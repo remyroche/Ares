@@ -23,7 +23,7 @@ from .tas_integration import TASModelSelector
 
 __all__ = [
     'DataDrivenModelSelector',
-    'ModelSelectorConfig', 
+    'ModelSelectorConfig',
     'ModelPerformanceMetrics',
     'RegimeModelMapping',
     'NASModelSelector',

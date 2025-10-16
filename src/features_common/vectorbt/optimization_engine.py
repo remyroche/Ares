@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 
 class VectorBTOptimizationEngine:
     """VectorBT optimization engine for enhanced performance."""
-    
+
     def __init__(self):
         self.optimizations = {}
         self.performance_metrics = {}
-    
+
     def optimize_operation(self, operation: str, data: Union[pd.DataFrame, pd.Series], **kwargs) -> Any:
         """Optimize a VectorBT operation."""
         try:
@@ -26,7 +26,7 @@ class VectorBTOptimizationEngine:
         except Exception as e:
             logger.warning(f"VectorBT optimization failed: {e}")
             return data
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         return self.performance_metrics

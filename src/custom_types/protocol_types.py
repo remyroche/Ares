@@ -19,7 +19,6 @@ ConfigT = TypeVar("ConfigT", bound = dict[str, Any])
 DataT = TypeVar("DataT")
 ResultT = TypeVar("ResultT")
 
-
 @runtime_checkable
 class DataProvider(Protocol[DataT]):
     """Protocol for data provider implementations."""
@@ -38,7 +37,6 @@ class DataProvider(Protocol[DataT]):
     def is_connected(self) -> bool:
         """Check if the data provider is connected."""
         ...
-
 
 @runtime_checkable
 class ModelPredictor(Protocol[T]):
@@ -64,7 +62,6 @@ class ModelPredictor(Protocol[T]):
         """Check if the model is trained and ready for prediction."""
         ...
 
-
 @runtime_checkable
 class RiskManager(Protocol):
     """Protocol for risk management implementations."""
@@ -88,7 +85,6 @@ class RiskManager(Protocol):
     async def update_risk_parameters(self, params: RiskParameters) -> bool:
         """Update risk parameters."""
         ...
-
 
 @runtime_checkable
 class OrderExecutor(Protocol):
@@ -114,7 +110,6 @@ class OrderExecutor(Protocol):
         """Get all open orders."""
         ...
 
-
 @runtime_checkable
 class StateManager(Protocol[T]):
     """Protocol for state management implementations."""
@@ -139,7 +134,6 @@ class StateManager(Protocol[T]):
         """Get all states."""
         ...
 
-
 @runtime_checkable
 class EventHandler(Protocol[T]):
     """Protocol for event handling implementations."""
@@ -158,7 +152,6 @@ class EventHandler(Protocol[T]):
     async def unsubscribe(self, event_type: str) -> None:
         """Unsubscribe from an event type."""
         ...
-
 
 @runtime_checkable
 class Configurable(Protocol[ConfigT]):
@@ -179,7 +172,6 @@ class Configurable(Protocol[ConfigT]):
         """Validate configuration."""
         ...
 
-
 @runtime_checkable
 class Monitorable(Protocol):
     """Protocol for monitorable components."""
@@ -198,7 +190,6 @@ class Monitorable(Protocol):
     def get_status(self) -> str:
         """Get current status."""
         ...
-
 
 @runtime_checkable
 class Startable(Protocol):
@@ -219,7 +210,6 @@ class Startable(Protocol):
         """Check if component is running."""
         ...
 
-
 # Composite protocols for common patterns
 @runtime_checkable
 class TradingComponent(
@@ -229,7 +219,6 @@ class TradingComponent(
     Protocol[ConfigT],
 ):
     """Protocol for trading system components."""
-
 
 @runtime_checkable
 class DataProcessor(Protocol[DataT, ResultT]):

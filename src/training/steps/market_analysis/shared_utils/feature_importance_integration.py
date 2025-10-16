@@ -27,7 +27,6 @@ from .balanced_feature_extractor import (
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class FeatureImportanceIntegrationConfig:
     """Configuration for feature importance integration."""
@@ -52,7 +51,6 @@ class FeatureImportanceIntegrationConfig:
     # Integration settings
     auto_integrate_with_clustering: bool = True
     auto_integrate_with_reporting: bool = True
-
 
 class FeatureImportanceIntegrationManager:
     """
@@ -275,7 +273,6 @@ class FeatureImportanceIntegrationManager:
             self.logger.warning(f"Failed to generate summary insights: {e}")
             return {}
 
-
 def integrate_feature_importance_with_clustering(
     clusterer,
     features: np.ndarray,
@@ -347,7 +344,6 @@ def integrate_feature_importance_with_clustering(
             'clustering_info': {'error': str(e)}
         }
 
-
 def enhance_regime_report_with_feature_importance(
     base_report: Dict[str, Any],
     feature_importance_manager: FeatureImportanceIntegrationManager
@@ -363,7 +359,6 @@ def enhance_regime_report_with_feature_importance(
         Enhanced report with feature importance insights
     """
     return feature_importance_manager.generate_enhanced_regime_report(base_report)
-
 
 # Integration hooks for pipeline components
 class FeatureImportancePipelineHook:

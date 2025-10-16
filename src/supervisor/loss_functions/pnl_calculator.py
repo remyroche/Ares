@@ -132,18 +132,18 @@ class PnLCalculator(PnLLossFunctionsBase):
 
             # Calculate running maximum
             running_max = np.maximum.accumulate(equity_curve)
-            
+
             # Calculate drawdown
             drawdown = (equity_curve - running_max) / running_max
-            
+
             # Find maximum drawdown
             max_drawdown = np.min(drawdown)
-            
+
             # Calculate drawdown duration
             in_drawdown = drawdown < 0
             drawdown_periods = []
             current_period = 0
-            
+
             for is_dd in in_drawdown:
                 if is_dd:
                     current_period += 1
@@ -151,10 +151,10 @@ class PnLCalculator(PnLLossFunctionsBase):
                     if current_period > 0:
                         drawdown_periods.append(current_period)
                     current_period = 0
-            
+
             if current_period > 0:
                 drawdown_periods.append(current_period)
-            
+
             max_drawdown_duration = max(drawdown_periods) if drawdown_periods else 0
 
             return {

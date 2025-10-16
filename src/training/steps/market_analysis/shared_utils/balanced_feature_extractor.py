@@ -138,7 +138,7 @@ class BalancedFeatureConfig:
     # Performance settings
     batch_size: int = 1000
     enable_caching: bool = True
-    
+
     # Enhanced regime detection settings
     use_numpy_optimization: bool = True
     enable_temporal_features: bool = True
@@ -162,11 +162,11 @@ class BalancedFeatureResult:
 class BalancedFeatureExtractor:
     """
     Comprehensive balanced feature extractor that prevents clustering imbalance.
-    
+
     This extractor uses TAS-style balanced feature extraction combined with
     existing feature generation tools to create well-distributed features.
     """
-    
+
     def __init__(self, config: Optional[BalancedFeatureConfig] = None) -> None:
         """Initialize the balanced feature extractor.
 
@@ -174,15 +174,15 @@ class BalancedFeatureExtractor:
             config: Configuration for feature extraction
         """
         tprint("🚀 Initializing BalancedFeatureExtractor", color="cyan", bold=True)
-        
+
         self.config = config or BalancedFeatureConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize components
         self.scaler = None
         self.feature_selector = None
         self.pca = None
-        
+
         # Initialize matrix operations for hardware optimization
         self.matrix_ops = None
         if MATRIX_OPERATIONS_AVAILABLE and self.config.enable_hardware_optimization:
@@ -191,7 +191,7 @@ class BalancedFeatureExtractor:
                 tprint("✅ Matrix operations initialized for hardware optimization", color="green")
             except Exception as e:
                 tprint(f"⚠️ Matrix operations initialization failed: {e}", color="yellow")
-        
+
         # Initialize feature generation system
         self.feature_bank = None
         self.feature_optimizer = None
@@ -202,7 +202,7 @@ class BalancedFeatureExtractor:
                 tprint("✅ Feature generation system initialized", color="green")
             except Exception as e:
                 tprint(f"⚠️ Feature generation system initialization failed: {e}", color="yellow")
-        
+
         # Initialize hybrid feature calculator
         self.hybrid_calculator = None
         if HYBRID_FEATURES_AVAILABLE and self.config.enable_hybrid_features:
@@ -218,31 +218,31 @@ class BalancedFeatureExtractor:
                 tprint("✅ Hybrid feature calculator initialized", color="green")
             except Exception as e:
                 tprint(f"⚠️ Hybrid calculator initialization failed: {e}", color="yellow")
-        
+
         tprint("✅ BalancedFeatureExtractor initialized successfully", color="green")
-    
+
     def extract_balanced_features(self, data: Union[np.ndarray, pd.DataFrame],
                                 labels: Optional[np.ndarray] = None) -> BalancedFeatureResult:
         """
         Extract balanced features to prevent clustering imbalance.
-        
+
         Args:
             data: Input data (numpy array or DataFrame)
             labels: Optional labels for supervised feature selection
-            
+
         Returns:
             BalancedFeatureResult with extracted features and metadata
         """
         start_time = time.time()
         tprint("🔍 Starting balanced feature extraction", color="blue")
-        
+
         try:
             # Convert to DataFrame if needed
             if isinstance(data, np.ndarray):
                 data_df = self._array_to_dataframe(data)
             else:
                 data_df = data.copy()
-            
+
             # Initialize result containers
             all_features = []
             feature_names = []
@@ -251,11 +251,11 @@ class BalancedFeatureExtractor:
             feature_categories['temporal'] = []
             feature_categories['micro_regime'] = []
             extraction_metadata = {}
-            
+
             # Extract features by category
             for category in self.config.enabled_categories:
                 tprint(f"📊 Extracting {category.value} features", color="cyan")
-                
+
                 try:
                     if category == FeatureCategory.PRICE:
                         features, names = self._extract_price_features_balanced(data_df)
@@ -275,7 +275,7 @@ class BalancedFeatureExtractor:
                         features, names = self._extract_interaction_features_balanced(data_df)
                     else:
                         continue
-                
+
                     if features is not None and len(features) > 0:
                         all_features.append(features)
                         feature_names.extend(names)
@@ -287,12 +287,12 @@ class BalancedFeatureExtractor:
                         tprint(f"✅ {category.value}: {len(names)} features extracted", color="green")
                     else:
                         tprint(f"⚠️ {category.value}: No features extracted", color="yellow")
-                        
+
                 except Exception as e:
                     tprint(f"❌ {category.value} extraction failed: {e}", color="red")
                     self.logger.warning(f"Feature extraction failed for {category.value}: {e}")
                     continue
-            
+
             # Extract temporal features if enabled
             if self.config.enable_temporal_features:
                 tprint("📊 Extracting temporal features", color="cyan")
@@ -310,7 +310,7 @@ class BalancedFeatureExtractor:
                 except Exception as e:
                     tprint(f"❌ temporal extraction failed: {e}", color="red")
                     self.logger.warning(f"Temporal feature extraction failed: {e}")
-            
+
             # Extract micro-regime features if enabled
             if self.config.enable_micro_regime_features:
                 tprint("📊 Extracting micro-regime features", color="cyan")
@@ -328,19 +328,19 @@ class BalancedFeatureExtractor:
                 except Exception as e:
                     tprint(f"❌ micro-regime extraction failed: {e}", color="red")
                     self.logger.warning(f"Micro-regime feature extraction failed: {e}")
-            
+
             # Combine all features
             if not all_features:
                 raise ValueError("No features were successfully extracted")
-            
+
             combined_features = np.concatenate(all_features, axis=1)
             tprint(f"📊 Combined features shape: {combined_features.shape}", color="blue")
-            
+
             # Apply balanced scaling
             if self.config.use_balanced_scaling:
                 combined_features = self._apply_balanced_scaling(combined_features)
                 tprint("✅ Balanced scaling applied", color="green")
-            
+
             # Feature selection if enabled
             if self.config.enable_feature_selection and labels is not None:
                 combined_features, selected_names = self._select_features_balanced(
@@ -348,12 +348,12 @@ class BalancedFeatureExtractor:
                 )
                 feature_names = selected_names
                 tprint(f"✅ Feature selection completed: {len(selected_names)} features selected", color="green")
-            
+
             # Calculate balance metrics
             balance_metrics = self._calculate_balance_metrics(combined_features)
-            
+
             processing_time = time.time() - start_time
-            
+
             result = BalancedFeatureResult(
                 features=combined_features,
                 feature_names=feature_names,
@@ -363,18 +363,18 @@ class BalancedFeatureExtractor:
                 balance_metrics=balance_metrics,
                 success=True
             )
-            
+
             tprint(f"✅ Balanced feature extraction completed in {processing_time:.2f}s", color="green")
             tprint(f"📊 Final features: {combined_features.shape[1]} features, {combined_features.shape[0]} samples", color="blue")
-            
+
             return result
-            
+
         except Exception as e:
             processing_time = time.time() - start_time
             error_msg = f"Balanced feature extraction failed: {e}"
             tprint(f"❌ {error_msg}", color="red")
             self.logger.error(error_msg)
-            
+
             return BalancedFeatureResult(
                 features=data if isinstance(data, np.ndarray) else data.values,
                 feature_names=[],
@@ -385,13 +385,13 @@ class BalancedFeatureExtractor:
                 success=False,
                 error_message=error_msg
             )
-    
+
     def _validate_input_data(self, data: Union[np.ndarray, pd.DataFrame]) -> None:
         """Validate input data for feature extraction."""
         try:
             if data is None:
                 raise DataValidationError("Input data cannot be None")
-            
+
             if isinstance(data, np.ndarray):
                 if data.size == 0:
                     raise DataValidationError("Input array is empty")
@@ -404,122 +404,122 @@ class BalancedFeatureExtractor:
                     raise DataValidationError("Input DataFrame must have at least 2 columns")
             else:
                 raise DataValidationError(f"Unsupported data type: {type(data)}")
-                
+
         except Exception as e:
             if isinstance(e, DataValidationError):
                 raise
             else:
                 raise DataValidationError(f"Data validation failed: {e}")
-    
+
     def _check_memory_usage(self) -> None:
         """Check memory usage and trigger cleanup if needed."""
         if not self.memory_optimizer:
             return
-            
+
         try:
             memory_stats = self.memory_optimizer.get_memory_stats()
             memory_percent = memory_stats.get('memory_percent', 0)
-            
+
             if memory_percent > self.config.memory_cleanup_threshold * 100:
                 tprint(f"🧠 Memory usage high ({memory_percent:.1f}%), triggering cleanup", color="yellow")
                 self.memory_optimizer._moderate_memory_cleanup()
-                
+
                 # Check if still high after cleanup
                 memory_stats = self.memory_optimizer.get_memory_stats()
                 memory_percent = memory_stats.get('memory_percent', 0)
-                
+
                 if memory_percent > 95:  # Critical threshold
                     raise MemoryLimitExceededError(f"Memory usage too high: {memory_percent:.1f}%")
-                    
+
         except Exception as e:
             if isinstance(e, MemoryLimitExceededError):
                 raise
             else:
                 self.logger.warning(f"Memory check failed: {e}")
-    
+
     def _memory_efficient_concatenate(self, feature_arrays: List[np.ndarray]) -> np.ndarray:
         """Memory-efficient concatenation for large feature arrays."""
         try:
             if not feature_arrays:
                 return np.array([])
-            
+
             if len(feature_arrays) == 1:
                 return feature_arrays[0]
-            
+
             # Calculate total shape
             n_samples = feature_arrays[0].shape[0]
             total_features = sum(arr.shape[1] for arr in feature_arrays)
-            
+
             # Pre-allocate result array
             result = np.empty((n_samples, total_features), dtype=feature_arrays[0].dtype)
-            
+
             # Fill result array in chunks to avoid memory spikes
             start_idx = 0
             for arr in feature_arrays:
                 end_idx = start_idx + arr.shape[1]
                 result[:, start_idx:end_idx] = arr
                 start_idx = end_idx
-                
+
                 # Force garbage collection after each chunk
                 if self.memory_optimizer:
                     gc.collect()
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Memory-efficient concatenation failed: {e}")
             # Fallback to standard concatenation
             return np.concatenate(feature_arrays, axis=1)
-    
+
     def _numpy_rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
         """Numpy-based rolling standard deviation for better performance."""
         try:
             if len(data) < window:
                 return np.full(len(data), np.nan)
-            
+
             # Use numpy for rolling calculations instead of pandas
             result = np.full(len(data), np.nan)
-            
+
             for i in range(window - 1, len(data)):
                 window_data = data[i - window + 1:i + 1]
                 if not np.any(np.isnan(window_data)):
                     result[i] = np.std(window_data)
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Numpy rolling std failed: {e}")
             # Fallback to pandas
             return pd.Series(data).rolling(window=window).std().values
-    
+
     def _numpy_rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
         """Numpy-based rolling mean for better performance."""
         try:
             if len(data) < window:
                 return np.full(len(data), np.nan)
-            
+
             result = np.full(len(data), np.nan)
-            
+
             for i in range(window - 1, len(data)):
                 window_data = data[i - window + 1:i + 1]
                 if not np.any(np.isnan(window_data)):
                     result[i] = np.mean(window_data)
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Numpy rolling mean failed: {e}")
             # Fallback to pandas
             return pd.Series(data).rolling(window=window).mean().values
-    
+
     def _numpy_rolling_skew(self, data: np.ndarray, window: int) -> np.ndarray:
         """Numpy-based rolling skewness for better performance."""
         try:
             if len(data) < window:
                 return np.full(len(data), np.nan)
-            
+
             result = np.full(len(data), np.nan)
-            
+
             for i in range(window - 1, len(data)):
                 window_data = data[i - window + 1:i + 1]
                 if not np.any(np.isnan(window_data)) and len(window_data) == window:
@@ -531,24 +531,24 @@ class BalancedFeatureExtractor:
                         result[i] = skew
                     else:
                         result[i] = 0.0
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Numpy rolling skew failed: {e}")
             # Fallback to pandas
             return pd.Series(data).rolling(window=window).apply(
                 lambda x: x.skew() if len(x) == window else np.nan
             ).values
-    
+
     def _numpy_rolling_kurtosis(self, data: np.ndarray, window: int) -> np.ndarray:
         """Numpy-based rolling kurtosis for better performance."""
         try:
             if len(data) < window:
                 return np.full(len(data), np.nan)
-            
+
             result = np.full(len(data), np.nan)
-            
+
             for i in range(window - 1, len(data)):
                 window_data = data[i - window + 1:i + 1]
                 if not np.any(np.isnan(window_data)) and len(window_data) == window:
@@ -560,16 +560,16 @@ class BalancedFeatureExtractor:
                         result[i] = kurt
                     else:
                         result[i] = 0.0
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Numpy rolling kurtosis failed: {e}")
             # Fallback to pandas
             return pd.Series(data).rolling(window=window).apply(
                 lambda x: x.kurtosis() if len(x) == window else np.nan
             ).values
-    
+
     def _array_to_dataframe(self, data: np.ndarray) -> pd.DataFrame:
         """Convert numpy array to DataFrame for processing."""
         try:
@@ -584,28 +584,28 @@ class BalancedFeatureExtractor:
                     columns.extend([f'feature_{i}' for i in range(4, data.shape[1])])
             else:
                 columns = [f'feature_{i}' for i in range(data.shape[1])]
-            
+
             return pd.DataFrame(data, columns=columns)
-            
+
         except Exception as e:
             self.logger.warning(f"Array to DataFrame conversion failed: {e}")
             return pd.DataFrame(data, columns=[f'feature_{i}' for i in range(data.shape[1])])
-    
+
     def _extract_price_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced price features using TAS-style approach."""
         try:
             features = []
             names = []
-            
+
             if 'close' in data_df.columns:
                 close_price = data_df['close'].values
-                
+
                 # Normalized price (TAS-style)
                 if self.config.use_tas_style_extraction:
                     normalized_price = (close_price - np.mean(close_price)) / (np.std(close_price) + 1e-8)
                     features.append(normalized_price.reshape(-1, 1))
                     names.append('normalized_close')
-                
+
                 # Price ratios (bounded)
                 if len(close_price) > 1:
                     price_ratios = close_price[1:] / close_price[:-1]
@@ -615,7 +615,7 @@ class BalancedFeatureExtractor:
                     log_ratios = np.clip(log_ratios, -2, 2)  # Bounded
                     features.append(log_ratios.reshape(-1, 1))
                     names.append('log_price_ratio')
-                
+
                 # Price position within range (if high/low available)
                 if 'high' in data_df.columns and 'low' in data_df.columns:
                     high_low_range = data_df['high'].values - data_df['low'].values
@@ -623,7 +623,7 @@ class BalancedFeatureExtractor:
                     price_position = np.clip(price_position, 0, 1)  # Bounded
                     features.append(price_position.reshape(-1, 1))
                     names.append('price_position')
-                
+
                 # Quantile-based features (balanced)
                 if self.config.use_quantile_features:
                     quantiles = [0.25, 0.5, 0.75]
@@ -633,32 +633,32 @@ class BalancedFeatureExtractor:
                         distance_to_q = np.clip(distance_to_q, -3, 3)  # Bounded
                         features.append(distance_to_q.reshape(-1, 1))
                         names.append(f'distance_to_q{q}')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Price features extraction failed: {e}")
             return None, []
-    
+
     def _extract_volume_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced volume features."""
         try:
             features = []
             names = []
-            
+
             if 'volume' in data_df.columns:
                 volume = data_df['volume'].values
-                
+
                 # Normalized volume
                 if self.config.use_tas_style_extraction:
                     normalized_volume = (volume - np.mean(volume)) / (np.std(volume) + 1e-8)
                     normalized_volume = np.clip(normalized_volume, -3, 3)
                     features.append(normalized_volume.reshape(-1, 1))
                     names.append('normalized_volume')
-                
+
                 # Volume ratios (bounded)
                 if len(volume) > 1:
                     volume_ratios = volume[1:] / (volume[:-1] + 1e-8)
@@ -667,7 +667,7 @@ class BalancedFeatureExtractor:
                     log_volume_ratios = np.clip(log_volume_ratios, -2, 2)
                     features.append(log_volume_ratios.reshape(-1, 1))
                     names.append('log_volume_ratio')
-                
+
                 # Volume position (if price available)
                 if 'close' in data_df.columns:
                     price_volume_ratio = volume / (data_df['close'].values + 1e-8)
@@ -675,34 +675,34 @@ class BalancedFeatureExtractor:
                     price_volume_ratio = np.clip(price_volume_ratio, -3, 3)
                     features.append(price_volume_ratio.reshape(-1, 1))
                     names.append('price_volume_ratio')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Volume features extraction failed: {e}")
             return None, []
-    
+
     def _extract_volatility_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced volatility features using TAS-style ratio-based approach."""
         try:
             features = []
             names = []
-            
+
             if 'close' not in data_df.columns:
                 raise FeatureCategoryError("Close price column not found for volatility features")
-            
+
             close_price = data_df['close'].values
-            
+
             # Volatility periods (balanced set)
             periods = [5, 10, 20]
-            
+
             for period in periods:
                 if len(close_price) <= period:
                     continue
-                    
+
                 try:
                     # Use numpy-based rolling calculations for better performance
                     if self.config.use_numpy_optimization:
@@ -712,138 +712,138 @@ class BalancedFeatureExtractor:
                         # Fallback to pandas
                         rolling_std = pd.Series(close_price).rolling(window=period).std().values
                         rolling_mean_vol = pd.Series(rolling_std).rolling(window=period).mean().values
-                    
+
                     # TAS-style volatility ratio (more balanced)
                     vol_ratio = rolling_std / (rolling_mean_vol + 1e-8)
-                    
+
                     # Bounded volatility features
                     valid_std = rolling_std[~np.isnan(rolling_std)]
                     if len(valid_std) > 0:
                         vol_normalized = np.clip(rolling_std, 0, np.percentile(valid_std, 95))
                     else:
                         vol_normalized = rolling_std
-                    
+
                     vol_ratio_normalized = np.clip(vol_ratio, 0, 5)  # Cap extreme ratios
-                    
+
                     # Fill NaN values
                     vol_normalized = np.nan_to_num(vol_normalized, nan=np.nanmean(vol_normalized))
                     vol_ratio_normalized = np.nan_to_num(vol_ratio_normalized, nan=1.0)
-                    
+
                     features.append(vol_normalized.reshape(-1, 1))
                     features.append(vol_ratio_normalized.reshape(-1, 1))
                     names.extend([f'volatility_{period}', f'vol_ratio_{period}'])
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Volatility period {period} failed: {e}")
                     continue
-            
+
             # Returns-based volatility (bounded)
             if len(close_price) > 1:
                 try:
                     returns = np.diff(close_price) / (close_price[:-1] + 1e-8)
                     abs_returns = np.abs(returns)
                     squared_returns = returns ** 2
-                    
+
                     # Pad to match original length
                     abs_returns_padded = np.concatenate([[0], abs_returns])
                     squared_returns_padded = np.concatenate([[0], squared_returns])
-                    
+
                     # Bounded returns
                     abs_returns_padded = np.clip(abs_returns_padded, 0, 0.1)  # Cap at 10%
                     squared_returns_padded = np.clip(squared_returns_padded, 0, 0.01)  # Cap at 1%
-                    
+
                     features.append(abs_returns_padded.reshape(-1, 1))
                     features.append(squared_returns_padded.reshape(-1, 1))
                     names.extend(['abs_returns', 'squared_returns'])
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Returns-based volatility failed: {e}")
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except FeatureCategoryError:
             raise
         except Exception as e:
             self.logger.warning(f"Volatility features extraction failed: {e}")
             return None, []
-    
+
     def _extract_momentum_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced momentum features using TAS-style bounded approach."""
         try:
             features = []
             names = []
-            
+
             if 'close' in data_df.columns:
                 close_price = data_df['close'].values
-                
+
                 # Momentum periods (balanced set)
                 periods = [3, 7, 14]
-                
+
                 for period in periods:
                     if len(close_price) > period:
                         # Price momentum (TAS approach - bounded)
                         momentum = close_price / np.roll(close_price, period) - 1
                         momentum = np.clip(momentum, -1, 2)  # Bounded momentum
-                        
+
                         # Rate of change (percentage-based)
                         roc = pd.Series(close_price).pct_change(period).values
                         roc = np.clip(roc, -1, 2)  # Bounded ROC
-                        
+
                         # Fill NaN values
                         momentum = np.nan_to_num(momentum, nan=0.0)
                         roc = np.nan_to_num(roc, nan=0.0)
-                        
+
                         features.append(momentum.reshape(-1, 1))
                         features.append(roc.reshape(-1, 1))
                         names.extend([f'momentum_{period}', f'roc_{period}'])
-                
+
                 # Stochastic-like momentum (if high/low available)
                 if 'high' in data_df.columns and 'low' in data_df.columns:
                     high_low = data_df['high'].values - data_df['low'].values
                     price_position = (close_price - data_df['low'].values) / (high_low + 1e-8)
                     price_position = np.clip(price_position, 0, 1)  # Bounded between 0 and 1
-                    
+
                     features.append(price_position.reshape(-1, 1))
                     names.append('stochastic_position')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Momentum features extraction failed: {e}")
             return None, []
-    
+
     def _extract_trend_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced trend features using TAS-style binary indicators."""
         try:
             features = []
             names = []
-            
+
             if 'close' in data_df.columns:
                 close_price = data_df['close'].values
-                
+
                 # Trend periods (balanced set)
                 periods = [5, 10, 20]
-                
+
                 for period in periods:
                     if len(close_price) > period:
                         # Trend direction (TAS approach - binary)
                         trend_dir = np.where(close_price > np.roll(close_price, period), 1, -1)
-                        
+
                         # Trend strength (normalized)
                         trend_strength = np.abs(close_price - np.roll(close_price, period))
                         trend_strength = trend_strength / (close_price + 1e-8)  # Normalized
                         trend_strength = np.clip(trend_strength, 0, 1)  # Bounded
-                        
+
                         features.append(trend_dir.reshape(-1, 1))
                         features.append(trend_strength.reshape(-1, 1))
                         names.extend([f'trend_dir_{period}', f'trend_strength_{period}'])
-                
+
                 # Volume trend (if volume available)
                 if 'volume' in data_df.columns:
                     volume = data_df['volume'].values
@@ -852,58 +852,58 @@ class BalancedFeatureExtractor:
                         vol_trend = np.where(volume > np.roll(volume, 10), 1, -1)
                         features.append(vol_trend.reshape(-1, 1))
                         names.append('volume_trend')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Trend features extraction failed: {e}")
             return None, []
-    
+
     def _extract_technical_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced technical features."""
         try:
             features = []
             names = []
-            
+
             if 'close' not in data_df.columns:
                 raise FeatureCategoryError("Close price column not found for technical features")
-            
+
             close_price = data_df['close'].values
-            
+
             # Simple moving average ratios (bounded)
             periods = [5, 10, 20]
             for period in periods:
                 if len(close_price) <= period:
                     continue
-                    
+
                 try:
                     # Use numpy-based rolling mean for better performance
                     if self.config.use_numpy_optimization:
                         sma = self._numpy_rolling_mean(close_price, period)
                     else:
                         sma = pd.Series(close_price).rolling(window=period).mean().values
-                    
+
                     sma_ratio = close_price / (sma + 1e-8)
                     sma_ratio = np.clip(sma_ratio, 0.5, 2.0)  # Bounded
                     sma_ratio = np.nan_to_num(sma_ratio, nan=1.0)
-                    
+
                     features.append(sma_ratio.reshape(-1, 1))
                     names.append(f'sma_ratio_{period}')
-                    
+
                 except Exception as e:
                     self.logger.warning(f"SMA period {period} failed: {e}")
                     continue
-            
+
             # RSI-like momentum (bounded)
             if len(close_price) > 14:
                 try:
                     delta = np.diff(close_price)
                     gains = np.where(delta > 0, delta, 0)
                     losses = np.where(delta < 0, -delta, 0)
-                    
+
                     # Use numpy-based rolling mean for RSI calculation
                     if self.config.use_numpy_optimization:
                         avg_gain = self._numpy_rolling_mean(gains, 14)
@@ -911,48 +911,48 @@ class BalancedFeatureExtractor:
                     else:
                         avg_gain = pd.Series(gains).rolling(window=14).mean().values
                         avg_loss = pd.Series(losses).rolling(window=14).mean().values
-                    
+
                     rs = avg_gain / (avg_loss + 1e-8)
                     rsi = 100 - (100 / (1 + rs))
                     rsi = np.clip(rsi, 0, 100)  # Bounded
                     rsi = np.nan_to_num(rsi, nan=50)  # Neutral RSI
-                    
+
                     # Pad to match original length
                     rsi_padded = np.concatenate([[50], rsi])
                     features.append(rsi_padded.reshape(-1, 1))
                     names.append('rsi')
-                    
+
                 except Exception as e:
                     self.logger.warning(f"RSI calculation failed: {e}")
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except FeatureCategoryError:
             raise
         except Exception as e:
             self.logger.warning(f"Technical features extraction failed: {e}")
             return None, []
-    
+
     def _extract_statistical_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced statistical features."""
         try:
             features = []
             names = []
-            
+
             if 'close' not in data_df.columns:
                 raise FeatureCategoryError("Close price column not found for statistical features")
-            
+
             close_price = data_df['close'].values
-            
+
             # Rolling statistics (bounded)
             periods = [10, 20]
             for period in periods:
                 if len(close_price) <= period:
                     continue
-                    
+
                 try:
                     # Use numpy-based rolling calculations for better performance
                     if self.config.use_numpy_optimization:
@@ -961,29 +961,29 @@ class BalancedFeatureExtractor:
                     else:
                         rolling_mean = pd.Series(close_price).rolling(window=period).mean().values
                         rolling_std = pd.Series(close_price).rolling(window=period).std().values
-                    
+
                     # Rolling mean ratio
                     mean_ratio = close_price / (rolling_mean + 1e-8)
                     mean_ratio = np.clip(mean_ratio, 0.5, 2.0)
                     mean_ratio = np.nan_to_num(mean_ratio, nan=1.0)
-                    
+
                     # Rolling std (normalized)
                     std_normalized = rolling_std / (np.std(close_price) + 1e-8)
                     std_normalized = np.clip(std_normalized, 0, 3)
                     std_normalized = np.nan_to_num(std_normalized, nan=1.0)
-                    
+
                     features.extend([mean_ratio.reshape(-1, 1), std_normalized.reshape(-1, 1)])
                     names.extend([f'mean_ratio_{period}', f'std_normalized_{period}'])
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Statistical period {period} failed: {e}")
                     continue
-            
+
             # Skewness and kurtosis (if enough data)
             if len(close_price) > 50:
                 try:
                     from scipy import stats
-                    
+
                     # Use numpy-based rolling calculations for skewness and kurtosis
                     if self.config.use_numpy_optimization:
                         rolling_skew = self._numpy_rolling_skew(close_price, 20)
@@ -995,38 +995,38 @@ class BalancedFeatureExtractor:
                         rolling_kurt = pd.Series(close_price).rolling(window=20).apply(
                             lambda x: stats.kurtosis(x) if len(x) == 20 else np.nan
                         ).values
-                    
+
                     # Bounded skewness and kurtosis
                     rolling_skew = np.clip(rolling_skew, -3, 3)
                     rolling_kurt = np.clip(rolling_kurt, -3, 10)
                     rolling_skew = np.nan_to_num(rolling_skew, nan=0.0)
                     rolling_kurt = np.nan_to_num(rolling_kurt, nan=0.0)
-                    
+
                     features.extend([rolling_skew.reshape(-1, 1), rolling_kurt.reshape(-1, 1)])
                     names.extend(['rolling_skewness', 'rolling_kurtosis'])
-                    
+
                 except ImportError:
                     self.logger.warning("SciPy not available for skewness and kurtosis")
                 except Exception as e:
                     self.logger.warning(f"Skewness/kurtosis calculation failed: {e}")
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except FeatureCategoryError:
             raise
         except Exception as e:
             self.logger.warning(f"Statistical features extraction failed: {e}")
             return None, []
-    
+
     def _extract_interaction_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract balanced interaction features using unified feature generation."""
         try:
             features = []
             names = []
-            
+
             # Use unified feature generation system if available
             if self.feature_bank is not None:
                 try:
@@ -1037,7 +1037,7 @@ class BalancedFeatureExtractor:
                         categories=interaction_categories,
                         lookback_optimization=True
                     )
-                    
+
                     if interaction_result is not None and hasattr(interaction_result, 'features'):
                         # Limit interaction features to prevent imbalance
                         interaction_features = interaction_result.features.values
@@ -1049,41 +1049,41 @@ class BalancedFeatureExtractor:
                             feature_names = [interaction_result.features.columns[i] for i in top_indices]
                         else:
                             feature_names = list(interaction_result.features.columns)
-                        
+
                         # Apply balanced scaling to interaction features
                         from sklearn.preprocessing import RobustScaler
                         scaler = RobustScaler()
                         interaction_features = scaler.fit_transform(interaction_features)
                         interaction_features = np.clip(interaction_features, -self.config.max_feature_range, self.config.max_feature_range)
-                        
+
                         features.append(interaction_features)
                         names.extend(feature_names)
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Unified interaction features failed: {e}")
-            
+
             # Fallback: Simple interaction features
             if not features and 'close' in data_df.columns and 'volume' in data_df.columns:
                 close_price = data_df['close'].values
                 volume = data_df['volume'].values
-                
+
                 # Price-volume interaction (normalized)
                 price_volume_interaction = close_price * volume
                 price_volume_interaction = (price_volume_interaction - np.mean(price_volume_interaction)) / (np.std(price_volume_interaction) + 1e-8)
                 price_volume_interaction = np.clip(price_volume_interaction, -3, 3)
-                
+
                 features.append(price_volume_interaction.reshape(-1, 1))
                 names.append('price_volume_interaction')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Interaction features extraction failed: {e}")
             return None, []
-    
+
     def _apply_balanced_scaling(self, features: np.ndarray) -> np.ndarray:
         """Apply balanced scaling to prevent extreme values."""
         try:
@@ -1094,65 +1094,65 @@ class BalancedFeatureExtractor:
             else:
                 from sklearn.preprocessing import MinMaxScaler
                 scaler = MinMaxScaler()
-            
+
             scaled_features = scaler.fit_transform(features)
-            
+
             # Apply TAS-style bounds to prevent extreme values
             scaled_features = np.clip(scaled_features, -self.config.max_feature_range, self.config.max_feature_range)
-            
+
             # Handle any remaining NaN or inf values
             scaled_features = np.nan_to_num(scaled_features, nan=0.0, posinf=1.0, neginf=-1.0)
-            
+
             self.scaler = scaler
             return scaled_features
-            
+
         except Exception as e:
             self.logger.warning(f"Balanced scaling failed: {e}")
             return features
-    
-    def _select_features_balanced(self, features: np.ndarray, feature_names: List[str], 
+
+    def _select_features_balanced(self, features: np.ndarray, feature_names: List[str],
                                 labels: np.ndarray) -> Tuple[np.ndarray, List[str]]:
         """Select features using balanced approach."""
         try:
             if features.shape[1] <= self.config.total_max_features:
                 return features, feature_names
-            
+
             # Use variance-based selection for balance
             feature_variance = np.var(features, axis=0)
-            
+
             # Select features with good variance (not too low, not too high)
             # This helps prevent both sparse and overly concentrated features
             variance_threshold_low = np.percentile(feature_variance, 10)
             variance_threshold_high = np.percentile(feature_variance, 90)
-            
+
             balanced_mask = (feature_variance >= variance_threshold_low) & (feature_variance <= variance_threshold_high)
-            
+
             if np.sum(balanced_mask) < self.config.total_max_features:
                 # Fallback to top variance features
                 top_indices = np.argsort(feature_variance)[-self.config.total_max_features:]
                 balanced_mask = np.zeros(len(feature_names), dtype=bool)
                 balanced_mask[top_indices] = True
-            
+
             selected_features = features[:, balanced_mask]
             selected_names = [name for i, name in enumerate(feature_names) if balanced_mask[i]]
-            
+
             return selected_features, selected_names
-            
+
         except Exception as e:
             self.logger.warning(f"Feature selection failed: {e}")
             return features, feature_names
-    
+
     def _extract_temporal_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract temporal features for regime detection."""
         try:
             features = []
             names = []
-            
+
             if 'close' not in data_df.columns:
                 return None, []
-            
+
             close_price = data_df['close'].values
-            
+
             # Time-based features
             if self.config.enable_temporal_features:
                 # Hour of day effect (if we have timestamps)
@@ -1176,7 +1176,7 @@ class BalancedFeatureExtractor:
                     day_features = np.cos(2 * np.pi * day_values / 7)
                     features.append(day_features.reshape(-1, 1))
                     names.append('day_cos')
-                
+
                 # Time-based volatility patterns
                 for period in [5, 10, 20]:
                     if len(close_price) > period:
@@ -1193,27 +1193,27 @@ class BalancedFeatureExtractor:
 
                         features.append(weighted_vol.reshape(-1, 1))
                         names.append(f'time_weighted_vol_{period}')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Temporal features extraction failed: {e}")
             return None, []
-    
+
     def _extract_micro_regime_features_balanced(self, data_df: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
         """Extract micro-regime features for short-term regime detection."""
         try:
             features = []
             names = []
-            
+
             if 'close' not in data_df.columns:
                 return None, []
-            
+
             close_price = data_df['close'].values
-            
+
             if self.config.enable_micro_regime_features:
                 # Short-term volatility changes (micro-regime indicators)
                 for short_period in [2, 3, 5]:
@@ -1244,7 +1244,7 @@ class BalancedFeatureExtractor:
 
                             features.append(vol_acceleration.reshape(-1, 1))
                             names.append(f'micro_vol_acceleration_{short_period}')
-                
+
                 # Price momentum micro-features
                 for short_period in [2, 3, 5]:
                     if len(close_price) > short_period:
@@ -1265,29 +1265,29 @@ class BalancedFeatureExtractor:
 
                             features.append(momentum_change.reshape(-1, 1))
                             names.append(f'micro_momentum_change_{short_period}')
-            
+
             if features:
                 return np.concatenate(features, axis=1), names
             else:
                 return None, []
-                
+
         except Exception as e:
             self.logger.warning(f"Micro-regime features extraction failed: {e}")
             return None, []
-    
+
     def _analyze_regime_stability(self, regime_assignments: np.ndarray) -> Dict[str, Any]:
         """Analyze regime stability and persistence."""
         try:
             stability_metrics = {}
-            
+
             # Regime persistence analysis
             regime_changes = np.diff(regime_assignments) != 0
             change_points = np.where(regime_changes)[0]
-            
+
             if len(change_points) > 0:
                 # Calculate regime durations
                 regime_durations = np.diff(np.concatenate([[0], change_points, [len(regime_assignments)]]))
-                
+
                 stability_metrics['total_regime_changes'] = len(change_points)
                 stability_metrics['avg_regime_duration'] = np.mean(regime_durations)
                 stability_metrics['min_regime_duration'] = np.min(regime_durations)
@@ -1299,20 +1299,20 @@ class BalancedFeatureExtractor:
                 stability_metrics['min_regime_duration'] = len(regime_assignments)
                 stability_metrics['max_regime_duration'] = len(regime_assignments)
                 stability_metrics['regime_stability_score'] = 1.0
-            
+
             # Regime distribution analysis
             unique_regimes, regime_counts = np.unique(regime_assignments, return_counts=True)
             regime_distribution = dict(zip(unique_regimes, regime_counts))
-            
+
             stability_metrics['regime_distribution'] = regime_distribution
             stability_metrics['regime_balance'] = 1.0 - (np.std(list(regime_counts.values())) / np.mean(list(regime_counts.values())))
-            
+
             return stability_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"Regime stability analysis failed: {e}")
             return {}
-    
+
     def _calculate_balance_metrics(self, features: np.ndarray) -> Dict[str, float]:
         """Calculate metrics to assess feature balance."""
         try:
@@ -1567,12 +1567,12 @@ def extract_balanced_features(data: Union[np.ndarray, pd.DataFrame],
                             labels: Optional[np.ndarray] = None) -> BalancedFeatureResult:
     """
     Convenience function to extract balanced features.
-    
+
     Args:
         data: Input data
         config: Optional configuration
         labels: Optional labels for supervised feature selection
-        
+
     Returns:
         BalancedFeatureResult with extracted features
     """
@@ -1639,16 +1639,16 @@ def analyze_regime_feature_importance(features: np.ndarray,
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1667,8 +1667,8 @@ def analyze_regime_feature_importance(features: np.ndarray,
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1685,13 +1685,13 @@ def analyze_regime_feature_importance(features: np.ndarray,
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

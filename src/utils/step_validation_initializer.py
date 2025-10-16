@@ -122,10 +122,10 @@ class StepValidationInitializer:
         def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
             """
             Validate and fix input data using pipeline standards.
-            
+
             Args:
                 data: Input DataFrame
-                
+
             Returns:
                 Validated and fixed DataFrame
             """

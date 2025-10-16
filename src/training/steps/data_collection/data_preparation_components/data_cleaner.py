@@ -16,7 +16,7 @@ import logging
 
 class DataCleaner:
     """Handles data cleaning operations for market data.
-    
+
     This class provides functionality for:
     - Removing duplicates
     - Handling missing values
@@ -32,12 +32,12 @@ class DataCleaner:
     def remove_duplicates(self, df: pd.DataFrame, subset: Optional[list[str]]=None, keep: str='first') -> pd.DataFrame:
         """
         Remove duplicate rows from DataFrame.
-        
+
         Args:
             df: DataFrame to clean
             subset: Columns to consider for identifying duplicates
             keep: Which duplicate to keep ('first', 'last', False)
-            
+
         Returns:
             DataFrame with duplicates removed
         """
@@ -60,14 +60,14 @@ class DataCleaner:
     def fill_missing_values(self, df: pd.DataFrame, method: str='auto', numeric_fill: Union[str, float]=0, string_fill: str='', custom_fills: Optional[dict[str, Any]]=None) -> pd.DataFrame:
         """
         Fill missing values in DataFrame.
-        
+
         Args:
             df: DataFrame to clean
             method: Method to use ('auto', 'forward', 'backward', 'interpolate')
             numeric_fill: Value to use for numeric columns
             string_fill: Value to use for string columns
             custom_fills: Dictionary of column-specific fill values
-            
+
         Returns:
             DataFrame with missing values filled
         """
@@ -117,13 +117,13 @@ class DataCleaner:
     def detect_outliers(self, df: pd.DataFrame, columns: Optional[list[str]]=None, method: str='zscore', threshold: float = 3.0) -> tuple[pd.DataFrame, dict[str, list[int]]]:
         """
         Detect outliers in specified columns.
-        
+
         Args:
             df: DataFrame to analyze
             columns: Columns to check for outliers (None = all numeric)
             method: Detection method ('zscore', 'iqr', 'isolation_forest')
             threshold: Threshold for outlier detection
-            
+
         Returns:
             Tuple of (DataFrame with outlier flags, dict of outlier indices by column)
         """
@@ -162,12 +162,12 @@ class DataCleaner:
     def remove_outliers(self, df: pd.DataFrame, outliers: dict[str, list[int]], method: str='remove') -> pd.DataFrame:
         """
         Remove or handle outliers based on detection results.
-        
+
         Args:
             df: DataFrame with data
             outliers: Dictionary of outlier indices by column
             method: How to handle outliers ('remove', 'cap', 'nan')
-            
+
         Returns:
             DataFrame with outliers handled
         """
@@ -199,14 +199,14 @@ class DataCleaner:
     def clean_time_series(self, df: pd.DataFrame, timestamp_col: str='timestamp', remove_weekends: bool = False, remove_holidays: bool = False, ensure_regular_intervals: bool = True) -> pd.DataFrame:
         """
         Perform time series specific cleaning operations.
-        
+
         Args:
             df: DataFrame with time series data
             timestamp_col: Name of timestamp column
             remove_weekends: Whether to remove weekend data
             remove_holidays: Whether to remove holiday data
             ensure_regular_intervals: Whether to ensure regular time intervals
-            
+
         Returns:
             Cleaned time series DataFrame
         """
@@ -238,11 +238,11 @@ class DataCleaner:
     def validate_cleaned_data(self, df: pd.DataFrame, original_df: pd.DataFrame) -> dict[str, Any]:
         """
         Validate the cleaned data against the original.
-        
+
         Args:
             df: Cleaned DataFrame
             original_df: Original DataFrame
-            
+
         Returns:
             Dictionary with validation results
         """

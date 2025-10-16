@@ -52,39 +52,39 @@ except ImportError:
     VectorizationConfig = None
 
 except ImportError:
-    
+
     cp = None
 
 # Base class for VectorBT-optimized time features
 class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
     """
     Base class for time features with full VectorBT optimization.
-    
+
     Provides unified VectorBT integration, performance monitoring,
     and memory optimization for all time-based features.
     """
-    
+
     def __init__(self, config: FeatureConfig):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT optimization components
         self.vectorbt_rolling_optimizer = None
         self.unified_vectorization_manager = None
-        
+
         if VECTORBT_OPTIMIZATION_AVAILABLE:
             try:
                 self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
                 self.unified_vectorization_manager = get_unified_vectorization_manager()
             except Exception as e:
                 self.logger.warning(f"Failed to initialize VectorBT optimization: {e}")
-    
+
     def _optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for VectorBT processing."""
         if self.unified_vectorization_manager:
             return self.unified_vectorization_manager.optimize_dataframe(data)
         return data
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with optimization."""
         if self.vectorbt_rolling_optimizer:
@@ -93,7 +93,7 @@ class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
             return self._direct_vectorbt_operation(data, operation, window, **kwargs)
         else:
             return self._pandas_fallback_operation(data, operation, window, **kwargs)
-    
+
     def _direct_vectorbt_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Direct VectorBT operation fallback."""
@@ -114,8 +114,8 @@ class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
             return rolling_sum(data, window=window, **kwargs)
         else:
             raise ValueError(f"Unsupported VectorBT operation: {operation}")
-    
-    def _pandas_fallback_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_fallback_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Pandas fallback operation."""
         rolling_obj = data.rolling(window=window, **kwargs)
@@ -133,7 +133,7 @@ class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
             return rolling_obj.sum()
         else:
             raise ValueError(f"Unsupported pandas operation: {operation}")
-    
+
     def _vectorbt_scale_operation(self, data: pd.Series, method: str, **kwargs) -> pd.Series:
         """Perform VectorBT scaling operation."""
         if self.unified_vectorization_manager:
@@ -149,7 +149,7 @@ class VectorBTTimeFeatureGenerator(VectorizedFeatureGenerator):
                 return self._pandas_scale_fallback(data, method, **kwargs)
         else:
             return self._pandas_scale_fallback(data, method, **kwargs)
-    
+
     def _pandas_scale_fallback(self, data: pd.Series, method: str, **kwargs) -> pd.Series:
         """Pandas scaling fallback."""
         if method == 'zscore':
@@ -176,19 +176,19 @@ class HourGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate hour feature with VectorBT optimization
         hour_series = pd.Series(data.index.hour, index=data.index)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             hour_series = self._vectorbt_scale_operation(hour_series, scale_method)
-        
+
         return hour_series
 
 # Cyclical Encodings for Machine Learning
@@ -206,21 +206,21 @@ class HourSinGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate cyclical hour feature with VectorBT optimization
         hour = data.index.hour
         sin_hour = np.sin(2 * np.pi * hour / 24)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             sin_hour = self._vectorbt_scale_operation(pd.Series(sin_hour, index=data.index), scale_method)
             return sin_hour
-        
+
         return pd.Series(sin_hour, index=data.index)
 
 class HourCosGenerator(VectorBTTimeFeatureGenerator):
@@ -237,21 +237,21 @@ class HourCosGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate cyclical hour feature with VectorBT optimization
         hour = data.index.hour
         cos_hour = np.cos(2 * np.pi * hour / 24)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             cos_hour = self._vectorbt_scale_operation(pd.Series(cos_hour, index=data.index), scale_method)
             return cos_hour
-        
+
         return pd.Series(cos_hour, index=data.index)
 
 # Intraday Pattern Features
@@ -269,22 +269,22 @@ class MarketOpenGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate market open feature with VectorBT optimization
         hour = data.index.hour
         # Market open: 9-11 AM (assuming 9 AM market open)
         market_open = ((hour >= 9) & (hour < 11)).astype(int)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             market_open = self._vectorbt_scale_operation(pd.Series(market_open, index=data.index), scale_method)
             return market_open
-        
+
         return pd.Series(market_open, index=data.index)
 
 class LunchHourGenerator(VectorBTTimeFeatureGenerator):
@@ -301,22 +301,22 @@ class LunchHourGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate lunch hour feature with VectorBT optimization
         hour = data.index.hour
         # Lunch hour: 12-2 PM
         lunch_hour = ((hour >= 12) & (hour < 14)).astype(int)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             lunch_hour = self._vectorbt_scale_operation(pd.Series(lunch_hour, index=data.index), scale_method)
             return lunch_hour
-        
+
         return pd.Series(lunch_hour, index=data.index)
 
 class MarketCloseGenerator(VectorBTTimeFeatureGenerator):
@@ -333,22 +333,22 @@ class MarketCloseGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate market close feature with VectorBT optimization
         hour = data.index.hour
         # Market close: 3-5 PM (assuming 5 PM market close)
         market_close = ((hour >= 15) & (hour < 17)).astype(int)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             market_close = self._vectorbt_scale_operation(pd.Series(market_close, index=data.index), scale_method)
             return market_close
-        
+
         return pd.Series(market_close, index=data.index)
 
 class AfterHoursGenerator(VectorBTTimeFeatureGenerator):
@@ -365,22 +365,22 @@ class AfterHoursGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate after hours feature with VectorBT optimization
         hour = data.index.hour
         # After hours: before 9 AM or after 5 PM
         after_hours = ((hour < 9) | (hour >= 17)).astype(int)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             after_hours = self._vectorbt_scale_operation(pd.Series(after_hours, index=data.index), scale_method)
             return after_hours
-        
+
         return pd.Series(after_hours, index=data.index)
 
 class HighActivityHoursGenerator(VectorBTTimeFeatureGenerator):
@@ -397,22 +397,22 @@ class HighActivityHoursGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate high activity feature with VectorBT optimization
         hour = data.index.hour
         # High activity: 10 AM - 2 PM (excluding lunch hour)
         high_activity = ((hour >= 10) & (hour < 12)) | ((hour >= 14) & (hour < 16))
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             high_activity = self._vectorbt_scale_operation(pd.Series(high_activity.astype(int), index=data.index), scale_method)
             return high_activity
-        
+
         return pd.Series(high_activity.astype(int), index=data.index)
 
 # Day of Week Cyclical Encoding (important for weekly patterns)
@@ -430,21 +430,21 @@ class DayOfWeekSinGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate cyclical day of week feature with VectorBT optimization
         day_of_week = data.index.dayofweek
         sin_dow = np.sin(2 * np.pi * day_of_week / 7)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             sin_dow = self._vectorbt_scale_operation(pd.Series(sin_dow, index=data.index), scale_method)
             return sin_dow
-        
+
         return pd.Series(sin_dow, index=data.index)
 
 class DayOfWeekCosGenerator(VectorBTTimeFeatureGenerator):
@@ -461,27 +461,27 @@ class DayOfWeekCosGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Generate cyclical day of week feature with VectorBT optimization
         day_of_week = data.index.dayofweek
         cos_dow = np.cos(2 * np.pi * day_of_week / 7)
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             cos_dow = self._vectorbt_scale_operation(pd.Series(cos_dow, index=data.index), scale_method)
             return cos_dow
-        
+
         return pd.Series(cos_dow, index=data.index)
 
 # Advanced Time-Based Features with VectorBT Rolling Operations
 class HourlyVolatilityGenerator(VectorBTTimeFeatureGenerator):
     """Generate hourly volatility patterns using VectorBT rolling operations."""
-    
+
     def __init__(self):
         config = FeatureConfig(
             name="hourly_volatility",
@@ -495,29 +495,29 @@ class HourlyVolatilityGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Calculate rolling volatility by hour using VectorBT
         window = kwargs.get('window', self.config.default_lookback)
         close_prices = data['close']
-        
+
         # Use VectorBT rolling operations for volatility calculation
         rolling_std = self._vectorbt_rolling_operation(close_prices, 'std', window)
-        
+
         # Group by hour and calculate mean volatility
         hourly_vol = rolling_std.groupby(data.index.hour).mean()
-        
+
         # Map back to original index
         result = data.index.hour.map(hourly_vol)
-        
+
         return pd.Series(result, index=data.index)
 
 class TimeBasedMomentumGenerator(VectorBTTimeFeatureGenerator):
     """Generate time-based momentum features using VectorBT optimization."""
-    
+
     def __init__(self):
         config = FeatureConfig(
             name="time_momentum",
@@ -531,36 +531,36 @@ class TimeBasedMomentumGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Calculate time-based momentum using VectorBT
         window = kwargs.get('window', self.config.default_lookback)
         close_prices = data['close']
-        
+
         # Calculate rolling mean and momentum
         rolling_mean = self._vectorbt_rolling_operation(close_prices, 'mean', window)
         momentum = (close_prices - rolling_mean) / rolling_mean
-        
+
         # Apply time-based scaling
         hour = data.index.hour
         time_factor = np.where((hour >= 9) & (hour <= 16), 1.0, 0.5)  # Higher weight during trading hours
-        
+
         result = momentum * time_factor
-        
+
         # Apply VectorBT scaling if requested
         scale_method = kwargs.get('scale_method')
         if scale_method:
             result = self._vectorbt_scale_operation(pd.Series(result, index=data.index), scale_method)
             return result
-        
+
         return pd.Series(result, index=data.index)
 
 class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
     """Generate time-based volume profile using VectorBT batch processing."""
-    
+
     def __init__(self):
         config = FeatureConfig(
             name="time_volume_profile",
@@ -574,11 +574,11 @@ class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
             enable_parallel=True
         )
         super().__init__(config)
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for VectorBT processing
         data = self._optimize_dataframe_processing(data)
-        
+
         # Use UnifiedVectorizationManager for batch processing
         if self.unified_vectorization_manager:
             # Define feature configurations for batch processing
@@ -594,34 +594,34 @@ class TimeBasedVolumeProfileGenerator(VectorBTTimeFeatureGenerator):
                     'params': {'operation': 'std', 'window': self.config.default_lookback, 'column': 'volume'}
                 }
             ]
-            
+
             # Process features in batch
             features = self.unified_vectorization_manager.batch_process_features(data, feature_configs)
-            
+
             # Calculate volume profile (normalized volume)
             volume_profile = (data['volume'] - features['volume_mean']) / features['volume_std']
-            
+
             # Apply time-based weighting
             hour = data.index.hour
             time_weight = np.where((hour >= 9) & (hour <= 16), 1.0, 0.3)  # Higher weight during trading hours
-            
+
             result = volume_profile * time_weight
-            
+
             # Apply VectorBT scaling if requested
             scale_method = kwargs.get('scale_method')
             if scale_method:
                 result = self._vectorbt_scale_operation(pd.Series(result, index=data.index), scale_method)
                 return result
-            
+
             return pd.Series(result, index=data.index)
         else:
             # Fallback to simple calculation
             volume = data['volume']
             rolling_mean = self._vectorbt_rolling_operation(volume, 'mean', self.config.default_lookback)
             rolling_std = self._vectorbt_rolling_operation(volume, 'std', self.config.default_lookback)
-            
+
             result = (volume - rolling_mean) / rolling_std
-            
+
             return pd.Series(result, index=data.index)
 
 def create_default_time_generators() -> List[FeatureGenerator]:
@@ -629,20 +629,20 @@ def create_default_time_generators() -> List[FeatureGenerator]:
     return [
         # Basic hour features
         HourGenerator(),
-        
+
         # Cyclical encodings (ML compatible)
         HourSinGenerator(),
         HourCosGenerator(),
         DayOfWeekSinGenerator(),
         DayOfWeekCosGenerator(),
-        
+
         # Intraday pattern features
         MarketOpenGenerator(),
         LunchHourGenerator(),
         MarketCloseGenerator(),
         AfterHoursGenerator(),
         HighActivityHoursGenerator(),
-        
+
         # Advanced VectorBT-optimized features
         HourlyVolatilityGenerator(),
         TimeBasedMomentumGenerator(),
@@ -654,29 +654,29 @@ def create_advanced_time_generators() -> List[FeatureGenerator]:
     return [
         # All basic generators
         *create_default_time_generators(),
-        
+
         # Additional advanced features can be added here
     ]
 
 def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenerator] = None) -> pd.DataFrame:
     """
     Create time features in batch using UnifiedVectorizationManager for maximum performance.
-    
+
     Args:
         data: Input OHLCV data
         generators: List of time feature generators (uses default if None)
-        
+
     Returns:
         DataFrame with generated time features
     """
     if generators is None:
         generators = create_default_time_generators()
-    
+
     # Use UnifiedVectorizationManager for batch processing if available
     try:
         from src.feature_generation.utils.unified_vectorization_manager import get_unified_vectorization_manager
         manager = get_unified_vectorization_manager()
-        
+
         # Generate features using batch processing
         results = {}
         for generator in generators:
@@ -688,9 +688,9 @@ def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenera
                     print(f"Warning: {generator.config.name} failed: {result.error_message}")
             except Exception as e:
                 print(f"Error generating {generator.config.name}: {e}")
-        
+
         return pd.DataFrame(results, index=data.index)
-        
+
     except ImportError:
         # Fallback to individual generation
         results = {}
@@ -701,5 +701,5 @@ def create_time_feature_batch(data: pd.DataFrame, generators: List[FeatureGenera
                     results[generator.config.name] = result.data
             except Exception as e:
                 print(f"Error generating {generator.config.name}: {e}")
-        
+
         return pd.DataFrame(results, index=data.index)

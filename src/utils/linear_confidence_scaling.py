@@ -19,7 +19,7 @@ class LinearConfidenceScaler:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize linear confidence scaler with configuration.
-        
+
         Args:
             config: Configuration dictionary containing scaling parameters
         """
@@ -43,12 +43,12 @@ class LinearConfidenceScaler:
     def calculate_linear_confidence_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0) -> float:
         """
         Calculate linear confidence multiplier based on confidence, intensity, and reliability.
-        
+
         Args:
             confidence: Base confidence score (0.0 to 1.0)
             intensity: Signal intensity (0.0 to 1.0)
             reliability: Signal reliability (0.0 to 1.0)
-            
+
         Returns:
             Linear confidence multiplier
         """
@@ -88,13 +88,13 @@ class LinearConfidenceScaler:
     def calculate_position_size_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
         Calculate position size multiplier using linear confidence scaling.
-        
+
         Args:
             confidence: Base confidence score
             intensity: Signal intensity
             reliability: Signal reliability
             risk_score: Current risk score (0.0 to 1.0)
-            
+
         Returns:
             Position size multiplier
         """
@@ -108,13 +108,13 @@ class LinearConfidenceScaler:
     def calculate_leverage_multiplier(self, confidence: float, intensity: float = 1.0, reliability: float = 1.0, risk_score: float = 0.0) -> float:
         """
         Calculate leverage multiplier using linear confidence scaling.
-        
+
         Args:
             confidence: Base confidence score
             intensity: Signal intensity
             reliability: Signal reliability
             risk_score: Current risk score
-            
+
         Returns:
             Leverage multiplier
         """
@@ -127,13 +127,13 @@ class LinearConfidenceScaler:
     def should_enter_trade(self, confidence: float, profit_confidence: float, risk_score: float, intensity: float = 1.0) -> Tuple[bool, Dict[str, Any]]:
         """
         Determine if trade should be entered based on linear thresholds.
-        
+
         Args:
             confidence: Base confidence score
             profit_confidence: Profit prediction confidence
             risk_score: Current risk score
             intensity: Signal intensity
-            
+
         Returns:
             Tuple of (should_enter, reasoning_dict)
         """
@@ -148,10 +148,10 @@ class LinearConfidenceScaler:
 def create_linear_confidence_scaler(config: Dict[str, Any]) -> LinearConfidenceScaler:
     """
     Factory function to create a linear confidence scaler.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         LinearConfidenceScaler instance
     """

@@ -22,12 +22,12 @@ class StepValidationWrapper:
     def wrap_step_with_validation(self, step_class: Any, step_name: str, schema_name: str='unified') -> None:
         """
         Wrap a step class with validation using pipeline standards.
-        
+
         Args:
             step_class: The step class to wrap
             step_name: Name of the step
             schema_name: Schema name for validation
-            
+
         Returns:
             Wrapped step class with validation
         """

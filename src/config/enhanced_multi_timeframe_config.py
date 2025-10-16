@@ -8,7 +8,6 @@ optimizer that uses optimized lookback periods from the matrix optimization syst
 
 from typing import Any
 
-
 def get_enhanced_multi_timeframe_config() -> dict[str, Any]:
     """Get configuration for enhanced multi-timeframe optimization."""
     return {
@@ -143,7 +142,6 @@ def get_enhanced_multi_timeframe_config() -> dict[str, Any]:
         },
     }
 
-
 def get_timeframe_period_mapping() -> dict[str, dict[str, list[int]]]:
     """Get mapping of timeframes to optimized periods for different indicators."""
     return {
@@ -204,7 +202,6 @@ def get_timeframe_period_mapping() -> dict[str, dict[str, list[int]]]:
         },
     }
 
-
 def get_cross_timeframe_period_pairs() -> list[tuple]:
     """Get optimized period pairs for cross-timeframe analysis."""
     return [
@@ -227,7 +224,6 @@ def get_cross_timeframe_period_pairs() -> list[tuple]:
         (20, 50),
         (30, 50),
     ]
-
 
 def get_regime_specific_config() -> dict[str, Any]:
     """Get configuration for regime-specific optimization."""
@@ -275,7 +271,6 @@ def get_regime_specific_config() -> dict[str, Any]:
         },
     }
 
-
 def get_quality_validation_config() -> dict[str, Any]:
     """Get configuration for quality validation."""
     return {
@@ -295,7 +290,6 @@ def get_quality_validation_config() -> dict[str, Any]:
             "stability_check",
         ],
     }
-
 
 def get_performance_config() -> dict[str, Any]:
     """Get configuration for performance optimization."""

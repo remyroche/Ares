@@ -64,21 +64,21 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class DisagreementMetaFeatures:
     """
     Comprehensive disagreement meta-features for ensemble models.
-    
+
     This class implements all the disagreement meta-features that help
     identify when ensemble models disagree and signal uncertainty.
     """
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize the disagreement meta-features calculator.
-        
+
         Args:
             logger: Optional logger instance
         """
@@ -179,7 +179,7 @@ class DisagreementMetaFeatures:
                     normalised[model_idx, sample_idx] = row / total
 
         return normalised
-        
+
     def calculate_all_disagreement_features(
         self,
         model_predictions: Dict[str, np.ndarray],
@@ -188,12 +188,12 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate all disagreement meta-features from model predictions.
-        
+
         Args:
             model_predictions: Dict mapping model names to prediction arrays
             model_probabilities: Dict mapping model names to probability arrays
             model_confidences: Optional dict mapping model names to confidence arrays
-            
+
         Returns:
             Dict containing all disagreement meta-features
         """
@@ -240,7 +240,7 @@ class DisagreementMetaFeatures:
             length = self._infer_length(model_predictions, model_probabilities, model_confidences)
             index = pd.RangeIndex(length)
             return self._get_default_disagreement_features(index)
-    
+
     def _calculate_prediction_dispersion(
         self,
         model_predictions: Dict[str, np.ndarray],
@@ -248,14 +248,14 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate prediction dispersion meta-features.
-        
+
         Measures:
         - Variance of predicted returns across models
         - Standard deviation of probability of "up" vs "down" across models
-        
+
         Args:
             model_predictions: Dict mapping model names to prediction arrays
-            
+
         Returns:
             Dict containing dispersion features
         """
@@ -281,7 +281,7 @@ class DisagreementMetaFeatures:
             self.logger.error(f"Error calculating prediction dispersion: {e}")
             zero = pd.Series(0.0, index=index)
             return {"prediction_dispersion": zero, "prediction_std": zero}
-    
+
     def _calculate_direction_conflict(
         self,
         model_predictions: Dict[str, np.ndarray],
@@ -289,14 +289,14 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate direction conflict meta-features.
-        
+
         Measures:
         - Fraction of models long vs short (hard votes)
         - Disagreement rate as a filter for trading decisions
-        
+
         Args:
             model_predictions: Dict mapping model names to prediction arrays
-            
+
         Returns:
             Dict containing direction conflict features
         """
@@ -354,7 +354,7 @@ class DisagreementMetaFeatures:
                 "short_ratio": half,
                 "disagreement_rate": default
             }
-    
+
     def _calculate_confidence_gap(
         self,
         model_probabilities: Dict[str, np.ndarray],
@@ -362,14 +362,14 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate ensemble confidence gap meta-features.
-        
+
         Measures:
         - Difference between highest and second-highest aggregated probability
         - High margin = conviction trade, Low margin = uncertain market regime
-        
+
         Args:
             model_probabilities: Dict mapping model names to probability arrays
-            
+
         Returns:
             Dict containing confidence gap features
         """
@@ -416,7 +416,7 @@ class DisagreementMetaFeatures:
                 "max_confidence": zero,
                 "second_max_confidence": zero
             }
-    
+
     def _calculate_entropy_uncertainty(
         self,
         model_probabilities: Dict[str, np.ndarray],
@@ -424,14 +424,14 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate uncertainty/entropy meta-features.
-        
+
         Measures:
         - Entropy of the average probability distribution
         - High entropy = scattered belief = uncertain trade environment
-        
+
         Args:
             model_probabilities: Dict mapping model names to probability arrays
-            
+
         Returns:
             Dict containing entropy features
         """
@@ -466,7 +466,7 @@ class DisagreementMetaFeatures:
             self.logger.error(f"Error calculating entropy uncertainty: {e}")
             zero = pd.Series(0.0, index=index)
             return {"entropy": zero, "normalized_entropy": zero, "uncertainty": zero}
-    
+
     def _calculate_spread_indicators(
         self,
         model_predictions: Dict[str, np.ndarray],
@@ -475,15 +475,15 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate model spread indicators.
-        
+
         Measures:
         - Range: max(p_long) - min(p_long) across models
         - IQR (interquartile range) of predicted returns/probs across models
-        
+
         Args:
             model_predictions: Dict mapping model names to prediction arrays
             model_probabilities: Dict mapping model names to probability arrays
-            
+
         Returns:
             Dict containing spread indicator features
         """
@@ -527,7 +527,7 @@ class DisagreementMetaFeatures:
                 "probability_range": zero,
                 "probability_iqr": zero
             }
-    
+
     def _calculate_pairwise_divergence(
         self,
         model_probabilities: Dict[str, np.ndarray],
@@ -535,15 +535,15 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate pairwise divergence meta-features.
-        
+
         Measures:
         - Jensen-Shannon divergence between model probability distributions
         - KL divergence between model probability distributions
         - Large divergence = models view market very differently
-        
+
         Args:
             model_probabilities: Dict mapping model names to probability arrays
-            
+
         Returns:
             Dict containing pairwise divergence features
         """
@@ -588,15 +588,15 @@ class DisagreementMetaFeatures:
             self.logger.error(f"Error calculating pairwise divergence: {e}")
             zero = pd.Series(0.0, index=index)
             return {"js_divergence": zero, "kl_divergence": zero, "avg_divergence": zero}
-    
+
     def _calculate_kl_divergence(self, p: np.ndarray, q: np.ndarray) -> np.ndarray:
         """
         Calculate KL divergence between two probability distributions.
-        
+
         Args:
             p: First probability distribution
             q: Second probability distribution
-            
+
         Returns:
             KL divergence value
         """
@@ -612,7 +612,7 @@ class DisagreementMetaFeatures:
         except Exception as e:
             self.logger.error(f"Error calculating KL divergence: {e}")
             return np.zeros(p.shape[0] if p.ndim > 1 else 1)
-    
+
     def _get_default_disagreement_features(self, index: pd.Index) -> Dict[str, pd.Series]:
         """Get default disagreement features when calculation fails."""
 
@@ -640,7 +640,7 @@ class DisagreementMetaFeatures:
             "kl_divergence": zero,
             "avg_divergence": zero
         }
-    
+
     def calculate_disagreement_features_for_ensemble(
         self,
         ensemble_predictions: Dict[str, Any],
@@ -648,11 +648,11 @@ class DisagreementMetaFeatures:
     ) -> Dict[str, pd.Series]:
         """
         Calculate disagreement features for an ensemble of models.
-        
+
         Args:
             ensemble_predictions: Dict containing ensemble prediction data
             is_live: Whether this is for live trading or backtesting
-            
+
         Returns:
             Dict containing disagreement features
         """
@@ -734,16 +734,16 @@ class DisagreementMetaFeatures:
             return self._get_default_disagreement_features(index)
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -762,8 +762,8 @@ class DisagreementMetaFeatures:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

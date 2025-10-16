@@ -25,7 +25,7 @@ import torch
 # Import tprint for comprehensive logging
 try:
     from src.utils.tprint import (
-        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
         tprint_success, tprint_progress, tprint_performance, tprint_timer
     )
     TPRINT_AVAILABLE = True
@@ -70,7 +70,6 @@ from ...hybrid_nas_tas_regime.shared_utils import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class EvaluationResult:
@@ -135,7 +134,6 @@ class EvaluationResult:
     evaluation_config: Dict[str, Any] = field(default_factory=dict)
     notes: str = ""
 
-
 class TASEvaluator:
     """Advanced evaluator for Trading Architecture Search."""
 
@@ -194,7 +192,7 @@ class TASEvaluator:
             )
             self.unified_economic_evaluator = create_unified_economic_evaluator(economic_config)
             tprint("✅ Economic significance evaluator created", color="green")
-            
+
             # Initialize unified trading viability evaluator
             tprint("📈 Creating trading viability evaluator", color="yellow")
             trading_config = TradingViabilityConfig(
@@ -208,7 +206,7 @@ class TASEvaluator:
             )
             self.unified_trading_evaluator = create_unified_trading_viability_evaluator(trading_config)
             tprint("✅ Trading viability evaluator created", color="green")
-            
+
             # Initialize unified multi-objective optimizer
             tprint("🎯 Creating multi-objective optimizer", color="yellow")
             optimization_config = OptimizationConfig(
@@ -224,7 +222,7 @@ class TASEvaluator:
             )
             self.unified_optimizer = create_unified_multi_objective_optimizer(optimization_config)
             tprint("✅ Multi-objective optimizer created", color="green")
-            
+
             # Initialize unified hardware optimizer
             tprint("💻 Creating hardware optimizer", color="yellow")
             hardware_config = HardwareConfig(
@@ -235,7 +233,7 @@ class TASEvaluator:
             )
             self.unified_hardware_optimizer = create_unified_hardware_optimizer(hardware_config)
             tprint("✅ Hardware optimizer created", color="green")
-            
+
             # Initialize unified regime analyzer
             tprint("📊 Creating regime analyzer", color="yellow")
             regime_config = RegimeAnalysisConfig(
@@ -246,7 +244,7 @@ class TASEvaluator:
             )
             self.unified_regime_analyzer = create_unified_regime_analyzer(regime_config)
             tprint("✅ Regime analyzer created", color="green")
-            
+
             # Initialize unified validation system
             tprint("✅ Creating validation system", color="yellow")
             validation_config = ValidationConfig(
@@ -259,10 +257,10 @@ class TASEvaluator:
             )
             self.unified_validator = create_unified_validation_system(validation_config)
             tprint("✅ Validation system created", color="green")
-            
+
             self.logger.info("✅ Unified utilities initialized for TAS evaluation")
             tprint("✅ All unified utilities initialized successfully", color="green")
-            
+
         except Exception as e:
             tprint(f"⚠️ Failed to initialize unified utilities: {e}", color="red")
             self.logger.warning(f"Failed to initialize unified utilities: {e}")
@@ -689,7 +687,6 @@ class TASEvaluator:
 
         return max_dd
 
-
 # Convenience functions for evaluation
 def evaluate_tas_model(model: Any, X_test: np.ndarray, y_test: np.ndarray,
                       market_data: pd.DataFrame, config: TASConfig,
@@ -697,7 +694,6 @@ def evaluate_tas_model(model: Any, X_test: np.ndarray, y_test: np.ndarray,
     """Convenience function for TAS model evaluation."""
     evaluator = TASEvaluator(config)
     return evaluator.evaluate_model(model, X_test, y_test, market_data, model_name=model_name)
-
 
 def compare_tas_models(models: List[Tuple[Any, str]], X_test: np.ndarray, y_test: np.ndarray,
                       market_data: pd.DataFrame, config: TASConfig) -> List[EvaluationResult]:

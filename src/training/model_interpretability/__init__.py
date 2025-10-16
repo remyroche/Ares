@@ -9,10 +9,9 @@ This package provides comprehensive model interpretability using SHAP and LIME:
 - Integration with the training pipeline
 """
 
-
 __all__ = [
     'ModelExplainer',
-    'SHAPAnalyzer', 
+    'SHAPAnalyzer',
     'LIMEAnalyzer',
     'InterpretabilityVisualizer',
     'InterpretabilityReporter'

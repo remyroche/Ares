@@ -1,8 +1,7 @@
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, Optional
-
+import asyncio
 
 @dataclass
 class PendingTrade:
@@ -10,7 +9,6 @@ class PendingTrade:
     created_at: datetime
     decision: Any
     future: asyncio.Future = field(default_factory=asyncio.Future)
-
 
 class GlobalTradeGate:
     """
@@ -139,4 +137,3 @@ class GlobalTradeGate:
             "queued": (self._queue.qsize() if self._queue is not None else 0),
             "last_acquired_at": self._last_acquired_at,
         }
-

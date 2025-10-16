@@ -30,7 +30,7 @@ class ModelSerializer:
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model serializer.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -48,14 +48,14 @@ class ModelSerializer:
     @handles_errors(exceptions=(Exception,), default_return = None, context='model serialization')
     async def save_model(self, model: Any, model_id: str, format_name: str, version_info: Dict[str, Any], metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save a model in specified format.
-        
+
         Args:
             model: Model to save
             model_id: Unique model identifier
             format_name: Serialization format
             version_info: Version information
             metadata: Optional model metadata
-            
+
         Returns:
             Path to saved model file
         """
@@ -70,13 +70,13 @@ class ModelSerializer:
 
     async def _save_pickle(self, model: Any, model_id: str, save_dir: Path, metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save model using pickle.
-        
+
         Args:
             model: Model to save
             model_id: Model identifier
             save_dir: Directory to save in
             metadata: Optional metadata
-            
+
         Returns:
             Path to saved file
         """
@@ -92,13 +92,13 @@ class ModelSerializer:
 
     async def _save_joblib(self, model: Any, model_id: str, save_dir: Path, metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save model using joblib.
-        
+
         Args:
             model: Model to save
             model_id: Model identifier
             save_dir: Directory to save in
             metadata: Optional metadata
-            
+
         Returns:
             Path to saved file
         """
@@ -117,13 +117,13 @@ class ModelSerializer:
 
     async def _save_onnx(self, model: Any, model_id: str, save_dir: Path, metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save model in ONNX format.
-        
+
         Args:
             model: Model to save
             model_id: Model identifier
             save_dir: Directory to save in
             metadata: Optional metadata
-            
+
         Returns:
             Path to saved file
         """
@@ -155,13 +155,13 @@ class ModelSerializer:
 
     async def _save_json(self, model: Any, model_id: str, save_dir: Path, metadata: Optional[Dict[str, Any]]=None) -> Optional[str]:
         """Save model metadata as JSON.
-        
+
         Args:
             model: Model (not saved, only metadata)
             model_id: Model identifier
             save_dir: Directory to save in
             metadata: Model metadata
-            
+
         Returns:
             Path to saved file
         """
@@ -185,11 +185,11 @@ class ModelSerializer:
     @handles_errors(exceptions=(Exception,), default_return = None, context='model loading')
     async def load_model(self, file_path: str, format_name: Optional[str]=None) -> Optional[Any]:
         """Load a model from file.
-        
+
         Args:
             file_path: Path to model file
             format_name: Format to use (auto-detect if None)
-            
+
         Returns:
             Loaded model or None
         """
@@ -197,13 +197,13 @@ class ModelSerializer:
         if not path.exists():
             self.logger.error(f'Model file not found: {file_path}')
             return None
-        
+
         # Auto-detect format if not specified
         if format_name is None:
             format_name = self._detect_format(path)
             if format_name is None:
                 return None
-        
+
         # Load model using appropriate loader
         return await self._load_model_by_format(path, format_name)
     @log_all_calls
@@ -215,11 +215,11 @@ class ModelSerializer:
             '.joblib': 'joblib',
             '.onnx': 'onnx'
         }
-        
+
         format_name = format_mapping.get(path.suffix)
         if format_name is None:
             self.logger.error(f'Unknown file format: {path.suffix}')
-        
+
         return format_name
 
     async def _load_model_by_format(self, path: Path, format_name: str) -> Optional[Any]:
@@ -229,12 +229,12 @@ class ModelSerializer:
             'joblib': self._load_joblib,
             'onnx': self._load_onnx
         }
-        
+
         loader = loaders.get(format_name)
         if loader is None:
             self.logger.error(f'Unsupported format: {format_name}')
             return None
-        
+
         return await loader(path)
 
     async def _load_pickle(self, file_path: Path) -> Optional[Any]:

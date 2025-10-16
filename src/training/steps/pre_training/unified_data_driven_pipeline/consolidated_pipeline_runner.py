@@ -44,56 +44,55 @@ from .consolidated_pipeline import (
 from .core.config import UnifiedPipelineConfig, create_default_config
 from .core.simplified_config import (
     create_full_config,
-    create_blank_config, 
+    create_blank_config,
     create_light_config,
     create_config_by_intensity,
     PipelineIntensity
 )
 
-
 class ConsolidatedPipelineRunner:
     """Runner for executing consolidated pipeline up to specific steps."""
-    
+
     def __init__(self, config: Optional[UnifiedPipelineConfig] = None) -> None:
         """
         Initialize the pipeline runner.
-        
+
         Args:
             config: Optional pipeline configuration. If None, uses default config.
-            
+
         Raises:
             ValueError: If config is invalid
             ImportError: If required dependencies are missing
         """
         try:
             tprint_step("🚀 Initializing ConsolidatedPipelineRunner")
-            
+
             if config is None:
                 tprint_info("📋 Using default configuration")
                 self.config = create_default_config()
             else:
                 tprint_info("📋 Using provided configuration")
                 self.config = config
-            
+
             # Validate configuration
             if not isinstance(self.config, UnifiedPipelineConfig):
                 raise ValueError(f"Invalid config type: {type(self.config)}. Expected UnifiedPipelineConfig.")
-            
+
             tprint_info("🔧 Creating unified pipeline")
             self.pipeline = create_unified_pipeline(self.config)
-            
+
             if self.pipeline is None:
                 raise RuntimeError("Failed to create unified pipeline")
-            
+
             self.logger = logging.getLogger(__name__)
             tprint_success("✅ ConsolidatedPipelineRunner initialized successfully")
-            
+
         except Exception as e:
             error_msg = f"Failed to initialize ConsolidatedPipelineRunner: {str(e)}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
-    
-    async def run_data_validation_step(self, 
+
+    async def run_data_validation_step(self,
                                      data: pd.DataFrame,
                                      symbol: str = "ETHUSDT",
                                      timeframe: str = "15m",
@@ -106,7 +105,7 @@ class ConsolidatedPipelineRunner:
                                      custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Run pipeline up to data validation step.
-        
+
         Args:
             data: Input DataFrame with time series data
             symbol: Trading symbol (default: "ETHUSDT")
@@ -118,7 +117,7 @@ class ConsolidatedPipelineRunner:
             end_date: Optional end date for analysis
             exchange: Exchange name (default: "binance")
             custom_overrides: Optional configuration overrides
-            
+
         Returns:
             Dict containing validation results with keys:
             - success: bool
@@ -126,7 +125,7 @@ class ConsolidatedPipelineRunner:
             - validation_metadata: Dict[str, Any]
             - artifacts: Dict[str, Any]
             - error_message: Optional[str]
-            
+
         Raises:
             ValueError: If input data is invalid
             RuntimeError: If pipeline execution fails
@@ -136,28 +135,28 @@ class ConsolidatedPipelineRunner:
             tprint_info(f"📊 Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
             tprint_info(f"🎯 Symbol: {symbol}, Timeframe: {timeframe}, Direction: {direction}")
             tprint_info(f"⚙️ Intensity: {intensity}, Exchange: {exchange}")
-            
+
             # Validate input data
             if data is None or data.empty:
                 raise ValueError("Input data cannot be None or empty")
-            
+
             if not isinstance(data, pd.DataFrame):
                 raise ValueError(f"Expected pandas DataFrame, got {type(data)}")
-            
+
             # Configure pipeline based on intensity
             tprint_info("🔧 Configuring pipeline based on intensity")
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             if self.pipeline is None:
                 raise RuntimeError("Failed to create unified pipeline with new configuration")
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -169,14 +168,14 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'data_validation'
             }
-            
+
             tprint_info("🚀 Executing pipeline up to data validation")
             # Run pipeline up to data validation
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             if result is None:
                 raise RuntimeError("Pipeline returned None result")
-            
+
             # Extract validation results
             validation_result = {
                 'success': result.success,
@@ -185,7 +184,7 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             if validation_result['success']:
                 tprint_success(f"✅ Data validation completed successfully")
                 tprint_result(f"📈 Data quality score: {validation_result['data_quality_score']:.3f}")
@@ -193,13 +192,13 @@ class ConsolidatedPipelineRunner:
                 tprint_info(f"📦 Artifacts generated: {len(validation_result['artifacts'])}")
             else:
                 tprint_error(f"❌ Data validation failed: {validation_result['error_message']}")
-            
+
             # Generate human-readable report
             tprint_info("📄 Generating human-readable report")
             await self._generate_data_validation_report(validation_result, data)
-            
+
             return validation_result
-            
+
         except ValueError as e:
             error_msg = f"Invalid input for data validation step: {str(e)}"
             tprint_error(f"❌ {error_msg}")
@@ -233,7 +232,7 @@ class ConsolidatedPipelineRunner:
                 'data_quality_score': 0.0,
                 'validation_metadata': {}
             }
-    
+
     async def run_feature_generation_step(self,
                                         data: pd.DataFrame,
                                         symbol: str = "ETHUSDT",
@@ -250,13 +249,13 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -268,10 +267,10 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'feature_generation'
             }
-            
+
             # Run pipeline up to feature generation
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract feature generation results
             feature_result = {
                 'success': result.success,
@@ -281,12 +280,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_feature_generation_report(feature_result, data)
-            
+
             return feature_result
-            
+
         except Exception as e:
             self.logger.error(f"Feature generation step failed: {e}")
             return {
@@ -297,7 +296,7 @@ class ConsolidatedPipelineRunner:
                 'feature_metadata': {},
                 'generation_metrics': {}
             }
-    
+
     async def run_feature_selection_step(self,
                                        data: pd.DataFrame,
                                        symbol: str = "ETHUSDT",
@@ -314,7 +313,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -326,16 +325,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'feature_selection'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to feature selection
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract feature selection results
             selection_result = {
                 'success': result.success,
@@ -345,12 +344,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_feature_selection_report(selection_result, data)
-            
+
             return selection_result
-            
+
         except Exception as e:
             self.logger.error(f"Feature selection step failed: {e}")
             return {
@@ -361,7 +360,7 @@ class ConsolidatedPipelineRunner:
                 'selection_metadata': {},
                 'selection_metrics': {}
             }
-    
+
     async def run_period_optimization_step(self,
                                          data: pd.DataFrame,
                                          symbol: str = "ETHUSDT",
@@ -378,7 +377,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -390,16 +389,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'period_optimization'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to period optimization
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract period optimization results
             optimization_result = {
                 'success': result.success,
@@ -408,12 +407,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_period_optimization_report(optimization_result, data)
-            
+
             return optimization_result
-            
+
         except Exception as e:
             self.logger.error(f"Period optimization step failed: {e}")
             return {
@@ -423,7 +422,7 @@ class ConsolidatedPipelineRunner:
                 'optimal_periods': {},
                 'optimization_metrics': {}
             }
-    
+
     async def run_lookback_optimization_step(self,
                                            data: pd.DataFrame,
                                            symbol: str = "ETHUSDT",
@@ -440,7 +439,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -452,16 +451,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'lookback_optimization'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to lookback optimization
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract lookback optimization results
             optimization_result = {
                 'success': result.success,
@@ -470,12 +469,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_lookback_optimization_report(optimization_result, data)
-            
+
             return optimization_result
-            
+
         except Exception as e:
             self.logger.error(f"Lookback optimization step failed: {e}")
             return {
@@ -485,7 +484,7 @@ class ConsolidatedPipelineRunner:
                 'optimal_lookbacks': {},
                 'optimization_metrics': {}
             }
-    
+
     async def run_period_lookback_optimization_step(self,
                                                   data: pd.DataFrame,
                                                   symbol: str = "ETHUSDT",
@@ -502,7 +501,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -514,16 +513,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'period_lookback_optimization'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to concurrent period + lookback optimization
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract period + lookback optimization results
             optimization_result = {
                 'success': result.success,
@@ -535,12 +534,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_period_lookback_optimization_report(optimization_result, data)
-            
+
             return optimization_result
-            
+
         except Exception as e:
             self.logger.error(f"Concurrent period + lookback optimization step failed: {e}")
             return {
@@ -553,7 +552,7 @@ class ConsolidatedPipelineRunner:
                 'trading_defaults': {},
                 'interaction_periods': []
             }
-    
+
     async def run_interaction_generation_step(self,
                                             data: pd.DataFrame,
                                             symbol: str = "ETHUSDT",
@@ -570,7 +569,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -582,16 +581,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'interaction_generation'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to interaction generation
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract interaction generation results
             interaction_result = {
                 'success': result.success,
@@ -601,12 +600,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_interaction_generation_report(interaction_result, data)
-            
+
             return interaction_result
-            
+
         except Exception as e:
             self.logger.error(f"Interaction generation step failed: {e}")
             return {
@@ -617,7 +616,7 @@ class ConsolidatedPipelineRunner:
                 'interaction_metadata': {},
                 'generation_metrics': {}
             }
-    
+
     async def run_vectorization_step(self,
                                    data: pd.DataFrame,
                                    symbol: str = "ETHUSDT",
@@ -634,7 +633,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -646,16 +645,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'vectorization'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to vectorization
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract vectorization results
             vectorization_result = {
                 'success': result.success,
@@ -665,12 +664,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_vectorization_report(vectorization_result, data)
-            
+
             return vectorization_result
-            
+
         except Exception as e:
             self.logger.error(f"Vectorization step failed: {e}")
             return {
@@ -681,7 +680,7 @@ class ConsolidatedPipelineRunner:
                 'vectorization_metadata': {},
                 'performance_metrics': {}
             }
-    
+
     async def run_labeling_integration_step(self,
                                           data: pd.DataFrame,
                                           symbol: str = "ETHUSDT",
@@ -698,7 +697,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -710,16 +709,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'labeling_integration'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to labeling integration
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract labeling integration results
             labeling_result = {
                 'success': result.success,
@@ -729,12 +728,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_labeling_integration_report(labeling_result, data)
-            
+
             return labeling_result
-            
+
         except Exception as e:
             self.logger.error(f"Labeling integration step failed: {e}")
             return {
@@ -745,7 +744,7 @@ class ConsolidatedPipelineRunner:
                 'labeling_metadata': {},
                 'quality_metrics': {}
             }
-    
+
     async def run_final_validation_step(self,
                                       data: pd.DataFrame,
                                       symbol: str = "ETHUSDT",
@@ -762,7 +761,7 @@ class ConsolidatedPipelineRunner:
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
-            
+
             # Create pipeline state
             pipeline_state = {
                 'symbol': symbol,
@@ -774,16 +773,16 @@ class ConsolidatedPipelineRunner:
                 'exchange': exchange,
                 'step': 'final_validation'
             }
-            
+
             # Get labels from pipeline state (from previous labeling steps)
             targets = self._get_labels_from_pipeline_state(custom_overrides)
-            
+
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
-            
+
             # Run pipeline up to final validation
             result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
-            
+
             # Extract final validation results
             validation_result = {
                 'success': result.success,
@@ -794,12 +793,12 @@ class ConsolidatedPipelineRunner:
                 'artifacts': result.artifacts or {},
                 'error_message': result.error_message if not result.success else None
             }
-            
+
             # Generate human-readable report
             await self._generate_final_validation_report(validation_result, data)
-            
+
             return validation_result
-            
+
         except Exception as e:
             self.logger.error(f"Final validation step failed: {e}")
             return {
@@ -811,20 +810,20 @@ class ConsolidatedPipelineRunner:
                 'quality_metrics': {},
                 'pipeline_summary': {}
             }
-    
+
     def _get_labels_from_pipeline_state(self, pipeline_state: Optional[Dict[str, Any]]) -> Optional[pd.Series]:
         """
         Extract labels from pipeline state (from previous labeling steps).
-        
+
         Args:
             pipeline_state: Pipeline state dictionary containing labels from previous steps
-            
+
         Returns:
             Target series from previous steps, or None if not found
         """
         if not pipeline_state:
             return None
-            
+
         # Try to get labels from various possible sources in pipeline state
         if 'labeled_data' in pipeline_state and 'target' in pipeline_state['labeled_data'].columns:
             return pipeline_state['labeled_data']['target']
@@ -838,26 +837,26 @@ class ConsolidatedPipelineRunner:
     def _create_config_from_intensity(self, intensity: str, custom_overrides: Optional[Dict[str, Any]] = None) -> UnifiedPipelineConfig:
         """
         Create configuration based on intensity level.
-        
+
         Args:
             intensity: Intensity level ("full", "blank", "light")
             custom_overrides: Optional configuration overrides
-            
+
         Returns:
             Configured UnifiedPipelineConfig instance
-            
+
         Raises:
             ValueError: If intensity is invalid
             RuntimeError: If config creation fails
         """
         try:
             tprint_info(f"🔧 Creating configuration for intensity: {intensity}")
-            
+
             # Validate intensity parameter
             valid_intensities = {"full", "blank", "light"}
             if intensity not in valid_intensities:
                 raise ValueError(f"Invalid intensity '{intensity}'. Must be one of: {valid_intensities}")
-            
+
             # Create base configuration
             if intensity == "full":
                 tprint_info("📋 Creating full intensity configuration (100%)")
@@ -871,10 +870,10 @@ class ConsolidatedPipelineRunner:
             else:
                 tprint_warning(f"⚠️ Unknown intensity '{intensity}', falling back to blank")
                 config = create_config_by_intensity(PipelineIntensity.BLANK)
-            
+
             if config is None:
                 raise RuntimeError("Failed to create configuration")
-            
+
             # Apply custom overrides if provided
             if custom_overrides:
                 tprint_info(f"🔧 Applying {len(custom_overrides)} custom overrides")
@@ -885,10 +884,10 @@ class ConsolidatedPipelineRunner:
                         tprint_debug(f"  - {key}: {old_value} → {value}")
                     else:
                         tprint_warning(f"  - Unknown config key: {key}")
-            
+
             tprint_success(f"✅ Configuration created successfully for intensity: {intensity}")
             return config
-            
+
         except ValueError as e:
             error_msg = f"Invalid intensity parameter: {str(e)}"
             tprint_error(f"❌ {error_msg}")
@@ -897,15 +896,15 @@ class ConsolidatedPipelineRunner:
             error_msg = f"Failed to create configuration: {str(e)}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
-    
+
     async def _generate_data_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """
         Generate human-readable report for data validation step.
-        
+
         Args:
             result: Validation result dictionary
             data: Input DataFrame
-            
+
         Raises:
             OSError: If report file cannot be created
             ValueError: If result data is invalid
@@ -913,37 +912,37 @@ class ConsolidatedPipelineRunner:
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"data_validation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
         try:
             tprint_info("📄 Generating data validation report")
-            
+
             # Validate inputs
             if not isinstance(result, dict):
                 raise ValueError(f"Result must be a dictionary, got {type(result)}")
-            
+
             if not isinstance(data, pd.DataFrame):
                 raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
-            
+
             # Create outcomes directory
             outcomes_dir = Path("outcomes")
             outcomes_dir.mkdir(exist_ok=True)
             tprint_debug(f"📁 Using outcomes directory: {outcomes_dir.absolute()}")
-            
+
             # Generate timestamp for filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             report_filename = f"data_validation_report_{timestamp}.md"
             report_path = outcomes_dir / report_filename
-            
+
             # Generate report content
             status_emoji = "✅ SUCCESS" if result['success'] else "❌ FAILED"
             quality_score = result.get('data_quality_score', 0.0)
             error_msg = result.get('error_message', 'None')
             artifacts_count = len(result.get('artifacts', {}))
-            
+
             report_content = f"""# Data Validation Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
@@ -971,17 +970,17 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-            
+
             # Write report
             tprint_debug(f"💾 Writing report to: {report_path}")
             with open(report_path, 'w', encoding='utf-8') as f:
                 f.write(report_content)
-            
+
             # Add report to artifacts
             result['artifacts']['human_readable_report'] = str(report_path)
-            
+
             tprint_success(f"📊 Human-readable report saved: {report_path}")
-            
+
         except OSError as e:
             error_msg = f"Failed to create report file: {str(e)}"
             tprint_error(f"❌ {error_msg}")
@@ -997,18 +996,18 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
             tprint_error(f"❌ {error_msg}")
             self.logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
-    
+
     async def _generate_feature_generation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for feature generation step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"feature_generation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Feature Generation Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1030,27 +1029,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_feature_selection_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for feature selection step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"feature_selection_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Feature Selection Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1072,27 +1071,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_period_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for period optimization step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"period_optimization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Period Optimization Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1114,27 +1113,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_lookback_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for lookback optimization step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"lookback_optimization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Lookback Optimization Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1156,27 +1155,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_interaction_generation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for interaction generation step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"interaction_generation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Interaction Generation Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1198,27 +1197,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_vectorization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for vectorization step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"vectorization_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Vectorization Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1240,27 +1239,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_labeling_integration_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for labeling integration step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"labeling_integration_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Labeling Integration Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1282,27 +1281,27 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
+
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
-    
+
     async def _generate_final_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for final validation step."""
         # Create outcomes directory
         outcomes_dir = Path("outcomes")
         outcomes_dir.mkdir(exist_ok=True)
-        
+
         # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         report_filename = f"final_validation_report_{timestamp}.md"
         report_path = outcomes_dir / report_filename
-        
+
         # Generate report content
         report_content = f"""# Final Validation Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1324,29 +1323,28 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 ---
 *Report generated by Consolidated Pipeline Runner*
 """
-        
+
         # Write report
         with open(report_path, 'w') as f:
             f.write(report_content)
-        
+
         # Add report to artifacts
         result['artifacts']['human_readable_report'] = str(report_path)
-        
-        self.logger.info(f"📊 Human-readable report saved: {report_path}")
 
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
 
 # Convenience functions for each step
 async def run_data_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run data validation step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing validation results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1363,14 +1361,14 @@ async def run_data_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[st
 async def run_feature_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run feature generation step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing feature generation results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1387,14 +1385,14 @@ async def run_feature_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict
 async def run_feature_selection_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run feature selection step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing feature selection results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1411,14 +1409,14 @@ async def run_feature_selection_step(data: pd.DataFrame, **kwargs: Any) -> Dict[
 async def run_period_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run period optimization step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing period optimization results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1435,14 +1433,14 @@ async def run_period_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dic
 async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run lookback optimization step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing lookback optimization results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1459,14 +1457,14 @@ async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> D
 async def run_interaction_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run interaction generation step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing interaction generation results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1483,14 +1481,14 @@ async def run_interaction_generation_step(data: pd.DataFrame, **kwargs: Any) -> 
 async def run_vectorization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run vectorization step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing vectorization results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1507,14 +1505,14 @@ async def run_vectorization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str,
 async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run labeling integration step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing labeling integration results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1531,14 +1529,14 @@ async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Di
 async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run concurrent period + lookback optimization step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing period + lookback optimization results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
@@ -1555,14 +1553,14 @@ async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: An
 async def run_final_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
     Run final validation step using consolidated pipeline.
-    
+
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
-        
+
     Returns:
         Dict containing final validation results
-        
+
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails

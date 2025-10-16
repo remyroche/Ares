@@ -226,10 +226,10 @@ class TacticianDifferentiatedLabeler:
     def __init__(self, config: TacticianLabelingConfig):
         self.config = config
         self.logger = system_logger.getChild('TacticianDifferentiatedLabeler')
-        
+
         # Initialize enhanced quality scorer
         self._initialize_quality_scorer()
-    
+
     def _initialize_quality_scorer(self):
         """Initialize the enhanced entry quality scorer based on configuration."""
         try:
@@ -238,7 +238,7 @@ class TacticianDifferentiatedLabeler:
                 ScoringMethod,
                 EnhancedScoringConfig
             )
-            
+
             # Map config string to ScoringMethod enum
             scoring_method_map = {
                 'linear_weighted': ScoringMethod.LINEAR_WEIGHTED,
@@ -246,12 +246,12 @@ class TacticianDifferentiatedLabeler:
                 'information_ratio': ScoringMethod.INFORMATION_RATIO,
                 'expected_utility': ScoringMethod.EXPECTED_UTILITY,
             }
-            
+
             method = scoring_method_map.get(
                 self.config.entry_quality_scoring_method,
                 ScoringMethod.ADAPTIVE_MULTI_FACTOR
             )
-            
+
             # Create scorer configuration (converting percent to decimal)
             scorer_config = EnhancedScoringConfig(
                 scoring_method=method,
@@ -263,14 +263,14 @@ class TacticianDifferentiatedLabeler:
                 enable_penalty_system=self.config.enable_penalty_system,
                 risk_aversion=self.config.risk_aversion,
             )
-            
+
             self.quality_scorer = create_enhanced_scorer(
                 method=method,
                 **{k: v for k, v in scorer_config.__dict__.items() if k != 'scoring_method'}
             )
-            
+
             tprint_success(f"✅ Enhanced quality scorer initialized: {method.value}")
-            
+
         except ImportError as e:
             tprint_warning(f"⚠️ Enhanced quality scorer not available, using fallback: {e}")
             self.quality_scorer = None
@@ -283,7 +283,7 @@ class TacticianDifferentiatedLabeler:
     ) -> Tuple[pd.Series, Dict[str, float]]:
         """
         Generate entry timing labels for all data (not constrained to Analyst signals).
-        
+
         CHANGE: Now trains on ALL data, not just Analyst green light periods.
         """
         tprint_info("🎯 Creating tactician entry timing labels for ALL market data")
@@ -292,27 +292,27 @@ class TacticianDifferentiatedLabeler:
             regime_assignments = regime_assignments.reindex(data.index)
 
         labels = pd.Series(0.0, index=data.index, dtype=float)
-        
+
         # CHANGE: Process ALL data, not just Analyst green light periods
         # Create sliding windows across entire dataset
         tprint_info(f"📊 Processing {len(data)} candles for entry opportunities")
 
         entry_points: List[pd.Timestamp] = []
-        
+
         # Scan entire dataset with sliding window
         window_size = self.config.max_entry_window_minutes
-        
+
         for i in range(len(data) - window_size):
             # Current potential entry point
             entry_idx = i
             entry_index = data.index[entry_idx]
-            
+
             # Future window for quality assessment
             future_window = data.iloc[entry_idx + 1:entry_idx + 1 + window_size]
-            
+
             if future_window.empty:
                 continue
-            
+
             # Calculate entry quality score
             score = self._calculate_entry_quality_score(
                 data.iloc[entry_idx],
@@ -320,12 +320,12 @@ class TacticianDifferentiatedLabeler:
                 entry_index,
                 regime_assignments
             )
-            
+
             # Store score if above threshold
             if score > self.config.entry_quality_threshold:
                 labels.loc[entry_index] = score
                 entry_points.append(entry_index)
-        
+
         # Apply peak detection to identify local maxima
         if len(entry_points) > 0:
             labels = self._apply_peak_filtering(labels)
@@ -353,36 +353,36 @@ class TacticianDifferentiatedLabeler:
         non_zero_mask = labels > 0
         if non_zero_mask.sum() == 0:
             return labels
-        
+
         # Extract scores
         scores = labels[non_zero_mask].values
         indices = labels[non_zero_mask].index
-        
+
         # Apply peak detection
         from scipy.signal import find_peaks
-        
+
         peaks, properties = find_peaks(
             scores,
             height=self.config.entry_quality_threshold,
             distance=max(1, self.config.min_entry_window_minutes)
         )
-        
+
         # Create filtered labels
         filtered_labels = pd.Series(0.0, index=labels.index, dtype=float)
-        
+
         if len(peaks) > 0:
             peak_indices = [indices[p] for p in peaks if p < len(indices)]
             peak_scores = [scores[p] for p in peaks if p < len(scores)]
-            
+
             for idx, score in zip(peak_indices, peak_scores):
                 filtered_labels.loc[idx] = score
-        
+
         # If no peaks found but we have high-quality entries, keep the best
         if filtered_labels.sum() == 0 and len(scores) > 0:
             best_idx = np.argmax(scores)
             if best_idx < len(indices):
                 filtered_labels.loc[indices[best_idx]] = scores[best_idx]
-        
+
         return filtered_labels
 
     def _calculate_labeling_quality_metrics_all_data(
@@ -396,12 +396,12 @@ class TacticianDifferentiatedLabeler:
         """
         total_samples = len(data)
         labeled_samples = int((labels > 0).sum())
-        
+
         metrics: Dict[str, float] = {
             'labeling_coverage': labeled_samples / total_samples if total_samples else 0.0,
             'entry_density': labeled_samples / total_samples if total_samples else 0.0,
         }
-        
+
         positive_scores = labels[labels > 0]
         if not positive_scores.empty:
             metrics['avg_entry_quality'] = float(positive_scores.mean())
@@ -414,15 +414,15 @@ class TacticianDifferentiatedLabeler:
         else:
             metrics['avg_entry_quality'] = 0.0
             metrics['entry_quality_std'] = 0.0
-        
+
         # Overall quality score
         metrics['overall_quality'] = (
             metrics.get('entry_density', 0.0) * 0.3 +
             metrics.get('avg_entry_quality', 0.0) * 0.7
         )
-        
+
         return metrics
-    
+
     def _find_green_periods(self, analyst_signals: pd.Series) -> List[Dict[str, int]]:
         """Identify contiguous stretches of Analyst green lights."""
         periods: List[Dict[str, int]] = []
@@ -507,12 +507,12 @@ class TacticianDifferentiatedLabeler:
     ) -> float:
         """
         Calculate entry quality score using enhanced scoring system.
-        
+
         CHANGE: Now uses EnhancedEntryQualityScorer with adaptive multi-factor scoring.
         """
         if future_data.empty:
             return 0.0
-        
+
         # Use enhanced scorer if available
         if self.quality_scorer is not None:
             # Determine regime
@@ -521,10 +521,10 @@ class TacticianDifferentiatedLabeler:
                 if index_label in regime_assignments.index:
                     regime_value = regime_assignments.loc[index_label]
                     regime = f"regime_{regime_value}"
-            
+
             # Build market context (can be expanded with more features)
             market_context = {}
-            
+
             # Calculate quality using enhanced scorer
             quality_score = self.quality_scorer.calculate_entry_quality(
                 entry_point=entry_point,
@@ -532,9 +532,9 @@ class TacticianDifferentiatedLabeler:
                 regime=regime,
                 market_context=market_context
             )
-            
+
             return quality_score
-        
+
         # Fallback to old method if enhanced scorer not available
         regime_params = self._get_regime_parameters(index_label, regime_assignments)
 
@@ -892,7 +892,7 @@ except ImportError as e:
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
 except ImportError:
-    
+
     cp = None
 
             # For now, return a placeholder model - in production this would load a trained model
@@ -1085,13 +1085,13 @@ class TacticianPreMLOrchestrator:
     Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates interactive features + Selects final features.
     Uses 15m timeframe with per-regime/cluster optimisation using the pipeline in src/training/steps/MODELS_TRAINING/.
     """
-    
+
     def __init__(self, config: Optional[TacticianPreMLConfig] = None):
         """Initialize the Tactician pre-ML orchestrator."""
         try:
             self.config = config or TacticianPreMLConfig()
             self.logger = system_logger.getChild('TacticianPreMLOrchestrator')
-            
+
             # Initialize pre-training pipeline
             if PRE_TRAINING_AVAILABLE:
                 self.pre_training_pipeline = PreTrainingSubPipeline()
@@ -1142,7 +1142,7 @@ class TacticianPreMLOrchestrator:
             tprint_success(f"✅ TacticianPreMLOrchestrator initialized (timeframe: {self.config.timeframe})")
             tprint_info(f"🎯 Analyst signal threshold: {self.config.analyst_confidence_threshold:.2%}")
             tprint_info(f"⏰ Operating on {self.config.timeframe} timeframe for feature engineering")
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
             raise
@@ -1246,7 +1246,7 @@ class TacticianPreMLOrchestrator:
     ) -> Optional[Dict[str, Any]]:
         """
         Create precomputed entry label artifacts.
-        
+
         CHANGE: No longer requires Analyst signals - creates labels from all data.
         """
         # Extract analyst signals if available (legacy support)
@@ -1570,12 +1570,12 @@ class TacticianPreMLOrchestrator:
                 # Step 4: Final Feature Selection for this regime
                 tprint_info(f"🎯 Step 4/5: Regime-specific feature selection for {regime_name}...")
                 result.phase = OrchestrationPhase.FEATURE_SELECTION
-                
+
                 # Enable gate feature protection for regime-specific selection
                 if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
                     tprint_info(f"🛡️ Enabling gate feature protection for regime {regime_name}...")
                     enable_gate_protection()
-                    
+
                     # Add gate protection config to regime_config
                     if self.config.gate_protection_config:
                         regime_config.custom_params['gate_protection'] = self.config.gate_protection_config
@@ -1586,7 +1586,7 @@ class TacticianPreMLOrchestrator:
                             'min_gate_ic_improvement': 0.005,
                             'min_gate_stability': 0.4
                         }
-                
+
                 selection_result = await self.pre_training_pipeline._execute_final_feature_selection(regime_config)
 
                 if not selection_result.success:
@@ -1746,13 +1746,13 @@ class TacticianPreMLOrchestrator:
             entry_label_bundle: Optional[Dict[str, Any]] = None
             tprint_info("🎯 Generating entry labels from ALL market data...")
             result.phase = OrchestrationPhase.ENTRY_LABELING
-            
+
             entry_label_bundle = self._create_entry_label_artifacts(
                 prepared_data,
                 analyst_predictions,  # Optional now
                 regime_assignments
             )
-            
+
             if entry_label_bundle is None:
                 tprint_warning("⚠️ Failed to generate entry labels - continuing with fallback")
 
@@ -1797,7 +1797,7 @@ class TacticianPreMLOrchestrator:
 
             if regime_split_payload is not None:
                 sub_config.custom_params['regime_data_splitting_result'] = regime_split_payload
-            
+
             tprint_info("📋 Configuration:")
             tprint_info(f"  - Timeframe: {self.config.timeframe} (feature engineering cadence)")
             tprint_info(f"  - Samples after preparation: {len(prepared_data)}")
@@ -1825,10 +1825,10 @@ class TacticianPreMLOrchestrator:
                     horizon_result,
                 )
                 raise RuntimeError(f"Horizon labeling failed ({error_code or 'unknown_error'}): {message}")
-            
+
             result.horizon_labeling_result = horizon_result.artifacts
             tprint_success("✅ Horizon labeling completed")
-            
+
             # Step 2: Feature Lookback Optimization (per-regime/cluster)
             tprint_info("⚙️ Step 2/5: Feature Lookback Optimization (per-regime/cluster)...")
             result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
@@ -1843,10 +1843,10 @@ class TacticianPreMLOrchestrator:
                     lookback_result,
                 )
                 raise RuntimeError(f"Lookback optimization failed ({error_code or 'unknown_error'}): {message}")
-            
+
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
-            
+
             # Step 3: Interactive Feature Generation
             tprint_info("🔧 Step 3/5: Interactive Feature Generation...")
             result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
@@ -1877,16 +1877,16 @@ class TacticianPreMLOrchestrator:
             tprint_success(
                 f"✅ Interactive feature generation completed ({result.total_features_generated} features)"
             )
-            
+
             # Step 4: Final Feature Selection
             tprint_info("🎯 Step 4/5: Final Feature Selection (multi-stage)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
-            
+
             # Enable gate feature protection if available
             if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
                 tprint_info("🛡️ Enabling gate feature protection for final feature selection...")
                 enable_gate_protection()
-                
+
                 # Add gate protection config to sub_config
                 if self.config.gate_protection_config:
                     sub_config.custom_params['gate_protection'] = self.config.gate_protection_config
@@ -1897,7 +1897,7 @@ class TacticianPreMLOrchestrator:
                         'min_gate_ic_improvement': 0.005,
                         'min_gate_stability': 0.4
                     }
-            
+
             selection_result = await self.pre_training_pipeline._execute_final_feature_selection(
                 sub_config,
                 run_metadata or {},
@@ -1909,7 +1909,7 @@ class TacticianPreMLOrchestrator:
                     selection_result,
                 )
                 raise RuntimeError(f"Feature selection failed ({error_code or 'unknown_error'}): {message}")
-            
+
             result.feature_selection_result = selection_result.artifacts
             result.final_features = selection_result.artifacts.get('final_features')
             result.selected_feature_names = selection_result.artifacts.get('selected_features', [])
@@ -1959,17 +1959,17 @@ class TacticianPreMLOrchestrator:
                 tprint_info(f"🎯 5m Optimal entries found: {len(entry_optimization_result.optimal_entries)}")
 
             return result
-            
+
         except Exception as e:
             result.success = False
             result.phase = OrchestrationPhase.FAILED
             result.error_message = str(e)
             result.execution_time = tprint_timer(start_time)
-            
+
             tprint_error(f"❌ Tactician Pre-ML Orchestration failed: {e}")
             tprint_error(f"Error details: {traceback.format_exc()}")
             raise
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the orchestrator."""
         return {
@@ -2018,7 +2018,7 @@ async def execute_tactician_pre_ml_orchestration(
         **kwargs
     )
 
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
         if self.vectorbt_optimizer is not None:
@@ -2045,8 +2045,8 @@ async def execute_tactician_pre_ml_orchestration(
                 return self._fallback_rolling_operation(data, operation, window, **kwargs)
         else:
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -2066,24 +2066,24 @@ async def execute_tactician_pre_ml_orchestration(
             return data.rolling(window=window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Legacy method - now uses optimized rolling operations."""
         return self._optimized_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Legacy method - now uses fallback rolling operations."""
         return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Legacy method - now uses optimized rolling operations."""
         return self._optimized_rolling_operation(data, 'apply', window, func=func, **kwargs)
@@ -2091,19 +2091,19 @@ async def execute_tactician_pre_ml_orchestration(
     def _optimize_matrix_operations(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Optimize matrix operations using Unified Vectorization Manager.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Optimized operation result
         """
         if self.vectorization_manager is not None:
             try:
                 tprint_debug(f"🔄 Using Unified Vectorization Manager for {operation_type}")
-                
+
                 # Create operation configuration
                 config = OperationConfig(
                     operation_type=OperationType.MATRIX_MULTIPLICATION if operation_type == 'matrix_mult' else OperationType.STATISTICAL_COMPUTATION,
@@ -2111,20 +2111,20 @@ async def execute_tactician_pre_ml_orchestration(
                     data_dimensions=X.shape,
                     memory_budget_mb=self.config.memory_limit_gb * 1024
                 )
-                
+
                 # Prepare data for optimization
                 data = {'matrix': X, **kwargs}
-                
+
                 # Use VectorBT optimization
                 result = self.vectorization_manager.optimize_operation(
                     config.operation_type,
                     data,
                     config
                 )
-                
+
                 tprint_success(f"✅ Matrix operation {operation_type} optimized (performance gain: {result.performance_gain:.2f}x)")
                 return result.result
-                
+
             except Exception as e:
                 tprint_warning(f"⚠️ Unified Vectorization Manager failed for {operation_type}: {e}, using fallback")
                 return self._fallback_matrix_operation(X, operation_type, **kwargs)
@@ -2135,12 +2135,12 @@ async def execute_tactician_pre_ml_orchestration(
     def _fallback_matrix_operation(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Fallback matrix operation using standard numpy/pandas.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Operation result
         """
@@ -2157,7 +2157,7 @@ async def execute_tactician_pre_ml_orchestration(
                 }
             else:
                 raise ValueError(f"Unsupported matrix operation: {operation_type}")
-                
+
         except Exception as e:
             tprint_error(f"❌ Fallback matrix operation failed for {operation_type}: {e}")
             raise

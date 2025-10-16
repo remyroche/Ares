@@ -124,14 +124,14 @@ class FeatureConfig:
     matrix_optimized: bool = True
     gpu_accelerated: bool = False
     enable_feature_selection: bool = True
-    
+
     # VectorBT native optimization settings
     use_vectorbt: bool = True
     vectorbt_threshold: int = 1000  # Minimum samples for VectorBT optimization
     enable_gpu: bool = False
     enable_parallel: bool = True
     vectorbt_memory_limit_gb: float = 8.0
-    
+
     def __post_init__(self):
         if self.optional_columns is None:
             self.optional_columns = []
@@ -139,7 +139,7 @@ class FeatureConfig:
             self.parameters = {}
         if self.dependencies is None:
             self.dependencies = []
-        
+
         # Auto-enable VectorBT optimizations for large lookbacks
         if self.default_lookback > 50:
             self.use_vectorbt = True
@@ -155,7 +155,7 @@ class FeatureResult:
     success: bool
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = None
-    
+
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
@@ -163,29 +163,29 @@ class FeatureResult:
 class FeatureGenerator(ABC):
     """
     Abstract base class for feature generators with native VectorBT support.
-    
+
     This class defines the interface that all feature generators must implement,
     providing a standardized way to generate features with consistent error handling,
     logging, performance tracking, and native VectorBT optimization.
     """
-    
+
     def __init__(self, config: FeatureConfig):
         """
         Initialize the feature generator with native VectorBT support.
-        
+
         Args:
             config: Feature configuration with VectorBT settings
         """
         tprint(f"Initializing {self.__class__.__name__} with config: {config.name}")
         self.config = config
         self.logger = logger.getChild(f'{self.__class__.__name__}')
-        
+
         # VectorBT configuration
         self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
         self.enable_gpu = False  # GPU support removed
         self.enable_parallel = config.enable_parallel and VECTORBT_AVAILABLE
         self.vectorbt_threshold = config.vectorbt_threshold
-        
+
         self.performance_stats = {
             'total_generations': 0,
             'successful_generations': 0,
@@ -207,12 +207,12 @@ class FeatureGenerator(ABC):
 
         # Reduced logging - only log at category level, not individual features
         # self.logger.info(f"Initialized {self.__class__.__name__} for {config.name}")
-    
+
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
         if not VECTORBT_AVAILABLE:
             return
-        
+
         try:
             # Configure VectorBT settings using newer API
             # Check if array_wrapper structure exists and set wrapper if available
@@ -248,26 +248,26 @@ class FeatureGenerator(ABC):
 
         except Exception as e:
             self.logger.warning(f"VectorBT configuration failed: {e}")
-    
+
     def _should_use_vectorbt(self, data: pd.DataFrame) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (self.use_vectorbt and
                 len(data) >= self.vectorbt_threshold and
                 VECTORBT_AVAILABLE and
                 VECTORBT_ROLLING_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """
         Perform VectorBT rolling operation with fallback to pandas.
         Now uses VectorBTRollingOptimizer for enhanced performance.
-        
+
         Args:
             data: Input data series
             operation: Operation type ('mean', 'std', 'var', 'min', 'max', 'sum', 'corr', 'cov')
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of rolling operation
         """
@@ -275,7 +275,7 @@ class FeatureGenerator(ABC):
         try:
             from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
             optimizer = get_vectorbt_rolling_optimizer()
-            
+
             # Map operation to optimizer method
             if operation == 'mean':
                 return optimizer.rolling_mean(data, window, **kwargs)
@@ -301,7 +301,7 @@ class FeatureGenerator(ABC):
                 return optimizer.rolling_cov(data, other, window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
-        
+
         except ImportError:
             # Fallback to original implementation if optimizer not available
             self.logger.warning("VectorBTRollingOptimizer not available, using direct VectorBT calls")
@@ -309,15 +309,15 @@ class FeatureGenerator(ABC):
         except Exception as e:
             self.logger.warning(f"VectorBTRollingOptimizer failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _direct_vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _direct_vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                          window: int, **kwargs) -> pd.Series:
         """Direct VectorBT rolling operation (fallback when optimizer unavailable)."""
         if not self._should_use_vectorbt(pd.DataFrame({'temp': data})):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         self.performance_stats['vectorbt_operations'] += 1
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -343,12 +343,12 @@ class FeatureGenerator(ABC):
                 return rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
-        
+
         except Exception as e:
             self.logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -375,55 +375,55 @@ class FeatureGenerator(ABC):
             return data.rolling(window=window).cov(other)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func: Callable, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func: Callable,
                                  window: int, **kwargs) -> pd.Series:
         """
         Perform VectorBT rolling apply operation with fallback to pandas.
-        
+
         Args:
             data: Input data series
             func: Function to apply
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of rolling apply operation
         """
         if not self._should_use_vectorbt(pd.DataFrame({'temp': data})):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         self.performance_stats['vectorbt_operations'] += 1
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
             self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
-    
+
     @abstractmethod
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """
         Generate the feature. This method must be implemented by subclasses.
-        
+
         Args:
             data: Input data DataFrame
             **kwargs: Additional parameters
-            
+
         Returns:
             Generated feature as pandas Series
         """
         pass
-    
+
     @log_function_execution(level="debug")
     def generate(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
         """
         Generate the feature with error handling and performance tracking.
-        
+
         Args:
             data: Input data DataFrame
             **kwargs: Additional parameters
-            
+
         Returns:
             FeatureResult with the generated feature and metadata
         """
@@ -433,10 +433,10 @@ class FeatureGenerator(ABC):
         # Fast fail on invalid input
         if data is None:
             fast_fail_error("Data cannot be None", DataValidationError)
-        
+
         if not isinstance(data, pd.DataFrame):
             fast_fail_error(f"Data must be DataFrame, got {type(data)}", DataValidationError)
-        
+
         if data.empty:
             fast_fail_error("DataFrame is empty", DataValidationError)
 
@@ -460,7 +460,7 @@ class FeatureGenerator(ABC):
             # Fast fail on invalid output
             if feature_data is None:
                 fast_fail_error("Feature generation returned None", ComputationError)
-            
+
             if not isinstance(feature_data, pd.Series):
                 fast_fail_error(f"Feature must be Series, got {type(feature_data)}", ComputationError)
 
@@ -503,7 +503,7 @@ class FeatureGenerator(ABC):
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=False)
             fast_fail_error(f"Feature generation failed: {str(e)}", type(e))
-            
+
         except Exception as e:
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=False)
@@ -605,145 +605,145 @@ class FeatureGenerator(ABC):
         # Base implementation returns state unchanged. Subclasses can override
         # if they need to restore complex structures.
         return state
-    
+
     def _validate_data(self, data: pd.DataFrame) -> None:
         """
         Validate input data with fast fail error handling.
-        
+
         Args:
             data: Input data DataFrame
-            
+
         Raises:
             DataValidationError: If data validation fails
         """
         tprint(f"Validating data for {self.config.name}", level="debug")
-        
+
         # Use centralized validation functions
         validate_required_columns(data, self.config.required_columns)
-        
+
         # Check for sufficient data
         if len(data) < self.config.min_lookback:
             fast_fail_error(
                 f"Insufficient data: need at least {self.config.min_lookback} rows, got {len(data)}",
                 DataValidationError
             )
-        
+
         # Check for finite values in required columns
         for col in self.config.required_columns:
             if col in data.columns:
                 validate_finite_values(data[col], col)
-        
+
         tprint(f"Data validation passed for {self.config.name}", level="debug")
-    
+
     def _validate_output(self, feature_data: pd.Series) -> None:
         """
         Validate output feature data with fast fail error handling.
-        
+
         Args:
             feature_data: Generated feature data
-            
+
         Raises:
             DataValidationError: If output validation fails
         """
         tprint(f"Validating output for {self.config.name}", level="debug")
-        
+
         if feature_data.empty:
             fast_fail_error("Generated feature is empty", DataValidationError)
-        
+
         # Check for all NaN values
         if feature_data.isna().all():
             fast_fail_error("Generated feature contains only NaN values", DataValidationError)
-        
+
         # Check for infinite values - warn but don't fail
         infinite_count = np.isinf(feature_data).sum()
         if infinite_count > 0:
             tprint(f"Warning: Generated feature contains {infinite_count} infinite values", level="warning")
-        
+
         # Check for finite values
         validate_finite_values(feature_data, f"{self.config.name}_output")
-        
+
         tprint(f"Output validation passed for {self.config.name}", level="debug")
-    
+
     def _update_performance_stats(self, computation_time: float, success: bool) -> None:
         """
         Update performance statistics.
-        
+
         Args:
             computation_time: Time taken for computation
             success: Whether the generation was successful
         """
         self.performance_stats['total_generations'] += 1
-        
+
         if success:
             self.performance_stats['successful_generations'] += 1
         else:
             self.performance_stats['failed_generations'] += 1
-        
+
         # Update average computation time
         total_time = self.performance_stats['total_computation_time'] + computation_time
         self.performance_stats['total_computation_time'] = total_time
         self.performance_stats['average_computation_time'] = (
             total_time / self.performance_stats['total_generations']
         )
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """
         Get performance statistics.
-        
+
         Returns:
             Dictionary with performance statistics
         """
         return self.performance_stats.copy()
-    
+
     def get_config(self) -> FeatureConfig:
         """
         Get feature configuration.
-        
+
         Returns:
             Feature configuration
         """
         return self.config
-    
+
     def supports_lookback_optimization(self) -> bool:
         """
         Check if this generator supports lookback optimization.
-        
+
         Returns:
             True if lookback optimization is supported
         """
         return hasattr(self, '_generate_feature_with_lookback')
-    
+
     def generate_with_lookback(self, data: pd.DataFrame, lookback: int, **kwargs) -> FeatureResult:
         """
         Generate feature with specific lookback period.
-        
+
         Args:
             data: Input data DataFrame
             lookback: Lookback period
             **kwargs: Additional parameters
-            
+
         Returns:
             FeatureResult with the generated feature
         """
         if not self.supports_lookback_optimization():
             self.logger.warning(f"{self.config.name} does not support lookback optimization")
             return self.generate(data, **kwargs)
-        
+
         # Validate lookback
         if lookback < self.config.min_lookback or lookback > self.config.max_lookback:
             raise ValueError(f"Lookback {lookback} is outside valid range [{self.config.min_lookback}, {self.config.max_lookback}]")
-        
+
         return self._generate_feature_with_lookback(data, lookback, **kwargs)
-    
+
     def _generate_feature_with_lookback(self, data: pd.DataFrame, lookback: int, **kwargs) -> FeatureResult:
         """
         Generate feature with specific lookback period. Override in subclasses.
-        
+
         Args:
             data: Input data DataFrame
             lookback: Lookback period
             **kwargs: Additional parameters
-            
+
         Returns:
             FeatureResult with the generated feature
         """
@@ -753,15 +753,15 @@ class FeatureGenerator(ABC):
 class CompositeFeatureGenerator(FeatureGenerator):
     """
     Feature generator that combines multiple sub-generators.
-    
+
     This class allows combining multiple feature generators into a single
     generator that produces multiple features.
     """
-    
+
     def __init__(self, config: FeatureConfig, sub_generators: List[FeatureGenerator]):
         """
         Initialize composite feature generator.
-        
+
         Args:
             config: Feature configuration
             sub_generators: List of sub-generators
@@ -769,17 +769,17 @@ class CompositeFeatureGenerator(FeatureGenerator):
         super().__init__(config)
         self.sub_generators = sub_generators
         self.logger.info(f"Initialized composite generator with {len(sub_generators)} sub-generators")
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """
         Generate features using sub-generators.
-        
+
         Args:
             data: Input data DataFrame
             **kwargs: Additional parameters
-            
+
         Returns:
-            Combined features as pandas Series (this is a placeholder - 
+            Combined features as pandas Series (this is a placeholder -
             composite generators typically return multiple features)
         """
         results = []
@@ -789,22 +789,22 @@ class CompositeFeatureGenerator(FeatureGenerator):
                 results.append(result.data)
             else:
                 self.logger.warning(f"Sub-generator {generator.config.name} failed: {result.error_message}")
-        
+
         if not results:
             raise ValueError("All sub-generators failed")
-        
+
         # For now, return the first successful result
         # In practice, composite generators should handle multiple outputs differently
         return results[0]
-    
+
     def generate_all_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, FeatureResult]:
         """
         Generate all features from sub-generators.
-        
+
         Args:
             data: Input data DataFrame
             **kwargs: Additional parameters
-            
+
         Returns:
             Dictionary mapping feature names to results
         """
@@ -812,7 +812,7 @@ class CompositeFeatureGenerator(FeatureGenerator):
         for generator in self.sub_generators:
             result = generator.generate(data, **kwargs)
             results[generator.config.name] = result
-        
+
         return results
 
 class VectorizedFeatureGenerator(FeatureGenerator):
@@ -932,7 +932,7 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         - Automatic fallback to pandas for smaller datasets
         - Support for multiple operations and windows in a single call
         - Memory-efficient processing with chunked operations
-        - 
+        -
         - Comprehensive error handling and logging
 
         Supported Operations:
@@ -1112,7 +1112,7 @@ _feature_generators: Dict[str, FeatureGenerator] = {}
 def register_feature_generator(generator: FeatureGenerator) -> None:
     """
     Register a feature generator.
-    
+
     Args:
         generator: Feature generator to register
     """
@@ -1122,10 +1122,10 @@ def register_feature_generator(generator: FeatureGenerator) -> None:
 def get_registered_generator(name: str) -> Optional[FeatureGenerator]:
     """
     Get a registered feature generator by name.
-    
+
     Args:
         name: Name of the generator
-        
+
     Returns:
         Feature generator or None if not found
     """
@@ -1134,7 +1134,7 @@ def get_registered_generator(name: str) -> Optional[FeatureGenerator]:
 def list_registered_generators() -> List[str]:
     """
     List all registered feature generators.
-    
+
     Returns:
         List of generator names
     """

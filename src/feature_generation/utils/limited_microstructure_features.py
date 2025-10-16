@@ -42,7 +42,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class LimitedMicrostructureFeatures:
@@ -54,7 +54,7 @@ class LimitedMicrostructureFeatures:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize Limited Microstructure Features system.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -72,7 +72,7 @@ class LimitedMicrostructureFeatures:
     async def initialize(self) -> bool:
         """
         Initialize the Limited Microstructure Features system.
-        
+
         Returns:
             bool: True if initialization successful
         """
@@ -90,11 +90,11 @@ class LimitedMicrostructureFeatures:
     async def extract_features(self, market_data: Dict[str, Any], historical_data: Optional[pd.DataFrame]=None) -> Optional[Dict[str, Any]]:
         """
         Extract microstructure features from available market data.
-        
+
         Args:
             market_data: Current market data (bid, ask, last_price, volume, etc.)
             historical_data: Historical data for context (optional)
-            
+
         Returns:
             Dict: Extracted microstructure features
         """
@@ -335,12 +335,12 @@ class LimitedMicrostructureFeatures:
     async def get_timeframe_specific_features(self, market_data: Dict[str, Any], timeframe: str, historical_data: Optional[pd.DataFrame]=None) -> Optional[Dict[str, Any]]:
         """
         Extract timeframe-specific features optimized for high-frequency trading.
-        
+
         Args:
             market_data: Current market data
             timeframe: Trading timeframe ('5m', '15m', '30m', '1h')
             historical_data: Historical data for context
-            
+
         Returns:
             Dict: Timeframe-specific features
         """
@@ -412,16 +412,16 @@ class LimitedMicrostructureFeatures:
         return {'system_status': 'active', 'available_data_types': self.available_data_types, 'supported_timeframes': ['5m', '15m', '30m', '1h'], 'feature_count': len(self.feature_statistics), 'history_length': len(self.feature_history), 'feature_statistics': self.feature_statistics, 'last_updated': datetime.now()}
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -440,8 +440,8 @@ class LimitedMicrostructureFeatures:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

@@ -37,35 +37,34 @@ except ImportError as e:
 # Setup logging
 logger = logging.getLogger(__name__)
 
-
 @contextmanager
 def limit_blas_threads(num_threads: int = 1) -> Iterator[None]:
     """Context manager to limit BLAS/OpenMP library threads.
 
     Falls back to environment variables if threadpoolctl is unavailable.
     Enhanced with comprehensive error handling and logging.
-    
+
     Args:
         num_threads: Number of threads to limit to (default: 1)
-        
+
     Yields:
         None
-        
+
     Raises:
         RuntimeError: If thread limiting fails critically
     """
     start_time = time.time()
     _LOGGER.info(f"🔒 Starting BLAS thread limiting...")
     _LOGGER.info(f"📊 Target threads: {num_threads}")
-    
+
     if not isinstance(num_threads, int) or num_threads < 1:
         _LOGGER.error(f"❌ Invalid num_threads: {num_threads}. Must be positive integer.")
         logger.error(f"❌ Invalid num_threads: {num_threads}. Must be positive integer.")
         raise ValueError(f"num_threads must be positive integer, got {num_threads}")
-    
+
     _LOGGER.info(f"🔒 Limiting BLAS threads to {num_threads}")
     logger.info(f"🔒 Limiting BLAS threads to {num_threads}")
-    
+
     # Store original environment variables
     original_env: Dict[str, Optional[str]] = {
         'OMP_NUM_THREADS': os.environ.get('OMP_NUM_THREADS'),
@@ -94,7 +93,7 @@ def limit_blas_threads(num_threads: int = 1) -> Iterator[None]:
                 'VECLIB_MAXIMUM_THREADS': str(num_threads),
                 'NUMEXPR_NUM_THREADS': str(num_threads)
             }
-            
+
             try:
                 for key, value in thread_env_vars.items():
                     os.environ[key] = value
@@ -103,11 +102,11 @@ def limit_blas_threads(num_threads: int = 1) -> Iterator[None]:
             except Exception as e:
                 logger.error(f"❌ Failed to set environment variables: {e}")
                 raise RuntimeError(f"Thread limiting failed: {e}")
-                
+
     except Exception as e:
         logger.error(f"❌ Thread limiting failed: {e}")
         raise RuntimeError(f"Critical thread limiting failure: {e}")
-        
+
     finally:
         # Restore environment variables
         try:
@@ -125,10 +124,9 @@ def limit_blas_threads(num_threads: int = 1) -> Iterator[None]:
             _LOGGER.error(f"❌ BLAS thread limiting failed after {execution_time:.3f}s: {e}")
             logger.error(f"❌ Failed to restore environment variables: {e}")
 
-
 def get_thread_info() -> Dict[str, Any]:
     """Get current thread configuration information.
-    
+
     Returns:
         Dictionary with thread configuration details
     """
@@ -139,12 +137,12 @@ def get_thread_info() -> Dict[str, Any]:
             'threadpoolctl_available': THREADPOOLCTL_AVAILABLE,
             'environment_variables': {}
         }
-        
+
         # Get current environment variables
-        for var in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 
+        for var in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS',
                    'VECLIB_MAXIMUM_THREADS', 'NUMEXPR_NUM_THREADS']:
             thread_info['environment_variables'][var] = os.environ.get(var)
-        
+
         # Get threadpoolctl info if available
         if THREADPOOLCTL_AVAILABLE:
             try:
@@ -152,32 +150,31 @@ def get_thread_info() -> Dict[str, Any]:
                 thread_info['threadpoolctl_info'] = threadpoolctl.info()
             except Exception as e:
                 thread_info['threadpoolctl_error'] = str(e)
-        
+
         execution_time = time.time() - start_time
         _LOGGER.info(f"✅ Thread information gathering completed in {execution_time:.3f}s")
         _LOGGER.info(f"📊 Thread info - threadpoolctl available: {thread_info.get('threadpoolctl_available', False)}")
         return thread_info
-        
+
     except Exception as e:
         execution_time = time.time() - start_time
         _LOGGER.error(f"❌ Thread information gathering failed after {execution_time:.3f}s: {e}")
         logger.error(f"❌ Failed to get thread info: {e}")
         return {'error': str(e)}
 
-
 def validate_thread_environment() -> bool:
     """Validate that thread limiting is working correctly.
-    
+
     Returns:
         True if thread limiting is working, False otherwise
     """
     start_time = time.time()
     _LOGGER.info("🔍 Starting thread environment validation...")
-    
+
     try:
         _LOGGER.info("🔍 Validating thread environment...")
         logger.info("🔍 Validating thread environment...")
-        
+
         if THREADPOOLCTL_AVAILABLE:
             _LOGGER.info("✅ threadpoolctl is available")
             logger.info("✅ threadpoolctl is available")
@@ -187,7 +184,7 @@ def validate_thread_environment() -> bool:
         else:
             # Check if environment variables are set
             env_vars_set = any(
-                os.environ.get(var) for var in 
+                os.environ.get(var) for var in
                 ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS']
             )
             if env_vars_set:
@@ -202,11 +199,9 @@ def validate_thread_environment() -> bool:
                 execution_time = time.time() - start_time
                 _LOGGER.info(f"⚠️ Thread environment validation completed in {execution_time:.3f}s - no limiting available")
                 return False
-                
+
     except Exception as e:
         execution_time = time.time() - start_time
         _LOGGER.error(f"❌ Thread environment validation failed after {execution_time:.3f}s: {e}")
         logger.error(f"❌ Thread environment validation failed: {e}")
         return False
-
-

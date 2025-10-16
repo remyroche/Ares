@@ -42,28 +42,27 @@ except ImportError:
 logger = system_logger.getChild('EvaluationUtils')
 logger.info("EvaluationUtils delegating core metric computation to unified_evaluator")
 
-
 class EvaluationUtils:
     """Common evaluation utilities."""
-    
+
     @staticmethod
     def calculate_metrics(
-        y_true: np.ndarray, 
-        y_pred: np.ndarray, 
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
         y_pred_proba: Optional[np.ndarray] = None,
         metrics: List[str] = None,
         is_classification: bool = True
     ) -> Dict[str, float]:
         """
         Calculate common metrics for model evaluation.
-        
+
         Args:
             y_true: True target values
             y_pred: Predicted target values
             y_pred_proba: Predicted probabilities (for classification)
             metrics: List of metrics to calculate
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing calculated metrics
         """
@@ -87,55 +86,55 @@ class EvaluationUtils:
                 y_pred=y_pred,
                 include=metrics,
             )
-    
+
     @staticmethod
     def evaluate_model_performance(
-        model: Any, 
-        X: np.ndarray, 
-        y: np.ndarray, 
+        model: Any,
+        X: np.ndarray,
+        y: np.ndarray,
         metrics: List[str] = None,
         is_classification: bool = True
     ) -> Dict[str, float]:
         """
         Evaluate model performance with common metrics.
-        
+
         Args:
             model: Trained model
             X: Input features
             y: True target values
             metrics: List of metrics to calculate
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing calculated metrics
         """
         task = 'classification' if is_classification else 'regression'
         return unified_evaluate_model(model=model, X=X, y=y, task=task, include=metrics)
-    
+
     @staticmethod
     def evaluate_ensemble_performance(
-        ensemble: Any, 
-        X: np.ndarray, 
-        y: np.ndarray, 
+        ensemble: Any,
+        X: np.ndarray,
+        y: np.ndarray,
         metrics: List[str] = None,
         is_classification: bool = True
     ) -> Dict[str, float]:
         """
         Evaluate ensemble performance with common metrics.
-        
+
         Args:
             ensemble: Trained ensemble model
             X: Input features
             y: True target values
             metrics: List of metrics to calculate
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing calculated metrics
         """
         task = 'classification' if is_classification else 'regression'
         return unified_evaluate_model(model=ensemble, X=X, y=y, task=task, include=metrics)
-    
+
     @staticmethod
     def evaluate_regime_performance(
         models: Dict[str, Any],
@@ -147,7 +146,7 @@ class EvaluationUtils:
     ) -> Dict[int, Dict[str, Dict[str, float]]]:
         """
         Evaluate model performance per regime.
-        
+
         Args:
             models: Dictionary of trained models
             X: Input features
@@ -155,19 +154,19 @@ class EvaluationUtils:
             regime_labels: Array of regime labels
             metrics: List of metrics to calculate
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing evaluation results per regime per model
         """
         evaluation_results = {}
-        
+
         for regime in np.unique(regime_labels):
             regime_mask = regime_labels == regime
             regime_X = X[regime_mask]
             regime_y = y[regime_mask]
-            
+
             regime_evaluation = {}
-            
+
             for model_name, model in models.items():
                 try:
                     metrics_dict = EvaluationUtils.evaluate_model_performance(
@@ -177,32 +176,32 @@ class EvaluationUtils:
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to evaluate {model_name} for regime {regime}: {e}")
                     regime_evaluation[model_name] = {'error': str(e)}
-            
+
             evaluation_results[regime] = regime_evaluation
-        
+
         return evaluation_results
-    
+
     @staticmethod
     def analyze_regime_distribution(
-        y_train: np.ndarray, 
-        y_test: np.ndarray, 
+        y_train: np.ndarray,
+        y_test: np.ndarray,
         results: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Analyze regime distribution and model performance per regime.
-        
+
         Args:
             y_train: Training regime labels
             y_test: Test regime labels
             results: Training results containing model performance
-            
+
         Returns:
             Dictionary containing regime analysis results
         """
         # Overall regime distribution
         unique_regimes, train_counts = np.unique(y_train, return_counts=True)
         _, test_counts = np.unique(y_test, return_counts=True)
-        
+
         regime_analysis = {
             'n_regimes': len(unique_regimes),
             'regime_distribution_train': dict(zip(unique_regimes, train_counts)),
@@ -210,7 +209,7 @@ class EvaluationUtils:
             'regime_balance_train': np.std(train_counts) / np.mean(train_counts) if len(train_counts) > 1 else 0.0,
             'regime_balance_test': np.std(test_counts) / np.mean(test_counts) if len(test_counts) > 1 else 0.0
         }
-        
+
         # Model performance per regime
         for model_name, metrics in results.get('performance', {}).items():
             if 'confusion_matrix' in metrics:
@@ -218,37 +217,36 @@ class EvaluationUtils:
                 regime_precision = np.diag(cm) / np.sum(cm, axis=0)
                 regime_recall = np.diag(cm) / np.sum(cm, axis=1)
                 regime_f1 = 2 * (regime_precision * regime_recall) / (regime_precision + regime_recall)
-                
+
                 regime_analysis[f'{model_name}_regime_performance'] = {
                     'precision_per_regime': regime_precision.tolist(),
                     'recall_per_regime': regime_recall.tolist(),
                     'f1_per_regime': regime_f1.tolist()
                 }
-        
+
         return regime_analysis
-    
+
     @staticmethod
     def get_best_model(results: Dict[str, Any], metric: str = 'accuracy') -> Optional[str]:
         """
         Get the best model based on a specific metric.
-        
+
         Args:
             results: Training results containing model performance
             metric: Metric to use for comparison
-            
+
         Returns:
             Name of the best model, or None if not found
         """
         best_model = None
         best_score = -np.inf
-        
+
         for model_name, metrics in results.get('performance', {}).items():
             if metric in metrics and metrics[metric] > best_score:
                 best_score = metrics[metric]
                 best_model = model_name
-        
-        return best_model
 
+        return best_model
 
 # Export functions for direct import compatibility
 calculate_metrics = EvaluationUtils.calculate_metrics
@@ -258,15 +256,14 @@ evaluate_regime_performance = EvaluationUtils.evaluate_regime_performance
 analyze_regime_distribution = EvaluationUtils.analyze_regime_distribution
 get_best_model = EvaluationUtils.get_best_model
 
-
 def create_evaluation_report(results: Dict[str, Any], output_path: Optional[str] = None) -> Dict[str, Any]:
     """
     Create a comprehensive evaluation report.
-    
+
     Args:
         results: Training results containing model performance
         output_path: Optional path to save the report
-        
+
     Returns:
         Dictionary containing the evaluation report
     """
@@ -276,20 +273,20 @@ def create_evaluation_report(results: Dict[str, Any], output_path: Optional[str]
         'best_models': {},
         'recommendations': []
     }
-    
+
     # Get performance metrics
     performance = results.get('performance', {})
-    
+
     if performance:
         # Summary statistics
         report['summary'] = {
             'total_models': len(performance),
             'models_evaluated': list(performance.keys())
         }
-        
+
         # Detailed metrics
         report['detailed_metrics'] = performance
-        
+
         # Find best models for different metrics
         common_metrics = ['accuracy', 'f1_score', 'precision', 'recall', 'mse', 'mae', 'r2']
         for metric in common_metrics:
@@ -299,20 +296,20 @@ def create_evaluation_report(results: Dict[str, Any], output_path: Optional[str]
                     'model': best_model,
                     'score': performance[best_model].get(metric, 'N/A')
                 }
-        
+
         # Generate recommendations
         if report['best_models']:
-            best_overall = max(report['best_models'].items(), 
+            best_overall = max(report['best_models'].items(),
                              key=lambda x: x[1]['score'] if isinstance(x[1]['score'], (int, float)) else 0)
             report['recommendations'].append(f"Best overall model: {best_overall[1]['model']} ({best_overall[0]}: {best_overall[1]['score']:.4f})")
-        
+
         # Check for potential issues
         for model_name, metrics in performance.items():
             if 'accuracy' in metrics and metrics['accuracy'] < 0.6:
                 report['recommendations'].append(f"⚠️ {model_name} has low accuracy ({metrics['accuracy']:.4f}) - consider hyperparameter tuning")
             if 'f1_score' in metrics and metrics['f1_score'] < 0.5:
                 report['recommendations'].append(f"⚠️ {model_name} has low F1 score ({metrics['f1_score']:.4f}) - may indicate class imbalance issues")
-    
+
     # Save report if path provided
     if output_path:
         try:

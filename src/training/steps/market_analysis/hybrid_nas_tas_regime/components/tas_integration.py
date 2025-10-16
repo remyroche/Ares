@@ -2,7 +2,6 @@
 
 from typing import Any, Dict
 
-
 class TASIntegrationComponent:
     """Lightweight stub for TAS integration used in tests."""
 

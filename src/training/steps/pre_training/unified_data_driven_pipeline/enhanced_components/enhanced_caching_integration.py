@@ -76,11 +76,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class CacheEntry:
     """Entry in the cache."""
-    
+
     key: str
     data: Any
     metadata: Dict[str, Any]
@@ -89,7 +88,7 @@ class CacheEntry:
     access_count: int
     size_bytes: int
     ttl_seconds: Optional[int] = None
-    
+
     def __post_init__(self):
         """Validate cache entry."""
         assert self.key, "Cache key is required"
@@ -100,11 +99,10 @@ class CacheEntry:
         assert self.access_count >= 0, "access_count must be non-negative"
         assert self.size_bytes >= 0, "size_bytes must be non-negative"
 
-
 @dataclass
 class CacheStats:
     """Cache statistics."""
-    
+
     total_entries: int
     total_size_bytes: int
     hit_count: int
@@ -113,7 +111,7 @@ class CacheStats:
     hit_rate: float
     average_access_time: float
     memory_usage_mb: float
-    
+
     def __post_init__(self):
         """Validate cache stats."""
         assert self.total_entries >= 0, "total_entries must be non-negative"
@@ -122,11 +120,10 @@ class CacheStats:
         assert self.miss_count >= 0, "miss_count must be non-negative"
         assert 0 <= self.hit_rate <= 1, "hit_rate must be between 0 and 1"
 
-
 @dataclass
 class ArtifactMetadata:
     """Metadata for cached artifacts."""
-    
+
     artifact_type: str
     schema_version: str
     data_hash: str
@@ -135,7 +132,7 @@ class ArtifactMetadata:
     dependencies: List[str] = None
     tags: List[str] = None
     size_bytes: int = 0
-    
+
     def __post_init__(self):
         """Validate artifact metadata."""
         assert self.artifact_type, "artifact_type is required"
@@ -147,16 +144,15 @@ class ArtifactMetadata:
         if self.tags is None:
             self.tags = []
 
-
 class EnhancedCachingIntegration:
     """
     Enhanced caching integration with advanced features.
-    
+
     Provides comprehensive caching with FeatureCacheService integration,
     artifact management, and performance optimization.
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  cache_dir: Optional[Path] = None,
                  enable_feature_cache: bool = True,
                  enable_serialization: bool = True,
@@ -170,18 +166,18 @@ class EnhancedCachingIntegration:
         self.enable_compression = enable_compression
         self.max_cache_size_mb = max_cache_size_mb
         self.default_ttl_seconds = default_ttl_seconds
-        
+
         # Create cache directory
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize cache components
         self._initialize_cache_components()
         self._initialize_enhanced_utilities()
-        
+
         # Cache storage
         self.cache_entries: Dict[str, CacheEntry] = {}
         self.artifact_metadata: Dict[str, ArtifactMetadata] = {}
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_cache_operations': 0,
@@ -193,7 +189,7 @@ class EnhancedCachingIntegration:
             'total_deserialization_time': 0.0,
             'memory_usage_mb': 0.0
         }
-        
+
         tprint_info("Enhanced Caching Integration initialized")
         if self.enable_feature_cache:
             tprint_info("✅ FeatureCacheService integration enabled")
@@ -201,11 +197,11 @@ class EnhancedCachingIntegration:
             tprint_info("✅ Serialization enabled")
         if self.enable_compression:
             tprint_info("✅ Compression enabled")
-    
+
     def _initialize_enhanced_utilities(self):
         """Initialize enhanced utilities from features_common and feature_generation."""
         tprint_debug("Initializing enhanced caching utilities")
-        
+
         # Initialize features common caching utilities
         if FEATURES_COMMON_CACHING_AVAILABLE:
             try:
@@ -213,10 +209,10 @@ class EnhancedCachingIntegration:
                 self.caching_mixin = CachingMixin()
                 self.monitoring_mixin = MonitoringMixin()
                 self.performance_mixin = PerformanceMixin()
-                
+
                 # Initialize logger
                 self.logger = get_logger(__name__)
-                
+
                 tprint_success("✅ Features common caching utilities initialized")
             except Exception as e:
                 tprint_warning(f"⚠️ Features common caching utilities initialization failed: {e}")
@@ -229,7 +225,7 @@ class EnhancedCachingIntegration:
             self.monitoring_mixin = None
             self.performance_mixin = None
             self.logger = None
-        
+
         # Initialize feature generation optimization utilities
         if FEATURE_GENERATION_OPTIMIZATION_AVAILABLE:
             try:
@@ -243,7 +239,7 @@ class EnhancedCachingIntegration:
         else:
             self.feature_optimizer = None
             self.feature_optimization_config = None
-    
+
     def _initialize_cache_components(self):
         """Initialize cache components."""
         # Initialize FeatureCacheService
@@ -259,7 +255,7 @@ class EnhancedCachingIntegration:
                 self.enable_feature_cache = False
         else:
             self.feature_cache = None
-        
+
         # Initialize serialization utilities
         if self.enable_serialization:
             try:
@@ -277,10 +273,10 @@ class EnhancedCachingIntegration:
             self.universal_serializer = None
             self.json_serializer = None
             self.pickle_serializer = None
-    
-    def cache_data(self, 
-                   key: str, 
-                   data: Any, 
+
+    def cache_data(self,
+                   key: str,
+                   data: Any,
                    artifact_type: str = "data",
                    schema_version: str = "1.0",
                    ttl_seconds: Optional[int] = None,
@@ -288,7 +284,7 @@ class EnhancedCachingIntegration:
                    tags: Optional[List[str]] = None) -> bool:
         """
         Cache data with metadata.
-        
+
         Args:
             key: Cache key
             data: Data to cache
@@ -297,18 +293,18 @@ class EnhancedCachingIntegration:
             ttl_seconds: Time to live in seconds
             dependencies: List of dependency keys
             tags: List of tags
-            
+
         Returns:
             True if caching successful
         """
         tprint_debug(f"Caching data with key '{key}'")
-        
+
         start_time = time.time()
-        
+
         try:
             # Calculate data hash
             data_hash = self._calculate_data_hash(data)
-            
+
             # Create artifact metadata
             metadata = ArtifactMetadata(
                 artifact_type=artifact_type,
@@ -320,10 +316,10 @@ class EnhancedCachingIntegration:
                 tags=tags or [],
                 size_bytes=self._calculate_data_size(data)
             )
-            
+
             # Serialize data
             serialized_data = self._serialize_data(data)
-            
+
             # Create cache entry
             cache_entry = CacheEntry(
                 key=key,
@@ -335,77 +331,77 @@ class EnhancedCachingIntegration:
                 size_bytes=metadata.size_bytes,
                 ttl_seconds=ttl_seconds or self.default_ttl_seconds
             )
-            
+
             # Store in cache
             self.cache_entries[key] = cache_entry
             self.artifact_metadata[key] = metadata
-            
+
             # Check cache size and evict if necessary
             self._evict_if_necessary()
-            
+
             # Update performance stats
             cache_time = time.time() - start_time
             self.performance_stats['total_cache_operations'] += 1
             self.performance_stats['total_cache_time'] += cache_time
-            
+
             tprint_success(f"Data cached successfully with key '{key}' in {cache_time:.3f}s")
             return True
-            
+
         except Exception as e:
             tprint_error(f"Failed to cache data with key '{key}': {e}")
             return False
-    
+
     def get_cached_data(self, key: str) -> Optional[Any]:
         """
         Get cached data by key.
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             Cached data or None if not found/expired
         """
         tprint_debug(f"Retrieving cached data with key '{key}'")
-        
+
         start_time = time.time()
-        
+
         try:
             # Check if key exists
             if key not in self.cache_entries:
                 self.performance_stats['cache_misses'] += 1
                 tprint_debug(f"Cache miss for key '{key}'")
                 return None
-            
+
             cache_entry = self.cache_entries[key]
-            
+
             # Check if expired
             if self._is_expired(cache_entry):
                 self._evict_entry(key)
                 self.performance_stats['cache_misses'] += 1
                 tprint_debug(f"Cache entry expired for key '{key}'")
                 return None
-            
+
             # Update access statistics
             cache_entry.last_accessed = datetime.now()
             cache_entry.access_count += 1
-            
+
             # Deserialize data
             data = self._deserialize_data(cache_entry.data)
-            
+
             # Update performance stats
             cache_time = time.time() - start_time
             self.performance_stats['cache_hits'] += 1
             self.performance_stats['total_cache_time'] += cache_time
-            
+
             tprint_success(f"Cache hit for key '{key}' in {cache_time:.3f}s")
             return data
-            
+
         except Exception as e:
             tprint_error(f"Failed to retrieve cached data with key '{key}': {e}")
             self.performance_stats['cache_misses'] += 1
             return None
-    
-    def cache_features(self, 
+
+    def cache_features(self,
                       symbol: str,
                       timeframe: str,
                       features: pd.DataFrame,
@@ -413,14 +409,14 @@ class EnhancedCachingIntegration:
                       lookback_config_hash: str = "default") -> bool:
         """
         Cache features using FeatureCacheService.
-        
+
         Args:
             symbol: Symbol name
             timeframe: Timeframe
             features: Features DataFrame
             feature_bank_version: Feature bank version
             lookback_config_hash: Lookback configuration hash
-            
+
         Returns:
             True if caching successful
         """
@@ -432,7 +428,7 @@ class EnhancedCachingIntegration:
                 artifact_type="features",
                 schema_version=feature_bank_version
             )
-        
+
         try:
             # Build cache key
             cache_key = self.feature_cache.build_key(
@@ -441,38 +437,38 @@ class EnhancedCachingIntegration:
                 feature_bank_version=feature_bank_version,
                 lookback_config_hash=lookback_config_hash
             )
-            
+
             # Save features
             self.feature_cache.save(cache_key, features, "features")
-            
+
             tprint_success(f"Features cached for {symbol} {timeframe}")
             return True
-            
+
         except Exception as e:
             tprint_error(f"Failed to cache features for {symbol} {timeframe}: {e}")
             return False
-    
-    def get_cached_features(self, 
+
+    def get_cached_features(self,
                            symbol: str,
                            timeframe: str,
                            feature_bank_version: str = "1.0",
                            lookback_config_hash: str = "default") -> Optional[pd.DataFrame]:
         """
         Get cached features using FeatureCacheService.
-        
+
         Args:
             symbol: Symbol name
             timeframe: Timeframe
             feature_bank_version: Feature bank version
             lookback_config_hash: Lookback configuration hash
-            
+
         Returns:
             Cached features DataFrame or None if not found
         """
         if not self.enable_feature_cache or not self.feature_cache:
             tprint_warning("FeatureCacheService not available, using fallback caching")
             return self.get_cached_data(f"features_{symbol}_{timeframe}")
-        
+
         try:
             # Build cache key
             cache_key = self.feature_cache.build_key(
@@ -481,21 +477,21 @@ class EnhancedCachingIntegration:
                 feature_bank_version=feature_bank_version,
                 lookback_config_hash=lookback_config_hash
             )
-            
+
             # Load features
             features = self.feature_cache.load(cache_key, "features")
-            
+
             if features is not None:
                 tprint_success(f"Features retrieved from cache for {symbol} {timeframe}")
             else:
                 tprint_debug(f"No cached features found for {symbol} {timeframe}")
-            
+
             return features
-            
+
         except Exception as e:
             tprint_error(f"Failed to retrieve cached features for {symbol} {timeframe}: {e}")
             return None
-    
+
     def _calculate_data_hash(self, data: Any) -> str:
         """Calculate hash for data."""
         try:
@@ -512,7 +508,7 @@ class EnhancedCachingIntegration:
         except Exception as e:
             tprint_debug(f"Hash calculation failed: {e}")
             return hashlib.sha256(str(id(data)).encode()).hexdigest()
-    
+
     def _calculate_data_size(self, data: Any) -> int:
         """Calculate size of data in bytes."""
         try:
@@ -525,12 +521,12 @@ class EnhancedCachingIntegration:
         except Exception as e:
             tprint_debug(f"Size calculation failed: {e}")
             return 0
-    
+
     def _serialize_data(self, data: Any) -> Any:
         """Serialize data for caching."""
         if not self.enable_serialization:
             return data
-        
+
         try:
             if isinstance(data, pd.DataFrame):
                 # Use pickle for DataFrames
@@ -544,12 +540,12 @@ class EnhancedCachingIntegration:
         except Exception as e:
             tprint_debug(f"Serialization failed: {e}")
             return data
-    
+
     def _deserialize_data(self, serialized_data: Any) -> Any:
         """Deserialize data from cache."""
         if not self.enable_serialization:
             return serialized_data
-        
+
         try:
             if isinstance(serialized_data, bytes):
                 # Try pickle first
@@ -566,41 +562,41 @@ class EnhancedCachingIntegration:
         except Exception as e:
             tprint_debug(f"Deserialization failed: {e}")
             return serialized_data
-    
+
     def _is_expired(self, cache_entry: CacheEntry) -> bool:
         """Check if cache entry is expired."""
         if cache_entry.ttl_seconds is None:
             return False
-        
+
         now = datetime.now()
         return now > cache_entry.created_at + timedelta(seconds=cache_entry.ttl_seconds)
-    
+
     def _evict_if_necessary(self):
         """Evict entries if cache size exceeds limit."""
         current_size_mb = sum(entry.size_bytes for entry in self.cache_entries.values()) / (1024 * 1024)
-        
+
         if current_size_mb > self.max_cache_size_mb:
             # Evict least recently used entries
             sorted_entries = sorted(
                 self.cache_entries.items(),
                 key=lambda x: x[1].last_accessed
             )
-            
+
             # Evict 20% of entries
             evict_count = max(1, len(sorted_entries) // 5)
-            
+
             for i in range(evict_count):
                 key, _ = sorted_entries[i]
                 self._evict_entry(key)
                 self.performance_stats['cache_evictions'] += 1
-    
+
     def _evict_entry(self, key: str):
         """Evict a cache entry."""
         if key in self.cache_entries:
             del self.cache_entries[key]
         if key in self.artifact_metadata:
             del self.artifact_metadata[key]
-    
+
     def get_cache_stats(self) -> CacheStats:
         """Get cache statistics."""
         total_entries = len(self.cache_entries)
@@ -608,18 +604,18 @@ class EnhancedCachingIntegration:
         hit_count = self.performance_stats['cache_hits']
         miss_count = self.performance_stats['cache_misses']
         eviction_count = self.performance_stats['cache_evictions']
-        
+
         total_requests = hit_count + miss_count
         hit_rate = hit_count / total_requests if total_requests > 0 else 0.0
-        
+
         average_access_time = (
-            self.performance_stats['total_cache_time'] / 
+            self.performance_stats['total_cache_time'] /
             self.performance_stats['total_cache_operations']
             if self.performance_stats['total_cache_operations'] > 0 else 0.0
         )
-        
+
         memory_usage_mb = total_size_bytes / (1024 * 1024)
-        
+
         return CacheStats(
             total_entries=total_entries,
             total_size_bytes=total_size_bytes,
@@ -630,7 +626,7 @@ class EnhancedCachingIntegration:
             average_access_time=average_access_time,
             memory_usage_mb=memory_usage_mb
         )
-    
+
     def clear_cache(self, pattern: Optional[str] = None):
         """Clear cache entries."""
         if pattern is None:
@@ -644,11 +640,10 @@ class EnhancedCachingIntegration:
             for key in keys_to_remove:
                 self._evict_entry(key)
             tprint_info(f"Cleared {len(keys_to_remove)} cache entries matching pattern '{pattern}'")
-    
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary."""
         return self.performance_stats.copy()
-
 
 # Convenience functions
 def create_enhanced_caching_integration(

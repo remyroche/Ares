@@ -21,4 +21,3 @@ __all__ = [
     "generate_live_portfolio_dashboard",
     "CrossAssetConfig",
 ]
-

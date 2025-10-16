@@ -42,7 +42,6 @@ try:
 except ImportError:
     HARDWARE_AVAILABLE = False
 
-
 @dataclass
 class FeatureSelectorConfig:
     """Configuration for feature selection."""
@@ -63,7 +62,6 @@ class FeatureSelectorConfig:
     # Selection strategy
     selection_method: str = "combined"  # "variance", "pca", "combined"
     target_features: int = 100
-
 
 class FeatureSelector:
     """

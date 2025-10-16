@@ -23,10 +23,9 @@ from .optimization_service import OptimizationService
 from .hardware_service import HardwareService
 from ..shared_utils import get_logger
 
-
 class ClusteringOrchestrator:
     """Orchestrates the entire NAS-TAS clustering pipeline."""
-    
+
     def __init__(self, verbose: bool = True):
         """Initialize the clustering orchestrator."""
         self.verbose = verbose
@@ -37,7 +36,7 @@ class ClusteringOrchestrator:
         self.feature_service = FeatureService(verbose=verbose)
         self.optimization_service = OptimizationService(verbose=verbose)
         self.hardware_service = HardwareService(verbose=verbose)
-        
+
         # Performance tracking
         self.performance_metrics = {
             "start_time": None,
@@ -47,11 +46,11 @@ class ClusteringOrchestrator:
             "error_count": 0,
             "success_count": 0
         }
-    
+
     async def execute_clustering_pipeline(
-        self, 
-        features: np.ndarray, 
-        market_data: pd.DataFrame, 
+        self,
+        features: np.ndarray,
+        market_data: pd.DataFrame,
         config: Any
     ) -> Dict[str, Any]:
         """Execute the complete clustering pipeline."""
@@ -60,7 +59,7 @@ class ClusteringOrchestrator:
             self.performance_metrics["start_time"] = time.time()
             tprint("🚀 Starting NAS-TAS Clustering Pipeline (Refactored)", "INFO")
             tprint("🎯 Using advanced 3-step iterative clustering with risk mitigation", "INFO")
-            
+
             # Create clustering context
             context = ClusteringContext(
                 original_features=features,
@@ -68,7 +67,7 @@ class ClusteringOrchestrator:
                 original_feature_names=getattr(config, 'feature_names', None),
                 feature_scores=getattr(config, 'feature_scores', {})
             )
-            
+
             # Validate context before pipeline execution
             if not hasattr(context, 'original_features') or context.original_features is None:
                 raise ValueError("Original features are None or not available in context")
@@ -77,29 +76,29 @@ class ClusteringOrchestrator:
 
             # Execute pipeline steps
             context = await self._execute_pipeline_steps(context, config)
-            
+
             # Finalize performance tracking
             self.performance_metrics["end_time"] = time.time()
             total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
-            
+
             tprint(f"🎉 NAS-TAS Clustering Pipeline completed in {total_time:.2f} seconds", "SUCCESS")
-            
+
             # Add performance metrics to results
             if hasattr(context, 'final_results'):
                 context.final_results['performance_metrics'] = self.performance_metrics
                 context.final_results['clustering_method'] = 'advanced_3_step_iterative'
                 context.final_results['risk_mitigation_enabled'] = True
-            
+
             return context.final_results
-            
+
         except Exception as e:
             self.performance_metrics["error_count"] += 1
             tprint(f"❌ Clustering pipeline failed: {e}", "ERROR")
             raise ValueError(f"Clustering pipeline failed: {e}")
-    
+
     async def _execute_pipeline_steps(
-        self, 
-        context: ClusteringContext, 
+        self,
+        context: ClusteringContext,
         config: Any
     ) -> ClusteringContext:
         """Execute all pipeline steps in sequence."""
@@ -193,14 +192,14 @@ class ClusteringOrchestrator:
             # Store final results in context
             context.final_results = final_results
             self.performance_metrics["success_count"] += 1
-            
+
             return context
-            
+
         except Exception as e:
             self.performance_metrics["error_count"] += 1
             tprint(f"Pipeline execution failed: {e}", "ERROR")
             raise
-    
+
     def _record_step_time(self, step_name: str, duration: float) -> None:
         """Record execution time for a step."""
         try:
@@ -208,7 +207,7 @@ class ClusteringOrchestrator:
             tprint(f"⏱️ {step_name}: {duration:.2f}s", "INFO")
         except Exception as e:
             tprint(f"Failed to record step time for {step_name}: {e}", "WARNING")
-    
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary of the clustering pipeline."""
         try:
@@ -216,9 +215,9 @@ class ClusteringOrchestrator:
                 total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
             else:
                 total_time = 0.0
-            
+
             step_times = self.performance_metrics["step_times"]
-            
+
             summary = {
                 "total_execution_time": total_time,
                 "step_breakdown": step_times,
@@ -228,13 +227,13 @@ class ClusteringOrchestrator:
                 "slowest_step": max(step_times.items(), key=lambda x: x[1])[0] if step_times else None,
                 "fastest_step": min(step_times.items(), key=lambda x: x[1])[0] if step_times else None
             }
-            
+
             return summary
-            
+
         except Exception as e:
             tprint(f"Performance summary generation failed: {e}", "ERROR")
             return {"error": str(e)}
-    
+
     def reset_performance_metrics(self) -> None:
         """Reset performance metrics."""
         try:
@@ -249,7 +248,7 @@ class ClusteringOrchestrator:
             tprint("Performance metrics reset", "INFO")
         except Exception as e:
             tprint(f"Performance metrics reset failed: {e}", "ERROR")
-    
+
     async def execute_step_individually(
         self,
         step_name: str,
@@ -312,7 +311,7 @@ class ClusteringOrchestrator:
         except Exception as e:
             tprint(f"Individual step execution failed for {step_name}: {e}", "ERROR")
             raise
-    
+
     def get_step_info(self) -> Dict[str, str]:
         """Get information about available steps."""
         return {
@@ -322,7 +321,7 @@ class ClusteringOrchestrator:
             "step8_validation": "Clustering validation and robustness testing",
             "step9_results_consolidation": "Results consolidation and artifact creation"
         }
-    
+
     def validate_pipeline_requirements(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Validate that pipeline requirements are met."""
         try:
@@ -331,33 +330,33 @@ class ClusteringOrchestrator:
                 "issues": [],
                 "warnings": []
             }
-            
+
             # Check features
             if features is None or features.size == 0:
                 validation_results["valid"] = False
                 validation_results["issues"].append("Features are empty or None")
-            
+
             if features.shape[0] < 10:
                 validation_results["warnings"].append("Very few samples for clustering")
-            
+
             if features.shape[1] < 2:
                 validation_results["valid"] = False
                 validation_results["issues"].append("Insufficient features for clustering")
-            
+
             # Check market data
             if market_data is None or market_data.empty:
                 validation_results["warnings"].append("Market data is empty")
-            
+
             # Check for NaN values
             if np.any(np.isnan(features)):
                 validation_results["warnings"].append("Features contain NaN values")
-            
+
             # Check for infinite values
             if np.any(np.isinf(features)):
                 validation_results["warnings"].append("Features contain infinite values")
-            
+
             return validation_results
-            
+
         except Exception as e:
             tprint(f"Pipeline validation failed: {e}", "ERROR")
             return {"valid": False, "issues": [f"Validation error: {e}"], "warnings": []}

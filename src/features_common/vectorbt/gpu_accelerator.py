@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 
 class GPUAccelerator:
     """GPU accelerator for VectorBT operations."""
-    
+
     def __init__(self):
         self.gpu_available = False
         self.performance_metrics = {}
-    
+
     def accelerate_operation(self, operation: str, data: Union[pd.DataFrame, pd.Series], **kwargs) -> Any:
         """Accelerate a VectorBT operation using GPU."""
         try:
@@ -26,7 +26,7 @@ class GPUAccelerator:
         except Exception as e:
             logger.warning(f"GPU acceleration failed: {e}")
             return data
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         return self.performance_metrics

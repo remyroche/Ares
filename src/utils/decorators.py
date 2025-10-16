@@ -25,7 +25,7 @@ _circuit_breaker_states: Dict[str, Dict[str, Any]] = {}
 def handles_errors(fallback = None, log_errors = True, reraise = False):
     """
     Decorator for handling errors in functions.
-    
+
     Args:
         fallback: Value to return on error (default: None)
         log_errors: Whether to log errors (default: True)
@@ -40,10 +40,10 @@ def handles_errors(fallback = None, log_errors = True, reraise = False):
                 if log_errors:
                     logger.error(f"Error in {func.__name__}: {e}")
                     logger.debug(f"Traceback: {traceback.format_exc()}")
-                
+
                 if reraise:
                     raise
-                
+
                 return fallback
         return wrapper
     return decorator
@@ -51,7 +51,7 @@ def handles_errors(fallback = None, log_errors = True, reraise = False):
 def log_execution_time(level="INFO", log_args = False):
     """
     Decorator to log function execution time.
-    
+
     Args:
         level: Log level (default: "INFO")
         log_args: Whether to log function arguments (default: False)
@@ -60,14 +60,14 @@ def log_execution_time(level="INFO", log_args = False):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             start_time = time.time()
-            
+
             if log_args:
                 logger.log(getattr(logging, level.upper(), logging.INFO),
                           f"Starting {func.__name__} with args={args}, kwargs={kwargs}")
             else:
                 logger.log(getattr(logging, level.upper(), logging.INFO),
                           f"Starting {func.__name__}")
-            
+
             try:
                 result = func(*args, **kwargs)
                 execution_time = time.time() - start_time
@@ -84,7 +84,7 @@ def log_execution_time(level="INFO", log_args = False):
 def log_call(level="INFO", log_result = False):
     """
     Decorator to log function calls.
-    
+
     Args:
         level: Log level (default: "INFO")
         log_result: Whether to log the result (default: False)
@@ -94,13 +94,13 @@ def log_call(level="INFO", log_result = False):
         def wrapper(*args, **kwargs):
             logger.log(getattr(logging, level.upper(), logging.INFO),
                       f"Calling {func.__name__}")
-            
+
             result = func(*args, **kwargs)
-            
+
             if log_result:
                 logger.log(getattr(logging, level.upper(), logging.INFO),
                           f"Result from {func.__name__}: {result}")
-            
+
             return result
         return wrapper
     return decorator
@@ -108,7 +108,7 @@ def log_call(level="INFO", log_result = False):
 def traced(span_name = None, log_entry = True, log_exit = True):
     """
     Decorator for function tracing.
-    
+
     Args:
         span_name: Custom span name (default: function name)
         log_entry: Whether to log function entry (default: True)
@@ -118,10 +118,10 @@ def traced(span_name = None, log_entry = True, log_exit = True):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             name = span_name or func.__name__
-            
+
             if log_entry:
                 logger.debug(f"Entering span: {name}")
-            
+
             try:
                 result = func(*args, **kwargs)
                 if log_exit:
@@ -136,7 +136,7 @@ def traced(span_name = None, log_entry = True, log_exit = True):
 def validates(*validators, **kwargs):
     """
     Decorator for input validation.
-    
+
     Args:
         *validators: Validation functions to apply
         **kwargs: Additional validation options
@@ -152,7 +152,7 @@ def validates(*validators, **kwargs):
                     except Exception as e:
                         logger.error(f"Validation failed for {func.__name__}: {e}")
                         raise ValueError(f"Validation failed: {e}")
-            
+
             return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -160,7 +160,7 @@ def validates(*validators, **kwargs):
 def cached(max_size = 128, ttl = None):
     """
     Decorator for function result caching.
-    
+
     Args:
         max_size: Maximum cache size (default: 128)
         ttl: Time to live in seconds (default: None - no expiration)
@@ -168,13 +168,13 @@ def cached(max_size = 128, ttl = None):
     def decorator(func: Callable) -> Callable:
         cache = {}
         cache_times = {}
-        
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # Create cache key
             key_data = (args, tuple(sorted(kwargs.items())))
             key = hashlib.md5(json.dumps(key_data, default = str).encode()).hexdigest()
-            
+
             # Check if cached result exists and is still valid
             if key in cache:
                 if ttl is None or (time.time() - cache_times[key]) < ttl:
@@ -184,20 +184,20 @@ def cached(max_size = 128, ttl = None):
                     # Expired, remove from cache
                     del cache[key]
                     del cache_times[key]
-            
+
             # Cache miss, compute result
             result = func(*args, **kwargs)
-            
+
             # Store in cache
             if len(cache) >= max_size:
                 # Remove oldest entry
                 oldest_key = min(cache_times.keys(), key = lambda k: cache_times[k])
                 del cache[oldest_key]
                 del cache_times[oldest_key]
-            
+
             cache[key] = result
             cache_times[key] = time.time()
-            
+
             logger.debug(f"Cache miss for {func.__name__}, result cached")
             return result
         return wrapper
@@ -206,7 +206,7 @@ def cached(max_size = 128, ttl = None):
 def circuit_breaker(failure_threshold = 5, recovery_timeout = 60, expected_exception = Exception):
     """
     Circuit breaker decorator to prevent cascading failures.
-    
+
     Args:
         failure_threshold: Number of failures before opening circuit (default: 5)
         recovery_timeout: Time in seconds before attempting recovery (default: 60)
@@ -214,7 +214,7 @@ def circuit_breaker(failure_threshold = 5, recovery_timeout = 60, expected_excep
     """
     def decorator(func: Callable) -> Callable:
         func_name = func.__name__
-        
+
         # Initialize circuit breaker state
         if func_name not in _circuit_breaker_states:
             _circuit_breaker_states[func_name] = {
@@ -222,12 +222,12 @@ def circuit_breaker(failure_threshold = 5, recovery_timeout = 60, expected_excep
                 'last_failure_time': None,
                 'state': 'CLOSED'  # CLOSED, OPEN, HALF_OPEN
             }
-        
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             state = _circuit_breaker_states[func_name]
             current_time = time.time()
-            
+
             # Check if circuit is open
             if state['state'] == 'OPEN':
                 if current_time - state['last_failure_time'] > recovery_timeout:
@@ -236,35 +236,35 @@ def circuit_breaker(failure_threshold = 5, recovery_timeout = 60, expected_excep
                 else:
                     logger.warning(f"Circuit breaker for {func_name} is OPEN, skipping call")
                     raise Exception(f"Circuit breaker is OPEN for {func_name}")
-            
+
             try:
                 result = func(*args, **kwargs)
-                
+
                 # Success - reset failure count and close circuit if needed
                 if state['state'] == 'HALF_OPEN':
                     state['state'] = 'CLOSED'
                     logger.info(f"Circuit breaker for {func_name} moved to CLOSED")
-                
+
                 state['failure_count'] = 0
                 return result
-                
+
             except expected_exception as e:
                 state['failure_count'] += 1
                 state['last_failure_time'] = current_time
-                
+
                 if state['failure_count'] >= failure_threshold:
                     state['state'] = 'OPEN'
                     logger.error(f"Circuit breaker for {func_name} moved to OPEN after {failure_threshold} failures")
-                
+
                 raise
-        
+
         return wrapper
     return decorator
 
 def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
     """
     Decorator for retrying failed function calls.
-    
+
     Args:
         max_attempts: Maximum number of retry attempts (default: 3)
         delay: Initial delay between retries in seconds (default: 1)
@@ -276,7 +276,7 @@ def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             current_delay = delay
-            
+
             for attempt in range(max_attempts):
                 try:
                     return func(*args, **kwargs)
@@ -284,11 +284,11 @@ def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
                     if attempt == max_attempts - 1:
                         logger.error(f"All {max_attempts} attempts failed for {func.__name__}")
                         raise
-                    
+
                     logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}. Retrying in {current_delay}s...")
                     time.sleep(current_delay)
                     current_delay *= backoff
-            
+
             return None
         return wrapper
     return decorator
@@ -296,7 +296,7 @@ def retry(max_attempts = 3, delay = 1, backoff = 2, exceptions=(Exception,)):
 def authenticated(required_roles = None):
     """
     Decorator for authentication and authorization.
-    
+
     Args:
         required_roles: List of required roles (default: None - any authenticated user)
     """
@@ -313,7 +313,7 @@ def authenticated(required_roles = None):
 def requires_role(*roles):
     """
     Decorator for role-based access control.
-    
+
     Args:
         *roles: Required roles for access
     """
@@ -330,7 +330,7 @@ def requires_role(*roles):
 def validate_schema(schema):
     """
     Decorator for schema validation.
-    
+
     Args:
         schema: Schema to validate against
     """
@@ -347,7 +347,7 @@ def validate_schema(schema):
 def validate_dataframe(required_columns = None, required_dtypes = None):
     """
     Decorator for DataFrame validation.
-    
+
     Args:
         required_columns: List of required columns
         required_dtypes: Dict of column -> expected dtype
@@ -365,7 +365,7 @@ def validate_dataframe(required_columns = None, required_dtypes = None):
 def comprehensive_validation(validators = None):
     """
     Decorator for comprehensive validation.
-    
+
     Args:
         validators: List of validation functions
     """
@@ -382,7 +382,7 @@ def comprehensive_validation(validators = None):
 def secure_data_processing(encrypt = False, audit = True):
     """
     Decorator for secure data processing.
-    
+
     Args:
         encrypt: Whether to encrypt data (default: False)
         audit: Whether to audit data access (default: True)
@@ -392,10 +392,10 @@ def secure_data_processing(encrypt = False, audit = True):
         def wrapper(*args, **kwargs):
             if audit:
                 logger.info(f"Secure data processing: {func.__name__}")
-            
+
             if encrypt:
                 logger.debug(f"Data encryption enabled for {func.__name__}")
-            
+
             return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -403,7 +403,7 @@ def secure_data_processing(encrypt = False, audit = True):
 def compose(*decorators):
     """
     Decorator to compose multiple decorators.
-    
+
     Args:
         *decorators: Decorators to compose
     """
@@ -416,7 +416,7 @@ def compose(*decorators):
 
 class CachePolicy:
     """Cache policy configuration."""
-    
+
     def __init__(self, max_size = 128, ttl = None, eviction_policy='LRU'):
         self.max_size = max_size
         self.ttl = ttl

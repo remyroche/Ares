@@ -1,8 +1,8 @@
-from functools import wraps
+from .logger import system_logger
 from datetime import datetime
+from functools import wraps
 from typing import Any, Callable
 import mlflow
-from .logger import system_logger
 ARES_VERSION = '1.0.0'
 
 def format_datetime(dt: Any = None) -> str:

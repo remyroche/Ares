@@ -1,10 +1,10 @@
-from typing import Any
 from datetime import datetime
-import pandas as pd
-import numpy as np
-from src.utils.logger import system_logger
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from src.utils.logger import system_logger
+from typing import Any
+import numpy as np
+import pandas as pd
 
 'Quality Metrics Calculator - Calculates comprehensive data quality metrics.'
 from scipy import stats
@@ -29,99 +29,99 @@ class QualityMetricsCalculator:
 
     async def calculate_all_metrics(self, data: pd.DataFrame, symbol: str='UNKNOWN', exchange: str='UNKNOWN') -> dict[str, Any]:
         """Calculate all quality metrics for the dataset.
-        
+
         Args:
             data: DataFrame to analyze
             symbol: Trading symbol
             exchange: Exchange name
-            
+
         Returns:
             dict: Comprehensive quality metrics
         """
         self.logger.info('🔍 Starting comprehensive quality metrics calculation...')
         self.logger.info(f'📊 Analyzing data for {symbol} on {exchange}')
-        
+
         metrics = {'symbol': symbol, 'exchange': exchange, 'timestamp': datetime.now().isoformat(), 'data_shape': data.shape if data is not None else (0, 0), 'dimensions': {}, 'overall_score': 0.0, 'recommendations': []}
-        
+
         try:
             if data is None or data.empty:
                 self.logger.warning('⚠️ No data provided for quality analysis')
                 metrics['overall_score'] = 0.0
                 metrics['recommendations'].append('No data available for analysis')
                 return metrics
-            
+
             self.logger.info(f'📈 Data shape: {data.shape[0]} rows, {data.shape[1]} columns')
             self.logger.info(f'📋 Columns: {list(data.columns)}')
-            
+
             # Calculate each dimension with detailed logging
             self.logger.info('🔍 Calculating completeness metrics...')
             metrics['dimensions']['completeness'] = await self.calculate_completeness(data)
             self.logger.info(f'✅ Completeness score: {metrics["dimensions"]["completeness"].get("score", 0):.2f}%')
-            
+
             self.logger.info('🔍 Calculating consistency metrics...')
             metrics['dimensions']['consistency'] = await self.calculate_consistency(data)
             self.logger.info(f'✅ Consistency score: {metrics["dimensions"]["consistency"].get("score", 0):.2f}%')
-            
+
             self.logger.info('🔍 Calculating accuracy metrics...')
             metrics['dimensions']['accuracy'] = await self.calculate_accuracy(data)
             self.logger.info(f'✅ Accuracy score: {metrics["dimensions"]["accuracy"].get("score", 0):.2f}%')
-            
+
             self.logger.info('🔍 Calculating timeliness metrics...')
             metrics['dimensions']['timeliness'] = await self.calculate_timeliness(data)
             self.logger.info(f'✅ Timeliness score: {metrics["dimensions"]["timeliness"].get("score", 0):.2f}%')
-            
+
             self.logger.info('🔍 Calculating uniqueness metrics...')
             metrics['dimensions']['uniqueness'] = await self.calculate_uniqueness(data)
             self.logger.info(f'✅ Uniqueness score: {metrics["dimensions"]["uniqueness"].get("score", 0):.2f}%')
-            
+
             self.logger.info('🔍 Calculating validity metrics...')
             metrics['dimensions']['validity'] = await self.calculate_validity(data)
             self.logger.info(f'✅ Validity score: {metrics["dimensions"]["validity"].get("score", 0):.2f}%')
-            
+
             # Calculate overall score
             dimension_scores = [dim['score'] for dim in metrics['dimensions'].values() if isinstance(dim, dict) and 'score' in dim]
             metrics['overall_score'] = np.mean(dimension_scores) if dimension_scores else 0.0
-            
+
             self.logger.info(f'📊 Overall quality score: {metrics["overall_score"]:.2f}%')
-            
+
             # Generate recommendations
             self.logger.info('💡 Generating recommendations...')
             metrics['recommendations'] = self._generate_recommendations(metrics['dimensions'])
             self.logger.info(f'📝 Generated {len(metrics["recommendations"])} recommendations')
-            
+
             # Calculate statistical summary
             self.logger.info('📈 Calculating statistical summary...')
             metrics['statistical_summary'] = self._calculate_statistical_summary(data)
-            
+
             # Log summary of issues found
             total_issues = sum(len(dim.get('issues', [])) for dim in metrics['dimensions'].values() if isinstance(dim, dict))
             total_warnings = sum(len(dim.get('warnings', [])) for dim in metrics['dimensions'].values() if isinstance(dim, dict))
-            
+
             self.logger.info(f'📋 Quality analysis complete: {total_issues} issues, {total_warnings} warnings found')
-            
+
             if metrics['overall_score'] >= 80:
                 self.logger.info('✅ Data quality is GOOD (≥80%)')
             elif metrics['overall_score'] >= 60:
                 self.logger.warning('⚠️ Data quality is FAIR (60-79%)')
             else:
                 self.logger.error('❌ Data quality is POOR (<60%)')
-                
+
         except Exception as e:
             self.logger.error(f'❌ Failed to calculate quality metrics: {e}')
             self.logger.exception('Full error details:')
             metrics['error'] = str(e)
-            
+
         return metrics
 
     async def calculate_completeness(self, data: pd.DataFrame) -> dict[str, Any]:
         """Calculate data completeness metrics."""
         self.logger.info('🔍 Analyzing data completeness...')
         completeness = {'score': 100.0, 'missing_values': {}, 'missing_rows': 0, 'completeness_by_column': {}, 'issues': []}
-        
+
         try:
             total_cells = len(data)
             self.logger.info(f'📊 Total cells to analyze: {total_cells:,}')
-            
+
             # Analyze each column
             for col in data.columns:
                 missing_count = data[col].isna().sum()
@@ -129,25 +129,25 @@ class QualityMetricsCalculator:
                 completeness['missing_values'][col] = {'count': int(missing_count), 'percentage': round(missing_pct, 2)}
                 col_completeness = 100 - missing_pct
                 completeness['completeness_by_column'][col] = round(col_completeness, 2)
-                
+
                 if missing_pct > 0:
                     completeness['issues'].append(f"Column '{col}' has {missing_pct:.2f}% missing values")
                     self.logger.warning(f'⚠️ Column "{col}": {missing_count:,} missing values ({missing_pct:.2f}%)')
                 else:
                     self.logger.info(f'✅ Column "{col}": No missing values')
-            
+
             # Analyze rows with missing values
             rows_with_missing = data.isna().any(axis = 1).sum()
             completeness['missing_rows'] = int(rows_with_missing)
             self.logger.info(f'📋 Rows with missing values: {rows_with_missing:,} ({rows_with_missing/total_cells*100:.2f}%)')
-            
+
             # Calculate overall completeness score
             total_missing = sum((item['count'] for item in completeness['missing_values'].values()))
             total_possible = len(data) * len(data.columns)
             completeness['score'] = round((1 - total_missing / total_possible) * 100 if total_possible > 0 else 100, 2)
-            
+
             self.logger.info(f'📊 Overall completeness: {completeness["score"]:.2f}% ({total_missing:,} missing out of {total_possible:,} total cells)')
-            
+
             # Check against threshold
             threshold_pct = self.config['completeness_threshold'] * 100
             if completeness['score'] < threshold_pct:
@@ -155,12 +155,12 @@ class QualityMetricsCalculator:
                 self.logger.error(f'❌ Completeness below threshold: {completeness["score"]:.2f}% < {threshold_pct}%')
             else:
                 self.logger.info(f'✅ Completeness meets threshold: {completeness["score"]:.2f}% ≥ {threshold_pct}%')
-                
+
         except Exception as e:
             self.logger.error(f'❌ Failed to calculate completeness: {e}')
             self.logger.exception('Completeness calculation error details:')
             completeness['error'] = str(e)
-            
+
         return completeness
 
     async def calculate_consistency(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -413,11 +413,11 @@ class QualityMetricsCalculator:
 
     async def generate_quality_report(self, data: pd.DataFrame, output_format: str='dict') -> Any:
         """Generate a comprehensive quality report.
-        
+
         Args:
             data: DataFrame to analyze
             output_format: Output format ('dict', 'json', 'html')
-            
+
         Returns:
             Quality report in specified format
         """

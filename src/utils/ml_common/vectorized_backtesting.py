@@ -16,12 +16,10 @@ from ..logger import system_logger
 
 logger = logging.getLogger(__name__)
 
-
 class BacktestMode(Enum):
     """Backtesting modes for different optimization levels."""
     VECTORIZED = "vectorized"
     GPU_ACCELERATED = "gpu_accelerated"
-
 
 @dataclass
 class VectorizedBacktestConfig:
@@ -33,7 +31,6 @@ class VectorizedBacktestConfig:
     memory_limit_gb: float = 8.0
     enable_parallel_processing: bool = True
     chunk_size: int = 1000
-
 
 @dataclass
 class BacktestResult:
@@ -50,7 +47,6 @@ class BacktestResult:
     def __post_init__(self):
         if self.trades is None:
             self.trades = []
-
 
 class VectorizedBacktestingEngine:
     """
@@ -227,7 +223,6 @@ class VectorizedBacktestingEngine:
             trades.append(trade)
 
         return trades
-
 
 def get_vectorized_backtesting_engine(config: Optional[VectorizedBacktestConfig] = None) -> VectorizedBacktestingEngine:
     """Get a vectorized backtesting engine instance."""

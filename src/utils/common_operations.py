@@ -536,17 +536,17 @@ def create_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
             'quality_metrics': calculate_data_quality_metrics(df),
             'issues': []
         }
-        
+
         # Check for common data quality issues
         if report['quality_metrics']['missing_percentage'] > 50:
             report['issues'].append("High percentage of missing values")
-        
+
         if report['quality_metrics']['duplicate_percentage'] > 10:
             report['issues'].append("High percentage of duplicate rows")
-        
+
         if len(report['basic_info']['numeric_columns']) == 0:
             report['issues'].append("No numeric columns found")
-        
+
         return report
     except Exception as e:
         logger.error(f"❌ Error creating data quality report: {e}")
@@ -699,7 +699,7 @@ def safe_percentage_change(old_value: float, new_value: float) -> float:
 def optimize_memory_usage() -> Dict[str, Any]:
     """
     Optimize memory usage by leveraging matrix operations manager.
-    
+
     Returns:
         Dictionary containing memory optimization statistics
     """
@@ -727,12 +727,12 @@ def optimize_memory_usage() -> Dict[str, Any]:
 def parallel_processing_optimizer(data: Any, operation: Callable, num_workers: int = None) -> Any:
     """
     Optimize parallel processing operations.
-    
+
     Args:
         data: Data to process
         operation: Operation to apply
         num_workers: Number of parallel workers (None for auto-detection)
-        
+
     Returns:
         Processed data
     """
@@ -740,7 +740,7 @@ def parallel_processing_optimizer(data: Any, operation: Callable, num_workers: i
         import multiprocessing
         if num_workers is None:
             num_workers = max(1, multiprocessing.cpu_count() - 1)
-        
+
         # Use concurrent processing for large datasets
         if hasattr(data, '__len__') and len(data) > 1000:
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
@@ -974,10 +974,10 @@ def safe_to_parquet(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> 
     try:
         if isinstance(file_path, str):
             file_path = Path(file_path)
-        
+
         # Ensure directory exists
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Save to parquet
         df.to_parquet(file_path, **kwargs)
         logger.info(f"✅ Successfully saved DataFrame to {file_path}")
@@ -1434,7 +1434,7 @@ except ImportError:
         pass
 
 except ImportError:
-    
+
     cp = None
 
 def get_memory_usage() -> float:
@@ -1521,20 +1521,20 @@ def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[s
 
 class CommonUtilities:
     """Common utilities class for unified operations."""
-    
+
     def __init__(self):
         """Initialize common utilities."""
         self.logger = logging.getLogger(__name__)
         self.m1_available = is_m1_available()
         self.mps_available = is_mps_available()
-    
+
     def get_m1_status(self):
         """Get M1 status information."""
         return {
             'm1_available': self.m1_available,
             'mps_available': self.mps_available
         }
-    
+
     def optimize_for_m1(self, data):
         """Optimize data processing for M1."""
         if self.m1_available:
@@ -1542,7 +1542,7 @@ class CommonUtilities:
             if hasattr(data, 'values'):
                 return data.values
         return data
-    
+
     def get_system_info(self):
         """Get system information."""
         return {
@@ -1554,16 +1554,16 @@ class CommonUtilities:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1582,8 +1582,8 @@ class CommonUtilities:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1600,13 +1600,13 @@ class CommonUtilities:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

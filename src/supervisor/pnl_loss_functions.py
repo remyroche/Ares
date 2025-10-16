@@ -76,7 +76,7 @@ class PnLLossFunctions:
         """Initialize all components."""
         try:
             self.logger.info("Initializing PnL Loss Functions...")
-            
+
             # Initialize all calculators
             results = await asyncio.gather(
                 self.pnl_calculator.initialize(),
@@ -86,16 +86,16 @@ class PnLLossFunctions:
                 self.loss_calculator.initialize(),
                 return_exceptions = True
             )
-            
+
             # Check if all initializations succeeded
             for i, result in enumerate(results):
                 if isinstance(result, Exception) or not result:
                     self.logger.error(f"Failed to initialize component {i}: {result}")
                     return False
-            
+
             self.logger.info("✅ PnL Loss Functions initialization completed successfully")
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ PnL Loss Functions initialization failed: {e}")
             return False
@@ -132,12 +132,12 @@ class PnLLossFunctions:
                 self.calculation_results["total_pnl"] = self.pnl_calculator.calculate_total_pnl(
                     {"trades": trades}
                 )
-                
+
                 # Calculate additional PnL metrics if we have returns data
                 returns = calculation_input.get("returns")
                 if returns is not None:
                     self.calculation_results["sharpe_ratio"] = self.pnl_calculator.calculate_sharpe_ratio(returns)
-                    
+
                     equity_curve = calculation_input.get("equity_curve")
                     if equity_curve is not None:
                         self.calculation_results["max_drawdown"] = self.pnl_calculator.calculate_max_drawdown(equity_curve)
@@ -156,7 +156,7 @@ class PnLLossFunctions:
                 trades = calculation_input.get("trades", [])
                 if trades:
                     self.calculation_results["win_rate"] = self.performance_metrics_calculator.calculate_win_rate(trades)
-                
+
                 returns = calculation_input.get("returns")
                 if returns is not None:
                     self.calculation_results["sortino_ratio"] = self.performance_metrics_calculator.calculate_sortino_ratio(returns)
@@ -173,7 +173,7 @@ class PnLLossFunctions:
 
             # Update history
             self._update_calculation_history()
-            
+
             self.is_calculating = False
             self.logger.info("PnL calculations completed successfully")
             return True

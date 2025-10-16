@@ -97,7 +97,7 @@ class PaperTrader:
 
         # Trade tracking
         self.trade_tracker = get_trade_tracker()
-        
+
         # Enhanced monitoring integration
         self.enhanced_monitoring: EnhancedMonitoringOrchestrator | None = None
 
@@ -126,7 +126,7 @@ class PaperTrader:
 
             # Initialize trading state
             await self._initialize_trading_state()
-            
+
             # Initialize enhanced monitoring
             await self._initialize_enhanced_monitoring()
 
@@ -245,11 +245,11 @@ class PaperTrader:
         """Initialize enhanced monitoring system."""
         try:
             self.logger.info("🔍 Initializing Enhanced Monitoring for Paper Trader...")
-            
+
             # Initialize enhanced monitoring orchestrator
             self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
             await self.enhanced_monitoring.initialize()
-            
+
             if self.enhanced_monitoring:
                 self.logger.info("✅ Enhanced Monitoring initialized for Paper Trader")
                 self.logger.info("   📊 Trade decisions will be automatically captured")
@@ -257,7 +257,7 @@ class PaperTrader:
                 self.logger.info("   📈 Performance metrics will be tracked")
             else:
                 self.logger.warning("⚠️ Failed to initialize Enhanced Monitoring for Paper Trader")
-                
+
         except Exception as e:
             self.logger.exception(
                 ExecutionError(f"Error initializing enhanced monitoring: {e}"),
@@ -303,9 +303,9 @@ class PaperTrader:
 
             # Record the trade decision
             await self.enhanced_monitoring.record_comprehensive_trade_decision(trade_decision)
-            
+
             self.logger.info(f"📊 {side} trade recorded in enhanced monitoring system")
-            
+
         except Exception as e:
             self.logger.exception(f"Error recording {side} trade in monitoring: {e}")
 

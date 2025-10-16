@@ -56,7 +56,6 @@ class MLTrainingError(Exception):
             return f"{self.error_type} ({self.severity}): {super().__str__()} | Context: {self.context}"
         return f"{self.error_type} ({self.severity}): {super().__str__()}"
 
-
 class ClassImbalanceError(MLTrainingError):
     """Raised when class imbalance is too extreme."""
 
@@ -73,7 +72,6 @@ class ClassImbalanceError(MLTrainingError):
             "Implement stratified sampling"
         ]
 
-
 class SingleClassError(MLTrainingError):
     """Raised when only one class is present."""
 
@@ -89,7 +87,6 @@ class SingleClassError(MLTrainingError):
             "Consider alternative labeling approaches",
             "Implement robust data validation checks"
         ]
-
 
 class DataQualityError(MLTrainingError):
     """Raised when data quality issues prevent training."""
@@ -207,7 +204,7 @@ class MLTrainingSafeguards:
         start_time = time.time()
         _LOGGER.info(f"🔄 Starting parquet schema harmonization...")
         _LOGGER.debug(f"📊 Input DataFrame shape: {df.shape}, Columns: {len(df.columns)}")
-        
+
         try:
             # Common dtype harmonization rules
             harmonized_df = df.copy()
@@ -274,7 +271,7 @@ class MLTrainingSafeguards:
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting class distribution analysis...")
         _LOGGER.debug(f"📊 Input array length: {len(y)}, Threshold: {threshold}")
-        
+
         try:
             unique_classes, counts = np.unique(y, return_counts=True)
             total_samples = len(y)
@@ -1074,7 +1071,6 @@ class MLTrainingSafeguards:
         """
         return SmartFastFailHandler(max_failures, critical_threshold, recoverable_threshold)
 
-
 class SmartFastFailHandler:
     """Smart fast-fail handler for ML training with proper error classification."""
 
@@ -1194,7 +1190,6 @@ class SmartFastFailHandler:
             'failure_types': [f['error_type'] for f in self.failures[-10:]],  # Last 10 failures
             'recent_failures': self.failures[-5:]  # Last 5 failure details
         }
-
 
 # Convenience functions for easy access
 def harmonize_parquet_schema(df: pd.DataFrame, schema_reference: Optional[Dict[str, str]] = None) -> pd.DataFrame:

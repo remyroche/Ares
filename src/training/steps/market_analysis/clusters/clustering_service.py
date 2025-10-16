@@ -26,7 +26,6 @@ from .step10_comprehensive_reporting import ComprehensiveReporter
 from .risk_mitigation import RiskMitigationSystem
 from .validation_framework import ClusteringValidator
 
-
 @dataclass
 class ClusteringResult:
     """Result from clustering service."""
@@ -37,7 +36,6 @@ class ClusteringResult:
     validation_results: Dict[str, Any]
     execution_time: float
     convergence_status: str
-
 
 class ClusteringService:
     """

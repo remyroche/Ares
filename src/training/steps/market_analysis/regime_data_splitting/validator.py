@@ -139,7 +139,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         except Exception:
             pass
         self.logger = system_logger.getChild('Validator.Step4')
-        
+
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
         self.data_quality_framework = DataQualityFramework()
@@ -200,7 +200,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
                 return False
             if 'composite_cluster_id' in df.columns:
                 unique_regimes = df['composite_cluster_id'].nunique()
-                
+
                 # Use existing validation patterns for regime count
                 if unique_regimes < 2:
                     self.logger.warning(f'⚠️ Very few regimes ({unique_regimes}) in {regime_file.name}')

@@ -35,7 +35,7 @@ from .tactician_signals import (
 __all__ = [
     "SignalGenerationPipeline",
     "HMMRegimeOutput",
-    "AnalystBaseOutput", 
+    "AnalystBaseOutput",
     "AnalystMetaOutput",
     "TacticianBaseOutput",
     "TacticianMetaOutput",

@@ -21,7 +21,7 @@ class OnlineLearningManager:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize online learning manager.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -41,7 +41,7 @@ class OnlineLearningManager:
     async def update_model_performance(self, model_id: str, performance: float) -> None:
         """
         Update model performance and recalculate weights.
-        
+
         Args:
             model_id: Identifier for the model
             performance: Performance metric value
@@ -117,7 +117,7 @@ class OnlineLearningManager:
     def reset_model(self, model_id: str) -> None:
         """
         Reset performance history for a specific model.
-        
+
         Args:
             model_id: Identifier for the model to reset
         """
@@ -134,7 +134,7 @@ class OnlineLearningManager:
             "performance_window": self.performance_window,
             "model_stats": {}
         }
-        
+
         for model_id, performances in self.model_performances.items():
             if performances:
                 stats["model_stats"][model_id] = {
@@ -143,5 +143,5 @@ class OnlineLearningManager:
                     "recent_performance": performances[-1] if performances else None,
                     "weight": self.model_weights.get(model_id, 0.0)
                 }
-        
+
         return stats

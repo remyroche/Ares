@@ -32,7 +32,6 @@ from .model_selector_service import ModelSelectorService, ModelSelectionResult, 
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class ModelPerformance:
     """Model performance tracking."""
@@ -50,7 +49,6 @@ class ModelPerformance:
     last_updated: datetime = field(default_factory=datetime.now)
     performance_history: List[float] = field(default_factory=list)
 
-
 @dataclass
 class ModelCacheEntry:
     """Model cache entry."""
@@ -61,65 +59,64 @@ class ModelCacheEntry:
     access_count: int = 0
     performance: Optional[ModelPerformance] = None
 
-
 class TradingModelManager:
     """
     Trading model manager for real-time model selection and management.
-    
+
     This class provides comprehensive model management capabilities including
     model loading, caching, performance tracking, and real-time selection.
     """
-    
+
     def __init__(self, config: Optional[TradingModelConfig] = None):
         """Initialize trading model manager."""
         self.config = config or TradingModelConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Model selector service
         self.model_selector_service = None
-        
+
         # Model cache
         self.model_cache: Dict[str, ModelCacheEntry] = {}
         self.cache_lock = threading.RLock()
-        
+
         # Performance tracking
         self.performance_tracker: Dict[str, ModelPerformance] = {}
         self.performance_lock = threading.RLock()
-        
+
         # Model loading
         self.model_loader = None
         self.loading_threads = ThreadPoolExecutor(max_workers=4)
-        
+
         # Configuration
         self.cache_size_limit = 100
         self.cache_ttl = timedelta(hours=24)
         self.performance_window = 1000
-        
+
         self.logger.info("✅ Trading Model Manager initialized")
-    
+
     def initialize(self) -> bool:
         """Initialize the trading model manager."""
         try:
             self.logger.info("🔧 Initializing trading model manager...")
-            
+
             # Initialize model selector service
             self.model_selector_service = ModelSelectorService(self.config)
             if not self.model_selector_service.initialize():
                 raise RuntimeError("Failed to initialize model selector service")
-            
+
             # Initialize model loader
             self._initialize_model_loader()
-            
+
             # Load existing models if available
             self._load_existing_models()
-            
+
             self.logger.info("✅ Trading model manager initialized successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize trading model manager: {e}")
             return False
-    
+
     def _initialize_model_loader(self):
         """Initialize model loader."""
         try:
@@ -127,11 +124,11 @@ class TradingModelManager:
             # For now, we'll use a placeholder
             self.model_loader = "model_loader_placeholder"
             self.logger.info("✅ Model loader initialized")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize model loader: {e}")
             raise
-    
+
     def _load_existing_models(self):
         """Load existing models from training results."""
         try:
@@ -142,10 +139,10 @@ class TradingModelManager:
                 # This would load actual models from training artifacts
                 # For now, we'll just log the attempt
                 self.logger.info("✅ Existing models loaded")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load existing models: {e}")
-    
+
     def get_models_for_trading(
         self,
         market_data: pd.DataFrame,
@@ -154,29 +151,29 @@ class TradingModelManager:
     ) -> Dict[str, Any]:
         """
         Get models for trading based on current market conditions.
-        
+
         Args:
             market_data: Current market data
             symbol: Trading symbol
             timeframe: Timeframe (5m or 15m)
-            
+
         Returns:
             Dictionary containing selected models and metadata
         """
         try:
             self.logger.info(f"🎯 Getting models for {symbol} ({timeframe})...")
-            
+
             # Get model selection result
             selection_result = self.model_selector_service.select_models_for_trading(
                 market_data=market_data,
                 symbol=symbol,
                 timeframe=timeframe
             )
-            
+
             if not selection_result.selected_models:
                 self.logger.warning("⚠️ No models selected, using fallback")
                 return self._get_fallback_models(symbol, timeframe)
-            
+
             # Load selected models
             loaded_models = {}
             for model_type, model_name in selection_result.selected_models.items():
@@ -192,25 +189,25 @@ class TradingModelManager:
                         }
                     else:
                         self.logger.warning(f"⚠️ Failed to load model {model_name}")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Error loading model {model_name}: {e}")
-            
+
             # Update performance tracking
             self._update_performance_tracking(selection_result)
-            
+
             self.logger.info(f"✅ Loaded {len(loaded_models)} models for trading")
             return loaded_models
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get models for trading: {e}")
             return self._get_fallback_models(symbol, timeframe)
-    
+
     def _load_model(self, model_name: str, model_type: str, timeframe: str) -> Optional[Any]:
         """Load a specific model."""
         try:
             cache_key = f"{model_name}_{model_type}_{timeframe}"
-            
+
             # Check cache first
             with self.cache_lock:
                 if cache_key in self.model_cache:
@@ -219,10 +216,10 @@ class TradingModelManager:
                     entry.access_count += 1
                     self.logger.debug(f"📦 Using cached model: {cache_key}")
                     return entry.model
-            
+
             # Load model (placeholder implementation)
             model = self._load_model_from_storage(model_name, model_type, timeframe)
-            
+
             if model:
                 # Cache the model
                 with self.cache_lock:
@@ -233,19 +230,19 @@ class TradingModelManager:
                         last_used=datetime.now(),
                         access_count=1
                     )
-                    
+
                     # Clean cache if needed
                     self._clean_cache()
-                
+
                 self.logger.debug(f"📥 Loaded model: {cache_key}")
                 return model
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load model {model_name}: {e}")
             return None
-    
+
     def _load_model_from_storage(self, model_name: str, model_type: str, timeframe: str) -> Optional[Any]:
         """Load model from storage (placeholder implementation)."""
         try:
@@ -256,22 +253,22 @@ class TradingModelManager:
                     self.name = name
                     self.model_type = model_type
                     self.timeframe = timeframe
-                
+
                 def predict(self, data):
                     # Placeholder prediction
                     return np.random.randint(0, 2, len(data))
-            
+
             return PlaceholderModel(model_name, model_type, timeframe)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load model from storage: {e}")
             return None
-    
+
     def _get_fallback_models(self, symbol: str, timeframe: str) -> Dict[str, Any]:
         """Get fallback models when selection fails."""
         try:
             fallback_models = {}
-            
+
             # Create fallback models
             for model_type in ['analyst', 'tactician']:
                 fallback_models[model_type] = {
@@ -282,75 +279,75 @@ class TradingModelManager:
                     'confidence': 0.5,
                     'fallback': True
                 }
-            
+
             self.logger.warning("⚠️ Using fallback models")
             return fallback_models
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get fallback models: {e}")
             return {}
-    
+
     def _update_performance_tracking(self, selection_result: ModelSelectionResult):
         """Update performance tracking for selected models."""
         try:
             with self.performance_lock:
                 for model_type, model_name in selection_result.selected_models.items():
                     key = f"{model_name}_{model_type}"
-                    
+
                     if key not in self.performance_tracker:
                         self.performance_tracker[key] = ModelPerformance(
                             model_name=model_name,
                             regime_id=selection_result.regime_id
                         )
-                    
+
                     # Update performance metrics (placeholder)
                     performance = self.performance_tracker[key]
                     performance.regime_id = selection_result.regime_id
                     performance.last_updated = datetime.now()
-                    
+
                     # Add to performance history
                     performance.performance_history.append(selection_result.confidence_score)
                     if len(performance.performance_history) > self.performance_window:
                         performance.performance_history.pop(0)
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to update performance tracking: {e}")
-    
+
     def _clean_cache(self):
         """Clean model cache to prevent memory issues."""
         try:
             with self.cache_lock:
                 if len(self.model_cache) <= self.cache_size_limit:
                     return
-                
+
                 # Remove least recently used models
                 current_time = datetime.now()
                 entries_to_remove = []
-                
+
                 for key, entry in self.model_cache.items():
                     if current_time - entry.last_used > self.cache_ttl:
                         entries_to_remove.append(key)
-                
+
                 # Remove expired entries
                 for key in entries_to_remove:
                     del self.model_cache[key]
-                
+
                 # If still over limit, remove least accessed
                 if len(self.model_cache) > self.cache_size_limit:
                     sorted_entries = sorted(
                         self.model_cache.items(),
                         key=lambda x: x[1].access_count
                     )
-                    
+
                     excess = len(self.model_cache) - self.cache_size_limit
                     for key, _ in sorted_entries[:excess]:
                         del self.model_cache[key]
-                
+
                 self.logger.debug(f"🧹 Cleaned cache: {len(entries_to_remove)} entries removed")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to clean cache: {e}")
-    
+
     def update_model_performance(
         self,
         model_name: str,
@@ -371,19 +368,19 @@ class TradingModelManager:
                     actual_values=actual_values,
                     execution_time=execution_time
                 )
-            
+
             # Update local performance tracking
             with self.performance_lock:
                 key = f"{model_name}_{model_type}"
                 if key in self.performance_tracker:
                     performance = self.performance_tracker[key]
-                    
+
                     # Calculate metrics
                     accuracy = np.mean(predictions == actual_values)
                     precision = np.mean(actual_values[predictions == 1]) if np.any(predictions == 1) else 0.0
                     recall = np.mean(predictions[actual_values == 1]) if np.any(actual_values == 1) else 0.0
                     f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-                    
+
                     # Update performance
                     performance.accuracy = accuracy
                     performance.precision = precision
@@ -392,17 +389,17 @@ class TradingModelManager:
                     performance.execution_time = execution_time
                     performance.sample_count += len(predictions)
                     performance.last_updated = datetime.now()
-                    
+
                     # Add to history
                     performance.performance_history.append(f1_score)
                     if len(performance.performance_history) > self.performance_window:
                         performance.performance_history.pop(0)
-            
+
             self.logger.debug(f"📊 Updated performance for {model_name} ({model_type})")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to update model performance: {e}")
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
         try:
@@ -421,13 +418,13 @@ class TradingModelManager:
                         'last_updated': performance.last_updated.isoformat(),
                         'avg_performance': np.mean(performance.performance_history) if performance.performance_history else 0.0
                     }
-                
+
                 return metrics
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get performance metrics: {e}")
             return {}
-    
+
     def get_cache_status(self) -> Dict[str, Any]:
         """Get model cache status."""
         try:
@@ -438,11 +435,11 @@ class TradingModelManager:
                     'cached_models': list(self.model_cache.keys()),
                     'memory_usage': sum(len(str(entry.model)) for entry in self.model_cache.values())
                 }
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get cache status: {e}")
             return {}
-    
+
     def get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
         try:
@@ -454,48 +451,45 @@ class TradingModelManager:
                 'performance_metrics': self.get_performance_metrics(),
                 'cache_status': self.get_cache_status()
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get system status: {e}")
             return {'error': str(e)}
-    
+
     def shutdown(self):
         """Shutdown the model manager."""
         try:
             self.logger.info("🛑 Shutting down trading model manager...")
-            
+
             # Shutdown loading threads
             if self.loading_threads:
                 self.loading_threads.shutdown(wait=True)
-            
+
             # Clear cache
             with self.cache_lock:
                 self.model_cache.clear()
-            
+
             # Clear performance tracking
             with self.performance_lock:
                 self.performance_tracker.clear()
-            
+
             self.logger.info("✅ Trading model manager shutdown complete")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error during shutdown: {e}")
-
 
 # Global instance for trading system
 _trading_model_manager = None
 
-
 def get_trading_model_manager(config: Optional[TradingModelConfig] = None) -> TradingModelManager:
     """Get or create global trading model manager instance."""
     global _trading_model_manager
-    
+
     if _trading_model_manager is None:
         _trading_model_manager = TradingModelManager(config)
         _trading_model_manager.initialize()
-    
-    return _trading_model_manager
 
+    return _trading_model_manager
 
 def get_models_for_trading(
     market_data: pd.DataFrame,

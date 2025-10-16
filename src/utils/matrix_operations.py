@@ -20,13 +20,12 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class UnifiedMatrixOperations:
     """
     Unified matrix operations wrapper that provides compatibility
     with the existing matrix operations system.
     """
-    
+
     def __init__(self):
         """Initialize the unified matrix operations."""
         if UNIFIED_MATRIX_OPS_AVAILABLE:
@@ -35,15 +34,15 @@ class UnifiedMatrixOperations:
         else:
             self._ops = None
             logger.warning("Unified matrix operations not available, using fallback implementations")
-    
+
     def matrix_multiply(self, a: np.ndarray, b: np.ndarray) -> np.ndarray:
         """
         Perform matrix multiplication with VectorBT optimization.
-        
+
         Args:
             a: First matrix
             b: Second matrix
-            
+
         Returns:
             Result of matrix multiplication
         """
@@ -53,7 +52,7 @@ class UnifiedMatrixOperations:
             return vectorbt_matrix_multiply(a, b)
         except ImportError:
             pass
-        
+
         if self._ops and hasattr(self._ops, 'matrix_multiply'):
             return self._ops.matrix_multiply(a, b)
         else:
@@ -61,14 +60,14 @@ class UnifiedMatrixOperations:
             a = np.ascontiguousarray(a)
             b = np.ascontiguousarray(b)
             return np.dot(a, b)
-    
+
     def matrix_inverse(self, matrix: np.ndarray) -> np.ndarray:
         """
         Compute matrix inverse with stability checks.
-        
+
         Args:
             matrix: Input matrix
-            
+
         Returns:
             Inverse of the matrix
         """
@@ -82,15 +81,15 @@ class UnifiedMatrixOperations:
                 # Use pseudo-inverse for singular matrices
                 logger.warning("Matrix is singular, using pseudo-inverse")
                 return np.linalg.pinv(matrix)
-    
+
     def matrix_decomposition(self, matrix: np.ndarray, method: str = 'svd') -> tuple:
         """
         Perform matrix decomposition.
-        
+
         Args:
             matrix: Input matrix
             method: Decomposition method ('svd', 'cholesky', 'eigen')
-            
+
         Returns:
             Decomposition results
         """
@@ -106,15 +105,15 @@ class UnifiedMatrixOperations:
                 return np.linalg.eig(matrix)
             else:
                 raise ValueError(f"Unknown decomposition method: {method}")
-    
+
     def optimize_array(self, array: np.ndarray, dtype: Optional[np.dtype] = None) -> np.ndarray:
         """
         Optimize array for memory and performance.
-        
+
         Args:
             array: Input array
             dtype: Target data type
-            
+
         Returns:
             Optimized array
         """
@@ -124,21 +123,21 @@ class UnifiedMatrixOperations:
             # Fallback optimization
             if dtype is not None:
                 array = array.astype(dtype)
-            
+
             # Ensure C-contiguous for better performance
             if not array.flags['C_CONTIGUOUS']:
                 array = np.ascontiguousarray(array)
-            
+
             return array
-    
+
     def create_memory_efficient_array(self, data: Any, dtype: np.dtype = np.float32) -> np.ndarray:
         """
         Create a memory-efficient array.
-        
+
         Args:
             data: Input data
             dtype: Data type for the array
-            
+
         Returns:
             Memory-efficient array
         """
@@ -148,15 +147,15 @@ class UnifiedMatrixOperations:
             # Fallback implementation
             array = np.asarray(data, dtype=dtype)
             return np.ascontiguousarray(array)
-    
+
     def compute_covariance(self, data: np.ndarray, regularization: float = 1e-6) -> np.ndarray:
         """
         Compute covariance matrix with regularization.
-        
+
         Args:
             data: Input data matrix
             regularization: Regularization parameter
-            
+
         Returns:
             Regularized covariance matrix
         """
@@ -168,15 +167,15 @@ class UnifiedMatrixOperations:
             # Add regularization to diagonal
             cov += regularization * np.eye(cov.shape[0])
             return cov
-    
+
     def calculate_pairwise_similarities(self, feature_vectors: np.ndarray, method: str = 'cosine_with_cv_filtering') -> np.ndarray:
         """
         Calculate pairwise similarities between feature vectors.
-        
+
         Args:
             feature_vectors: Matrix of feature vectors (n_samples, n_features)
             method: Similarity calculation method
-            
+
         Returns:
             Similarity matrix (n_samples, n_samples)
         """
@@ -185,22 +184,22 @@ class UnifiedMatrixOperations:
         else:
             # Fallback implementation
             logger.info(f"🔄 Using fallback pairwise similarity calculation with method: {method}")
-            
+
             if method == 'cosine_with_cv_filtering' or method == 'cosine':
                 # Normalize feature vectors for cosine similarity
                 norms = np.linalg.norm(feature_vectors, axis=1, keepdims=True)
                 norms[norms == 0] = 1  # Avoid division by zero
                 normalized_vectors = feature_vectors / norms
-                
+
                 # Calculate cosine similarity matrix
                 similarity_matrix = np.dot(normalized_vectors, normalized_vectors.T)
-                
+
                 # Ensure diagonal is 1.0 and values are in [0, 1]
                 np.fill_diagonal(similarity_matrix, 1.0)
                 similarity_matrix = np.clip(similarity_matrix, 0.0, 1.0)
-                
+
                 return similarity_matrix
-            
+
             elif method == 'euclidean':
                 # Calculate Euclidean distance and convert to similarity
                 from scipy.spatial.distance import pdist, squareform
@@ -212,20 +211,20 @@ class UnifiedMatrixOperations:
                 else:
                     similarity_matrix = np.ones_like(distances)
                 return similarity_matrix
-            
+
             else:
                 logger.warning(f"Unknown similarity method: {method}, using cosine")
                 return self.calculate_pairwise_similarities(feature_vectors, 'cosine')
-    
+
     def apply_cv_filtering(self, similarity_matrix: np.ndarray, cv_values: np.ndarray, max_cv_difference: float = 0.5) -> np.ndarray:
         """
         Apply CV (coefficient of variation) filtering to similarity matrix.
-        
+
         Args:
             similarity_matrix: Input similarity matrix
             cv_values: CV values for each sample
             max_cv_difference: Maximum allowed CV difference for similarity
-            
+
         Returns:
             Filtered similarity matrix
         """
@@ -234,10 +233,10 @@ class UnifiedMatrixOperations:
         else:
             # Fallback implementation
             logger.info(f"🔄 Using fallback CV filtering with max_cv_difference: {max_cv_difference}")
-            
+
             filtered_matrix = similarity_matrix.copy()
             n_samples = len(cv_values)
-            
+
             for i in range(n_samples):
                 for j in range(n_samples):
                     if i != j:  # Don't modify diagonal
@@ -247,16 +246,16 @@ class UnifiedMatrixOperations:
                             reduction_factor = min(cv_diff / max_cv_difference, 5.0)  # Cap at 5x reduction
                             filtered_matrix[i, j] *= (1.0 / reduction_factor)
                             filtered_matrix[i, j] = max(filtered_matrix[i, j], 0.01)  # Keep minimum similarity
-            
+
             return filtered_matrix
-    
+
     def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize DataFrame memory usage and performance.
-        
+
         Args:
             df: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame
         """
@@ -265,7 +264,7 @@ class UnifiedMatrixOperations:
         else:
             # FIXED: Enhanced DataFrame optimization
             optimized_df = df.copy()
-            
+
             # Optimize dtypes
             for col in optimized_df.columns:
                 if optimized_df[col].dtype == 'object':
@@ -285,13 +284,12 @@ class UnifiedMatrixOperations:
                         optimized_df[col] = optimized_df[col].astype(np.int16)
                     elif optimized_df[col].min() >= np.iinfo(np.int8).min and optimized_df[col].max() <= np.iinfo(np.int8).max:
                         optimized_df[col] = optimized_df[col].astype(np.int8)
-            
+
             return optimized_df
-    
+
     def is_available(self) -> bool:
         """Check if unified matrix operations are available."""
         return UNIFIED_MATRIX_OPS_AVAILABLE and self._ops is not None
-
 
 # Create a default instance for backward compatibility
 default_matrix_ops = UnifiedMatrixOperations()

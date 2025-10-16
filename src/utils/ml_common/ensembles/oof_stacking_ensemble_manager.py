@@ -50,7 +50,6 @@ from src.core.errors import (
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class OOFStackingEnsembleConfig:
     """Configuration for OOF stacking ensemble manager."""
@@ -112,7 +111,6 @@ class OOFStackingEnsembleConfig:
     oof_validation_metric: str = "accuracy"
     oof_aggregation_method: str = "mean"  # mean, median, weighted
 
-
 @dataclass
 class OOFStackingEnsembleResult:
     """Result from OOF stacking ensemble operations."""
@@ -148,7 +146,6 @@ class OOFStackingEnsembleResult:
     execution_time: float = 0.0
     memory_usage_mb: float = 0.0
     optimization_used: List[str] = field(default_factory=list)
-
 
 class OOFStackingEnsembleManager:
     """Comprehensive OOF stacking ensemble manager with temporal validation."""
@@ -852,66 +849,66 @@ class OOFStackingEnsembleManager:
     def get_oof_scores(self) -> Dict[str, float]:
         """Get OOF scores for all outputs."""
         return self.oof_scores
-    
+
     def get_confidence_intervals(self, confidence_level: float = 0.95) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
         """Get confidence intervals for OOF predictions using bootstrap."""
         try:
             from scipy import stats
-            
+
             confidence_intervals = {}
-            
+
             for output_name, oof_preds in self.oof_predictions.items():
                 if len(oof_preds) == 0:
                     continue
-                
+
                 # Bootstrap confidence intervals
                 n_bootstrap = 1000
                 bootstrap_samples = []
-                
+
                 for _ in range(n_bootstrap):
                     # Bootstrap sample
                     bootstrap_indices = np.random.choice(len(oof_preds), size=len(oof_preds), replace=True)
                     bootstrap_sample = oof_preds[bootstrap_indices]
                     bootstrap_samples.append(np.mean(bootstrap_sample))
-                
+
                 # Calculate confidence intervals
                 alpha = 1 - confidence_level
                 lower_percentile = (alpha / 2) * 100
                 upper_percentile = (1 - alpha / 2) * 100
-                
+
                 lower_bound = np.percentile(bootstrap_samples, lower_percentile)
                 upper_bound = np.percentile(bootstrap_samples, upper_percentile)
-                
+
                 confidence_intervals[output_name] = (lower_bound, upper_bound)
-            
+
             return confidence_intervals
-            
+
         except Exception as e:
             self.logger.warning(f"Confidence interval calculation failed: {e}")
             return {}
-    
+
     def get_ensemble_diversity_metrics(self) -> Dict[str, float]:
         """Calculate ensemble diversity metrics."""
         try:
             diversity_metrics = {}
-            
+
             for output_name, oof_preds in self.oof_predictions.items():
                 if len(oof_preds) == 0:
                     continue
-                
+
                 # Calculate prediction variance as diversity measure
                 prediction_variance = np.var(oof_preds)
                 diversity_metrics[f"{output_name}_variance"] = float(prediction_variance)
-                
+
                 # Calculate coefficient of variation
                 if np.mean(oof_preds) != 0:
                     cv = np.std(oof_preds) / np.abs(np.mean(oof_preds))
                     diversity_metrics[f"{output_name}_cv"] = float(cv)
                 else:
                     diversity_metrics[f"{output_name}_cv"] = 0.0
-            
+
             return diversity_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"Diversity metrics calculation failed: {e}")
             return {}

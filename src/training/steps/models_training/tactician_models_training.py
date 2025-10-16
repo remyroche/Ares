@@ -157,7 +157,6 @@ except ImportError as e:
     print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
-
 class TacticianModelType(Enum):
     """Tactician model types."""
     # Updated model types as requested
@@ -172,7 +171,6 @@ class TacticianModelType(Enum):
     ELASTIC_NET_CV = "ELASTIC_NET_CV"
     NAS = "NAS"
     TAS = "TAS"
-
 
 @dataclass
 class TacticianModelsTrainingConfig:
@@ -239,7 +237,6 @@ class TacticianModelsTrainingConfig:
 
             self.model_types = normalized_types
 
-
 @dataclass
 class TacticianModelsTrainingResult:
     """Result of Tactician models training."""
@@ -257,7 +254,6 @@ class TacticianModelsTrainingResult:
     # Status
     training_completed: bool = False
     error: Optional[str] = None
-
 
 class TacticianModelsTrainingStep:
     """
@@ -601,7 +597,7 @@ class TacticianModelsTrainingStep:
             # Use VectorBT-optimized cross-validation if available
             if UNIFIED_VECTORIZATION_AVAILABLE and self.vectorization_manager is not None:
                 tprint_debug("🚀 Using VectorBT-optimized cross-validation for OOF predictions")
-                
+
                 # Create operation configuration for cross-validation
                 config = OperationConfig(
                     operation_type=OperationType.CROSS_VALIDATION,
@@ -609,7 +605,7 @@ class TacticianModelsTrainingStep:
                     data_dimensions=X.shape,
                     memory_budget_mb=self.config.memory_limit_gb * 1024
                 )
-                
+
                 # Prepare data for VectorBT optimization
                 data = {
                     'X': X,
@@ -620,7 +616,7 @@ class TacticianModelsTrainingStep:
                     'sample_weight': sample_weight,
                     'prediction_fn': prediction_fn
                 }
-                
+
                 # Use VectorBT-optimized cross-validation
                 cv_result = self.vectorization_manager.optimize_operation(
                     OperationType.CROSS_VALIDATION,
@@ -628,7 +624,7 @@ class TacticianModelsTrainingStep:
                     config,
                     prefer_vectorbt=True
                 )
-                
+
                 # Extract OOF predictions from VectorBT result
                 if hasattr(cv_result.result, 'oof_predictions'):
                     oof_predictions = cv_result.result.oof_predictions
@@ -646,7 +642,7 @@ class TacticianModelsTrainingStep:
                 return self._generate_model_oof_predictions_fallback(
                     model_builder, X, y, sample_weight, n_splits, prediction_fn
                 )
-                
+
         except Exception as e:
             tprint_warning(f"⚠️ Failed to generate VectorBT-optimized OOF predictions: {e}, using fallback")
             return self._generate_model_oof_predictions_fallback(
@@ -1458,24 +1454,24 @@ class TacticianModelsTrainingStep:
 
         return metrics
 
-    def _optimized_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
+    def _optimized_rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                                    operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
         Perform optimized rolling operation using VectorBT Rolling Optimizer.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             operation: Operation to perform ('mean', 'std', 'var', 'min', 'max', 'sum', etc.)
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the rolling operation
         """
         if self.vectorbt_rolling_optimizer is not None:
             try:
                 tprint_debug(f"🔄 Using VectorBT Rolling Optimizer for {operation} (window={window})")
-                
+
                 if operation == 'mean':
                     return self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
@@ -1499,7 +1495,7 @@ class TacticianModelsTrainingStep:
                     return self.vectorbt_rolling_optimizer.rolling_cov(data, other, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported VectorBT rolling operation: {operation}")
-                    
+
             except Exception as e:
                 tprint_warning(f"⚠️ VectorBT Rolling Optimizer failed for {operation}: {e}, using fallback")
                 return self._fallback_rolling_operation(data, operation, window, **kwargs)
@@ -1507,20 +1503,20 @@ class TacticianModelsTrainingStep:
             tprint_warning(f"⚠️ VectorBT Rolling Optimizer not available, using fallback for {operation}")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
 
-    def _optimized_batch_rolling_operations(self, data: Union[pd.Series, pd.DataFrame], 
+    def _optimized_batch_rolling_operations(self, data: Union[pd.Series, pd.DataFrame],
                                           operations: List[str], window: int, **kwargs) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """
         Perform multiple rolling operations in a single optimized batch.
-        
+
         This provides 3-5x speedup by processing multiple rolling operations
         simultaneously instead of sequentially.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             operations: List of operations to perform
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Dictionary mapping operation names to results
         """
@@ -1535,7 +1531,7 @@ class TacticianModelsTrainingStep:
             tprint_warning("⚠️ VectorBT optimizer not available, using sequential fallback")
             return self._sequential_batch_fallback(data, operations, window, **kwargs)
 
-    def _sequential_batch_fallback(self, data: Union[pd.Series, pd.DataFrame], operations: List[str], 
+    def _sequential_batch_fallback(self, data: Union[pd.Series, pd.DataFrame], operations: List[str],
                                  window: int, **kwargs) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """Sequential fallback for batch rolling operations."""
         results = {}
@@ -1551,23 +1547,23 @@ class TacticianModelsTrainingStep:
                     results[operation] = pd.DataFrame(index=data.index, columns=data.columns, dtype=float)
         return results
 
-    def _fallback_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
+    def _fallback_rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                                   operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
         Fallback rolling operation using pandas.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             operation: Operation to perform
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the rolling operation
         """
         try:
             rolling_obj = data.rolling(window=window, **kwargs)
-            
+
             if operation == 'mean':
                 return rolling_obj.mean()
             elif operation == 'std':
@@ -1591,7 +1587,7 @@ class TacticianModelsTrainingStep:
                 return rolling_obj.cov(other)
             else:
                 raise ValueError(f"Unsupported fallback rolling operation: {operation}")
-                
+
         except Exception as e:
             tprint_error(f"❌ Fallback rolling operation failed for {operation}: {e}")
             raise
@@ -1599,19 +1595,19 @@ class TacticianModelsTrainingStep:
     def _optimize_matrix_operations(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Optimize matrix operations using Unified Vectorization Manager.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Optimized operation result
         """
         if self.vectorization_manager is not None:
             try:
                 tprint_debug(f"🔄 Using Unified Vectorization Manager for {operation_type}")
-                
+
                 # Create operation configuration
                 config = OperationConfig(
                     operation_type=OperationType.MATRIX_MULTIPLICATION if operation_type == 'matrix_mult' else OperationType.STATISTICAL_COMPUTATION,
@@ -1619,20 +1615,20 @@ class TacticianModelsTrainingStep:
                     data_dimensions=X.shape,
                     memory_budget_mb=self.config.memory_limit_gb * 1024
                 )
-                
+
                 # Prepare data for optimization
                 data = {'matrix': X, **kwargs}
-                
+
                 # Use VectorBT optimization
                 result = self.vectorization_manager.optimize_operation(
                     config.operation_type,
                     data,
                     config
                 )
-                
+
                 tprint_success(f"✅ Matrix operation {operation_type} optimized (performance gain: {result.performance_gain:.2f}x)")
                 return result.result
-                
+
             except Exception as e:
                 tprint_warning(f"⚠️ Unified Vectorization Manager failed for {operation_type}: {e}, using fallback")
                 return self._fallback_matrix_operation(X, operation_type, **kwargs)
@@ -1643,12 +1639,12 @@ class TacticianModelsTrainingStep:
     def _fallback_matrix_operation(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Fallback matrix operation using standard numpy/pandas.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Operation result
         """
@@ -1665,7 +1661,7 @@ class TacticianModelsTrainingStep:
                 }
             else:
                 raise ValueError(f"Unsupported matrix operation: {operation_type}")
-                
+
         except Exception as e:
             tprint_error(f"❌ Fallback matrix operation failed for {operation_type}: {e}")
             raise
@@ -1998,7 +1994,7 @@ class TacticianModelsTrainingStep:
 
             # Add Analyst OOF outputs as features
             analyst_features = await self._add_analyst_oof_features(enhanced_data, **kwargs)
-            
+
             # Calculate sample weights based on Analyst confidence
             sample_weights = await self._calculate_analyst_weights(enhanced_data, **kwargs)
 
@@ -2043,16 +2039,16 @@ class TacticianModelsTrainingStep:
             symbol = kwargs.get('symbol', 'BTCUSDT')
             exchange = kwargs.get('exchange', 'binance')
             timeframe = kwargs.get('timeframe', '5m')
-            
+
             tprint_debug(f"🔧 Adding Analyst OOF features for {symbol} {exchange} {timeframe}")
 
             analyst_features = []
-            
+
             # Look for existing Analyst OOF outputs in the data
             p_trade_col = None
             u_trade_col = None
             q_trade_col = None
-            
+
             for col in training_data.columns:
                 col_lower = col.lower()
                 if 'p_trade' in col_lower or 'analyst_probability' in col_lower:
@@ -2092,12 +2088,12 @@ class TacticianModelsTrainingStep:
                     p_col = analyst_features[0] if 'p_trade' in analyst_features[0].lower() else None
                     u_col = analyst_features[1] if 'u_trade' in analyst_features[1].lower() else None
                     q_col = analyst_features[2] if len(analyst_features) > 2 and 'q_trade' in analyst_features[2].lower() else None
-                    
+
                     if p_col and u_col:
                         # Expected value feature
                         training_data['analyst_expected_value'] = training_data[p_col] * training_data[u_col]
                         analyst_features.append('analyst_expected_value')
-                    
+
                     if p_col and q_col:
                         # Confidence-weighted probability
                         training_data['analyst_weighted_prob'] = training_data[p_col] * training_data[q_col]
@@ -2127,26 +2123,26 @@ class TacticianModelsTrainingStep:
         """
         try:
             w_min = kwargs.get('w_min', 0.2)  # Minimum weight parameter
-            
+
             # Find p_trade column
             p_trade_col = None
             for col in training_data.columns:
                 if 'p_trade' in col.lower() or 'analyst_probability' in col.lower():
                     p_trade_col = col
                     break
-            
+
             if p_trade_col is None:
                 tprint_warning("⚠️ No p_trade column found for weight calculation")
                 return None
-            
+
             # Calculate weights: w = w_min + (1-w_min)*p_trade
             p_trade_values = training_data[p_trade_col].fillna(0.0)
             sample_weights = w_min + (1 - w_min) * p_trade_values
-            
+
             # Ensure weights are positive and finite
             sample_weights = np.clip(sample_weights, 0.01, 1.0)
             sample_weights = np.where(np.isfinite(sample_weights), sample_weights, w_min)
-            
+
             tprint_success(f"✅ Calculated sample weights: min={sample_weights.min():.3f}, max={sample_weights.max():.3f}, mean={sample_weights.mean():.3f}")
             return sample_weights.values
 
@@ -2177,18 +2173,18 @@ class TacticianModelsTrainingStep:
             # Look for Analyst ensemble results
             results_dir = Path("outcomes/model_training")
             pattern = f"analyst_ensemble_training_report_{symbol}_{exchange}_{timeframe}_*.json"
-            
+
             matching_files = list(results_dir.glob(pattern))
             if not matching_files:
                 tprint_warning(f"⚠️ No Analyst ensemble results found for {symbol} {exchange} {timeframe}")
                 return None
-            
+
             # Use the most recent file
             latest_file = max(matching_files, key=lambda x: x.stat().st_mtime)
-            
+
             with open(latest_file, 'r') as f:
                 results = json.load(f)
-            
+
             # Extract OOF outputs from results
             oof_data = {}
             if 'oof_predictions' in results:
@@ -2199,7 +2195,7 @@ class TacticianModelsTrainingStep:
                     oof_data['u_trade'] = oof_preds['u_trade']
                 if 'q_trade' in oof_preds:
                     oof_data['q_trade'] = oof_preds['q_trade']
-            
+
             if oof_data:
                 return pd.DataFrame(oof_data)
             else:
@@ -2724,7 +2720,6 @@ class TacticianModelsTrainingStep:
             tprint_error(f"❌ T4: TFT-Small training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
-
     async def _train_lgbm_gru(
         self,
         X: np.ndarray,
@@ -2740,7 +2735,7 @@ class TacticianModelsTrainingStep:
             # Create LGBM + GRU model
             config = LGBMGRUConfig()
             model = create_lgbm_gru_embedding(config)
-            
+
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
@@ -2825,7 +2820,7 @@ class TacticianModelsTrainingStep:
 
             config = CausalTCNConfig()
             model = create_causal_dilated_tcn(config)
-            
+
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
@@ -2992,7 +2987,7 @@ class TacticianModelsTrainingStep:
         regime_probabilities_info = _lookup('regime_probabilities_info')
         if regime_probabilities_info and regime_probabilities_info.get('has_probabilistic_outputs'):
             tprint_info("📊 Using regime probabilities for Tactician models")
-            
+
             # Add regime probability features
             regime_probabilities = regime_probabilities_info.get('regime_probabilities')
             if regime_probabilities is not None and len(regime_probabilities) == n_samples:
@@ -3040,7 +3035,6 @@ class TacticianModelsTrainingStep:
                 raise ValueError("Regime feature length mismatch while assembling gating tensor")
         return arr
 
-
 # Convenience function for external usage
 async def execute_tactician_models_training(
     training_data: pd.DataFrame,
@@ -3068,7 +3062,6 @@ async def execute_tactician_models_training(
     return await trainer.train_tactician_models(
         training_data, feature_columns, target_columns, sample_weight, **kwargs
     )
-
 
 # Apply negative learning patches
 if NEGATIVE_LEARNING_AVAILABLE:

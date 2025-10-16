@@ -93,22 +93,22 @@ class EnhancedEnsembleConfig:
     """Enhanced configuration for ensemble advanced selector."""
     # Adaptive weighting
     adaptive_weighting: AdaptiveWeightingConfig = field(default_factory=AdaptiveWeightingConfig)
-    
+
     # Confidence scoring
     confidence_scoring: ConfidenceScoringConfig = field(default_factory=ConfidenceScoringConfig)
-    
+
     # Native validation
     native_validation: NativeValidationConfig = field(default_factory=NativeValidationConfig)
-    
+
     # Dynamic feature selection
     dynamic_selection: DynamicFeatureSelectionConfig = field(default_factory=DynamicFeatureSelectionConfig)
-    
+
     # Elbow method
     elbow_method: ElbowMethodConfig = field(default_factory=ElbowMethodConfig)
-    
+
     # Statistical thresholding
     statistical_thresholding: StatisticalThresholdingConfig = field(default_factory=StatisticalThresholdingConfig)
-    
+
     # General settings
     random_state: int = 42
     n_jobs: int = -1
@@ -121,21 +121,21 @@ class EnhancedAdvancedConfig:
     """Enhanced configuration for advanced feature selector."""
     # Ensemble configuration
     ensemble_config: EnhancedEnsembleConfig = field(default_factory=EnhancedEnsembleConfig)
-    
+
     # Method selection
     enable_auto_method_selection: bool = True
     method_selection_metrics: List[str] = field(default_factory=lambda: ['r2', 'mse', 'stability'])
-    
+
     # Performance monitoring
     enable_performance_monitoring: bool = True
     monitoring_interval: int = 10  # Monitor every N selections
     performance_history_size: int = 100
-    
+
     # Error handling
     enable_error_recovery: bool = True
     max_retry_attempts: int = 3
     retry_delay: float = 1.0
-    
+
     # General settings
     random_state: int = 42
     n_jobs: int = -1

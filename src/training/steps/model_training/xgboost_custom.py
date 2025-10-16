@@ -11,11 +11,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class XGBoostCustom(BaseEstimator, RegressorMixin):
     """
     Custom XGBoost implementation optimized for Tactician entry timing optimization.
-    
+
     Features:
     - Optimized for financial time series data
     - Enhanced feature importance tracking
@@ -23,7 +22,7 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
     - Confidence score integration
     - Memory optimization for large datasets
     """
-    
+
     def __init__(self,
                  n_estimators: int = 1000,
                  learning_rate: float = 0.05,
@@ -46,7 +45,7 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
                  **kwargs):
         """
         Initialize custom XGBoost for entry timing optimization.
-        
+
         Args:
             n_estimators: Number of boosting rounds
             learning_rate: Learning rate for boosting
@@ -86,20 +85,20 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
         self.enable_cyclic_noise = enable_cyclic_noise
         self.cyclic_noise_scale = cyclic_noise_scale
         self.cyclic_noise_cycle = cyclic_noise_cycle
-        
+
         # Additional parameters
         self.kwargs = kwargs
-        
+
         # Model components
         self.model_ = None
         self.feature_importance_ = None
         self.feature_names_ = None
         self.is_fitted_ = False
-        
+
         # Entry timing specific attributes
         self.entry_timing_metrics_ = {}
         self.confidence_scores_ = None
-        
+
     def _create_xgboost_model(self) -> XGBRegressor:
         """Create XGBoost model with optimized parameters for entry timing."""
         params = {
@@ -119,35 +118,35 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
             'tree_method': self.tree_method,
             'verbosity': 0,  # Suppress XGBoost output
         }
-        
+
         # Add additional parameters
         params.update(self.kwargs)
-        
+
         return XGBRegressor(**params)
-    
-    def fit(self, X: np.ndarray, y: np.ndarray, 
+
+    def fit(self, X: np.ndarray, y: np.ndarray,
             feature_names: Optional[List[str]] = None,
             eval_set: Optional[Tuple[np.ndarray, np.ndarray]] = None,
             **fit_params) -> 'XGBoostCustom':
         """
         Fit the custom XGBoost model for entry timing optimization.
-        
+
         Args:
             X: Training features
             y: Training targets (entry timing values)
             feature_names: Names of features
             eval_set: Validation set for early stopping
             **fit_params: Additional fit parameters
-            
+
         Returns:
             Self
         """
         try:
             logger.info(f"🚀 Training XGBoost_custom with {X.shape[0]} samples, {X.shape[1]} features")
-            
+
             # Store feature names
             self.feature_names_ = feature_names
-            
+
             # Create model
             self.model_ = self._create_xgboost_model()
 
@@ -184,80 +183,80 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
 
             # Fit model
             self.model_.fit(X_train, y, **fit_kwargs)
-            
+
             # Extract feature importance
             self._extract_feature_importance()
-            
+
             # Calculate entry timing specific metrics
             self._calculate_entry_timing_metrics(X, y)
-            
+
             self.is_fitted_ = True
             logger.info(f"✅ XGBoost_custom training completed")
             logger.info(f"   Best iteration: {self.model_.best_iteration if hasattr(self.model_, 'best_iteration') else self.n_estimators}")
             logger.info(f"   Feature importance top 5: {self._get_top_features(5)}")
-            
+
             return self
-            
+
         except Exception as e:
             logger.error(f"❌ XGBoost_custom training failed: {e}")
             raise
-    
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict entry timing values.
-        
+
         Args:
             X: Features to predict
-            
+
         Returns:
             Predicted entry timing values
         """
         if not self.is_fitted_:
             raise ValueError("Model must be fitted before making predictions")
-        
+
         return self.model_.predict(X)
-    
-    def predict_with_confidence(self, X: np.ndarray, 
+
+    def predict_with_confidence(self, X: np.ndarray,
                                confidence_threshold: float = 0.8) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict entry timing with confidence scores.
-        
+
         Args:
             X: Features to predict
             confidence_threshold: Minimum confidence threshold
-            
+
         Returns:
             Tuple of (predictions, confidence_scores)
         """
         predictions = self.predict(X)
-        
+
         # Calculate confidence based on prediction uncertainty
         # Use leaf indices to estimate prediction confidence
         leaf_indices = self.model_.apply(X)
-        
+
         # Calculate confidence as inverse of prediction variance across trees
         # (simplified approach - in practice, you might use more sophisticated methods)
         confidence_scores = np.ones(len(predictions)) * 0.8  # Default confidence
-        
+
         # Adjust confidence based on feature importance and prediction magnitude
         if self.feature_importance_ is not None:
             # Higher confidence for predictions using important features
-            feature_weights = np.array([self.feature_importance_.get(f"f{i}", 0.0) 
+            feature_weights = np.array([self.feature_importance_.get(f"f{i}", 0.0)
                                       for i in range(X.shape[1])])
             weighted_features = np.sum(X * feature_weights, axis=1)
             confidence_adjustment = np.clip(weighted_features / np.max(weighted_features), 0.5, 1.0)
             confidence_scores = confidence_scores * confidence_adjustment
-        
+
         # Ensure confidence is between 0 and 1
         confidence_scores = np.clip(confidence_scores, 0.0, 1.0)
-        
+
         return predictions, confidence_scores
-    
+
     def _extract_feature_importance(self):
         """Extract and store feature importance."""
         if self.model_ is not None:
             importance_dict = self.model_.get_booster().get_score(importance_type='weight')
-            
+
             # Convert to feature names if available
             if self.feature_names_ is not None:
                 self.feature_importance_ = {
@@ -266,12 +265,12 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
                 }
             else:
                 self.feature_importance_ = importance_dict
-    
+
     def _calculate_entry_timing_metrics(self, X: np.ndarray, y: np.ndarray):
         """Calculate entry timing specific metrics."""
         try:
             predictions = self.predict(X)
-            
+
             # Calculate timing accuracy
             timing_error = np.abs(predictions - y)
             self.entry_timing_metrics_ = {
@@ -283,28 +282,28 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
                 'timing_accuracy_within_0.2%': np.mean(timing_error <= 0.002),
                 'timing_accuracy_within_0.5%': np.mean(timing_error <= 0.005),
             }
-            
+
         except Exception as e:
             logger.warning(f"⚠️ Failed to calculate entry timing metrics: {e}")
             self.entry_timing_metrics_ = {}
-    
+
     def _get_top_features(self, n: int = 10) -> List[Tuple[str, float]]:
         """Get top N most important features."""
         if self.feature_importance_ is None:
             return []
-        
-        sorted_features = sorted(self.feature_importance_.items(), 
+
+        sorted_features = sorted(self.feature_importance_.items(),
                                key=lambda x: x[1], reverse=True)
         return sorted_features[:n]
-    
+
     def get_feature_importance(self) -> Dict[str, float]:
         """Get feature importance dictionary."""
         return self.feature_importance_ or {}
-    
+
     def get_entry_timing_metrics(self) -> Dict[str, float]:
         """Get entry timing specific metrics."""
         return self.entry_timing_metrics_
-    
+
     def get_params(self, deep: bool = True) -> Dict[str, Any]:
         """Get model parameters."""
         params = {
@@ -324,12 +323,12 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
             'enable_categorical': self.enable_categorical,
             'tree_method': self.tree_method,
         }
-        
+
         if deep:
             params.update(self.kwargs)
-        
+
         return params
-    
+
     def set_params(self, **params) -> 'XGBoostCustom':
         """Set model parameters."""
         for key, value in params.items():
@@ -339,14 +338,13 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
                 self.kwargs[key] = value
         return self
 
-
 def create_xgboost_custom_model(params: Dict[str, Any]) -> XGBoostCustom:
     """
     Create XGBoost_custom model with given parameters.
-    
+
     Args:
         params: Model parameters
-        
+
     Returns:
         XGBoost_custom model instance
     """

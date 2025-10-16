@@ -18,7 +18,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 def init_sentry() -> None:
     """Initialize Sentry if SENTRY_DSN is provided.
 
@@ -69,7 +68,6 @@ def init_sentry() -> None:
     except Exception as exc:  # pragma: no cover
         tprint(failed(f"Failed to initialize Sentry: {exc}"))
 
-
 def init_otlp_logging() -> None:
     """Initialize OpenTelemetry logging exporter if OTLP endpoint is provided."""
     endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -93,7 +91,6 @@ def init_otlp_logging() -> None:
         logger.info("OpenTelemetry logging exporter initialized")
     except Exception:  # pragma: no cover
         tprint(failed("Failed to initialize OTLP logging: {exc}"))
-
 
 def init_observability(_: dict[str, Any] | None = None) -> None:
     """Initialize production observability hooks: Sentry and OTLP if configured."""

@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 """Monitoring Module."
 
 This module provides system-wide monitoring capabilities for the trading system,

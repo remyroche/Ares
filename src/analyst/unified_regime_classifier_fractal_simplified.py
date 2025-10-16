@@ -48,17 +48,17 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class UnifiedRegimeClassifierFractal:
     """
     Simplified Fractal Location Classifier
-    
+
     Focuses on two key aspects:
     1. Distance from nearest S/R levels (normalized by ATR or percentage)
     2. Strength of those S/R levels (based on touches, volume, multi-timeframe confirmation)
-    
+
     The fractal analysis aggregates S/R information across timeframes to provide
     robust distance and strength metrics.
     """
@@ -101,7 +101,7 @@ class UnifiedRegimeClassifierFractal:
     async def classify_location(self, features_df: pd.DataFrame) -> Dict[str, Any]:
         """
         Classify current price location based on distance and strength of S/R levels.
-        
+
         Returns:
             Dict containing:
             - support_distance: Normalized distance to nearest support (positive = above support)
@@ -285,7 +285,7 @@ class UnifiedRegimeClassifierFractal:
     def get_location_features(self, classification: Dict[str, Any]) -> pd.Series:
         """
         Convert location classification to features for ML models.
-        
+
         Returns continuous features based on distance and strength.
         """
         location_features = {'support_distance': classification.get('support_distance', 1.0), 'resistance_distance': classification.get('resistance_distance', 1.0), 'support_strength': classification.get('support_strength', 0.0), 'resistance_strength': classification.get('resistance_strength', 0.0), 'combined_location_score': classification.get('combined_location_score', 0.0), 'location_quality': classification.get('location_quality', 0.0), 'support_touches': classification.get('support_details', {}).get('touches', 0) if classification.get('support_details') else 0, 'resistance_touches': classification.get('resistance_details', {}).get('touches', 0) if classification.get('resistance_details') else 0, 'support_timeframes': classification.get('support_details', {}).get('timeframe_count', 0) if classification.get('support_details') else 0, 'resistance_timeframes': classification.get('resistance_details', {}).get('timeframe_count', 0) if classification.get('resistance_details') else 0, 'distance_ratio': classification.get('support_distance', 1.0) / (classification.get('resistance_distance', 1.0) + 0.001), 'strength_ratio': classification.get('support_strength', 0.0) / (classification.get('resistance_strength', 0.0) + 0.001)}
@@ -293,16 +293,16 @@ class UnifiedRegimeClassifierFractal:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -321,8 +321,8 @@ class UnifiedRegimeClassifierFractal:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -339,13 +339,13 @@ class UnifiedRegimeClassifierFractal:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

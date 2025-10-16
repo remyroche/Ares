@@ -89,7 +89,6 @@ def exclude_corrupted_periods(df: pd.DataFrame,
 
     return df_clean
 
-
 def validate_data_quality_after_cleaning(df: pd.DataFrame,
                                         volume_col: str = 'volume',
                                         datetime_col: str = 'datetime') -> dict:
@@ -167,7 +166,6 @@ def validate_data_quality_after_cleaning(df: pd.DataFrame,
 
     return quality_report
 
-
 def create_clean_dataset_pipeline(input_file: str, output_file: str) -> dict:
     """
     Complete pipeline to create a clean dataset by excluding corrupted periods.
@@ -227,7 +225,6 @@ def create_clean_dataset_pipeline(input_file: str, output_file: str) -> dict:
     except Exception as e:
         logger.error(f"❌ Pipeline failed: {e}")
         return {'success': False, 'error': str(e)}
-
 
 # Example usage
 if __name__ == "__main__":

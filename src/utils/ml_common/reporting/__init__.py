@@ -30,7 +30,7 @@ __all__ = [
     'ReportType',
     'Alert',
     'AlertLevel',
-    
+
     # Validation Reporting Integration
     'ValidationReportingIntegrator',
     'ValidationReportData',

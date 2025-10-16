@@ -24,16 +24,16 @@ import time
 
 class BasePipelineManager(ABC):
     """Base class for all pipeline managers."""
-    
+
     def __init__(self, launcher):
         self.launcher = launcher
         self.logger = launcher.logger
-        
+
     @abstractmethod
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute the pipeline with the given parameters."""
         pass
-    
+
     def _run_subprocess_with_monitoring(self, cmd: list, env: Optional[Dict] = None) -> bool:
         """Run a subprocess with real-time output monitoring."""
         try:
@@ -47,7 +47,7 @@ class BasePipelineManager(ABC):
                 env = env or os.environ.copy(),
             )
             self.launcher.processes.append(process)
-            
+
             # Monitor output in real-time
             while True:
                 output = process.stdout.readline()
@@ -56,16 +56,16 @@ class BasePipelineManager(ABC):
                 if output:
                     tprint(output.strip())
                     self.logger.info(output.strip())
-            
+
             return process.poll() == 0
-            
+
         except Exception as e:
             self.logger.exception(f"Failed to run subprocess: {e}")
             return False
 
 class DataCollectionPipelineManager(BasePipelineManager):
     """Manages data collection pipeline execution."""
-    
+
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute unified data collection pipeline with all 12 steps."""
         self.logger.info(f"📊 Running unified data collection pipeline for {symbol} on {exchange}")
@@ -101,7 +101,7 @@ class DataCollectionPipelineManager(BasePipelineManager):
 
         # Execute unified data collection pipeline using standalone script
         return self._execute_standalone_pipeline(symbol, exchange)
-    
+
     def _execute_standalone_pipeline(self, symbol: str, exchange: str) -> bool:
         """Execute the unified data collection pipeline using the standalone script."""
         try:
@@ -116,7 +116,7 @@ class DataCollectionPipelineManager(BasePipelineManager):
 
             # Build command for standalone script
             cmd = [
-                sys.executable, 
+                sys.executable,
                 "standalone_data_collection.py",
                 "--symbol", symbol,
                 "--exchange", exchange.upper(),
@@ -128,11 +128,11 @@ class DataCollectionPipelineManager(BasePipelineManager):
                 "--parallel-processing",
                 "--max-workers", "4"
             ]
-            
+
             self.logger.info(f"🔄 Executing standalone data collection pipeline: {' '.join(cmd)}")
-            
+
             return self._run_subprocess_with_monitoring(cmd, env)
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to execute standalone data collection pipeline: {e}")
             tprint("=" * 80)
@@ -141,14 +141,14 @@ class DataCollectionPipelineManager(BasePipelineManager):
             tprint(f"Error: {str(e)}")
             tprint("=" * 80)
             return False
-    
+
     def _validate_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for data collection."""
         self.logger.info("🔍 Validating data collection prerequisites...")
-        
+
         try:
             from src.utils.common_operations import safe_file_exists, ensure_directory
-            
+
             # Check required directories
             required_dirs = ["data_cache", "log"]
             for dir_path in required_dirs:
@@ -157,23 +157,23 @@ class DataCollectionPipelineManager(BasePipelineManager):
                     ensure_directory(dir_path)
                 else:
                     self.logger.info(f"✅ Directory exists: {dir_path}")
-            
+
             # Check for standalone data collection script
             script_path = "standalone_data_collection.py"
             if not safe_file_exists(script_path):
                 self.logger.error(f"❌ Data collection script not found: {script_path}")
                 return False
-            
+
             self.logger.info("✅ Data collection prerequisites validation completed")
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
 
 class ModelTrainingPipelineManager(BasePipelineManager):
     """Manages model training pipeline execution."""
-    
+
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute model training pipeline with comprehensive monitoring."""
         self.logger.info(f"📊 Running model training pipeline for {symbol} on {exchange}")
@@ -208,15 +208,15 @@ class ModelTrainingPipelineManager(BasePipelineManager):
             "--exchange", exchange,
             "--enhanced-mode"
         ]
-        
+
         return self._run_subprocess_with_monitoring(cmd, env)
-    
+
     def _validate_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for model training."""
         self.logger.info("🔍 Validating model training prerequisites...")
-        
+
         try:
-            
+
             # Check required directories
             required_dirs = ["data_cache", "models", "checkpoints", "log"]
             for dir_path in required_dirs:
@@ -225,20 +225,20 @@ class ModelTrainingPipelineManager(BasePipelineManager):
                     ensure_directory(dir_path)
                 else:
                     self.logger.info(f"✅ Directory exists: {dir_path}")
-            
+
             # Check for required data files
             required_data_files = [
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
                 f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
             ]
-            
+
             missing_files = []
             for file_path in required_data_files:
                 if not safe_file_exists(file_path):
                     missing_files.append(file_path)
                 else:
                     self.logger.info(f"✅ Data file exists: {file_path}")
-            
+
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
                 tprint(f"❌ Missing required data files:")
@@ -247,17 +247,17 @@ class ModelTrainingPipelineManager(BasePipelineManager):
                 tprint("💡 Please run data collection first:")
                 tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
-            
+
             self.logger.info("✅ Model training prerequisites validation completed")
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
 
 class OptimisationPipelineManager(BasePipelineManager):
     """Manages optimisation pipeline execution."""
-    
+
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute enhanced optimisation pipeline."""
         self.logger.info(f"📊 Running enhanced optimisation pipeline for {symbol} on {exchange}")
@@ -292,15 +292,15 @@ class OptimisationPipelineManager(BasePipelineManager):
             "--exchange", exchange,
             "--enhanced-mode"
         ]
-        
+
         return self._run_subprocess_with_monitoring(cmd, env)
-    
+
     def _validate_prerequisites(self, symbol: str, exchange: str) -> bool:
         """Validate prerequisites for optimisation."""
         self.logger.info("🔍 Validating optimisation prerequisites...")
-        
+
         try:
-            
+
             # Check required directories
             required_dirs = ["data_cache", "models", "checkpoints", "log"]
             for dir_path in required_dirs:
@@ -309,20 +309,20 @@ class OptimisationPipelineManager(BasePipelineManager):
                     ensure_directory(dir_path)
                 else:
                     self.logger.info(f"✅ Directory exists: {dir_path}")
-            
+
             # Check for required data files
             required_data_files = [
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet",
                 f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
             ]
-            
+
             missing_files = []
             for file_path in required_data_files:
                 if not safe_file_exists(file_path):
                     missing_files.append(file_path)
                 else:
                     self.logger.info(f"✅ Data file exists: {file_path}")
-            
+
             if missing_files:
                 self.logger.error(f"❌ Missing required data files: {missing_files}")
                 tprint(f"❌ Missing required data files:")
@@ -331,17 +331,17 @@ class OptimisationPipelineManager(BasePipelineManager):
                 tprint("💡 Please run data collection first:")
                 tprint(f"   python ares_launcher.py load --symbol {symbol} --exchange {exchange}")
                 return False
-            
+
             self.logger.info("✅ Optimisation prerequisites validation completed")
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Prerequisites validation failed: {e}")
             return False
 
 class BacktestingPipelineManager(BasePipelineManager):
     """Manages backtesting pipeline execution."""
-    
+
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute enhanced backtesting pipeline."""
         self.logger.info(f"📊 Running enhanced backtesting for {symbol} on {exchange}")
@@ -357,7 +357,7 @@ class BacktestingPipelineManager(BasePipelineManager):
 
             # Initialize enhanced logger
             launcher_logger = get_backtesting_logger(
-                f"launcher_{symbol}_{exchange}", 
+                f"launcher_{symbol}_{exchange}",
                 log_dir="log/backtesting"
             )
             launcher_logger.start_performance_monitoring(interval = 5.0)
@@ -386,13 +386,13 @@ class BacktestingPipelineManager(BasePipelineManager):
 
                 # Pre-flight validation
                 launcher_logger.log_progress("Pre-flight Validation", 0, "Starting validation checks")
-                
+
                 data_dir = "historical_data"
                 required_files = [
                     f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
                     f"volume_{exchange}_{symbol}_consolidated.parquet"
                 ]
-                
+
                 missing_files = []
                 for file_name in required_files:
                     file_path = f"{data_dir}/{file_name}"
@@ -400,19 +400,19 @@ class BacktestingPipelineManager(BasePipelineManager):
                         missing_files.append(file_name)
                     else:
                         launcher_logger.log_success(f"Required file found: {file_name}", "VALIDATION")
-                
+
                 if missing_files:
                     launcher_logger.log_error(
-                        Exception(f"Missing required data files: {missing_files}"), 
+                        Exception(f"Missing required data files: {missing_files}"),
                         "VALIDATION"
                     )
                     launcher_logger.log_quality_flag(
-                        "MISSING_DATA_FILES", 
-                        f"Missing required data files: {missing_files}", 
+                        "MISSING_DATA_FILES",
+                        f"Missing required data files: {missing_files}",
                         "ERROR"
                     )
                     return False
-                
+
                 launcher_logger.log_success("All required data files found", "VALIDATION")
                 launcher_logger.log_progress("Pre-flight Validation", 100, "Validation completed successfully")
 
@@ -448,7 +448,7 @@ class BacktestingPipelineManager(BasePipelineManager):
             self.logger.exception(f"❌ Failed to run enhanced backtesting: {e}")
             tprint(f"❌ Failed to run enhanced backtesting: {e}")
             return False
-    
+
     async def _run_backtesting_pipeline(self, **kwargs) -> bool:
         """Run the actual backtesting pipeline."""
         # This would call the actual backtesting pipeline implementation
@@ -457,7 +457,7 @@ class BacktestingPipelineManager(BasePipelineManager):
 
 class AllPipelinesManager(BasePipelineManager):
     """Manages execution of all pipelines in sequence."""
-    
+
     def execute(self, symbol: str, exchange: str, with_gui: bool = False) -> bool:
         """Execute all pipelines in sequence with organized report management."""
         self.logger.info(f"📊 Running all pipelines for {symbol} on {exchange}")
@@ -466,12 +466,12 @@ class AllPipelinesManager(BasePipelineManager):
         try:
             from src.utils.report_manager import initialize_report_manager
             from src.utils.report_collector import initialize_report_collector
-            
+
             report_manager = initialize_report_manager()
             report_collector = initialize_report_collector()
-            
+
             report_collector.setup_pipeline_interception(symbol, exchange)
-            
+
             self.logger.info(f"📁 Report directory initialized: {report_manager.get_run_directory()}")
             tprint(f"📁 Report directory: {report_manager.get_run_directory()}")
         except Exception as e:
@@ -489,12 +489,12 @@ class AllPipelinesManager(BasePipelineManager):
         })
 
         cmd = [sys.executable, "src/training/steps/run_all_pipelines.py"]
-        
+
         return self._run_subprocess_with_monitoring(cmd, env)
 
 class PipelineManagerFactory:
     """Factory for creating pipeline managers."""
-    
+
     @staticmethod
     def create_manager(pipeline_type: str, launcher):
         """Create the appropriate pipeline manager."""
@@ -505,8 +505,8 @@ class PipelineManagerFactory:
             "backtesting": BacktestingPipelineManager,
             "all-pipelines": AllPipelinesManager,
         }
-        
+
         if pipeline_type not in managers:
             raise ValueError(f"No pipeline manager available for: {pipeline_type}")
-        
+
         return managers[pipeline_type](launcher)

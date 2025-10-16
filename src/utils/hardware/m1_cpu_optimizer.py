@@ -57,24 +57,24 @@ class M1CPUOptimizer:
         self.logger = logger.getChild('M1CPUOptimizer')
         self.version = __version__
         self.compatibility_mode = compatibility_mode
-        
+
         # M1 detection and generation
         self.is_m1 = self._detect_m1()
         self.m1_generation = self._detect_m1_generation()
-        
+
         if not self.is_m1:
             self.logger.warning("⚠️ Non-M1 system detected - M1-specific optimizations disabled")
-        
+
         # CPU configuration
         self.cpu_count = self._get_optimal_cpu_count()
         self.performance_cores = self._get_performance_cores()
         self.efficiency_cores = self._get_efficiency_cores()
         self.conservative_mode = False
-        
+
         # M1-specific optimization flags
         self._legacy_mode = False
         self._m1_optimizations_enabled = self.is_m1
-        
+
         # Initialize M1-specific features
         self._initialize_m1_cpu_features()
 
@@ -101,7 +101,7 @@ class M1CPUOptimizer:
         """Detect M1 chip generation for optimization purposes."""
         if not self.is_m1:
             return "none"
-            
+
         try:
             import subprocess
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
@@ -155,10 +155,10 @@ class M1CPUOptimizer:
         if not self.is_m1:
             # Non-M1 systems - use standard approach
             return max(1, multiprocessing.cpu_count() // 2)
-            
+
         try:
             total_cores = multiprocessing.cpu_count()
-            
+
             # M1-specific core optimization based on generation
             if self.m1_generation in ["m3", "m4"]:
                 # M3/M4: Use more cores due to better performance
@@ -172,7 +172,7 @@ class M1CPUOptimizer:
             else:
                 # Generic Apple Silicon - conservative
                 return max(1, int(total_cores * 0.4))   # Use 40% of cores
-                
+
         except Exception as e:
             self.logger.warning(f"Could not determine optimal CPU count: {e}")
             return max(1, multiprocessing.cpu_count() // 4)  # Conservative fallback
@@ -187,7 +187,7 @@ class M1CPUOptimizer:
         """Get number of performance cores based on M1 generation."""
         if not self.is_m1:
             return 0
-            
+
         # M1 generation-specific performance core counts
         if self.m1_generation in ["m3", "m4"]:
             return 6  # M3/M4 have 6 performance cores
@@ -202,7 +202,7 @@ class M1CPUOptimizer:
         """Get number of efficiency cores based on M1 generation."""
         if not self.is_m1:
             return 0
-            
+
         # M1 generation-specific efficiency core counts
         if self.m1_generation in ["m3", "m4"]:
             return 6  # M3/M4 have 6 efficiency cores
@@ -328,7 +328,7 @@ class M1CPUOptimizer:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, skipping numpy optimization")
             return
-            
+
         try:
             # Set thread count for numpy operations
             # M1 benefits from using all cores for vectorized operations
@@ -348,14 +348,14 @@ class M1CPUOptimizer:
         This reduces the number of workers and thread usage to avoid high CPU usage.
         """
         self.conservative_mode = True
-        
+
         # Reduce CPU count to be more conservative
         self.cpu_count = max(1, self.performance_cores // 2)
-        
+
         # Set more conservative thread limits
         os.environ['OMP_NUM_THREADS'] = str(max(1, self.performance_cores // 2))
         os.environ['MKL_NUM_THREADS'] = str(max(1, self.performance_cores // 2))
-        
+
         self.logger.info(f"🔧 Conservative mode enabled: reduced workers to {self.cpu_count}")
 
     def create_m1_optimized_context(self):
@@ -392,20 +392,20 @@ class M1CPUOptimizer:
                 self.optimizer.logger.info("🧠 M1 optimization context deactivated")
 
         return M1OptimizationContext(self)
-    
+
     def optimize_cpu_usage(self, target_utilization: float = 0.8, aggressive: bool = False) -> Dict[str, Any]:
         """
         Optimize CPU usage for M1 architecture.
-        
+
         Args:
             target_utilization: Target CPU utilization (0.0 to 1.0)
             aggressive: Whether to use aggressive optimization
-            
+
         Returns:
             Dictionary with optimization results
         """
         start_time = time.time()
-        
+
         try:
             # Get current CPU info
             cpu_info = {
@@ -415,7 +415,7 @@ class M1CPUOptimizer:
                 'is_m1': self.is_m1,
                 'optimal_workers': self.get_optimal_worker_count()
             }
-            
+
             # Calculate optimal settings based on target utilization
             if aggressive:
                 # Use more cores but with lower utilization per core
@@ -425,12 +425,12 @@ class M1CPUOptimizer:
                 # Conservative approach - use performance cores primarily
                 recommended_workers = min(self.performance_cores, int(self.performance_cores * target_utilization))
                 thread_multiplier = 1.0
-            
+
             # Ensure at least 1 worker
             recommended_workers = max(1, recommended_workers)
-            
+
             optimization_time = time.time() - start_time
-            
+
             result = {
                 'success': True,
                 'recommended_workers': recommended_workers,
@@ -441,11 +441,11 @@ class M1CPUOptimizer:
                 'aggressive_mode': aggressive,
                 'optimization_applied': True
             }
-            
+
             self.logger.info(f"🖥️ CPU optimized: {recommended_workers} workers recommended (target: {target_utilization:.1%})")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ CPU optimization failed: {e}")
             return {
@@ -454,10 +454,8 @@ class M1CPUOptimizer:
                 'optimization_time_s': time.time() - start_time
             }
 
-
 # Global instance - lazy initialization to include new methods
 _m1_cpu_optimizer_instance = None
-
 
 def get_m1_cpu_optimizer(compatibility_mode: str = "auto") -> M1CPUOptimizer:
     """Get the global M1 CPU optimizer instance with enhanced backwards compatibility."""
@@ -466,16 +464,13 @@ def get_m1_cpu_optimizer(compatibility_mode: str = "auto") -> M1CPUOptimizer:
         _m1_cpu_optimizer_instance = M1CPUOptimizer(compatibility_mode=compatibility_mode)
     return _m1_cpu_optimizer_instance
 
-
 def is_m1_system() -> bool:
     """Check if running on M1 system."""
     return get_m1_cpu_optimizer().is_m1
 
-
 def get_m1_generation() -> str:
     """Get M1 chip generation."""
     return get_m1_cpu_optimizer().m1_generation
-
 
 def get_m1_core_info() -> Dict[str, Any]:
     """Get M1-specific core information."""
@@ -488,38 +483,31 @@ def get_m1_core_info() -> Dict[str, Any]:
         'is_m1': optimizer.is_m1
     }
 
-
 def check_m1_compatibility() -> Dict[str, Any]:
     """Check M1 compatibility and available features."""
     optimizer = get_m1_cpu_optimizer()
     return optimizer.get_m1_compatibility_info()
-
 
 @deprecated("Use get_m1_core_info() instead", "2.0.0")
 def get_cpu_core_info() -> Dict[str, Any]:
     """Legacy method for getting CPU core info."""
     return get_m1_core_info()
 
-
 def optimize_function_for_m1(func: Callable) -> Callable:
     """Optimize function for M1 execution."""
     return get_m1_cpu_optimizer().optimize_function_for_m1(func)
-
 
 def parallel_map_m1(func: Callable, items: List[Any], max_workers: Optional[int] = None) -> List[Any]:
     """Parallel map optimized for M1."""
     return get_m1_cpu_optimizer().parallel_map_m1(func, items, max_workers)
 
-
 def create_m1_optimized_thread_pool(max_workers: Optional[int] = None):
     """Create thread pool optimized for M1."""
     return get_m1_cpu_optimizer().create_optimized_thread_pool(max_workers)
 
-
 def run_cpu_intensive_task(func: Callable, *args, **kwargs):
     """Run CPU-intensive task optimized for M1."""
     return get_m1_cpu_optimizer().run_cpu_intensive_task(func, *args, **kwargs)
-
 
 async def parallel_backtesting_worker(
     worker_id: int,
@@ -581,7 +569,6 @@ async def parallel_backtesting_worker(
             'sharpe_ratio': 0.0,
             'total_return': 0.0
         }
-
 
 async def _execute_backtesting_chunk(
     data_chunk: Any,
@@ -655,7 +642,6 @@ async def _execute_backtesting_chunk(
             'total_return': 0.0
         }
 
-
 def create_parallel_backtesting_pool(max_workers: Optional[int] = None):
     """
     Create a parallel backtesting pool optimized for M1.
@@ -668,7 +654,6 @@ def create_parallel_backtesting_pool(max_workers: Optional[int] = None):
     """
     optimizer = get_m1_cpu_optimizer()
     return optimizer.create_optimized_thread_pool(max_workers)
-
 
 async def parallel_monte_carlo_simulation(
     simulation_func: Callable,
@@ -734,7 +719,6 @@ async def parallel_monte_carlo_simulation(
             logger.info(f"✅ Parallel Monte Carlo simulation completed with {len(results)} results")
             return results
 
-
 async def _run_task_in_executor(executor: concurrent.futures.Executor, task: Dict[str, Any]) -> Dict[str, Any]:
     """Run a single task in the executor."""
     loop = asyncio.get_event_loop()
@@ -761,7 +745,6 @@ async def _run_task_in_executor(executor: concurrent.futures.Executor, task: Dic
             'success': False,
             'exception': type(e).__name__
         }
-
 
 def _create_monte_carlo_task(
     task_id: int,
@@ -790,7 +773,6 @@ def _create_monte_carlo_task(
         'kwargs': {},
         'data_size': len(data_chunk) if hasattr(data_chunk, '__len__') else 'unknown'
     }
-
 
 def run_monte_carlo_batch(
     simulation_func: Callable,

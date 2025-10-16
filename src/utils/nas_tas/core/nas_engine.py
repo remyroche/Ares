@@ -94,7 +94,7 @@ logger = logging.getLogger(__name__)
 class NASEngine:
     """
     Neural Architecture Search Engine with extensive utility integration.
-    
+
     This engine provides comprehensive NAS capabilities with:
     - Extensive use of common operations for data processing
     - Math validation for safe computations
@@ -105,22 +105,22 @@ class NASEngine:
     - Matrix operations for high-performance computations
     - Advanced optimization algorithms
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the NAS Engine with extensive utility integration.
-        
+
         Args:
             config: Configuration dictionary for NAS engine
         """
         tprint_info("🚀 Initializing NAS Engine with extensive utility integration")
         tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
-        
+
         # Initialize configuration
         self.config = config or {}
         tprint_debug(f"⚙️ NAS Engine config keys: {list(self.config.keys()) if self.config else 'None'}")
         self.logger = logger.getChild("NASEngine")
         tprint_debug(f"📝 Logger initialized: {self.logger.name}")
-        
+
         # Initialize utility classes
         tprint_debug("🔧 Initializing utility classes")
         self.common_ops = CommonUtilities()
@@ -131,7 +131,7 @@ class NASEngine:
         tprint_debug("✅ KlinesParquetManager initialized")
         self.serializer = UniversalSerializer()
         tprint_debug("✅ UniversalSerializer initialized")
-        
+
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
         self.matrix_ops = UnifiedMatrixOperations()
@@ -142,7 +142,7 @@ class NASEngine:
         tprint_debug("✅ BatchMatrixOperations initialized")
         self.vectorized_core = VectorizedProcessingCore()
         tprint_debug("✅ VectorizedProcessingCore initialized")
-        
+
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
         self.m1_integration = integrate_with_m1_optimizers()
@@ -161,7 +161,7 @@ class NASEngine:
             self.memory_optimizer = None
             self.cpu_optimizer = None
             tprint_debug("🔄 Using fallback configurations")
-        
+
         # Initialize optimization components
         tprint_debug("🔧 Initializing optimization components")
         self.bayesian_optimizer = BayesianEntryTimingOptimizer()
@@ -172,13 +172,13 @@ class NASEngine:
         tprint_debug("✅ HPOUtils initialized")
         self.hierarchical_hpo = HierarchicalHPO()
         tprint_debug("✅ HierarchicalHPO initialized")
-        
+
         # Initialize performance tracking
         self.performance_metrics = {}
         tprint_debug("✅ Performance metrics tracking initialized")
         self.search_history = []
         tprint_debug("✅ Search history tracking initialized")
-        
+
         tprint_success("✅ NAS Engine initialized successfully")
         tprint_info(f"📊 Engine components: {len([attr for attr in dir(self) if not attr.startswith('_')])} public attributes")
         tprint_structured({
@@ -192,33 +192,33 @@ class NASEngine:
                 'optimization_components': True
             }
         }, LogLevel.INFO)
-    
+
     @tprint_timer("Data Loading and Validation")
     def load_and_validate_data(
-        self, 
+        self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None
     ) -> Optional[pd.DataFrame]:
         """Load and validate data using extensive utility integration.
-        
+
         Args:
             symbol: Trading symbol to load
             interval: Data interval
             start_date: Start date for data loading
             end_date: End date for data loading
-            
+
         Returns:
             Validated DataFrame or None if loading fails
         """
         tprint_info(f"📊 Loading data for {symbol} {interval}")
-        
+
         try:
             # Load data using klines parquet manager
             tprint_debug(f"📊 Loading data with parameters: symbol={symbol}, interval={interval}")
             tprint_debug(f"📅 Date range: {start_date} to {end_date}")
-            
+
             with memory_checkpoint("data_loading"):
                 tprint_debug("🔍 Accessing klines manager for data retrieval")
                 data = self.klines_manager.read_data(
@@ -229,12 +229,12 @@ class NASEngine:
                     data_type="processed"
                 )
                 tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
-            
+
             if data is None or data.empty:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
                 tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
                 return None
-            
+
             tprint_info(f"📊 Loaded {len(data)} records")
             tprint_debug(f"📋 Data columns: {list(data.columns)}")
             tprint_debug(f"📅 Data date range: {data.index.min()} to {data.index.max()}")
@@ -247,12 +247,12 @@ class NASEngine:
                     'memory_usage': get_memory_usage()
                 }
             }, LogLevel.DEBUG)
-            
+
             # Validate data using common utilities
             tprint_debug("🔍 Validating data quality")
             validation_result = validate_klines_data(data)
             tprint_debug(f"📋 Validation result: {validation_result}")
-            
+
             if not validation_result['valid']:
                 tprint_error(f"❌ Data validation failed: {validation_result['errors']}")
                 tprint_structured({
@@ -263,9 +263,9 @@ class NASEngine:
                     }
                 }, LogLevel.ERROR)
                 return None
-            
+
             tprint_success("✅ Data validation passed")
-            
+
             # Apply data quality metrics
             tprint_debug("📊 Calculating data quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
@@ -278,21 +278,21 @@ class NASEngine:
                     'memory_usage': data.memory_usage(deep=True).sum()
                 }
             }, LogLevel.INFO)
-            
+
             # Optimize data types for memory efficiency
             tprint_debug("🔧 Optimizing data types")
             memory_before = data.memory_usage(deep=True).sum()
             data = optimize_dataframe_dtypes(data)
             memory_after = data.memory_usage(deep=True).sum()
             tprint_debug(f"💾 Memory optimization: {memory_before} -> {memory_after} bytes ({(memory_after/memory_before-1)*100:.1f}% change)")
-            
+
             # Guard against null values
             tprint_debug("🛡️ Applying null value guards")
             null_counts_before = data.isnull().sum().sum()
             data = guard_dataframe_nulls(data, threshold=0.1)
             null_counts_after = data.isnull().sum().sum()
             tprint_debug(f"🔍 Null values: {null_counts_before} -> {null_counts_after}")
-            
+
             tprint_success(f"✅ Data loaded and validated: {len(data)} records")
             tprint_info(f"📊 Final data summary: {data.shape[0]} rows × {data.shape[1]} columns")
             tprint_structured({
@@ -303,12 +303,12 @@ class NASEngine:
                 }
             }, LogLevel.SUCCESS)
             return data
-            
+
         except Exception as e:
             tprint_error(f"❌ Error loading data: {e}")
             self.logger.exception("Data loading error")
             return None
-    
+
     @tprint_timer("Architecture Search")
     def search_architectures(
         self,
@@ -318,25 +318,25 @@ class NASEngine:
         n_trials: int = 100
     ) -> Dict[str, Any]:
         """Search for optimal architectures using extensive utility integration.
-        
+
         Args:
             data: Input data for architecture search
             search_space: Architecture search space
             optimization_method: Optimization method (bayesian_tpe, grid, hierarchical)
             n_trials: Number of optimization trials
-            
+
         Returns:
             Dictionary with search results and best architecture
         """
         tprint_info(f"🔍 Starting architecture search with {optimization_method}")
-        
+
         try:
             # Validate input data
             tprint_debug("🔍 Validating input data for architecture search")
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             tprint_debug(f"📋 Required columns: {required_columns}")
             tprint_debug(f"📊 Available columns: {list(data.columns)}")
-            
+
             if not validate_dataframe_columns(data, required_columns):
                 tprint_error("❌ Invalid data columns for architecture search")
                 tprint_structured({
@@ -347,9 +347,9 @@ class NASEngine:
                     }
                 }, LogLevel.ERROR)
                 return {}
-            
+
             tprint_success("✅ Data validation passed for architecture search")
-            
+
             # Initialize search results
             tprint_debug("📊 Initializing search results structure")
             search_results = {
@@ -369,16 +369,16 @@ class NASEngine:
                     'search_space_keys': list(search_space.keys()) if search_space else []
                 }
             }, LogLevel.INFO)
-            
+
             start_time = time.time()
             tprint_debug(f"⏰ Search start time: {start_time}")
-            
+
             # Use M1 GPU context if available
             context_type = "GPU" if self.gpu_manager else "Memory"
             tprint_debug(f"🔧 Using {context_type} context for architecture search")
-            
+
             with gpu_context("architecture_search") if self.gpu_manager else memory_checkpoint("architecture_search"):
-                
+
                 if optimization_method == "bayesian_tpe":
                     tprint_info("🧠 Using Bayesian TPE optimization")
                     tprint_debug(f"🔧 Bayesian TPE parameters: n_trials={n_trials}, search_space_size={len(search_space)}")
@@ -404,28 +404,28 @@ class NASEngine:
                     tprint_error(f"❌ Unknown optimization method: {optimization_method}")
                     tprint_debug(f"📋 Available methods: ['bayesian_tpe', 'grid', 'hierarchical']")
                     return {}
-                
+
                 search_results.update({
                     'best_architecture': best_architecture,
                     'best_score': best_score,
                     'trials': trials
                 })
-                
+
                 tprint_info(f"📊 Search results updated: {len(trials)} trials completed")
                 tprint_debug(f"🏆 Best architecture found: {bool(best_architecture)}")
                 tprint_debug(f"📈 Best score: {best_score:.6f}")
-            
+
             search_time = time.time() - start_time
             search_results['search_time'] = search_time
-            
+
             # Calculate performance metrics
             tprint_debug("📊 Calculating architecture search performance metrics")
             search_results['performance_metrics'] = self._calculate_search_metrics(trials)
-            
+
             tprint_success(f"✅ Architecture search completed in {search_time:.2f}s")
             tprint_info(f"🏆 Best score: {best_score:.4f}")
             tprint_info(f"📊 Total trials: {len(trials)}")
-            
+
             # Log comprehensive search summary
             tprint_structured({
                 'search_summary': {
@@ -437,27 +437,27 @@ class NASEngine:
                     'performance_metrics_available': bool(search_results['performance_metrics'])
                 }
             }, LogLevel.SUCCESS)
-            
+
             return search_results
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in architecture search: {e}")
             self.logger.exception("Architecture search error")
             return {}
-    
+
     def _bayesian_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Bayesian TPE search with extensive utility integration."""
         tprint_debug("🧠 Starting Bayesian TPE search")
-        
+
         trials = []
         best_score = -np.inf
         best_architecture = None
-        
+
         try:
             # Configure Bayesian optimizer
             self.bayesian_optimizer.configure(
@@ -465,17 +465,17 @@ class NASEngine:
                 n_trials=n_trials,
                 random_state=42
             )
-            
+
             for trial_idx in range(n_trials):
                 tprint_progress(trial_idx, n_trials, f"Bayesian TPE trial {trial_idx}")
-                
+
                 # Get next trial parameters
                 trial_params = self.bayesian_optimizer.suggest()
-                
+
                 # Evaluate architecture
                 with tprint_timer(f"Trial {trial_idx} evaluation"):
                     score = self._evaluate_architecture(data, trial_params)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -484,40 +484,40 @@ class NASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_architecture = trial_params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Update optimizer
                 self.bayesian_optimizer.update(trial_params, score)
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Bayesian search completed: {len(trials)} trials")
             return best_architecture, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Bayesian search: {e}")
             return {}, -np.inf, []
-    
+
     def _grid_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Grid Search with extensive utility integration."""
         tprint_debug("🔧 Starting Grid Search")
-        
+
         trials = []
         best_score = -np.inf
         best_architecture = None
-        
+
         try:
             # Generate grid parameters
             grid_params = self.grid_optimizer.generate_grid(search_space, max_trials=n_trials)
@@ -528,14 +528,14 @@ class NASEngine:
 
             total_trials = len(grid_params)
             tprint_info(f"🔧 Grid search: {total_trials} parameter combinations")
-            
+
             for trial_idx, params in enumerate(grid_params):
                 tprint_progress(trial_idx, total_trials, f"Grid search trial {trial_idx}")
-                
+
                 # Evaluate architecture
                 with tprint_timer(f"Grid trial {trial_idx} evaluation"):
                     score = self._evaluate_architecture(data, params)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -544,37 +544,37 @@ class NASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_architecture = params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Grid search completed: {len(trials)} trials")
             return best_architecture, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Grid search: {e}")
             return {}, -np.inf, []
-    
+
     def _hierarchical_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Hierarchical HPO search with extensive utility integration."""
         tprint_debug("🏗️ Starting Hierarchical HPO search")
-        
+
         trials = []
         best_score = -np.inf
         best_architecture = None
-        
+
         try:
             # Configure hierarchical HPO
             self.hierarchical_hpo.configure(
@@ -582,17 +582,17 @@ class NASEngine:
                 n_trials=n_trials,
                 hierarchy_levels=3
             )
-            
+
             for trial_idx in range(n_trials):
                 tprint_progress(trial_idx, n_trials, f"Hierarchical HPO trial {trial_idx}")
-                
+
                 # Get next trial parameters
                 trial_params = self.hierarchical_hpo.suggest()
-                
+
                 # Evaluate architecture
                 with tprint_timer(f"Hierarchical trial {trial_idx} evaluation"):
                     score = self._evaluate_architecture(data, trial_params)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -601,39 +601,39 @@ class NASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_architecture = trial_params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Update hierarchical HPO
                 self.hierarchical_hpo.update(trial_params, score)
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Hierarchical search completed: {len(trials)} trials")
             return best_architecture, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Hierarchical search: {e}")
             return {}, -np.inf, []
-    
+
     @tprint_timer("Architecture Evaluation")
     def _evaluate_architecture(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         architecture_params: Dict[str, Any]
     ) -> float:
         """Evaluate architecture performance with extensive utility integration.
-        
+
         Args:
             data: Input data for evaluation
             architecture_params: Architecture parameters to evaluate
-            
+
         Returns:
             Architecture performance score
         """
@@ -650,104 +650,104 @@ class NASEngine:
                 except ValueError as e:
                     tprint_warning(f"⚠️ Invalid parameter {param}: {e}")
                     continue
-            
+
             # Prepare data for evaluation
             with memory_checkpoint("data_preparation"):
                 # Create feature matrix using matrix operations
                 feature_matrix = self._create_feature_matrix(data)
-                
+
                 # Validate feature matrix
                 if not validate_correlation_matrix(feature_matrix):
                     tprint_warning("⚠️ Invalid feature matrix correlation structure")
                     return 0.0
-            
+
             # Simulate architecture evaluation (placeholder for actual model evaluation)
             with gpu_context("architecture_evaluation") if self.gpu_manager else memory_checkpoint("architecture_evaluation"):
                 # Use matrix operations for evaluation
                 score = self._compute_architecture_score(feature_matrix, validated_params)
-            
+
             # Validate score
             score = validate_finite(score, "architecture_score")
-            
+
             tprint_debug(f"🔍 Architecture evaluation score: {score:.4f}")
             return score
-            
+
         except Exception as e:
             tprint_error(f"❌ Error evaluating architecture: {e}")
             return 0.0
-    
+
     def _create_feature_matrix(self, data: pd.DataFrame) -> np.ndarray:
         """Create feature matrix using matrix operations utilities."""
         try:
             # Extract numeric columns
             numeric_cols = data.select_dtypes(include=[np.number]).columns
             feature_data = data[numeric_cols].values
-            
+
             # Handle NaN values
             feature_data = np.nan_to_num(feature_data, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             # Use matrix operations for feature engineering
             # Normalize features
             normalized_features = self.matrix_ops.normalize_matrix(feature_data)
-            
+
             # Add polynomial features
             polynomial_features = self.enhanced_matrix_ops.add_polynomial_features(
                 normalized_features, degree=2
             )
-            
+
             return polynomial_features
-            
+
         except Exception as e:
             tprint_error(f"❌ Error creating feature matrix: {e}")
             return np.array([])
-    
+
     def _compute_architecture_score(
-        self, 
-        feature_matrix: np.ndarray, 
+        self,
+        feature_matrix: np.ndarray,
         params: Dict[str, Any]
     ) -> float:
         """Compute architecture score using matrix operations."""
         try:
             # Use vectorized operations for efficient computation
             # Simulate model performance based on architecture parameters
-            
+
             # Extract key parameters
             complexity = params.get('complexity', 1.0)
             depth = params.get('depth', 1)
             width = params.get('width', 1)
-            
+
             # Compute base score using matrix operations
             base_score = self.vectorized_core.compute_performance_metric(
                 feature_matrix, complexity, depth, width
             )
-            
+
             # Apply parameter-based adjustments
             complexity_factor = safe_power(complexity, 0.5)
             depth_factor = safe_log(depth + 1)
             width_factor = safe_sqrt(width)
-            
+
             # Combine factors
             adjusted_score = safe_weighted_average(
                 [base_score, complexity_factor, depth_factor, width_factor],
                 [0.7, 0.1, 0.1, 0.1]
             )
-            
+
             return adjusted_score
-            
+
         except Exception as e:
             tprint_error(f"❌ Error computing architecture score: {e}")
             return 0.0
-    
+
     def _calculate_search_metrics(self, trials: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate search performance metrics using math validation utilities."""
         try:
             if not trials:
                 return {}
-            
+
             # Extract scores
             scores = [trial['score'] for trial in trials]
             scores_array = np.array(scores)
-            
+
             # Calculate metrics using math validation utilities
             metrics = {
                 'mean_score': safe_mean(scores_array),
@@ -760,70 +760,70 @@ class NASEngine:
                 'improvement_rate': self._calculate_improvement_rate(scores),
                 'convergence_metric': self._calculate_convergence_metric(scores)
             }
-            
+
             return metrics
-            
+
         except Exception as e:
             tprint_error(f"❌ Error calculating search metrics: {e}")
             return {}
-    
+
     def _calculate_improvement_rate(self, scores: List[float]) -> float:
         """Calculate improvement rate using math validation utilities."""
         try:
             if len(scores) < 2:
                 return 0.0
-            
+
             improvements = 0
             for i in range(1, len(scores)):
                 if scores[i] > scores[i-1]:
                     improvements += 1
-            
+
             return safe_divide(improvements, len(scores) - 1)
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_convergence_metric(self, scores: List[float]) -> float:
         """Calculate convergence metric using math validation utilities."""
         try:
             if len(scores) < 10:
                 return 0.0
-            
+
             # Use last 20% of trials for convergence analysis
             last_portion = max(1, len(scores) // 5)
             recent_scores = scores[-last_portion:]
-            
+
             # Calculate coefficient of variation
             mean_score = safe_mean(np.array(recent_scores))
             std_score = safe_std(np.array(recent_scores))
-            
+
             if mean_score == 0:
                 return 0.0
-            
+
             cv = safe_divide(std_score, abs(mean_score))
             return 1.0 - cv  # Lower CV means better convergence
-            
+
         except Exception:
             return 0.0
-    
+
     @tprint_timer("Results Serialization")
     def save_results(
-        self, 
-        results: Dict[str, Any], 
+        self,
+        results: Dict[str, Any],
         filepath: str
     ) -> bool:
         """Save search results using serialization utilities.
-        
+
         Args:
             results: Search results to save
             filepath: Path to save results
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             tprint_info(f"💾 Saving results to {filepath}")
-            
+
             # Add metadata
             results_with_metadata = {
                 'results': results,
@@ -834,75 +834,75 @@ class NASEngine:
                     'memory_usage': get_memory_usage()
                 }
             }
-            
+
             # Save using universal serializer
             success = self.serializer.save(results_with_metadata, filepath)
-            
+
             if success:
                 tprint_success(f"✅ Results saved successfully to {filepath}")
             else:
                 tprint_error(f"❌ Failed to save results to {filepath}")
-            
+
             return success
-            
+
         except Exception as e:
             tprint_error(f"❌ Error saving results: {e}")
             return False
-    
+
     def load_results(self, filepath: str) -> Optional[Dict[str, Any]]:
         """Load search results using serialization utilities.
-        
+
         Args:
             filepath: Path to load results from
-            
+
         Returns:
             Loaded results or None if loading fails
         """
         try:
             tprint_info(f"📂 Loading results from {filepath}")
-            
+
             # Load using universal serializer
             results = self.serializer.load(filepath)
-            
+
             if results:
                 tprint_success(f"✅ Results loaded successfully from {filepath}")
                 return results
             else:
                 tprint_error(f"❌ Failed to load results from {filepath}")
                 return None
-                
+
         except Exception as e:
             tprint_error(f"❌ Error loading results: {e}")
             return None
-    
+
     def cleanup(self):
         """Cleanup resources and M1 optimizations."""
         try:
             tprint_info("🧹 Cleaning up NAS Engine resources")
-            
+
             # Get memory usage before cleanup
             memory_before = get_memory_usage()
             tprint_debug(f"💾 Memory usage before cleanup: {memory_before}")
-            
+
             # Cleanup M1 optimizers
             tprint_debug("🔧 Cleaning up M1 optimizers")
             cleanup_m1_optimizers()
             tprint_debug("✅ M1 optimizers cleaned up")
-            
+
             # Clear search history
             search_count = len(self.search_history)
             tprint_debug(f"📊 Clearing {search_count} search history entries")
             self.search_history.clear()
-            
+
             # Clear performance metrics
             perf_count = len(self.performance_metrics)
             tprint_debug(f"📊 Clearing {perf_count} performance metrics entries")
             self.performance_metrics.clear()
-            
+
             # Get memory usage after cleanup
             memory_after = get_memory_usage()
             tprint_debug(f"💾 Memory usage after cleanup: {memory_after}")
-            
+
             tprint_success("✅ NAS Engine cleanup completed")
             tprint_structured({
                 'cleanup_summary': {
@@ -913,7 +913,7 @@ class NASEngine:
                     'cleanup_successful': True
                 }
             }, LogLevel.INFO)
-            
+
         except Exception as e:
             tprint_error(f"❌ Error during cleanup: {e}")
             tprint_structured({
@@ -923,16 +923,16 @@ class NASEngine:
                     'cleanup_failed': True
                 }
             }, LogLevel.ERROR)
-    
+
     def __enter__(self):
         """Context manager entry."""
         tprint_debug("🚪 Entering NAS Engine context manager")
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
         tprint_debug("🚪 Exiting NAS Engine context manager")
-        
+
         if exc_type is not None:
             tprint_error(f"❌ Exception in context manager: {exc_type.__name__}: {exc_val}")
             tprint_structured({
@@ -944,37 +944,35 @@ class NASEngine:
             }, LogLevel.ERROR)
         else:
             tprint_debug("✅ Context manager exited normally")
-        
-        self.cleanup()
 
+        self.cleanup()
 
 # Convenience function for quick NAS usage
 def create_nas_engine(config: Optional[Dict[str, Any]] = None) -> NASEngine:
     """Create a NAS engine instance with default configuration.
-    
+
     Args:
         config: Optional configuration dictionary
-        
+
     Returns:
         Configured NASEngine instance
     """
     tprint_info("🏭 Creating NAS Engine instance")
     tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
-    
+
     if config:
         tprint_debug(f"⚙️ Config keys: {list(config.keys())}")
-    
+
     engine = NASEngine(config)
     tprint_success("✅ NAS Engine instance created successfully")
     return engine
-
 
 # Example usage
 if __name__ == "__main__":
     # Configure tprint for better output
     tprint_info("🚀 Starting NAS Engine example")
     from ...tprint import TPrintConfig, configure_tprint
-    
+
     tprint_debug("⚙️ Configuring tprint for enhanced output")
     config = TPrintConfig(
         use_colors=True,
@@ -984,18 +982,18 @@ if __name__ == "__main__":
     )
     configure_tprint(config)
     tprint_success("✅ Tprint configuration applied")
-    
+
     # Create and use NAS engine
     tprint_info("🏭 Creating NAS engine for example usage")
     with create_nas_engine() as nas_engine:
         tprint_info("📊 Starting data loading and validation example")
-        
+
         # Load data
         data = nas_engine.load_and_validate_data("ETHUSDT", "1m")
-        
+
         if data is not None:
             tprint_success("✅ Data loaded successfully, proceeding with architecture search")
-            
+
             # Define search space
             tprint_debug("🔧 Defining architecture search space")
             search_space = {
@@ -1004,7 +1002,7 @@ if __name__ == "__main__":
                 'width': [8, 16, 32, 64, 128],
                 'activation': ['relu', 'tanh', 'sigmoid']
             }
-            
+
             tprint_info(f"📋 Search space defined: {len(search_space)} parameters")
             tprint_structured({
                 'search_space_summary': {
@@ -1013,7 +1011,7 @@ if __name__ == "__main__":
                     'total_combinations': np.prod([len(v) for v in search_space.values()])
                 }
             }, LogLevel.INFO)
-            
+
             # Perform architecture search
             tprint_info("🔍 Starting architecture search")
             with tprint_timer("Complete Architecture Search Example"):
@@ -1023,7 +1021,7 @@ if __name__ == "__main__":
                     optimization_method="bayesian_tpe",
                     n_trials=50
                 )
-            
+
             # Save results
             if results:
                 tprint_info("💾 Saving architecture search results")
@@ -1032,12 +1030,12 @@ if __name__ == "__main__":
                     tprint_success("✅ Results saved successfully")
                 else:
                     tprint_warning("⚠️ Failed to save results")
-                
+
                 tprint_info("📊 Displaying search results summary")
                 tprint_structured(results, LogLevel.INFO)
             else:
                 tprint_error("❌ No results to save")
         else:
             tprint_error("❌ Failed to load data, skipping architecture search")
-    
+
     tprint_success("✅ NAS Engine example completed")

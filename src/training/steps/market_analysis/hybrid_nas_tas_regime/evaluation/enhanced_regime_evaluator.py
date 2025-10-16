@@ -48,9 +48,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -101,7 +101,7 @@ class EnhancedRegimeEvaluator:
         """Initialize enhanced regime evaluator."""
         tprint_info("🚀 Initializing Enhanced Regime Evaluator")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -126,8 +126,8 @@ class EnhancedRegimeEvaluator:
         tprint_success("✅ Enhanced Regime Evaluator initialized")
         self.logger.info("✅ Enhanced Regime Evaluator initialized")
 
-    def evaluate_regimes(self, 
-                        market_data: pd.DataFrame, 
+    def evaluate_regimes(self,
+                        market_data: pd.DataFrame,
                         regime_labels: np.ndarray,
                         returns: Optional[np.ndarray] = None) -> RegimeEvaluationResult:
         """
@@ -185,7 +185,7 @@ class EnhancedRegimeEvaluator:
 
             tprint_success(f"🎉 [REGIME_EVALUATION] Enhanced regime evaluation completed successfully")
             tprint_performance(f"⚡ [REGIME_EVALUATION] Final result: {len(regime_metrics)} regimes evaluated")
-            
+
             return RegimeEvaluationResult(
                 regime_metrics=regime_metrics,
                 regime_rankings=regime_rankings,
@@ -228,9 +228,9 @@ class EnhancedRegimeEvaluator:
             self.logger.warning(f"Return calculation failed: {e}")
             return np.zeros(len(market_data))
 
-    def _calculate_regime_metrics(self, 
-                                 market_data: pd.DataFrame, 
-                                 regime_labels: np.ndarray, 
+    def _calculate_regime_metrics(self,
+                                 market_data: pd.DataFrame,
+                                 regime_labels: np.ndarray,
                                  returns: np.ndarray) -> List[RegimeMetrics]:
         """Calculate comprehensive metrics for each regime."""
         try:
@@ -249,24 +249,24 @@ class EnhancedRegimeEvaluator:
                 # Basic statistics
                 mean_return = np.mean(regime_returns)
                 volatility = np.std(regime_returns)
-                
+
                 # Risk-adjusted metrics
                 sharpe_ratio = self._calculate_sharpe_ratio(regime_returns)
                 sortino_ratio = self._calculate_sortino_ratio(regime_returns)
                 max_drawdown = self._calculate_max_drawdown(regime_returns)
                 calmar_ratio = self._calculate_calmar_ratio(regime_returns, max_drawdown)
-                
+
                 # Trading metrics
                 hit_rate, payoff_ratio = self._calculate_trading_metrics(regime_returns)
-                
+
                 # Risk metrics
                 var_95, cvar_95 = self._calculate_risk_metrics(regime_returns)
                 information_ratio = self._calculate_information_ratio(regime_returns)
-                
+
                 # Distribution metrics
                 skewness = stats.skew(regime_returns)
                 kurtosis = stats.kurtosis(regime_returns)
-                
+
                 # Economic and trading viability
                 economic_significance = self._calculate_economic_significance(regime_data, regime_returns)
                 trading_viability = self._calculate_trading_viability(hit_rate, payoff_ratio, sharpe_ratio)
@@ -312,7 +312,7 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0 or np.std(returns) == 0:
                 return 0.0
-            
+
             excess_returns = returns - (self.risk_free_rate / 252)  # Daily risk-free rate
             return np.mean(excess_returns) / np.std(returns) * np.sqrt(252)  # Annualized
         except:
@@ -323,13 +323,13 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0:
                 return 0.0
-            
+
             excess_returns = returns - (self.risk_free_rate / 252)
             downside_returns = excess_returns[excess_returns < 0]
-            
+
             if len(downside_returns) == 0 or np.std(downside_returns) == 0:
                 return 0.0
-            
+
             return np.mean(excess_returns) / np.std(downside_returns) * np.sqrt(252)
         except:
             return 0.0
@@ -339,7 +339,7 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0:
                 return 0.0
-            
+
             cumulative = np.cumprod(1 + returns)
             running_max = np.maximum.accumulate(cumulative)
             drawdown = (cumulative - running_max) / running_max
@@ -352,7 +352,7 @@ class EnhancedRegimeEvaluator:
         try:
             if max_drawdown == 0:
                 return 0.0
-            
+
             annual_return = np.mean(returns) * 252
             return annual_return / max_drawdown
         except:
@@ -363,17 +363,17 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0:
                 return 0.0, 0.0
-            
+
             positive_returns = returns[returns > 0]
             negative_returns = returns[returns < 0]
-            
+
             hit_rate = len(positive_returns) / len(returns) if len(returns) > 0 else 0.0
-            
+
             avg_gain = np.mean(positive_returns) if len(positive_returns) > 0 else 0.0
             avg_loss = abs(np.mean(negative_returns)) if len(negative_returns) > 0 else 0.0
-            
+
             payoff_ratio = avg_gain / avg_loss if avg_loss > 0 else 0.0
-            
+
             return hit_rate, payoff_ratio
         except:
             return 0.0, 0.0
@@ -383,10 +383,10 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0:
                 return 0.0, 0.0
-            
+
             var_95 = np.percentile(returns, (1 - self.confidence_level) * 100)
             cvar_95 = np.mean(returns[returns <= var_95]) if np.any(returns <= var_95) else var_95
-            
+
             return var_95, cvar_95
         except:
             return 0.0, 0.0
@@ -396,12 +396,12 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) == 0 or np.std(returns) == 0:
                 return 0.0
-            
+
             # Use benchmark return of 0 (market-neutral)
             benchmark_return = 0.0
             excess_returns = returns - benchmark_return
             tracking_error = np.std(excess_returns)
-            
+
             return np.mean(excess_returns) / tracking_error if tracking_error > 0 else 0.0
         except:
             return 0.0
@@ -410,17 +410,17 @@ class EnhancedRegimeEvaluator:
         """Calculate economic significance score."""
         try:
             significance_factors = []
-            
+
             # Return significance
             if len(returns) > 0:
                 return_significance = min(abs(np.mean(returns)) * 100, 1.0)
                 significance_factors.append(return_significance)
-            
+
             # Volatility significance
             if len(returns) > 1:
                 vol_significance = min(np.std(returns) * 10, 1.0)
                 significance_factors.append(vol_significance)
-            
+
             # Volume significance (if available)
             if 'volume' in regime_data.columns:
                 volume = regime_data['volume'].values
@@ -428,7 +428,7 @@ class EnhancedRegimeEvaluator:
                     volume_volatility = np.std(volume) / np.mean(volume) if np.mean(volume) > 0 else 0
                     volume_significance = min(volume_volatility, 1.0)
                     significance_factors.append(volume_significance)
-            
+
             return np.mean(significance_factors) if significance_factors else 0.5
         except:
             return 0.5
@@ -451,15 +451,15 @@ class EnhancedRegimeEvaluator:
         try:
             if len(returns) < 10:
                 return 0.5
-            
+
             # Rolling volatility stability
             window_size = min(10, len(returns) // 2)
             rolling_vol = pd.Series(returns).rolling(window=window_size).std()
             vol_stability = 1.0 - (rolling_vol.std() / rolling_vol.mean()) if rolling_vol.mean() > 0 else 0.0
-            
+
             # Return consistency
             return_consistency = 1.0 - (np.std(returns) / abs(np.mean(returns))) if np.mean(returns) != 0 else 0.0
-            
+
             return (vol_stability + return_consistency) / 2.0
         except:
             return 0.5
@@ -471,14 +471,14 @@ class EnhancedRegimeEvaluator:
             vol_score = min(volatility * 10, 1.0)
             dd_score = min(max_drawdown * 5, 1.0)
             var_score = min(abs(var_95) * 20, 1.0)
-            
+
             # Combined risk score (lower is better, so invert)
             risk_score = (vol_score + dd_score + var_score) / 3.0
             return 1.0 - risk_score  # Invert so higher is better
         except:
             return 0.5
 
-    def _calculate_performance_score(self, sharpe_ratio: float, sortino_ratio: float, 
+    def _calculate_performance_score(self, sharpe_ratio: float, sortino_ratio: float,
                                    hit_rate: float, payoff_ratio: float) -> float:
         """Calculate overall performance score."""
         try:
@@ -487,7 +487,7 @@ class EnhancedRegimeEvaluator:
             sortino_norm = min(max(sortino_ratio, 0) / 2.0, 1.0)
             hit_rate_norm = min(hit_rate, 1.0)
             payoff_norm = min(payoff_ratio / 2.0, 1.0)
-            
+
             # Weighted performance score
             performance = (
                 0.3 * sharpe_norm +
@@ -495,7 +495,7 @@ class EnhancedRegimeEvaluator:
                 0.2 * hit_rate_norm +
                 0.2 * payoff_norm
             )
-            
+
             return min(performance, 1.0)
         except:
             return 0.5
@@ -504,33 +504,33 @@ class EnhancedRegimeEvaluator:
         """Calculate various regime rankings."""
         try:
             rankings = {}
-            
+
             # Performance rankings
-            sharpe_ranking = sorted(range(len(regime_metrics)), 
+            sharpe_ranking = sorted(range(len(regime_metrics)),
                                  key=lambda i: regime_metrics[i].sharpe_ratio, reverse=True)
-            sortino_ranking = sorted(range(len(regime_metrics)), 
+            sortino_ranking = sorted(range(len(regime_metrics)),
                                    key=lambda i: regime_metrics[i].sortino_ratio, reverse=True)
-            performance_ranking = sorted(range(len(regime_metrics)), 
+            performance_ranking = sorted(range(len(regime_metrics)),
                                        key=lambda i: regime_metrics[i].performance_score, reverse=True)
-            
+
             # Risk rankings (lower risk is better)
-            risk_ranking = sorted(range(len(regime_metrics)), 
+            risk_ranking = sorted(range(len(regime_metrics)),
                                 key=lambda i: regime_metrics[i].risk_score, reverse=True)
-            drawdown_ranking = sorted(range(len(regime_metrics)), 
+            drawdown_ranking = sorted(range(len(regime_metrics)),
                                     key=lambda i: regime_metrics[i].max_drawdown)
-            
+
             # Trading rankings
-            hit_rate_ranking = sorted(range(len(regime_metrics)), 
+            hit_rate_ranking = sorted(range(len(regime_metrics)),
                                    key=lambda i: regime_metrics[i].hit_rate, reverse=True)
-            payoff_ranking = sorted(range(len(regime_metrics)), 
+            payoff_ranking = sorted(range(len(regime_metrics)),
                                   key=lambda i: regime_metrics[i].payoff_ratio, reverse=True)
-            
+
             # Economic rankings
-            economic_ranking = sorted(range(len(regime_metrics)), 
+            economic_ranking = sorted(range(len(regime_metrics)),
                                    key=lambda i: regime_metrics[i].economic_significance, reverse=True)
-            trading_viability_ranking = sorted(range(len(regime_metrics)), 
+            trading_viability_ranking = sorted(range(len(regime_metrics)),
                                             key=lambda i: regime_metrics[i].trading_viability, reverse=True)
-            
+
             rankings = {
                 'sharpe_ratio': sharpe_ranking,
                 'sortino_ratio': sortino_ranking,
@@ -542,7 +542,7 @@ class EnhancedRegimeEvaluator:
                 'economic_significance': economic_ranking,
                 'trading_viability': trading_viability_ranking
             }
-            
+
             return rankings
         except Exception as e:
             self.logger.warning(f"Regime rankings calculation failed: {e}")
@@ -553,33 +553,33 @@ class EnhancedRegimeEvaluator:
         try:
             if not regime_metrics:
                 return 0.0
-            
+
             # Weighted average of key metrics
             scores = []
             weights = []
-            
+
             for metric in regime_metrics:
                 # Performance weight
                 perf_score = metric.performance_score
                 scores.append(perf_score)
                 weights.append(0.3)
-                
+
                 # Risk-adjusted weight
                 risk_adj_score = (metric.sharpe_ratio + metric.sortino_ratio) / 2.0
                 risk_adj_score = min(max(risk_adj_score, 0) / 2.0, 1.0)
                 scores.append(risk_adj_score)
                 weights.append(0.25)
-                
+
                 # Trading viability weight
                 trading_score = metric.trading_viability
                 scores.append(trading_score)
                 weights.append(0.25)
-                
+
                 # Stability weight
                 stability_score = metric.stability_score
                 scores.append(stability_score)
                 weights.append(0.2)
-            
+
             # Calculate weighted average
             if weights:
                 overall_score = np.average(scores, weights=weights)
@@ -595,7 +595,7 @@ class EnhancedRegimeEvaluator:
         try:
             transitions = []
             unique_regimes = set(regime_labels)
-            
+
             for i in range(1, len(regime_labels)):
                 if regime_labels[i] != regime_labels[i-1]:
                     transition = {
@@ -605,7 +605,7 @@ class EnhancedRegimeEvaluator:
                         'transition_type': f"{regime_labels[i-1]} -> {regime_labels[i]}"
                     }
                     transitions.append(transition)
-            
+
             return transitions
         except Exception as e:
             self.logger.warning(f"Regime transition analysis failed: {e}")
@@ -615,21 +615,21 @@ class EnhancedRegimeEvaluator:
         """Calculate risk-adjusted rankings."""
         try:
             # Sharpe ratio ranking
-            sharpe_ranking = sorted(range(len(regime_metrics)), 
+            sharpe_ranking = sorted(range(len(regime_metrics)),
                                  key=lambda i: regime_metrics[i].sharpe_ratio, reverse=True)
-            
+
             # Sortino ratio ranking
-            sortino_ranking = sorted(range(len(regime_metrics)), 
+            sortino_ranking = sorted(range(len(regime_metrics)),
                                    key=lambda i: regime_metrics[i].sortino_ratio, reverse=True)
-            
+
             # Calmar ratio ranking
-            calmar_ranking = sorted(range(len(regime_metrics)), 
+            calmar_ranking = sorted(range(len(regime_metrics)),
                                   key=lambda i: regime_metrics[i].calmar_ratio, reverse=True)
-            
+
             # Information ratio ranking
-            info_ranking = sorted(range(len(regime_metrics)), 
+            info_ranking = sorted(range(len(regime_metrics)),
                                 key=lambda i: regime_metrics[i].information_ratio, reverse=True)
-            
+
             return {
                 'sharpe_ratio': sharpe_ranking,
                 'sortino_ratio': sortino_ranking,
@@ -644,17 +644,17 @@ class EnhancedRegimeEvaluator:
         """Calculate economic rankings."""
         try:
             # Economic significance ranking
-            economic_ranking = sorted(range(len(regime_metrics)), 
+            economic_ranking = sorted(range(len(regime_metrics)),
                                     key=lambda i: regime_metrics[i].economic_significance, reverse=True)
-            
+
             # Trading viability ranking
-            trading_ranking = sorted(range(len(regime_metrics)), 
+            trading_ranking = sorted(range(len(regime_metrics)),
                                    key=lambda i: regime_metrics[i].trading_viability, reverse=True)
-            
+
             # Stability ranking
-            stability_ranking = sorted(range(len(regime_metrics)), 
+            stability_ranking = sorted(range(len(regime_metrics)),
                                      key=lambda i: regime_metrics[i].stability_score, reverse=True)
-            
+
             return {
                 'economic_significance': economic_ranking,
                 'trading_viability': trading_ranking,
@@ -668,17 +668,17 @@ class EnhancedRegimeEvaluator:
         """Calculate trading-specific rankings."""
         try:
             # Hit rate ranking
-            hit_rate_ranking = sorted(range(len(regime_metrics)), 
+            hit_rate_ranking = sorted(range(len(regime_metrics)),
                                     key=lambda i: regime_metrics[i].hit_rate, reverse=True)
-            
+
             # Payoff ratio ranking
-            payoff_ranking = sorted(range(len(regime_metrics)), 
+            payoff_ranking = sorted(range(len(regime_metrics)),
                                   key=lambda i: regime_metrics[i].payoff_ratio, reverse=True)
-            
+
             # Risk score ranking (higher is better)
-            risk_ranking = sorted(range(len(regime_metrics)), 
+            risk_ranking = sorted(range(len(regime_metrics)),
                                 key=lambda i: regime_metrics[i].risk_score, reverse=True)
-            
+
             return {
                 'hit_rate': hit_rate_ranking,
                 'payoff_ratio': payoff_ranking,
@@ -694,16 +694,16 @@ def create_enhanced_regime_evaluator(config: Dict[str, Any]) -> EnhancedRegimeEv
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -722,8 +722,8 @@ def create_enhanced_regime_evaluator(config: Dict[str, Any]) -> EnhancedRegimeEv
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -740,13 +740,13 @@ def create_enhanced_regime_evaluator(config: Dict[str, Any]) -> EnhancedRegimeEv
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

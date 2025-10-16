@@ -39,20 +39,20 @@ class OptimizationError(FeatureGenerationError):
 def validate_required_columns(data: pd.DataFrame, required_columns: List[str]) -> None:
     """
     Validate that DataFrame has required columns with fast fail.
-    
+
     Args:
         data: DataFrame to validate
         required_columns: List of required column names
-        
+
     Raises:
         DataValidationError: If required columns are missing
     """
     if not isinstance(data, pd.DataFrame):
         fast_fail_error("Data must be a pandas DataFrame", DataValidationError)
-    
+
     if data.empty:
         fast_fail_error("DataFrame is empty", DataValidationError)
-    
+
     missing_columns = [col for col in required_columns if col not in data.columns]
     if missing_columns:
         fast_fail_error(
@@ -63,18 +63,18 @@ def validate_required_columns(data: pd.DataFrame, required_columns: List[str]) -
 def validate_data_types(data: pd.DataFrame, column_types: Dict[str, type]) -> None:
     """
     Validate DataFrame column data types with fast fail.
-    
+
     Args:
         data: DataFrame to validate
         column_types: Dictionary mapping column names to expected types
-        
+
     Raises:
         DataValidationError: If data types don't match
     """
     for column, expected_type in column_types.items():
         if column not in data.columns:
             continue
-        
+
         actual_type = data[column].dtype
         if not np.issubdtype(actual_type, expected_type):
             fast_fail_error(
@@ -85,20 +85,20 @@ def validate_data_types(data: pd.DataFrame, column_types: Dict[str, type]) -> No
 def validate_finite_values(data: pd.Series, column_name: str = None) -> None:
     """
     Validate that series contains only finite values with fast fail.
-    
+
     Args:
         data: Series to validate
         column_name: Name of column for error message
-        
+
     Raises:
         DataValidationError: If non-finite values found
     """
     if not isinstance(data, pd.Series):
         fast_fail_error("Data must be a pandas Series", DataValidationError)
-    
+
     if data.empty:
         fast_fail_error("Series is empty", DataValidationError)
-    
+
     non_finite_count = (~np.isfinite(data)).sum()
     if non_finite_count > 0:
         col_info = f" in column '{column_name}'" if column_name else ""
@@ -110,20 +110,20 @@ def validate_finite_values(data: pd.Series, column_name: str = None) -> None:
 def validate_positive_values(data: pd.Series, column_name: str = None) -> None:
     """
     Validate that series contains only positive values with fast fail.
-    
+
     Args:
         data: Series to validate
         column_name: Name of column for error message
-        
+
     Raises:
         DataValidationError: If non-positive values found
     """
     if not isinstance(data, pd.Series):
         fast_fail_error("Data must be a pandas Series", DataValidationError)
-    
+
     if data.empty:
         fast_fail_error("Series is empty", DataValidationError)
-    
+
     non_positive_count = (data <= 0).sum()
     if non_positive_count > 0:
         col_info = f" in column '{column_name}'" if column_name else ""
@@ -135,12 +135,12 @@ def validate_positive_values(data: pd.Series, column_name: str = None) -> None:
 def validate_window_size(window: int, data_length: int, min_window: int = 1) -> None:
     """
     Validate rolling window size with fast fail.
-    
+
     Args:
         window: Window size to validate
         data_length: Length of data
         min_window: Minimum allowed window size
-        
+
     Raises:
         ConfigurationError: If window size is invalid
     """
@@ -149,7 +149,7 @@ def validate_window_size(window: int, data_length: int, min_window: int = 1) -> 
             f"Window size must be integer >= {min_window}, got {window}",
             ConfigurationError
         )
-    
+
     if window > data_length:
         fast_fail_error(
             f"Window size {window} exceeds data length {data_length}",
@@ -159,46 +159,46 @@ def validate_window_size(window: int, data_length: int, min_window: int = 1) -> 
 def validate_periods(periods: Union[int, List[int]], data_length: int) -> None:
     """
     Validate period parameters with fast fail.
-    
+
     Args:
         periods: Period or list of periods to validate
         data_length: Length of data
-        
+
     Raises:
         ConfigurationError: If periods are invalid
     """
     if isinstance(periods, int):
         periods = [periods]
-    
+
     for period in periods:
         if not isinstance(period, int) or period < 1:
             fast_fail_error(
                 f"Period must be positive integer, got {period}",
                 ConfigurationError
             )
-        
+
         if period > data_length:
             fast_fail_error(
                 f"Period {period} exceeds data length {data_length}",
                 ConfigurationError
             )
 
-def safe_divide(numerator: Union[float, pd.Series], 
-                denominator: Union[float, pd.Series], 
+def safe_divide(numerator: Union[float, pd.Series],
+                denominator: Union[float, pd.Series],
                 default: float = 0.0,
                 zero_handling: str = "default") -> Union[float, pd.Series]:
     """
     Safe division with proper error handling.
-    
+
     Args:
         numerator: Numerator value or series
         denominator: Denominator value or series
         default: Default value when division by zero
         zero_handling: How to handle zeros ('default', 'nan', 'error')
-        
+
     Returns:
         Result of division or default/nan/error based on zero_handling
-        
+
     Raises:
         ComputationError: If zero_handling is 'error' and division by zero occurs
     """
@@ -214,9 +214,9 @@ def safe_divide(numerator: Union[float, pd.Series],
                     )
             elif denominator == 0 or not np.isfinite(denominator):
                 fast_fail_error("Division by zero detected", ComputationError)
-        
+
         result = numerator / denominator
-        
+
         if zero_handling == "nan":
             # Replace inf/nan with NaN
             if isinstance(result, pd.Series):
@@ -229,40 +229,40 @@ def safe_divide(numerator: Union[float, pd.Series],
                 result = result.replace([np.inf, -np.inf], default)
             elif not np.isfinite(result):
                 result = default
-        
+
         return result
-        
+
     except Exception as e:
         fast_fail_error(f"Safe division failed: {str(e)}", ComputationError)
 
-def safe_rolling_operation(data: pd.Series, 
-                          operation: str, 
+def safe_rolling_operation(data: pd.Series,
+                          operation: str,
                           window: int,
                           min_periods: int = None) -> pd.Series:
     """
     Safe rolling operation with proper error handling.
-    
+
     Args:
         data: Input series
         operation: Rolling operation ('mean', 'std', 'var', 'min', 'max', 'sum')
         window: Rolling window size
         min_periods: Minimum periods for valid result
-        
+
     Returns:
         Result of rolling operation
-        
+
     Raises:
         ComputationError: If operation fails
     """
     try:
         validate_window_size(window, len(data))
         validate_finite_values(data, "input_data")
-        
+
         if min_periods is None:
             min_periods = window
-        
+
         rolling_obj = data.rolling(window=window, min_periods=min_periods)
-        
+
         if operation == 'mean':
             result = rolling_obj.mean()
         elif operation == 'std':
@@ -277,29 +277,29 @@ def safe_rolling_operation(data: pd.Series,
             result = rolling_obj.sum()
         else:
             fast_fail_error(f"Unsupported rolling operation: {operation}", ComputationError)
-        
+
         # Validate result
         validate_finite_values(result, f"rolling_{operation}")
-        
+
         return result
-        
+
     except Exception as e:
         fast_fail_error(f"Rolling operation failed: {str(e)}", ComputationError)
 
-def safe_technical_indicator(data: pd.DataFrame, 
-                           indicator: str, 
+def safe_technical_indicator(data: pd.DataFrame,
+                           indicator: str,
                            **kwargs) -> pd.Series:
     """
     Safe technical indicator calculation with proper error handling.
-    
+
     Args:
         data: OHLCV data
         indicator: Indicator name
         **kwargs: Indicator parameters
-        
+
     Returns:
         Indicator values
-        
+
     Raises:
         ComputationError: If indicator calculation fails
     """
@@ -310,9 +310,9 @@ def safe_technical_indicator(data: pd.DataFrame,
             required_columns.extend(['high', 'low'])
         if indicator in ['obv', 'mfi']:
             required_columns.append('volume')
-        
+
         validate_required_columns(data, required_columns)
-        
+
         # Calculate indicator based on type
         if indicator == 'rsi':
             return _calculate_rsi_safe(data['close'], **kwargs)
@@ -328,47 +328,47 @@ def safe_technical_indicator(data: pd.DataFrame,
             return _calculate_obv_safe(data['close'], data['volume'], **kwargs)
         else:
             fast_fail_error(f"Unsupported indicator: {indicator}", ComputationError)
-            
+
     except Exception as e:
         fast_fail_error(f"Technical indicator {indicator} failed: {str(e)}", ComputationError)
 
 def _calculate_rsi_safe(close: pd.Series, window: int = 14) -> pd.Series:
     """Safe RSI calculation."""
     validate_window_size(window, len(close))
-    
+
     delta = close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    
+
     rs = safe_divide(gain, loss, default=0.0, zero_handling="default")
     rsi = 100 - (100 / (1 + rs))
-    
+
     validate_finite_values(rsi, "rsi")
     return rsi
 
-def _calculate_macd_safe(close: pd.Series, 
-                        fast_window: int = 12, 
-                        slow_window: int = 26, 
+def _calculate_macd_safe(close: pd.Series,
+                        fast_window: int = 12,
+                        slow_window: int = 26,
                         signal_window: int = 9) -> pd.Series:
     """Safe MACD calculation."""
     validate_periods([fast_window, slow_window, signal_window], len(close))
-    
+
     ema_fast = close.ewm(span=fast_window).mean()
     ema_slow = close.ewm(span=slow_window).mean()
     macd = ema_fast - ema_slow
-    
+
     validate_finite_values(macd, "macd")
     return macd
 
 def _calculate_atr_safe(high: pd.Series, low: pd.Series, close: pd.Series, window: int = 14) -> pd.Series:
     """Safe ATR calculation."""
     validate_window_size(window, len(close))
-    
+
     tr1 = high - low
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
+
     atr = safe_rolling_operation(tr, 'mean', window)
     validate_finite_values(atr, "atr")
     return atr
@@ -376,45 +376,45 @@ def _calculate_atr_safe(high: pd.Series, low: pd.Series, close: pd.Series, windo
 def _calculate_bbands_safe(close: pd.Series, window: int = 20, std_dev: float = 2.0) -> pd.Series:
     """Safe Bollinger Bands calculation."""
     validate_window_size(window, len(close))
-    
+
     sma = safe_rolling_operation(close, 'mean', window)
     std = safe_rolling_operation(close, 'std', window)
-    
+
     upper = sma + (std * std_dev)
     lower = sma - (std * std_dev)
-    
+
     validate_finite_values(upper, "bbands_upper")
     validate_finite_values(lower, "bbands_lower")
-    
+
     return upper, sma, lower
 
-def _calculate_stoch_safe(high: pd.Series, low: pd.Series, close: pd.Series, 
+def _calculate_stoch_safe(high: pd.Series, low: pd.Series, close: pd.Series,
                          k_window: int = 14, d_window: int = 3) -> pd.Series:
     """Safe Stochastic calculation."""
     validate_window_size(k_window, len(close))
     validate_window_size(d_window, len(close))
-    
+
     lowest_low = safe_rolling_operation(low, 'min', k_window)
     highest_high = safe_rolling_operation(high, 'max', k_window)
-    
+
     k_percent = safe_divide(
         (close - lowest_low) * 100,
         (highest_high - lowest_low),
         default=50.0,
         zero_handling="default"
     )
-    
+
     validate_finite_values(k_percent, "stoch_k")
     return k_percent
 
 def _calculate_obv_safe(close: pd.Series, volume: pd.Series) -> pd.Series:
     """Safe OBV calculation."""
     validate_positive_values(volume, "volume")
-    
+
     price_change = close.diff()
-    obv = np.where(price_change > 0, volume, 
+    obv = np.where(price_change > 0, volume,
                   np.where(price_change < 0, -volume, 0))
-    
+
     obv_cumsum = pd.Series(obv, index=close.index).cumsum()
     validate_finite_values(obv_cumsum, "obv")
     return obv_cumsum
@@ -422,7 +422,7 @@ def _calculate_obv_safe(close: pd.Series, volume: pd.Series) -> pd.Series:
 def fast_fail_decorator(error_class: type = FeatureGenerationError):
     """
     Decorator for fast fail error handling.
-    
+
     Args:
         error_class: Exception class to raise on failure
     """
@@ -439,7 +439,7 @@ def fast_fail_decorator(error_class: type = FeatureGenerationError):
 # Export main functions
 __all__ = [
     'FeatureGenerationError',
-    'DataValidationError', 
+    'DataValidationError',
     'ConfigurationError',
     'ComputationError',
     'OptimizationError',

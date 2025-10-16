@@ -68,7 +68,6 @@ except ImportError as error:  # pragma: no cover - import guard
     get_m1_cpu_performance_monitor = lambda: None  # type: ignore
     get_m1_cpu_scheduler = lambda: None  # type: ignore
 
-
 @dataclass
 class HardwareResources:
     """Collection of hardware and matrix resources used by clustering components."""
@@ -80,7 +79,6 @@ class HardwareResources:
     m1_gpu_optimizer: Optional[Any] = None
     m1_memory_optimizer: Optional[Any] = None
     m1_cpu_optimizer: Optional[Any] = None
-
 
 class HardwareSetup:
     """Helper responsible for initializing hardware and matrix resources."""

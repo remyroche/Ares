@@ -42,7 +42,7 @@ __all__ = []
 if DEPENDENCY_INJECTION_AVAILABLE:
     __all__.extend([
         "DependencyContainer",
-        "ComponentFactory", 
+        "ComponentFactory",
         "ModularTradingSystem",
         "ServiceRegistration",
     ])

@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Import optimized clustering components
 from .optimized_clustering import (
-    OptimizedRegimeClusterer, 
+    OptimizedRegimeClusterer,
     OptimizedClusteringResult,
     create_optimized_clusterer,
     cluster_hmm_regimes_optimized
@@ -36,31 +36,31 @@ class OptimizedHMMClusteringIntegration:
         self.vectorized_ops = VectorizedClusteringOperations()
         self.performance_metrics = {}
 
-    def process_hmm_regime_data(self, hmm_data: pd.DataFrame, 
+    def process_hmm_regime_data(self, hmm_data: pd.DataFrame,
                                feature_columns: Optional[list] = None) -> OptimizedClusteringResult:
         """
         Process HMM regime data with optimized clustering.
-        
+
         Args:
             hmm_data: DataFrame containing HMM regime data
             feature_columns: List of feature columns to use
-            
+
         Returns:
             Optimized clustering result
         """
         try:
             logger.info("🚀 Processing HMM regime data with optimized clustering...")
-            
+
             # Prepare features
             if feature_columns is None:
-                feature_columns = [col for col in hmm_data.columns 
+                feature_columns = [col for col in hmm_data.columns
                                  if col not in ['timestamp', 'regime', 'probability']]
-            
+
             features_df = hmm_data[feature_columns]
-            
+
             # Run optimized clustering
             result = self.clusterer.cluster(features_df)
-            
+
             # Log performance metrics
             if result.success:
                 logger.info("✅ Optimized clustering completed successfully")
@@ -69,40 +69,40 @@ class OptimizedHMMClusteringIntegration:
                 logger.info(f"   Performance: {result.performance_metrics}")
             else:
                 logger.error(f"❌ Clustering failed: {result.error_message}")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Error processing HMM regime data: {e}")
             raise
 
-    def compare_with_original(self, hmm_data: pd.DataFrame, 
+    def compare_with_original(self, hmm_data: pd.DataFrame,
                             feature_columns: Optional[list] = None) -> Dict[str, Any]:
         """
         Compare optimized clustering with original implementation.
-        
+
         Args:
             hmm_data: DataFrame containing HMM regime data
             feature_columns: List of feature columns to use
-            
+
         Returns:
             Comparison results
         """
         try:
             logger.info("🔍 Comparing optimized vs original clustering...")
-            
+
             # Prepare features
             if feature_columns is None:
-                feature_columns = [col for col in hmm_data.columns 
+                feature_columns = [col for col in hmm_data.columns
                                  if col not in ['timestamp', 'regime', 'probability']]
-            
+
             features_df = hmm_data[feature_columns]
-            
+
             # Run optimized clustering
             start_time = pd.Timestamp.now()
             optimized_result = self.clusterer.cluster(features_df)
             optimized_time = (pd.Timestamp.now() - start_time).total_seconds()
-            
+
             # Run original clustering for comparison
             try:
                 from .clustering import OptimalRegimeClusterer
@@ -114,7 +114,7 @@ class OptimizedHMMClusteringIntegration:
                 logger.warning(f"Original clustering failed: {e}")
                 original_result = None
                 original_time = float('inf')
-            
+
             # Compare results
             comparison = {
                 'optimized': {
@@ -131,15 +131,15 @@ class OptimizedHMMClusteringIntegration:
                     'silhouette': original_result.quality_metrics.get('silhouette', 0.0) if original_result else 0.0
                 }
             }
-            
+
             # Calculate speedup
             if original_time != float('inf') and optimized_time > 0:
                 speedup = original_time / optimized_time
                 comparison['speedup'] = speedup
                 logger.info(f"🚀 Speedup: {speedup:.2f}x")
-            
+
             return comparison
-            
+
         except Exception as e:
             logger.error(f"Error comparing clustering implementations: {e}")
             raise
@@ -147,43 +147,43 @@ class OptimizedHMMClusteringIntegration:
     def benchmark_performance(self, dataset_sizes: list = None) -> Dict[str, Any]:
         """
         Benchmark performance across different dataset sizes.
-        
+
         Args:
             dataset_sizes: List of dataset sizes to test
-            
+
         Returns:
             Benchmark results
         """
         if dataset_sizes is None:
             dataset_sizes = [500, 1000, 2000, 5000]
-        
+
         logger.info(f"🔍 Benchmarking performance for sizes: {dataset_sizes}")
-        
+
         benchmark = ClusteringPerformanceBenchmark(self.config)
         results = benchmark.run_comprehensive_benchmark(dataset_sizes)
-        
+
         return results
 
     def optimize_for_dataset(self, hmm_data: pd.DataFrame) -> OptimalClusteringConfig:
         """
         Optimize configuration for specific dataset characteristics.
-        
+
         Args:
             hmm_data: Dataset to optimize for
-            
+
         Returns:
             Optimized configuration
         """
         try:
             logger.info("🔧 Optimizing configuration for dataset...")
-            
+
             n_samples = len(hmm_data)
-            n_features = len([col for col in hmm_data.columns 
+            n_features = len([col for col in hmm_data.columns
                             if col not in ['timestamp', 'regime', 'probability']])
-            
+
             # Create optimized configuration
             optimized_config = OptimalClusteringConfig()
-            
+
             # Adjust parameters based on dataset size
             if n_samples < 1000:
                 optimized_config.chunk_size = 500
@@ -194,41 +194,41 @@ class OptimizedHMMClusteringIntegration:
             else:
                 optimized_config.chunk_size = 2000
                 optimized_config.kmeans_num_seeds = 15
-            
+
             # Adjust for feature count
             if n_features > 20:
                 optimized_config.clustering_method = "hybrid"  # Better for high dimensions
             else:
                 optimized_config.clustering_method = "kmeans"
-            
+
             # Enable memory optimization for large datasets
             if n_samples > 5000:
                 optimized_config.use_memory_optimization = True
                 optimized_config.multi_stage_clustering = True
-            
+
             logger.info(f"✅ Configuration optimized for {n_samples} samples, {n_features} features")
-            
+
             return optimized_config
-            
+
         except Exception as e:
             logger.error(f"Error optimizing configuration: {e}")
             return self.config
 
-    def create_clustering_report(self, result: OptimizedClusteringResult, 
+    def create_clustering_report(self, result: OptimizedClusteringResult,
                                 output_path: str = "clustering_report.html") -> str:
         """
         Create comprehensive clustering report.
-        
+
         Args:
             result: Clustering result
             output_path: Path to save report
-            
+
         Returns:
             Report content
         """
         try:
             logger.info("📊 Creating clustering report...")
-            
+
             # Generate HTML report
             html_content = f"""
             <!DOCTYPE html>
@@ -250,11 +250,11 @@ class OptimizedHMMClusteringIntegration:
                     <h1>HMM Clustering Report</h1>
                     <p>Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
                 </div>
-                
+
                 <div class="section">
                     <h2>Clustering Results</h2>
                     <div class="metric">
-                        <strong>Status:</strong> 
+                        <strong>Status:</strong>
                         <span class="{'success' if result.success else 'error'}">
                             {'Success' if result.success else 'Failed'}
                         </span>
@@ -272,14 +272,14 @@ class OptimizedHMMClusteringIntegration:
                         <strong>Davies-Bouldin Score:</strong> {result.quality_metrics.get('davies_bouldin', 0.0):.3f}
                     </div>
                 </div>
-                
+
                 <div class="section">
                     <h2>Performance Metrics</h2>
                     <div class="performance">
                         {self._format_performance_metrics(result.performance_metrics)}
                     </div>
                 </div>
-                
+
                 <div class="section">
                     <h2>Hardware Optimizations</h2>
                     <div class="metric">
@@ -292,19 +292,19 @@ class OptimizedHMMClusteringIntegration:
                         <strong>Matrix Operations:</strong> {'Available' if result.metadata.get('hardware_optimizations', {}).get('matrix_ops_available') else 'Not Available'}
                     </div>
                 </div>
-                
+
                 {f'<div class="section"><h2>Error Details</h2><p class="error">{result.error_message}</p></div>' if not result.success else ''}
             </body>
             </html>
             """
-            
+
             # Save report
             with open(output_path, 'w') as f:
                 f.write(html_content)
-            
+
             logger.info(f"📊 Report saved to {output_path}")
             return html_content
-            
+
         except Exception as e:
             logger.error(f"Error creating report: {e}")
             return ""
@@ -313,12 +313,12 @@ class OptimizedHMMClusteringIntegration:
         """Format performance metrics for HTML display."""
         if not metrics:
             return "No performance metrics available"
-        
+
         html = "<ul>"
         for operation, time_taken in metrics.items():
             html += f"<li><strong>{operation}:</strong> {time_taken:.4f}s</li>"
         html += "</ul>"
-        
+
         return html
 
     def cleanup(self):
@@ -329,7 +329,7 @@ class OptimizedHMMClusteringIntegration:
             self.vectorized_ops.cleanup()
 
 # Convenience functions
-def process_hmm_data_optimized(hmm_data: pd.DataFrame, 
+def process_hmm_data_optimized(hmm_data: pd.DataFrame,
                               config: Optional[OptimalClusteringConfig] = None,
                               feature_columns: Optional[list] = None) -> OptimizedClusteringResult:
     """Process HMM data with optimized clustering."""
@@ -351,7 +351,7 @@ def benchmark_clustering_performance(dataset_sizes: list = None) -> Dict[str, An
 if __name__ == "__main__":
     # Example usage
     logging.basicConfig(level=logging.INFO)
-    
+
     # Generate sample data
     n_samples = 1000
     n_features = 10
@@ -359,10 +359,10 @@ if __name__ == "__main__":
         np.random.randn(n_samples, n_features),
         columns=[f'feature_{i}' for i in range(n_features)]
     )
-    
+
     # Process with optimized clustering
     result = process_hmm_data_optimized(sample_data)
-    
+
     if result.success:
         print(f"✅ Clustering completed successfully!")
         print(f"   Clusters: {len(np.unique(result.labels))}")

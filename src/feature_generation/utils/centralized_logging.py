@@ -27,11 +27,11 @@ class FeatureGenerationLogger:
     """
     Centralized logger for feature generation with fast-fail error handling.
     """
-    
+
     def __init__(self, name: str = "feature_generation"):
         self.logger = logging.getLogger(name)
         self._setup_logging()
-    
+
     def _setup_logging(self):
         """Setup logging configuration."""
         if not self.logger.handlers:
@@ -42,7 +42,7 @@ class FeatureGenerationLogger:
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
             self.logger.setLevel(logging.INFO)
-    
+
     def info(self, message: str, **kwargs):
         """Log info message with tprint if available."""
         self.logger.info(message)
@@ -50,7 +50,7 @@ class FeatureGenerationLogger:
             _tprint(f"INFO: {message}", **kwargs)
         else:
             print(f"INFO: {message}")
-    
+
     def debug(self, message: str, **kwargs):
         """Log debug message with tprint if available."""
         self.logger.debug(message)
@@ -58,7 +58,7 @@ class FeatureGenerationLogger:
             _tprint(f"DEBUG: {message}", **kwargs)
         else:
             print(f"DEBUG: {message}")
-    
+
     def warning(self, message: str, **kwargs):
         """Log warning message with tprint if available."""
         self.logger.warning(message)
@@ -66,7 +66,7 @@ class FeatureGenerationLogger:
             _tprint(f"WARNING: {message}", **kwargs)
         else:
             print(f"WARNING: {message}")
-    
+
     def error(self, message: str, **kwargs):
         """Log error message with tprint if available."""
         self.logger.error(message)
@@ -74,7 +74,7 @@ class FeatureGenerationLogger:
             _tprint(f"ERROR: {message}", **kwargs)
         else:
             print(f"ERROR: {message}")
-    
+
     def critical(self, message: str, **kwargs):
         """Log critical message with tprint if available."""
         self.logger.critical(message)
@@ -82,7 +82,7 @@ class FeatureGenerationLogger:
             _tprint(f"CRITICAL: {message}", **kwargs)
         else:
             print(f"CRITICAL: {message}")
-    
+
     def exception(self, message: str, exc_info: bool = True, **kwargs):
         """Log exception with full traceback."""
         self.logger.exception(message, exc_info=exc_info)
@@ -99,7 +99,7 @@ _feature_logger = FeatureGenerationLogger()
 def tprint(message: str, level: str = "info", **kwargs):
     """
     Centralized tprint function that replaces scattered tprint imports.
-    
+
     Args:
         message: Message to log
         level: Log level (info, debug, warning, error, critical)
@@ -132,7 +132,7 @@ def log_function_result(func_name: str, success: bool, duration: float = None, *
 def fast_fail_error(message: str, exception_class: type = ValueError, **kwargs):
     """
     Fast fail with proper error handling instead of silent failures.
-    
+
     Args:
         message: Error message
         exception_class: Exception class to raise
@@ -141,20 +141,20 @@ def fast_fail_error(message: str, exception_class: type = ValueError, **kwargs):
     error_msg = f"FAST FAIL: {message}"
     if kwargs:
         error_msg += f" Context: {kwargs}"
-    
+
     tprint(error_msg, level="error")
     raise exception_class(error_msg)
 
 def safe_execute(func, *args, error_message: str = None, **kwargs):
     """
     Safely execute a function with proper error handling.
-    
+
     Args:
         func: Function to execute
         *args: Function arguments
         error_message: Custom error message
         **kwargs: Function keyword arguments
-        
+
     Returns:
         Function result or None if failed
     """
@@ -168,24 +168,24 @@ def safe_execute(func, *args, error_message: str = None, **kwargs):
 def validate_dataframe(data, required_columns: list = None, min_rows: int = 1):
     """
     Validate DataFrame with fast fail on errors.
-    
+
     Args:
         data: DataFrame to validate
         required_columns: List of required columns
         min_rows: Minimum number of rows required
-        
+
     Raises:
         ValueError: If validation fails
     """
     if data is None:
         fast_fail_error("DataFrame is None")
-    
+
     if hasattr(data, 'empty') and data.empty:
         fast_fail_error("DataFrame is empty")
-    
+
     if hasattr(data, 'shape') and data.shape[0] < min_rows:
         fast_fail_error(f"DataFrame has insufficient rows: {data.shape[0]} < {min_rows}")
-    
+
     if required_columns:
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
@@ -208,7 +208,7 @@ def log_function_execution(level: str = "debug"):
             if level in ["debug", "info"]:
                 import time
                 start_time = time.time()
-            
+
             try:
                 result = func(*args, **kwargs)
                 if start_time:

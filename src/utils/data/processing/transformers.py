@@ -28,7 +28,7 @@ except ImportError:
 
 class DataStreamingManager:
     """Manages data streaming and chunking for large datasets."""
-    
+
     _instance = None
     _initialized = False
 
@@ -41,7 +41,7 @@ class DataStreamingManager:
     def __init__(self, chunk_size: int = 10000, memory_threshold: float = 0.8, overlap_size: int = 100, enable_compression: bool = True) -> None:
         """
         Initialize data streaming manager (only once due to singleton).
-        
+
         Args:
             chunk_size: Number of rows per chunk
             memory_threshold: Memory usage threshold (0.0-1.0)
@@ -50,7 +50,7 @@ class DataStreamingManager:
         """
         if self._initialized:
             return
-        
+
         start_time = time.time()
         self.logger = system_logger.getChild('DataStreamingManager')
         self.chunk_size = chunk_size
@@ -61,7 +61,7 @@ class DataStreamingManager:
         self.performance_metrics = {'chunks_processed': 0, 'total_rows_processed': 0, 'memory_usage_peak': 0.0, 'processing_time_total': 0.0, 'compression_ratio': 0.0}
         self.logger.info(f'🚀 DataStreamingManager initialized (singleton): chunk_size={chunk_size}, memory_threshold={memory_threshold}')
         self._initialized = True
-        
+
         # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
@@ -71,13 +71,12 @@ class DataStreamingManager:
             # Fallback to basic logging (Numba-safe)
             self.logger.info(f"⏱️ DataStreamingManager initialized in {duration:.3f}s")
 
-
 class DataTransformer:
     """Data transformation utilities for feature engineering using BaseScaler."""
 
     def __init__(self, use_vectorbt: bool = True, enable_batch_processing: bool = True):
         """Initialize the DataTransformer with BaseScaler integration.
-        
+
         Args:
             use_vectorbt: Whether to use VectorBT-optimized scalers
             enable_batch_processing: Whether to enable batch processing for large datasets
@@ -85,7 +84,7 @@ class DataTransformer:
         self.logger = system_logger.getChild('DataTransformer')
         self.use_vectorbt = use_vectorbt and SCALER_AVAILABLE
         self.enable_batch_processing = enable_batch_processing
-        
+
         # Initialize scalers
         self.scalers = {}
         self._initialize_scalers()
@@ -95,7 +94,7 @@ class DataTransformer:
         if not SCALER_AVAILABLE:
             self.logger.warning("BaseScaler not available, using fallback implementations")
             return
-        
+
         try:
             # Create optimized scalers
             self.scalers = {
@@ -104,15 +103,15 @@ class DataTransformer:
                 'robust': create_optimized_scaler('robust') if create_optimized_scaler else None,
                 'quantile': create_optimized_scaler('quantile') if create_optimized_scaler else None,
             }
-            
+
             # Use VectorBT scalers if available and requested
             if self.use_vectorbt and VectorBTScaler:
                 self.scalers['vectorbt_zscore'] = VectorBTScaler()
                 if self.enable_batch_processing and VectorBTBatchScaler:
                     self.scalers['vectorbt_batch'] = VectorBTBatchScaler()
-            
+
             self.logger.info(f"Initialized {len(self.scalers)} scalers")
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to initialize scalers: {e}")
             self.scalers = {}
@@ -185,7 +184,7 @@ class DataTransformer:
     def _apply_scaler_to_dataframe(self, data: pd.DataFrame, scaler: BaseScaler) -> pd.DataFrame:
         """Apply a scaler to all numeric columns in a DataFrame."""
         transformed_data = data.copy()
-        
+
         for col in data.select_dtypes(include=[np.number]).columns:
             try:
                 # Fit and transform the column
@@ -194,7 +193,7 @@ class DataTransformer:
                 self.logger.warning(f"Failed to transform column {col}: {e}")
                 # Keep original values if transformation fails
                 transformed_data[col] = data[col]
-        
+
         return transformed_data
 
     def _log_transform_features(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -270,10 +269,10 @@ class DataTransformer:
     def should_chunk_data(self, data: pd.DataFrame) -> bool:
         """
         Determine if data should be chunked based on size and memory usage.
-        
+
         Args:
             data: DataFrame to evaluate
-            
+
         Returns:
             True if data should be chunked
         """
@@ -293,12 +292,12 @@ class DataTransformer:
     def create_data_chunks(self, data: pd.DataFrame, preserve_order: bool = True, time_based_chunking: bool = True) -> Generator[pd.DataFrame, None, None]:
         """
         Create data chunks with optional overlap and time-based chunking.
-        
+
         Args:
             data: DataFrame to chunk
             preserve_order: Whether to preserve temporal order
             time_based_chunking: Use time-based chunking if timestamp column exists
-            
+
         Yields:
             DataFrame chunks
         """
@@ -362,13 +361,13 @@ class DataTransformer:
     def process_large_dataset(self, data: pd.DataFrame, processing_func: Callable[[pd.DataFrame], pd.DataFrame], combine_results: bool = True, progress_callback: Optional[Callable[[int, int], None]]=None) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Process large dataset in chunks with memory management.
-        
+
         Args:
             data: DataFrame to process
             processing_func: Function to apply to each chunk
             combine_results: Whether to combine results into single DataFrame
             progress_callback: Optional progress callback function
-            
+
         Returns:
             Processed DataFrame or list of processed chunks
         """
@@ -438,12 +437,12 @@ class DataTransformer:
     def stream_data_from_file(self, file_path: Union[str, Path], chunk_size: Optional[int]=None, file_format: str='parquet') -> Generator[pd.DataFrame, None, None]:
         """
         Stream data from file in chunks.
-        
+
         Args:
             file_path: Path to data file
             chunk_size: Override default chunk size
             file_format: File format ('parquet', 'csv', 'json')
-            
+
         Yields:
             DataFrame chunks
         """

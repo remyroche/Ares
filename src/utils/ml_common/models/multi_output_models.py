@@ -72,7 +72,6 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class MultiOutputConfig:
     """Configuration for multi-output models."""
@@ -82,45 +81,44 @@ class MultiOutputConfig:
     output_names: List[str] = field(default_factory=lambda: ["output_1", "output_2", "output_3", "output_4"])
     # Output format for predictions: 'array' or 'dict'
     output_format: str = 'array'
-    
+
     # Model configuration
     base_models: Dict[str, Any] = field(default_factory=dict)
     meta_model: Optional[Any] = None
-    
+
     # Training configuration
     enable_cross_validation: bool = True
     cv_folds: int = 5
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
-    
+
     # Multi-output specific settings
     output_weights: Optional[List[float]] = None
     output_loss_weights: Optional[List[float]] = None
     enable_output_correlation: bool = True
     correlation_threshold: float = 0.7
-    
+
     # M1 optimization settings
     enable_gpu_acceleration: bool = True
     enable_memory_optimization: bool = True
     enable_parallel_processing: bool = True
     memory_limit_gb: float = 8.0
     max_workers: Optional[int] = None
-    
+
     # Performance settings
     enable_caching: bool = True
     cache_size_mb: int = 100
     enable_profiling: bool = False
-    
+
     # Validation settings
     validation_split: float = 0.2
     test_split: float = 0.1
     enable_online_learning: bool = False
-    
+
     # Output settings
     save_models: bool = True
     save_predictions: bool = True
     generate_reports: bool = True
-
 
 @dataclass
 class MultiOutputResult:
@@ -131,57 +129,56 @@ class MultiOutputResult:
     output_names: List[str]
     created_at: datetime
     total_duration: float
-    
+
     # Predictions
     predictions: np.ndarray = field(default_factory=lambda: np.array([]))
     prediction_probabilities: Optional[np.ndarray] = None
     confidence_scores: np.ndarray = field(default_factory=lambda: np.array([]))
-    
+
     # Performance metrics
     performance_metrics: Dict[str, float] = field(default_factory=dict)
     per_output_metrics: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    
+
     # Model characteristics
     model_weights: Optional[np.ndarray] = None
     output_correlations: Optional[np.ndarray] = None
     feature_importance: Optional[Dict[str, Any]] = None
-    
+
     # Metadata
     config: MultiOutputConfig = field(default_factory=MultiOutputConfig)
     execution_time: float = 0.0
     memory_usage_mb: float = 0.0
     optimization_used: List[str] = field(default_factory=list)
 
-
 class MultiOutputModel(ABC):
     """Abstract base class for multi-output models."""
-    
+
     def __init__(self, config: MultiOutputConfig):
         """Initialize the multi-output model."""
         self.config = config
         self.logger = logger.getChild(f'MultiOutputModel.{config.model_name}')
         self.logger.info(f"🚀 Initializing MultiOutputModel: {config.model_name}")
-        
+
         # Initialize M1 optimizers
         self.m1_gpu = get_m1_memory_optimizer() if config.enable_gpu_acceleration else None
         self.m1_memory = get_m1_memory_optimizer(
             memory_limit_gb=config.memory_limit_gb
         ) if config.enable_memory_optimization else None
         self.m1_cpu = get_memory_manager() if config.enable_parallel_processing else None
-        
+
         # Model state
         self.is_fitted = False
         self.output_weights = config.output_weights or [1.0] * config.n_outputs
         self.output_loss_weights = config.output_loss_weights or [1.0] * config.n_outputs
-        
+
         # Performance tracking
         self.training_history: List[Dict[str, Any]] = []
         self.prediction_history: List[Dict[str, Any]] = []
-        
+
         self.logger.info(f"✅ MultiOutputModel initialized with {config.n_outputs} outputs")
         self.logger.info(f"📊 Output names: {config.output_names}")
         self.logger.info(f"⚖️ Output weights: {self.output_weights}")
-    
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputModel':
         """Fit the multi-output model."""
         try:
@@ -441,7 +438,7 @@ class MultiOutputModel(ABC):
                         n = X.shape[0] if hasattr(X, 'shape') else len(X)
                         return np.full(n, getattr(self, '_mean', 0.0))
                 return DummyModel()
-    
+
     def validate_outputs(self, y: np.ndarray) -> bool:
         """Validate output data format."""
         if len(y.shape) == 1:
@@ -457,12 +454,12 @@ class MultiOutputModel(ABC):
         else:
             self.logger.error(f"❌ Output data must be 2D after reshaping, got {y.ndim}D shape: {y.shape}")
             return False
-    
+
     def calculate_output_correlations(self, y: np.ndarray) -> np.ndarray:
         """Calculate correlations between outputs."""
         if not self.config.enable_output_correlation:
             return None
-        
+
         try:
             correlations = np.corrcoef(y.T)
             self.logger.debug(f"📊 Output correlations calculated: {correlations.shape}")
@@ -470,7 +467,7 @@ class MultiOutputModel(ABC):
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to calculate output correlations: {e}")
             return None
-    
+
     def apply_output_weights(self, predictions: np.ndarray) -> np.ndarray:
         """Apply output weights to predictions."""
         if len(self.output_weights) != self.config.n_outputs:
@@ -478,40 +475,40 @@ class MultiOutputModel(ABC):
             weights = np.ones(self.config.n_outputs) / self.config.n_outputs
         else:
             weights = np.array(self.output_weights)
-        
+
         # Normalize weights
         weights = weights / weights.sum()
-        
+
         # Apply weights
         weighted_predictions = predictions * weights
-        
+
         self.logger.debug(f"⚖️ Applied output weights: {weights}")
         return weighted_predictions
-    
+
     def calculate_confidence_scores(self, predictions: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for predictions."""
         try:
             # Simple confidence based on prediction magnitude
             confidence = np.abs(predictions)
             confidence = confidence / (confidence.max(axis=0, keepdims=True) + 1e-8)
-            
+
             # Average confidence across outputs
             avg_confidence = np.mean(confidence, axis=1)
-            
+
             self.logger.debug(f"📊 Confidence scores calculated: {avg_confidence.shape}")
             return avg_confidence
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to calculate confidence scores: {e}")
             return np.ones(len(predictions))
-    
+
     def get_feature_importance(self) -> Optional[Dict[str, Any]]:
         """Get feature importance if available."""
         try:
             if not self.is_fitted or not hasattr(self, 'models'):
                 return None
-            
+
             feature_importance = {}
-            
+
             for output_name, model in self.models.items():
                 try:
                     if hasattr(model, 'feature_importances_'):
@@ -554,7 +551,7 @@ class MultiOutputModel(ABC):
                                 y_sample = self.y_train[:n_samples] if hasattr(self, 'y_train') and self.y_train is not None else None
                                 if y_sample is not None:
                                     perm_importance = permutation_importance(
-                                        model, X_sample, y_sample, 
+                                        model, X_sample, y_sample,
                                         n_repeats=5, random_state=42, n_jobs=1
                                     )
                                     feature_importance[output_name] = {
@@ -566,27 +563,27 @@ class MultiOutputModel(ABC):
                         except Exception as e:
                             self.logger.debug(f"Could not calculate permutation importance for {output_name}: {e}")
                             continue
-                            
+
                 except Exception as e:
                     self.logger.warning(f"Could not extract feature importance for {output_name}: {e}")
                     continue
-            
+
             if feature_importance:
                 self.logger.info(f"✅ Extracted feature importance for {len(feature_importance)} outputs")
                 return feature_importance
             else:
                 self.logger.warning("⚠️ No feature importance available for any output")
                 return None
-                
+
         except Exception as e:
             self.logger.error(f"❌ Feature importance extraction failed: {e}")
             return None
-    
+
     def save_model(self, file_path: str) -> None:
         """Save the model to disk."""
         try:
             import pickle
-            
+
             model_data = {
                 'config': self.config,
                 'is_fitted': self.is_fitted,
@@ -595,53 +592,52 @@ class MultiOutputModel(ABC):
                 'training_history': self.training_history,
                 'prediction_history': self.prediction_history
             }
-            
+
             with open(file_path, 'wb') as f:
                 pickle.dump(model_data, f)
-            
+
             self.logger.info(f"💾 Model saved to {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to save model: {e}")
             raise
-    
+
     def load_model(self, file_path: str) -> None:
         """Load the model from disk."""
         try:
-            
+
             with open(file_path, 'rb') as f:
                 model_data = pickle.load(f)
-            
+
             self.config = model_data['config']
             self.is_fitted = model_data['is_fitted']
             self.output_weights = model_data['output_weights']
             self.output_loss_weights = model_data['output_loss_weights']
             self.training_history = model_data['training_history']
             self.prediction_history = model_data['prediction_history']
-            
+
             self.logger.info(f"📂 Model loaded from {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load model: {e}")
             raise
 
-
 class MultiOutputStackingModel(MultiOutputModel):
     """Multi-output stacking ensemble model."""
-    
+
     def __init__(self, config: MultiOutputConfig):
         """Initialize the multi-output stacking model."""
         super().__init__(config)
         self.logger = logger.getChild(f'MultiOutputStackingModel.{config.model_name}')
-        
+
         # Base models for each output
         self.base_models: Dict[str, Dict[str, Any]] = {}
         self.meta_models: Dict[str, Any] = {}
-        
+
         # Training data
         self.X_train: Optional[np.ndarray] = None
         self.y_train: Optional[np.ndarray] = None
-        
+
         self.logger.info(f"✅ MultiOutputStackingModel initialized for {config.n_outputs} outputs")
         # OOF storage
         self._oof_base_predictions: Dict[str, np.ndarray] = {}
@@ -653,32 +649,32 @@ class MultiOutputStackingModel(MultiOutputModel):
             if _OVERFITTING_AVAILABLE
             else None
         )
-    
+
     def add_base_model(self, output_name: str, model_name: str, model: Any) -> None:
         """Add a base model for a specific output."""
         if output_name not in self.base_models:
             self.base_models[output_name] = {}
-        
+
         self.base_models[output_name][model_name] = model
         self.logger.info(f"➕ Added base model {model_name} for output {output_name}")
-    
+
     def add_meta_model(self, output_name: str, model: Any) -> None:
         """Add a meta model for a specific output."""
         self.meta_models[output_name] = model
         self.logger.info(f"➕ Added meta model for output {output_name}")
-    
+
     def _create_default_base_models(self, output_name: str) -> None:
         """Create default base models for an output if none exist."""
         if output_name not in self.base_models:
             self.base_models[output_name] = {}
-        
+
         if len(self.base_models[output_name]) == 0:
             try:
                 from sklearn.ensemble import GradientBoostingRegressor, ExtraTreesRegressor
                 from sklearn.linear_model import Ridge, Lasso
                 from sklearn.svm import SVR
                 from sklearn.neighbors import KNeighborsRegressor
-                
+
                 # Create diverse base models for better ensemble performance
                 default_models = {
                     'rf': RandomForestRegressor(n_estimators=50, random_state=42, n_jobs=1),
@@ -690,7 +686,7 @@ class MultiOutputStackingModel(MultiOutputModel):
                     'svr': SVR(kernel='rbf', C=1.0, gamma='scale'),
                     'knn': KNeighborsRegressor(n_neighbors=5, weights='distance')
                 }
-                
+
                 # Only add models that can be imported successfully
                 successful_models = {}
                 for model_name, model in default_models.items():
@@ -701,32 +697,32 @@ class MultiOutputStackingModel(MultiOutputModel):
                     except Exception as e:
                         self.logger.debug(f"Could not create {model_name} model: {e}")
                         continue
-                
+
                 for model_name, model in successful_models.items():
                     self.base_models[output_name][model_name] = model
-                
+
                 self.logger.info(f"🔧 Created {len(successful_models)} default base models for output {output_name}")
-                
+
             except ImportError as e:
                 self.logger.warning(f"⚠️ Could not create default base models for {output_name}: {e}")
                 # Fallback to minimal models
                 try:
                     from sklearn.linear_model import LinearRegression
                     from sklearn.ensemble import RandomForestRegressor
-                    
+
                     minimal_models = {
                         'lr': LinearRegression(),
                         'rf': RandomForestRegressor(n_estimators=10, random_state=42)
                     }
-                    
+
                     for model_name, model in minimal_models.items():
                         self.base_models[output_name][model_name] = model
-                    
+
                     self.logger.info(f"🔧 Created {len(minimal_models)} minimal base models for output {output_name}")
-                    
+
                 except Exception as fallback_e:
                     self.logger.error(f"❌ Could not create any base models for {output_name}: {fallback_e}")
-    
+
     def _create_default_meta_model(self, output_name: str) -> None:
         """Create default meta model for an output if none exist."""
         if output_name not in self.meta_models:
@@ -734,7 +730,7 @@ class MultiOutputStackingModel(MultiOutputModel):
                 from sklearn.ensemble import RandomForestRegressor
                 from sklearn.linear_model import Ridge
                 from sklearn.svm import SVR
-                
+
                 # Try different meta models in order of preference
                 meta_model_candidates = [
                     ('ridge', Ridge(alpha=1.0, random_state=42)),
@@ -742,7 +738,7 @@ class MultiOutputStackingModel(MultiOutputModel):
                     ('svr', SVR(kernel='rbf', C=1.0, gamma='scale')),
                     ('lr', LinearRegression())
                 ]
-                
+
                 for model_name, model in meta_model_candidates:
                     try:
                         # Test if model can be instantiated
@@ -753,12 +749,12 @@ class MultiOutputStackingModel(MultiOutputModel):
                     except Exception as e:
                         self.logger.debug(f"Could not create {model_name} meta model: {e}")
                         continue
-                
+
                 # If no model was created, create a simple fallback
                 if output_name not in self.meta_models:
                     self.meta_models[output_name] = LinearRegression()
                     self.logger.info(f"🔧 Created fallback meta model for output {output_name}")
-                
+
             except ImportError as e:
                 self.logger.warning(f"⚠️ Could not create default meta model for {output_name}: {e}")
                 # Last resort fallback
@@ -767,7 +763,7 @@ class MultiOutputStackingModel(MultiOutputModel):
                     self.logger.info(f"🔧 Created minimal meta model for output {output_name}")
                 except Exception as fallback_e:
                     self.logger.error(f"❌ Could not create any meta model for {output_name}: {fallback_e}")
-    
+
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'MultiOutputStackingModel':
         """Fit the multi-output stacking model with OUT-OF-FOLD stacking.
 
@@ -1078,19 +1074,19 @@ class MultiOutputStackingModel(MultiOutputModel):
         pred = model.predict(X)
         pred_arr = np.asarray(pred).astype(float)
         return pred_arr.ravel()
-    
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions for all outputs."""
-        
+
         if not self.is_fitted:
             raise ValueError("Model not fitted")
-        
+
         self.logger.debug(f"🔮 Making predictions for {X.shape[0]} samples")
         start_time = time.time()
-        
+
         try:
             predictions = []
-            
+
             for output_idx, output_name in enumerate(self.config.output_names):
                 # Ensure base and meta models exist. If missing, create sensible defaults.
                 if output_name not in self.base_models or len(self.base_models.get(output_name, {})) == 0:
@@ -1104,20 +1100,20 @@ class MultiOutputStackingModel(MultiOutputModel):
                     self.logger.warning(f"⚠️ Missing base/meta models for output {output_name}, returning zeros for this output")
                     predictions.append(np.zeros(X.shape[0]))
                     continue
-                
+
                 # Get base model predictions
                 base_predictions = []
                 X_arr = X.values if isinstance(X, pd.DataFrame) else X
                 for model_name, model in self.base_models[output_name].items():
                     pred = self._predict_1d(model, X_arr)
                     base_predictions.append(pred)
-                
+
                 # Stack base predictions
                 base_pred_array = np.column_stack(base_predictions)
-                
+
                 # Combine original features with base model predictions
                 meta_features = np.hstack([X, base_pred_array])
-                
+
                 # Get meta model prediction
                 meta_model = self.meta_models[output_name]
                 try:
@@ -1126,19 +1122,19 @@ class MultiOutputStackingModel(MultiOutputModel):
                     # Fallback to averaging base predictions if meta model fails
                     self.logger.warning(f"⚠️ Meta model prediction failed for {output_name}, using mean of base predictions")
                     meta_pred = base_pred_array.mean(axis=1)
-                
+
                 predictions.append(meta_pred)
                 self.logger.debug(f"✅ Predictions generated for {output_name}: {len(meta_pred)} samples")
-            
+
             # Stack all predictions
             final_predictions = np.column_stack(predictions)
-            
+
             # Apply output weights
             weighted_predictions = self.apply_output_weights(final_predictions)
-            
+
             # Calculate confidence scores
             confidence_scores = self.calculate_confidence_scores(weighted_predictions)
-            
+
             # Record prediction history
             prediction_time = time.time() - start_time
             self.prediction_history.append({
@@ -1148,46 +1144,46 @@ class MultiOutputStackingModel(MultiOutputModel):
                 'confidence_mean': float(np.mean(confidence_scores)),
                 'confidence_std': float(np.std(confidence_scores))
             })
-            
+
             self.logger.info(f"✅ Predictions completed in {prediction_time:.3f}s")
             self.logger.info(f"📊 Confidence: {np.mean(confidence_scores):.3f} ± {np.std(confidence_scores):.3f}")
-            
+
             return weighted_predictions
-            
+
         except Exception as e:
             prediction_time = time.time() - start_time
             self.logger.error(f"❌ Failed to make predictions after {prediction_time:.3f}s: {e}")
             raise
-    
+
     def predict_proba(self, X: np.ndarray) -> Optional[np.ndarray]:
         """Make probability predictions for all outputs."""
-        
+
         if not self.is_fitted:
             raise ValueError("Model not fitted")
-        
+
         self.logger.debug(f"🔮 Making probability predictions for {X.shape[0]} samples")
-        
+
         try:
             # For now, return None as most base models don't support predict_proba
             # In practice, you would implement probability prediction logic
             self.logger.warning("⚠️ Probability predictions not implemented for stacking model")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to make probability predictions: {e}")
             return None
-    
+
     def get_base_model_predictions(self, X: np.ndarray) -> Dict[str, np.ndarray]:
         """Get predictions from all base models."""
-        
+
         if not self.is_fitted:
             raise ValueError("Model not fitted")
-        
+
         base_predictions = {}
-        
+
         for output_name, models in self.base_models.items():
             output_predictions = {}
-            
+
             for model_name, model in models.items():
                 if hasattr(model, 'predict_proba'):
                     pred = model.predict_proba(X)
@@ -1195,21 +1191,21 @@ class MultiOutputStackingModel(MultiOutputModel):
                         pred = pred[:, 1]  # Use positive class probability
                 else:
                     pred = model.predict(X)
-                
+
                 output_predictions[model_name] = pred
-            
+
             base_predictions[output_name] = output_predictions
-        
+
         return base_predictions
-    
+
     def evaluate_performance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Evaluate model performance."""
-        
+
         if not self.is_fitted:
             raise ValueError("Model not fitted")
-        
+
         self.logger.info(f"📊 Evaluating performance on {X.shape[0]} samples")
-        
+
         try:
             # If evaluating on training data and OOF meta predictions exist, prefer OOF
             use_oof = False
@@ -1227,79 +1223,79 @@ class MultiOutputStackingModel(MultiOutputModel):
                 y_pred = self._oof_meta_predictions
             else:
                 y_pred = self.predict(X)
-            
+
             # Ensure y and y_pred are 2D arrays for consistent indexing
             if len(y.shape) == 1:
                 self.logger.info(f"📊 Reshaping 1D y array from {y.shape} to ({y.shape[0]}, 1)")
                 y = y.reshape(-1, 1)
-            
+
             if len(y_pred.shape) == 1:
                 self.logger.info(f"📊 Reshaping 1D y_pred array from {y_pred.shape} to ({y_pred.shape[0]}, 1)")
                 y_pred = y_pred.reshape(-1, 1)
-            
+
             # Validate that we have the expected number of outputs
             expected_outputs = len(self.config.output_names)
             actual_outputs = y.shape[1] if len(y.shape) > 1 else 1
-            
+
             if actual_outputs != expected_outputs:
                 self.logger.warning(f"⚠️ Output count mismatch: expected {expected_outputs}, got {actual_outputs}")
                 # Adjust to handle the actual number of outputs
                 num_outputs_to_process = min(expected_outputs, actual_outputs)
             else:
                 num_outputs_to_process = expected_outputs
-            
+
             # Calculate metrics for each output
             per_output_metrics = {}
             overall_metrics = {}
-            
+
             for output_idx in range(num_outputs_to_process):
                 output_name = self.config.output_names[output_idx] if output_idx < len(self.config.output_names) else f"output_{output_idx + 1}"
-                
+
                 # Safe indexing with bounds checking
                 if y.shape[1] > output_idx:
                     y_true_output = y[:, output_idx]
                 else:
                     self.logger.warning(f"⚠️ No target data for output {output_idx}, using zeros")
                     y_true_output = np.zeros(y.shape[0])
-                
+
                 if y_pred.shape[1] > output_idx:
                     y_pred_output = y_pred[:, output_idx]
                 else:
                     self.logger.warning(f"⚠️ No prediction data for output {output_idx}, using zeros")
                     y_pred_output = np.zeros(y_pred.shape[0])
-                
+
                 # Calculate basic metrics
                 mse = np.mean((y_true_output - y_pred_output) ** 2)
                 mae = np.mean(np.abs(y_true_output - y_pred_output))
-                r2 = 1 - (np.sum((y_true_output - y_pred_output) ** 2) / 
+                r2 = 1 - (np.sum((y_true_output - y_pred_output) ** 2) /
                          np.sum((y_true_output - np.mean(y_true_output)) ** 2))
-                
+
                 per_output_metrics[output_name] = {
                     'mse': float(mse),
                     'mae': float(mae),
                     'r2': float(r2)
                 }
-                
+
                 # Add to overall metrics
                 overall_metrics[f'{output_name}_mse'] = float(mse)
                 overall_metrics[f'{output_name}_mae'] = float(mae)
                 overall_metrics[f'{output_name}_r2'] = float(r2)
-            
+
             # Calculate overall metrics
             overall_metrics['overall_mse'] = float(np.mean([m['mse'] for m in per_output_metrics.values()]))
             overall_metrics['overall_mae'] = float(np.mean([m['mae'] for m in per_output_metrics.values()]))
             overall_metrics['overall_r2'] = float(np.mean([m['r2'] for m in per_output_metrics.values()]))
-            
+
             self.logger.info(f"📊 Overall performance - MSE: {overall_metrics['overall_mse']:.4f}, "
                            f"MAE: {overall_metrics['overall_mae']:.4f}, R²: {overall_metrics['overall_r2']:.4f}")
-            
+
             return {
                 'per_output_metrics': per_output_metrics,
                 'overall_metrics': overall_metrics,
                 'predictions': y_pred,
                 'targets': y
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to evaluate performance: {e}")
             return {'error': str(e)}
@@ -1350,43 +1346,39 @@ class MultiOutputStackingModel(MultiOutputModel):
             self.logger.error(f"❌ OOF evaluation failed: {e}")
             return {'error': str(e)}
 
-
 # Utility functions for multi-output data preparation
 def prepare_multi_output_targets(y: np.ndarray, output_names: List[str]) -> np.ndarray:
     """Prepare multi-output targets from single output data."""
-    
+
     if len(y.shape) == 1:
         # Single output - duplicate for multi-output
         y_multi = np.column_stack([y] * len(output_names))
         logger.info(f"📊 Converted single output to multi-output: {y.shape} -> {y_multi.shape}")
         return y_multi
-    
+
     elif len(y.shape) == 2 and y.shape[1] == len(output_names):
         # Already multi-output
         logger.info(f"📊 Multi-output data already prepared: {y.shape}")
         return y
-    
+
     else:
         raise ValueError(f"Invalid target shape: {y.shape}, expected (n_samples,) or (n_samples, {len(output_names)})")
 
-
-def create_analyst_outputs(signal_strength: np.ndarray, confidence: np.ndarray, 
+def create_analyst_outputs(signal_strength: np.ndarray, confidence: np.ndarray,
                           risk_score: np.ndarray, regime_label: np.ndarray) -> np.ndarray:
     """Create Analyst multi-output targets."""
-    
+
     outputs = np.column_stack([signal_strength, confidence, risk_score, regime_label])
     logger.info(f"📊 Created Analyst outputs: {outputs.shape}")
     return outputs
 
-
 def create_tactician_outputs(entry_timing: np.ndarray, position_size: np.ndarray,
                             stop_loss: np.ndarray, take_profit: np.ndarray) -> np.ndarray:
     """Create Tactician multi-output targets."""
-    
+
     outputs = np.column_stack([entry_timing, position_size, stop_loss, take_profit])
     logger.info(f"📊 Created Tactician outputs: {outputs.shape}")
     return outputs
-
 
 def create_multi_output_stacking_model(config: MultiOutputConfig) -> MultiOutputStackingModel:
     """Create a multi-output stacking model."""

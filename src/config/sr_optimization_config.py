@@ -11,7 +11,6 @@ optimization system, including all optimization strategies and parameters.
 from dataclasses import dataclass, field
 from typing import Any
 
-
 @dataclass
 class SROptimizationConfig:
     """Configuration for S/R detection optimization."""
@@ -170,11 +169,9 @@ class SROptimizationConfig:
             "log_optimization_progress": self.log_optimization_progress,
         }
 
-
 def get_sr_optimization_config() -> SROptimizationConfig:
     """Get default S/R optimization configuration."""
     return SROptimizationConfig()
-
 
 def get_light_optimization_config() -> SROptimizationConfig:
     """Get light optimization configuration for quick testing."""
@@ -187,7 +184,6 @@ def get_light_optimization_config() -> SROptimizationConfig:
     config.enable_regime_optimization = False
     config.enable_real_time_adaptation = False
     return config
-
 
 def get_comprehensive_optimization_config() -> SROptimizationConfig:
     """Get comprehensive optimization configuration for production."""
@@ -209,7 +205,6 @@ def get_comprehensive_optimization_config() -> SROptimizationConfig:
         }
     )
     return config
-
 
 def get_market_specific_config(market_type: str) -> SROptimizationConfig:
     """Get market-specific optimization configuration."""
@@ -258,7 +253,6 @@ def get_market_specific_config(market_type: str) -> SROptimizationConfig:
         ] = 0.3  # More weight on daily
 
     return config
-
 
 def create_optimization_config(
     optimization_level: str = "standard",

@@ -253,14 +253,13 @@ __all__ = [
     "VolumeVolatilityElasticityGenerator",
     "VolatilityFeatureGenerator",
     "GARCHFeatureGenerator",
-    # Note: NormalizationFeatureGenerator and related classes removed from __all__ 
+    # Note: NormalizationFeatureGenerator and related classes removed from __all__
     # to avoid circular imports - they will be imported lazily when needed
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
     "CandlestickPatternFeatureGenerator",
-    
-    
+
     # New consolidated categories
     "AccelerationFeatureGenerator",
     "MomentumGenerator",
@@ -271,7 +270,7 @@ __all__ = [
     "VolumeAccelerationGenerator",
     "VolatilityAccelerationGenerator",
     "create_acceleration_generators",
-    
+
     "InteractionFeatureGenerator",
     "MomentumDivergenceGenerator",
     "MomentumVolumeGenerator",
@@ -283,7 +282,7 @@ __all__ = [
     "VolatilityMomentumGenerator",
     "VolatilityTrendGenerator",
     "create_interaction_generators",
-    
+
     "CrossTimeframeFeatureGenerator",
     "CrossTimeframeMomentumGenerator",
     "CrossTimeframeVolatilityGenerator",
@@ -297,7 +296,7 @@ __all__ = [
     "CrossTimeframeAlignmentGenerator",
     "CrossTimeframeLearnedProjectionGenerator",
     "create_cross_timeframe_generators",
-    
+
     "EntropyFeatureGenerator",
     "PriceEntropyGenerator",
     "VolumeEntropyGenerator",
@@ -321,7 +320,7 @@ __all__ = [
     "EntropyRateGenerator",
     "SpectralEntropyGenerator",
     "create_entropy_generators",
-    
+
     # Legacy interaction generators
     "CrossTimeframeInteractionGenerator",
     "FeatureRatioGenerator",
@@ -330,7 +329,7 @@ __all__ = [
     "create_default_interaction_generators",
     # Note: RegimeDependentFeatureGenerator, CointegrationResidualGenerator,
     # StructuralRatioGenerator, PairwiseInteractionGenerator are not implemented yet
-    
+
     # Other categories
     "create_returns_generators",
     "create_default_returns_generators",

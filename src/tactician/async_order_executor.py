@@ -1,6 +1,6 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 from ...utils.logger import system_logger
 from .core.decorators import handles_errors
+from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Async Order Executor with Advanced Analytics and Dynamic Parameter Optimization
 Integrates with Enhanced Order Manager, Performance Reporter, and Optuna for optimization.

@@ -64,13 +64,10 @@ __all__ = [
     'validate_training_data'
 ]
 
-
 class ValidationError(Exception):
     """Custom exception for validation failures."""
 
-
 ## Removed legacy ValidationFramework in favor of unified framework
-
 
 class ConfigurationValidator:
     """Configuration validation with fast fail mechanisms."""
@@ -103,7 +100,7 @@ class ConfigurationValidator:
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting ML configuration validation...")
         _LOGGER.debug(f"📊 Configuration keys: {list(config.keys()) if config else 'None'}")
-        
+
         try:
             # Required keys validation
             required_keys = ['symbol', 'exchange', 'timeframe']
@@ -114,7 +111,7 @@ class ConfigurationValidator:
                 _LOGGER.error(error_msg)
                 self.logger.error(error_msg)
                 raise ValidationError(error_msg, "configuration", {"missing_keys": missing_keys})
-            
+
             _LOGGER.info(f"✅ Required keys validation passed")
 
             # Symbol validation
@@ -166,7 +163,6 @@ class ConfigurationValidator:
 
         return result
 
-
 class DataValidator:
     """Comprehensive data validation with fast fail mechanisms."""
 
@@ -192,7 +188,7 @@ class DataValidator:
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting DataFrame validation...")
         _LOGGER.info(f"📊 Validation level: {validation_level}")
-        
+
         if data is None:
             error_msg = "❌ FAST FAIL: Input data is None"
             _LOGGER.error(error_msg)
@@ -200,7 +196,7 @@ class DataValidator:
             raise ValidationError(error_msg, "data_integrity", {"data_is_none": True})
 
         _LOGGER.info(f"📊 Data shape: {data.shape}")
-        
+
         if len(data) == 0:
             error_msg = "❌ FAST FAIL: Input data is empty"
             _LOGGER.error(error_msg)
@@ -347,7 +343,6 @@ class DataValidator:
 
         return {'errors': errors, 'warnings': warnings}
 
-
 class ResourceValidator:
     """Resource availability validation with fast fail."""
 
@@ -415,7 +410,6 @@ class ResourceValidator:
             raise ValidationError(error_msg, "resource_validation", {"validation_error": str(e)}) from e
 
         return result
-
 
 class ExecutionValidator:
     """Execution validation with timeout and monitoring."""
@@ -518,7 +512,6 @@ class ExecutionValidator:
             raise
 
         return validation_result
-
 
 class ResultValidator:
     """Result quality validation and statistical checks."""
@@ -637,7 +630,6 @@ class ResultValidator:
 
         return max(0.0, score)  # Ensure non-negative score
 
-
 class MLValidationSuite:
     """Comprehensive ML validation suite combining all validators."""
 
@@ -719,22 +711,19 @@ class MLValidationSuite:
 
         return validation_result
 
-
 # Convenience functions for easy access
 def create_validation_suite(logger: Optional[logging.Logger] = None) -> MLValidationSuite:
     """Create a complete ML validation suite."""
     return MLValidationSuite(logger)
-
 
 async def validate_ml_step(config: Dict[str, Any], data: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
     """Convenience function for complete ML step validation."""
     suite = create_validation_suite()
     return await suite.validate_step_execution(config, data)
 
-
 class ValidationUtils:
     """Utility class for common validation operations."""
-    
+
     @staticmethod
     def validate_config(config: Dict[str, Any]) -> bool:
         """Validate configuration parameters."""
@@ -743,7 +732,7 @@ class ValidationUtils:
         if not config:
             return False
         return True
-    
+
     @staticmethod
     def validate_data_shapes(X, y, regime_labels) -> bool:
         """Validate data shapes for ML training."""
@@ -752,7 +741,7 @@ class ValidationUtils:
         if len(X) != len(y) or len(X) != len(regime_labels):
             return False
         return True
-    
+
     @staticmethod
     def validate_data_quality(X, y, regime_labels) -> bool:
         """Validate data quality for ML training."""
@@ -762,78 +751,77 @@ class ValidationUtils:
         if len(X) == 0 or len(y) == 0 or len(regime_labels) == 0:
             return False
         return True
-    
+
     @staticmethod
     def validate_regime_distribution(regime_labels, min_samples_per_regime: int = 10) -> bool:
         """Validate regime distribution for ML training."""
         if regime_labels is None or len(regime_labels) == 0:
             return False
-        
+
         # Count samples per regime
         unique_regimes, counts = np.unique(regime_labels, return_counts=True)
-        
+
         # Check if all regimes have enough samples
         for count in counts:
             if count < min_samples_per_regime:
                 return False
-        
+
         return True
-    
+
     @staticmethod
     def validate_feature_matrix(X, min_samples: int = 10, max_nan_ratio: float = 0.1) -> bool:
         """Validate feature matrix for ML training."""
         if X is None:
             return False
-        
+
         # Check for empty data
         if len(X) == 0:
             return False
-        
+
         # Check minimum samples
         if len(X) < min_samples:
             return False
-        
+
         # Check for excessive NaN values
         if hasattr(X, 'isna'):  # pandas DataFrame
             nan_ratio = X.isna().sum().sum() / (X.shape[0] * X.shape[1])
         else:  # numpy array
             nan_ratio = np.isnan(X).sum() / X.size
-        
+
         if nan_ratio > max_nan_ratio:
             return False
-        
-        return True
 
+        return True
 
 def validate_input_data(data, required_columns=None, min_samples=10) -> bool:
     """
     Validate input data for ML processing.
-    
+
     Args:
         data: Input data (pandas DataFrame or numpy array)
         required_columns: List of required column names (for DataFrames)
         min_samples: Minimum number of samples required
-        
+
     Returns:
         bool: True if data is valid, False otherwise
     """
     if data is None:
         return False
-    
+
     # Check for empty data
     if len(data) == 0:
         return False
-    
+
     # Check minimum samples
     if len(data) < min_samples:
         return False
-    
+
     # Check required columns for DataFrames
     if hasattr(data, 'columns') and required_columns:
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             return False
-    
+
     # Check for excessive NaN values
     if hasattr(data, 'isna'):  # pandas DataFrame
         nan_ratio = data.isna().sum().sum() / (data.shape[0] * data.shape[1])
@@ -841,13 +829,12 @@ def validate_input_data(data, required_columns=None, min_samples=10) -> bool:
         nan_ratio = np.isnan(data).sum() / data.size
     else:
         nan_ratio = 0.0
-    
+
     # Allow up to 10% NaN values
     if nan_ratio > 0.1:
         return False
-    
-    return True
 
+    return True
 
 # Standalone functions for direct import compatibility
 def validate_data_quality(X, y, regime_labels) -> bool:
@@ -861,45 +848,44 @@ def validate_feature_matrix(X, min_samples: int = 10, max_nan_ratio: float = 0.1
 def validate_model_config(config: Dict[str, Any]) -> bool:
     """
     Validate model configuration for ML training.
-    
+
     Args:
         config: Model configuration dictionary
-        
+
     Returns:
         bool: True if configuration is valid, False otherwise
     """
     if not isinstance(config, dict):
         return False
-    
+
     # Check for required configuration keys
     required_keys = ['model_type', 'parameters']
     for key in required_keys:
         if key not in config:
             return False
-    
+
     # Validate model type
     model_type = config.get('model_type')
     if not isinstance(model_type, str) or len(model_type.strip()) == 0:
         return False
-    
+
     # Validate parameters
     parameters = config.get('parameters')
     if not isinstance(parameters, dict):
         return False
-    
-    return True
 
+    return True
 
 def validate_training_data(X, y=None, regime_labels=None, **kwargs) -> Dict[str, Any]:
     """
     Validate training data for ML training with comprehensive checks.
-    
+
     Args:
         X: Input features (DataFrame or numpy array)
         y: Target values (optional, for supervised learning)
         regime_labels: Regime/cluster labels (optional)
         **kwargs: Additional validation parameters
-        
+
     Returns:
         Dict containing validation result with 'valid' key and additional info
     """
@@ -909,49 +895,49 @@ def validate_training_data(X, y=None, regime_labels=None, **kwargs) -> Dict[str,
         'warnings': [],
         'data_info': {}
     }
-    
+
     try:
         # Check if X is provided
         if X is None:
             result['valid'] = False
             result['errors'].append("Input features X is None")
             return result
-        
+
         # Check if X is empty
         if len(X) == 0:
             result['valid'] = False
             result['errors'].append("Input features X is empty")
             return result
-        
+
         # Basic data info
         if hasattr(X, 'shape'):
             result['data_info']['shape'] = X.shape
         else:
             result['data_info']['length'] = len(X)
-        
+
         # Check minimum samples
         min_samples = kwargs.get('min_samples', 10)
         if len(X) < min_samples:
             result['warnings'].append(f"Dataset has only {len(X)} samples (minimum recommended: {min_samples})")
-        
+
         # Check for excessive NaN values
         nan_ratio = 0.0
         if hasattr(X, 'isna'):  # pandas DataFrame
             nan_ratio = X.isna().sum().sum() / (X.shape[0] * X.shape[1])
         elif hasattr(X, 'size'):  # numpy array
             nan_ratio = np.isnan(X).sum() / X.size
-        
+
         max_nan_ratio = kwargs.get('max_nan_ratio', 0.1)
         if nan_ratio > max_nan_ratio:
             result['warnings'].append(f"High NaN ratio: {nan_ratio:.2%} (threshold: {max_nan_ratio:.2%})")
-        
+
         # Validate target values if provided
         if y is not None:
             if len(y) != len(X):
                 result['valid'] = False
                 result['errors'].append(f"Length mismatch: X has {len(X)} samples, y has {len(y)} samples")
                 return result
-            
+
             # Check for constant target (classification issue)
             if hasattr(y, 'nunique'):
                 unique_values = y.nunique()
@@ -959,38 +945,38 @@ def validate_training_data(X, y=None, regime_labels=None, **kwargs) -> Dict[str,
                     result['warnings'].append("Target variable has only one unique value")
                 elif unique_values < 3 and hasattr(y, 'dtype') and y.dtype == 'object':
                     result['warnings'].append(f"Target variable has only {unique_values} classes")
-        
+
         # Validate regime labels if provided
         if regime_labels is not None:
             if len(regime_labels) != len(X):
                 result['valid'] = False
                 result['errors'].append(f"Length mismatch: X has {len(X)} samples, regime_labels has {len(regime_labels)} samples")
                 return result
-            
+
             # Check regime distribution
             unique_regimes, counts = np.unique(regime_labels, return_counts=True)
             min_samples_per_regime = kwargs.get('min_samples_per_regime', 10)
-            
+
             for regime, count in zip(unique_regimes, counts):
                 if count < min_samples_per_regime:
                     result['warnings'].append(f"Regime {regime} has only {count} samples (minimum: {min_samples_per_regime})")
-            
+
             result['data_info']['n_regimes'] = len(unique_regimes)
             result['data_info']['regime_distribution'] = dict(zip(unique_regimes, counts))
-        
+
         # Add data characteristics
         result['data_info']['nan_ratio'] = nan_ratio
         result['data_info']['n_samples'] = len(X)
-        
+
         # Check for near-constant features (warning only)
         if hasattr(X, 'var'):  # pandas DataFrame
             near_constant_features = X.var() < 1e-10
             if near_constant_features.any():
                 constant_feature_names = X.columns[near_constant_features].tolist()
                 result['warnings'].append(f"⚠️ Near-constant features detected: {constant_feature_names[:5]}")
-        
+
         return result
-        
+
     except Exception as e:
         result['valid'] = False
         result['errors'].append(f"Validation error: {str(e)}")

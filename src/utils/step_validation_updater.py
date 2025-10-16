@@ -20,11 +20,11 @@ class StepValidationUpdater:
     def add_validation_to_step_class(self, step_class: Type, step_name: str) -> Type:
         """
         Add validation methods to an existing step class.
-        
+
         Args:
             step_class: The step class to update
             step_name: Name of the step
-            
+
         Returns:
             Updated step class with validation
         """
@@ -72,10 +72,10 @@ class StepValidationUpdater:
         def _validate_and_fix_input_data(self, data: pd.DataFrame) -> pd.DataFrame:
             """
             Validate and fix input data using pipeline standards.
-            
+
             Args:
                 data: Input DataFrame
-                
+
             Returns:
                 Validated and fixed DataFrame
             """

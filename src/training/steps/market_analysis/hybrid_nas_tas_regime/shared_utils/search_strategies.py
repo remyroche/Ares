@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from abc import ABC, abstractmethod
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -33,7 +33,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class SearchStrategyConfig:
     """Configuration for search strategy operations."""
@@ -47,7 +46,6 @@ class SearchStrategyConfig:
     use_bayesian_optimization: bool = True
     use_grid_optimization: bool = True
 
-
 @dataclass
 class OptimizationResult:
     """Result from optimization operations."""
@@ -59,74 +57,72 @@ class OptimizationResult:
     success: bool
     error_message: Optional[str] = None
 
-
 class AdvancedSearchStrategy(ABC):
     """Abstract base class for advanced search strategies."""
-    
+
     def __init__(self, config: SearchStrategyConfig):
         """Initialize the search strategy.
-        
+
         Args:
             config: Search strategy configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-    
+
     @abstractmethod
     def optimize(self, objective_function: Callable, parameter_space: Dict[str, Any]) -> OptimizationResult:
         """Optimize the objective function over the parameter space.
-        
+
         Args:
             objective_function: Function to optimize
             parameter_space: Parameter space definition
-            
+
         Returns:
             OptimizationResult with optimization results
         """
         pass
 
-
 class BayesianOptimizer(AdvancedSearchStrategy):
     """Bayesian optimization using Gaussian Process regression."""
-    
+
     def __init__(self, config: SearchStrategyConfig):
         """Initialize the Bayesian optimizer.
-        
+
         Args:
             config: Search strategy configuration
         """
         super().__init__(config)
-        
+
         if not BAYESIAN_OPTIMIZATION_AVAILABLE:
             self.logger.warning("⚠️ Bayesian optimization not available - scikit-learn required")
-        
+
         self.logger.info("✅ Bayesian Optimizer initialized")
-    
+
     def optimize(self, objective_function: Callable, parameter_space: Dict[str, Any]) -> OptimizationResult:
         """Optimize using Bayesian optimization.
-        
+
         Args:
             objective_function: Function to optimize
             parameter_space: Parameter space definition
-            
+
         Returns:
             OptimizationResult with optimization results
         """
         try:
             self.logger.info("🔍 Starting Bayesian optimization...")
             start_time = time.time()
-            
+
             if not BAYESIAN_OPTIMIZATION_AVAILABLE:
                 raise ImportError("Bayesian optimization requires scikit-learn")
-            
+
             # Initialize optimization
             optimization_history = []
             best_score = -np.inf
             best_parameters = {}
-            
+
             # Generate initial points
             initial_points = self._generate_initial_points(parameter_space)
-            
+
             # Evaluate initial points
             for point in initial_points:
                 score = objective_function(point)
@@ -135,50 +131,50 @@ class BayesianOptimizer(AdvancedSearchStrategy):
                     'score': score,
                     'iteration': len(optimization_history)
                 })
-                
+
                 if score > best_score:
                     best_score = score
                     best_parameters = point.copy()
-            
+
             # Bayesian optimization loop
             for iteration in range(self.config.n_initial_points, self.config.max_iterations):
                 # Fit Gaussian Process
                 gp = self._fit_gaussian_process(optimization_history)
-                
+
                 # Select next point using acquisition function
                 next_point = self._select_next_point(gp, parameter_space, optimization_history)
-                
+
                 # Evaluate objective function
                 score = objective_function(next_point)
-                
+
                 # Update history
                 optimization_history.append({
                     'parameters': next_point.copy(),
                     'score': score,
                     'iteration': iteration
                 })
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_parameters = next_point.copy()
-                
+
                 # Check convergence
                 if self._check_convergence(optimization_history):
                     self.logger.info(f"✅ Convergence reached at iteration {iteration}")
                     break
-            
+
             execution_time = time.time() - start_time
-            
+
             # Create convergence info
             convergence_info = {
                 'total_iterations': len(optimization_history),
                 'convergence_reached': len(optimization_history) < self.config.max_iterations,
                 'score_improvement': best_score - optimization_history[0]['score'] if optimization_history else 0.0
             }
-            
+
             self.logger.info(f"✅ Bayesian optimization completed: {best_score:.4f} in {execution_time:.2f}s")
-            
+
             return OptimizationResult(
                 best_parameters=best_parameters,
                 best_score=best_score,
@@ -187,7 +183,7 @@ class BayesianOptimizer(AdvancedSearchStrategy):
                 execution_time=execution_time,
                 success=True
             )
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ Bayesian optimization failed: {e}")
@@ -200,13 +196,13 @@ class BayesianOptimizer(AdvancedSearchStrategy):
                 success=False,
                 error_message=str(e)
             )
-    
+
     def _generate_initial_points(self, parameter_space: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate initial points for Bayesian optimization."""
         try:
             initial_points = []
             np.random.seed(self.config.random_state)
-            
+
             for _ in range(self.config.n_initial_points):
                 point = {}
                 for param_name, param_config in parameter_space.items():
@@ -229,74 +225,74 @@ class BayesianOptimizer(AdvancedSearchStrategy):
                             point[param_name] = np.random.uniform(min_val, max_val)
                         else:
                             point[param_name] = param_config
-                
+
                 initial_points.append(point)
-            
+
             return initial_points
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Initial point generation failed: {e}")
             return []
-    
+
     def _fit_gaussian_process(self, optimization_history: List[Dict[str, Any]]) -> GaussianProcessRegressor:
         """Fit Gaussian Process to optimization history."""
         try:
             # Extract parameters and scores
             X = []
             y = []
-            
+
             for record in optimization_history:
                 param_vector = []
                 for param_name in sorted(record['parameters'].keys()):
                     param_vector.append(record['parameters'][param_name])
                 X.append(param_vector)
                 y.append(record['score'])
-            
+
             X = np.array(X)
             y = np.array(y)
-            
+
             # Create kernel
             kernel = RBF(length_scale=1.0) + WhiteKernel(noise_level=0.1)
-            
+
             # Fit Gaussian Process
             gp = GaussianProcessRegressor(kernel=kernel, random_state=self.config.random_state)
             gp.fit(X, y)
-            
+
             return gp
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Gaussian Process fitting failed: {e}")
             # Return a simple fallback
             return None
-    
-    def _select_next_point(self, gp: GaussianProcessRegressor, parameter_space: Dict[str, Any], 
+
+    def _select_next_point(self, gp: GaussianProcessRegressor, parameter_space: Dict[str, Any],
                           optimization_history: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Select next point using acquisition function."""
         try:
             if gp is None:
                 # Fallback to random selection
                 return self._generate_initial_points(parameter_space)[0]
-            
+
             # Generate candidate points
             n_candidates = 1000
             candidates = self._generate_initial_points(parameter_space)
             candidates = candidates * (n_candidates // len(candidates) + 1)
             candidates = candidates[:n_candidates]
-            
+
             # Evaluate acquisition function
             best_acquisition = -np.inf
             best_point = candidates[0]
-            
+
             for candidate in candidates:
                 # Convert to vector
                 param_vector = []
                 for param_name in sorted(candidate.keys()):
                     param_vector.append(candidate[param_name])
                 param_vector = np.array(param_vector).reshape(1, -1)
-                
+
                 # Get GP predictions
                 mean, std = gp.predict(param_vector, return_std=True)
-                
+
                 # Calculate acquisition function
                 if self.config.acquisition_function == "expected_improvement":
                     acquisition = self._expected_improvement(mean, std, optimization_history)
@@ -304,97 +300,96 @@ class BayesianOptimizer(AdvancedSearchStrategy):
                     acquisition = self._upper_confidence_bound(mean, std)
                 else:
                     acquisition = mean[0]  # Fallback to mean
-                
+
                 if acquisition > best_acquisition:
                     best_acquisition = acquisition
                     best_point = candidate
-            
+
             return best_point
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Next point selection failed: {e}")
             return self._generate_initial_points(parameter_space)[0]
-    
-    def _expected_improvement(self, mean: np.ndarray, std: np.ndarray, 
+
+    def _expected_improvement(self, mean: np.ndarray, std: np.ndarray,
                             optimization_history: List[Dict[str, Any]]) -> float:
         """Calculate expected improvement acquisition function."""
         try:
             if not optimization_history:
                 return mean[0]
-            
+
             # Get best score so far
             best_score = max(record['score'] for record in optimization_history)
-            
+
             # Calculate expected improvement
             improvement = mean[0] - best_score
             z = improvement / (std[0] + 1e-8)
-            
+
             # Expected improvement formula
             from scipy.stats import norm
             ei = improvement * norm.cdf(z) + std[0] * norm.pdf(z)
-            
+
             return ei
-            
+
         except Exception:
             return mean[0]
-    
+
     def _upper_confidence_bound(self, mean: np.ndarray, std: np.ndarray) -> float:
         """Calculate upper confidence bound acquisition function."""
         try:
             return mean[0] + self.config.exploration_weight * std[0]
         except Exception:
             return mean[0]
-    
+
     def _check_convergence(self, optimization_history: List[Dict[str, Any]]) -> bool:
         """Check if optimization has converged."""
         try:
             if len(optimization_history) < 10:
                 return False
-            
+
             # Check if improvement is below threshold
             recent_scores = [record['score'] for record in optimization_history[-10:]]
             score_std = np.std(recent_scores)
-            
+
             return score_std < self.config.convergence_threshold
-            
+
         except Exception:
             return False
 
-
 class GridOptimizer(AdvancedSearchStrategy):
     """Grid search optimization for parameter space exploration."""
-    
+
     def __init__(self, config: SearchStrategyConfig):
         """Initialize the grid optimizer.
-        
+
         Args:
             config: Search strategy configuration
         """
         super().__init__(config)
         self.logger.info("✅ Grid Optimizer initialized")
-    
+
     def optimize(self, objective_function: Callable, parameter_space: Dict[str, Any]) -> OptimizationResult:
         """Optimize using grid search.
-        
+
         Args:
             objective_function: Function to optimize
             parameter_space: Parameter space definition
-            
+
         Returns:
             OptimizationResult with optimization results
         """
         try:
             self.logger.info("🔍 Starting grid optimization...")
             start_time = time.time()
-            
+
             # Generate parameter grid
             param_grid = self._generate_parameter_grid(parameter_space)
-            
+
             # Initialize optimization
             optimization_history = []
             best_score = -np.inf
             best_parameters = {}
-            
+
             # Evaluate all parameter combinations
             for i, params in enumerate(param_grid):
                 try:
@@ -404,15 +399,15 @@ class GridOptimizer(AdvancedSearchStrategy):
                         'score': score,
                         'iteration': i
                     })
-                    
+
                     if score > best_score:
                         best_score = score
                         best_parameters = params.copy()
-                    
+
                     # Log progress
                     if (i + 1) % 10 == 0:
                         self.logger.info(f"   Evaluated {i + 1}/{len(param_grid)} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Evaluation failed for parameters {params}: {e}")
                     optimization_history.append({
@@ -421,18 +416,18 @@ class GridOptimizer(AdvancedSearchStrategy):
                         'iteration': i,
                         'error': str(e)
                     })
-            
+
             execution_time = time.time() - start_time
-            
+
             # Create convergence info
             convergence_info = {
                 'total_combinations': len(param_grid),
                 'successful_evaluations': len([h for h in optimization_history if h['score'] != -np.inf]),
                 'score_improvement': best_score - optimization_history[0]['score'] if optimization_history else 0.0
             }
-            
+
             self.logger.info(f"✅ Grid optimization completed: {best_score:.4f} in {execution_time:.2f}s")
-            
+
             return OptimizationResult(
                 best_parameters=best_parameters,
                 best_score=best_score,
@@ -441,7 +436,7 @@ class GridOptimizer(AdvancedSearchStrategy):
                 execution_time=execution_time,
                 success=True
             )
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ Grid optimization failed: {e}")
@@ -454,13 +449,13 @@ class GridOptimizer(AdvancedSearchStrategy):
                 success=False,
                 error_message=str(e)
             )
-    
+
     def _generate_parameter_grid(self, parameter_space: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate parameter grid for grid search."""
         try:
             # Convert parameter space to sklearn ParameterGrid format
             param_grid_dict = {}
-            
+
             for param_name, param_config in parameter_space.items():
                 if isinstance(param_config, dict):
                     if param_config['type'] == 'continuous':
@@ -482,36 +477,35 @@ class GridOptimizer(AdvancedSearchStrategy):
                         param_grid_dict[param_name] = np.linspace(min_val, max_val, 10).tolist()
                     else:
                         param_grid_dict[param_name] = [param_config]
-            
+
             # Generate all combinations
             param_grid = list(ParameterGrid(param_grid_dict))
-            
+
             # Limit grid size if too large
             max_combinations = 10000
             if len(param_grid) > max_combinations:
                 self.logger.warning(f"⚠️ Grid too large ({len(param_grid)} combinations), sampling {max_combinations}")
                 np.random.seed(self.config.random_state)
                 param_grid = np.random.choice(param_grid, max_combinations, replace=False).tolist()
-            
+
             return param_grid
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Parameter grid generation failed: {e}")
             return []
 
-
 class SearchStrategyManager:
     """Manager for coordinating different search strategies."""
-    
+
     def __init__(self, config: SearchStrategyConfig):
         """Initialize the search strategy manager.
-        
+
         Args:
             config: Search strategy configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize optimizers
         self.bayesian_optimizer = None
         self.grid_optimizer = None
@@ -527,7 +521,7 @@ class SearchStrategyManager:
         self.evolutionary_optimizer = EvolutionarySearch(config)
 
         self.logger.info("✅ Search Strategy Manager initialized")
-    
+
     def optimize_with_strategy(self, objective_function: Callable, parameter_space: Dict[str, Any],
                               strategy: str = "auto") -> OptimizationResult:
         """Optimize using specified strategy.
@@ -571,25 +565,25 @@ class SearchStrategyManager:
                 success=False,
                 error_message=str(e)
             )
-    
+
     def compare_strategies(self, objective_function: Callable, parameter_space: Dict[str, Any]) -> Dict[str, OptimizationResult]:
         """Compare different optimization strategies.
-        
+
         Args:
             objective_function: Function to optimize
             parameter_space: Parameter space definition
-            
+
         Returns:
             Dictionary mapping strategy names to results
         """
         try:
             results = {}
-            
+
             # Run Bayesian optimization if available
             if self.bayesian_optimizer is not None:
                 self.logger.info("🔍 Running Bayesian optimization...")
                 results['bayesian'] = self.bayesian_optimizer.optimize(objective_function, parameter_space)
-            
+
             # Run grid optimization if available
             if self.grid_optimizer is not None:
                 self.logger.info("🔍 Running grid optimization...")
@@ -598,18 +592,17 @@ class SearchStrategyManager:
             # Always run evolutionary optimization
             self.logger.info("🔍 Running evolutionary optimization...")
             results['evolutionary'] = self.evolutionary_optimizer.optimize(objective_function, parameter_space)
-            
+
             # Compare results
             if results:
                 best_strategy = max(results.keys(), key=lambda k: results[k].best_score)
                 self.logger.info(f"✅ Best strategy: {best_strategy} (score: {results[best_strategy].best_score:.4f})")
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Strategy comparison failed: {e}")
             return {}
-
 
 def create_search_strategy_manager(config: SearchStrategyConfig) -> SearchStrategyManager:
     """Create a search strategy manager instance.
@@ -621,7 +614,6 @@ def create_search_strategy_manager(config: SearchStrategyConfig) -> SearchStrate
         SearchStrategyManager instance
     """
     return SearchStrategyManager(config)
-
 
 class EvolutionarySearch(AdvancedSearchStrategy):
     """Evolutionary search algorithm for optimization."""

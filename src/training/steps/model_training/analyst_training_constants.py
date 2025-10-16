@@ -77,7 +77,7 @@ VALID_MODEL_TYPES = [
 
 # Valid evaluation metrics
 VALID_METRICS = [
-    "mse", "mae", "r2", "mape", "smape", 
+    "mse", "mae", "r2", "mape", "smape",
     "accuracy", "precision", "recall", "f1"
 ]
 

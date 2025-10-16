@@ -14,6 +14,6 @@ from ...clusters.optimizer import ClusteringOptimizer
 
 __all__ = [
     'ClusteringEngine',
-    'ClusteringMetrics', 
+    'ClusteringMetrics',
     'ClusteringOptimizer'
 ]

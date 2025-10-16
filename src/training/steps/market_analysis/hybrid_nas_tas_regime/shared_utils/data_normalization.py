@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from enum import Enum
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -49,7 +49,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class NormalizationMethod(Enum):
     """Normalization methods available."""
     Z_SCORE = "z_score"
@@ -59,7 +58,6 @@ class NormalizationMethod(Enum):
     POWER = "power"
     LOG = "log"
     SQRT = "sqrt"
-
 
 @dataclass
 class NormalizationConfig:
@@ -77,7 +75,6 @@ class NormalizationConfig:
     batch_size: int = 1000
     memory_limit_gb: float = 8.0
 
-
 @dataclass
 class NormalizationResult:
     """Result from data normalization."""
@@ -91,24 +88,23 @@ class NormalizationResult:
     hardware_optimization_applied: bool = False
     matrix_operations_used: bool = False
 
-
 class DataNormalizer:
     """Advanced data normalizer with hardware acceleration and robust preprocessing."""
-    
+
     def __init__(self, config: NormalizationConfig):
         """Initialize the data normalizer.
-        
+
         Args:
             config: Normalization configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize hardware acceleration if available
         self.hardware_accelerator = None
         self.memory_optimizer = None
         self.cpu_optimizer = None
-        
+
         if HARDWARE_UTILS_AVAILABLE and config.use_hardware_acceleration:
             try:
                 self.hardware_accelerator = get_m1_gpu_manager()
@@ -117,13 +113,13 @@ class DataNormalizer:
                 self.logger.info("✅ Hardware acceleration initialized for data normalization")
             except Exception as e:
                 self.logger.warning(f"⚠️ Hardware acceleration not available: {e}")
-        
+
         # Initialize matrix operations if available
         self.matrix_ops = None
         self.vectorized_core = None
         self.enhanced_ops = None
         self.batch_processor = None
-        
+
         if MATRIX_OPERATIONS_AVAILABLE and config.use_matrix_operations:
             try:
                 self.matrix_ops = get_unified_matrix_operations()
@@ -133,64 +129,64 @@ class DataNormalizer:
                 self.logger.info("✅ Matrix operations initialized for data normalization")
             except Exception as e:
                 self.logger.warning(f"⚠️ Matrix operations not available: {e}")
-        
+
         self.logger.info("✅ Data Normalizer initialized")
         self.logger.info(f"   Method: {config.method.value}")
         self.logger.info(f"   Handle outliers: {config.handle_outliers}")
         self.logger.info(f"   Handle missing: {config.handle_missing}")
-    
-    def normalize_data(self, data: pd.DataFrame, 
+
+    def normalize_data(self, data: pd.DataFrame,
                       target_columns: Optional[List[str]] = None) -> NormalizationResult:
         """Normalize data using the specified method.
-        
+
         Args:
             data: Input DataFrame
             target_columns: Optional list of columns to normalize (None = all numeric columns)
-            
+
         Returns:
             NormalizationResult with normalized data and metadata
         """
         start_time = time.time()
-        
+
         try:
             self.logger.info("🔄 Starting data normalization")
             self.logger.info(f"   Input shape: {data.shape}")
             self.logger.info(f"   Method: {self.config.method.value}")
-            
+
             # Validate input data
             if data.empty:
                 raise ValueError("Input data is empty")
-            
+
             # Select target columns
             if target_columns is None:
                 target_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
+
             if not target_columns:
                 raise ValueError("No numeric columns found for normalization")
-            
+
             self.logger.info(f"   Target columns: {len(target_columns)}")
-            
+
             # Create working copy
             normalized_data = data.copy()
-            
+
             # Handle missing values first
             missing_info = self._handle_missing_values(normalized_data, target_columns)
-            
+
             # Handle outliers if configured
             outlier_info = {}
             if self.config.handle_outliers:
                 outlier_info = self._handle_outliers(normalized_data, target_columns)
-            
+
             # Apply normalization
             normalization_params = self._apply_normalization(
                 normalized_data, target_columns
             )
-            
+
             processing_time = time.time() - start_time
-            
+
             self.logger.info(f"✅ Data normalization completed in {processing_time:.2f}s")
             self.logger.info(f"   Normalized columns: {len(target_columns)}")
-            
+
             return NormalizationResult(
                 normalized_data=normalized_data,
                 normalization_params=normalization_params,
@@ -201,11 +197,11 @@ class DataNormalizer:
                 hardware_optimization_applied=self.hardware_accelerator is not None,
                 matrix_operations_used=self.matrix_ops is not None
             )
-            
+
         except Exception as e:
             processing_time = time.time() - start_time
             self.logger.error(f"❌ Data normalization failed: {e}")
-            
+
             return NormalizationResult(
                 normalized_data=pd.DataFrame(),
                 normalization_params={},
@@ -215,15 +211,15 @@ class DataNormalizer:
                 success=False,
                 error_message=str(e)
             )
-    
-    def _handle_missing_values(self, data: pd.DataFrame, 
+
+    def _handle_missing_values(self, data: pd.DataFrame,
                              target_columns: List[str]) -> Dict[str, Any]:
         """Handle missing values in the data.
-        
+
         Args:
             data: DataFrame to process
             target_columns: Columns to process
-            
+
         Returns:
             Missing value information
         """
@@ -234,17 +230,17 @@ class DataNormalizer:
                 'missing_percentages': {},
                 'handled': True
             }
-            
+
             if not self.config.handle_missing:
                 missing_info['handled'] = False
                 return missing_info
-            
+
             for col in target_columns:
                 if col in data.columns:
                     missing_count = data[col].isnull().sum()
                     missing_info['missing_counts'][col] = int(missing_count)
                     missing_info['missing_percentages'][col] = float(missing_count / len(data))
-                    
+
                     if missing_count > 0:
                         if self.config.missing_strategy == "mean":
                             data[col].fillna(data[col].mean(), inplace=True)
@@ -258,21 +254,21 @@ class DataNormalizer:
                             data[col].fillna(method='ffill', inplace=True)
                         elif self.config.missing_strategy == "drop":
                             data.dropna(subset=[col], inplace=True)
-            
+
             return missing_info
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Missing value handling failed: {e}")
             return {'handled': False, 'error': str(e)}
-    
-    def _handle_outliers(self, data: pd.DataFrame, 
+
+    def _handle_outliers(self, data: pd.DataFrame,
                         target_columns: List[str]) -> Dict[str, Any]:
         """Handle outliers in the data.
-        
+
         Args:
             data: DataFrame to process
             target_columns: Columns to process
-            
+
         Returns:
             Outlier information
         """
@@ -283,42 +279,42 @@ class DataNormalizer:
                 'outlier_percentages': {},
                 'handled': True
             }
-            
+
             for col in target_columns:
                 if col in data.columns:
                     # Calculate outlier bounds using IQR method
                     Q1 = data[col].quantile(0.25)
                     Q3 = data[col].quantile(0.75)
                     IQR = Q3 - Q1
-                    
+
                     lower_bound = Q1 - self.config.outlier_threshold * IQR
                     upper_bound = Q3 + self.config.outlier_threshold * IQR
-                    
+
                     # Identify outliers
                     outlier_mask = (data[col] < lower_bound) | (data[col] > upper_bound)
                     outlier_count = outlier_mask.sum()
-                    
+
                     outlier_info['outlier_counts'][col] = int(outlier_count)
                     outlier_info['outlier_percentages'][col] = float(outlier_count / len(data))
-                    
+
                     # Cap outliers to bounds
                     if outlier_count > 0:
                         data[col] = np.clip(data[col], lower_bound, upper_bound)
-            
+
             return outlier_info
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Outlier handling failed: {e}")
             return {'handled': False, 'error': str(e)}
-    
-    def _apply_normalization(self, data: pd.DataFrame, 
+
+    def _apply_normalization(self, data: pd.DataFrame,
                            target_columns: List[str]) -> Dict[str, Any]:
         """Apply normalization to the specified columns.
-        
+
         Args:
             data: DataFrame to normalize
             target_columns: Columns to normalize
-            
+
         Returns:
             Normalization parameters used
         """
@@ -328,32 +324,32 @@ class DataNormalizer:
                 'columns': target_columns,
                 'parameters': {}
             }
-            
+
             for col in target_columns:
                 if col in data.columns:
                     col_params = self._normalize_column(data, col)
                     normalization_params['parameters'][col] = col_params
-            
+
             return normalization_params
-            
+
         except Exception as e:
             self.logger.error(f"❌ Normalization application failed: {e}")
             return {}
-    
+
     def _normalize_column(self, data: pd.DataFrame, column: str) -> Dict[str, Any]:
         """Normalize a single column.
-        
+
         Args:
             data: DataFrame containing the column
             column: Column name to normalize
-            
+
         Returns:
             Normalization parameters for the column
         """
         try:
             col_data = data[column].copy()
             params = {'column': column, 'method': self.config.method.value}
-            
+
             if self.config.method == NormalizationMethod.Z_SCORE:
                 mean_val = col_data.mean()
                 std_val = col_data.std()
@@ -363,7 +359,7 @@ class DataNormalizer:
                 else:
                     data[column] = 0
                     params.update({'mean': float(mean_val), 'std': 0.0})
-            
+
             elif self.config.method == NormalizationMethod.MIN_MAX:
                 min_val = col_data.min()
                 max_val = col_data.max()
@@ -372,14 +368,14 @@ class DataNormalizer:
                     # Scale to feature range
                     data[column] = data[column] * (self.config.feature_range[1] - self.config.feature_range[0]) + self.config.feature_range[0]
                     params.update({
-                        'min': float(min_val), 
+                        'min': float(min_val),
                         'max': float(max_val),
                         'feature_range': self.config.feature_range
                     })
                 else:
                     data[column] = self.config.feature_range[0]
                     params.update({'min': float(min_val), 'max': float(max_val)})
-            
+
             elif self.config.method == NormalizationMethod.ROBUST:
                 median_val = col_data.median()
                 q75 = col_data.quantile(0.75)
@@ -396,7 +392,7 @@ class DataNormalizer:
                 else:
                     data[column] = 0
                     params.update({'median': float(median_val), 'iqr': 0.0})
-            
+
             elif self.config.method == NormalizationMethod.QUANTILE:
                 q_low = col_data.quantile(self.config.quantile_range[0])
                 q_high = col_data.quantile(self.config.quantile_range[1])
@@ -410,7 +406,7 @@ class DataNormalizer:
                 else:
                     data[column] = 0.5
                     params.update({'q_low': float(q_low), 'q_high': float(q_high)})
-            
+
             elif self.config.method == NormalizationMethod.POWER:
                 if MATH_VALIDATION_AVAILABLE:
                     # Apply power transformation with safe operations
@@ -420,7 +416,7 @@ class DataNormalizer:
                 else:
                     data[column] = np.power(np.abs(col_data), self.config.power_exponent) * np.sign(col_data)
                 params.update({'exponent': self.config.power_exponent})
-            
+
             elif self.config.method == NormalizationMethod.LOG:
                 if MATH_VALIDATION_AVAILABLE:
                     # Apply log transformation with safe operations
@@ -430,7 +426,7 @@ class DataNormalizer:
                 else:
                     data[column] = np.log(np.maximum(col_data, 1e-10))
                 params.update({'transformation': 'log'})
-            
+
             elif self.config.method == NormalizationMethod.SQRT:
                 if MATH_VALIDATION_AVAILABLE:
                     # Apply sqrt transformation with safe operations
@@ -440,40 +436,40 @@ class DataNormalizer:
                 else:
                     data[column] = np.sqrt(np.maximum(col_data, 0))
                 params.update({'transformation': 'sqrt'})
-            
+
             return params
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Column normalization failed for {column}: {e}")
             return {'column': column, 'error': str(e)}
-    
-    def inverse_normalize(self, normalized_data: pd.DataFrame, 
+
+    def inverse_normalize(self, normalized_data: pd.DataFrame,
                         normalization_params: Dict[str, Any]) -> pd.DataFrame:
         """Inverse normalize data using stored parameters.
-        
+
         Args:
             normalized_data: Normalized data
             normalization_params: Parameters used for normalization
-            
+
         Returns:
             Inverse normalized data
         """
         try:
             inverse_data = normalized_data.copy()
-            
+
             for col, params in normalization_params.get('parameters', {}).items():
                 if col in inverse_data.columns:
                     self._inverse_normalize_column(inverse_data, col, params)
-            
+
             return inverse_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Inverse normalization failed: {e}")
             return normalized_data
-    
+
     def _inverse_normalize_column(self, data: pd.DataFrame, column: str, params: Dict[str, Any]):
         """Inverse normalize a single column.
-        
+
         Args:
             data: DataFrame containing the column
             column: Column name to inverse normalize
@@ -481,12 +477,12 @@ class DataNormalizer:
         """
         try:
             method = params.get('method', self.config.method.value)
-            
+
             if method == NormalizationMethod.Z_SCORE.value:
                 mean_val = params.get('mean', 0.0)
                 std_val = params.get('std', 1.0)
                 data[column] = data[column] * std_val + mean_val
-            
+
             elif method == NormalizationMethod.MIN_MAX.value:
                 min_val = params.get('min', 0.0)
                 max_val = params.get('max', 1.0)
@@ -495,45 +491,45 @@ class DataNormalizer:
                 data[column] = (data[column] - feature_range[0]) / (feature_range[1] - feature_range[0])
                 # Then scale to original range
                 data[column] = data[column] * (max_val - min_val) + min_val
-            
+
             elif method == NormalizationMethod.ROBUST.value:
                 median_val = params.get('median', 0.0)
                 iqr = params.get('iqr', 1.0)
                 data[column] = data[column] * iqr + median_val
-            
+
             elif method == NormalizationMethod.QUANTILE.value:
                 q_low = params.get('q_low', 0.0)
                 q_high = params.get('q_high', 1.0)
                 data[column] = data[column] * (q_high - q_low) + q_low
-            
+
             # For power, log, and sqrt transformations, inverse is more complex
             # and may not be exact due to information loss
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Inverse normalization failed for {column}: {e}")
-    
-    def get_normalization_statistics(self, data: pd.DataFrame, 
+
+    def get_normalization_statistics(self, data: pd.DataFrame,
                                    target_columns: Optional[List[str]] = None) -> Dict[str, Any]:
         """Get statistics about the data before normalization.
-        
+
         Args:
             data: Input DataFrame
             target_columns: Columns to analyze
-            
+
         Returns:
             Data statistics
         """
         try:
             if target_columns is None:
                 target_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
+
             stats = {
                 'total_columns': len(target_columns),
                 'total_samples': len(data),
                 'column_statistics': {},
                 'overall_statistics': {}
             }
-            
+
             for col in target_columns:
                 if col in data.columns:
                     col_data = data[col]
@@ -548,7 +544,7 @@ class DataNormalizer:
                         'missing_count': int(col_data.isnull().sum()),
                         'missing_percentage': float(col_data.isnull().sum() / len(data))
                     }
-            
+
             # Overall statistics
             all_numeric = data[target_columns].select_dtypes(include=[np.number])
             if not all_numeric.empty:
@@ -558,20 +554,19 @@ class DataNormalizer:
                     'total_missing': int(all_numeric.isnull().sum().sum()),
                     'missing_percentage': float(all_numeric.isnull().sum().sum() / all_numeric.size)
                 }
-            
+
             return stats
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Statistics calculation failed: {e}")
             return {'error': str(e)}
 
-
 def create_data_normalizer(config: Optional[NormalizationConfig] = None) -> DataNormalizer:
     """Create a data normalizer instance.
-    
+
     Args:
         config: Optional normalization configuration
-        
+
     Returns:
         DataNormalizer instance
     """
@@ -579,17 +574,16 @@ def create_data_normalizer(config: Optional[NormalizationConfig] = None) -> Data
         config = NormalizationConfig()
     return DataNormalizer(config)
 
-
-def quick_normalize(data: pd.DataFrame, 
+def quick_normalize(data: pd.DataFrame,
                    method: NormalizationMethod = NormalizationMethod.Z_SCORE,
                    target_columns: Optional[List[str]] = None) -> NormalizationResult:
     """Quick data normalization with default settings.
-    
+
     Args:
         data: Input DataFrame
         method: Normalization method
         target_columns: Optional target columns
-        
+
     Returns:
         Normalization result
     """

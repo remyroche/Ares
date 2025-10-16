@@ -11,7 +11,6 @@ from typing import Any, Dict, List, Optional, Tuple
 import itertools
 import numpy as np
 
-
 def build_coarse_grid_from_search_space(search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
     """Create a coarse parameter grid list from a search space.
 
@@ -53,7 +52,6 @@ def build_coarse_grid_from_search_space(search_space: Dict[str, Any], grid_point
         return [dict(combo) for combo in combinations]
     except Exception:
         return []
-
 
 def build_fine_grid_around_best(search_space: Dict[str, Any], best_params: Dict[str, Any],
                                 grid_points: int) -> List[Dict[str, Any]]:
@@ -103,7 +101,6 @@ def build_fine_grid_around_best(search_space: Dict[str, Any], best_params: Dict[
         return []
     return [dict(c) for c in itertools.product(*combos)]
 
-
 def generate_grid(search_space: Dict[str, Any], max_trials: Optional[int] = None) -> List[Dict[str, Any]]:
     """Generate a parameter grid from a search space.
 
@@ -139,7 +136,6 @@ def generate_grid(search_space: Dict[str, Any], max_trials: Optional[int] = None
     if max_trials is not None and max_trials > 0:
         return combinations[:max_trials]
     return combinations
-
 
 class GridSearchOptimizer:
     """Grid search optimizer for hyperparameter tuning."""
@@ -250,11 +246,9 @@ class GridSearchOptimizer:
             raise ValueError("GridSearchOptimizer must be fitted before getting best estimator")
         return self.grid_search_.best_estimator_
 
-
 __all__ = [
     'build_coarse_grid_from_search_space',
     'build_fine_grid_around_best',
     'generate_grid',
     'GridSearchOptimizer',
 ]
-

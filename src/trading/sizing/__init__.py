@@ -13,7 +13,7 @@ from .risk_calculator import RiskCalculator, setup_risk_calculator
 __all__ = [
     "PositionSizer",
     "setup_position_sizer",
-    "LeverageManager", 
+    "LeverageManager",
     "setup_leverage_manager",
     "RiskCalculator",
     "setup_risk_calculator"

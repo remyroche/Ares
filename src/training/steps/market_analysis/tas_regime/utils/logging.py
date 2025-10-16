@@ -14,7 +14,6 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 from pathlib import Path
 
-
 @dataclass
 class TreeLogger:
     """Tree-specific logger for TAS operations."""
@@ -40,7 +39,6 @@ class TreeLogger:
         elapsed = time.time() - self.start_time
         self.logger.info(f"🔍 Iteration {iteration}: Best Score={best_score:.4f}, Population={population_size}, Elapsed={elapsed:.2f}s")
 
-
 @dataclass
 class TreeSearchLogger(TreeLogger):
     """Logger for tree search operations."""
@@ -55,7 +53,6 @@ class TreeSearchLogger(TreeLogger):
     def log_generation_complete(self, generation: int, best_fitness: float, avg_fitness: float):
         """Log completion of a generation."""
         self.logger.info(f"✅ Generation {generation}: Best={best_fitness:.4f}, Avg={avg_fitness:.4f}")
-
 
 @dataclass
 class TreePerformanceLogger(TreeLogger):

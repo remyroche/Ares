@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Union
 
-
 def _normalise_message(value: Optional[object]) -> str:
     """Return a user friendly string representation for ``value``."""
 
@@ -13,7 +12,6 @@ def _normalise_message(value: Optional[object]) -> str:
         return ""
     text = str(value).strip()
     return text
-
 
 @dataclass(init=False)
 class ComponentError(Exception):
@@ -57,7 +55,6 @@ class ComponentError(Exception):
         if self.cause is not None:
             payload["cause"] = repr(self.cause)
         return payload
-
 
 @dataclass(init=False)
 class ComponentResult:
@@ -180,6 +177,5 @@ class ComponentResult:
         self.success = False
         self.errors = [component_error]
         self.error = component_error
-
 
 __all__ = ["ComponentError", "ComponentResult"]

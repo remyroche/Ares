@@ -112,7 +112,6 @@ from .data_access import load_regime_datasets
 from .metrics import calculate_regime_distribution, calculate_clustering_metrics
 from .reporting import print_detailed_metrics, print_analysis_summary
 
-
 class RegimeAnalysisService:
     """Coordinates loading, computation, and reporting of regime metrics with enhanced monitoring and error handling."""
 
@@ -120,15 +119,15 @@ class RegimeAnalysisService:
         self.data_cache_path = Path(data_cache_path)
         if not self.data_cache_path.exists():
             raise FileNotFoundError(f"Data cache directory not found: {self.data_cache_path}")
-        
+
         # Initialize logging
         self.logger = get_logger("RegimeAnalyzer")
-        
+
         # Initialize hardware optimizers
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
         self.gpu_manager = get_m1_gpu_manager()
-        
+
         # Initialize VectorBT optimization
         self.enable_vectorbt = enable_vectorbt and VECTORBT_AVAILABLE
         if self.enable_vectorbt:
@@ -145,7 +144,7 @@ class RegimeAnalysisService:
             self.vectorization_manager = None
             if enable_vectorbt and not VECTORBT_AVAILABLE:
                 tprint_warning("⚠️ VectorBT not available, using standard operations")
-        
+
         # Performance monitoring
         self.performance_metrics = {
             "start_time": None,
@@ -155,11 +154,11 @@ class RegimeAnalysisService:
             "error_count": 0,
             "success_count": 0
         }
-        
+
         # Start memory monitoring if available
         if self.memory_optimizer:
             self.memory_optimizer.start_monitoring()
-        
+
         tprint_structured({
             "service": "RegimeAnalysisService",
             "data_cache_path": str(self.data_cache_path),
@@ -178,12 +177,12 @@ class RegimeAnalysisService:
         """Execute the full regime analysis workflow for a symbol with comprehensive monitoring and error handling."""
         # Input validation
         self._validate_analysis_inputs(symbol)
-        
+
         # Initialize performance monitoring
         self.performance_metrics["start_time"] = time.time()
         self.performance_metrics["error_count"] = 0
         self.performance_metrics["success_count"] = 0
-        
+
         with tprint_timer(f"Comprehensive regime analysis for {symbol}"):
             try:
                 # Log analysis start
@@ -193,7 +192,7 @@ class RegimeAnalysisService:
                     "data_cache_path": str(self.data_cache_path),
                     "memory_usage_start": get_memory_usage() / (1024**2)
                 })
-                
+
                 # Load datasets with monitoring
                 with tprint_timer("Loading datasets"):
                     nas_features, nas_labels, tas_features, tas_labels = self._load_datasets(symbol)
@@ -240,7 +239,7 @@ class RegimeAnalysisService:
                 # Final performance metrics
                 self.performance_metrics["end_time"] = time.time()
                 total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
-                
+
                 # Log VectorBT performance statistics if enabled
                 vectorbt_stats = {}
                 if self.enable_vectorbt and self.vectorization_manager:
@@ -253,7 +252,7 @@ class RegimeAnalysisService:
                     }
                     tprint_performance(f"📊 VectorBT Performance: {vectorbt_stats['vectorbt_operations']} operations, "
                                      f"{vectorbt_stats['vectorbt_usage_rate']:.1%} usage rate")
-                
+
                 # Log final performance
                 tprint_structured({
                     "analysis_complete": datetime.now().isoformat(),
@@ -269,7 +268,7 @@ class RegimeAnalysisService:
                 tprint_success(f"Regime analysis completed and saved to {output_path}")
                 print_analysis_summary(analysis)
                 return analysis
-                
+
             except ValueError as exc:
                 # Handle missing features error specifically
                 self.performance_metrics["error_count"] += 1
@@ -326,7 +325,7 @@ class RegimeAnalysisService:
                 # Cleanup and final monitoring
                 if self.memory_optimizer:
                     self.memory_optimizer.stop_monitoring()
-                
+
                 # Log final performance summary
                 self._log_performance_summary()
 
@@ -388,7 +387,7 @@ class RegimeAnalysisService:
             output_dir.mkdir(exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = output_dir / f"{symbol}_regime_analysis_{timestamp}.json"
-            
+
             # Add performance metrics to analysis
             analysis["performance_metrics"] = {
                 "total_time_seconds": self.performance_metrics.get("end_time", 0) - self.performance_metrics.get("start_time", 0),
@@ -401,14 +400,14 @@ class RegimeAnalysisService:
                 "vectorbt_rolling_optimizer": self.rolling_optimizer is not None,
                 "unified_vectorization_manager": self.vectorization_manager is not None
             }
-            
+
             # Use safe JSON dump
             if safe_json_dump(analysis, output_path, indent=2):
                 tprint_success(f"Analysis saved successfully to {output_path}")
                 return output_path
             else:
                 raise Exception("Failed to save analysis JSON")
-                
+
         except Exception as exc:
             tprint_error(f"Failed to save analysis: {exc}")
             raise
@@ -419,12 +418,12 @@ class RegimeAnalysisService:
             total_time = 0
             if self.performance_metrics["start_time"] and self.performance_metrics["end_time"]:
                 total_time = self.performance_metrics["end_time"] - self.performance_metrics["start_time"]
-            
+
             # Validate performance metrics using math_validation
             success_count = validate_positive(self.performance_metrics["success_count"], "success_count")
             error_count = validate_positive(self.performance_metrics["error_count"], "error_count")
             total_time = validate_finite(total_time, "total_time")
-            
+
             performance_summary = {
                 "total_time_seconds": round(validate_finite(total_time, "total_time_rounded"), 2),
                 "success_count": int(success_count),
@@ -437,12 +436,12 @@ class RegimeAnalysisService:
                 "memory_usage_mb": validate_finite(get_memory_usage() / (1024**2), "memory_usage_mb"),
                 "m1_optimizations_used": M1_HARDWARE_AVAILABLE
             }
-            
+
             tprint_structured({
                 "performance_summary": performance_summary,
                 "service": "RegimeAnalysisService"
             })
-            
+
         except Exception as exc:
             tprint_warning(f"Failed to log performance summary: {exc}")
 
@@ -468,33 +467,33 @@ class RegimeAnalysisService:
             # Validate symbol
             if not isinstance(symbol, str):
                 raise ValueError(f"Symbol must be a string, got {type(symbol)}")
-            
+
             if not symbol or symbol.strip() == "":
                 raise ValueError("Symbol cannot be empty")
-            
+
             # Validate symbol format (basic check)
             if len(symbol) < 3 or len(symbol) > 20:
                 raise ValueError(f"Symbol length invalid: {len(symbol)} (expected 3-20)")
-            
+
             # Check for valid characters (alphanumeric only)
             # Remove common trading pair suffixes and check if remaining part is alphanumeric
             cleaned_symbol = symbol.replace("USDT", "").replace("USD", "").replace("BTC", "").replace("ETH", "")
             if cleaned_symbol and not cleaned_symbol.isalnum():
                 raise ValueError(f"Symbol contains invalid characters: {symbol}")
-            
+
             # Validate data cache path
             if not self.data_cache_path.exists():
                 raise FileNotFoundError(f"Data cache directory not found: {self.data_cache_path}")
-            
+
             if not self.data_cache_path.is_dir():
                 raise ValueError(f"Data cache path is not a directory: {self.data_cache_path}")
-            
+
             # Check if we have read permissions
             if not os.access(self.data_cache_path, os.R_OK):
                 raise PermissionError(f"No read access to data cache directory: {self.data_cache_path}")
-            
+
             tprint("Analysis input validation passed", "SUCCESS")
-            
+
         except Exception as e:
             tprint_error(f"Analysis input validation failed: {e}")
             raise ValueError(f"Analysis input validation failed: {e}") from e

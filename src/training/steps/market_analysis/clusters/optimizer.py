@@ -35,7 +35,6 @@ from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperatio
 from ..shared_utils import get_logger
 from .iterative_optimization import ClusteringStats
 
-
 @dataclass
 class OptimizerConfig:
     """Configuration for clustering optimizer."""
@@ -75,7 +74,6 @@ class OptimizerConfig:
     use_numba_optimization: bool = True
     parallel_processing: bool = False
     memory_optimization: bool = True
-
 
 class ClusteringOptimizer:
     """

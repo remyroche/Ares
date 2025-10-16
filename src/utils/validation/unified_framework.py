@@ -33,9 +33,7 @@ try:
 except Exception:  # pragma: no cover - optional at runtime
     psutil = None  # type: ignore
 
-
 # ---------- Core types ----------
-
 
 class ValidationLevel(Enum):
     CRITICAL = "critical"
@@ -44,13 +42,11 @@ class ValidationLevel(Enum):
     LOW = "low"
     INFO = "info"
 
-
 class ValidationStatus(Enum):
     PASSED = "passed"
     FAILED = "failed"
     WARNING = "warning"
     SKIPPED = "skipped"
-
 
 @dataclass
 class ValidationRule:
@@ -62,7 +58,6 @@ class ValidationRule:
     auto_fix: bool = False
     fix_func: Optional[Callable[[Any], Any]] = None
 
-
 @dataclass
 class ValidationResult:
     rule_name: str
@@ -72,7 +67,6 @@ class ValidationResult:
     details: Optional[Dict[str, Any]] = None
     auto_fixed: bool = False
     fix_applied: Optional[str] = None
-
 
 @dataclass
 class ValidationSummary:
@@ -85,7 +79,6 @@ class ValidationSummary:
     overall_status: ValidationStatus
     quality_score: float
     recommendations: List[str]
-
 
 class UnifiedValidationFramework:
     """Rule-based validation framework with pluggable rule sets by category."""
@@ -566,9 +559,7 @@ class UnifiedValidationFramework:
             fixed["volume"] = np.maximum(fixed["volume"], 0)
         return fixed
 
-
 # ---------- Preconfigured frameworks (backward-compatibility) ----------
-
 
 class ComprehensiveValidationFramework(UnifiedValidationFramework):
     """Preconfigured framework for function input/output + data/performance/business rules."""
@@ -630,7 +621,6 @@ class ComprehensiveValidationFramework(UnifiedValidationFramework):
         except Exception as e:
             self.logger.error(f"Failed to log validation report: {e}")
 
-
 def comprehensive_validation(validator: ComprehensiveValidationFramework) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to validate function input/output using the comprehensive framework."""
 
@@ -659,7 +649,6 @@ def comprehensive_validation(validator: ComprehensiveValidationFramework) -> Cal
         return async_wrapper if _asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
-
 
 class FeatureLookbackValidationFramework(UnifiedValidationFramework):
     """Preconfigured framework mirroring Feature Lookback Optimization validation sets."""
@@ -833,9 +822,7 @@ class FeatureLookbackValidationFramework(UnifiedValidationFramework):
                     recs.append("Review optimization parameters and data quality")
         return recs or ["All validations passed - no recommendations needed"]
 
-
 # ---------- Optional HMM integration ----------
-
 
 class HMMValidatorAdapter:
     """Adapter that exposes a simple API and defers to HMMValidationFramework if available."""
@@ -858,7 +845,6 @@ class HMMValidatorAdapter:
             }
         return self._hmm.validate_hmm_regimes(regime_data, original_data, feature_columns)
 
-
 __all__ = [
     "ValidationLevel",
     "ValidationStatus",
@@ -871,4 +857,3 @@ __all__ = [
     "HMMValidatorAdapter",
     "comprehensive_validation",
 ]
-

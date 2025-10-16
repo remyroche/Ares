@@ -17,7 +17,7 @@ from .enhanced_error_handler import (
 
 __all__ = [
     'FeatureSelectionError',
-    'InsufficientDataError', 
+    'InsufficientDataError',
     'SelectionConvergenceError',
     'ConfigurationError',
     'EnhancedErrorHandler',

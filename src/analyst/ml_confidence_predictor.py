@@ -215,10 +215,10 @@ class MLConfidencePredictor:
     def _generate_fallback_predictions(self, current_price: float) -> dict[str, Any]:
         """
         Generate fallback predictions when models are not available.
-        
+
         Args:
             current_price: Current market price
-            
+
         Returns:
             dict: Fallback prediction results
         """
@@ -244,12 +244,12 @@ class MLConfidencePredictor:
     def _generate_directional_confidence_analysis(self, price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float], current_price: float) -> dict[str, Any]:
         """
         Generate directional confidence analysis from price target and adversarial confidences.
-        
+
         Args:
             price_target_confidences: Price target confidence predictions
             adversarial_confidences: Adversarial confidence predictions
             current_price: Current market price
-            
+
         Returns:
             dict: Directional analysis results
         """
@@ -296,10 +296,10 @@ class MLConfidencePredictor:
     def _get_fallback_confidence(self, target_level: float) -> float:
         """
         Get fallback confidence for a price target level.
-        
+
         Args:
             target_level: Target level percentage
-            
+
         Returns:
             float: Fallback confidence probability
         """
@@ -310,10 +310,10 @@ class MLConfidencePredictor:
     def _get_fallback_decrease_probability(self, target_level: float) -> float:
         """
         Get fallback decrease probability for an adversarial level.
-        
+
         Args:
             target_level: Target level percentage
-            
+
         Returns:
             float: Fallback decrease probability
         """
@@ -324,12 +324,12 @@ class MLConfidencePredictor:
     def _predict_single_target(self, features: pd.DataFrame, model_key: str, model_type: str) -> float:
         """
         Predict confidence for a single target using the appropriate model.
-        
+
         Args:
             features: Prepared features
             model_key: Model key
             model_type: Type of model
-            
+
         Returns:
             float: Prediction confidence
         """
@@ -1375,7 +1375,7 @@ class MLConfidencePredictor:
         try:
             if not self.async_order_executor:
                 return {'success': False, 'error': 'Async order executor not available', 'execution_id': None}
-            
+
             order_side = OrderSide.BUY if side.lower() == 'buy' else OrderSide.SELL
             order_type = OrderType.LIMIT if price else OrderType.MARKET
             strategy_map = {'immediate': ExecutionStrategy.IMMEDIATE, 'batch': ExecutionStrategy.BATCH, 'twap': ExecutionStrategy.TWAP, 'vwap': ExecutionStrategy.VWAP, 'iceberg': ExecutionStrategy.ICEBERG, 'adaptive': ExecutionStrategy.ADAPTIVE}

@@ -52,96 +52,96 @@ REGIME HANDLING STRATEGY:
 def validate_training_data(data: Any, data_name: str, required_columns: Optional[List[str]] = None) -> bool:
     """
     Consistent data validation for all training components.
-    
+
     Args:
         data: Data to validate (DataFrame, array, etc.)
         data_name: Name of the data for error messages
         required_columns: Required columns for DataFrames
-        
+
     Returns:
         True if validation passes
-        
+
     Raises:
         ValueError: If validation fails
     """
     if data is None:
         raise ValueError(f"{data_name} cannot be None")
-    
+
     if isinstance(data, pd.DataFrame):
         if data.empty:
             raise ValueError(f"{data_name} DataFrame is empty")
-        
+
         # Check for required columns
         if required_columns:
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 raise ValueError(f"{data_name} missing required columns: {missing_columns}")
-        
+
         # Check for NaN values
         if data.isnull().any().any():
             nan_count = data.isnull().sum().sum()
             tprint(f"⚠️ {data_name} contains {nan_count} NaN values")
-        
+
         # Check for infinite values
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) > 0:
             inf_mask = np.isinf(data[numeric_cols]).any().any()
             if inf_mask:
                 raise ValueError(f"{data_name} contains infinite values")
-        
+
         tprint(f"✅ {data_name} validation passed: {len(data)} rows, {len(data.columns)} columns")
-        
+
     elif isinstance(data, np.ndarray):
         if data.size == 0:
             raise ValueError(f"{data_name} array is empty")
-        
+
         if np.any(np.isnan(data)):
             raise ValueError(f"{data_name} contains NaN values")
-        
+
         if np.any(np.isinf(data)):
             raise ValueError(f"{data_name} contains infinite values")
-        
+
         tprint(f"✅ {data_name} validation passed: shape {data.shape}")
-        
+
     else:
         # Basic validation for other types
         if hasattr(data, '__len__') and len(data) == 0:
             raise ValueError(f"{data_name} is empty")
-        
+
         tprint(f"✅ {data_name} validation passed: type {type(data).__name__}")
-    
+
     return True
 
 def validate_model_inputs(X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> bool:
     """
     Validate standard model training inputs.
-    
+
     Args:
         X: Feature matrix
         y: Target values
         feature_names: Optional feature names
-        
+
     Returns:
         True if validation passes
-        
+
     Raises:
         ValueError: If validation fails
     """
     validate_training_data(X, "Feature matrix X")
     validate_training_data(y, "Target values y")
-    
+
     if X.shape[0] != y.shape[0]:
         raise ValueError(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
-    
+
     if X.ndim != 2:
         raise ValueError(f"X must be 2D array, got shape {X.shape}")
-    
+
     if y.ndim != 1:
         raise ValueError(f"y must be 1D array, got shape {y.shape}")
-    
+
     if feature_names and len(feature_names) != X.shape[1]:
         raise ValueError(f"feature_names length ({len(feature_names)}) must match X features ({X.shape[1]})")
-    
+
     tprint(f"✅ Model inputs validation passed: {X.shape[0]} samples, {X.shape[1]} features")
     return True
 # Import from simplified model training structure
@@ -209,7 +209,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
         """Monitor memory usage and provide optimization alerts."""
         import json
         import logging
-        
+
         try:
             import psutil
             import gc
@@ -928,7 +928,7 @@ async def run_model_training_pipeline(symbol: str, exchange: str, timeframe: Any
     try:
         # Record start time for performance metrics
         start_time = time.time()
-        
+
         tprint('🚀 Starting Enhanced Model Training Pipeline')
         tprint('=' * 80)
         logger.info('🚀 Starting Enhanced Model Training Pipeline')

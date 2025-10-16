@@ -93,7 +93,6 @@ except ImportError as e:
     get_unified_vectorization_manager = None
     logger.warning(f"VectorBT optimization not available: {e}")
 
-
 class HyperparameterOptimization:
     """Enhanced hyperparameter optimization utilities with monitoring and failure detection."""
 
@@ -101,12 +100,12 @@ class HyperparameterOptimization:
         """Initialize hyperparameter optimization utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('HPOUtils')
-        
+
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
         self.use_nonlinear_optimization = self.config.get('use_nonlinear_optimization', True)
-        
+
         _LOGGER.info("🚀 Initializing Enhanced HyperparameterOptimization...")
 
         # Configuration defaults
@@ -117,10 +116,10 @@ class HyperparameterOptimization:
         self.enable_vectorbt = self.config.get('enable_vectorbt', VECTORBT_AVAILABLE)
         self.vectorbt_rolling_optimizer = None
         self.vectorization_manager = None
-        
+
         # Enhanced monitoring configuration (must be set before VectorBT initialization)
         self.enable_monitoring = self.config.get('enable_monitoring', True)
-        
+
         # Initialize VectorBT components if available
         if self.enable_vectorbt and VECTORBT_AVAILABLE:
             self._initialize_vectorbt_components()
@@ -156,14 +155,14 @@ class HyperparameterOptimization:
         # Default search spaces for common models
         _LOGGER.debug("🔧 Initializing default search spaces...")
         self.default_search_spaces = self._initialize_default_search_spaces()
-        
+
         # Enhanced search spaces with non-linear transformations
         if self.use_nonlinear_optimization:
             _LOGGER.debug("🚀 Creating enhanced search spaces with non-linear transformations...")
             self.enhanced_search_spaces = self._create_enhanced_search_spaces()
-        
+
         _LOGGER.info("✅ Enhanced HyperparameterOptimization initialized successfully")
-    
+
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
         try:
@@ -176,7 +175,7 @@ class HyperparameterOptimization:
                     chunk_size=self.config.get('chunk_size', 1000)
                 )
                 self.logger.info("✅ VectorBT Rolling Optimizer initialized")
-            
+
             # Initialize unified vectorization manager
             if get_unified_vectorization_manager:
                 vectorization_config = VectorizationConfig(
@@ -190,19 +189,19 @@ class HyperparameterOptimization:
                 )
                 self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
                 self.logger.info("✅ Unified Vectorization Manager initialized")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT components initialization failed: {e}")
             self.vectorbt_rolling_optimizer = None
             self.vectorization_manager = None
-    
+
     def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Create enhanced search spaces with non-linear transformation metadata."""
         enhanced_spaces = {}
-        
+
         for model_type, space in self.default_search_spaces.items():
             enhanced_spaces[model_type] = create_enhanced_search_space(space, self.nonlinear_config)
-        
+
         return enhanced_spaces
 
     def start_study_monitoring(self, study_id: str, study_name: str) -> Dict[str, Any]:
@@ -221,19 +220,19 @@ class HyperparameterOptimization:
                 'convergence_info': None,
                 'error_summary': {}
             }
-            
+
             self.active_studies[study_id] = study_info
             self.trial_results[study_id] = []
-            
+
             _LOGGER.info(f"🚀 Started monitoring HPO study: {study_name} ({study_id})")
             return study_info
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failed to start study monitoring: {e}")
             _LOGGER.warning("⚠️ Study monitoring failed - returning error status")
             return {'error': str(e), 'study_id': study_id, 'status': 'failed'}
 
-    def record_trial_with_monitoring(self, 
+    def record_trial_with_monitoring(self,
                                    study_id: str,
                                    trial_number: int,
                                    parameters: Dict[str, Any],
@@ -253,38 +252,38 @@ class HyperparameterOptimization:
                 'error_info': kwargs.get('error_info'),
                 'metadata': kwargs.get('metadata', {})
             }
-            
+
             if study_id in self.active_studies:
                 self.trial_results[study_id].append(trial_result)
                 study_info = self.active_studies[study_id]
                 study_info['total_trials'] += 1
-                
+
                 if trial_result['error_info'] is None:
                     study_info['successful_trials'] += 1
-                    
+
                     # Update best value
-                    if (study_info['best_value'] is None or 
+                    if (study_info['best_value'] is None or
                         objective_value > study_info['best_value']):
                         study_info['best_value'] = objective_value
                         study_info['best_parameters'] = parameters.copy()
                 else:
                     study_info['failed_trials'] += 1
                     self._update_error_summary(study_info, trial_result['error_info'])
-                
+
                 # Check for convergence
                 convergence_info = self._check_convergence(study_id)
                 if convergence_info and convergence_info.get('is_converged'):
                     study_info['convergence_info'] = convergence_info
                     study_info['status'] = 'converged'
                     _LOGGER.info(f"✅ Study {study_id} converged after {trial_number} trials")
-                
+
                 # Check for failure conditions
                 if self._check_failure_conditions(study_id):
                     study_info['status'] = 'failed'
                     _LOGGER.error(f"❌ Study {study_id} failed due to failure conditions")
-            
+
             return trial_result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failed to record trial: {e}")
             _LOGGER.warning("⚠️ Trial recording failed - trial data will be lost")
@@ -295,26 +294,26 @@ class HyperparameterOptimization:
         try:
             if study_id not in self.trial_results:
                 return None
-            
+
             trial_results = self.trial_results[study_id]
             if len(trial_results) < self.convergence_config['min_trials_for_convergence']:
                 return None
-            
+
             # Extract objective values
             objective_values = [t['objective_value'] for t in trial_results if t['error_info'] is None]
             if len(objective_values) < self.convergence_config['min_trials_for_convergence']:
                 return None
-            
+
             convergence_criteria = []
             convergence_confidence = 0.0
-            
+
             # Check improvement threshold
             if len(objective_values) >= 2:
                 recent_improvement = abs(objective_values[-1] - objective_values[-2])
                 if recent_improvement < self.convergence_config['improvement_threshold']:
                     convergence_criteria.append('improvement_threshold')
                     convergence_confidence += 0.3
-            
+
             # Check patience (no improvement for N trials)
             patience_trials = self.convergence_config['patience_trials']
             if len(objective_values) >= patience_trials:
@@ -323,7 +322,7 @@ class HyperparameterOptimization:
                 if all(v <= best_value + self.convergence_config['improvement_threshold'] for v in recent_values):
                     convergence_criteria.append('patience')
                     convergence_confidence += 0.4
-            
+
             # Check variance threshold
             if len(objective_values) >= 10:
                 recent_values = objective_values[-10:]
@@ -331,20 +330,20 @@ class HyperparameterOptimization:
                 if variance < self.convergence_config['variance_threshold']:
                     convergence_criteria.append('variance_threshold')
                     convergence_confidence += 0.3
-            
+
             # Calculate improvement rate
             if len(objective_values) >= 2:
                 improvement_rate = (objective_values[-1] - objective_values[0]) / len(objective_values)
             else:
                 improvement_rate = 0.0
-            
+
             # Calculate variance estimate
             variance_estimate = np.var(objective_values) if len(objective_values) > 1 else 0.0
-            
+
             # Determine if converged
-            is_converged = (len(convergence_criteria) >= 2 and 
+            is_converged = (len(convergence_criteria) >= 2 and
                           convergence_confidence >= 0.6)
-            
+
             convergence_analysis = {
                 'objective_values': objective_values,
                 'recent_improvement': recent_improvement if len(objective_values) >= 2 else 0.0,
@@ -352,7 +351,7 @@ class HyperparameterOptimization:
                 'improvement_rate': improvement_rate,
                 'convergence_criteria_met': convergence_criteria
             }
-            
+
             return {
                 'is_converged': is_converged,
                 'convergence_criteria': convergence_criteria,
@@ -362,7 +361,7 @@ class HyperparameterOptimization:
                 'best_value_history': objective_values,
                 'convergence_analysis': convergence_analysis
             }
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Convergence check failed: {e}")
             _LOGGER.warning("⚠️ Convergence check failed - assuming not converged")
@@ -373,33 +372,33 @@ class HyperparameterOptimization:
         try:
             if study_id not in self.active_studies:
                 return False
-            
+
             study_info = self.active_studies[study_id]
             trial_results = self.trial_results[study_id]
-            
+
             # Check failure rate
             if study_info['total_trials'] > 0:
                 failure_rate = study_info['failed_trials'] / study_info['total_trials']
                 if failure_rate > self.failure_detection_config['max_failure_rate']:
                     _LOGGER.error(f"❌ High failure rate: {failure_rate:.2%}")
                     return True
-            
+
             # Check consecutive failures
             if len(trial_results) >= self.failure_detection_config['consecutive_failures_threshold']:
                 recent_trials = trial_results[-self.failure_detection_config['consecutive_failures_threshold']:]
                 if all(t['error_info'] is not None for t in recent_trials):
                     _LOGGER.error("❌ Too many consecutive failures")
                     return True
-            
+
             # Check timeout
             if study_info['start_time']:
                 elapsed_time = (datetime.now() - study_info['start_time']).total_seconds()
                 if elapsed_time > self.failure_detection_config['timeout_threshold']:
                     _LOGGER.error(f"❌ Study timeout: {elapsed_time:.0f}s")
                     return True
-            
+
             return False
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failure condition check failed: {e}")
             _LOGGER.warning("⚠️ Failure condition check failed - assuming no failure conditions")
@@ -410,7 +409,7 @@ class HyperparameterOptimization:
         try:
             error_type = error_info.get('error_type', 'unknown')
             study_info['error_summary'][error_type] = study_info['error_summary'].get(error_type, 0) + 1
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failed to update error summary: {e}")
             _LOGGER.warning("⚠️ Error summary update failed - error tracking may be incomplete")
@@ -421,9 +420,9 @@ class HyperparameterOptimization:
             study_info = self.active_studies.get(study_id)
             if not study_info:
                 return None
-            
+
             trial_results = self.trial_results.get(study_id, [])
-            
+
             return {
                 'study_id': study_info['study_id'],
                 'study_name': study_info['study_name'],
@@ -437,7 +436,7 @@ class HyperparameterOptimization:
                 'error_summary': study_info['error_summary'],
                 'recent_trials': len(trial_results[-10:]) if trial_results else 0
             }
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failed to get study status: {e}")
             _LOGGER.warning(f"⚠️ Study status check failed for {study_id} - returning error status")
@@ -447,23 +446,23 @@ class HyperparameterOptimization:
         """Get comprehensive monitoring summary."""
         try:
             active_count = len(self.active_studies)
-            
+
             # Calculate overall statistics
             all_trials = []
             for study_id in self.trial_results:
                 all_trials.extend(self.trial_results[study_id])
-            
+
             successful_trials = [t for t in all_trials if t['error_info'] is None]
             failed_trials = [t for t in all_trials if t['error_info'] is not None]
-            
+
             total_trials = len(all_trials)
             success_rate = len(successful_trials) / max(1, total_trials)
-            
+
             # Calculate performance metrics
             if successful_trials:
                 objective_values = [t['objective_value'] for t in successful_trials]
                 training_times = [t['training_time'] for t in successful_trials if t['training_time'] is not None]
-                
+
                 performance_metrics = {
                     'best_objective_value': max(objective_values),
                     'mean_objective_value': np.mean(objective_values),
@@ -472,14 +471,14 @@ class HyperparameterOptimization:
                 }
             else:
                 performance_metrics = {}
-            
+
             # Error analysis
             error_types = defaultdict(int)
             for trial in failed_trials:
                 if trial['error_info']:
                     error_type = trial['error_info'].get('error_type', 'unknown')
                     error_types[error_type] += 1
-            
+
             return {
                 'monitoring_summary': {
                     'active_studies': active_count,
@@ -492,11 +491,11 @@ class HyperparameterOptimization:
                 'performance_metrics': performance_metrics,
                 'error_analysis': dict(error_types),
                 'convergence_analysis': {
-                    'converged_studies': sum(1 for s in self.active_studies.values() 
+                    'converged_studies': sum(1 for s in self.active_studies.values()
                                            if s.get('convergence_info') and s['convergence_info'].get('is_converged'))
                 }
             }
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Failed to get monitoring summary: {e}")
             _LOGGER.warning("⚠️ Monitoring summary failed - returning error summary")
@@ -517,7 +516,7 @@ class HyperparameterOptimization:
         start_time = time.time()
         _LOGGER.info(f"🔧 Starting automated search space generation for {model_type}...")
         _LOGGER.debug(f"📊 Data characteristics: {data_characteristics}")
-        
+
         try:
             self.logger.info(f"🔍 Generating automated search space for {model_type}")
 
@@ -602,7 +601,7 @@ class HyperparameterOptimization:
         start_time = time.time()
         _LOGGER.info(f"🎯 Starting multi-objective optimization...")
         _LOGGER.info(f"📊 Parameters - Objectives: {objectives}, Trials: {n_trials}, Data shape: {X.shape}")
-        
+
         try:
             if not OPTUNA_AVAILABLE:
                 _LOGGER.error("❌ Optuna required for multi-objective optimization")
@@ -795,17 +794,17 @@ class HyperparameterOptimization:
         try:
             # Enhanced study context logging
             self._log_study_context(X, y, search_space, optimization_context, study_name, n_trials)
-            
+
             self.logger.info(f"🎲 Starting enhanced Bayesian optimization with {acquisition_function} acquisition")
-            
+
             # Run diagnostics if enabled
             if enable_diagnostics:
                 from .hpo_diagnostics_and_fixes import HPODiagnostics, HPOMonitor
-                
+
                 self.logger.info("🔍 Running HPO diagnostics...")
                 diagnostics = HPODiagnostics.check_data_variance(X, y, "Training Data")
                 HPODiagnostics.print_diagnostics(diagnostics)
-                
+
                 if not diagnostics["is_valid"]:
                     self.logger.error("❌ Data validation failed! Cannot proceed with HPO.")
                     return {
@@ -814,7 +813,7 @@ class HyperparameterOptimization:
                         'best_params': {},
                         'best_score': 0.0
                     }
-                
+
                 # Check scoring metric appropriateness
                 stats = diagnostics["stats"]
                 if scoring == 'accuracy' and 'class_percentages' in stats:
@@ -827,12 +826,12 @@ class HyperparameterOptimization:
                         )
                         self.logger.info(f"   Automatically switching to '{recommended}'")
                         scoring = recommended
-                
+
                 # Initialize monitor
                 monitor = HPOMonitor()
             else:
                 monitor = None
-            
+
             if use_enhanced_search_space and self.use_nonlinear_optimization:
                 self.logger.info("🚀 Using enhanced non-linear search space")
 
@@ -888,7 +887,7 @@ class HyperparameterOptimization:
                 try:
                     fold_scores: list[float] = []
                     fold_predictions = []  # Track predictions for diagnostics
-                    
+
                     for i, (train_idx, test_idx) in enumerate(cv_obj.split(X, y)):
                         X_tr, X_te = X[train_idx], X[test_idx]
                         y_tr, y_te = y[train_idx], y[test_idx]
@@ -901,12 +900,12 @@ class HyperparameterOptimization:
                                 mdl.fit(X_tr, y_tr)
                         except Exception:
                             mdl.fit(X_tr, y_tr)
-                        
+
                         # Get predictions for diagnostics
                         if hasattr(mdl, 'predict'):
                             y_pred = mdl.predict(X_te)
                             fold_predictions.extend(y_pred)
-                        
+
                         try:
                             from sklearn.metrics import get_scorer
                             scorer = get_scorer(scoring) if isinstance(scoring, str) else scoring
@@ -917,10 +916,10 @@ class HyperparameterOptimization:
                         trial.report(float(score), step=i)
                         if trial.should_prune():
                             raise optuna.TrialPruned()
-                    
+
                     if fold_scores:
                         mean_score = float(np.mean(fold_scores))
-                        
+
                         # Log diagnostics for monitoring
                         if enable_diagnostics and monitor and trial.number % 1 == 0:
                             # Check prediction diversity
@@ -931,10 +930,10 @@ class HyperparameterOptimization:
                                         f"⚠️  Trial {trial.number}: Model predicting CONSTANT class! "
                                         f"Score: {mean_score:.4f}, Params: {params}"
                                     )
-                            
+
                             # Record trial for monitoring
                             monitor.record_trial(trial.number, mean_score, params)
-                        
+
                         # Check for suspiciously high scores (data leakage indicator)
                         # Adaptive threshold based on dataset size and complexity
                         n_samples = len(X)
@@ -996,7 +995,7 @@ class HyperparameterOptimization:
 
                             if unique_preds == 1:
                                 self.logger.warning("   🚨 CRITICAL: Model predicting ONLY ONE CLASS - definite data leakage!")
-                        
+
                         return mean_score
                 except optuna.TrialPruned:
                     # Trial pruning is expected behavior - not an error
@@ -1044,7 +1043,7 @@ class HyperparameterOptimization:
 
             # Enhanced optimization with early stopping for low variance
             self.logger.info(f"🎲 Starting Bayesian optimization with {n_trials} trials...")
-            study.optimize(objective, n_trials=n_trials, timeout=timeout, 
+            study.optimize(objective, n_trials=n_trials, timeout=timeout,
                          callbacks=[self._early_stopping_callback])
 
             results = {
@@ -1106,7 +1105,7 @@ class HyperparameterOptimization:
             self.logger.info("🎯 Stage 1: Coarse grid search")
             coarse_start = time.time()
             coarse_results = self._coarse_grid_search_staged(
-                model_factory, X_train, y_train, search_space, 
+                model_factory, X_train, y_train, search_space,
                 coarse_grid_points, cv_obj, scoring
             )
             coarse_time = time.time() - coarse_start
@@ -1124,7 +1123,7 @@ class HyperparameterOptimization:
             fine_start = time.time()
             best_coarse = coarse_results.get('best_params', {})
             fine_results = self._fine_grid_search_staged(
-                model_factory, X, y, search_space, best_coarse, 
+                model_factory, X, y, search_space, best_coarse,
                 fine_grid_points, cv_obj, scoring
             )
             fine_time = time.time() - fine_start
@@ -1143,10 +1142,10 @@ class HyperparameterOptimization:
             # Stage 3: Optuna TPE Optimization around best grid parameters
             self.logger.info("🎯 Stage 3: Optuna TPE optimization")
             optuna_start = time.time()
-            
+
             # Narrow search space around best grid parameters
             narrowed = self._narrow_search_space(search_space, best_params)
-            
+
             optuna_results = self.bayesian_optimization(
                 model_factory=model_factory,
                 X=X,
@@ -1183,7 +1182,7 @@ class HyperparameterOptimization:
                     cv if cv is not None else self._create_time_series_split(len(X))
                 )
                 refine_time = time.time() - refine_start
-                
+
                 if fine_score > final_score:
                     final_params, final_score = fine_params, fine_score
                     final_stage = 'refine'
@@ -1461,41 +1460,41 @@ class HyperparameterOptimization:
 
         return search_space
 
-    def _log_study_context(self, X: np.ndarray, y: np.ndarray, 
-                          search_space: Dict[str, Any], 
+    def _log_study_context(self, X: np.ndarray, y: np.ndarray,
+                          search_space: Dict[str, Any],
                           optimization_context: Optional[str],
-                          study_name: Optional[str], 
+                          study_name: Optional[str],
                           n_trials: int) -> None:
         """Log detailed context about what this study is optimizing."""
         try:
             # Get model type from search space characteristics
             model_type = self._infer_model_type_from_search_space(search_space)
-            
+
             # Get data characteristics
             n_samples, n_features = X.shape
             n_classes = len(np.unique(y)) if len(y) > 0 else 0
-            
+
             # Calculate additional data insights
             data_insights = self._analyze_dataset_characteristics(X, y)
-            
+
             # Create study identifier
             study_id = study_name or f"study_{id(self)}"
-            
+
             # Enhanced logging with more descriptive information
             self.logger.info("=" * 100)
             self.logger.info(f"🔬 HYPERPARAMETER OPTIMIZATION STUDY: {study_id}")
             self.logger.info("=" * 100)
-            
+
             if optimization_context:
                 self.logger.info(f"🎯 OPTIMIZATION PURPOSE: {optimization_context}")
                 self.logger.info("")
-            
+
             # Model and algorithm information
             self.logger.info(f"🤖 ALGORITHM: {model_type}")
             self.logger.info(f"🔧 OPTIMIZATION METHOD: Bayesian Optimization with TPE Sampler")
             self.logger.info(f"🎲 PLANNED TRIALS: {n_trials}")
             self.logger.info("")
-            
+
             # Dataset analysis
             self.logger.info("📊 DATASET ANALYSIS:")
             self.logger.info(f"   • Total Samples: {n_samples:,}")
@@ -1503,7 +1502,7 @@ class HyperparameterOptimization:
             self.logger.info(f"   • Target Classes: {n_classes}")
             self.logger.info(f"   • Sample-to-Feature Ratio: {n_samples/n_features:.2f}")
             self.logger.info(f"   • Samples per Class (avg): {n_samples/n_classes:.1f}")
-            
+
             # Data quality insights
             if data_insights:
                 self.logger.info("")
@@ -1516,15 +1515,15 @@ class HyperparameterOptimization:
                     self.logger.info("   ⚠️  SMALL DATASET: May need more regularization")
                 if data_insights.get('good_balance'):
                     self.logger.info("   ✅ WELL-BALANCED: Good for optimization")
-            
+
             self.logger.info("")
             self.logger.info(f"🔧 HYPERPARAMETER SEARCH SPACE ({len(search_space)} parameters):")
-            
+
             # Categorize parameters by type
             int_params = []
             float_params = []
             categorical_params = []
-            
+
             for param_name, param_config in search_space.items():
                 if isinstance(param_config, dict):
                     param_type = param_config.get('type', 'unknown')
@@ -1534,7 +1533,7 @@ class HyperparameterOptimization:
                         int_params.append((param_name, param_config))
                     elif param_type == 'float':
                         float_params.append((param_name, param_config))
-            
+
             # Log parameters by category
             if int_params:
                 self.logger.info("   📈 INTEGER PARAMETERS:")
@@ -1543,7 +1542,7 @@ class HyperparameterOptimization:
                     high = config.get('high', 'N/A')
                     step = config.get('step', 1)
                     self.logger.info(f"      • {param_name}: [{low}, {high}] (step: {step})")
-            
+
             if float_params:
                 self.logger.info("   📊 FLOAT PARAMETERS:")
                 for param_name, config in float_params:
@@ -1552,13 +1551,13 @@ class HyperparameterOptimization:
                     log_scale = config.get('log', False)
                     scale_info = " (log scale)" if log_scale else " (linear scale)"
                     self.logger.info(f"      • {param_name}: [{low}, {high}]{scale_info}")
-            
+
             if categorical_params:
                 self.logger.info("   🎛️  CATEGORICAL PARAMETERS:")
                 for param_name, config in categorical_params:
                     choices = config.get('choices', [])
                     self.logger.info(f"      • {param_name}: {choices}")
-            
+
             # Optimization strategy insights
             self.logger.info("")
             self.logger.info("🚀 OPTIMIZATION STRATEGY:")
@@ -1566,7 +1565,7 @@ class HyperparameterOptimization:
             self.logger.info(f"   • Pruning Strategy: Median Pruner with early stopping")
             self.logger.info(f"   • Convergence: Will stop if no improvement for 5 consecutive trials")
             self.logger.info(f"   • Expected Runtime: ~{n_trials * 2}-{n_trials * 5} minutes")
-            
+
             # Expected outcomes
             self.logger.info("")
             self.logger.info("🎯 EXPECTED OUTCOMES:")
@@ -1578,9 +1577,9 @@ class HyperparameterOptimization:
                 self.logger.info("   • Focus on learning rate, hidden units, regularization")
             else:
                 self.logger.info("   • General hyperparameter tuning for model performance")
-            
+
             self.logger.info("=" * 100)
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to log study context: {e}")
 
@@ -1589,30 +1588,30 @@ class HyperparameterOptimization:
         try:
             n_samples, n_features = X.shape
             n_classes = len(np.unique(y))
-            
+
             insights = {}
-            
+
             # High dimensionality check
             insights['high_dimensionality'] = n_features > n_samples * 0.1
-            
+
             # Class imbalance check
             class_counts = np.bincount(y)
             max_class = np.max(class_counts)
             min_class = np.min(class_counts)
             insights['class_imbalance'] = max_class > min_class * 3
-            
+
             # Small dataset check
             insights['small_dataset'] = n_samples < 1000
-            
+
             # Good balance check
             insights['good_balance'] = (
                 not insights.get('high_dimensionality', False) and
                 not insights.get('class_imbalance', False) and
                 not insights.get('small_dataset', False)
             )
-            
+
             return insights
-            
+
         except Exception:
             return {}
 
@@ -1740,11 +1739,11 @@ class HyperparameterOptimization:
             self.logger.warning(f"Search space adjustment failed: {e}")
             return search_space
 
-    def _get_smart_initialization(self, model_factory: Callable, search_space: Dict[str, Any], 
+    def _get_smart_initialization(self, model_factory: Callable, search_space: Dict[str, Any],
                                    X: np.ndarray, y: np.ndarray) -> Optional[Dict[str, Any]]:
         """
         Get smart initialization parameters based on domain knowledge and data characteristics.
-        
+
         Returns sensible defaults from literature and best practices for:
         - RandomForest: Optimal for regime detection
         - XGBoost/LightGBM: Common defaults
@@ -1752,16 +1751,16 @@ class HyperparameterOptimization:
         """
         try:
             model_name = model_factory.__name__.lower() if hasattr(model_factory, '__name__') else str(model_factory).lower()
-            
+
             # Analyze data characteristics
             n_samples = X.shape[0]
             n_features = X.shape[1] if len(X.shape) > 1 else 1
             n_classes = len(np.unique(y))
-            
+
             self.logger.info(f"📊 Data characteristics: {n_samples} samples, {n_features} features, {n_classes} classes")
-            
+
             smart_params = {}
-            
+
             # RandomForest smart defaults (regime detection optimized)
             if 'randomforest' in model_name or 'random_forest' in model_name:
                 smart_params = {
@@ -1772,7 +1771,7 @@ class HyperparameterOptimization:
                     'max_features': 'sqrt',  # Standard best practice
                     'class_weight': 'balanced'  # Handle imbalance
                 }
-                
+
                 # Adjust for data size
                 if n_samples < 500:
                     smart_params['n_estimators'] = 150
@@ -1780,9 +1779,9 @@ class HyperparameterOptimization:
                 elif n_samples > 5000:
                     smart_params['n_estimators'] = 250
                     smart_params['max_depth'] = 10
-                
+
                 self.logger.info("🎯 Using RandomForest regime detection defaults from literature")
-                
+
             # XGBoost smart defaults
             elif 'xgb' in model_name:
                 smart_params = {
@@ -1796,7 +1795,7 @@ class HyperparameterOptimization:
                     'reg_lambda': 1.0
                 }
                 self.logger.info("🎯 Using XGBoost defaults from literature")
-                
+
             # LightGBM smart defaults
             elif 'lgbm' in model_name or 'lightgbm' in model_name:
                 smart_params = {
@@ -1810,7 +1809,7 @@ class HyperparameterOptimization:
                     'min_child_samples': 20
                 }
                 self.logger.info("🎯 Using LightGBM defaults from literature")
-                
+
             # CatBoost smart defaults
             elif 'catboost' in model_name:
                 smart_params = {
@@ -1822,7 +1821,7 @@ class HyperparameterOptimization:
                     'colsample_bylevel': 0.8
                 }
                 self.logger.info("🎯 Using CatBoost defaults from literature")
-                
+
             # ExtraTrees smart defaults (similar to RandomForest but more randomized)
             elif 'extratrees' in model_name or 'extra_trees' in model_name:
                 smart_params = {
@@ -1834,14 +1833,14 @@ class HyperparameterOptimization:
                     'class_weight': 'balanced'
                 }
                 self.logger.info("🎯 Using ExtraTrees defaults from literature")
-            
+
             # Filter out params not in search space
             if search_space:
                 filtered_params = {}
                 for param, value in smart_params.items():
                     if param in search_space:
                         param_config = search_space[param]
-                        
+
                         # Validate param is within bounds
                         if param_config['type'] == 'int':
                             if 'low' in param_config and 'high' in param_config:
@@ -1854,20 +1853,20 @@ class HyperparameterOptimization:
                                 if value not in param_config['choices']:
                                     # Use first choice as default
                                     value = param_config['choices'][0]
-                        
+
                         filtered_params[param] = value
                     else:
                         self.logger.debug(f"Skipping smart param '{param}' - not in search space")
-                
+
                 if filtered_params:
                     self.logger.info(f"✅ Smart initialization: {len(filtered_params)}/{len(smart_params)} params applied")
                     return filtered_params
                 else:
                     self.logger.warning("⚠️  No smart params matched search space")
                     return None
-            
+
             return smart_params if smart_params else None
-            
+
         except Exception as e:
             self.logger.warning(f"Smart initialization failed: {e}")
             return None
@@ -1894,7 +1893,7 @@ class HyperparameterOptimization:
                 if self.use_nonlinear_optimization and 'transform_type' in param_config:
                     # Use enhanced non-linear sampling
                     transform_type = param_config.get('transform_type', 'auto')
-                    
+
                     if param_config['type'] == 'int':
                         params[param_name] = self.parameter_sampler.suggest_enhanced_int(
                             trial, param_name, param_config['low'], param_config['high'], transform_type
@@ -1911,28 +1910,28 @@ class HyperparameterOptimization:
                     # Fallback to original sampling
                     if param_config['type'] == 'int':
                         params[param_name] = trial.suggest_int(
-                            param_name, 
-                            param_config['low'], 
+                            param_name,
+                            param_config['low'],
                             param_config['high'],
                             step=param_config.get('step', 1)
                         )
                     elif param_config['type'] == 'float':
                         if param_config.get('log', False):
                             params[param_name] = trial.suggest_float(
-                                param_name, 
-                                param_config['low'], 
+                                param_name,
+                                param_config['low'],
                                 param_config['high'],
                                 log=True
                             )
                         else:
                             params[param_name] = trial.suggest_float(
-                                param_name, 
-                                param_config['low'], 
+                                param_name,
+                                param_config['low'],
                                 param_config['high']
                             )
                     elif param_config['type'] == 'categorical':
                         params[param_name] = trial.suggest_categorical(
-                            param_name, 
+                            param_name,
                             param_config['choices']
                         )
 
@@ -2115,16 +2114,16 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.warning(f"Failed to build coarse grid: {e}")
             return []
-    
+
     def _vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """Generate coarse grid using VectorBT vectorization manager."""
         try:
             self.logger.debug("🔄 Generating VectorBT-optimized coarse grid...")
-            
+
             # Use the vectorization manager for efficient grid generation
             param_names = list(search_space.keys())
             param_configs = list(search_space.values())
-            
+
             # Generate parameter values using VectorBT
             param_values = {}
             for name, config in zip(param_names, param_configs):
@@ -2154,17 +2153,17 @@ class HyperparameterOptimization:
                         values = np.linspace(low, high, grid_points)
                     else:
                         values = [config]
-                
+
                 param_values[name] = values
-            
+
             # Generate all combinations
             import itertools
             combinations = list(itertools.product(*[param_values[name] for name in param_names]))
             grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
-            
+
             self.logger.debug(f"✅ Generated {len(grid_points_list)} VectorBT-optimized coarse grid points")
             return grid_points_list
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT coarse grid generation failed: {e}, using fallback")
             return build_coarse_grid_from_search_space(search_space, grid_points)
@@ -2242,14 +2241,14 @@ class HyperparameterOptimization:
         """Early stopping callback for low variance scenarios."""
         if len(study.trials) < 5:  # Need at least 5 trials to check variance
             return
-        
+
         # Get recent scores (last 5 trials)
         recent_scores = [t.value for t in study.trials[-5:] if t.value is not None]
-        
+
         if len(recent_scores) >= 5:
             # Calculate variance
             score_variance = np.var(recent_scores)
-            
+
             # If variance is extremely low (all scores identical), stop early
             if score_variance < 1e-10:  # Threshold for identical scores
                 self.logger.warning(f"⚠️ Early stopping triggered: Score variance extremely low ({score_variance:.2e})")
@@ -2334,9 +2333,9 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.warning(f"Fresh optimization failed: {e}")
             return {'error': str(e)}
-    
+
     def _coarse_grid_search_staged(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
-                                  search_space: Dict[str, Any], grid_points: int, cv_obj: Any, 
+                                  search_space: Dict[str, Any], grid_points: int, cv_obj: Any,
                                   scoring: Union[str, Callable]) -> Dict[str, Any]:
         """Perform coarse grid search for staged HPO."""
         try:
@@ -2355,24 +2354,24 @@ class HyperparameterOptimization:
                     model = model_factory(**params)
                     score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
                     parameter_scores.append((params, score))
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params.copy()
-                    
+
                     if (i + 1) % 10 == 0:
                         self.logger.debug(f"   Evaluated {i + 1} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
                     continue
-            
+
             if not parameter_scores:
                 self.logger.error("❌ No valid parameter combinations found in coarse grid")
                 return {}
-            
+
             self.logger.info(f"✅ Coarse grid search completed - Best score: {best_score:.4f}")
-            
+
             return {
                 'best_params': best_params,
                 'best_score': best_score,
@@ -2380,50 +2379,50 @@ class HyperparameterOptimization:
                 'valid_combinations': len(parameter_scores),
                 'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Coarse grid search failed: {e}")
             return {}
-    
+
     def _fine_grid_search_staged(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
                                 search_space: Dict[str, Any], best_coarse_params: Dict[str, Any],
                                 grid_points: int, cv_obj: Any, scoring: Union[str, Callable]) -> Dict[str, Any]:
         """Perform fine grid search around best coarse parameters for staged HPO."""
         try:
             self.logger.info(f"🔍 Creating fine grid with {grid_points} points around best coarse parameters")
-            
+
             # Create fine parameter grid around best coarse parameters
             fine_grid = build_fine_grid_around_best(search_space, best_coarse_params, grid_points)
             self.logger.info(f"📊 Fine grid size: {len(fine_grid)} combinations")
-            
+
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
-            
+
             # Evaluate each parameter combination
             for i, params in enumerate(fine_grid):
                 try:
                     model = model_factory(**params)
                     score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
                     parameter_scores.append((params, score))
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params.copy()
-                    
+
                     if (i + 1) % 10 == 0:
                         self.logger.debug(f"   Evaluated {i + 1}/{len(fine_grid)} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
                     continue
-            
+
             if not parameter_scores:
                 self.logger.error("❌ No valid parameter combinations found in fine grid")
                 return {}
-            
+
             self.logger.info(f"✅ Fine grid search completed - Best score: {best_score:.4f}")
-            
+
             return {
                 'best_params': best_params,
                 'best_score': best_score,
@@ -2431,12 +2430,12 @@ class HyperparameterOptimization:
                 'valid_combinations': len(parameter_scores),
                 'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Fine grid search failed: {e}")
             return {}
-    
-    def _create_fine_parameter_grid_staged(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+
+    def _create_fine_parameter_grid_staged(self, search_space: Dict[str, Any], best_params: Dict[str, Any],
                                          grid_points: int) -> List[Dict[str, Any]]:
         """Create fine parameter grid around best parameters for staged HPO with VectorBT optimization."""
         try:
@@ -2448,24 +2447,24 @@ class HyperparameterOptimization:
         except Exception as e:
             self.logger.warning(f"Fine grid generation failed: {e}")
             return []
-    
-    def _vectorbt_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+
+    def _vectorbt_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any],
                            grid_points: int) -> List[Dict[str, Any]]:
         """Generate fine grid using VectorBT vectorization manager."""
         try:
             self.logger.debug("🔄 Generating VectorBT-optimized fine grid...")
-            
+
             param_names = list(search_space.keys())
             param_configs = list(search_space.values())
-            
+
             # Generate fine parameter values around best parameters
             param_values = {}
             for name, config in zip(param_names, param_configs):
                 if name not in best_params:
                     continue
-                
+
                 best_val = best_params[name]
-                
+
                 if isinstance(config, dict):
                     param_type = config.get('type', 'float')
                     if param_type == 'float':
@@ -2474,7 +2473,7 @@ class HyperparameterOptimization:
                         fine_range = range_size * 0.2  # 20% of original range
                         fine_min = max(low, best_val - fine_range)
                         fine_max = min(high, best_val + fine_range)
-                        
+
                         if config.get('log', False) and fine_min > 0:
                             values = np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points)
                         else:
@@ -2499,34 +2498,34 @@ class HyperparameterOptimization:
                         values = np.linspace(fine_min, fine_max, grid_points)
                     else:
                         values = [best_val]
-                
+
                 param_values[name] = values
-            
+
             # Generate all combinations
             import itertools
             combinations = list(itertools.product(*[param_values[name] for name in param_names]))
             grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
-            
+
             self.logger.debug(f"✅ Generated {len(grid_points_list)} VectorBT-optimized fine grid points")
             return grid_points_list
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT fine grid generation failed: {e}, using fallback")
             return self._standard_fine_grid(search_space, best_params, grid_points)
-    
-    def _standard_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any], 
+
+    def _standard_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any],
                            grid_points: int) -> List[Dict[str, Any]]:
         """Generate fine grid using standard method."""
         import itertools
-        
+
         param_combinations = []
-        
+
         for param_name, param_config in search_space.items():
             if param_name not in best_params:
                 continue
-                
+
             best_value = best_params[param_name]
-            
+
             if isinstance(param_config, dict):
                 typ = param_config.get('type', 'float')
                 if typ == 'float':
@@ -2536,7 +2535,7 @@ class HyperparameterOptimization:
                     fine_range = range_size * 0.2
                     fine_min = max(low, best_value - fine_range)
                     fine_max = min(high, best_value + fine_range)
-                    
+
                     # Use specified number of points for fine grid
                     if param_config.get('log', False):
                         # Log-spaced values
@@ -2545,7 +2544,7 @@ class HyperparameterOptimization:
                         # Linear-spaced values
                         values = np.linspace(fine_min, fine_max, grid_points)
                     param_combinations.append([(param_name, v) for v in values])
-                    
+
                 elif typ == 'int':
                     low, high = param_config['low'], param_config['high']
                     # Create fine grid around best value (±2 values)
@@ -2553,7 +2552,7 @@ class HyperparameterOptimization:
                     fine_max = min(high, best_value + 2)
                     values = list(range(fine_min, fine_max + 1))
                     param_combinations.append([(param_name, v) for v in values])
-                    
+
                 elif typ == 'categorical':
                     param_combinations.append([(param_name, v) for v in param_config.get('choices', [])])
             else:
@@ -2566,56 +2565,56 @@ class HyperparameterOptimization:
                     fine_max = min(high, best_value + fine_range)
                     values = np.linspace(fine_min, fine_max, grid_points)
                     param_combinations.append([(param_name, v) for v in values])
-        
+
         # Generate all combinations
         all_combinations = list(itertools.product(*param_combinations))
-        
+
         # Convert to list of dictionaries
         grid = []
         for combination in all_combinations:
             param_dict = dict(combination)
             grid.append(param_dict)
-        
+
         return grid
-    
+
     def _fallback_random_search(self, model_factory: Callable, X: np.ndarray, y: np.ndarray,
-                               search_space: Dict[str, Any], n_samples: int, cv_obj: Any, 
+                               search_space: Dict[str, Any], n_samples: int, cv_obj: Any,
                                scoring: Union[str, Callable]) -> Dict[str, Any]:
         """Fallback random search when grid search fails."""
         try:
             self.logger.info(f"🎲 Performing fallback random search with {n_samples} samples")
-            
+
             # Generate random parameter combinations using coarse grid and sampling
             coarse = build_coarse_grid_from_search_space(search_space, 3)
             sampled = coarse[:n_samples] if len(coarse) > n_samples else coarse
-            
+
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
-            
+
             for i, params in enumerate(sampled):
                 try:
                     model = model_factory(**params)
                     score = self._evaluate_model_cv(model, X, y, cv_obj, scoring)
                     parameter_scores.append((params, score))
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params.copy()
-                    
+
                     if (i + 1) % 10 == 0:
                         self.logger.debug(f"   Evaluated {i + 1}/{len(sampled)} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
                     continue
-            
+
             if not parameter_scores:
                 self.logger.error("❌ No valid parameter combinations found in random search")
                 return {}
-            
+
             self.logger.info(f"✅ Random search completed - Best score: {best_score:.4f}")
-            
+
             return {
                 'best_params': best_params,
                 'best_score': best_score,
@@ -2624,20 +2623,19 @@ class HyperparameterOptimization:
                 'parameter_scores': parameter_scores[:10],
                 'method': 'random_fallback'
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Random search failed: {e}")
             return {}
-
 
 # ============================================================================
 # PUBLIC API FUNCTIONS
 # ============================================================================
 # These functions provide a simple interface to the HyperparameterOptimization class
 
-def optimize_hyperparameters(model_factory: Callable = None, 
+def optimize_hyperparameters(model_factory: Callable = None,
                            model: Any = None,
-                           X: np.ndarray = None, 
+                           X: np.ndarray = None,
                            y: np.ndarray = None,
                            search_space: Dict[str, Any] = None,
                            n_trials: int = 50,
@@ -2648,7 +2646,7 @@ def optimize_hyperparameters(model_factory: Callable = None,
                            **kwargs) -> Dict[str, Any]:
     """
     Optimize hyperparameters for a given model.
-    
+
     Args:
         model_factory: Function that creates model with given parameters
         model: Model instance (alternative to model_factory)
@@ -2661,13 +2659,13 @@ def optimize_hyperparameters(model_factory: Callable = None,
         cv: Cross-validation strategy
         config: Configuration dictionary
         **kwargs: Additional arguments
-    
+
     Returns:
         Optimization results dictionary
     """
     try:
         logger.info(f"🚀 Starting hyperparameter optimization with {method} method")
-        
+
         # Handle model factory creation
         if model_factory is None and model is not None:
             def model_factory(**params):
@@ -2682,24 +2680,24 @@ def optimize_hyperparameters(model_factory: Callable = None,
                     # Fallback: create new instance with params
                     model_class = type(model)
                     return model_class(**params)
-        
+
         if model_factory is None:
             logger.error("❌ Either model_factory or model must be provided")
             return {'error': 'Either model_factory or model must be provided'}
-        
+
         if X is None or y is None:
             logger.error("❌ Training data (X, y) must be provided")
             return {'error': 'Training data (X, y) must be provided'}
-        
+
         # Create HPO instance
         hpo = HyperparameterOptimization(config=config)
-        
+
         # Generate search space if not provided
         if search_space is None:
             model_name = getattr(model, '__class__.__name__', 'unknown').lower()
             search_space = create_search_space(model_name, X, y)
             logger.info(f"📊 Generated search space for {model_name}: {list(search_space.keys())}")
-        
+
         # Choose optimization method
         if method == 'bayesian':
             results = hpo.bayesian_optimization(
@@ -2733,34 +2731,33 @@ def optimize_hyperparameters(model_factory: Callable = None,
         else:
             logger.error(f"❌ Unknown optimization method: {method}")
             return {'error': f'Unknown optimization method: {method}'}
-        
+
         logger.info(f"✅ Hyperparameter optimization completed with {method} method")
         return results
-        
+
     except Exception as e:
         logger.error(f"❌ Hyperparameter optimization failed: {e}")
         return {'error': str(e)}
 
-
-def create_search_space(model_type: str, 
-                       X: Optional[np.ndarray] = None, 
+def create_search_space(model_type: str,
+                       X: Optional[np.ndarray] = None,
                        y: Optional[np.ndarray] = None,
                        data_characteristics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Create search space for hyperparameter optimization.
-    
+
     Args:
         model_type: Type of model ('xgboost', 'lightgbm', 'random_forest', etc.)
         X: Feature matrix (optional, used for data characteristics)
         y: Target array (optional, used for data characteristics)
         data_characteristics: Dictionary with data characteristics
-    
+
     Returns:
         Search space dictionary
     """
     try:
         logger.info(f"🔧 Creating search space for {model_type}")
-        
+
         # Extract data characteristics
         if data_characteristics is None and X is not None and y is not None:
             data_characteristics = {
@@ -2776,57 +2773,56 @@ def create_search_space(model_type: str,
                 'n_classes': 2,
                 'task_type': 'classification'
             }
-        
+
         # Create HPO instance and generate search space
         hpo = HyperparameterOptimization()
         search_space = hpo.automated_search_space_generation(model_type, data_characteristics)
-        
+
         logger.info(f"✅ Created search space with {len(search_space)} parameters")
         return search_space
-        
+
     except Exception as e:
         logger.error(f"❌ Search space creation failed: {e}")
         return {}
 
-
 def validate_hpo_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     Validate hyperparameter optimization configuration.
-    
+
     Args:
         config: HPO configuration dictionary
-    
+
     Returns:
         Validation results dictionary
     """
     try:
         logger.info("🔍 Validating HPO configuration")
-        
+
         validation_results = {
             'valid': True,
             'warnings': [],
             'errors': []
         }
-        
+
         # Check required fields
         if 'n_trials' in config:
             if not isinstance(config['n_trials'], int) or config['n_trials'] <= 0:
                 validation_results['errors'].append("n_trials must be a positive integer")
                 validation_results['valid'] = False
-        
+
         if 'method' in config:
             valid_methods = ['bayesian', 'staged', 'multi_objective', 'random']
             if config['method'] not in valid_methods:
                 validation_results['errors'].append(f"method must be one of {valid_methods}")
                 validation_results['valid'] = False
-        
+
         if 'scoring' in config:
             # Basic scoring validation
             if isinstance(config['scoring'], str):
                 valid_scorings = ['accuracy', 'f1', 'precision', 'recall', 'roc_auc', 'neg_mean_squared_error']
                 if config['scoring'] not in valid_scorings:
                     validation_results['warnings'].append(f"Scoring '{config['scoring']}' may not be supported")
-        
+
         # Check search space if provided
         if 'search_space' in config:
             search_space = config['search_space']
@@ -2839,21 +2835,21 @@ def validate_hpo_config(config: Dict[str, Any]) -> Dict[str, Any]:
                         validation_results['warnings'].append(f"Parameter '{param_name}' config should be a dictionary")
                     elif 'type' not in param_config:
                         validation_results['warnings'].append(f"Parameter '{param_name}' missing 'type' specification")
-        
+
         # Performance warnings
         if config.get('n_trials', 50) > 200:
             validation_results['warnings'].append("High number of trials may take significant time")
-        
+
         if config.get('enable_parallel', True) and config.get('max_workers', 4) > 8:
             validation_results['warnings'].append("High number of workers may cause resource contention")
-        
+
         if validation_results['valid']:
             logger.info("✅ HPO configuration is valid")
         else:
             logger.warning(f"⚠️ HPO configuration has errors: {validation_results['errors']}")
-        
+
         return validation_results
-        
+
     except Exception as e:
         logger.error(f"❌ HPO configuration validation failed: {e}")
         return {
@@ -2861,7 +2857,6 @@ def validate_hpo_config(config: Dict[str, Any]) -> Dict[str, Any]:
             'errors': [f"Validation failed: {str(e)}"],
             'warnings': []
         }
-
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -2875,7 +2870,7 @@ def create_hpo_config(n_trials: int = 50,
                      **kwargs) -> Dict[str, Any]:
     """
     Create a standard HPO configuration dictionary.
-    
+
     Args:
         n_trials: Number of optimization trials
         method: Optimization method
@@ -2883,7 +2878,7 @@ def create_hpo_config(n_trials: int = 50,
         enable_parallel: Enable parallel processing
         max_workers: Maximum number of parallel workers
         **kwargs: Additional configuration options
-    
+
     Returns:
         HPO configuration dictionary
     """
@@ -2896,13 +2891,12 @@ def create_hpo_config(n_trials: int = 50,
         'enable_monitoring': kwargs.get('enable_monitoring', True),
         'use_nonlinear_optimization': kwargs.get('use_nonlinear_optimization', True)
     }
-    
+
     # Add any additional kwargs
     config.update(kwargs)
-    
+
     logger.info(f"📋 Created HPO config: {method} method, {n_trials} trials")
     return config
-
 
 # Add missing import for defaultdict
 from collections import defaultdict

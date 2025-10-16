@@ -658,7 +658,6 @@ def load_klines_data(filename: str) -> Any:
         tprint(critical('CRITICAL ERROR: Error loading klines data from {filename}: {e}'))
         return pd.DataFrame()
 
-
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Get standardized column names for OHLCV data."""
     close_col = 'Close' if 'Close' in klines_df.columns else 'close'

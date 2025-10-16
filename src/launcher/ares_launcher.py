@@ -74,7 +74,6 @@ tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
 tprint("✅ [IMPORTS] Core decorators imported")
 
-
 tprint("🔧 [IMPORTS] Importing main training pipeline components...")
 from src.training.steps.main_training_pipeline import (
     MainTrainingPipeline, MainPipelineConfig, MainPipelineResult,
@@ -111,11 +110,11 @@ class ExecutionModeType(Enum):
 class AresLauncher:
     """
     Ares Launcher with Granular Sub-Pipeline Control.
-    
+
     Provides comprehensive control over training pipeline execution with
     granular sub-pipeline management and real-time monitoring.
     """
-    
+
     # Feature Generation Pipeline Steps in execution order
     FEATURE_GENERATION_STEPS = [
         {
@@ -125,7 +124,7 @@ class AresLauncher:
         },
         {
             "name": "Labeling Integration",
-            "sub_pipeline": "feature_generation_labeling_integration_step", 
+            "sub_pipeline": "feature_generation_labeling_integration_step",
             "description": "Integrates labeling for feature generation"
         },
         {
@@ -164,75 +163,75 @@ class AresLauncher:
             "description": "Final validation of generated features"
         }
     ]
-    
+
     def __init__(self):
         """Initialize the Ares launcher."""
         tprint("🚀 [INIT] Starting AresLauncher initialization...")
         tprint("🚀 [INIT] Creating logger instance...")
         self.logger = logger.getChild('AresLauncher')
         tprint("✅ [INIT] Logger created successfully")
-        
+
         tprint("🚀 [INIT] Initializing MainTrainingPipeline...")
         self.pipeline = MainTrainingPipeline()
         tprint("✅ [INIT] MainTrainingPipeline initialized successfully")
-        
+
         tprint("🚀 [INIT] Setting up execution tracking...")
         self.current_execution: Optional[MainPipelineResult] = None
         self.execution_history: List[MainPipelineResult] = []
         tprint("✅ [INIT] Execution tracking setup complete")
-        
+
         # Initialize monitoring
         tprint("🚀 [INIT] Starting logging setup...")
         self._setup_logging()
         tprint("✅ [INIT] Logging setup complete")
-        
+
         tprint("🚀 [INIT] Starting monitoring setup...")
         self._setup_monitoring()
         tprint("✅ [INIT] Monitoring setup complete")
-        
+
         tprint("🎯 [INIT] AresLauncher initialization completed successfully!")
         tprint("=" * 80)
-    
+
     def _setup_logging(self):
         """Setup comprehensive logging."""
         tprint("🔧 [SETUP_LOGGING] Starting logging configuration...")
         tprint("🔧 [SETUP_LOGGING] Configuring logger formatters...")
-        
+
         # Keep light verbosity in LIGHT mode
         self.logger.info("🚀 Ares Launcher Initialized")
         self.logger.info("🎯 Granular Sub-Pipeline Control Enabled")
-        
+
         tprint("🔧 [SETUP_LOGGING] Logger configuration complete")
         tprint("🔧 [SETUP_LOGGING] Logging levels configured")
         tprint("🔧 [SETUP_LOGGING] Console output enabled")
         tprint("🔧 [SETUP_LOGGING] File output configured")
         tprint("✅ [SETUP_LOGGING] Comprehensive logging setup completed")
-    
+
     def _setup_monitoring(self):
         """Setup monitoring and progress tracking."""
         tprint("📊 [SETUP_MONITORING] Starting monitoring configuration...")
         tprint("📊 [SETUP_MONITORING] Enabling monitoring system...")
         self.monitoring_enabled = True
         tprint("✅ [SETUP_MONITORING] Monitoring system enabled")
-        
+
         tprint("📊 [SETUP_MONITORING] Initializing progress callbacks list...")
         self.progress_callbacks: List[callable] = []
         tprint("✅ [SETUP_MONITORING] Progress callbacks list initialized")
-        
+
         # Register default progress callback
         tprint("📊 [SETUP_MONITORING] Registering default progress callback...")
         self.register_progress_callback(self._default_progress_callback)
         tprint("✅ [SETUP_MONITORING] Default progress callback registered")
         tprint("✅ [SETUP_MONITORING] Monitoring setup completed successfully")
-    
+
     def register_progress_callback(self, callback: callable):
         """Register a progress callback function."""
         self.progress_callbacks.append(callback)
-    
+
     def _default_progress_callback(self, progress_data: Dict[str, Any]):
         """Default progress callback for monitoring."""
         self.logger.info(f"📊 Progress: {progress_data.get('message', 'Unknown')}")
-    
+
     def _log_stage_transition(self, from_stage: Optional[str], to_stage: str, transition_type: str = "STAGE"):
         """Log explicit stage/pipeline transitions."""
         if from_stage:
@@ -247,7 +246,7 @@ class AresLauncher:
             self.logger.info(f"📋 Execution Type: {transition_type}")
             self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
             self.logger.info("=" * 80)
-    
+
     def _log_sub_pipeline_transition(self, from_sub_pipeline: Optional[str], to_sub_pipeline: str, stage: str):
         """Log explicit sub-pipeline transitions."""
         if from_sub_pipeline:
@@ -262,16 +261,16 @@ class AresLauncher:
             self.logger.info(f"📋 Stage: {stage}")
             self.logger.info(f"⏰ Timestamp: {datetime.now().isoformat()}")
             self.logger.info("=" * 60)
-    
+
     async def _create_outcome_file(self, stage: str, sub_pipeline: str, result: Any, config: MainPipelineConfig) -> str:
         """Create outcome file for stage/sub-pipeline completion."""
         outcome_dir = Path("outcomes")
         outcome_dir.mkdir(exist_ok=True)
-        
+
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
         outcome_file = outcome_dir / filename
-        
+
         # Determine actual direction type from metadata if available
         direction_type = 'both'
         if hasattr(result, 'metadata') and result.metadata:
@@ -286,7 +285,7 @@ class AresLauncher:
                 direction_type = 'short'
         elif hasattr(config, 'direction_type'):
             direction_type = config.direction_type.value
-        
+
         outcome_data = {
             'stage': stage,
             'sub_pipeline': sub_pipeline,
@@ -306,33 +305,33 @@ class AresLauncher:
             },
             'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
         }
-        
+
         with open(outcome_file, 'w') as f:
             json.dump(outcome_data, f, indent=2, default=str)
-        
+
         self.logger.info(f"💾 Outcome file created: {outcome_file}")
-        
+
         # Create human-readable summary
         summary_file = self._create_human_readable_summary(outcome_file, outcome_data, stage, sub_pipeline)
         if summary_file:
             self.logger.info(f"📄 Human-readable summary created: {summary_file}")
-        
+
         return str(outcome_file)
-    
+
     def _create_human_readable_summary(self, outcome_file: Path, outcome_data: Dict, stage: str, sub_pipeline: str) -> Optional[str]:
         """Create a human-readable summary file from the outcome data."""
         try:
             import pandas as pd
-            
+
             # Create summary filename
             summary_file = Path(str(outcome_file).replace('.json', '_SUMMARY.txt'))
-            
+
             with open(summary_file, 'w') as f:
                 # Header
                 f.write("=" * 80 + "\n")
                 f.write(f"  {sub_pipeline.upper().replace('_', ' ')} - EXECUTION SUMMARY\n")
                 f.write("=" * 80 + "\n\n")
-                
+
                 # Configuration
                 config = outcome_data.get('config', {})
                 f.write("📋 CONFIGURATION\n")
@@ -343,23 +342,23 @@ class AresLauncher:
                 f.write(f"   Direction:       {config.get('direction_type', 'N/A')}\n")
                 f.write(f"   Intensity:       {config.get('intensity_percentage', 'N/A')}\n")
                 f.write("\n")
-                
+
                 # Status and timing
                 f.write("📊 EXECUTION STATUS\n")
                 f.write(f"   Status:          {outcome_data.get('status', 'N/A')}\n")
                 f.write(f"   Timestamp:       {outcome_data.get('timestamp', 'N/A')}\n")
                 f.write("\n")
-                
+
                 # Metadata-specific summaries
                 metadata = outcome_data.get('metadata', {})
-                
+
                 # Feature Lookback Optimization specific
                 if sub_pipeline == 'feature_lookback_optimization':
                     f.write("🎯 OPTIMIZATION RESULTS\n")
                     f.write(f"   Status:                  {metadata.get('optimization_status', 'N/A')}\n")
                     f.write(f"   Total Features Optimized: {metadata.get('total_features_optimized', 'N/A')}\n")
                     f.write("\n")
-                    
+
                     # Performance
                     perf = metadata.get('performance_metrics', {})
                     if perf:
@@ -373,14 +372,14 @@ class AresLauncher:
                             if peak_mb:
                                 f.write(f"   Peak Memory:     {peak_mb:.2f} MB\n")
                         f.write("\n")
-                    
+
                     # Feature file
                     artifacts = outcome_data.get('artifacts', {})
                     feature_file = artifacts.get('optimized_features_file')
                     if feature_file:
                         f.write("💾 SAVED FEATURES\n")
                         f.write(f"   File: {Path(feature_file).name}\n")
-                        
+
                         # Try to load feature details
                         if Path(feature_file).exists():
                             try:
@@ -396,22 +395,22 @@ class AresLauncher:
                             except Exception as e:
                                 f.write(f"   (Could not load feature details: {e})\n")
                         f.write("\n")
-                    
+
                     # Optimization details
                     opt_results = metadata.get('optimization_results', {})
                     if opt_results:
                         feature_results = opt_results.get('feature_results', {})
                         if feature_results:
                             f.write("🔍 FEATURE OPTIMIZATION DETAILS\n")
-                            
+
                             long_features = feature_results.get('long_pipeline', {})
                             short_features = feature_results.get('short_pipeline', {})
-                            
+
                             if long_features or short_features:
                                 f.write(f"   Long Direction:  {len(long_features):,} features\n")
                                 f.write(f"   Short Direction: {len(short_features):,} features\n")
                                 f.write("\n")
-                                
+
                                 # Show sample lookbacks
                                 if long_features:
                                     f.write("   📊 Sample Optimal Lookbacks (Long Direction):\n")
@@ -427,7 +426,7 @@ class AresLauncher:
                                     if len(long_features) > 10:
                                         f.write(f"          ... +{len(long_features) - 10} more features\n")
                                 f.write("\n")
-                    
+
                     # Cache metrics
                     cache_metrics = metadata.get('feature_cache_metrics', {})
                     if cache_metrics:
@@ -438,7 +437,7 @@ class AresLauncher:
                         if hit_rate is not None:
                             f.write(f"   Hit Rate:        {hit_rate*100:.1f}%\n")
                         f.write("\n")
-                
+
                 # Analyst Profit Labeler specific
                 elif sub_pipeline == 'analyst_profit_labeler':
                     f.write("🎯 LABELING RESULTS\n")
@@ -446,17 +445,17 @@ class AresLauncher:
                     f.write(f"   Samples:                 {metadata.get('n_samples', 'N/A'):,}\n")
                     f.write(f"   Targets:                 {metadata.get('n_targets', 'N/A')}\n")
                     f.write(f"   Horizons:                {metadata.get('n_horizons', 'N/A')}\n")
-                    
+
                     opps_per_day = metadata.get('opportunities_per_day')
                     if opps_per_day is not None:
                         f.write(f"   Opportunities/Day:       {opps_per_day}\n")
-                    
+
                     direction_settings = metadata.get('direction_settings', {})
                     if direction_settings:
                         f.write(f"   Long Positions:          {'✅ Enabled' if direction_settings.get('enable_long_positions') else '❌ Disabled'}\n")
                         f.write(f"   Short Positions:         {'✅ Enabled' if direction_settings.get('enable_short_positions') else '❌ Disabled'}\n")
                     f.write("\n")
-                
+
                 # Generic metadata summary
                 else:
                     if metadata:
@@ -465,7 +464,7 @@ class AresLauncher:
                             if not isinstance(value, (dict, list)):
                                 f.write(f"   {key}: {value}\n")
                         f.write("\n")
-                
+
                 # Output files
                 output_files = outcome_data.get('output_files', [])
                 if output_files:
@@ -473,7 +472,7 @@ class AresLauncher:
                     for output_file in output_files:
                         f.write(f"   • {output_file}\n")
                     f.write("\n")
-                
+
                 # Next stage requirements
                 next_reqs = outcome_data.get('next_stage_requirements', {})
                 if next_reqs:
@@ -488,20 +487,20 @@ class AresLauncher:
                     if sub_pipelines:
                         f.write(f"   Sub-pipelines: {', '.join(sub_pipelines)}\n")
                     f.write("\n")
-                
+
                 # Footer
                 f.write("=" * 80 + "\n")
                 f.write(f"✅ {sub_pipeline.upper().replace('_', ' ')} COMPLETED SUCCESSFULLY\n")
                 f.write("=" * 80 + "\n")
                 f.write(f"\n📄 JSON Details: {outcome_file.name}\n")
                 f.write(f"📄 This Summary: {summary_file.name}\n")
-            
+
             return str(summary_file)
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create human-readable summary: {e}")
             return None
-    
+
     def _get_next_stage_requirements(self, current_stage: str, current_sub_pipeline: str) -> Dict[str, Any]:
         """Get requirements for the next stage/sub-pipeline."""
         requirements = {
@@ -509,14 +508,14 @@ class AresLauncher:
             'required_artifacts': [],
             'data_dependencies': []
         }
-        
+
         # Define stage dependencies and requirements
         stage_requirements = {
             'data_collection': {
                 'next_stage': 'market_analysis',
                 'required_files': ['processed_data.parquet', 'data_quality_report.json', 'exported_data.parquet'],
                 'required_artifacts': ['data_metadata', 'quality_metrics', 'integration_results'],
-                'sub_pipelines': ['data_download', 'data_conversion', 'data_validation', 'data_preparation', 
+                'sub_pipelines': ['data_download', 'data_conversion', 'data_validation', 'data_preparation',
                                 'feature_engineering', 'data_quality_check', 'data_storage', 'data_monitoring',
                                 'data_integration', 'data_export']
             },
@@ -549,38 +548,38 @@ class AresLauncher:
                                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting']
             }
         }
-        
+
         if current_stage in stage_requirements:
             requirements.update(stage_requirements[current_stage])
-        
+
         return requirements
-    
+
     async def _check_outcome_files(self, stage: str, sub_pipeline: str) -> Optional[Dict[str, Any]]:
         """Check for existing outcome files from previous stages."""
         outcome_dir = Path("outcomes")
         if not outcome_dir.exists():
             return None
-        
+
         # Look for the most recent outcome file for this stage/sub-pipeline
         pattern = f"{stage}_{sub_pipeline}_outcome_*.json"
         outcome_files = list(outcome_dir.glob(pattern))
-        
+
         if not outcome_files:
             return None
-        
+
         # Get the most recent file
         latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-        
+
         try:
             with open(latest_file, 'r') as f:
                 outcome_data = json.load(f)
-            
+
             self.logger.info(f"📂 Found existing outcome file: {latest_file}")
             return outcome_data
         except Exception as e:
             self.logger.warning(f"⚠️ Could not read outcome file {latest_file}: {e}")
             return None
-    
+
     async def execute_pipeline(
         self,
         mode: LauncherMode = LauncherMode.FULL,
@@ -640,7 +639,7 @@ class AresLauncher:
             stage, sub_pipeline, execution_mode, custom_config
         )
         tprint("✅ [EXECUTE_PIPELINE] Configuration created successfully")
-        
+
         # Execute based on mode
         tprint("🚀 [EXECUTE_PIPELINE] Determining execution path...")
         if mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
@@ -655,43 +654,43 @@ class AresLauncher:
         else:
             tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
             return await self._execute_full_pipeline(config)
-    
+
     async def _execute_unified_pipeline_shortcut(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute unified data driven pipeline with specific configuration based on shortcut."""
         tprint(f"🚀 [UNIFIED_PIPELINE] Executing unified pipeline shortcut: {sub_pipeline}")
-        
+
         # Parse the shortcut to determine configuration
         parts = sub_pipeline.split('_')
         labeling_type = 'analyst'  # default
         direction = 'longs'  # default
-        
+
         if 'analyst' in parts:
             labeling_type = 'analyst'
         elif 'tactician' in parts:
             labeling_type = 'tactician'
-        
+
         if 'long' in parts:
             direction = 'longs'
         elif 'short' in parts:
             direction = 'shorts'
-        
+
         # Update config with specific parameters
         config.direction = DirectionType(direction)
-        
+
         # Set appropriate timeframe based on labeling type
         # Both analyst and tactician use 15m timeframe
         config.timeframe = '15m'
-        
+
         # Add custom parameters for the unified pipeline
         if not hasattr(config, 'custom_params'):
             config.custom_params = {}
         config.custom_params['labeling_type'] = labeling_type
-        
+
         tprint(f"🎯 [UNIFIED_PIPELINE] Configuration: labeling_type={labeling_type}, direction={direction}, timeframe={config.timeframe}")
-        
+
         # Execute the unified_data_driven_pipeline sub-pipeline
         return await self._execute_sub_pipeline('unified_data_driven_pipeline', config)
-    
+
     def _create_config(
         self,
         mode: LauncherMode,
@@ -734,14 +733,14 @@ class AresLauncher:
             'custom_params': custom_config or {}
         }
         tprint("✅ [CREATE_CONFIG] Base configuration created")
-        
+
         # Filter base_config to only include supported parameters for each config function
         tprint("⚙️ [CREATE_CONFIG] Filtering configuration parameters...")
         # Note: direction_type is NOT included as it's not a parameter for get_*_pipeline_config functions
         config_function_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
         filtered_config = {k: v for k, v in base_config.items() if k in config_function_params}
         tprint(f"✅ [CREATE_CONFIG] Filtered config: {list(filtered_config.keys())}")
-        
+
         # Mode-specific configuration
         tprint("⚙️ [CREATE_CONFIG] Creating mode-specific configuration...")
         if mode == LauncherMode.FULL:
@@ -767,10 +766,10 @@ class AresLauncher:
             # Default to full configuration
             tprint("⚙️ [CREATE_CONFIG] Using DEFAULT (FULL) pipeline configuration")
             config = get_full_pipeline_config(**filtered_config)
-        
+
         tprint("✅ [CREATE_CONFIG] Configuration creation completed successfully")
         return config
-    
+
     def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any], execution_mode: ExecutionModeType, direction: str) -> MainPipelineConfig:
         """Create configuration for a specific stage."""
         tprint(f"🎭 [STAGE_CONFIG] Creating stage configuration for: {stage.value}")
@@ -783,7 +782,7 @@ class AresLauncher:
         config_function_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
         filtered_config = {k: v for k, v in base_config.items() if k in config_function_params}
         tprint(f"✅ [STAGE_CONFIG] Filtered config: {list(filtered_config.keys())}")
-        
+
         # Use the provided timeframe for all stages
         tprint(f"📊 [STAGE_CONFIG] Using timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
 
@@ -801,20 +800,20 @@ class AresLauncher:
         else:
             tprint("🎭 [STAGE_CONFIG] Using DEFAULT (FULL) execution mode configuration")
             config = get_full_pipeline_config(**filtered_config)
-        
+
         # Enable only the specified stage
         tprint(f"🎭 [STAGE_CONFIG] Enabling stage: {stage.value}")
         config.enabled_stages = [stage]
         config.single_stage_only = True  # Prevent automatic stage transitions
         tprint("✅ [STAGE_CONFIG] Stage enabled (single stage mode)")
-        
+
         # Get all available sub-pipelines for the stage
         tprint("🎭 [STAGE_CONFIG] Getting available sub-pipelines...")
         available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
         tprint(f"🎭 [STAGE_CONFIG] Found {len(available_sub_pipelines)} sub-pipelines: {available_sub_pipelines}")
         config.enabled_sub_pipelines[stage] = available_sub_pipelines
         tprint("✅ [STAGE_CONFIG] Sub-pipelines configured")
-        
+
         # Add intensity parameters to stage configuration
         tprint("🎭 [STAGE_CONFIG] Adding intensity parameters...")
         if config.training_mode_config:
@@ -828,10 +827,10 @@ class AresLauncher:
             tprint("✅ [STAGE_CONFIG] Intensity parameters added")
         else:
             tprint("⚠️ [STAGE_CONFIG] No training mode config available")
-        
+
         tprint("✅ [STAGE_CONFIG] Stage configuration completed successfully")
         return config
-    
+
     def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType, direction: str) -> MainPipelineConfig:
         """Create configuration for a specific sub-pipeline."""
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Creating sub-pipeline configuration for: {sub_pipeline}")
@@ -842,7 +841,7 @@ class AresLauncher:
         tprint("🔧 [SUB_PIPELINE_CONFIG] Setting execution mode in base config...")
         base_config['mode'] = ExecutionMode(execution_mode.value)
         tprint("✅ [SUB_PIPELINE_CONFIG] Execution mode set")
-        
+
         # Filter base_config to only include supported parameters for each config function
         tprint("🔧 [SUB_PIPELINE_CONFIG] Filtering configuration parameters...")
         supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir', 'start_date', 'end_date']
@@ -856,19 +855,19 @@ class AresLauncher:
             import pandas as pd
 
             mode_config = get_light_mode_config()
-            
+
             # Use last available data date instead of current date
             try:
                 from src.utils.data.klines_parquet import KlinesParquetManager
                 manager = KlinesParquetManager(data_dir=base_config.get('data_dir', 'historical_data'))
-                
+
                 # Get data info to find the actual available date range
                 data_info = manager.get_data_info(
                     symbol=base_config.get('symbol', 'ETHUSDT'),
                     interval=base_config.get('timeframe', '15m'),
                     data_type="processed"
                 )
-                
+
                 if data_info and data_info.get("available") and data_info.get("date_range"):
                     # Use the last date from the available data
                     _, max_date = data_info["date_range"]
@@ -898,19 +897,19 @@ class AresLauncher:
             import pandas as pd
 
             mode_config = get_blank_mode_config()
-            
+
             # Use last available data date instead of current date
             try:
                 from src.utils.data.klines_parquet import KlinesParquetManager
                 manager = KlinesParquetManager(data_dir=base_config.get('data_dir', 'historical_data'))
-                
+
                 # Get data info to find the actual available date range
                 data_info = manager.get_data_info(
                     symbol=base_config.get('symbol', 'ETHUSDT'),
                     interval=base_config.get('timeframe', '15m'),
                     data_type="processed"
                 )
-                
+
                 if data_info and data_info.get("available") and data_info.get("date_range"):
                     # Use the last date from the available data
                     _, max_date = data_info["date_range"]
@@ -946,7 +945,7 @@ class AresLauncher:
             'regime_ensemble_training',     # Train ensemble regime detection models using NAS-TAS regime labels
             'nas'                       # Combined NAS regime discovery + clustering
         ]
-        
+
         # Set 15m as default for NAS sub-pipelines
         if sub_pipeline in nas_sub_pipelines:
             original_timeframe = filtered_config.get('timeframe', '1m')
@@ -961,7 +960,7 @@ class AresLauncher:
             tprint(f"📊 [SUB_PIPELINE_CONFIG] Using timeframe for {sub_pipeline}: {filtered_config.get('timeframe', '1m')}")
 
         tprint(f"✅ [SUB_PIPELINE_CONFIG] Filtered config: {list(filtered_config.keys())}")
-        
+
         # Get configuration based on execution mode
         tprint("🔧 [SUB_PIPELINE_CONFIG] Getting base configuration...")
         if execution_mode == ExecutionModeType.FULL:
@@ -983,7 +982,7 @@ class AresLauncher:
         else:
             tprint("🔧 [SUB_PIPELINE_CONFIG] Using DEFAULT (FULL) execution mode configuration")
             config = get_full_pipeline_config(**filtered_config)
-        
+
         # Find which stage contains the sub-pipeline
         tprint("🔧 [SUB_PIPELINE_CONFIG] Finding target stage for sub-pipeline...")
         target_stage = None
@@ -993,11 +992,11 @@ class AresLauncher:
                 target_stage = stage
                 tprint(f"🔧 [SUB_PIPELINE_CONFIG] Found sub-pipeline in stage: {stage.value}")
                 break
-        
+
         if not target_stage:
             tprint(f"❌ [SUB_PIPELINE_CONFIG] Sub-pipeline '{sub_pipeline}' not found in any stage")
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
-        
+
         # Enable only the target stage and sub-pipeline
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling stage: {target_stage.value}")
         config.enabled_stages = [target_stage]
@@ -1031,7 +1030,7 @@ class AresLauncher:
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipelines for stage: {enabled_sequence}")
         config.enabled_sub_pipelines[target_stage] = enabled_sequence
         tprint("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
-        
+
         # Set single stage execution mode for individual sub-pipeline execution
         # Enable chaining for SR components to automatically run the full SR pipeline
         sr_components = ['sr_parameter_optimization', 'sr_detection', 'sr_clustering']
@@ -1052,7 +1051,7 @@ class AresLauncher:
         else:
             config.single_stage_only = True
             tprint("🎯 [SUB_PIPELINE_CONFIG] Single stage execution mode enabled")
-        
+
         # Add intensity parameters to stage configuration
         tprint("🔧 [SUB_PIPELINE_CONFIG] Adding intensity parameters...")
         if config.training_mode_config:
@@ -1066,44 +1065,44 @@ class AresLauncher:
             tprint("✅ [SUB_PIPELINE_CONFIG] Intensity parameters added")
         else:
             tprint("⚠️ [SUB_PIPELINE_CONFIG] No training mode config available")
-        
+
         tprint("✅ [SUB_PIPELINE_CONFIG] Sub-pipeline configuration completed successfully")
         return config
-    
+
     async def _execute_full_pipeline(self, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute the full pipeline."""
         # Log full pipeline start
         self._log_stage_transition(None, "FULL_PIPELINE", "FULL_PIPELINE_EXECUTION")
-        
+
         # Create mid-function artifacts
         artifacts = await self._create_mid_function_artifacts(config)
-        
+
         # Execute pipeline with stage-by-stage transition logging
         result = await self._execute_pipeline_with_transitions(config)
-        
+
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)
-        
+
         # Log results
         self._log_execution_results(result)
-        
+
         return result
-    
+
     async def _execute_pipeline_with_transitions(self, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute pipeline with explicit stage transitions."""
         pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         start_time = datetime.now()
-        
+
         result = MainPipelineResult(
             pipeline_id=pipeline_id,
             status=SubPipelineStatus.RUNNING,
             start_time=start_time
         )
-        
+
         try:
             previous_stage = None
-            
+
             # Execute each enabled stage with transitions
             for stage in config.enabled_stages:
                 # Log stage transition
@@ -1111,13 +1110,13 @@ class AresLauncher:
                     self._log_stage_transition(previous_stage.value, stage.value, "STAGE_TRANSITION")
                 else:
                     self._log_stage_transition(None, stage.value, "STAGE_START")
-                
+
                 # Check for existing outcome files
                 outcome_data = await self._check_outcome_files(stage.value, "stage")
                 if outcome_data:
                     timestamp = outcome_data.get('metadata', {}).get('timestamp', 'unknown')
                     self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
-                
+
                 # Execute stage
                 stage_result = await self.pipeline._execute_stage(stage, config)
                 result.stage_results[stage] = stage_result
@@ -1127,23 +1126,23 @@ class AresLauncher:
                 for sub_result in stage_result:
                     if hasattr(sub_result, 'sub_pipeline_name') and sub_result.status == SubPipelineStatus.COMPLETED:
                         await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
-                
+
                 # Check if stage failed
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
                 if failed_sub_pipelines and config.mode != ExecutionMode.BLANK:
                     self.logger.warning(f"⚠️ Stage {stage.value} had {len(failed_sub_pipelines)} failed sub-pipelines")
                     result.failed_stages.append(stage)
-                
+
                 previous_stage = stage
-            
+
             # Calculate overall metrics
             self.pipeline._calculate_pipeline_metrics(result)
-            
+
             # Update result status
             end_time = datetime.now()
             result.end_time = end_time
             result.duration_seconds = (end_time - start_time).total_seconds()
-            
+
             if result.failed_sub_pipelines == 0:
                 result.status = SubPipelineStatus.COMPLETED
                 self.logger.info(f"✅ Full pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
@@ -1151,65 +1150,64 @@ class AresLauncher:
                 result.status = SubPipelineStatus.FAILED
                 result.error_message = f"Pipeline failed with {result.failed_sub_pipelines} failed sub-pipelines"
                 self.logger.error(f"❌ Full pipeline {pipeline_id} failed: {result.error_message}")
-            
+
         except Exception as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
             result.end_time = end_time
             result.duration_seconds = (end_time - start_time).total_seconds()
             result.error_message = str(e)
-            
+
             self.logger.error(f"❌ Full pipeline {pipeline_id} failed with exception: {e}")
-        
+
         return result
-    
+
     async def _execute_stage(self, stage: PipelineStage, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific stage."""
         # Log stage transition
         self._log_stage_transition(None, stage.value, "STAGE_EXECUTION")
-        
+
         # Check for existing outcome files
         outcome_data = await self._check_outcome_files(stage.value, "stage")
         if outcome_data:
             timestamp = outcome_data.get('metadata', {}).get('timestamp', 'unknown')
             self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
-        
+
         # Create mid-function artifacts for the stage
         artifacts = await self._create_stage_artifacts(stage, config)
-        
+
         # Execute only the specified stage
         result = await self.pipeline.execute_pipeline(config)
-        
+
         # Calculate overall metrics for stage execution
         self.pipeline._calculate_pipeline_metrics(result)
-        
+
         # Create outcome file for this stage
         if result.stage_results and stage in result.stage_results:
             stage_results = result.stage_results[stage]
             for sub_result in stage_results:
                 if hasattr(sub_result, 'sub_pipeline_name'):
                     await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
-        
+
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)
-        
+
         # Log results
         self._log_execution_results(result)
-        
+
         return result
-    
-    
+
     async def _execute_sub_pipeline_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline directly (for internal use in sequential mode)."""
         # Handle feature generation steps directly
         if sub_pipeline.startswith('feature_generation_'):
             return await self._execute_feature_generation_step_direct(sub_pipeline, config)
-        
+
         # Handle unified data driven pipeline shortcuts
         if sub_pipeline.startswith('unified_data_driven_pipeline'):
             return await self._execute_unified_pipeline_shortcut(sub_pipeline, config)
-        
+
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
@@ -1217,26 +1215,26 @@ class AresLauncher:
             if sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 break
-        
+
         if not target_stage:
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
-        
+
         # Log sub-pipeline transition
         self._log_sub_pipeline_transition(None, sub_pipeline, target_stage.value)
-        
+
         # Check for existing outcome files
         outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
         if outcome_data:
             timestamp = outcome_data.get('metadata', {}).get('timestamp', outcome_data.get('timestamp', 'unknown'))
             self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
-        
+
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
-        
+
         # Execute only the specified sub-pipeline with automatic chaining
         # Use execute_sub_pipeline_with_chain for automatic sequential execution
         sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, sub_pipeline, config)
-        
+
         # Create a MainPipelineResult to maintain compatibility
         result = MainPipelineResult(
             pipeline_id=f"sub_pipeline_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -1246,14 +1244,14 @@ class AresLauncher:
             duration_seconds=sub_pipeline_result.duration_seconds if sub_pipeline_result else 0.0,
             error_message=sub_pipeline_result.error_message if sub_pipeline_result else "Sub-pipeline execution failed"
         )
-        
+
         # Add the sub-pipeline result to the stage results
         if sub_pipeline_result:
             result.stage_results[target_stage] = [sub_pipeline_result]
-        
+
         # Calculate overall metrics for sub-pipeline execution
         self.pipeline._calculate_pipeline_metrics(result)
-        
+
         # Create outcome file for this sub-pipeline
         if result.stage_results and target_stage in result.stage_results:
             stage_results = result.stage_results[target_stage]
@@ -1261,16 +1259,16 @@ class AresLauncher:
                 if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
                     await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
                     break
-        
+
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)
-        
+
         # Log results
         self._log_execution_results(result)
-        
+
         return result
-    
+
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
         # Handle feature generation steps - redirect to sequential mode
@@ -1279,10 +1277,10 @@ class AresLauncher:
             tprint(f"   Use --mode sequential instead for feature generation pipeline.")
             tprint(f"   Example: python3 src/launcher/ares_launcher.py --mode sequential --symbol {config.symbol} --execution-mode {config.execution_mode}")
             raise ValueError(f"Individual feature generation steps are deprecated. Use --mode sequential instead.")
-        
+
         # Use the direct method for other sub-pipelines
         return await self._execute_sub_pipeline_direct(sub_pipeline, config)
-        
+
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
@@ -1290,26 +1288,26 @@ class AresLauncher:
             if sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 break
-        
+
         if not target_stage:
             raise ValueError(f"Sub-pipeline '{sub_pipeline}' not found in any stage")
-        
+
         # Log sub-pipeline transition
         self._log_sub_pipeline_transition(None, sub_pipeline, target_stage.value)
-        
+
         # Check for existing outcome files
         outcome_data = await self._check_outcome_files(target_stage.value, sub_pipeline)
         if outcome_data:
             timestamp = outcome_data.get('metadata', {}).get('timestamp', outcome_data.get('timestamp', 'unknown'))
             self.logger.info(f"📂 Resuming from previous outcome: {timestamp}")
-        
+
         # Create mid-function artifacts for the sub-pipeline
         artifacts = await self._create_sub_pipeline_artifacts(sub_pipeline, config)
-        
+
         # Execute only the specified sub-pipeline with automatic chaining
         # Use execute_sub_pipeline_with_chain for automatic sequential execution
         sub_pipeline_result = await self.pipeline.execute_sub_pipeline_with_chain(target_stage, sub_pipeline, config)
-        
+
         # Create a MainPipelineResult to maintain compatibility
         result = MainPipelineResult(
             pipeline_id=f"sub_pipeline_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -1319,14 +1317,14 @@ class AresLauncher:
             duration_seconds=sub_pipeline_result.duration_seconds if sub_pipeline_result else 0.0,
             error_message=sub_pipeline_result.error_message if sub_pipeline_result else "Sub-pipeline execution failed"
         )
-        
+
         # Add the sub-pipeline result to the stage results
         if sub_pipeline_result:
             result.stage_results[target_stage] = [sub_pipeline_result]
-        
+
         # Calculate overall metrics for sub-pipeline execution
         self.pipeline._calculate_pipeline_metrics(result)
-        
+
         # Create outcome file for this sub-pipeline
         if result.stage_results and target_stage in result.stage_results:
             stage_results = result.stage_results[target_stage]
@@ -1334,38 +1332,38 @@ class AresLauncher:
                 if hasattr(sub_result, 'sub_pipeline_name') and sub_result.sub_pipeline_name == sub_pipeline:
                     await self._create_outcome_file(target_stage.value, sub_pipeline, sub_result, config)
                     break
-        
+
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)
-        
+
         # Log results
         self._log_execution_results(result)
-        
+
         return result
-    
+
     async def _execute_sequential_pipeline(self, pipeline_type: str, config: MainPipelineConfig, start_from_step: int = 1, stop_at_step: Optional[int] = None) -> MainPipelineResult:
         """Execute multiple sub-pipelines sequentially with parameter consistency."""
         tprint(f"🚀 [SEQUENTIAL] Starting sequential pipeline execution: {pipeline_type}")
-        
+
         if pipeline_type == "feature_generation":
             all_steps = self.FEATURE_GENERATION_STEPS
         else:
             raise ValueError(f"Unknown pipeline type: {pipeline_type}")
-        
+
         # Filter steps based on start/stop parameters
         steps = [
-            step for i, step in enumerate(all_steps, 1) 
+            step for i, step in enumerate(all_steps, 1)
             if i >= start_from_step and (stop_at_step is None or i <= stop_at_step)
         ]
-        
+
         if not steps:
             raise ValueError(f"No steps to execute with start_from_step={start_from_step}, stop_at_step={stop_at_step}")
-        
+
         # Create result container
         pipeline_id = f"sequential_{pipeline_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         start_time = datetime.now()
-        
+
         result = MainPipelineResult(
             pipeline_id=pipeline_id,
             status=PipelineStatus.RUNNING,
@@ -1373,11 +1371,11 @@ class AresLauncher:
             end_time=start_time,
             duration_seconds=0.0
         )
-        
+
         successful_steps = 0
         failed_steps = 0
         total_execution_time = 0.0
-        
+
         tprint(f"📋 [SEQUENTIAL] Executing {len(steps)} steps sequentially")
         tprint(f"   Start from step: {start_from_step}")
         if stop_at_step:
@@ -1389,7 +1387,7 @@ class AresLauncher:
         tprint(f"   Exchange: {config.exchange}")
         tprint(f"   Timeframe: {config.timeframe}")
         tprint(f"   Direction: {config.direction}")
-        
+
         for i, step in enumerate(steps, 1):
             step_start_time = datetime.now()
             tprint(f"\n{'='*80}")
@@ -1397,17 +1395,17 @@ class AresLauncher:
             tprint(f"   Sub-pipeline: {step['sub_pipeline']}")
             tprint(f"   Description: {step['description']}")
             tprint(f"{'='*80}")
-            
+
             try:
                 # Execute the sub-pipeline step directly (bypassing the redirect)
                 step_result = await self._execute_sub_pipeline_direct(step['sub_pipeline'], config)
                 step_duration = (datetime.now() - step_start_time).total_seconds()
                 total_execution_time += step_duration
-                
+
                 if step_result.status == PipelineStatus.COMPLETED:
                     successful_steps += 1
                     tprint(f"✅ [SEQUENTIAL] Step {i} completed successfully in {step_duration:.2f}s")
-                    
+
                     # Add step result to overall result
                     if not hasattr(result, 'step_results'):
                         result.step_results = []
@@ -1418,7 +1416,7 @@ class AresLauncher:
                         'execution_time': step_duration,
                         'result': step_result
                     })
-                    
+
                     # Check if we should continue to next step
                     if i < len(steps):
                         next_step = steps[i]
@@ -1427,7 +1425,7 @@ class AresLauncher:
                     failed_steps += 1
                     error_msg = step_result.error_message or "Unknown error"
                     tprint(f"❌ [SEQUENTIAL] Step {i} failed: {error_msg}")
-                    
+
                     # Add failed step result
                     if not hasattr(result, 'step_results'):
                         result.step_results = []
@@ -1439,17 +1437,17 @@ class AresLauncher:
                         'error_message': error_msg,
                         'result': step_result
                     })
-                    
+
                     tprint(f"🛑 [SEQUENTIAL] Pipeline execution stopped due to step failure")
                     break
-                    
+
             except Exception as e:
                 step_duration = (datetime.now() - step_start_time).total_seconds()
                 total_execution_time += step_duration
                 failed_steps += 1
                 error_msg = f"Exception during step execution: {str(e)}"
                 tprint(f"❌ [SEQUENTIAL] Step {i} failed with exception: {error_msg}")
-                
+
                 # Add failed step result
                 if not hasattr(result, 'step_results'):
                     result.step_results = []
@@ -1460,15 +1458,15 @@ class AresLauncher:
                     'execution_time': step_duration,
                     'error_message': error_msg
                 })
-                
+
                 tprint(f"🛑 [SEQUENTIAL] Pipeline execution stopped due to exception")
                 break
-        
+
         # Finalize result
         end_time = datetime.now()
         result.end_time = end_time
         result.duration_seconds = total_execution_time
-        
+
         if failed_steps == 0:
             result.status = PipelineStatus.COMPLETED
             tprint(f"🎉 [SEQUENTIAL] All {successful_steps} steps completed successfully!")
@@ -1476,7 +1474,7 @@ class AresLauncher:
             result.status = PipelineStatus.FAILED
             result.error_message = f"Pipeline failed: {failed_steps} steps failed, {successful_steps} succeeded"
             tprint(f"💥 [SEQUENTIAL] Pipeline failed: {failed_steps} steps failed, {successful_steps} succeeded")
-        
+
         # Summary
         tprint(f"\n{'='*80}")
         tprint(f"📊 [SEQUENTIAL] PIPELINE EXECUTION SUMMARY")
@@ -1486,28 +1484,28 @@ class AresLauncher:
         tprint(f"   Failed: {failed_steps}")
         tprint(f"   Total execution time: {total_execution_time:.2f}s")
         tprint(f"   Status: {result.status.value}")
-        
+
         # Store execution
         self.current_execution = result
         self.execution_history.append(result)
-        
+
         return result
-    
+
     async def _execute_feature_generation_step_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific feature generation step directly (for internal use in sequential mode)."""
         try:
             tprint(f"🚀 [FEATURE_GENERATION] Executing feature generation step: {sub_pipeline}")
-            
+
             # Import the step module
             step_module = __import__(f'src.training.steps.pre_training.unified_data_driven_pipeline.steps.{sub_pipeline}', fromlist=['FeatureGenerationStep'])
-            
+
             # Get the step class
             step_class_name = ''.join(word.capitalize() for word in sub_pipeline.split('_'))
             step_class = getattr(step_module, step_class_name)
-            
+
             # Create step instance
             step = step_class()
-            
+
             # Execute the step
             result = await step.execute(
                 data=config.data,
@@ -1520,7 +1518,7 @@ class AresLauncher:
                 end_date=config.end_date,
                 exchange=config.exchange
             )
-            
+
             # Create MainPipelineResult
             pipeline_result = MainPipelineResult(
                 pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -1530,17 +1528,17 @@ class AresLauncher:
                 duration_seconds=0.0,
                 error_message=result.get('error', None) if not result.get('success', False) else None
             )
-            
+
             # Add artifacts
             pipeline_result.artifacts = result.get('artifacts', {})
-            
+
             tprint(f"✅ [FEATURE_GENERATION] Feature generation step completed: {sub_pipeline}")
             return pipeline_result
-            
+
         except Exception as e:
             error_msg = f"Feature generation step {sub_pipeline} failed: {e}"
             tprint_error(f"❌ {error_msg}")
-            
+
             return MainPipelineResult(
                 pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                 status=SubPipelineStatus.FAILED,
@@ -1549,11 +1547,11 @@ class AresLauncher:
                 duration_seconds=0.0,
                 error_message=error_msg
             )
-    
+
     async def _create_mid_function_artifacts(self, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for full pipeline execution."""
         self.logger.info("🔧 Creating mid-function artifacts for full pipeline")
-        
+
         artifacts = {
             'pipeline_config': {
                 'mode': config.mode.value,
@@ -1562,7 +1560,7 @@ class AresLauncher:
                 'timeframe': config.timeframe,
                 'enabled_stages': [stage.value for stage in config.enabled_stages],
                 'enabled_sub_pipelines': {
-                    stage.value: sub_pipelines 
+                    stage.value: sub_pipelines
                     for stage, sub_pipelines in config.enabled_sub_pipelines.items()
                 }
             },
@@ -1577,16 +1575,16 @@ class AresLauncher:
                 'real_time_monitoring': True
             }
         }
-        
+
         # Save artifacts - DISABLED: Only outcome file should be created
         # await self._save_artifacts(artifacts, 'full_pipeline_artifacts.json')
-        
+
         return artifacts
-    
+
     async def _create_stage_artifacts(self, stage: PipelineStage, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for stage execution."""
         self.logger.info(f"🔧 Creating mid-function artifacts for stage: {stage.value}")
-        
+
         artifacts = {
             'stage_config': {
                 'stage': stage.value,
@@ -1606,23 +1604,23 @@ class AresLauncher:
                 'stage_description': self._get_stage_description(stage)
             }
         }
-        
+
         # Save artifacts - DISABLED: Only outcome file should be created
         # await self._save_artifacts(artifacts, f'{stage.value}_artifacts.json')
-        
+
         return artifacts
-    
+
     async def _create_sub_pipeline_artifacts(self, sub_pipeline: str, config: MainPipelineConfig) -> Dict[str, Any]:
         """Create mid-function artifacts for sub-pipeline execution."""
         self.logger.info(f"🔧 Creating mid-function artifacts for sub-pipeline: {sub_pipeline}")
-        
+
         # Find the stage containing this sub-pipeline
         target_stage = None
         for stage in PipelineStage:
             if sub_pipeline in config.enabled_sub_pipelines.get(stage, []):
                 target_stage = stage
                 break
-        
+
         artifacts = {
             'sub_pipeline_config': {
                 'sub_pipeline': sub_pipeline,
@@ -1643,23 +1641,23 @@ class AresLauncher:
                 'outputs': self._get_sub_pipeline_outputs(sub_pipeline)
             }
         }
-        
+
         # Save artifacts - DISABLED: Only outcome file should be created
         # await self._save_artifacts(artifacts, f'{sub_pipeline}_artifacts.json')
-        
+
         return artifacts
-    
+
     async def _save_artifacts(self, artifacts: Dict[str, Any], filename: str):
         """Save artifacts to file."""
         artifacts_dir = Path("artifacts")
         artifacts_dir.mkdir(exist_ok=True)
-        
+
         artifacts_file = artifacts_dir / filename
         with open(artifacts_file, 'w') as f:
             json.dump(artifacts, f, indent=2, default=str)
-        
+
         self.logger.info(f"💾 Artifacts saved to: {artifacts_file}")
-    
+
     def _get_stage_description(self, stage: PipelineStage) -> str:
         """Get description for a pipeline stage."""
         descriptions = {
@@ -1670,7 +1668,7 @@ class AresLauncher:
             PipelineStage.BACKTESTING: "Backtesting and optimization stage"
         }
         return descriptions.get(stage, "Unknown stage")
-    
+
     def _get_sub_pipeline_description(self, sub_pipeline: str) -> str:
         """Get description for a sub-pipeline."""
         descriptions = {
@@ -1685,7 +1683,7 @@ class AresLauncher:
             'data_monitoring': "Monitor data collection process",
             'data_integration': "Integrate multiple data sources",
             'data_export': "Export data in various formats",
-            
+
             # Market Analysis (10 sub-pipelines)
             'sr_detection': "Detect Support/Resistance levels",
             'sr_clustering': "Generate SR clusters",
@@ -1712,7 +1710,7 @@ class AresLauncher:
             'analyst_final_feature_selection': "Final feature selection for Analyst models",
             'tactician_final_feature_selection': "Final feature selection for Tactician models",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
-            
+
             # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
             'analyst_pre_ml_orchestration': "Analyst Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, per-regime/cluster)",
             'analyst_models_training': "Train Analyst base models per-regime (ElasticNet, RandomForest, NAS, TAS, N-BEATS) on 15m timeframe - 8 regimes × 5 models = 40 base models",
@@ -1728,7 +1726,7 @@ class AresLauncher:
             'model_validation': "Model validation and testing",
             'model_persistence': "Save and load models",
             'model_evaluation': "Comprehensive model evaluation",
-            
+
             # Backtesting (10 sub-pipelines)
             'walk_forward_validation': "Walk-forward backtesting",
             'monte_carlo_simulation': "Monte Carlo backtesting",
@@ -1743,7 +1741,7 @@ class AresLauncher:
             'reporting': "Comprehensive reporting"
         }
         return descriptions.get(sub_pipeline, "Unknown sub-pipeline")
-    
+
     def _get_sub_pipeline_dependencies(self, sub_pipeline: str) -> List[str]:
         """Get dependencies for a sub-pipeline."""
         dependencies = {
@@ -1757,7 +1755,7 @@ class AresLauncher:
             'data_monitoring': ['data_storage'],
             'data_integration': ['data_monitoring'],
             'data_export': ['data_integration'],
-            
+
             # Market Analysis dependencies
             'sr_clustering': ['sr_detection'],
             'nas_clustering': ['sr_clustering'],  # DEPRECATED - use nas_tas_clustering instead
@@ -1779,7 +1777,7 @@ class AresLauncher:
             'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
             'interactive_feature_generation': ['feature_lookback_optimization'],
             'final_feature_selection': ['interactive_feature_generation'],
-            
+
             # Model Training dependencies (Analyst → Tactician pipeline)
             'analyst_pre_ml_orchestration': ['final_feature_selection'],  # From PRE_TRAINING stage
             'analyst_models_training': ['analyst_pre_ml_orchestration'],
@@ -1793,7 +1791,7 @@ class AresLauncher:
             'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
             'model_evaluation': ['model_persistence'],
-            
+
             # Backtesting dependencies
             'basic_backtesting_pre': [],
             'final_parameters_optimization': ['basic_backtesting_pre'],
@@ -1808,7 +1806,7 @@ class AresLauncher:
             'reporting': ['portfolio_analysis']
         }
         return dependencies.get(sub_pipeline, [])
-    
+
     def _get_sub_pipeline_outputs(self, sub_pipeline: str) -> List[str]:
         """Get expected outputs for a sub-pipeline."""
         outputs = {
@@ -1823,7 +1821,7 @@ class AresLauncher:
             'data_monitoring': ['monitoring_report.json'],
             'data_integration': ['integrated_data.parquet'],
             'data_export': ['exported_data.parquet'],
-            
+
             # Market Analysis outputs
             'sr_detection': ['sr_levels.json'],
             'sr_clustering': ['sr_clusters.json'],
@@ -1864,7 +1862,7 @@ class AresLauncher:
             'model_validation': ['validation_results.json'],
             'model_persistence': ['persisted_models.pkl'],
             'model_evaluation': ['evaluation_results.json'],
-            
+
             # Backtesting outputs
             'walk_forward_validation': ['backtest_results.json'],
             'monte_carlo_simulation': ['mc_results.json'],
@@ -1879,7 +1877,7 @@ class AresLauncher:
             'reporting': ['comprehensive_report.pdf']
         }
         return outputs.get(sub_pipeline, [])
-    
+
     def _log_execution_results(self, result: MainPipelineResult):
         """Log execution results."""
         self.logger.info("=" * 80)
@@ -1892,27 +1890,27 @@ class AresLauncher:
         self.logger.info(f"Completed: {result.completed_sub_pipelines}")
         self.logger.info(f"Failed: {result.failed_sub_pipelines}")
         self.logger.info(f"Success Rate: {result.success_rate:.2%}")
-        
+
         if result.failed_stages:
             self.logger.warning(f"Failed Stages: {[stage.value for stage in result.failed_stages]}")
-        
+
         if result.error_message:
             self.logger.error(f"Error: {result.error_message}")
-        
+
         self.logger.info("=" * 80)
-    
+
     def get_execution_history(self) -> List[MainPipelineResult]:
         """Get execution history."""
         return self.execution_history
-    
+
     def get_current_execution(self) -> Optional[MainPipelineResult]:
         """Get current execution status."""
         return self.current_execution
-    
+
     def get_available_stages(self) -> List[str]:
         """Get list of available pipeline stages."""
         return [stage.value for stage in PipelineStage]
-    
+
     def get_available_sub_pipelines(self, stage: Optional[str] = None) -> Dict[str, List[str]]:
         """Get available sub-pipelines for stages."""
         if stage:
@@ -1923,11 +1921,11 @@ class AresLauncher:
                 stage.value: self.pipeline.get_available_sub_pipelines(stage)
                 for stage in PipelineStage
             }
-    
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all executions."""
         return self.pipeline.get_execution_summary()
-    
+
     def list_feature_generation_steps(self) -> None:
         """List all available feature generation pipeline steps."""
         tprint("📋 [FEATURE_GENERATION] Available Pipeline Steps:")
@@ -1937,7 +1935,6 @@ class AresLauncher:
             tprint(f"      Sub-pipeline: {step['sub_pipeline']}")
             tprint(f"      Description: {step['description']}")
             tprint()
-    
 
 # CLI Interface
 def create_cli_parser() -> argparse.ArgumentParser:
@@ -2026,39 +2023,39 @@ Examples:
   python ares_launcher.py --mode blank --symbol ETHUSDT
         """
     )
-    
+
     parser.add_argument(
-        '--mode', 
+        '--mode',
         choices=['full', 'light', 'blank', 'stage', 'sub_pipeline', 'sequential'],
         default='full',
         help='Launcher execution mode (default: full)'
     )
-    
+
     parser.add_argument(
         '--execution-mode',
         choices=['full', 'light', 'blank'],
         default='full',
         help='Execution mode type for stage/sub-pipeline specific execution (default: full)'
     )
-    
+
     parser.add_argument(
         '--symbol',
         default='ETHUSDT',
         help='Trading symbol (default: ETHUSDT)'
     )
-    
+
     parser.add_argument(
         '--exchange',
         default='binance',
         help='Exchange name (default: binance)'
     )
-    
+
     parser.add_argument(
         '--timeframe',
         default='1m',
         help='Data timeframe (default: 1m; use 15m for both Analyst and Tactician steps)'
     )
-    
+
     parser.add_argument(
         '--data-dir',
         default='historical_data',
@@ -2077,7 +2074,7 @@ Examples:
         choices=['data_collection', 'market_analysis', 'pre_training', 'model_training', 'backtesting'],
         help='Specific stage to execute (for stage mode)'
     )
-    
+
     parser.set_defaults(shortcut_sub_pipeline=None)
 
     shortcut_group = parser.add_mutually_exclusive_group()
@@ -2184,49 +2181,49 @@ Examples:
         '--sub-pipeline', '--sub_pipeline',
         help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble. For feature generation steps, use --mode sequential instead.'
     )
-    
+
     parser.add_argument(
         '--pipeline-type',
         choices=['feature_generation'],
         default='feature_generation',
         help='Type of pipeline to execute sequentially (for sequential mode). Default: feature_generation'
     )
-    
+
     parser.add_argument(
         '--start-from-step',
         type=int,
         default=1,
         help='Start sequential execution from this step number (1-based). Default: 1'
     )
-    
+
     parser.add_argument(
         '--stop-at-step',
         type=int,
         help='Stop sequential execution at this step number (1-based). If not specified, runs all steps.'
     )
-    
+
     parser.add_argument(
         '--config',
         help='Path to custom configuration file (JSON)'
     )
-    
+
     parser.add_argument(
         '--list-stages',
         action='store_true',
         help='List available pipeline stages'
     )
-    
+
     parser.add_argument(
         '--list-sub-pipelines',
         help='List available sub-pipelines for a stage. Use with --stage to see sub-pipelines for that stage.'
     )
-    
+
     parser.add_argument(
         '--list-feature-generation-steps',
         action='store_true',
         help='List all available feature generation pipeline steps for sequential execution.'
     )
-    
+
     return parser
 
 async def main():
@@ -2235,7 +2232,7 @@ async def main():
     tprint("🎯 [MAIN] Creating CLI argument parser...")
     parser = create_cli_parser()
     tprint("✅ [MAIN] CLI parser created")
-    
+
     tprint("🎯 [MAIN] Parsing command line arguments...")
     args = parser.parse_args()
     tprint("✅ [MAIN] Arguments parsed successfully")
@@ -2258,7 +2255,7 @@ async def main():
     tprint("🎯 [MAIN] Initializing AresLauncher...")
     launcher = AresLauncher()
     tprint("✅ [MAIN] AresLauncher initialized successfully")
-    
+
     # Handle list commands
     if args.list_stages:
         tprint("📋 [MAIN] Listing available pipeline stages...")
@@ -2268,7 +2265,7 @@ async def main():
             tprint(f"  - {stage}")
         tprint("✅ [MAIN] Stage listing completed")
         return
-    
+
     if args.list_sub_pipelines:
         tprint(f"📋 [MAIN] Listing available sub-pipelines for: {args.list_sub_pipelines}")
         sub_pipelines = launcher.get_available_sub_pipelines(args.list_sub_pipelines)
@@ -2279,13 +2276,13 @@ async def main():
                 tprint(f"    - {pipeline}")
         tprint("✅ [MAIN] Sub-pipeline listing completed")
         return
-    
+
     if args.list_feature_generation_steps:
         tprint("📋 [MAIN] Listing available feature generation pipeline steps...")
         launcher.list_feature_generation_steps()
         tprint("✅ [MAIN] Feature generation steps listing completed")
         return
-    
+
     # Load custom configuration if provided
     custom_config = None
     if args.config:
@@ -2295,7 +2292,7 @@ async def main():
         tprint(f"✅ [MAIN] Custom configuration loaded: {len(custom_config)} parameters")
     else:
         tprint("📁 [MAIN] No custom configuration provided, using defaults")
-    
+
     # Convert string mode to enum
     tprint("🔄 [MAIN] Converting string modes to enums...")
     mode_map = {
@@ -2313,7 +2310,7 @@ async def main():
         tprint("🎯 [MAIN] Launcher mode overridden to sub_pipeline due to shortcut flag")
 
     tprint(f"✅ [MAIN] Launcher mode converted: {mode.value}")
-    
+
     # Convert execution mode to enum
     execution_mode_map = {
         'full': ExecutionModeType.FULL,
@@ -2343,7 +2340,7 @@ async def main():
         tprint(f"📋 [MAIN] Sub-pipeline selected: {selected_sub_pipeline}")
     else:
         tprint("📋 [MAIN] No specific sub-pipeline provided")
-    
+
     # Execute pipeline
     tprint("🚀 [MAIN] Starting pipeline execution...")
     try:
@@ -2363,7 +2360,7 @@ async def main():
             stop_at_step=args.stop_at_step if hasattr(args, 'stop_at_step') else None
         )
         tprint("✅ [MAIN] Pipeline execution completed successfully")
-        
+
         # Print final results
         tprint("\n" + "=" * 80)
         tprint("🎯 EXECUTION COMPLETED")
@@ -2372,7 +2369,7 @@ async def main():
         tprint(f"Duration: {result.duration_seconds:.2f}s")
         tprint(f"Success Rate: {result.success_rate:.2%}")
         tprint("=" * 80)
-        
+
         if result.status.value == 'failed':
             tprint("❌ [MAIN] Pipeline execution failed, exiting with code 1")
             sys.exit(1)
@@ -2380,7 +2377,7 @@ async def main():
             tprint("⚠️ [MAIN] Pipeline completed but no sub-pipelines succeeded, exiting with code 0")
         else:
             tprint("✅ [MAIN] Pipeline execution successful, exiting with code 0")
-            
+
     except Exception as e:
         tprint(f"❌ [MAIN] Pipeline execution failed with exception: {e}")
         logger.error(f"❌ Execution failed: {e}")

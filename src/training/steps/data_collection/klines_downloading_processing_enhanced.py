@@ -37,7 +37,6 @@ from src.trading.execution.exchange_interface import ExchangeInterface, create_e
 from src.utils.data.gap_detector import GapDetector
 from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer, ExchangeType
 
-
 class KlinesDataProcessingPipeline:
     """Complete pipeline for downloading, processing, and quality-checking klines data."""
 
@@ -71,13 +70,13 @@ class KlinesDataProcessingPipeline:
 
     def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str, exchange: str = "binance") -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Standardize data format using centralized standardizer.
-        
+
         Args:
             df: Raw DataFrame from exchange
             symbol: Trading symbol
             interval: Data interval
             exchange: Exchange name
-            
+
         Returns:
             Tuple of (standardized_dataframe, standardization_report)
         """
@@ -85,11 +84,11 @@ class KlinesDataProcessingPipeline:
             standardized_df = self.data_standardizer.standardize_to_dataframe(
                 df, ExchangeType(exchange.upper()), symbol, interval
             )
-            
+
             tprint_success(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
-            
+
             return standardized_df, {"success": True, "shape": standardized_df.shape}
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to standardize data format: {e}")
             raise  # Fast fail - no fallback
@@ -272,7 +271,7 @@ class KlinesDataProcessingPipeline:
                 from src.config.pipeline_modes import get_full_mode_config
                 mode_config = get_full_mode_config()
                 years = mode_config.lookback_years
-            
+
             tprint_info(f"🚀 Starting complete klines processing pipeline for {symbol}")
 
             results = {
@@ -287,7 +286,7 @@ class KlinesDataProcessingPipeline:
 
             # Step 1: Download data using HistoricalDataPipeline
             tprint_info(f"📥 Step 1: Downloading {years} years of {symbol} {interval} data")
-            
+
             # Create ExchangeInterface for exchange-agnostic data access
             exchange_interface: Optional[ExchangeInterface] = None
             if api_key and api_secret:
@@ -305,7 +304,7 @@ class KlinesDataProcessingPipeline:
                 tprint_error(f"❌ {error_msg}")
                 results["errors"].append(error_msg)
                 return results
-            
+
             download_results = await self.historical_pipeline.run_complete_pipeline(
                 symbol=symbol,
                 years=years,
@@ -776,7 +775,6 @@ class KlinesDataProcessingPipeline:
                 "success": False,
                 "error": error_msg
             }
-
 
 class KlinesDataQualityChecker:
     """Comprehensive data quality checker for klines data processing pipeline."""
@@ -1290,7 +1288,6 @@ class KlinesDataQualityChecker:
 
         print("="*60)
 
-
 # Convenience functions
 async def run_enhanced_klines_pipeline(
     symbol: str = "ETHUSDT",
@@ -1332,7 +1329,7 @@ async def run_enhanced_klines_pipeline(
         from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
-    
+
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
     print(f"🚀 Starting enhanced {symbol} {interval} data pipeline ({years} years)")
@@ -1387,28 +1384,27 @@ async def run_enhanced_klines_pipeline(
 
     return results
 
-
 if __name__ == "__main__":
     # Example usage - download klines data with configurable symbol and years
     async def main():
         # Parse command line arguments for symbol and years
         symbol = "ETHUSDT"  # default
         years = None  # Will use centralized config
-        
+
         # Check for additional command line arguments
         if len(sys.argv) > 1:
             # Try to parse symbol from command line
             potential_symbol = sys.argv[1].upper()
             if potential_symbol not in ["TEST_CONSOLIDATED", "TEST_COLUMNS"]:
                 symbol = potential_symbol
-                
+
             # Try to parse years from command line
             if len(sys.argv) > 2:
                 try:
                     years = int(sys.argv[2])
                 except ValueError:
                     print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
-        
+
         print(f"Starting enhanced {symbol} {years}-year 1m klines data download pipeline...")
 
         # Run the enhanced pipeline

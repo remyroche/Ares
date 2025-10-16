@@ -37,7 +37,7 @@ if 'numba' in globals() and numba is not None:
     @numba.jit(nopython = True, cache = True)
     def _numba_regime_aware_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray, regime_ids: np.ndarray, pt_multipliers: np.ndarray, sl_multipliers: np.ndarray, end_idx_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Numba-accelerated regime-aware triple barrier labeling with profit tracking."
-        
+
         Args:
             close: Close prices
             high: High prices
@@ -46,7 +46,7 @@ if 'numba' in globals() and numba is not None:
             pt_multipliers: Profit take multipliers for each regime
             sl_multipliers: Stop loss multipliers for each regime
             end_idx_arr: End indices for each point
-            
+
         Returns:
             labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
             profit_pcts: Actual profit/loss percentages at barrier hits
@@ -436,19 +436,19 @@ class RegimeAwareTripleBarrierLabeling:
         regimes = data[regime_column].values
         closes = data['close'].values
         atrs = data['atr'].values
-        
+
         # Pre-compute regime parameters for all unique regimes
         unique_regimes = np.unique(regimes)
         regime_params = {}
         for regime in unique_regimes:
             regime_name = self.config.regime_id_to_name.get(regime, f'REGIME_{regime}')
             regime_params[regime] = self.get_regime_parameters(regime_name)
-        
+
         # Vectorized calculations
         tp_multipliers = np.array([regime_params[r]['tp_multiplier'] for r in regimes])
         sl_multipliers = np.array([regime_params[r]['sl_multiplier'] for r in regimes])
         position_sizes = np.array([regime_params[r]['position_size'] for r in regimes])
-        
+
         data['tp_level'] = closes * (1 + tp_multipliers * atrs)
         data['sl_level'] = closes * (1 - sl_multipliers * atrs)
         data['position_size'] = position_sizes
@@ -569,10 +569,10 @@ def apply_regime_aware_triple_barrier_labeling(data: pd.DataFrame, optimization_
 def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame, barrier_map_or_path: Union[str, Dict[str, Any]], regime_column: str='hmm_regime', binary_classification: bool = True, default_time_barrier_minutes: int = 30, default_max_lookahead: int = 100) -> pd.DataFrame:
     """
     Apply regime-aware triple barrier labeling using a barrier map or path.
-    
+
     This function is designed to work with the HMMRegimeBarrierOptimizer and
     provides the interface needed by the vectorized labeling orchestrator.
-    
+
     Args:
         data: DataFrame with OHLCV and regime data
         barrier_map_or_path: Either a path to a barrier map file or a barrier map dictionary
@@ -580,7 +580,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
         binary_classification: Whether to use binary classification
         default_time_barrier_minutes: Default time barrier in minutes
         default_max_lookahead: Default maximum lookahead
-        
+
     Returns:
         DataFrame with regime-aware labels
     """
@@ -642,7 +642,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
         logger = logging.getLogger(__name__)
@@ -655,16 +655,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -683,8 +683,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

@@ -51,7 +51,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class FeatureSelectionConfig:
     """Configuration for data-driven feature selection."""
@@ -59,21 +58,21 @@ class FeatureSelectionConfig:
     target_feature_count: int = 40
     min_features_per_category: int = 2
     max_features_per_category: int = 4
-    
+
     # Quality thresholds
     min_variance: float = 1e-8
     max_correlation_threshold: float = 0.95
     min_information_content: float = 0.1
-    
+
     # Diversity requirements
     require_different_aspects: bool = True
     aspect_diversity_threshold: float = 0.3
-    
+
     # Performance settings
     enable_parallel_processing: bool = True
     max_workers: int = 4
     enable_vectorbt: bool = True
-    
+
     # Category weights (higher = more important)
     category_weights: Dict[str, float] = field(default_factory=lambda: {
         'momentum': 1.0,
@@ -95,7 +94,6 @@ class FeatureSelectionConfig:
         'spectral_wavelet': 0.9
     })
 
-
 @dataclass
 class FeatureScore:
     """Score and metadata for a feature."""
@@ -109,7 +107,6 @@ class FeatureScore:
     uniqueness_score: float
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class FeatureSelectionResult:
     """Result of data-driven feature selection."""
@@ -121,32 +118,31 @@ class FeatureSelectionResult:
     quality_metrics: Dict[str, float]
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 class DataDrivenFeatureSelector:
     """
     Data-driven feature selector that intelligently chooses features from the full feature bank.
-    
+
     This class analyzes all available features from the feature bank and selects the most
     relevant ones based on data characteristics, ensuring diversity across categories
     and feature aspects.
     """
-    
+
     def __init__(self, config: Optional[FeatureSelectionConfig] = None):
         """
         Initialize the data-driven feature selector.
-        
+
         Args:
             config: Configuration for feature selection
         """
         self.config = config or FeatureSelectionConfig()
-        
+
         # Initialize feature bank
         if FEATURE_BANK_AVAILABLE:
             self.feature_bank = get_global_feature_bank()
         else:
             self.feature_bank = None
             logger.warning("Feature bank not available, using fallback feature list")
-        
+
         # Feature aspect mapping for diversity
         self.aspect_mapping = {
             'momentum': ['short_term', 'medium_term', 'long_term', 'cross_timeframe'],
@@ -167,44 +163,44 @@ class DataDrivenFeatureSelector:
             'advanced_statistical': ['higher_moments', 'distribution', 'dependence', 'regime'],
             'spectral_wavelet': ['frequency', 'time_frequency', 'decomposition', 'reconstruction']
         }
-        
+
         logger.info(f"✅ Data-driven feature selector initialized")
         logger.info(f"📊 Target features: {self.config.target_feature_count}")
         logger.info(f"📊 Min per category: {self.config.min_features_per_category}")
         logger.info(f"📊 Feature bank available: {FEATURE_BANK_AVAILABLE}")
-    
-    def select_features(self, 
+
+    def select_features(self,
                        data: pd.DataFrame,
                        targets: Optional[pd.Series] = None,
                        available_categories: Optional[List[str]] = None) -> FeatureSelectionResult:
         """
         Select features using data-driven approach.
-        
+
         Args:
             data: Input data for feature generation
             targets: Target variable for relevance scoring
             available_categories: Specific categories to consider (None = all)
-            
+
         Returns:
             FeatureSelectionResult with selected features and metadata
         """
         tprint("🚀 Starting data-driven feature selection")
         tprint(f"📊 Input data shape: {data.shape}")
-        
+
         try:
             start_time = time.time()
-            
+
             # Validate inputs
             if data is None or data.empty:
                 tprint("❌ ERROR: Input data is None or empty")
                 return self._create_empty_result()
-            
+
             if not isinstance(data, pd.DataFrame):
                 tprint("❌ ERROR: Input data must be a pandas DataFrame")
                 return self._create_empty_result()
-            
+
             tprint(f"✅ Input validation passed: {len(data.columns)} features, {len(data)} samples")
-            
+
             # Step 1: Generate all available features
             tprint("🔧 Generating all available features from feature bank...")
             try:
@@ -213,7 +209,7 @@ class DataDrivenFeatureSelector:
             except Exception as e:
                 tprint(f"❌ ERROR: Feature generation failed: {e}")
                 return self._create_empty_result()
-            
+
             # Step 2: Analyze feature characteristics
             tprint("🔍 Analyzing feature characteristics...")
             try:
@@ -222,7 +218,7 @@ class DataDrivenFeatureSelector:
             except Exception as e:
                 tprint(f"❌ ERROR: Feature analysis failed: {e}")
                 return self._create_empty_result()
-            
+
             # Step 3: Select features with diversity constraints
             tprint("🎯 Selecting features with diversity constraints...")
             try:
@@ -231,7 +227,7 @@ class DataDrivenFeatureSelector:
             except Exception as e:
                 tprint(f"❌ ERROR: Feature selection failed: {e}")
                 return self._create_empty_result()
-            
+
             # Step 4: Calculate quality metrics
             tprint("📊 Calculating quality metrics...")
             try:
@@ -240,7 +236,7 @@ class DataDrivenFeatureSelector:
             except Exception as e:
                 tprint(f"⚠️ WARNING: Quality metrics calculation failed: {e}, using defaults")
                 quality_metrics = {}
-            
+
             # Step 5: Create result
             selection_time = time.time() - start_time
             try:
@@ -257,22 +253,22 @@ class DataDrivenFeatureSelector:
                         'targets_provided': targets is not None
                     }
                 )
-                
+
                 tprint(f"✅ Feature selection completed in {selection_time:.2f}s")
                 tprint(f"📊 Category distribution: {result.category_distribution}")
                 tprint(f"📊 Aspect distribution: {result.aspect_distribution}")
-                
+
                 return result
-                
+
             except Exception as e:
                 tprint(f"❌ ERROR: Result creation failed: {e}")
                 return self._create_empty_result()
-                
+
         except Exception as e:
             tprint(f"❌ CRITICAL ERROR: Feature selection failed: {e}")
             logger.exception("Critical error in select_features")
             return self._create_empty_result()
-    
+
     def _create_empty_result(self) -> FeatureSelectionResult:
         """Create an empty result for error cases."""
         return FeatureSelectionResult(
@@ -284,37 +280,37 @@ class DataDrivenFeatureSelector:
             quality_metrics={},
             metadata={'error': True}
         )
-    
-    def _generate_all_features(self, 
+
+    def _generate_all_features(self,
                               data: pd.DataFrame,
                               available_categories: Optional[List[str]] = None) -> pd.DataFrame:
         """Generate all available features from the feature bank."""
         if not self.feature_bank:
             logger.warning("Feature bank not available, using basic features")
             return self._generate_basic_features(data)
-        
+
         try:
             # Get all available categories
             if available_categories is None:
                 available_categories = [cat.value for cat in FeatureCategory]
-            
+
             # Generate features for all categories
             all_features = self.feature_bank.generate_features(
                 data=data,
                 categories=available_categories,
                 target_column='returns' if 'returns' in data.columns else None
             )
-            
+
             return all_features
-            
+
         except Exception as e:
             logger.warning(f"Feature bank generation failed: {e}, using basic features")
             return self._generate_basic_features(data)
-    
+
     def _generate_basic_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Generate basic features as fallback."""
         features = pd.DataFrame(index=data.index)
-        
+
         # Basic price features
         if 'close' in data.columns:
             features['close_return'] = data['close'].pct_change()
@@ -322,37 +318,37 @@ class DataDrivenFeatureSelector:
             features['close_volatility_20'] = data['close'].rolling(20).std()
             features['close_sma_20'] = data['close'].rolling(20).mean()
             features['close_ema_12'] = data['close'].ewm(span=12).mean()
-        
+
         # Basic volume features
         if 'volume' in data.columns:
             features['volume_sma_20'] = data['volume'].rolling(20).mean()
             features['volume_ratio'] = data['volume'] / data['volume'].rolling(20).mean()
-        
+
         # Basic technical indicators
         if 'close' in data.columns and 'high' in data.columns and 'low' in data.columns:
             features['rsi_14'] = self._calculate_rsi(data['close'], 14)
             features['atr_14'] = self._calculate_atr(data, 14)
-        
+
         return features
-    
-    def _analyze_features(self, 
+
+    def _analyze_features(self,
                          features: pd.DataFrame,
                          targets: Optional[pd.Series]) -> List[FeatureScore]:
         """Analyze all features and calculate scores."""
         feature_scores = []
-        
+
         for feature_name in features.columns:
             try:
                 feature_series = features[feature_name].dropna()
-                
+
                 if len(feature_series) == 0:
                     continue
-                
+
                 # Calculate basic metrics
                 variance = float(feature_series.var())
                 if variance < self.config.min_variance:
                     continue
-                
+
                 # Calculate correlation with target
                 correlation_with_target = 0.0
                 if targets is not None:
@@ -361,23 +357,23 @@ class DataDrivenFeatureSelector:
                         correlation_with_target = abs(corr) if not pd.isna(corr) else 0.0
                     except:
                         correlation_with_target = 0.0
-                
+
                 # Calculate information content
                 information_content = self._calculate_information_content(feature_series)
-                
+
                 # Determine category and aspect
                 category = self._determine_category(feature_name)
                 aspect_type = self._determine_aspect_type(feature_name, category)
-                
+
                 # Calculate uniqueness score
                 uniqueness_score = self._calculate_uniqueness_score(feature_series, features)
-                
+
                 # Calculate overall score
                 score = self._calculate_feature_score(
-                    variance, correlation_with_target, information_content, 
+                    variance, correlation_with_target, information_content,
                     uniqueness_score, category
                 )
-                
+
                 feature_score = FeatureScore(
                     feature_name=feature_name,
                     category=category,
@@ -394,15 +390,15 @@ class DataDrivenFeatureSelector:
                         'kurtosis': float(feature_series.kurtosis())
                     }
                 )
-                
+
                 feature_scores.append(feature_score)
-                
+
             except Exception as e:
                 logger.debug(f"Failed to analyze feature {feature_name}: {e}")
                 continue
-        
+
         return feature_scores
-    
+
     def _select_diverse_features(self, feature_scores: List[FeatureScore]) -> List[FeatureScore]:
         """Select features ensuring diversity across categories and aspects."""
         # Group features by category
@@ -412,27 +408,27 @@ class DataDrivenFeatureSelector:
             if category not in category_groups:
                 category_groups[category] = []
             category_groups[category].append(score)
-        
+
         # Sort features within each category by score
         for category in category_groups:
             category_groups[category].sort(key=lambda x: x.score, reverse=True)
-        
+
         selected_features = []
-        
+
         # First pass: Select minimum required features per category
         for category, features in category_groups.items():
             min_required = self.config.min_features_per_category
             max_allowed = min(self.config.max_features_per_category, len(features))
-            
+
             # Select top features from this category
             category_selected = features[:max_allowed]
-            
+
             # Ensure we have at least the minimum
             if len(category_selected) < min_required:
                 category_selected = features[:min_required]
-            
+
             selected_features.extend(category_selected)
-        
+
         # Second pass: Fill remaining slots with best available features
         remaining_slots = self.config.target_feature_count - len(selected_features)
         if remaining_slots > 0:
@@ -440,16 +436,16 @@ class DataDrivenFeatureSelector:
             selected_names = {f.feature_name for f in selected_features}
             unselected = [f for f in feature_scores if f.feature_name not in selected_names]
             unselected.sort(key=lambda x: x.score, reverse=True)
-            
+
             # Add best remaining features
             selected_features.extend(unselected[:remaining_slots])
-        
+
         # Third pass: Ensure aspect diversity within categories
         if self.config.require_different_aspects:
             selected_features = self._ensure_aspect_diversity(selected_features)
-        
+
         return selected_features[:self.config.target_feature_count]
-    
+
     def _ensure_aspect_diversity(self, selected_features: List[FeatureScore]) -> List[FeatureScore]:
         """Ensure diversity of aspects within each category."""
         # Group by category
@@ -459,14 +455,14 @@ class DataDrivenFeatureSelector:
             if category not in category_groups:
                 category_groups[category] = []
             category_groups[category].append(feature)
-        
+
         diversified_features = []
-        
+
         for category, features in category_groups.items():
             if len(features) <= 3:  # Not enough for diversity
                 diversified_features.extend(features)
                 continue
-            
+
             # Group by aspect type
             aspect_groups = {}
             for feature in features:
@@ -474,30 +470,30 @@ class DataDrivenFeatureSelector:
                 if aspect not in aspect_groups:
                     aspect_groups[aspect] = []
                 aspect_groups[aspect].append(feature)
-            
+
             # Select from different aspects
             selected_from_category = []
             aspects_used = set()
-            
+
             # First, select the best feature from each aspect
             for aspect, aspect_features in aspect_groups.items():
                 if aspect not in aspects_used:
                     best_feature = max(aspect_features, key=lambda x: x.score)
                     selected_from_category.append(best_feature)
                     aspects_used.add(aspect)
-            
+
             # Fill remaining slots with best available
             remaining_slots = len(features) - len(selected_from_category)
             if remaining_slots > 0:
                 all_features = [f for f in features if f not in selected_from_category]
                 all_features.sort(key=lambda x: x.score, reverse=True)
                 selected_from_category.extend(all_features[:remaining_slots])
-            
+
             diversified_features.extend(selected_from_category)
-        
+
         return diversified_features
-    
-    def _calculate_feature_score(self, 
+
+    def _calculate_feature_score(self,
                                 variance: float,
                                 correlation_with_target: float,
                                 information_content: float,
@@ -506,21 +502,21 @@ class DataDrivenFeatureSelector:
         """Calculate overall feature score."""
         # Base score from variance and information content
         base_score = np.log1p(variance) * information_content
-        
+
         # Boost for target correlation
         correlation_boost = correlation_with_target * 0.3
-        
+
         # Boost for uniqueness
         uniqueness_boost = uniqueness_score * 0.2
-        
+
         # Category weight
         category_weight = self.config.category_weights.get(category, 1.0)
-        
+
         # Combine scores
         total_score = (base_score + correlation_boost + uniqueness_boost) * category_weight
-        
+
         return total_score
-    
+
     def _calculate_information_content(self, series: pd.Series) -> float:
         """Calculate information content of a feature."""
         try:
@@ -528,15 +524,15 @@ class DataDrivenFeatureSelector:
             value_counts = series.value_counts()
             probabilities = value_counts / len(series)
             entropy = -np.sum(probabilities * np.log2(probabilities + 1e-10))
-            
+
             # Normalize by maximum possible entropy
             max_entropy = np.log2(len(value_counts))
             normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
-            
+
             return normalized_entropy
         except:
             return 0.0
-    
+
     def _calculate_uniqueness_score(self, series: pd.Series, all_features: pd.DataFrame) -> float:
         """Calculate how unique this feature is compared to others."""
         try:
@@ -549,22 +545,22 @@ class DataDrivenFeatureSelector:
                             correlations.append(abs(corr))
                     except:
                         continue
-            
+
             if not correlations:
                 return 1.0
-            
+
             # Uniqueness is inverse of maximum correlation
             max_correlation = max(correlations)
             uniqueness = 1.0 - max_correlation
-            
+
             return max(0.0, uniqueness)
         except:
             return 0.5
-    
+
     def _determine_category(self, feature_name: str) -> str:
         """Determine the category of a feature based on its name."""
         feature_lower = feature_name.lower()
-        
+
         # Category detection based on keywords
         if any(keyword in feature_lower for keyword in ['rsi', 'momentum', 'roc', 'williams']):
             return 'momentum'
@@ -602,14 +598,14 @@ class DataDrivenFeatureSelector:
             return 'spectral_wavelet'
         else:
             return 'custom'
-    
+
     def _determine_aspect_type(self, feature_name: str, category: str) -> str:
         """Determine the aspect type of a feature."""
         feature_lower = feature_name.lower()
-        
+
         # Get possible aspects for this category
         possible_aspects = self.aspect_mapping.get(category, ['general'])
-        
+
         # Determine aspect based on feature name patterns
         if 'short' in feature_lower or any(x in feature_lower for x in ['_5', '_10', '_15']):
             return possible_aspects[0] if len(possible_aspects) > 0 else 'short_term'
@@ -621,7 +617,7 @@ class DataDrivenFeatureSelector:
             return 'regime_based' if 'regime_based' in possible_aspects else possible_aspects[0]
         else:
             return possible_aspects[0] if len(possible_aspects) > 0 else 'general'
-    
+
     def _calculate_category_distribution(self, features: List[FeatureScore]) -> Dict[str, int]:
         """Calculate distribution of features across categories."""
         distribution = {}
@@ -629,7 +625,7 @@ class DataDrivenFeatureSelector:
             category = feature.category
             distribution[category] = distribution.get(category, 0) + 1
         return distribution
-    
+
     def _calculate_aspect_distribution(self, features: List[FeatureScore]) -> Dict[str, int]:
         """Calculate distribution of features across aspects."""
         distribution = {}
@@ -637,30 +633,30 @@ class DataDrivenFeatureSelector:
             aspect = feature.aspect_type
             distribution[aspect] = distribution.get(aspect, 0) + 1
         return distribution
-    
-    def _calculate_quality_metrics(self, 
+
+    def _calculate_quality_metrics(self,
                                   selected_features: List[FeatureScore],
                                   all_features: pd.DataFrame,
                                   targets: Optional[pd.Series]) -> Dict[str, float]:
         """Calculate quality metrics for the selected features."""
         if not selected_features:
             return {}
-        
+
         # Average scores
         avg_score = np.mean([f.score for f in selected_features])
         avg_variance = np.mean([f.variance for f in selected_features])
         avg_correlation = np.mean([f.correlation_with_target for f in selected_features])
         avg_information = np.mean([f.information_content for f in selected_features])
         avg_uniqueness = np.mean([f.uniqueness_score for f in selected_features])
-        
+
         # Diversity metrics
         category_diversity = len(set(f.category for f in selected_features))
         aspect_diversity = len(set(f.aspect_type for f in selected_features))
-        
+
         # Coverage metrics
         total_categories = len(self.config.category_weights)
         category_coverage = category_diversity / total_categories
-        
+
         return {
             'average_score': avg_score,
             'average_variance': avg_variance,
@@ -672,7 +668,7 @@ class DataDrivenFeatureSelector:
             'category_coverage': category_coverage,
             'total_features': len(selected_features)
         }
-    
+
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI indicator."""
         try:
@@ -684,25 +680,24 @@ class DataDrivenFeatureSelector:
             return rsi
         except:
             return pd.Series(index=prices.index, dtype=float)
-    
+
     def _calculate_atr(self, data: pd.DataFrame, period: int) -> pd.Series:
         """Calculate ATR indicator."""
         try:
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
-            
+
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             atr = tr.rolling(window=period).mean()
-            
+
             return atr
         except:
             return pd.Series(index=data.index, dtype=float)
-
 
 def create_data_driven_feature_selector(config: Optional[FeatureSelectionConfig] = None) -> DataDrivenFeatureSelector:
     """Create a data-driven feature selector with default configuration."""

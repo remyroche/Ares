@@ -86,7 +86,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
     PATCHTST_AVAILABLE = True
 except ImportError as e:
@@ -120,11 +120,11 @@ class BaseEnsemble:
         self.ensemble_weights = {self.ensemble_name: 1.0}
         self.regularization_config: dict[str, Any] | None = None
         self.normalization_windows = {'short': 20, 'medium': 60, 'long': 120}
-        
+
         # Initialize M1 optimizations
         self.enable_m1_optimizations = enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
         self.enable_gpu_acceleration = TORCH_AVAILABLE
-        
+
         # Initialize PatchTST wrapper for tree-based models only
         self.enable_patchtst_wrapper = self.config.get('enable_patchtst_wrapper', True) and PATCHTST_AVAILABLE
         self.patchtst_config = self.config.get('patchtst_config', {
@@ -137,16 +137,16 @@ class BaseEnsemble:
             'sign_dropout_rate': 0.0,
             'sign_threshold': 0.2
         })
-        
+
         # Tree-based model types that support PatchTST wrapper
         self.tree_model_types = {
             'LGBMClassifier', 'LGBMRegressor',
-            'XGBClassifier', 'XGBRegressor', 
+            'XGBClassifier', 'XGBRegressor',
             'RandomForestClassifier', 'RandomForestRegressor',
             'ExtraTreesClassifier', 'ExtraTreesRegressor',
             'GradientBoostingClassifier', 'GradientBoostingRegressor'
         }
-        
+
         if self.enable_m1_optimizations:
             try:
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
@@ -220,71 +220,71 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             tprint("⚠️ [BASE_ENSEMBLE] M1 optimizations not available, falling back to standard method", color="yellow")
             self.logger.warning("⚠️ M1 optimizations not available, falling back to standard method")
             return self.train_ensemble(historical_features, historical_targets)
-        
+
         tprint(f"🚀 [BASE_ENSEMBLE] Starting M1-optimized training pipeline for {self.ensemble_name}", color="cyan")
         self.logger.info(f'🚀 Starting M1-optimized training pipeline for {self.ensemble_name}...')
-        
+
         if historical_features.empty:
             self.logger.warning(f'No historical features for {self.ensemble_name}. Skipping training.')
             return
-        
+
         # Memory checkpoint for M1 optimization
         with self.m1_memory_optimizer.memory_checkpoint("ensemble_training"):
             # Check if data should be processed in chunks
             data_size_mb = historical_features.memory_usage(deep=True).sum() / (1024**2)
-            
+
             if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "ensemble_training"):
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
                 return self._chunked_ensemble_training(historical_features, historical_targets)
-            
-            # Use 
+
+            # Use
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info("🎯 Using 
+                self.logger.info("🎯 Using
                 return self._gpu_accelerated_ensemble_training(historical_features, historical_targets)
-            
+
             # Standard M1-optimized processing
             return self._m1_optimized_ensemble_training(historical_features, historical_targets)
 
     def _m1_optimized_ensemble_training(self, historical_features: pd.DataFrame, historical_targets: pd.Series | None = None) -> None:
         """M1-optimized ensemble training."""
         self.logger.info('🔧 Applying M1-optimized feature normalization...')
-        
+
         # M1-optimized feature normalization
         historical_features = self._m1_normalize_features(historical_features)
-        
+
         # Ensure all expected features are present
         all_expected_features = list(set(self.sequence_features + self.flat_features + self.order_flow_features))
         for col in all_expected_features:
             if col not in historical_features.columns:
                 historical_features[col] = 0.0
-        
+
         if historical_targets is None:
             self.logger.warning(f'No historical targets for {self.ensemble_name}. Skipping training.')
             return
-        
+
         # M1-optimized data alignment
         aligned_data = self._m1_align_data(historical_features, historical_targets)
-        
+
         if aligned_data.empty:
             self.logger.warning(f'Aligned data is empty for {self.ensemble_name} after dropping NaNs. Skipping training.')
             return
-        
+
         try:
             y_encoded = self.label_encoder.fit_transform(aligned_data['target'].to_numpy())
         except ValueError as e:
             self.logger.error(f'Error encoding labels for {self.ensemble_name}: {e}. Skipping training.', exc_info=True)
             return
-        
+
         # M1-optimized base model training
         self._train_base_models_m1_optimized(aligned_data, y_encoded)
-        
+
         # M1-optimized meta-feature generation
         meta_features_train = self._get_meta_features_m1_optimized(aligned_data, is_live=False)
-        
+
         if not isinstance(meta_features_train, pd.DataFrame) or meta_features_train.empty:
             self.logger.warning(f'Meta-features are empty for {self.ensemble_name}. Cannot train meta-learner.')
             return
-        
+
         # Ensure index alignment between y_encoded and meta_features_train
         try:
             y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[meta_features_train.index].values
@@ -296,24 +296,24 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
                 return
             y_meta_train = pd.Series(y_encoded, index=aligned_data.index).loc[common_indices].values
             meta_features_train = meta_features_train.loc[common_indices]
-        
+
         X_meta_train = meta_features_train
-        
+
         if X_meta_train.empty or len(np.unique(y_meta_train)) < 2:
             self.logger.warning(f'Insufficient or single-class data for meta-learner in {self.ensemble_name}. Skipping meta-learner training.')
             return
-        
+
         # M1-optimized scaling and PCA
         self.logger.info('🔧 M1-optimized scaling and PCA to meta-features...')
         X_meta_scaled, X_meta_pca_df = self._m1_scale_and_pca(X_meta_train)
-        
+
         # M1-optimized hyperparameter tuning
         self.logger.info('🎯 M1-optimized hyperparameter tuning for meta-learner...')
         self.best_meta_params = self._tune_hyperparameters_m1_optimized(LGBMClassifier, self._get_lgbm_search_space, X_meta_pca_df, y_meta_train)
-        
+
         # M1-optimized meta-learner training
         self._train_meta_learner_m1_optimized(X_meta_pca_df, y_meta_train, self.best_meta_params)
-        
+
         self.trained = True
         self.logger.info(f'✅ M1-optimized training pipeline for {self.ensemble_name} complete.')
         self._validate_ensemble_state()
@@ -322,7 +322,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         """M1-optimized feature normalization."""
         # Use M1 memory-efficient operations
         normalized_features = features.copy()
-        
+
         # M1-optimized normalization for different feature types
         for window_name, window_size in self.normalization_windows.items():
             for feature in self.flat_features:
@@ -343,7 +343,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
                         normalized_features[f"{feature}_{window_name}_norm"] = self._rolling_normalize(
                             normalized_features[feature], window_size
                         )
-        
+
         return normalized_features
 
     def _m1_align_data(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
@@ -352,17 +352,17 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         if self.m1_memory_optimizer:
             # Check if data should be processed in chunks
             data_size_mb = features.memory_usage(deep=True).sum() / (1024**2)
-            
+
             if self.m1_memory_optimizer.should_chunk_data(data_size_mb, "data_alignment"):
                 return self._chunked_data_alignment(features, targets)
-        
+
         # Standard alignment with M1 memory optimization
         aligned_data = features.join(targets.rename('target')).dropna()
-        
+
         # M1 memory cleanup
         if self.m1_memory_optimizer:
             self.m1_memory_optimizer.optimize_memory()
-        
+
         return aligned_data
 
     def _m1_scale_and_pca(self, X_meta_train: pd.DataFrame) -> Tuple[np.ndarray, pd.DataFrame]:
@@ -370,7 +370,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         # M1-optimized scaling
         self.meta_feature_scaler = StandardScaler()
         X_meta_scaled = self.meta_feature_scaler.fit_transform(X_meta_train)
-        
+
         # GPU-accelerated PCA if available
         if self.enable_gpu_acceleration and self.matrix_ops:
             try:
@@ -378,20 +378,20 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
                     # Convert to tensor for GPU processing
                     X_tensor = torch.from_numpy(X_meta_scaled.astype(np.float32))
                     X_tensor = self.matrix_ops.gpu_manager.to_device(X_tensor, "pca_analysis")
-                    
+
                     # GPU-accelerated SVD for PCA
                     U, S, V = torch.linalg.svd(X_tensor)
-                    
+
                     # Select components
                     n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
                     X_meta_pca = (U[:, :n_components] * S[:n_components]).cpu().numpy()
-                    
+
                     # Store PCA components
                     self.pca = type('PCA', (), {
                         'components_': V[:n_components].cpu().numpy(),
                         'explained_variance_ratio_': (S[:n_components] ** 2 / (S ** 2).sum()).cpu().numpy()
                     })()
-                    
+
             except Exception as e:
                 self.logger.warning(f"⚠️ GPU PCA failed: {e}, using CPU")
                 # Fallback to CPU PCA
@@ -403,7 +403,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             n_components = min(self.n_pca_components, X_meta_scaled.shape[1])
             self.pca = PCA(n_components=n_components)
             X_meta_pca = self.pca.fit_transform(X_meta_scaled)
-        
+
         X_meta_pca_df = pd.DataFrame(X_meta_pca, index=X_meta_train.index)
         return X_meta_scaled, X_meta_pca_df
 
@@ -412,7 +412,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         # Use M1 memory-efficient rolling operations
         rolling_mean = series.rolling(window=window, min_periods=1).mean()
         rolling_std = series.rolling(window=window, min_periods=1).std()
-        
+
         # Avoid division by zero
         normalized = (series - rolling_mean) / rolling_std.replace(0, 1)
         return normalized
@@ -421,49 +421,49 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         """Chunked rolling normalization for large datasets."""
         chunk_size = self.m1_memory_optimizer.calculate_optimal_chunk_size((len(series),), "rolling_normalization")
         normalized_chunks = []
-        
+
         for start_idx in range(0, len(series), chunk_size):
             end_idx = min(start_idx + chunk_size, len(series))
             chunk = series.iloc[start_idx:end_idx]
-            
+
             # Apply rolling normalization to chunk
             chunk_normalized = self._rolling_normalize(chunk, window)
             normalized_chunks.append(chunk_normalized)
-            
+
             # Memory cleanup
             if start_idx % (chunk_size * 3) == 0:
                 self.m1_memory_optimizer.optimize_memory()
-        
+
         return pd.concat(normalized_chunks)
 
     def _chunked_data_alignment(self, features: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
         """Chunked data alignment for large datasets."""
         chunk_size = self.m1_memory_optimizer.calculate_optimal_chunk_size(features.shape, "data_alignment")
         aligned_chunks = []
-        
+
         for start_idx in range(0, len(features), chunk_size):
             end_idx = min(start_idx + chunk_size, len(features))
             feature_chunk = features.iloc[start_idx:end_idx]
             target_chunk = targets.iloc[start_idx:end_idx]
-            
+
             # Align chunk
             aligned_chunk = feature_chunk.join(target_chunk.rename('target')).dropna()
             aligned_chunks.append(aligned_chunk)
-            
+
             # Memory cleanup
             if start_idx % (chunk_size * 3) == 0:
                 self.m1_memory_optimizer.optimize_memory()
-        
+
         return pd.concat(aligned_chunks, ignore_index=True)
 
     def _train_base_models_m1_optimized(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray) -> None:
         """M1-optimized base model training."""
         # Use M1 memory-efficient base model training
         self.logger.info("🔧 M1-optimized base model training...")
-        
+
         # Check if data should be processed in chunks
         data_size_mb = aligned_data.memory_usage(deep=True).sum() / (1024**2)
-        
+
         if self.m1_memory_optimizer and self.m1_memory_optimizer.should_chunk_data(data_size_mb, "base_model_training"):
             self.logger.info("📦 Using chunked base model training")
             self._chunked_base_model_training(aligned_data, y_encoded)
@@ -610,7 +610,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         else:
             base_space.update({'reg_alpha': trial.suggest_float('reg_alpha', 0.001, 1.0, log = True), 'reg_lambda': trial.suggest_float('reg_lambda', 0.001, 1.0, log = True)})
             self.logger.info('Using optuna-optimized regularization parameters')
-        
+
         return base_space
 
     @handles_errors(fallback = LogisticRegression())
@@ -633,10 +633,10 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
         # Create base LightGBM model
         base_model = LGBMClassifier(**params, random_state = 42, verbose=-1)
-        
+
         # Apply PatchTST wrapper only for tree-based models
         self.meta_learner = self._apply_patchtst_wrapper_if_needed(base_model, "Meta-learner")
-        
+
         self.meta_learner.fit(X, y)
 
     def _is_tree_based_model(self, model) -> bool:
@@ -649,10 +649,10 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         if not self._is_tree_based_model(base_model):
             self.logger.info(f"ℹ️ PatchTST wrapper not applied to {model_name} (not a tree-based model)")
             return base_model
-        
+
         if not (self.enable_patchtst_wrapper and create_patchtst_wrapper is not None):
             return base_model
-        
+
         try:
             wrapped_model = create_patchtst_wrapper(base_model, **self.patchtst_config)
             self.logger.info(f"✅ {model_name} enhanced with PatchTST wrapper")
@@ -793,11 +793,11 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         """
         Abstract method to train base models for the ensemble.
         Must be implemented by child classes.
-        
+
         Args:
             aligned_data: DataFrame with aligned features
             y_encoded: Encoded target labels
-            
+
         Raises:
             NotImplementedError: This is an abstract method
         """
@@ -991,15 +991,15 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         """
         Abstract method to extract meta-features for the ensemble.
         Must be implemented by child classes based on their specific needs.
-        
+
         Args:
             df: Input DataFrame with features
             is_live: Whether this is for live trading or backtesting
             **kwargs: Additional keyword arguments
-            
+
         Returns:
             DataFrame or dict of meta-features
-            
+
         Raises:
             NotImplementedError: This is an abstract method
         """
@@ -1129,16 +1129,16 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1157,8 +1157,8 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1175,13 +1175,13 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

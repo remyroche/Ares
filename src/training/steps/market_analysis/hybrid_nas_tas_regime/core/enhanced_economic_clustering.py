@@ -18,7 +18,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -35,7 +35,6 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.robust_
 from src.feature_selection.dimensionality import create_pca_module, create_vif_module
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class EnhancedClusteringResult:
@@ -54,7 +53,6 @@ class EnhancedClusteringResult:
     execution_time: float
     metadata: Dict[str, Any]
 
-
 class EnhancedEconomicClusterer:
     """
     Enhanced economic clusterer with data-driven improvements.
@@ -64,34 +62,34 @@ class EnhancedEconomicClusterer:
         """Initialize enhanced economic clusterer."""
         tprint_info("🚀 Initializing Enhanced Economic Clusterer")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
         # Initialize components
         tprint_debug("🔧 Initializing evaluation components...")
-        
+
         # Enhanced regime evaluator
         evaluator_config = config.get('evaluator_config', {})
         self.regime_evaluator = create_enhanced_regime_evaluator(evaluator_config)
         tprint_success("✅ Enhanced regime evaluator initialized")
-        
+
         # Cross-validation for clustering
         cv_config = config.get('cv_config', {})
         self.clustering_cv = create_clustering_cross_validator(cv_config)
         tprint_success("✅ Clustering cross-validator initialized")
-        
+
         # Robust scoring models
         scoring_config = config.get('scoring_config', {})
         self.scoring_models = create_robust_scoring_models(scoring_config)
         tprint_success("✅ Robust scoring models initialized")
-        
+
         # Feature selection modules
         tprint_debug("🔧 Initializing feature selection modules...")
         pca_config = config.get('pca_config', {})
         self.pca_module = create_pca_module(pca_config)
         tprint_success("✅ PCA module initialized")
-        
+
         vif_config = config.get('vif_config', {})
         self.vif_module = create_vif_module(vif_config)
         tprint_success("✅ VIF module initialized")
@@ -108,7 +106,7 @@ class EnhancedEconomicClusterer:
         tprint_success("✅ Enhanced Economic Clusterer initialized")
         self.logger.info("✅ Enhanced Economic Clusterer initialized")
 
-    def cluster_with_enhanced_evaluation(self, 
+    def cluster_with_enhanced_evaluation(self,
                                        features: np.ndarray,
                                        market_data: pd.DataFrame,
                                        historical_data: Optional[pd.DataFrame] = None) -> EnhancedClusteringResult:
@@ -173,7 +171,7 @@ class EnhancedEconomicClusterer:
 
             tprint_success(f"🎉 [ENHANCED_CLUSTERING] Enhanced economic clustering completed successfully")
             tprint_performance(f"⚡ [ENHANCED_CLUSTERING] Final result: {len(set(clustering_result['labels']))} clusters, {len(regime_evaluation.regime_metrics)} regimes evaluated")
-            
+
             return EnhancedClusteringResult(
                 labels=clustering_result['labels'],
                 cluster_centers=clustering_result['cluster_centers'],
@@ -218,7 +216,7 @@ class EnhancedEconomicClusterer:
             # Apply VIF-based feature selection
             tprint_debug("🔧 [ENHANCED_CLUSTERING] Applying VIF-based feature selection")
             vif_result = self.vif_module.apply_vif_feature_selection(features)
-            
+
             if vif_result['success'] and len(vif_result['selected_features']) > 0:
                 selected_indices = vif_result['selected_indices']
                 features_selected = features[:, selected_indices]
@@ -238,7 +236,7 @@ class EnhancedEconomicClusterer:
             if features_selected.shape[1] > 50:  # Threshold for PCA
                 tprint_debug("🔧 [ENHANCED_CLUSTERING] Applying PCA for dimensionality reduction")
                 pca_result = self.pca_module.apply_pca_feature_selection(features_selected)
-                
+
                 if pca_result['success'] and len(pca_result['selected_features']) > 0:
                     # Use PCA components instead of original features
                     pca_components = self.pca_module.get_pca_components(features_selected)
@@ -264,7 +262,7 @@ class EnhancedEconomicClusterer:
         try:
             tprint_debug("🎯 [ENHANCED_CLUSTERING] Optimizing clustering parameters")
             cv_result = self.clustering_cv.optimize_clustering_parameters(features, market_data)
-            
+
             return {
                 'best_params': cv_result.best_params,
                 'best_score': cv_result.best_score,
@@ -282,19 +280,19 @@ class EnhancedEconomicClusterer:
                 'stability_scores': {}
             }
 
-    def _apply_enhanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame, 
+    def _apply_enhanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame,
                                  best_params: Dict[str, Any]) -> Dict[str, Any]:
         """Apply clustering with optimized parameters."""
         try:
             # This would integrate with the existing economic clustering logic
             # For now, use a simplified approach
-            
+
             from sklearn.cluster import KMeans
             from sklearn.mixture import GaussianMixture
-            
+
             n_regimes = best_params.get('n_regimes', self.n_regimes)
             algorithm = best_params.get('algorithm', 'kmeans')
-            
+
             if algorithm == 'kmeans':
                 clusterer = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
                 labels = clusterer.fit_predict(features)
@@ -308,17 +306,17 @@ class EnhancedEconomicClusterer:
                 clusterer = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
                 labels = clusterer.fit_predict(features)
                 cluster_centers = clusterer.cluster_centers_
-            
+
             # Calculate probabilities (simplified)
             probabilities = np.ones((len(labels), n_regimes)) / n_regimes
-            
+
             return {
                 'labels': labels,
                 'cluster_centers': cluster_centers,
                 'probabilities': probabilities,
                 'algorithm_used': algorithm
             }
-            
+
         except Exception as e:
             self.logger.error(f"Enhanced clustering application failed: {e}")
             raise
@@ -349,7 +347,7 @@ class EnhancedEconomicClusterer:
         """Train and apply robust scoring models."""
         try:
             tprint_debug("🤖 [ENHANCED_CLUSTERING] Training robust scoring models")
-            
+
             # Convert regime metrics to the format expected by scoring models
             regime_metrics_dict = []
             for i, metric in enumerate(regime_metrics):
@@ -357,30 +355,30 @@ class EnhancedEconomicClusterer:
                     regime_metrics_dict.append(metric.__dict__)
                 else:
                     regime_metrics_dict.append(metric)
-            
+
             # Train models
             model_performances = self.scoring_models.train_scoring_models(
                 historical_data, features, labels, regime_metrics_dict
             )
-            
+
             # Apply models to current data
             scoring_results = {}
             for regime_id in set(labels):
                 regime_mask = labels == regime_id
                 regime_features = features[regime_mask]
                 regime_market_data = historical_data[regime_mask] if len(historical_data) > len(labels) else historical_data
-                
+
                 scoring_result = self.scoring_models.predict_regime_scores(
                     regime_features, regime_market_data, regime_id
                 )
                 scoring_results[f'regime_{regime_id}'] = scoring_result
-            
+
             return {
                 'model_performances': model_performances,
                 'scoring_results': scoring_results,
                 'models_trained': len(model_performances)
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Robust scoring models training/application failed: {e}")
             return {}
@@ -398,7 +396,7 @@ class EnhancedEconomicClusterer:
                 'economic_rankings': regime_evaluation.economic_rankings,
                 'trading_rankings': regime_evaluation.trading_rankings
             }
-            
+
             # Add regime-specific metrics
             for i, metric in enumerate(regime_evaluation.regime_metrics):
                 if hasattr(metric, '__dict__'):
@@ -417,13 +415,12 @@ class EnhancedEconomicClusterer:
                         'risk_score': getattr(metric, 'risk_score', 0.0),
                         'performance_score': getattr(metric, 'performance_score', 0.0)
                     }
-            
+
             return economic_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"Enhanced economic metrics calculation failed: {e}")
             return {'n_regimes': len(set(labels)), 'overall_quality_score': 0.5}
-
 
 def create_enhanced_economic_clusterer(config: Dict[str, Any]) -> EnhancedEconomicClusterer:
     """Create enhanced economic clusterer."""

@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 
 # Import tprint utilities
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -84,30 +84,29 @@ def _get_training_integration():
 
 logger = system_logger.getChild('BaseTrainingStep')
 
-
 class BaseTrainingStep(ABC):
     """
     Base class for all training steps with common functionality.
-    
+
     This class provides common functionality that can be inherited by specific
     training modules, reducing code duplication and ensuring consistency.
     """
-    
+
     def __init__(self, config: BaseTrainingConfig):
         """
         Initialize base training step.
-        
+
         Args:
             config: Training configuration object
         """
         tprint("🏗️ [BASE_TRAINING_STEP] Initializing Base Training Step", color="blue")
         self.config = config
         self.logger = logger.getChild(self.__class__.__name__)
-        
+
         # Initialize common components
         tprint("🔧 [BASE_TRAINING_STEP] Initializing common components", color="cyan")
         self._initialize_common_components()
-        
+
         # Initialize validation integration
         tprint("✅ [BASE_TRAINING_STEP] Initializing validation integration", color="cyan")
         self._initialize_validation_integration()
@@ -138,37 +137,37 @@ class BaseTrainingStep(ABC):
             self.logger.info("✅ Enhanced training utilities initialized")
         else:
             self.logger.info("⚠️ Enhanced training utilities not available (optional)")
-    
+
     def _initialize_common_components(self):
         """Initialize common components using existing utilities."""
         tprint("🔧 [BASE_TRAINING_STEP] Setting up training utilities", color="blue")
         # Initialize training utilities with hardware optimization
         self.training_utils = TrainingUtils(self.config)
-        
+
         tprint("📊 [BASE_TRAINING_STEP] Setting up data processors", color="blue")
         # Initialize data processors
         self.regime_processor = RegimeProcessor()
         self.feature_preparator = FeaturePreparator()
-        
+
         tprint("💾 [BASE_TRAINING_STEP] Setting up model manager", color="blue")
         # Initialize model manager with existing serialization utilities
         self.model_manager = ModelManager(
             save_path=self.config.model_save_path,
             save_format=self.config.save_format
         )
-        
+
         tprint("📈 [BASE_TRAINING_STEP] Setting up evaluation utilities", color="blue")
         # Initialize evaluation utilities
         self.evaluation_utils = EvaluationUtils()
-        
+
         tprint("🗄️ [BASE_TRAINING_STEP] Setting up data utilities", color="blue")
         # Initialize existing data utilities
         self.data_utils = UnifiedDataUtils()
         self.parquet_utils = ParquetUtils()
-        
+
         tprint_success("✅ [BASE_TRAINING_STEP] Common components initialized with existing utilities")
         self.logger.info("✅ Common components initialized with existing utilities")
-    
+
     def _initialize_validation_integration(self):
         """Initialize universal validation integration."""
         # Create validation configuration
@@ -183,13 +182,13 @@ class BaseTrainingStep(ABC):
             fail_on_validation_error=getattr(self.config, 'fail_on_validation_error', False),
             warn_on_validation_issues=getattr(self.config, 'warn_on_validation_issues', True)
         )
-        
+
         # Initialize validation integrator
         self.validation_integrator = get_validation_integrator(validation_config)
-        
+
         self.logger.info("✅ Universal validation integration initialized")
-    
-    def validate_training_data(self, 
+
+    def validate_training_data(self,
                               X: np.ndarray,
                               y: np.ndarray,
                               regime_labels: np.ndarray,
@@ -198,7 +197,7 @@ class BaseTrainingStep(ABC):
                               model_type: str = "unknown") -> Dict[str, Any]:
         """
         Validate training data before model training.
-        
+
         Args:
             X: Input features
             y: Target values
@@ -206,7 +205,7 @@ class BaseTrainingStep(ABC):
             feature_names: Names of input features
             timestamps: Optional timestamps for temporal validation
             model_type: Type of model
-            
+
         Returns:
             Dict: Validation results
         """
@@ -233,7 +232,7 @@ class BaseTrainingStep(ABC):
                 X, y, test_size=self.config.validation_split if hasattr(self.config, 'validation_split') else 0.2,
                 random_state=42, stratify=None
             )
-        
+
         # Validate training data
         validation_results = self.validation_integrator.validate_training_data(
             X_train=X_train,
@@ -244,7 +243,7 @@ class BaseTrainingStep(ABC):
             feature_names=feature_names,
             model_type=model_type
         )
-        
+
         # Log validation results
         if validation_results['valid']:
             tprint_success("✅ [BASE_TRAINING_STEP] validate_training_data() completed successfully")
@@ -258,11 +257,11 @@ class BaseTrainingStep(ABC):
             for warning in validation_results.get('warnings', []):
                 tprint_warning(f"⚠️ [BASE_TRAINING_STEP] Warning: {warning}")
                 self.logger.warning(f"Warning: {warning}")
-        
+
         tprint(f"📊 [BASE_TRAINING_STEP] validate_training_data() outcome: valid={validation_results['valid']}", color="green" if validation_results['valid'] else "red")
         return validation_results
-    
-    def validate_trained_model(self, 
+
+    def validate_trained_model(self,
                               model: Any,
                               X_train: np.ndarray,
                               X_val: np.ndarray,
@@ -275,7 +274,7 @@ class BaseTrainingStep(ABC):
                               fold_number: Optional[int] = None) -> Dict[str, Any]:
         """
         Validate trained model with comprehensive analysis.
-        
+
         Args:
             model: Trained ML model
             X_train: Training features
@@ -287,7 +286,7 @@ class BaseTrainingStep(ABC):
             model_name: Name of the model
             model_type: Type of model
             fold_number: Fold number for cross-validation
-            
+
         Returns:
             Dict: Comprehensive validation results
         """
@@ -306,7 +305,7 @@ class BaseTrainingStep(ABC):
             model_type=model_type,
             fold_number=fold_number
         )
-        
+
         # Log validation results
         if validation_results['valid']:
             tprint_success(f"✅ [BASE_TRAINING_STEP] validate_trained_model() passed for {model_name}")
@@ -322,13 +321,13 @@ class BaseTrainingStep(ABC):
             for warning in validation_results.get('warnings', []):
                 tprint_warning(f"⚠️ [BASE_TRAINING_STEP] Warning: {warning}")
                 self.logger.warning(f"Warning: {warning}")
-        
+
         # Store validation results in training results
         if 'validation_results' not in self.training_results:
             self.training_results['validation_results'] = {}
-        
+
         self.training_results['validation_results'][model_name] = validation_results
-        
+
         # Process validation with reporting system
         if self.config.save_validation_reports:
             from ..reporting.validation_reporting_integration import process_validation_with_reporting
@@ -339,17 +338,17 @@ class BaseTrainingStep(ABC):
                 fold_number=fold_number,
                 model_metadata={'training_step': self.__class__.__name__}
             )
-        
+
         tprint(f"📊 [BASE_TRAINING_STEP] validate_trained_model() outcome: valid={validation_results['valid']}", color="green" if validation_results['valid'] else "red")
         return validation_results
-    
+
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validations performed."""
         tprint("📊 [BASE_TRAINING_STEP] get_validation_summary() called", color="blue")
         summary = self.validation_integrator.get_validation_summary()
         tprint(f"📊 [BASE_TRAINING_STEP] get_validation_summary() outcome: {len(summary)} validation entries", color="green")
         return summary
-    
+
     def execute(
         self,
         X: np.ndarray,
@@ -519,14 +518,14 @@ class BaseTrainingStep(ABC):
         except Exception as e:
             self.logger.error(f"❌ Training execution failed: {e}")
             return self._handle_training_error(e, "training execution")
-    
+
     def analyze_regimes(self, regime_labels: np.ndarray) -> Dict[str, Any]:
         """
         Analyze regime distribution and characteristics.
-        
+
         Args:
             regime_labels: Array of regime labels for each sample
-            
+
         Returns:
             Dictionary containing regime analysis results
         """
@@ -541,7 +540,7 @@ class BaseTrainingStep(ABC):
         tprint_success("✅ [BASE_TRAINING_STEP] analyze_regimes() completed successfully")
         tprint(f"📊 [BASE_TRAINING_STEP] analyze_regimes() outcome: {len(result)} analysis results", color="green")
         return result
-    
+
     def prepare_regime_data(
         self,
         X: np.ndarray,
@@ -552,14 +551,14 @@ class BaseTrainingStep(ABC):
     ) -> Dict[int, Dict[str, np.ndarray]]:
         """
         Prepare data for each regime with HMM state integration.
-        
+
         Args:
             X: Input features
             y: Target values
             regime_labels: Regime labels for each sample
             regime_analysis: Results from regime analysis
             hmm_states: Optional HMM cluster/regime states
-            
+
         Returns:
             Dictionary containing prepared data for each regime
         """
@@ -574,7 +573,7 @@ class BaseTrainingStep(ABC):
             augmentation_method=self.config.augmentation_method,
             augmentation_ratio=self.config.augmentation_ratio
         )
-    
+
     def prepare_combined_features(
         self,
         X: np.ndarray,
@@ -586,7 +585,7 @@ class BaseTrainingStep(ABC):
     ) -> Tuple[np.ndarray, List[str]]:
         """
         Prepare combined features with HMM states, analyst outputs, and regime features.
-        
+
         Args:
             X: Input features
             regime_labels: Array of regime labels
@@ -594,7 +593,7 @@ class BaseTrainingStep(ABC):
             analyst_outputs: Optional analyst model outputs
             analyst_output_names: Names of analyst output features
             feature_names: Names of input features
-            
+
         Returns:
             Tuple of combined features and feature names
         """
@@ -606,7 +605,7 @@ class BaseTrainingStep(ABC):
             analyst_output_names=analyst_output_names,
             feature_names=feature_names
         )
-    
+
     def train_models(
         self,
         model_types: List[str],
@@ -617,14 +616,14 @@ class BaseTrainingStep(ABC):
     ) -> Dict[str, Any]:
         """
         Train multiple models.
-        
+
         Args:
             model_types: List of model types to train
             X: Input features
             y: Target values
             enable_hpo: Whether to use HPO
             search_spaces: HPO search spaces for each model type
-            
+
         Returns:
             Dictionary containing training results
         """
@@ -641,7 +640,7 @@ class BaseTrainingStep(ABC):
         tprint_success("✅ [BASE_TRAINING_STEP] train_models() completed successfully")
         tprint(f"📊 [BASE_TRAINING_STEP] train_models() outcome: {len(result.get('models', {}))} models trained", color="green")
         return result
-    
+
     def evaluate_models(
         self,
         models: Dict[str, Any],
@@ -651,13 +650,13 @@ class BaseTrainingStep(ABC):
     ) -> Dict[str, Dict[str, float]]:
         """
         Evaluate multiple models.
-        
+
         Args:
             models: Dictionary of trained models
             X: Input features
             y: True target values
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing evaluation results for each model
         """
@@ -667,7 +666,7 @@ class BaseTrainingStep(ABC):
             y=y,
             is_classification=is_classification
         )
-    
+
     def save_models(
         self,
         models: Dict[str, Any],
@@ -679,7 +678,7 @@ class BaseTrainingStep(ABC):
     ) -> List[str]:
         """
         Save trained models.
-        
+
         Args:
             models: Dictionary of models to save
             model_type: Type of models
@@ -687,7 +686,7 @@ class BaseTrainingStep(ABC):
             exchange: Optional exchange identifier
             timeframe: Optional timeframe identifier
             regime: Optional regime identifier
-            
+
         Returns:
             List of saved model file paths
         """
@@ -699,7 +698,7 @@ class BaseTrainingStep(ABC):
             timeframe=timeframe,
             regime=regime
         )
-    
+
     def save_metadata(
         self,
         metadata: Dict[str, Any],
@@ -711,7 +710,7 @@ class BaseTrainingStep(ABC):
     ) -> str:
         """
         Save model metadata.
-        
+
         Args:
             metadata: Model metadata to save
             model_type: Type of models
@@ -719,7 +718,7 @@ class BaseTrainingStep(ABC):
             exchange: Optional exchange identifier
             timeframe: Optional timeframe identifier
             regime: Optional regime identifier
-            
+
         Returns:
             Path to saved metadata file
         """
@@ -731,7 +730,7 @@ class BaseTrainingStep(ABC):
             timeframe=timeframe,
             regime=regime
         )
-    
+
     def get_model_metadata(
         self,
         model: Any,
@@ -743,7 +742,7 @@ class BaseTrainingStep(ABC):
     ) -> Dict[str, Any]:
         """
         Extract common model metadata.
-        
+
         Args:
             model: Trained model
             model_name: Name of the model
@@ -751,7 +750,7 @@ class BaseTrainingStep(ABC):
             optimization_time: Optimization time in seconds
             samples: Number of training samples
             features: Number of features
-            
+
         Returns:
             Dictionary containing model metadata
         """
@@ -763,7 +762,7 @@ class BaseTrainingStep(ABC):
             samples=samples,
             features=features
         )
-    
+
     def _create_final_results(
         self,
         models: Dict[str, Any],
@@ -774,14 +773,14 @@ class BaseTrainingStep(ABC):
     ) -> Dict[str, Any]:
         """
         Create final results dictionary.
-        
+
         Args:
             models: Trained models
             metadata: Training metadata
             evaluation_results: Evaluation results
             training_time: Total training time
             additional_results: Additional results to include
-            
+
         Returns:
             Dictionary containing final results
         """
@@ -803,9 +802,9 @@ class BaseTrainingStep(ABC):
 
         if additional_results:
             results.update(additional_results)
-        
+
         return results
-    
+
     def _log_training_summary(
         self,
         results: Dict[str, Any],
@@ -814,7 +813,7 @@ class BaseTrainingStep(ABC):
     ):
         """
         Log training summary.
-        
+
         Args:
             results: Training results
             model_type: Type of models trained
@@ -822,10 +821,10 @@ class BaseTrainingStep(ABC):
         """
         training_time = results.get('training_time', 0)
         self.logger.info(f"✅ {model_type} training completed in {training_time:.2f}s")
-        
+
         if n_models > 0:
             self.logger.info(f"📊 Models trained: {n_models}")
-        
+
         # Log evaluation results if available
         evaluation_results = results.get('evaluation_results', {})
         if evaluation_results:
@@ -838,21 +837,21 @@ class BaseTrainingStep(ABC):
                     for metric in key_metrics:
                         if metric in metrics:
                             metric_values.append(f"{metric}={metrics[metric]:.4f}")
-                    
+
                     if metric_values:
                         self.logger.info(f"📊 - {model_name}: {', '.join(metric_values)}")
-    
+
     def _handle_training_error(self, error: Exception, context: str = ""):
         """
         Handle training errors with proper logging.
-        
+
         Args:
             error: Exception that occurred
             context: Additional context about where the error occurred
         """
         error_msg = f"❌ Training error{f' in {context}' if context else ''}: {error}"
         self.logger.error(error_msg)
-        
+
         # Return empty results structure
         return {
             'models': {},

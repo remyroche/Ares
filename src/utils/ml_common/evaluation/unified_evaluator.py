@@ -39,9 +39,7 @@ try:
 except Exception:  # pragma: no cover - environment without sklearn
     SKLEARN_AVAILABLE = False
 
-
 _logger = logging.getLogger("UnifiedEvaluator")
-
 
 def _is_classification_task(y_true: np.ndarray, y_pred: np.ndarray) -> bool:
     try:
@@ -50,7 +48,6 @@ def _is_classification_task(y_true: np.ndarray, y_pred: np.ndarray) -> bool:
         return unique_true <= 10 and unique_pred <= 10 and not np.issubdtype(y_true.dtype, np.floating)
     except Exception:
         return False
-
 
 def compute_classification_metrics(
     y_true: np.ndarray,
@@ -157,7 +154,6 @@ def compute_classification_metrics(
 
     return metrics
 
-
 def compute_regression_metrics(
     y_true: np.ndarray,
     y_pred: np.ndarray,
@@ -224,7 +220,6 @@ def compute_regression_metrics(
 
     return metrics
 
-
 def evaluate_model(
     model: Any,
     X: np.ndarray,
@@ -266,7 +261,6 @@ def evaluate_model(
     else:
         return compute_regression_metrics(y_true=y, y_pred=y_pred, include=include)
 
-
 def evaluate_multiple_datasets(
     datasets: Dict[str, Tuple[np.ndarray, np.ndarray]],
     model: Optional[Any] = None,
@@ -302,7 +296,6 @@ def evaluate_multiple_datasets(
             raise ValueError("Either `model` or `predictions` must be provided.")
     return results
 
-
 def compute_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.0) -> float:
     """
     Compute the Sharpe ratio given per-period returns and optional risk-free rate.
@@ -320,7 +313,6 @@ def compute_sharpe_ratio(returns: np.ndarray, risk_free_rate: float = 0.0) -> fl
         _logger.warning(f"⚠️ Sharpe ratio calculation failed: {e}")
         return 0.0
 
-
 __all__ = [
     "compute_classification_metrics",
     "compute_regression_metrics",
@@ -328,4 +320,3 @@ __all__ = [
     "evaluate_multiple_datasets",
     "compute_sharpe_ratio",
 ]
-

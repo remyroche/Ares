@@ -94,14 +94,14 @@ class CrossStepValidator:
     def validate_step_transition(self, from_step: str, to_step: str, input_data: pd.DataFrame, output_data: pd.DataFrame, step_metadata: Optional[Dict[str, Any]]=None) -> Dict[str, Any]:
         """
         Validate data consistency between pipeline steps.
-        
+
         Args:
             from_step: Name of the source step
             to_step: Name of the destination step
             input_data: Input DataFrame
             output_data: Output DataFrame
             step_metadata: Additional step metadata
-            
+
         Returns:
             Validation results dictionary
         """

@@ -1,10 +1,10 @@
-from typing import List
 from typing import Any
 from typing import Dict
-import pandas as pd
+from typing import List
 from typing import Optional
 from typing import Union
 import numpy as np
+import pandas as pd
 'Analyst model explainer for SHAP and LIME integration.\n\nThis module provides explainability for Analyst ensemble models, enabling\ntraceability of market analysis decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
 import logging

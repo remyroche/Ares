@@ -7,18 +7,18 @@ This module contains features related to price action analysis including:
 """
 
 from .bar_efficiency_ratio import (
-    BarEfficiencyRatioFeature, BarEfficiencyConfig, BarEfficiencyRatioGenerator, 
+    BarEfficiencyRatioFeature, BarEfficiencyConfig, BarEfficiencyRatioGenerator,
     calculate_bar_efficiency_features
 )
 from .close_location_value import (
-    CloseLocationValueFeature, CLVConfig, CloseLocationValueGenerator, 
+    CloseLocationValueFeature, CLVConfig, CloseLocationValueGenerator,
     calculate_clv_features
 )
 
 __all__ = [
     'BarEfficiencyRatioFeature',
     'BarEfficiencyConfig',
-    'BarEfficiencyRatioGenerator', 
+    'BarEfficiencyRatioGenerator',
     'calculate_bar_efficiency_features',
     'CloseLocationValueFeature',
     'CLVConfig',

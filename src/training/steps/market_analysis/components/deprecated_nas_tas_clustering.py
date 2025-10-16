@@ -331,17 +331,17 @@ class ClusteringContext:
     feature_scores: Dict[str, float] = field(default_factory=dict)
     pca_loading_scores: Dict[str, float] = field(default_factory=dict)
     pre_pca_feature_count: Optional[int] = None
-    
+
     def __enter__(self):
         """Context manager entry for memory management."""
         if self.memory_optimizer:
             self.memory_optimizer.start_monitoring()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with proper cleanup."""
         cleanup_errors = []
-        
+
         try:
             # Stop monitoring first
             if self.memory_optimizer:
@@ -349,7 +349,7 @@ class ClusteringContext:
                     self.memory_optimizer.stop_monitoring()
                 except Exception as e:
                     cleanup_errors.append(f"Failed to stop monitoring: {e}")
-            
+
             # Cleanup large arrays
             arrays_to_cleanup = [
                 self.original_features, self.optimized_features, self.optimized_assignments,
@@ -357,24 +357,24 @@ class ClusteringContext:
                 self.raw_assignments, self.smoothed_assignments
             ]
             valid_arrays = [arr for arr in arrays_to_cleanup if arr is not None]
-            
+
             if valid_arrays and self.memory_optimizer:
                 try:
                     self.memory_optimizer.cleanup_arrays(valid_arrays)
                 except Exception as e:
                     cleanup_errors.append(f"Failed to cleanup arrays: {e}")
-            
+
             # Force garbage collection
             import gc
             try:
                 gc.collect()
             except Exception as e:
                 cleanup_errors.append(f"Failed to run garbage collection: {e}")
-            
+
             # Log cleanup errors if any
             if cleanup_errors:
                 tprint_warning(f"Memory cleanup warnings: {'; '.join(cleanup_errors)}")
-            
+
             # Additional cleanup on exception
             if exc_type:
                 try:
@@ -386,14 +386,14 @@ class ClusteringContext:
                     self.raw_assignments = None
                     self.smoothed_assignments = None
                     self.memory_optimizer = None
-                    
+
                     # Force multiple garbage collection cycles
                     for _ in range(3):
                         gc.collect()
-                        
+
                 except Exception as e:
                     tprint_warning(f"Exception cleanup failed: {e}")
-                    
+
         except Exception as e:
             tprint_error(f"Critical error in context cleanup: {e}")
             # Last resort cleanup
@@ -411,24 +411,24 @@ class NASTASClusteringConfig(BaseConfig):
     # Empirical regime search bounds
     regime_search_min: int = 5
     regime_search_max: int = 15
-    
+
     # Clustering parameters
     n_regimes: int = 10  # Increased from 8 to 10 for more granular regimes
     # algorithm_type removed - always use custom progressive regime optimization
     enable_economic_clustering: bool = True
     enable_ensemble_clustering: bool = True
-    
+
     # Balance control parameters - ENHANCED for better balance
     max_regime_percentage: float = 0.15  # Maximum percentage for any single regime (reduced to 15% for better balance)
     min_regime_percentage: float = 0.05  # Minimum percentage for any single regime (reduced for better flexibility)
     balance_weight: float = 0.40  # Weight for balance in composite score (increased from 25% to 40% for better regime balance)
-    
+
     # Regime-focused clustering weights (removed momentum_weight)
     economic_weight: float = 0.25
     volatility_regime_weight: float = 0.30
     volume_regime_weight: float = 0.25
     structural_trend_weight: float = 0.20
-    
+
     # Regime-focused feature configuration
     feature_categories: List[str] = None
     use_regime_focused_features: bool = True
@@ -459,11 +459,11 @@ class NASTASClusteringConfig(BaseConfig):
     min_regime_persistence: Optional[float] = None
     max_feature_noise_ratio: Optional[float] = None
     min_temporal_stability: Optional[float] = None
-    
+
     # Output configuration
     output_dir: str = "data_cache"
     save_intermediate_results: bool = True
-    
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         self.regime_search_min = int(max(5, min(20, self.regime_search_min)))
@@ -505,7 +505,7 @@ class NASTASClusteringConfig(BaseConfig):
                 'statistical_regime': 30,
                 'regime_quality': 20,
             }
-        
+
         # Ensure n_regimes is within learned bounds
         if not (self.regime_search_min <= self.n_regimes <= self.regime_search_max):
             self.n_regimes = max(
@@ -525,7 +525,7 @@ class NASTASClusteringConfig(BaseConfig):
 class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     """
     NAS-TAS Clustering Component.
-    
+
     This component uses shared utilities to eliminate redundancy:
     - Uses shared feature preparation
     - Uses shared configuration validation
@@ -533,7 +533,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     - Uses shared metrics calculation
     - Uses shared regime characteristics generation
     """
-    
+
     def __init__(self, config: Optional[NASTASClusteringConfig] = None):
         """Initialize the NAS-TAS clustering component with enhanced capabilities."""
         with LoggingContext('NAS-TAS-Clustering', 'Initialization', verbose=True):
@@ -541,24 +541,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Use shared logging utilities
             self.logger = get_logger('NASTASClustering')
-            
+
             # Initialize shared utilities
             self.config_validator = ConfigValidator(verbose=True)
             self.metrics_calculator = MetricsCalculator(verbose=True)
             self.characteristics_generator = CharacteristicsGenerator(verbose=True)
-            
+
             # Initialize regime-focused feature configuration
             self.feature_config = FeatureConfig(
                 feature_categories=getattr(config, 'feature_categories', [
-                    'regime_volatility', 
-                    'regime_volume', 
-                    'regime_structural_trend', 
+                    'regime_volatility',
+                    'regime_volume',
+                    'regime_structural_trend',
                     'regime_statistical'
                 ]),
                 use_standardized_features=getattr(config, 'use_standardized_features', True),
                 drop_highly_correlated=True
             )
-            
+
             self.clustering_result = None
             self.execution_metadata = {}
 
@@ -606,32 +606,32 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             self.hardware_resources = resources
             self.matrix_ops = resources.matrix_ops
             self.vectorized_core = resources.vectorized_core
-            
+
             # Initialize M1 hardware optimizers
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()
             self.gpu_manager = get_m1_gpu_manager()
-            
+
             # Initialize ML Common optimizers
             if ML_COMMON_AVAILABLE:
                 self.bayesian_optimizer = BayesianTPEOptimizer() if BayesianTPEOptimizer else None
                 self.grid_optimizer = GridSearchOptimizer() if GridSearchOptimizer else None
                 self.hyperparameter_optimizer = HyperparameterOptimizer() if HyperparameterOptimizer else None
                 self.optuna_optimizer = OptunaOptimizer() if OptunaOptimizer else None
-                
+
                 # Initialize cross-validators
                 self.ts_cv = TimeSeriesCrossValidator() if TimeSeriesCrossValidator else None
                 self.regime_cv = RegimeAwareCrossValidator() if RegimeAwareCrossValidator else None
                 self.walk_forward_cv = WalkForwardValidator() if WalkForwardValidator else None
                 self.purged_cv = PurgedCrossValidator() if PurgedCrossValidator else None
-                
+
                 # Initialize validators
                 # Import ValidationConfig
                 from src.utils.ml_common.post_training.model_validation import ValidationConfig
                 self.model_validator = ModelValidator(ValidationConfig()) if ModelValidator else None
                 self.performance_validator = PerformanceValidator() if PerformanceValidator else None
                 self.stability_validator = StabilityValidator() if StabilityValidator else None
-                
+
                 # Initialize ensembles
                 self.ensemble_validator = EnsembleValidator() if EnsembleValidator else None
                 self.model_ensemble = ModelEnsemble() if ModelEnsemble else None
@@ -651,7 +651,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 self.ensemble_validator = None
                 self.model_ensemble = None
                 self.weighted_ensemble = None
-            
+
             # Performance monitoring
             self.performance_metrics = {
                 "start_time": None,
@@ -663,7 +663,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 "optimization_trials": 0,
                 "cv_folds": 0
             }
-            
+
             # Log initialization status
             tprint_structured({
                 "component": "NASTASClusteringComponent",
@@ -680,14 +680,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     "purged_cv": self.purged_cv is not None
                 }
             })
-            
+
             # Set hardware resources
             self.batch_processor = resources.batch_processor
             self.hardware_manager = resources.hardware_manager
             self.m1_gpu_optimizer = resources.m1_gpu_optimizer
             self.m1_memory_optimizer = resources.m1_memory_optimizer
             self.m1_cpu_optimizer = resources.m1_cpu_optimizer
-            
+
             # Initialize regime optimization service with proper label fusion service
             from ..regime_analysis.label_fusion import LabelFusionService
             label_fusion_service = LabelFusionService(logger=self._log)
@@ -696,27 +696,27 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 score_calculator=self._calculate_composite_score,
                 logger=self._log,
             )
-            
+
             tprint_success("🔍 NAS-TAS Clustering Component initialized with enhanced capabilities")
 
-    def run_advanced_cross_validation(self, features: np.ndarray, labels: np.ndarray, 
+    def run_advanced_cross_validation(self, features: np.ndarray, labels: np.ndarray,
                                      market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run advanced cross-validation with multiple strategies."""
         cv_results = {}
-        
+
         with tprint_timer("Advanced cross-validation"):
             try:
                 # Time Series Cross-Validation
                 if self.ts_cv:
                     with tprint_timer("Time Series CV"):
                         ts_results = self.ts_cv.cross_validate(
-                            features, labels, 
-                            n_splits=5, 
+                            features, labels,
+                            n_splits=5,
                             test_size=0.2
                         )
                         cv_results['time_series'] = ts_results
                         self.performance_metrics["cv_folds"] += 5
-                
+
                 # Regime-Aware Cross-Validation
                 if self.regime_cv:
                     with tprint_timer("Regime-Aware CV"):
@@ -727,7 +727,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         )
                         cv_results['regime_aware'] = regime_results
                         self.performance_metrics["cv_folds"] += 5
-                
+
                 # Walk-Forward Validation
                 if self.walk_forward_cv:
                     with tprint_timer("Walk-Forward CV"):
@@ -738,7 +738,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         )
                         cv_results['walk_forward'] = wf_results
                         self.performance_metrics["cv_folds"] += 5
-                
+
                 # Purged Cross-Validation
                 if self.purged_cv:
                     with tprint_timer("Purged CV"):
@@ -750,22 +750,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         )
                         cv_results['purged'] = purged_results
                         self.performance_metrics["cv_folds"] += 5
-                
+
                 # Calculate ensemble CV score
                 if cv_results:
                     tprint("⚠️ WARNING: _calculate_ensemble_cv_score is not defined - using fallback", "WARNING")
                     ensemble_score = 0.0  # Fallback value
                     cv_results['ensemble_score'] = ensemble_score
-                
+
                 tprint_structured({
                     "cv_complete": True,
                     "cv_methods": list(cv_results.keys()),
                     "total_folds": self.performance_metrics["cv_folds"],
                     "ensemble_score": cv_results.get('ensemble_score', 0.0)
                 })
-                
+
                 return cv_results
-                
+
             except Exception as exc:
                 tprint_error(f"Advanced cross-validation failed: {exc}")
                 return {}
@@ -773,7 +773,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     def _log(self, message: str, level: str = "INFO") -> None:
         """Log a message using the standard component logger."""
         tprint(message, level)
-    
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
@@ -1532,11 +1532,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Perform PID-based feature selection for regime discovery.
-        
+
         Reduces high-dimensional feature space using Partial Information Decomposition
         to identify features with high synergy, unique information, and low redundancy
         for robust regime clustering.
-        
+
         Args:
             feature_result: Stage 1 feature preparation result
             market_data: Market data with potential target labels
@@ -1566,12 +1566,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         # Always perform feature selection to ensure we have exactly target_n_features maximum
         tprint(f"🔍 FEATURE SELECTION: Starting with {n_features} features, target: {target_n_features}", color="cyan", bold=True)
         tprint(f"🔍 DEBUG: Feature selection input - stage1_df shape: {stage1_df.shape}", "INFO")
-        
+
         # Check if feature selection is needed
         if n_features <= target_n_features:
             tprint(f"✅ Feature count ({n_features}) already within target ({target_n_features}), but still performing selection for optimization", "INFO")
             # Don't skip - still perform selection for optimization
-        
+
         # Check dimensionality warning
         sample_to_feature_ratio = n_samples / n_features
         if sample_to_feature_ratio < 5.0:
@@ -1582,7 +1582,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"   • Performing PID-based feature selection to optimize for {target_n_features} features", color="cyan")
             else:
                 tprint(f"   • Performing PID-based feature selection to reduce to {target_n_features} features", color="cyan")
-        
+
         # Stage 1.1: Drop signal-like features according to configuration patterns
         signal_like_patterns = getattr(self.config, 'signal_like_patterns', None) or []
         compiled_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in signal_like_patterns]
@@ -1807,31 +1807,31 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
         tprint(f"🔍 DEBUG: Feature selection final output - projected_features shape: {projected_features.shape}", "INFO")
         return projected_features, selected_feature_names, metadata
-    
+
     def _regime_feature_generation(
-        self, 
-        features: np.ndarray, 
+        self,
+        features: np.ndarray,
         target_n_features: int
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Sequential feature selection pipeline targeting exactly 100 features.
-        
+
         Sequential Steps:
         1. RegimeFeatureIntegration (regime-specific features)
-        2. PID-based selection (high-dimensional reduction) 
+        2. PID-based selection (high-dimensional reduction)
         3. Variance-based selection (final optimization)
-        
+
         Args:
             features: Feature matrix
             target_n_features: Number of features to target (100)
-            
+
         Returns:
             Tuple of (selected_features, selected_feature_names, selection_metadata)
         """
         try:
             tprint("🔍 SEQUENTIAL FEATURE SELECTION: Starting 3-step pipeline", color="cyan", bold=True)
             tprint(f"🎯 TARGET: {target_n_features} features", color="green")
-            
+
             current_features = features.copy()
             current_feature_names = [f"feature_{i}" for i in range(features.shape[1])]
             selection_metadata = {
@@ -1839,7 +1839,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'original_n_features': features.shape[1],
                 'target_n_features': target_n_features
             }
-            
+
             # Step 1: Regime Feature Integration (regime-specific features)
             tprint("🔍 STEP 1: Regime Feature Integration", color="cyan")
             try:
@@ -1856,7 +1856,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 tprint(f"✅ STEP 1: {features.shape[1]} → {current_features.shape[1]} features", "SUCCESS")
             except Exception as e:
                 tprint(f"⚠️ STEP 1 failed: {e}, continuing with original features", "WARNING")
-            
+
             # Step 2: PID-based selection (if needed)
             if current_features.shape[1] > target_n_features:
                 tprint("🔍 STEP 2: PID-based selection", color="cyan")
@@ -1874,7 +1874,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"✅ STEP 2: {selection_metadata['sequential_steps'][-2]['features_after']} → {current_features.shape[1]} features", "SUCCESS")
                 except Exception as e:
                     tprint(f"⚠️ STEP 2 failed: {e}, continuing with current features", "WARNING")
-            
+
             # Step 3: Variance-based selection (final optimization)
             if current_features.shape[1] > target_n_features:
                 tprint("🔍 STEP 3: Variance-based selection (final optimization)", color="cyan")
@@ -1892,7 +1892,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"✅ STEP 3: {selection_metadata['sequential_steps'][-2]['features_after']} → {current_features.shape[1]} features", "SUCCESS")
                 except Exception as e:
                     tprint(f"⚠️ STEP 3 failed: {e}, using current features", "WARNING")
-            
+
             # Final result
             final_metadata = {
                 'selection_performed': True,
@@ -1903,10 +1903,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'sequential_steps': selection_metadata['sequential_steps'],
                 'pipeline_success': current_features.shape[1] <= target_n_features
             }
-            
+
             tprint(f"🎯 FINAL RESULT: {features.shape[1]} → {current_features.shape[1]} features (target: {target_n_features})", color="green", bold=True)
             return current_features, current_feature_names, final_metadata
-            
+
         except Exception as e:
             tprint(f"❌ Sequential feature selection failed: {e}", "ERROR")
             tprint(f"🔍 DEBUG: Sequential selection failure - input features: {features.shape}, target: {target_n_features}", "ERROR")
@@ -1915,37 +1915,37 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features, feature_names, {'selection_performed': False, 'error': str(e)}
 
     def _variance_based_feature_selection(
-        self, 
-        features: np.ndarray, 
+        self,
+        features: np.ndarray,
         target_n_features: int
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Fallback variance-based feature selection.
-        
+
         Args:
             features: Feature matrix
             target_n_features: Number of features to select
-            
+
         Returns:
             Tuple of (selected_features, selected_feature_names, selection_metadata)
         """
         try:
             tprint("🔍 Performing variance-based feature selection...", "INFO")
             tprint(f"🔍 VARIANCE SELECTION: Reducing {features.shape[1]} → {target_n_features} features", color="yellow")
-            
+
             # Calculate variance for each feature
             variances = np.var(features, axis=0)
             tprint(f"🔍 VARIANCE STATS: Min: {variances.min():.6f}, Max: {variances.max():.6f}, Mean: {variances.mean():.6f}", color="blue")
-            
+
             # Select top N features by variance, targeting 100 features
             actual_target = min(target_n_features, features.shape[1])  # Target 100 or all available features
             top_indices = np.argsort(variances)[::-1][:actual_target]
             selected_features = features[:, top_indices]
             selected_feature_names = [f"feature_{i}" for i in top_indices]
-            
+
             tprint(f"🔍 VARIANCE RESULT: Selected {len(top_indices)} features with highest variance (target: {target_n_features})", color="green")
             tprint(f"🎯 FINAL RESULT: Regime feature selection completed - {features.shape[1]} → {len(top_indices)} features", color="green", bold=True)
-            
+
             metadata = {
                 'selection_performed': True,
                 'method': 'variance_based',
@@ -1953,11 +1953,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'selected_n_features': len(top_indices),
                 'sample_to_feature_ratio_after': features.shape[0] / len(top_indices)
             }
-            
+
             tprint(f"✅ Variance-based selection: {features.shape[1]} → {len(top_indices)} features", "SUCCESS")
             tprint(f"🎯 FINAL RESULT: Feature selection completed - {features.shape[1]} → {len(top_indices)} features (target: {target_n_features})", color="green", bold=True)
             return selected_features, selected_feature_names, metadata
-            
+
         except Exception as e:
             tprint(f"❌ Variance-based selection failed: {e}", "ERROR")
             # Last resort: return original features
@@ -1965,120 +1965,120 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             return features, feature_names, {'selection_performed': False, 'error': str(e)}
 
     def _apply_regime_feature_integration(
-        self, 
-        features: np.ndarray, 
+        self,
+        features: np.ndarray,
         feature_names: List[str]
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Step 1: Apply regime feature integration for regime-specific features.
-        
+
         Args:
             features: Feature matrix
             feature_names: List of feature names
-            
+
         Returns:
             Tuple of (processed_features, processed_feature_names, metadata)
         """
         try:
             tprint("🔍 STEP 1: Applying regime feature integration...", "INFO")
-            
+
             # For now, return features as-is (regime feature integration would be applied here)
             # In a full implementation, this would use RegimeFeatureIntegration
             processed_features = features.copy()
             processed_feature_names = feature_names.copy()
-            
+
             metadata = {
                 'method': 'regime_feature_integration',
                 'features_processed': features.shape[1],
                 'regime_categories_applied': True,
                 'quality_filters_applied': True
             }
-            
+
             tprint(f"✅ STEP 1: Regime feature integration applied to {features.shape[1]} features", "SUCCESS")
             return processed_features, processed_feature_names, metadata
-            
+
         except Exception as e:
             tprint(f"❌ Regime feature integration failed: {e}", "ERROR")
             raise e
 
     def _apply_pid_selection(
-        self, 
-        features: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        features: np.ndarray,
+        feature_names: List[str],
         target_n_features: int
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Step 2: Apply PID-based selection for high-dimensional reduction.
-        
+
         Args:
             features: Feature matrix
             feature_names: List of feature names
             target_n_features: Target number of features
-            
+
         Returns:
             Tuple of (selected_features, selected_feature_names, metadata)
         """
         try:
             tprint("🔍 STEP 2: Applying PID-based selection...", "INFO")
-            
+
             if features.shape[1] <= target_n_features:
                 tprint(f"✅ STEP 2: No PID selection needed ({features.shape[1]} <= {target_n_features})", "SUCCESS")
                 return features, feature_names, {'method': 'pid_selection', 'skipped': True}
-            
+
             # Simplified PID-based selection using variance as proxy
             # In a full implementation, this would use actual PID calculations
             variances = np.var(features, axis=0)
             top_indices = np.argsort(variances)[::-1][:target_n_features]
-            
+
             selected_features = features[:, top_indices]
             selected_feature_names = [feature_names[i] for i in top_indices]
-            
+
             metadata = {
                 'method': 'pid_selection',
                 'features_before': features.shape[1],
                 'features_after': selected_features.shape[1],
                 'reduction_ratio': features.shape[1] / selected_features.shape[1]
             }
-            
+
             tprint(f"✅ STEP 2: PID selection {features.shape[1]} → {selected_features.shape[1]} features", "SUCCESS")
             return selected_features, selected_feature_names, metadata
-            
+
         except Exception as e:
             tprint(f"❌ PID selection failed: {e}", "ERROR")
             raise e
 
     def _apply_variance_selection(
-        self, 
-        features: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        features: np.ndarray,
+        feature_names: List[str],
         target_n_features: int
     ) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """
         Step 3: Apply variance-based selection for final optimization.
-        
+
         Args:
             features: Feature matrix
             feature_names: List of feature names
             target_n_features: Target number of features
-            
+
         Returns:
             Tuple of (selected_features, selected_feature_names, metadata)
         """
         try:
             tprint("🔍 STEP 3: Applying variance-based selection...", "INFO")
-            
+
             if features.shape[1] <= target_n_features:
                 tprint(f"✅ STEP 3: No variance selection needed ({features.shape[1]} <= {target_n_features})", "SUCCESS")
                 return features, feature_names, {'method': 'variance_selection', 'skipped': True}
-            
+
             # Calculate variance for each feature
             variances = np.var(features, axis=0)
-            
+
             # Select top N features by variance
             top_indices = np.argsort(variances)[::-1][:target_n_features]
             selected_features = features[:, top_indices]
             selected_feature_names = [feature_names[i] for i in top_indices]
-            
+
             metadata = {
                 'method': 'variance_selection',
                 'features_before': features.shape[1],
@@ -2089,10 +2089,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'mean': float(variances.mean())
                 }
             }
-            
+
             tprint(f"✅ STEP 3: Variance selection {features.shape[1]} → {selected_features.shape[1]} features", "SUCCESS")
             return selected_features, selected_feature_names, metadata
-            
+
         except Exception as e:
             tprint(f"❌ Variance selection failed: {e}", "ERROR")
             raise e
@@ -2121,18 +2121,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Calculate clustering metrics using shared utilities with defensive error handling."""
         try:
             tprint("Step 9: Calculating clustering metrics using shared utilities", "INFO")
-            
+
             # Extract assignments and other needed data
             cluster_assignments = clustering_result.get('cluster_assignments', [])
             cluster_centers = clustering_result.get('cluster_centers', [])
-            
+
             if not cluster_assignments:
                 tprint_warning("No cluster assignments found in clustering result")
                 return {"error": "no_assignments"}
-            
+
             # Convert to numpy array for processing
             assignments_array = np.array(cluster_assignments)
-            
+
             # Use shared metrics calculator
             # Note: consensus and disagreement metrics require two assignment arrays (TAS vs NAS)
             # For clustering-only metrics, we skip these and use other metrics
@@ -2145,7 +2145,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             stability_scores = self.metrics_calculator.calculate_stability_scores(
                 assignments_array
             )
-            
+
             # Compile metrics dictionary
             clustering_metrics = {
                 "economic_scores": economic_scores,
@@ -2162,10 +2162,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     else None,
                 },
             }
-            
+
             tprint("Clustering metrics calculated using shared utilities", "SUCCESS")
             return clustering_metrics
-            
+
         except Exception as exc:
             tprint_error(f"Failed to calculate clustering metrics: {exc}")
             # Return fallback metrics
@@ -2191,16 +2191,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Create consolidated artifacts from clustering outputs with comprehensive metadata."""
         try:
             tprint("Creating consolidated artifacts with comprehensive metadata", "INFO")
-            
+
             # Extract core clustering data
             cluster_assignments = clustering_result.get('cluster_assignments', [])
             cluster_centers = clustering_result.get('cluster_centers', [])
             n_clusters = clustering_result.get('n_clusters', 0)
             algorithm_used = clustering_result.get('algorithm_used', 'unknown')
-            
+
             # Extract optimization metadata
             optimization_metadata = clustering_result.get('optimization_metadata', {})
-            
+
             # Create comprehensive artifact structure
             self.execution_metadata['end_time'] = datetime.now().isoformat()
 
@@ -2247,20 +2247,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     if getattr(self, 'feature_projection_artifact_path', None)
                     else None,
                 },
-                
+
                 # Raw and smoothed assignments
                 'raw_assignments': cluster_assignments,
                 'smoothed_assignments': cluster_assignments,  # Same as raw for now
-                
+
                 # Clustering quality metrics
                 'clustering_quality': clustering_result.get('clustering_quality', {}),
-                
+
                 # Optimization metadata
                 'optimization_metadata': optimization_metadata,
-                
+
                 # Cluster characteristics
                 'cluster_characteristics': cluster_characteristics,
-                
+
                 # Comprehensive metrics
                 'clustering_metrics': clustering_metrics,
 
@@ -2297,7 +2297,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'calibration_loaded_from_state': False,
                     **execution_meta
                 },
-                
+
                 # Performance metrics
                 'performance_metrics': {
                     'memory_usage_mb': get_memory_usage() / (1024**2) if 'get_memory_usage' in globals() else 0.0,
@@ -2327,41 +2327,41 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Add consensus and disagreement metrics if available
             if 'consensus_metrics' in clustering_metrics:
                 artifacts['consensus_metrics'] = clustering_metrics['consensus_metrics']
-            
+
             if 'disagreement_metrics' in clustering_metrics:
                 artifacts['disagreement_metrics'] = clustering_metrics['disagreement_metrics']
-            
+
             # Add economic and trading scores if available
             if 'economic_scores' in clustering_metrics:
                 artifacts['economic_scores'] = clustering_metrics['economic_scores']
-            
+
             if 'trading_scores' in clustering_metrics:
                 artifacts['trading_scores'] = clustering_metrics['trading_scores']
-            
+
             # Add stability scores if available
             if 'stability_scores' in clustering_metrics:
                 artifacts['stability_scores'] = clustering_metrics['stability_scores']
-            
+
             # Add feature optimization metadata if available
             if 'feature_optimization' in optimization_metadata:
                 artifacts['feature_optimization'] = optimization_metadata['feature_optimization']
-            
+
             # Add feature selection metadata
             if hasattr(self, 'selection_metadata') and self.selection_metadata:
                 artifacts['feature_selection_metadata'] = self.selection_metadata
                 tprint(f"✅ Added feature selection metadata to artifacts", "SUCCESS")
-            
+
             # Add fusion metadata if available
             if 'fusion_metadata' in optimization_metadata:
                 artifacts['fusion_metadata'] = optimization_metadata['fusion_metadata']
-            
+
             # Add HMM smoothing metadata if available
             if 'hmm_transitions' in optimization_metadata:
                 artifacts['hmm_smoothing'] = {
                     'transitions': optimization_metadata['hmm_transitions'],
                     'smoothing_metadata': optimization_metadata.get('smoothing_metadata', {})
                 }
-            
+
             # Add HMM smoothing metadata if available in clustering_metrics
             if 'hmm_smoothing' in clustering_metrics:
                 artifacts['hmm_smoothing'] = clustering_metrics['hmm_smoothing']
@@ -2381,7 +2381,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             tprint("Consolidated artifacts created successfully", "SUCCESS")
             return artifacts
-            
+
         except Exception as exc:
             tprint_error(f"Failed to create consolidated artifacts: {exc}")
             # Return minimal fallback artifacts
@@ -2425,11 +2425,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute NAS-TAS clustering using shared utilities.
-        
+
         Args:
             data: Market data for clustering
             pipeline_state: Current pipeline state
-            
+
         Returns:
             ComponentResult with clustering results
         """
@@ -2437,22 +2437,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Store pipeline state as instance attribute for use in other methods
             self.pipeline_state = pipeline_state
             self._restore_learned_weights_from_state(pipeline_state)
-            
+
             # Step 1: Extract regime count from previous step artifacts BEFORE validation
             n_regimes = self._extract_regime_counts(pipeline_state)
             self.config.n_regimes = n_regimes
             tprint(f"Using extracted regime count: {n_regimes}", "INFO")
-            
+
             # Determine optimal algorithm_type based on data characteristics and regime discovery results
             if not hasattr(self.config, 'algorithm_type') or self.config.algorithm_type is None:
                 algorithm_type = self._determine_optimal_algorithm_type(pipeline_state, data)
                 self.config.algorithm_type = algorithm_type
                 tprint(f"Determined optimal algorithm_type: {algorithm_type}", "INFO")
-            
+
             # Input validation (after n_regimes and algorithm_type are set)
             self._validate_execution_inputs(data, pipeline_state)
             tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
-            
+
             # Initialize performance monitoring
             tprint("📊 Initializing performance monitoring...", "INFO")
             start_time = time.time()
@@ -2503,7 +2503,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint(f"🔍 DEBUG: Features shape before clustering: {features.shape}", "INFO")
             clustering_result = await self._perform_clustering(features, market_data)
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
-            
+
             # Display clustering metrics if available
             if 'silhouette_score' in clustering_result:
                 tprint(f"📊 Silhouette Score: {clustering_result['silhouette_score']:.4f}", "INFO")
@@ -2566,15 +2566,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'uses_shared_utilities': True
                 }
             )
-            
+
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
-            
+
             # Log comprehensive error information
             tprint_error(f'NAS-TAS Clustering failed: {e}')
             tprint_debug(f'Error details: {error_traceback}')
-            
+
             # Log structured error information
             error_info = {
                 "error_type": type(e).__name__,
@@ -2603,7 +2603,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'error_type': type(e).__name__
                 }
             )
-    
+
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and validate market data for clustering."""
         try:
@@ -2711,7 +2711,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             tprint("Clustering configuration created using shared utilities", "SUCCESS")
             return fallback_config
-            
+
         except Exception as e:
             tprint(f"Config creation failed: {e}, using defaults", "WARNING")
             # Use supported config type with necessary parameters
@@ -2753,29 +2753,29 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # - Temporal coherence smoothing
             # - Advanced regime optimization
             clustering_result = await self._perform_advanced_clustering(features, market_data)
-            
+
             tprint("Advanced clustering optimization completed", "SUCCESS")
             tprint(f"Clustering completed: {clustering_result['n_clusters']} clusters", "SUCCESS")
-            
+
             # Display comprehensive clustering metrics
             tprint("📊 === CLUSTERING QUALITY METRICS ===", "INFO")
-            
+
             # Standard clustering metrics
             if 'silhouette_score' in clustering_result:
                 silhouette = clustering_result['silhouette_score']
                 quality = "Excellent" if silhouette > 0.5 else "Good" if silhouette > 0.3 else "Fair" if silhouette > 0.1 else "Poor"
                 tprint(f"📊 Silhouette Score: {silhouette:.4f} ({quality})", "INFO")
-            
+
             if 'davies_bouldin_score' in clustering_result:
                 db_score = clustering_result['davies_bouldin_score']
                 quality = "Excellent" if db_score < 1.0 else "Good" if db_score < 2.0 else "Fair" if db_score < 3.0 else "Poor"
                 tprint(f"📊 Davies-Bouldin Index: {db_score:.4f} ({quality})", "INFO")
-            
+
             if 'calinski_harabasz_score' in clustering_result:
                 ch_score = clustering_result['calinski_harabasz_score']
                 quality = "Excellent" if ch_score > 1000 else "Good" if ch_score > 500 else "Fair" if ch_score > 100 else "Poor"
                 tprint(f"📊 Calinski-Harabasz Index: {ch_score:.2f} ({quality})", "INFO")
-            
+
             # Additional quality metrics
             if 'cv_score' in clustering_result:
                 cv_score = clustering_result['cv_score']
@@ -2799,52 +2799,52 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"📊 CV Quality: {cv_quality} (higher ratio indicates better cluster separation)", "INFO")
                 else:
                     tprint(f"📊 Cross-Validation Score: {cv_score:.4f}", "INFO")
-            
+
             if 'temporal_smoothness' in clustering_result:
                 temporal = clustering_result['temporal_smoothness']
                 quality = "Excellent" if temporal > 0.7 else "Good" if temporal > 0.5 else "Fair" if temporal > 0.3 else "Poor"
                 tprint(f"📊 Temporal Consistency: {temporal:.4f} ({quality})", "INFO")
-            
+
             if 'regime_balance' in clustering_result:
                 balance = clustering_result['regime_balance']
                 quality = "Excellent" if balance > 0.8 else "Good" if balance > 0.6 else "Fair" if balance > 0.4 else "Poor"
                 tprint(f"📊 Regime Balance: {balance:.4f} ({quality})", "INFO")
-            
+
             # Calculate and display composite score
             composite_score = 0.0
             # ENHANCED: Shifted weights to prioritize Silhouette and CV over balance for better cluster quality
             weights = {'silhouette': 0.40, 'davies_bouldin': 0.15, 'cv': 0.30, 'temporal': 0.10, 'balance': 0.05}
             components = []
-            
+
             if 'silhouette_score' in clustering_result:
                 silhouette = clustering_result['silhouette_score']
                 composite_score += silhouette * weights['silhouette']
                 components.append(f"Silhouette: {silhouette:.3f}")
-            
+
             if 'davies_bouldin_score' in clustering_result:
                 db_score = clustering_result['davies_bouldin_score']
                 # Invert Davies-Bouldin (lower is better) and normalize
                 db_normalized = max(0, 1 - (db_score / 5.0))  # Normalize to 0-1 range
                 composite_score += db_normalized * weights['davies_bouldin']
                 components.append(f"DB: {db_score:.3f}→{db_normalized:.3f}")
-            
+
             if 'cv_score' in clustering_result:
                 cv_score = clustering_result['cv_score']
                 # Normalize CV score for composite calculation (higher is better)
                 cv_normalized = min(1.0, cv_score)  # Cap at 1.0 for composite score
                 composite_score += cv_normalized * weights['cv']
                 components.append(f"CV: {cv_score:.3f}")
-            
+
             if 'temporal_smoothness' in clustering_result:
                 temporal = clustering_result['temporal_smoothness']
                 composite_score += temporal * weights['temporal']
                 components.append(f"Temporal: {temporal:.3f}")
-            
+
             if 'regime_balance' in clustering_result:
                 balance = clustering_result['regime_balance']
                 composite_score += balance * weights['balance']
                 components.append(f"Balance: {balance:.3f}")
-            
+
             composite_quality = "Excellent" if composite_score > 0.8 else "Good" if composite_score > 0.6 else "Fair" if composite_score > 0.4 else "Poor"
             tprint(f"📊 Composite Score: {composite_score:.4f} ({composite_quality})", "INFO")
             tprint(f"📊 Components: {', '.join(components)}", "INFO")
@@ -2887,35 +2887,35 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"Clustering failed: {e}", "ERROR")
             raise ValueError(f"Clustering failed: {e}")
-    
+
     def _optimize_regime_balance(self, assignments: np.ndarray, features: np.ndarray) -> np.ndarray:
         """Optimize regime balance while maintaining silhouette quality."""
         try:
             from sklearn.metrics import silhouette_score
-            
+
             optimized_assignments = assignments.copy()
             n_samples = len(assignments)
             unique_regimes = np.unique(assignments)
             n_regimes = len(unique_regimes)
-            
+
             # Calculate current regime sizes
             regime_counts = np.bincount(assignments)
             regime_percentages = regime_counts / n_samples
-            
+
             # Target balanced regime sizes
             target_size = n_samples / n_regimes
             tolerance = 0.1  # 10% tolerance
-            
+
             # Iteratively rebalance while maintaining silhouette quality
             for iteration in range(10):  # Max 10 iterations
                 current_silhouette = silhouette_score(features, optimized_assignments)
                 improved = False
-                
+
                 # Apply cluster splitting after each iteration
                 if iteration > 0:  # Skip first iteration to allow initial balance
                     tprint(f"🔍 Applying cluster splitting after iteration {iteration}...", "INFO")
                     split_assignments, split_k, split_stats = self._smart_cluster_splitting_decision(optimized_assignments, features, n_regimes, iteration, current_silhouette)
-                    
+
                     if split_k > n_regimes:
                         tprint(f"📈 Cluster splitting created {split_k - n_regimes} new clusters in iteration {iteration}", "SUCCESS")
                         optimized_assignments = split_assignments
@@ -2925,22 +2925,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         regime_counts = np.bincount(optimized_assignments)
                         regime_percentages = regime_counts / n_samples
                         target_size = n_samples / n_regimes
-                
+
                 for regime in unique_regimes:
                     regime_mask = optimized_assignments == regime
                     regime_size = np.sum(regime_mask)
                     regime_percentage = regime_size / n_samples
-                    
+
                     # If regime is too large, try to move samples to smaller regimes
                     if regime_percentage > (1.0 / n_regimes) * (1 + tolerance):
                         # Find smaller regimes
-                        smaller_regimes = [r for r in unique_regimes if r != regime and 
+                        smaller_regimes = [r for r in unique_regimes if r != regime and
                                         np.sum(optimized_assignments == r) < target_size * (1 + tolerance)]
-                        
+
                         if smaller_regimes:
                             # Move some samples to the smallest regime
                             target_regime = min(smaller_regimes, key=lambda r: np.sum(optimized_assignments == r))
-                            
+
                             # Find samples that are closest to the target regime centroid
                             regime_samples = np.where(regime_mask)[0]
                             if len(regime_samples) > 1:
@@ -2948,27 +2948,27 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                                 regime_centroid = np.mean(features[regime_mask], axis=0)
                                 distances = np.linalg.norm(features[regime_samples] - regime_centroid, axis=1)
                                 sample_to_move = regime_samples[np.argmax(distances)]
-                                
+
                                 # Test the move
                                 test_assignments = optimized_assignments.copy()
                                 test_assignments[sample_to_move] = target_regime
                                 test_silhouette = silhouette_score(features, test_assignments)
-                                
+
                                 # Accept move if silhouette doesn't decrease significantly
                                 if test_silhouette >= current_silhouette * 0.95:  # Allow 5% decrease
                                     optimized_assignments = test_assignments
                                     improved = True
                                     break
-                
+
                 if not improved:
                     break
-            
+
             return optimized_assignments
-            
+
         except Exception as e:
             tprint(f"Regime balance optimization failed: {e}", "WARNING")
             return assignments
-    
+
     async def _perform_advanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform advanced clustering using progressive regime optimization."""
         try:
@@ -3016,7 +3016,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 pre_reallocation_k = len(np.unique(context.optimized_assignments))
                 pre_reallocation_J = self._compute_unified_objective(context.optimized_features, context.optimized_assignments, pre_reallocation_k)
                 tprint(f"🔍 PRE-REALLOCATION VALIDATION: k={pre_reallocation_k}, J={pre_reallocation_J:.4f}", "INFO")
-                
+
                 # Perform iterative reallocation during optimization process
                 optimized_assignments, reallocation_stats = self._integrate_reallocation_in_optimization(
                     context.optimized_features, context.optimized_assignments, neighborhood_results
@@ -3029,7 +3029,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 post_reallocation_J = self._compute_unified_objective(context.optimized_features, optimized_assignments, post_reallocation_k)
                 delta_J_reallocation = post_reallocation_J - pre_reallocation_J
                 tprint(f"🔍 POST-REALLOCATION VALIDATION: k={pre_reallocation_k}→{post_reallocation_k}, J={post_reallocation_J:.4f}, ΔJ={delta_J_reallocation:.4f}", "INFO")
-                
+
                 # Alert if excessive reallocation
                 reallocated_count = reallocation_stats.get('reallocated_points', 0)
                 reallocation_rate = reallocated_count / len(context.optimized_assignments) if len(context.optimized_assignments) > 0 else 0.0
@@ -3042,7 +3042,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"✅ Integrated {reallocated_count} reallocations into optimization (rate: {reallocation_rate:.1%})", "SUCCESS")
             else:
                 tprint("ℹ️ Samples reallocation disabled via config", "INFO")
-            
+
             # Final summary and artifact packaging
             clustering_result = self._summarize_results(context, market_data)
 
@@ -3054,23 +3054,23 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Fast-fail: Do not fall back to basic clustering
             tprint("Progressive regime optimization failed - fast failing to prevent suboptimal clustering", "ERROR")
             raise ValueError(f"Progressive regime optimization failed: {e}. Fast failing to prevent suboptimal clustering.")
-    
+
     def _extract_and_optimize_regimes_with_splitting(self, context: ClusteringContext, optimal_k: int = 6) -> None:
         """Extract TAS/NAS regime assignments and apply dynamic iterative convergence with cluster splitting."""
         try:
             tprint("Step 2: Extracting TAS/NAS assignments and applying enhanced iterative convergence with splitting...", "INFO")
             features = context.optimized_features
-            
+
             if features is None:
                 raise ValueError("Optimized features are required for regime optimization")
-            
+
             # Step 2a: Extract TAS and NAS regime assignments
             tprint("Step 2a: Extracting TAS and NAS regime assignments...", "INFO")
             tas_assignments, nas_assignments = self._extract_regime_assignments()
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
             tprint(f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
-            
+
             # Step 2b: Initialize with optimal K from stability analysis
             tprint(f"Step 2b: Initializing clustering with optimal K={optimal_k}...", "INFO")
 
@@ -3082,72 +3082,72 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Step 2c: Apply cluster splitting optimization if needed
             tprint("🔍 Step 2c: Applying cluster splitting optimization...", "INFO")
             n_initial_clusters = optimal_k
-            
+
             # VALIDATION: Log pre-split state
             tprint(f"🔍 PRE-SPLIT VALIDATION: k={n_initial_clusters}, n_samples={len(features)}", "INFO")
             current_J = self._compute_unified_objective(features, initial_assignments, n_initial_clusters)
             tprint(f"🔍 PRE-SPLIT OBJECTIVE: J={current_J:.4f}", "INFO")
-            
+
             # Calculate baseline score for cluster splitting
             from sklearn.metrics import silhouette_score, davies_bouldin_score
             baseline_silhouette = silhouette_score(features, initial_assignments)
             baseline_dbi = davies_bouldin_score(features, initial_assignments)
             tprint(f"🔍 PRE-SPLIT METRICS: Silhouette={baseline_silhouette:.3f}, DBI={baseline_dbi:.3f}", "INFO")
-            
+
             # Log cluster size distribution
             cluster_sizes = np.bincount(initial_assignments)
             min_size = np.min(cluster_sizes)
             max_size = np.max(cluster_sizes)
             mean_size = np.mean(cluster_sizes)
             tprint(f"🔍 PRE-SPLIT CLUSTER SIZES: min={min_size}, max={max_size}, mean={mean_size:.1f}", "INFO")
-            
+
             split_assignments, n_final_clusters, split_stats = self._smart_cluster_splitting_decision(
                 initial_assignments, features, n_initial_clusters, 0, baseline_silhouette
             )
-            
+
             # VALIDATION: Log post-split state
             tprint(f"🔍 POST-SPLIT VALIDATION: k={n_initial_clusters}→{n_final_clusters}", "INFO")
             final_J = self._compute_unified_objective(features, split_assignments, n_final_clusters)
             delta_J = final_J - current_J
             tprint(f"🔍 POST-SPLIT OBJECTIVE: J={final_J:.4f}, ΔJ={delta_J:.4f}", "INFO")
-            
+
             # Log final metrics
             final_silhouette = silhouette_score(features, split_assignments)
             final_dbi = davies_bouldin_score(features, split_assignments)
             tprint(f"🔍 POST-SPLIT METRICS: Silhouette={final_silhouette:.3f}, DBI={final_dbi:.3f}", "INFO")
-            
+
             # Log cluster size distribution after splits
             final_cluster_sizes = np.bincount(split_assignments)
             final_min_size = np.min(final_cluster_sizes)
             final_max_size = np.max(final_cluster_sizes)
             final_mean_size = np.mean(final_cluster_sizes)
             tprint(f"🔍 POST-SPLIT CLUSTER SIZES: min={final_min_size}, max={final_max_size}, mean={final_mean_size:.1f}", "INFO")
-            
+
             # Alert if k explosion detected
             if n_final_clusters > n_initial_clusters * 2:
                 tprint(f"🚨 ALERT: K explosion detected! {n_initial_clusters} → {n_final_clusters} (2x+ increase)", "WARNING")
             elif n_final_clusters > n_initial_clusters + 3:
                 tprint(f"⚠️ WARNING: Large k increase: {n_initial_clusters} → {n_final_clusters}", "WARNING")
-            
+
             if n_final_clusters > n_initial_clusters:
                 tprint(f"📈 Cluster splitting created {n_final_clusters - n_initial_clusters} new clusters ({n_initial_clusters} → {n_final_clusters})", "SUCCESS")
                 optimized_assignments = split_assignments
             else:
                 tprint(f"📊 No cluster splitting needed (clusters remain at {n_initial_clusters})", "INFO")
                 optimized_assignments = initial_assignments
-            
+
             # Store final assignments
             context.optimized_assignments = optimized_assignments
             context.smoothed_assignments = optimized_assignments  # Set smoothed assignments for summarization
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
-            
+
             tprint(f"Regime optimization completed with {n_final_clusters} final clusters", "SUCCESS")
-            
+
         except Exception as e:
             tprint(f"Regime optimization with splitting failed: {e}", "ERROR")
             raise ValueError(f"Regime optimization with splitting failed: {e}")
-    
+
     def _optimize_features(self, context: ClusteringContext) -> None:
         """Optimize features using data-driven dimensionality reduction."""
         try:
@@ -3210,13 +3210,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 context.pca_loading_scores = {f"umap_{i}": 1.0 for i in range(features_final.shape[1])}
                 if context.feature_scores:
                     context.feature_scores = {f"umap_{i}": 1.0 for i in range(features_final.shape[1])}
-                
+
                 tprint(f"UMAP feature optimization: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
                 self.optimized_features = features_final
                 self.feature_names = context.optimized_feature_names
                 if hasattr(self, 'feature_scores') and isinstance(self.feature_scores, dict):
                     self.feature_scores = context.feature_scores
-                
+
                 self._safe_memory_cleanup([features_scaled, umap_features])
                 return
 
@@ -3224,7 +3224,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Using PCA for dimensionality reduction", "INFO")
             pca = PCA(n_components=min(20, features_scaled.shape[1] - 1))
             features_pca = pca.fit_transform(features_scaled)
-            
+
             features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
             context.optimized_features = features_final
             context.optimized_feature_names = [f"pca_{i}" for i in range(features_final.shape[1])]
@@ -3232,13 +3232,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             context.pca_loading_scores = {f"pca_{i}": float(pca.explained_variance_ratio_[i]) for i in range(features_final.shape[1])}
             if context.feature_scores:
                 context.feature_scores = {f"pca_{i}": float(pca.explained_variance_ratio_[i]) for i in range(features_final.shape[1])}
-            
+
             tprint(f"PCA feature optimization: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
             self.optimized_features = features_final
             self.feature_names = context.optimized_feature_names
             if hasattr(self, 'feature_scores') and isinstance(self.feature_scores, dict):
                 self.feature_scores = context.feature_scores
-            
+
             self._safe_memory_cleanup([features_scaled, features_pca])
 
         except Exception as e:
@@ -3540,15 +3540,15 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             reallocated_assignments = assignments.copy()
             reallocation_count = 0
             n_samples = len(assignments)
-            
+
             # Throttling constraints
             max_moves_per_round = max(2, int(0.05 * n_samples))  # Cap at 5% of N
             neighbor_consensus_threshold = 0.7  # Require 70% neighbor consensus
             margin_improvement_threshold = 0.05  # Require 5% margin improvement
-            
+
             # Track moved points to prevent immediate re-moves (hysteresis)
             moved_points = set()
-            
+
             # Compute current objective for comparison
             current_k = len(np.unique(assignments))
             current_J = self._compute_unified_objective(features, assignments, current_k)
@@ -3556,11 +3556,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             for i in np.where(misclustered_mask)[0]:
                 if len(moved_points) >= max_moves_per_round:
                     break
-                    
+
                 # Skip if recently moved (hysteresis)
                 if i in moved_points:
                     continue
-                            
+
                         # Find better cluster for this misclustered point
                         distances, indices = nn.kneighbors(features[i:i+1])
                         neighbor_indices = indices[0][1:]  # Exclude self
@@ -3572,14 +3572,14 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         # Find most common cluster among neighbors
                         unique_clusters, counts = np.unique(neighbor_assignments, return_counts=True)
                         consensus_ratio = np.max(counts) / len(neighbor_assignments)
-                        
+
                         # Require neighbor consensus
                         if consensus_ratio < neighbor_consensus_threshold:
                             continue
-                            
+
                         best_neighbor_cluster = unique_clusters[np.argmax(counts)]
                         current_cluster = assignments[i]
-                        
+
                         # Only reallocate if different cluster
                         if best_neighbor_cluster == current_cluster:
                             continue
@@ -3587,16 +3587,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         # Test the move: compute objective improvement
                         test_assignments = reallocated_assignments.copy()
                         test_assignments[i] = best_neighbor_cluster
-                        
+
                         # Compute margin improvement
                         current_local_score = local_scores[i]
                         test_local_score = self._compute_local_silhouette(features, test_assignments, i)
                         margin_improvement = test_local_score - current_local_score
-                        
+
                         # Require margin improvement
                         if margin_improvement < margin_improvement_threshold:
                             continue
-                            
+
                         # Check if target cluster has good local cohesion
                         cluster_local_stats = local_silhouette['cluster_local_stats'].get(best_neighbor_cluster, {})
                         target_local_sil = cluster_local_stats.get('mean_local_silhouette', 0.0)
@@ -3606,19 +3606,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             reallocated_assignments[i] = best_neighbor_cluster
                             reallocation_count += 1
                             moved_points.add(i)
-                            
+
                             # Rebuild kNN if too many changes
                             if len(moved_points) % max(1, int(0.15 * n_samples)) == 0:
                                 nn.fit(features)
 
                     tprint(f"✅ Reallocated {reallocation_count}/{n_misclustered} misclustered points "
                            f"(consensus≥{neighbor_consensus_threshold}, margin≥{margin_improvement_threshold})", "SUCCESS")
-                    
+
                     # Compute final objective improvement
                     final_k = len(np.unique(reallocated_assignments))
                     final_J = self._compute_unified_objective(features, reallocated_assignments, final_k)
                     delta_J = final_J - current_J
-                    
+
                     tprint(f"📊 Reallocation impact: ΔJ={delta_J:.4f}, k={current_k}→{final_k}", "INFO")
 
                     return reallocated_assignments, {
@@ -4415,21 +4415,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             from sklearn.metrics import adjusted_rand_score
             from sklearn.metrics import silhouette_score, davies_bouldin_score
             from sklearn.mixture import BayesianGaussianMixture
-            
+
             k_min, k_max = k_range
             k_values = range(k_min, k_max + 1)
             n_samples, n_features = features.shape
-            
+
             tprint(f"🔍 Performing bootstrap stability analysis for k={k_min}-{k_max}...", "INFO")
-            
+
             # Get VBGMM upper bound first
-            vbgmm = BayesianGaussianMixture(n_components=min(20, n_samples//100), 
+            vbgmm = BayesianGaussianMixture(n_components=min(20, n_samples//100),
                                            max_iter=100, random_state=42)
             vbgmm.fit(features)
             vbgmm_components = np.sum(vbgmm.weights_ > 0.01)  # Active components
             k_max = min(k_max, vbgmm_components, 12)
             tprint(f"🔍 VBGMM suggests max {vbgmm_components} components, capping at {k_max}", "INFO")
-            
+
             stability_results = {
                 'k_values': list(range(k_min, k_max + 1)),
                 'ari_scores': [],
@@ -4441,7 +4441,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'best_k': None,
                 'best_ari': -1.0
             }
-            
+
             for k in range(k_min, k_max + 1):
                 try:
                     # Bootstrap stability analysis
@@ -4452,38 +4452,38 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     min_sizes = []
                     regime_balances = []
                     temporal_consistencies = []
-                    
+
                     for b in range(B):
                         # Sample ~80% of rows (time slices)
                         sample_size = int(0.8 * n_samples)
                         sample_indices = np.random.choice(n_samples, size=sample_size, replace=False)
                         features_sample = features[sample_indices]
-                        
+
                         # Fit clustering
                         kmeans = KMeans(n_clusters=k, random_state=42 + b, n_init=10)
                         labels_sample = kmeans.fit_predict(features_sample)
-                        
+
                         if len(np.unique(labels_sample)) > 1:
                             # Compute metrics
                             sil_score = silhouette_score(features_sample, labels_sample)
                             dbi_score = davies_bouldin_score(features_sample, labels_sample)
-                            
+
                             silhouette_runs.append(sil_score)
                             dbi_runs.append(dbi_score)
-                            
+
                             # Cluster size constraints
                             cluster_sizes = np.bincount(labels_sample)
                             min_size = np.min(cluster_sizes)
                             min_sizes.append(min_size)
-                            
+
                             # Regime balance (if we have regime info)
                             regime_balance = self._compute_regime_balance(labels_sample)
                             regime_balances.append(regime_balance)
-                            
+
                             # Temporal consistency (simplified proxy)
                             temporal_consistency = self._compute_temporal_consistency(labels_sample, sample_indices)
                             temporal_consistencies.append(temporal_consistency)
-                    
+
                     # Compute pairwise ARI across bootstrap runs
                     if len(silhouette_runs) >= 2:
                         # For ARI, we need to compare different bootstrap runs
@@ -4491,35 +4491,35 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         ari_proxy = 1.0 - np.std(silhouette_runs) if len(silhouette_runs) > 1 else 0.0
                     else:
                         ari_proxy = 0.0
-                    
+
                     # Average metrics
                     avg_silhouette = np.mean(silhouette_runs) if silhouette_runs else -1.0
                     avg_dbi = np.mean(dbi_runs) if dbi_runs else float('inf')
                     avg_min_size = np.mean(min_sizes) if min_sizes else 0
                     avg_regime_balance = np.mean(regime_balances) if regime_balances else 0.0
                     avg_temporal_consistency = np.mean(temporal_consistencies) if temporal_consistencies else 0.0
-                    
+
                     stability_results['ari_scores'].append(ari_proxy)
                     stability_results['silhouette_scores'].append(avg_silhouette)
                     stability_results['dbi_scores'].append(avg_dbi)
                     stability_results['min_cluster_sizes'].append(avg_min_size)
                     stability_results['regime_balances'].append(avg_regime_balance)
                     stability_results['temporal_consistencies'].append(avg_temporal_consistency)
-                    
+
                     # Check acceptance constraints
                     min_cluster_size_ok = avg_min_size >= max(25, 0.005 * n_samples)
                     regime_balance_ok = avg_regime_balance >= 0.7
                     temporal_consistency_ok = avg_temporal_consistency >= 0.3
-                    
+
                     if min_cluster_size_ok and regime_balance_ok and temporal_consistency_ok:
                         if ari_proxy > stability_results['best_ari']:
                             stability_results['best_ari'] = ari_proxy
                             stability_results['best_k'] = k
-                    
+
                     tprint(f"   K={k}: ARI={ari_proxy:.3f}, Sil={avg_silhouette:.3f}, DBI={avg_dbi:.3f}, "
                            f"MinSize={avg_min_size:.0f}, Balance={avg_regime_balance:.3f}, "
                            f"Temporal={avg_temporal_consistency:.3f}", "INFO")
-                    
+
                 except Exception as e:
                     tprint(f"   K={k}: Failed - {e}", "WARNING")
                     stability_results['ari_scores'].append(0.0)
@@ -4528,13 +4528,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     stability_results['min_cluster_sizes'].append(0)
                     stability_results['regime_balances'].append(0.0)
                     stability_results['temporal_consistencies'].append(0.0)
-            
+
             # Find optimal k
             optimal_k = self._find_optimal_k_robust(stability_results, n_samples)
-            
+
             tprint(f"✅ K stability analysis complete. Optimal K: {optimal_k} (ARI={stability_results['best_ari']:.3f})", "SUCCESS")
             return optimal_k, stability_results
-            
+
         except Exception as e:
             tprint(f"K stability analysis failed: {e}", "ERROR")
             return 6, {'error': str(e)}  # Fallback to 6 clusters
@@ -4577,81 +4577,81 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             min_sizes = stability_results['min_cluster_sizes']
             regime_balances = stability_results['regime_balances']
             temporal_consistencies = stability_results['temporal_consistencies']
-            
+
             # Filter by constraints
             valid_k = []
             for i, k in enumerate(k_values):
                 min_size_ok = min_sizes[i] >= max(25, 0.005 * n_samples)
                 regime_balance_ok = regime_balances[i] >= 0.7
                 temporal_consistency_ok = temporal_consistencies[i] >= 0.3
-                
+
                 if min_size_ok and regime_balance_ok and temporal_consistency_ok:
                     valid_k.append((k, ari_scores[i], silhouette_scores[i]))
-            
+
             if not valid_k:
                 # Fallback: use best silhouette with relaxed constraints
                 best_sil_idx = np.argmax(silhouette_scores)
                 return k_values[best_sil_idx]
-            
+
             # Choose k with highest ARI among valid candidates
             valid_k.sort(key=lambda x: x[1], reverse=True)  # Sort by ARI
             optimal_k = valid_k[0][0]
-            
+
             return min(max(optimal_k, 3), 12)  # Constrain between 3-12
-            
+
         except Exception:
             return 6  # Safe fallback
 
-    def _compute_unified_objective(self, features: np.ndarray, assignments: np.ndarray, k: int, 
+    def _compute_unified_objective(self, features: np.ndarray, assignments: np.ndarray, k: int,
                                  k_max: int = 12) -> float:
         """Compute unified objective J with complexity penalty."""
         try:
             from sklearn.metrics import silhouette_score, davies_bouldin_score
             from sklearn.cluster import KMeans
-            
+
             # Weights for objective components
             w_cv = 0.45      # CV ratio weight
-            w_t = 0.30       # Temporal weight  
+            w_t = 0.30       # Temporal weight
             w_b = 0.10       # Balance weight
             w_s = 0.10       # Silhouette weight
             w_d = 0.05       # DBI weight
             lambda_k = 0.25  # Complexity penalty weight
-            
+
             # Compute CV ratio (simplified proxy)
             cv_ratio = self._compute_cv_ratio(features, assignments)
             cv_component = w_cv * np.clip(cv_ratio, 0, 3)
-            
+
             # Compute temporal consistency
             temporal_score = self._compute_temporal_score(assignments)
             temporal_component = w_t * temporal_score
-            
+
             # Compute balance score
             balance_score = self._compute_balance_score(assignments)
             balance_component = w_b * balance_score
-            
+
             # Compute silhouette score
             if len(np.unique(assignments)) > 1:
                 silhouette = silhouette_score(features, assignments)
                 silhouette_component = w_s * np.clip(silhouette, -0.2, 0.5)
             else:
                 silhouette_component = 0.0
-            
+
             # Compute DBI score (negative because lower is better)
             if len(np.unique(assignments)) > 1:
                 dbi = davies_bouldin_score(features, assignments)
                 dbi_component = -w_d * np.clip(dbi, 0, 5)
             else:
                 dbi_component = 0.0
-            
+
             # Complexity penalty
             complexity_penalty = -lambda_k * (k - 1) / k_max
-            
+
             # Total objective
-            J = (cv_component + temporal_component + balance_component + 
+            J = (cv_component + temporal_component + balance_component +
                  silhouette_component + dbi_component + complexity_penalty)
-            
+
             return J
-            
+
         except Exception as e:
             tprint(f"Unified objective computation failed: {e}", "ERROR")
             return 0.0
@@ -4661,46 +4661,46 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             if len(np.unique(assignments)) <= 1:
                 return 0.0
-            
+
             # Compute within-cluster variance
             within_var = 0.0
             total_points = 0
-            
+
             for cluster_id in np.unique(assignments):
                 cluster_mask = assignments == cluster_id
                 cluster_points = features[cluster_mask]
-                
+
                 if len(cluster_points) > 1:
                     cluster_var = np.var(cluster_points)
                     within_var += cluster_var * len(cluster_points)
                     total_points += len(cluster_points)
-            
+
             if total_points == 0:
                 return 0.0
-            
+
             within_var /= total_points
-            
+
             # Compute between-cluster variance (simplified)
             overall_mean = np.mean(features, axis=0)
             between_var = 0.0
-            
+
             for cluster_id in np.unique(assignments):
                 cluster_mask = assignments == cluster_id
                 cluster_points = features[cluster_mask]
-                
+
                 if len(cluster_points) > 0:
                     cluster_mean = np.mean(cluster_points, axis=0)
                     between_var += len(cluster_points) * np.sum((cluster_mean - overall_mean) ** 2)
-            
+
             if total_points > 0:
                 between_var /= total_points
-            
+
             # CV ratio = between / within
             if within_var > 0:
                 return between_var / within_var
             else:
                 return 0.0
-                
+
         except:
             return 0.0
 
@@ -4709,13 +4709,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             if len(assignments) < 2:
                 return 0.0
-            
+
             # Count consecutive same labels
             consecutive_same = 0
             for i in range(1, len(assignments)):
                 if assignments[i] == assignments[i-1]:
                     consecutive_same += 1
-            
+
             return consecutive_same / (len(assignments) - 1)
         except:
             return 0.0
@@ -4725,18 +4725,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             if len(assignments) == 0:
                 return 0.0
-            
+
             cluster_sizes = np.bincount(assignments)
             if len(cluster_sizes) == 0:
                 return 0.0
-            
+
             # Balance = 1 - coefficient of variation
             mean_size = np.mean(cluster_sizes)
             std_size = np.std(cluster_sizes)
-            
+
             if mean_size == 0:
                 return 0.0
-            
+
             return max(0.0, 1.0 - (std_size / mean_size))
         except:
             return 0.0
@@ -4790,7 +4790,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 2: Apply PCA and prune near-zero contributors using loading scores
             tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
-            
+
             # Use more aggressive feature pruning to target 15-25 features
             target_features = min(25, max(5, context.original_features.shape[1] // 6))
             tprint(f"🔍 DEBUG: PCA input - {features_scaled.shape[1]} features, target reduction to {target_features} features", "INFO")
@@ -4966,58 +4966,58 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Input validation
             if features is None:
                 raise ValueError("Features cannot be None")
-            
+
             if not isinstance(features, np.ndarray):
                 raise ValueError(f"Features must be numpy array, got {type(features)}")
-            
+
             if len(features.shape) != 2:
                 raise ValueError(f"Features must be 2D array, got shape {features.shape}")
-            
+
             original_shape = features.shape
             tprint(f"Validating features with shape {original_shape}", "INFO")
-            
+
             # Check for NaN/inf values
             nan_mask = np.any(np.isnan(features), axis=1)
             inf_mask = np.any(np.isinf(features), axis=1)
             invalid_mask = nan_mask | inf_mask
-            
+
             if np.any(invalid_mask):
                 tprint(f"Found {np.sum(invalid_mask)} samples with NaN/inf values, removing them", "WARNING")
                 features = features[~invalid_mask]
                 tprint(f"Features shape after cleanup: {features.shape}", "INFO")
-            
+
             # Check for empty features after cleanup
             if features.size == 0:
                 tprint(f"Original features shape: {original_shape}", "ERROR")
                 tprint(f"NaN mask sum: {np.sum(nan_mask)}", "ERROR")
                 tprint(f"Inf mask sum: {np.sum(inf_mask)}", "ERROR")
                 raise ValueError("All features were invalid (NaN/inf), cannot proceed")
-            
+
             # Validate minimum requirements
             if features.shape[1] == 0:
                 raise ValueError("Insufficient features for clustering: 0 < 2")
 
             if features.shape[1] == 1:
                 tprint_warning("⚠️ Only one feature available after optimization - clustering stability may be reduced")
-            
+
             if features.shape[0] < 10:
                 tprint(f"Low sample count: {features.shape[0]} samples", "WARNING")
                 if features.shape[0] < 5:
                     raise ValueError(f"Too few samples for clustering: {features.shape[0]} < 5")
-            
+
             # Check for constant features (zero variance)
             feature_vars = np.var(features, axis=0)
             constant_features = feature_vars == 0
-            
+
             if np.any(constant_features):
                 tprint(f"Found {np.sum(constant_features)} constant features, removing them", "WARNING")
                 features = features[:, ~constant_features]
                 tprint(f"Features shape after removing constants: {features.shape}", "INFO")
-                
+
                 # Final check after removing constants
                 if features.shape[1] < 2:
                     raise ValueError("Too few features after removing constant features")
-            
+
             # Check for perfect correlation between features
             if features.shape[1] > 1:
                 corr_matrix = np.corrcoef(features.T)
@@ -5025,10 +5025,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 perfect_corr_mask = np.triu(np.abs(corr_matrix - 1.0) < 1e-10, k=1)
                 if np.any(perfect_corr_mask):
                     tprint("Found perfectly correlated features, this may cause clustering issues", "WARNING")
-            
+
             tprint(f"Feature validation completed: {original_shape} -> {features.shape}", "SUCCESS")
             return features
-            
+
         except Exception as e:
             tprint_error(f"Feature validation failed: {e}")
             raise ValueError(f"Feature validation failed: {e}") from e
@@ -5037,25 +5037,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Thread-safe memory cleanup to avoid race conditions."""
         import threading
         import gc
-        
+
         # Use a lock to prevent concurrent cleanup operations
         if not hasattr(self, '_cleanup_lock'):
             self._cleanup_lock = threading.Lock()
-        
+
         with self._cleanup_lock:
             try:
                 # Clean up arrays in a safe order
                 valid_arrays = [arr for arr in arrays_to_cleanup if arr is not None]
-                
+
                 if valid_arrays and self.memory_optimizer:
                     try:
                         # Check if optimizer is still available and not being used elsewhere
                         if hasattr(self.memory_optimizer, 'cleanup_arrays'):
                             self.memory_optimizer.cleanup_arrays(valid_arrays)
-                        
+
                         if hasattr(self.memory_optimizer, 'optimize_memory_usage'):
                             self.memory_optimizer.optimize_memory_usage()
-                            
+
                     except Exception as cleanup_error:
                         tprint_warning(f"Hardware memory cleanup failed: {cleanup_error}")
                         # Fallback to standard cleanup
@@ -5063,7 +5063,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 else:
                     # Standard cleanup when no hardware optimizer
                     self._fallback_memory_cleanup(valid_arrays)
-                    
+
             except Exception as e:
                 tprint_warning(f"Memory cleanup failed: {e}")
                 # Last resort cleanup
@@ -5071,31 +5071,31 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     gc.collect()
                 except:
                     pass
-    
+
     def _fallback_memory_cleanup(self, arrays: List[np.ndarray]) -> None:
         """Fallback memory cleanup when hardware optimizer is not available."""
         import gc
-        
+
         try:
             # Clear array references
             for arr in arrays:
                 if arr is not None:
                     del arr
-            
+
             # Force garbage collection
             gc.collect()
-            
+
         except Exception as e:
             tprint_warning(f"Fallback cleanup failed: {e}")
 
     def _determine_optimal_algorithm_type(self, pipeline_state: Dict[str, Any], data: Any) -> str:
         """
         Determine the optimal clustering algorithm based on data characteristics and regime discovery results.
-        
+
         Args:
             pipeline_state: Current pipeline state with regime discovery results
             data: Input data for analysis
-            
+
         Returns:
             Optimal algorithm type string
         """
@@ -5106,25 +5106,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 market_data = data['market_data']
             elif hasattr(data, 'shape'):
                 market_data = data
-                
+
             if market_data is None:
                 tprint_warning("Cannot determine data characteristics, using adaptive_clustering")
                 return 'adaptive_clustering'
-            
+
             # Extract data dimensions
             if hasattr(market_data, 'shape'):
                 n_samples, n_features = market_data.shape
             else:
                 n_samples = len(market_data)
                 n_features = len(market_data.columns) if hasattr(market_data, 'columns') else 10
-            
+
             data_density = n_samples / n_features if n_features > 0 else 1
-            
+
             # Get regime discovery results for additional context
             regime_discovery_result = pipeline_state.get('nas_tas_regime_discovery_result', {})
             tas_regime_count = regime_discovery_result.get('tas_regime_count', 8)
             nas_regime_count = regime_discovery_result.get('nas_regime_count', 8)
-            
+
             # Always use our custom NAS-TAS clustering logic (progressive regime optimization)
             # This is our sophisticated clustering approach that combines:
             # - BIC-selected GMM for optimal regime count
@@ -5135,10 +5135,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             algorithm = 'nas_tas_clustering'
             reason = f"Custom progressive regime optimization for regime detection (TAS={tas_regime_count}, NAS={nas_regime_count}, {n_samples} samples)"
-            
+
             tprint(f"Algorithm selection: {algorithm} - {reason}", "INFO")
             return algorithm
-            
+
         except Exception as e:
             tprint_warning(f"Algorithm determination failed: {e}, using adaptive_clustering")
             return 'adaptive_clustering'
@@ -5149,7 +5149,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Validate pipeline_state
             if not isinstance(pipeline_state, dict):
                 raise ValueError(f"pipeline_state must be a dict, got {type(pipeline_state)}")
-            
+
             # Validate data
             if data is not None:
                 if isinstance(data, pd.DataFrame):
@@ -5167,26 +5167,26 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         raise ValueError("market_data DataFrame is empty")
                 else:
                     raise ValueError(f"Unsupported data type: {type(data)}")
-            
+
             # Validate configuration
             if not hasattr(self, 'config') or self.config is None:
                 raise ValueError("Component configuration is not set")
-            
+
             # Validate required config attributes
             required_attrs = ['n_regimes', 'algorithm_type']
             for attr in required_attrs:
                 if not hasattr(self.config, attr):
                     raise ValueError(f"Configuration missing required attribute: {attr}")
-            
+
             # Validate n_regimes
             if not isinstance(self.config.n_regimes, int) or self.config.n_regimes < 2:
                 raise ValueError(f"n_regimes must be an integer >= 2, got {self.config.n_regimes}")
-            
+
             if self.config.n_regimes > 50:
                 raise ValueError(f"n_regimes too large: {self.config.n_regimes} > 50")
-            
+
             tprint("Input validation passed", "SUCCESS")
-            
+
         except Exception as e:
             tprint_error(f"Input validation failed: {e}")
             raise ValueError(f"Input validation failed: {e}") from e
@@ -5212,7 +5212,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             # Calculate individual quality scores
             quality_scores = self._calculate_individual_quality_scores(features, assignments)
-            
+
             # Weighted composite score - ENHANCED: Prioritize quality metrics over balance
             weights = {
                 'silhouette': 0.5,           # Increased from 0.4
@@ -5220,10 +5220,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'temporal_consistency': 0.15, # Reduced from 0.2
                 'within_regime_cv': 0.15     # Increased from 0.1
             }
-            
+
             composite_score = sum(quality_scores.get(key, 0.0) * weight for key, weight in weights.items())
             return min(1.0, max(0.0, composite_score))
-            
+
         except Exception as e:
             tprint(f"Composite score calculation failed: {e}", "ERROR")
             return 0.0
@@ -5232,7 +5232,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Calculate individual quality scores for composite scoring."""
         try:
             scores = {}
-            
+
             # Silhouette score
             try:
                 from sklearn.metrics import silhouette_score
@@ -5242,19 +5242,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     scores['silhouette'] = 0.0
             except:
                 scores['silhouette'] = 0.0
-            
+
             # Regime balance score
             tprint("⚠️ WARNING: _calculate_regime_balance is not defined - using fallback", "WARNING")
             scores['regime_balance'] = 0.5  # Fallback value
-            
+
             # Temporal consistency score
             scores['temporal_consistency'] = self._calculate_temporal_smoothness(assignments)
-            
+
             # Within-regime CV score
             scores['within_regime_cv'] = self._calculate_cv_score_optimized(features, assignments)
-            
+
             return scores
-            
+
         except Exception as e:
             tprint(f"Individual quality scores calculation failed: {e}", "ERROR")
             return {
@@ -5270,10 +5270,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             unique_regimes = np.unique(assignments)
             n_regimes = len(unique_regimes)
             n_features = features.shape[1]
-            
+
             # Initialize centers array
             centers = np.zeros((n_regimes, n_features))
-            
+
             # Calculate center for each regime
             for i, regime in enumerate(unique_regimes):
                 regime_mask = assignments == regime
@@ -5281,9 +5281,9 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     centers[i] = np.mean(features[regime_mask], axis=0)
                 else:
                     centers[i] = np.zeros(n_features)
-            
+
             return centers
-            
+
         except Exception as e:
             tprint(f"Cluster centers calculation failed: {e}", "ERROR")
             # Return zero centers as fallback
@@ -5298,7 +5298,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             unique_regimes = np.unique(assignments)
             if len(unique_regimes) < 2:
                 return 0.0
-            
+
             # Calculate within-cluster coefficient of variation (CV = std/mean)
             within_cvs = []
             for regime in unique_regimes:
@@ -5311,10 +5311,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     # Avoid division by zero - use absolute mean for CV calculation
                     regime_cvs = np.where(np.abs(regime_means) > 1e-8, regime_stds / np.abs(regime_means), 0)
                     within_cvs.append(np.mean(regime_cvs))
-            
+
             if not within_cvs:
                 return 0.0
-            
+
             # Calculate between-cluster coefficient of variation
             regime_means = []
             for regime in unique_regimes:
@@ -5322,34 +5322,34 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 if np.sum(regime_mask) > 0:
                     regime_mean = np.mean(features[regime_mask], axis=0)
                     regime_means.append(regime_mean)
-            
+
             if len(regime_means) < 2:
                 return 0.0
-            
+
             # Calculate CV between cluster means
             regime_means_array = np.array(regime_means)
             between_mean = np.mean(regime_means_array, axis=0)
             between_std = np.std(regime_means_array, axis=0)
             between_cv = np.mean(np.where(np.abs(between_mean) > 1e-8, between_std / np.abs(between_mean), 0))
-            
+
             # Calculate within-cluster CV
             within_cv = np.mean(within_cvs)
-            
+
             # Return the actual coefficient of variation values
             # Store both within and between CV for detailed reporting
             self._last_within_cv = within_cv
             self._last_between_cv = between_cv
-            
+
             # CV score: ratio of between-cluster CV to within-cluster CV
             # Higher ratio means better cluster separation
             if within_cv > 0:
                 cv_ratio = between_cv / within_cv
             else:
                 cv_ratio = between_cv
-            
+
             # Return the actual CV ratio (not capped at 1.0)
             return cv_ratio
-            
+
         except Exception as e:
             return 0.0
 
@@ -5362,20 +5362,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Step 2: Extracting TAS/NAS assignments and applying enhanced iterative convergence...", "INFO")
             features = context.optimized_features
-            
+
             if features is None:
                 # Use original features if optimized features are not available
                 features = context.original_features
                 context.optimized_features = features
                 tprint("Using original features as optimized features", "WARNING")
-            
+
             # Step 2a: Extract TAS and NAS regime assignments
             tprint("Step 2a: Extracting TAS and NAS regime assignments...", "INFO")
             tas_assignments, nas_assignments = self._extract_regime_assignments()
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
             tprint(f"TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
-            
+
             # Step 2b: Apply Dawid-Skene fusion for initial regime assignments
             tprint("Step 2b: Applying Dawid-Skene fusion...", "INFO")
             initial_k = 6  # Start with reasonable default
@@ -5385,13 +5385,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             context.raw_assignments = fusion_result[0]
             context.optimization_metrics = fusion_result[1]
             context.fusion_metadata = fusion_result[2]
-            
+
             # Step 2c: Apply consecutive optimization loop (merging → reshuffling → splitting)
             tprint("Step 2c: Applying consecutive optimization loop (merging → reshuffling → splitting)...", "INFO")
             optimized_assignments, convergence_metrics = self._run_consecutive_optimization_loop(
                 features, context.raw_assignments, initial_k
             )
-            
+
             # Calculate final scores with temporal smoothness
             tprint("⚠️ WARNING: _calculate_regime_balance is not defined - using fallback", "WARNING")
             final_balance = 0.5  # Fallback value
@@ -5400,19 +5400,19 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("⚠️ WARNING: _calculate_cv_score is not defined - using fallback", "WARNING")
             final_cv = 0.5  # Fallback value
             final_temporal = self._calculate_temporal_smoothness(optimized_assignments)
-            
+
             # Enhanced composite score - ENHANCED: Further prioritize Silhouette and CV for better cluster quality
             balance_weight = 0.15   # 15% balance emphasis (reduced from 25% to prioritize clustering quality)
             silhouette_weight = 0.45 # 45% silhouette emphasis (increased from 30% for better separation)
             cv_weight = 0.35        # 35% CV emphasis (maintained for between-cluster variance)
             temporal_weight = 0.05  # 5% temporal emphasis (reduced from 10% for stability)
-            final_score = (final_balance * balance_weight + 
-                          final_silhouette * silhouette_weight + 
-                          final_cv * cv_weight + 
+            final_score = (final_balance * balance_weight +
+                          final_silhouette * silhouette_weight +
+                          final_cv * cv_weight +
                           final_temporal * temporal_weight)
-            
+
             tprint(f"Enhanced convergence completed: Balance={final_balance:.3f}, Silhouette={final_silhouette:.3f}, CV={final_cv:.3f}, Temporal={final_temporal:.3f}, Composite={final_score:.3f}", "SUCCESS")
-            
+
             # MEMORY OPTIMIZATION: Clear caches and free memory after clustering
             if hasattr(self, '_cached_silhouette'):
                 del self._cached_silhouette
@@ -5420,18 +5420,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 del self._cached_cv
             if hasattr(self, '_cached_temporal'):
                 del self._cached_temporal
-            
+
             # Force garbage collection to free memory
             import gc
             gc.collect()
             tprint("🧹 Memory cleanup completed after clustering", "INFO")
-            
+
             # Update context with results
             context.optimal_k = initial_k  # Use the K from fusion
             context.smoothed_assignments = optimized_assignments
             context.optimized_assignments = optimized_assignments
             context.convergence_metrics = convergence_metrics
-            
+
             # Update optimization metrics
             context.optimization_metrics.update({
                 'final_score': final_score,
@@ -5443,21 +5443,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'temporal_score': final_temporal,
                 'convergence_metadata': convergence_metrics
             })
-            
+
         except Exception as e:
             tprint(f"Enhanced regime optimization failed: {e}", "ERROR")
             raise ValueError(f"Enhanced regime optimization failed: {e}")
 
-    def _run_enhanced_iterative_convergence(self, features: np.ndarray, initial_assignments: np.ndarray, k: int, 
+    def _run_enhanced_iterative_convergence(self, features: np.ndarray, initial_assignments: np.ndarray, k: int,
                                            max_iterations: int = 100, tolerance: float = 1e-5) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Run enhanced iterative convergence with temporal smoothness and more aggressive optimization."""
         try:
             # Initialize distance caching for performance optimization
             distance_cache = {}
-            
+
             # ENHANCED: Quality-based iteration limits using proper composite score
             initial_quality = self._calculate_composite_score(features, initial_assignments)
-            
+
             # Add regime-specific bonuses for initial quality
             tprint("⚠️ WARNING: _calculate_regime_balance is not defined - using fallback", "WARNING")
             initial_balance = 0.5  # Fallback value
@@ -5465,21 +5465,21 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             balance_bonus = min(0.2, initial_balance * 0.2)
             temporal_bonus = min(0.1, initial_temporal * 0.1)
             initial_quality = min(1.0, initial_quality + balance_bonus + temporal_bonus)
-            
+
             if initial_quality < 0.3:  # Poor initial quality
                 max_iterations = max(max_iterations, 200)  # Double iterations for poor quality
                 tprint(f"⚠️ Poor initial quality ({initial_quality:.4f}), increasing iterations to {max_iterations}", "WARNING")
-            
+
             tprint(f"🚀 Starting enhanced iterative convergence for K={k}...", "INFO")
             tprint(f"📊 Parameters: max_iterations={max_iterations}, tolerance={tolerance:.2e}", "INFO")
             tprint(f"📈 Data shape: {features.shape}, samples={len(initial_assignments)}", "INFO")
             tprint(f"🎯 Initial quality: {initial_quality:.4f}", "INFO")
-            
+
             assignments = initial_assignments.copy()
             convergence_history = []
             best_assignments = assignments.copy()
             best_score = -1.0
-            
+
             # OPTIMIZATION: Add caching for expensive calculations
             cache = {
                 'centroids': None,
@@ -5487,22 +5487,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'last_assignment_hash': None,
                 'score_cache': {}
             }
-            
+
             # Progress tracking variables
             last_progress_update = 0
             progress_interval = max(1, max_iterations // 20)  # Update every 5% of iterations
-            
+
             # ENHANCED: Multi-metric convergence with relative improvement thresholds
             quality_target = 0.75  # Target quality score (increased from 0.6)
             relative_improvement_threshold = 0.001  # 0.1% relative improvement threshold
             no_improvement_window = 3  # Stop if no improvement for 3 iterations
             min_iterations_before_early_stop = 5  # Minimum iterations before considering early stop
-            
+
             for iteration in range(max_iterations):
                 # Initialize convergence status
                 convergence_achieved = False
                 current_k = k  # Initialize current_k for splitting logic
-                
+
                 # VECTORIZED: Calculate current scores with optimized methods
                 tprint("⚠️ WARNING: _calculate_regime_balance is not defined - using fallback", "WARNING")
                 balance_score = 0.5  # Fallback value
@@ -5515,22 +5515,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     silhouette_score = 0.5  # Fallback value
                 cv_score = self._calculate_cv_score_optimized(features, assignments)
                 temporal_score = self._calculate_temporal_smoothness_optimized(assignments)
-                
+
                 # FIXED: Use proper composite score calculation instead of inline calculation
                 current_score = self._calculate_composite_score(features, assignments)
-                
+
                 # Add regime-specific bonuses for better regime distribution
                 balance_bonus = min(0.2, balance_score * 0.2)  # Max 0.2 bonus for good balance
                 temporal_bonus = min(0.1, temporal_score * 0.1)  # Max 0.1 bonus for temporal smoothness
-                
+
                 current_score = min(1.0, current_score + balance_bonus + temporal_bonus)
-                
+
                 # Update best if improved
                 improvement = current_score - best_score
                 if current_score > best_score:
                     best_score = current_score
                     best_assignments = assignments.copy()
-                
+
                 # Store convergence metrics
                 convergence_history.append({
                     'iteration': iteration,
@@ -5541,47 +5541,47 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'composite_score': current_score,
                     'improvement': improvement
                 })
-                
+
                 # Progress updates with different levels of detail
                 progress_percent = (iteration + 1) / max_iterations * 100
-                
+
                 # Detailed update every 5% or every iteration for first 10%
-                if (iteration - last_progress_update >= progress_interval or 
-                    progress_percent <= 10.0 or 
-                    iteration == 0 or 
+                if (iteration - last_progress_update >= progress_interval or
+                    progress_percent <= 10.0 or
+                    iteration == 0 or
                     improvement > 0.001):  # Significant improvement
-                    
+
                     # ENHANCED: Silhouette-focused progress reporting
                     silhouette_change = silhouette_score - (convergence_history[-2]['silhouette_score'] if len(convergence_history) > 1 else silhouette_score)
                     silhouette_indicator = "📈" if silhouette_change > 0.001 else "📉" if silhouette_change < -0.001 else "➡️"
-                    
+
                     tprint(f"🔄 Iteration {iteration+1}/{max_iterations} ({progress_percent:.1f}%): "
                           f"Score={current_score:.4f} "
                           f"(Balance={balance_score:.3f}, {silhouette_indicator}Silhouette={silhouette_score:.3f}, "
                           f"CV={cv_score:.3f}, Temporal={temporal_score:.3f}) "
                           f"Best={best_score:.4f}", "INFO")
-                    
+
                     if improvement > 0:
                         tprint(f"   📈 Improvement: +{improvement:.4f}", "INFO")
-                    
+
                     last_progress_update = iteration
-                
+
                 # Summary update every 25%
                 elif iteration % (max_iterations // 4) == 0 and iteration > 0:
                     tprint(f"📊 Progress: {progress_percent:.0f}% complete, "
                           f"Best score: {best_score:.4f}, "
                           f"Current: {current_score:.4f}", "INFO")
-                
+
                 # Convergence check (last 5 iterations for stability)
                 if len(convergence_history) >= 5:
                     recent_scores = [h['composite_score'] for h in convergence_history[-5:]]
                     avg_improvement = np.mean(np.diff(recent_scores))
-                    
+
                     # Show convergence status
                     if iteration % 10 == 0:  # Every 10 iterations
                         tprint(f"   🔍 Convergence check: avg_improvement={avg_improvement:.6f}, "
                               f"tolerance={tolerance:.2e}", "INFO")
-                    
+
                     # ENHANCED: Multi-metric convergence detection with relative improvement thresholds
                     # Check if we have enough iterations to evaluate convergence
                     if len(convergence_history) >= min_iterations_before_early_stop:
@@ -5612,7 +5612,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
                         # Convergence achieved if multiple metrics are stable AND no improvement for window
                         convergence_achieved = (silhouette_converged and cv_converged and balance_converged) and no_improvement_count >= no_improvement_window * 0.8
-                        
+
                         # DEBUG: Show convergence decision with multi-metric details
                         if iteration % 5 == 0:  # Every 5 iterations
                             tprint(f"   🔍 Multi-metric convergence: sil_trend={silhouette_trend:.6f}, "
@@ -5634,22 +5634,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         tprint(f"🎉 Target quality achieved at iteration {iteration+1}!", "SUCCESS")
                         tprint(f"   🎯 Quality score: {best_score:.4f} (target: >{quality_target})", "SUCCESS")
                         break
-                    
+
                     # ENHANCED: Check for quality stagnation
                     if len(convergence_history) >= 10:  # Need enough history
                         recent_quality_scores = [h['composite_score'] for h in convergence_history[-10:]]
                         quality_improvement = np.mean(np.diff(recent_quality_scores)) if len(recent_quality_scores) > 1 else 0
-                        
+
                         if quality_improvement < relative_improvement_threshold and best_score < quality_target * 0.85:
                             tprint(f"⚠️ Quality stagnation detected (improvement: {quality_improvement:.6f})", "WARNING")
                             tprint(f"   🔧 Applying aggressive optimization...", "INFO")
                             # Apply more aggressive optimization
                             assignments = self._apply_aggressive_iteration_optimization(features, assignments, k, iteration, convergence_history, distance_cache)
-                    
+
                     # ENHANCED: Apply smart cluster splitting EVERY iteration for maximum responsiveness
                     tprint(f"   🔍 Checking for cluster splitting opportunities (iteration {iteration+1})...", "INFO")
                     assignments, k, split_stats = self._smart_cluster_splitting_decision(assignments, features, k, iteration, best_score)
-                    
+
                     if k > current_k:
                         tprint(f"   📈 Dynamic regime count adjustment: {current_k} → {k}", "SUCCESS")
                         current_k = k
@@ -5667,42 +5667,42 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         tprint(f"   🎯 Target quality: >0.750, Current: {best_score:.4f}", "ERROR")
                         # Reset convergence to force more iterations
                         avg_improvement = tolerance * 2.0  # Force continuation
-                        
+
                         # ENHANCED: Extend iterations if quality is poor
                         if iteration > max_iterations * 0.8:  # Near end of iterations
                             max_iterations += 50  # Add 50 more iterations
                             tprint(f"   🔧 Extending iterations to {max_iterations} for quality improvement", "INFO")
-                        
+
                         # Apply more aggressive single iteration optimization with adaptive thresholding
                         tprint(f"   🔧 Applying optimization round {iteration+1}...", "INFO")
                         assignments = self._apply_aggressive_iteration_optimization(features, assignments, k, iteration, convergence_history)
-                        
+
                         # GLOBAL OPTIMIZATION: Apply global strategies every 3 iterations
                         if iteration % 3 == 0 and iteration > 0:
                             tprint(f"   🌐 Applying global optimization strategies...", "INFO")
                             assignments = self._apply_global_optimization_strategies(features, assignments, k)
-                
+
                 # CRITICAL: Apply core optimization to update assignments with early termination
                 if not convergence_achieved:  # Only optimize if not converged
                     tprint(f"   🔧 Applying core optimization iteration {iteration+1}...", "INFO")
-                    
+
                     # Store previous assignments for change detection
                     prev_assignments = assignments.copy()
-                    
+
                     # Apply optimization with caching
                     assignments = self._apply_single_iteration_optimization(features, assignments, k, distance_cache)
-                    
+
                     # OPTIMIZATION: Early termination if no significant changes
                     changes = np.sum(assignments != prev_assignments)
                     change_ratio = changes / len(assignments)
-                    
+
                     # ENHANCED: Apply aggressive optimization if stuck in local minimum
                     if change_ratio < 0.0005 and iteration > 10:  # Stuck for multiple iterations
                         tprint(f"   🔥 Local minimum detected: Only {changes} samples changed, applying aggressive optimization...", "WARNING")
-                        
+
                         # Apply more aggressive optimization to escape local minimum
                         assignments = self._apply_aggressive_iteration_optimization(features, assignments, k, iteration, convergence_history)
-                        
+
                         # Check if aggressive optimization helped
                         new_changes = np.sum(assignments != prev_assignments)
                         if new_changes > changes:
@@ -5714,11 +5714,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         tprint(f"   ⚡ Early termination: Only {changes} samples changed ({change_ratio:.4f}%), convergence likely", "INFO")
                         # Force convergence to exit early
                         avg_improvement = tolerance * 0.5  # Below threshold
-                    
+
                     # Store assignments for change tracking BEFORE checking changes
                     if len(convergence_history) > 0:
                         convergence_history[-1]['assignments'] = assignments.copy()
-                    
+
                     # Verify that assignments actually changed
                     if iteration > 0 and len(convergence_history) > 1:
                         prev_assignments = convergence_history[-2].get('assignments', assignments)
@@ -5727,29 +5727,29 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                             tprint(f"   📊 Assignment changes: {changes} samples reassigned", "INFO")
                         else:
                             tprint(f"   ⚠️ No assignment changes detected - optimization may need adjustment", "WARNING")
-            
+
             iteration_metrics = {
                 'total_iterations': len(convergence_history),
                 'converged': len(convergence_history) < max_iterations,
                 'final_score': best_score,
                 'convergence_history': convergence_history
             }
-            
+
             # Final progress summary
             tprint(f"🎉 Enhanced iterative convergence completed!", "SUCCESS")
             tprint(f"   📊 Total iterations: {len(convergence_history)}/{max_iterations}", "SUCCESS")
             tprint(f"   🎯 Best score achieved: {best_score:.4f}", "SUCCESS")
             tprint(f"   ✅ Convergence status: {'CONVERGED' if iteration_metrics['converged'] else 'MAX_ITERATIONS'}", "SUCCESS")
-            
+
             # Show improvement summary
             if len(convergence_history) > 1:
                 initial_score = convergence_history[0]['composite_score']
                 total_improvement = best_score - initial_score
                 tprint(f"   📈 Total improvement: {total_improvement:.4f} "
                       f"(from {initial_score:.4f} to {best_score:.4f})", "SUCCESS")
-            
+
             return best_assignments, iteration_metrics
-            
+
         except Exception as e:
             tprint(f"Enhanced iterative convergence failed: {e}", "ERROR")
             return assignments, {'error': str(e), 'total_iterations': 0, 'converged': False}
@@ -6671,20 +6671,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             unique_regimes = np.unique(assignments)
             cluster_metrics = {}
-            
+
             for regime in unique_regimes:
                 regime_mask = assignments == regime
                 regime_size = np.sum(regime_mask)
                 regime_percentage = regime_size / len(assignments)
-                
+
                 if regime_size > 0:
                     regime_features = features[regime_mask]
-                    
+
                     # Calculate basic quality metrics
                     internal_cv = np.std(regime_features) / (np.mean(regime_features) + 1e-8)
                     compactness = 1.0 / (1.0 + internal_cv)
                     quality_score = compactness * regime_percentage
-                    
+
                     cluster_metrics[regime] = {
                         'size_percentage': regime_percentage,
                         'internal_cv': internal_cv,
@@ -6702,70 +6702,70 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                         'quality_score': 0.0,
                         'regime_size': 0
                     }
-            
+
             return cluster_metrics
-            
+
         except Exception as e:
             tprint(f"Cluster quality analysis failed: {e}", "ERROR")
             return {}
 
-    def validate_clustering_robustness(self, features: np.ndarray, assignments: np.ndarray, 
+    def validate_clustering_robustness(self, features: np.ndarray, assignments: np.ndarray,
                                      market_data: pd.DataFrame = None) -> Dict[str, Any]:
         """Lightweight validation framework for clustering robustness."""
         try:
             tprint("🔍 Starting clustering validation...", "INFO")
-            
+
             validation_results = {}
-            
+
             # Basic clustering metrics
             n_clusters = len(np.unique(assignments))
             n_samples = features.shape[0]
-            
+
             # Calculate silhouette score
             from sklearn.metrics import silhouette_score
             silhouette = silhouette_score(features, assignments)
-            
+
             # Regime balance
             unique, counts = np.unique(assignments, return_counts=True)
             balance = 1.0 - (np.std(counts) / np.mean(counts)) if np.mean(counts) > 0 else 0.0
-            
+
             validation_results['basic_metrics'] = {
                 'silhouette_score': silhouette,
                 'n_clusters': n_clusters,
                 'n_samples': n_samples,
                 'regime_balance': balance
             }
-            
+
             # Overall quality score
             overall_robustness = (silhouette + balance) / 2.0
-            
+
             validation_summary = {
                 'overall_robustness': overall_robustness,
                 'silhouette_score': silhouette,
                 'regime_balance': balance
             }
-            
+
             tprint(f"✅ Clustering validation completed - Overall quality: {overall_robustness:.3f}", "SUCCESS")
-            
+
             return {
                 'detailed_results': validation_results,
                 'summary': validation_summary
             }
-            
+
         except Exception as e:
             tprint(f"Clustering validation failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    def _perform_neighborhood_analysis(self, features: np.ndarray, assignments: np.ndarray, 
+    def _perform_neighborhood_analysis(self, features: np.ndarray, assignments: np.ndarray,
                                       market_data: pd.DataFrame = None) -> Dict[str, Any]:
         """Perform neighborhood analysis for local structure insights."""
         try:
             tprint("🔍 Performing neighborhood analysis...", "INFO")
-            
+
             # Basic neighborhood analysis
             n_clusters = len(np.unique(assignments))
             n_samples = features.shape[0]
-            
+
             # Calculate cluster centroids
             centroids = []
             for cluster_id in range(n_clusters):
@@ -6775,13 +6775,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     centroids.append(centroid)
                 else:
                     centroids.append(np.zeros(features.shape[1]))
-            
+
             centroids = np.array(centroids)
-            
+
             # Calculate inter-cluster distances
             from scipy.spatial.distance import pdist, squareform
             inter_cluster_distances = squareform(pdist(centroids))
-            
+
             # Calculate average intra-cluster distances
             intra_cluster_distances = []
             for cluster_id in range(n_clusters):
@@ -6792,7 +6792,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     intra_cluster_distances.append(avg_distance)
                 else:
                     intra_cluster_distances.append(0.0)
-            
+
             neighborhood_results = {
                 'n_clusters': n_clusters,
                 'n_samples': n_samples,
@@ -6800,24 +6800,24 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'intra_cluster_distances': intra_cluster_distances,
                 'centroids': centroids.tolist()
             }
-            
+
             tprint(f"✅ Neighborhood analysis completed - {n_clusters} clusters analyzed", "SUCCESS")
             return neighborhood_results
-            
+
         except Exception as e:
             tprint(f"Neighborhood analysis failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    def _integrate_reallocation_in_optimization(self, features: np.ndarray, assignments: np.ndarray, 
+    def _integrate_reallocation_in_optimization(self, features: np.ndarray, assignments: np.ndarray,
                                               market_data: pd.DataFrame = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Integrate sample reallocation into optimization pipeline."""
         try:
             tprint("🔍 Integrating sample reallocation into optimization...", "INFO")
-            
+
             # Basic reallocation optimization
             n_clusters = len(np.unique(assignments))
             n_samples = features.shape[0]
-            
+
             # Calculate cluster centroids
             centroids = []
             for cluster_id in range(n_clusters):
@@ -6827,18 +6827,18 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     centroids.append(centroid)
                 else:
                     centroids.append(np.zeros(features.shape[1]))
-            
+
             centroids = np.array(centroids)
-            
+
             # Simple reallocation: assign each point to its nearest centroid
             from scipy.spatial.distance import cdist
             distances = cdist(features, centroids)
             optimized_assignments = np.argmin(distances, axis=1)
-            
+
             # Calculate reallocation statistics
             reallocated_count = np.sum(optimized_assignments != assignments)
             reallocation_rate = reallocated_count / n_samples
-            
+
             reallocation_stats = {
                 'n_clusters': n_clusters,
                 'n_samples': n_samples,
@@ -6846,10 +6846,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'reallocation_rate': reallocation_rate,
                 'optimization_quality': 1.0 - reallocation_rate  # Lower reallocation = better optimization
             }
-            
+
             tprint(f"✅ Sample reallocation completed - {reallocated_count} samples reallocated ({reallocation_rate:.1%})", "SUCCESS")
             return optimized_assignments, reallocation_stats
-            
+
         except Exception as e:
             tprint(f"Sample reallocation failed: {e}", "ERROR")
             return assignments, {'error': str(e)}
@@ -6858,7 +6858,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Summarize clustering results and create final output."""
         try:
             tprint("📊 Summarizing clustering results...", "INFO")
-            
+
             # Handle both dict and ClusteringContext object
             if hasattr(context, 'optimized_assignments') or hasattr(context, 'smoothed_assignments'):
                 # ClusteringContext object
@@ -6883,12 +6883,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 validation_quality = context.get('validation_quality', 0.0)
                 neighborhood_analysis = context.get('neighborhood_analysis', {})
                 reallocation_stats = context.get('reallocation_stats', {})
-            
+
             # Create summary statistics
             # Handle both numpy arrays and lists properly
             tprint(f"🔍 About to calculate statistics - assignments type: {type(assignments)}", "DEBUG")
             tprint(f"🔍 Assignments content preview: {assignments[:5] if hasattr(assignments, '__getitem__') else 'N/A'}", "DEBUG")
-            
+
             if isinstance(assignments, np.ndarray):
                 tprint(f"🔍 Processing numpy array - size: {assignments.size}, shape: {assignments.shape}", "DEBUG")
                 tprint(f"🔍 Array dtype: {assignments.dtype}", "DEBUG")
@@ -6921,7 +6921,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 except Exception as e:
                     tprint(f"🔍 Error in list processing: {e}", "ERROR")
                     raise
-            
+
             # Handle features shape properly
             tprint(f"🔍 Processing features - type: {type(features)}", "DEBUG")
             if isinstance(features, np.ndarray):
@@ -6930,7 +6930,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             else:
                 features_shape = features.shape if len(features) > 0 else (0, 0)
                 tprint(f"🔍 List features shape: {features_shape}", "DEBUG")
-            
+
             tprint(f"🔍 Creating summary with n_clusters: {n_clusters}, n_samples: {n_samples}", "DEBUG")
             summary = {
                 'n_clusters': n_clusters,
@@ -6942,10 +6942,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'reallocation_stats': reallocation_stats,
                 'success': True
             }
-            
+
             tprint(f"✅ Results summarized: {n_clusters} clusters, {n_samples} samples", "SUCCESS")
             return summary
-            
+
         except Exception as e:
             tprint(f"Results summarization failed: {e}", "ERROR")
             return {'error': str(e), 'success': False}
@@ -7408,74 +7408,74 @@ class CachedClusteringState:
             tprint(f"Consecutive optimization loop failed: {e}", "ERROR")
             return initial_assignments, {'error': str(e), 'total_rounds': 0, 'converged': False}
 
-    def _apply_aggressive_iteration_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int, 
+    def _apply_aggressive_iteration_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int,
                                                iteration: int = 0, convergence_history: List[Dict] = None, cache: Dict = None) -> np.ndarray:
         """Apply more aggressive single iteration optimization with adaptive thresholding - VECTORIZED OPTIMIZATION."""
         try:
             new_assignments = assignments.copy()
-            
+
             # Calculate adaptive threshold based on iteration progress and convergence history
             adaptive_threshold = self._calculate_adaptive_threshold(iteration, convergence_history)
-            
+
             # GLOBAL OPTIMIZATION: Smart batch sizing with adaptive strategy
             batch_size = self._calculate_optimal_batch_size_enhanced(len(assignments), iteration, features)
-            
+
             # OPTIMIZATION: Use vectorized single-pass optimization instead of multiple rounds
             # This eliminates the need for multiple rounds and reduces complexity
             improvements_made = self._optimize_batch_vectorized_enhanced(
                 features, assignments, new_assignments, k, adaptive_threshold, cache
             )
-            
+
             if improvements_made == 0:
                 tprint(f"No improvements above threshold {adaptive_threshold:.6f}", "INFO")
-            
+
             return new_assignments
-            
+
         except Exception as e:
             tprint(f"Aggressive iteration optimization failed: {e}", "ERROR")
             return assignments
 
-    def _optimize_batch_vectorized_enhanced(self, features: np.ndarray, assignments: np.ndarray, 
+    def _optimize_batch_vectorized_enhanced(self, features: np.ndarray, assignments: np.ndarray,
                                           new_assignments: np.ndarray, k: int, adaptive_threshold: float, cache: Dict = None) -> int:
         """Enhanced vectorized batch optimization with single-pass processing and intelligent caching."""
         try:
             # OPTIMIZATION: Pre-compute all centroids and distances once with caching
             regime_centroids = self._compute_regime_centroids_vectorized(features, assignments, k)
             distances, cache = self._compute_distances_with_caching(features, assignments, regime_centroids, k, cache)
-            
+
             # OPTIMIZATION: Compute all improvements in one vectorized operation
             improvements = self._compute_improvements_vectorized(
                 features, assignments, distances, regime_centroids, k
             )
-            
+
             # OPTIMIZATION: Apply improvements with threshold filtering
             significant_improvements = improvements > adaptive_threshold
             improvements_made = np.sum(significant_improvements)
-            
+
             if improvements_made > 0:
                 # Get significant indices first
                 significant_indices = np.where(significant_improvements)[0]
-                
+
                 # Get best regimes ONLY for samples with significant improvements
                 best_regimes = np.argmax(improvements[significant_indices], axis=1)
-                
+
                 # FIXED: Apply assignments only to significant samples
                 new_assignments[significant_indices] = best_regimes
-                
+
                 # Log significant improvements (limited to avoid spam) - FIXED INDEXING
                 if improvements_made <= 50:  # Only log if reasonable number
-                    
+
                     # Get improvement values for significant indices using their best regimes
                     significant_values = np.array([
                         improvements[significant_indices[i], best_regimes[i]] for i in range(len(significant_indices))
                     ])
-                    
-                    for idx, val, new_regime in zip(significant_indices[:10], significant_values[:10], 
+
+                    for idx, val, new_regime in zip(significant_indices[:10], significant_values[:10],
                                                   best_regimes[:10]):
                         tprint(f"      🎯 Sample {idx}: regime {assignments[idx]} → {new_regime} (improvement: {val:.6f})", "INFO")
-            
+
             return improvements_made
-            
+
         except Exception as e:
             tprint(f"Enhanced batch optimization failed: {e}", "ERROR")
             return 0
@@ -7485,7 +7485,7 @@ class CachedClusteringState:
         try:
             # ENHANCED: More aggressive base threshold for better quality and early stopping
             base_threshold = 0.0001  # 100% more aggressive than before (doubled)
-            
+
             # ENHANCED: More aggressive iteration factors
             if iteration < 5:
                 iteration_factor = 0.2  # 20% of base threshold (very aggressive)
@@ -7495,13 +7495,13 @@ class CachedClusteringState:
                 iteration_factor = 0.6  # 60% of base threshold
             else:
                 iteration_factor = 0.8  # 80% of base threshold
-            
+
             # Convergence-based adjustment
             convergence_factor = 1.0
             if convergence_history and len(convergence_history) >= 3:
                 recent_scores = [h['composite_score'] for h in convergence_history[-3:]]
                 avg_improvement = np.mean(np.diff(recent_scores))
-                
+
                 # ENHANCED: More aggressive convergence for quality improvement
                 if avg_improvement < 0.002:  # Increased threshold
                     convergence_factor = 0.3  # 70% more aggressive
@@ -7512,23 +7512,23 @@ class CachedClusteringState:
                 # If improving well, maintain current threshold
                 else:
                     convergence_factor = 1.0
-            
+
             # Calculate final adaptive threshold
             adaptive_threshold = base_threshold * iteration_factor * convergence_factor
-            
+
             # Ensure minimum threshold to avoid noise
             adaptive_threshold = max(adaptive_threshold, 1e-6)
-            
+
             # Ensure maximum threshold to maintain some selectivity
             adaptive_threshold = min(adaptive_threshold, 0.001)
-            
+
             return adaptive_threshold
-            
+
         except Exception as e:
             tprint(f"Adaptive threshold calculation failed: {e}", "ERROR")
             return 0.0001  # Fallback to base threshold
 
-    def _optimize_batch_vectorized(self, features: np.ndarray, assignments: np.ndarray, new_assignments: np.ndarray, 
+    def _optimize_batch_vectorized(self, features: np.ndarray, assignments: np.ndarray, new_assignments: np.ndarray,
                                  k: int, batch_start: int, batch_end: int, adaptive_threshold: float) -> int:
         """Vectorized batch optimization for better performance."""
         try:
@@ -7536,60 +7536,60 @@ class CachedClusteringState:
             batch_size = batch_end - batch_start
             batch_assignments = assignments[batch_start:batch_end]
             batch_features = features[batch_start:batch_end]
-            
+
             # Progress update for medium-sized batches (adjusted for smaller batch size)
             if batch_size > 100:
                 tprint(f"      🔄 Processing batch {batch_start}-{batch_end} ({batch_size} samples)...", "INFO")
-            
+
             # Pre-calculate cluster centers for faster distance calculations
             cluster_centers = {}
             for regime in range(k):
                 regime_mask = assignments == regime
                 if np.sum(regime_mask) > 0:
                     cluster_centers[regime] = np.mean(features[regime_mask], axis=0)
-            
+
             # Vectorized distance calculations
             for i in range(len(batch_assignments)):
                 global_idx = batch_start + i
                 current_regime = assignments[global_idx]
                 sample_features = batch_features[i]
-                
+
                 best_regime = current_regime
                 best_improvement = 0.0
-                
+
                 # Calculate distances to all cluster centers
                 distances = {}
                 for regime, center in cluster_centers.items():
                     if regime != current_regime:
                         distances[regime] = np.linalg.norm(sample_features - center)
-                
+
                 # Try each possible regime (vectorized approach)
                 for candidate_regime in range(k):
                     if candidate_regime == current_regime:
                         continue
-                    
+
                     # Fast improvement estimation using distance-based approximation
                     improvement = self._estimate_improvement_fast(
                         assignments, global_idx, candidate_regime, distances.get(candidate_regime, 1.0)
                     )
-                    
+
                     if improvement > best_improvement:
                         best_improvement = improvement
                         best_regime = candidate_regime
-                
+
                 # Apply best reassignment if improvement exceeds adaptive threshold
                 if best_improvement > adaptive_threshold:
                     new_assignments[global_idx] = best_regime
                     improvements_made += 1
-            
+
             # Progress update for significant improvements (adjusted for smaller batches)
             if improvements_made > 0 and batch_size > 50:
                 improvement_rate = improvements_made / batch_size * 100
                 tprint(f"      ✅ Batch {batch_start}-{batch_end}: {improvements_made} improvements "
                       f"({improvement_rate:.1f}% rate)", "SUCCESS")
-            
+
             return improvements_made
-            
+
         except Exception as e:
             tprint(f"Batch vectorized optimization failed: {e}", "ERROR")
             return 0
@@ -7602,21 +7602,21 @@ class CachedClusteringState:
             # 2. Distance to candidate cluster center
             # 3. Current cluster size balance
             # 4. Temporal smoothness with neighbors
-            
+
             current_regime = assignments[sample_idx]
-            
+
             # ENHANCED: Estimate silhouette improvement for this reassignment
             silhouette_improvement = self._estimate_silhouette_improvement(
                 assignments, sample_idx, current_regime, candidate_regime
             )
-            
+
             # Distance-based improvement (normalized)
             distance_improvement = 1.0 / (1.0 + distance)
-            
+
             # Balance-based improvement
             current_count = np.sum(assignments == current_regime)
             candidate_count = np.sum(assignments == candidate_regime)
-            
+
             # ENHANCED: More aggressive balance penalty for large clusters
             if candidate_count > current_count * 1.3:  # Stricter threshold
                 balance_improvement = 0.3  # Harsher penalty
@@ -7624,62 +7624,62 @@ class CachedClusteringState:
                 balance_improvement = 0.7
             else:
                 balance_improvement = 1.0
-            
+
             # Temporal smoothness (check neighbors)
             temporal_improvement = self._calculate_temporal_factor(assignments, sample_idx, candidate_regime)
-            
+
             # ENHANCED: Maximum focus on silhouette and CV for better clustering quality
             fast_improvement = (silhouette_improvement * 0.80 +     # Ultra-high focus on silhouette (increased from 0.70)
                               distance_improvement * 0.05 +         # Minimal distance factor (reduced from 0.15)
                               balance_improvement * 0.05 +          # Minimal balance factor (reduced from 0.10)
                               temporal_improvement * 0.10)          # Increased temporal factor (from 0.05)
-            
+
             return fast_improvement
-            
+
         except Exception as e:
             return 0.0
-    
-    def _estimate_silhouette_improvement(self, assignments: np.ndarray, sample_idx: int, 
+
+    def _estimate_silhouette_improvement(self, assignments: np.ndarray, sample_idx: int,
                                        current_regime: int, candidate_regime: int) -> float:
         """Estimate silhouette score improvement for a single sample reassignment."""
         try:
             if len(np.unique(assignments)) < 2:
                 return 0.0
-            
+
             # Get cluster sizes
             current_regime_size = np.sum(assignments == current_regime)
             candidate_regime_size = np.sum(assignments == candidate_regime)
-            
+
             # ENHANCED: More sophisticated silhouette estimation
             # Estimate intra-cluster cohesion (a_i in silhouette formula)
             current_cohesion = 1.0 / (1.0 + current_regime_size / 50.0)  # Smaller = better cohesion
             candidate_cohesion = 1.0 / (1.0 + candidate_regime_size / 50.0)
-            
+
             # Estimate inter-cluster separation (b_i in silhouette formula)
             # Moving to a smaller, more cohesive cluster generally improves separation
             separation_improvement = candidate_cohesion - current_cohesion
-            
+
             # ENHANCED: Factor in cluster density
             # Denser clusters (more samples per unit space) are better
             density_factor = min(2.0, candidate_regime_size / max(1, current_regime_size))
-            
+
             # Estimate silhouette improvement
             silhouette_improvement = separation_improvement * density_factor * 0.3
-            
+
             return np.clip(silhouette_improvement, -1.0, 1.0)  # Clamp to valid range
-            
+
         except Exception as e:
             return 0.0
-    
+
     def _calculate_temporal_factor(self, assignments: np.ndarray, sample_idx: int, candidate_regime: int) -> float:
         """Calculate temporal consistency factor for regime reassignment."""
         try:
             if sample_idx == 0 or sample_idx == len(assignments) - 1:
                 return 1.0
-            
+
             prev_regime = assignments[sample_idx - 1]
             next_regime = assignments[sample_idx + 1]
-            
+
             # ENHANCED: More nuanced temporal consistency
             if candidate_regime == prev_regime == next_regime:
                 return 1.4  # Strong temporal consistency bonus
@@ -7689,7 +7689,7 @@ class CachedClusteringState:
                 return 0.7  # Penalty for breaking temporal consistency
             else:
                 return 1.0  # Neutral
-                
+
         except Exception as e:
             return 1.0
 
@@ -7710,7 +7710,7 @@ class CachedClusteringState:
                 old_silhouette = 0.5  # Fallback value
                 old_cv = self._calculate_cv_score_optimized(features, old_assignments)
                 old_temporal = self._calculate_temporal_smoothness_optimized(old_assignments)
-                
+
                 # Cache for next iteration
                 self._cached_scores = {
                     'assignments': old_assignments.copy(),
@@ -7719,35 +7719,35 @@ class CachedClusteringState:
                     'cv': old_cv,
                     'temporal': old_temporal
                 }
-            
+
             # ENHANCED: Balanced optimization for better clustering quality and regime balance
             balance_weight = getattr(self.config, 'balance_weight', 0.25)  # Increased balance weight for better regime distribution
             silhouette_weight = 0.40  # High silhouette emphasis but not overwhelming
             cv_weight = 0.25  # Moderate CV emphasis for stability
             temporal_weight = 0.10  # Increased temporal weight for regime consistency
-            
-            old_composite = (old_balance * balance_weight + 
-                           old_silhouette * silhouette_weight + 
-                           old_cv * cv_weight + 
+
+            old_composite = (old_balance * balance_weight +
+                           old_silhouette * silhouette_weight +
+                           old_cv * cv_weight +
                            old_temporal * temporal_weight)
-            
+
             # Calculate new scores (only if significantly different)
             if np.array_equal(old_assignments, new_assignments):
                 return 0.0
-            
+
             tprint("⚠️ WARNING: _calculate_regime_balance_optimized is not defined - using fallback", "WARNING")
             new_balance = 0.5  # Fallback value
             tprint("⚠️ WARNING: _calculate_silhouette_score_optimized is not defined - using fallback", "WARNING")
             new_silhouette = 0.5  # Fallback value
             new_cv = self._calculate_cv_score_optimized(features, new_assignments)
             new_temporal = self._calculate_temporal_smoothness_optimized(new_assignments)
-            new_composite = (new_balance * balance_weight + 
-                           new_silhouette * silhouette_weight + 
-                           new_cv * cv_weight + 
+            new_composite = (new_balance * balance_weight +
+                           new_silhouette * silhouette_weight +
+                           new_cv * cv_weight +
                            new_temporal * temporal_weight)
-            
+
             return new_composite - old_composite
-            
+
         except Exception as e:
             return 0.0
 
@@ -7756,19 +7756,19 @@ class CachedClusteringState:
         try:
             if len(assignments) < 2:
                 return 0.0
-            
+
             # Calculate the number of regime changes
             changes = np.sum(assignments[1:] != assignments[:-1])
             total_possible_changes = len(assignments) - 1
-            
+
             if total_possible_changes == 0:
                 return 1.0
-            
+
             # Smoothness score (1.0 = no changes, 0.0 = maximum changes)
             smoothness = 1.0 - (changes / total_possible_changes) if total_possible_changes > 0 else 1.0
-            
+
             return smoothness
-            
+
         except Exception as e:
             return 0.0
 
@@ -7777,25 +7777,25 @@ class CachedClusteringState:
         try:
             if len(assignments) < 2:
                 return 0.0
-            
+
             # VECTORIZED calculation of regime changes
             changes = np.sum(assignments[1:] != assignments[:-1])
             total_possible_changes = len(assignments) - 1
-            
+
             if total_possible_changes == 0:
                 return 1.0
-            
+
             # Calculate smoothness ratio (higher = smoother)
             smoothness_ratio = 1.0 - (changes / total_possible_changes)
-            
+
             # Apply penalty for excessive changes
             if changes > len(assignments) * 0.1:  # More than 10% changes
                 penalty_factor = 0.8
             else:
                 penalty_factor = 1.0
-            
+
             return np.clip(smoothness_ratio * penalty_factor, 0.0, 1.0)
-            
+
         except Exception as e:
             return 0.0
 
@@ -7804,16 +7804,16 @@ class CachedClusteringState:
         try:
             if len(assignments) < 2:
                 return 0.0
-            
+
             # Calculate regime change frequency
             changes = np.sum(assignments[1:] != assignments[:-1])
             total_transitions = len(assignments) - 1
             change_rate = changes / total_transitions
-            
+
             # Stability is inverse of change rate
             stability = 1.0 - change_rate
             return max(0.0, min(1.0, stability))
-            
+
         except Exception:
             return 0.0
 
@@ -7822,21 +7822,21 @@ class CachedClusteringState:
         try:
             if len(assignments) == 0:
                 return 0.0
-            
+
             # Calculate how well assignments are distributed
             unique_labels, counts = np.unique(assignments, return_counts=True)
             n_clusters = len(unique_labels)
-            
+
             if n_clusters < 2:
                 return 0.0
-            
+
             # Calculate balance (inverse of standard deviation of cluster sizes)
             mean_size = len(assignments) / n_clusters
             size_variance = np.var(counts)
             balance = 1.0 / (1.0 + size_variance / (mean_size ** 2))
-            
+
             return min(1.0, balance)
-            
+
         except Exception:
             return 0.0
 
@@ -7845,11 +7845,11 @@ class CachedClusteringState:
         try:
             # Use shared utilities for quality metrics
             from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-            
+
             # Basic clustering quality metrics
             unique_labels = np.unique(assignments)
             n_clusters = len(unique_labels)
-            
+
             if n_clusters < 2:
                 return {
                     "silhouette_score": 0.0,
@@ -7859,19 +7859,19 @@ class CachedClusteringState:
                     "inter_cluster_dispersion": 0.0,
                     "cluster_compactness": 0.0
                 }
-            
+
             # Import safe functions from metrics module
             from ..regime_analysis.metrics import (
-                safe_silhouette_score, 
-                safe_davies_bouldin_score, 
+                safe_silhouette_score,
+                safe_davies_bouldin_score,
                 safe_calinski_harabasz_score
             )
-            
+
             # Calculate standard clustering metrics
             silhouette = safe_silhouette_score(features, assignments)
             davies_bouldin = safe_davies_bouldin_score(features, assignments)
             calinski_harabasz = safe_calinski_harabasz_score(features, assignments)
-            
+
             # Calculate intra-cluster dispersion
             intra_dispersion = 0.0
             for label in unique_labels:
@@ -7881,9 +7881,9 @@ class CachedClusteringState:
                     center = safe_mean(cluster_features, axis=0)
                     distances = np.linalg.norm(cluster_features - center, axis=1)
                     intra_dispersion += safe_mean(distances)
-            
+
             intra_dispersion /= n_clusters
-            
+
             # Calculate inter-cluster dispersion
             centers = []
             for label in unique_labels:
@@ -7891,7 +7891,7 @@ class CachedClusteringState:
                 if np.any(mask):
                     center = safe_mean(features[mask], axis=0)
                     centers.append(center)
-            
+
             if len(centers) > 1:
                 centers = np.array(centers)
                 inter_dispersion = 0.0
@@ -7901,10 +7901,10 @@ class CachedClusteringState:
                 inter_dispersion /= (len(centers) * (len(centers) - 1) / 2)
             else:
                 inter_dispersion = 0.0
-            
+
             # Calculate cluster compactness
             compactness = safe_divide(inter_dispersion, intra_dispersion, default=0.0)
-            
+
             return {
                 "silhouette_score": float(silhouette),
                 "davies_bouldin_score": float(davies_bouldin),
@@ -7913,7 +7913,7 @@ class CachedClusteringState:
                 "inter_cluster_dispersion": float(inter_dispersion),
                 "cluster_compactness": float(compactness)
             }
-            
+
         except Exception as exc:
             tprint_warning(f"Failed to calculate final quality metrics: {exc}")
             return {
@@ -7930,11 +7930,11 @@ class CachedClusteringState:
         try:
             # Import safe functions from metrics module
             from ..regime_analysis.metrics import (
-                safe_silhouette_score, 
-                safe_davies_bouldin_score, 
+                safe_silhouette_score,
+                safe_davies_bouldin_score,
                 safe_calinski_harabasz_score
             )
-            
+
             # Calculate standard clustering metrics
             tprint(f"🔍 Features shape: {features.shape}, Assignments shape: {assignments.shape}", "INFO")
             silhouette = safe_silhouette_score(features, assignments)
@@ -7943,19 +7943,19 @@ class CachedClusteringState:
             tprint(f"🔍 Davies-Bouldin score: {davies_bouldin}", "INFO")
             calinski_harabasz = safe_calinski_harabasz_score(features, assignments)
             tprint(f"🔍 Calinski-Harabasz score: {calinski_harabasz}", "INFO")
-            
+
             # Calculate CV score
             cv_score = self._calculate_cv_score_optimized(features, assignments)
-            
+
             # Calculate temporal smoothness
             temporal_smoothness = self._calculate_temporal_smoothness_optimized(assignments)
-            
+
             # Calculate regime balance
             unique_labels = np.unique(assignments)
             n_clusters = len(unique_labels)
             regime_counts = np.bincount(assignments)
             regime_balance = 1.0 - (np.std(regime_counts) / (np.mean(regime_counts) + 1e-8))
-            
+
             # Calculate intra-cluster dispersion
             intra_dispersion = 0.0
             for label in unique_labels:
@@ -7965,9 +7965,9 @@ class CachedClusteringState:
                     center = np.mean(cluster_features, axis=0)
                     distances = np.linalg.norm(cluster_features - center, axis=1)
                     intra_dispersion += np.mean(distances)
-            
+
             intra_dispersion /= n_clusters
-            
+
             # Calculate inter-cluster dispersion
             centers = []
             for label in unique_labels:
@@ -7975,7 +7975,7 @@ class CachedClusteringState:
                 if np.any(mask):
                     center = np.mean(features[mask], axis=0)
                     centers.append(center)
-            
+
             if len(centers) > 1:
                 centers = np.array(centers)
                 inter_dispersion = 0.0
@@ -7985,10 +7985,10 @@ class CachedClusteringState:
                 inter_dispersion /= (len(centers) * (len(centers) - 1) / 2)
             else:
                 inter_dispersion = 0.0
-            
+
             # Calculate cluster compactness
             compactness = inter_dispersion / (intra_dispersion + 1e-8)
-            
+
             # Create comprehensive quality metrics
             quality_metrics = {
                 # Standard clustering metrics
@@ -7996,25 +7996,25 @@ class CachedClusteringState:
                 "davies_bouldin_score": float(davies_bouldin),
                 "calinski_harabasz_score": float(calinski_harabasz),
                 "cv_score": float(cv_score),
-                
+
                 # Temporal and regime metrics
                 "temporal_smoothness": float(temporal_smoothness),
                 "regime_balance": float(regime_balance),
-                
+
                 # Dispersion metrics
                 "intra_cluster_dispersion": float(intra_dispersion),
                 "inter_cluster_dispersion": float(inter_dispersion),
                 "cluster_compactness": float(compactness),
-                
+
                 # Regime distribution
                 "regime_distribution": {int(label): int(count) for label, count in enumerate(regime_counts)},
                 "n_clusters": int(n_clusters),
                 "total_samples": int(len(assignments))
             }
-            
+
             tprint(f"🔍 Quality metrics calculated successfully: {list(quality_metrics.keys())}", "SUCCESS")
             return quality_metrics
-            
+
         except Exception as exc:
             tprint_warning(f"Failed to calculate final quality metrics: {exc}")
             return {
@@ -8137,24 +8137,24 @@ class CachedClusteringState:
                     values = [v for v in economic_scores.values() if isinstance(v, (int, float)) and not np.isnan(v)]
                     if values:
                         return float(np.mean(values))
-                
+
                 # Fallback to trading scores
                 trading_scores = clustering_metrics.get('trading_scores')
                 if trading_scores and isinstance(trading_scores, dict):
                     values = [v for v in trading_scores.values() if isinstance(v, (int, float)) and not np.isnan(v)]
                     if values:
                         return float(np.mean(values))
-                
+
                 # Fallback to stability scores
                 stability_scores = clustering_metrics.get('stability_scores')
                 if stability_scores and isinstance(stability_scores, dict):
                     values = [v for v in stability_scores.values() if isinstance(v, (int, float)) and not np.isnan(v)]
                     if values:
                         return float(np.mean(values))
-            
+
             # Default fallback - use a neutral validation metric
             return 0.5
-            
+
         except Exception as exc:
             tprint_warning(f"Failed to derive validation metric: {exc}")
             return 0.5
@@ -8168,10 +8168,10 @@ class CachedClusteringState:
         try:
             if not metric_outputs or not isinstance(validation_metric, (int, float)):
                 return None
-            
+
             # Simple weight learning: adjust weights based on validation metric performance
             learned_weights = {}
-            
+
             for group, metrics in metric_outputs.items():
                 if not isinstance(metrics, dict):
                     continue
@@ -8180,11 +8180,11 @@ class CachedClusteringState:
                 default_weights = self._default_metric_weights.get(group, {})
                 if not default_weights:
                     continue
-            
+
                 # Calculate adjustment factor based on validation metric
                 # Higher validation metric should increase weights for better-performing metrics
                 adjustment_factor = max(0.5, min(2.0, validation_metric * 2.0))
-                
+
                 learned_group_weights = {}
                 for metric_name, default_weight in default_weights.items():
                     if metric_name in metrics:
@@ -8199,32 +8199,32 @@ class CachedClusteringState:
                             learned_group_weights[metric_name] = default_weight
                     else:
                         learned_group_weights[metric_name] = default_weight
-                
+
                 # Normalize weights to sum to 1.0
                 total_weight = sum(learned_group_weights.values())
                 if total_weight > 0:
                     for metric_name in learned_group_weights:
                         learned_group_weights[metric_name] /= total_weight
-                
+
                 learned_weights[group] = learned_group_weights
-            
+
             # Store learned weights
             if learned_weights:
                 self.learned_weights = learned_weights
-                
+
                 # Add to history
                 self.metric_weight_history.append({
                     'timestamp': pd.Timestamp.now(),
                     'validation_metric': validation_metric,
                     'learned_weights': learned_weights.copy()
                 })
-                
+
                 # Keep history within limit
                 if len(self.metric_weight_history) > self._weight_history_limit:
                     self.metric_weight_history = self.metric_weight_history[-self._weight_history_limit:]
-            
+
             return learned_weights
-            
+
         except Exception as exc:
             tprint_warning(f"Failed to fit metric weights: {exc}")
             return None
@@ -8255,7 +8255,7 @@ class CachedClusteringState:
         """Filter out trading-relevant features, keep only regime-relevant ones."""
         try:
             tprint("🔍 Filtering regime-relevant features (excluding trading features)...", "INFO")
-            
+
             # Define trading-relevant feature patterns to exclude
             trading_patterns = [
                 'rsi', 'macd', 'stochastic', 'williams', 'momentum',
@@ -8263,45 +8263,45 @@ class CachedClusteringState:
                 'candlestick', 'pattern', 'breakout', 'support', 'resistance',
                 'bollinger', 'atr', 'cci', 'roc', 'mfi', 'obv'
             ]
-            
+
             # Define regime-relevant feature patterns to prioritize
             regime_patterns = [
-                'volatility', 'volume_regime', 'trend_persistence', 
+                'volatility', 'volume_regime', 'trend_persistence',
                 'regime_stability', 'correlation', 'distribution',
                 'clustering', 'persistence', 'structural', 'statistical',
                 'vol_persistence', 'vol_clustering', 'vol_stability',
                 'vol_regime', 'trend_strength', 'market_structure'
             ]
-            
+
             # Create dummy feature names for filtering (in real implementation, these would come from feature generation)
             feature_names = [f'feature_{i}' for i in range(features.shape[1])]
-            
+
             # Filter features based on regime relevance
             regime_relevant_indices = []
             regime_relevant_names = []
-            
+
             for i, name in enumerate(feature_names):
                 name_lower = name.lower()
-                
+
                 # Exclude if matches trading patterns
                 if any(pattern in name_lower for pattern in trading_patterns):
                     continue
-                    
+
                 # Include if matches regime patterns or passes regime tests
                 if (any(pattern in name_lower for pattern in regime_patterns) or
                     self._is_regime_relevant_feature(features[:, i], market_data)):
                     regime_relevant_indices.append(i)
                     regime_relevant_names.append(name)
-            
+
             filtered_features = features[:, regime_relevant_indices] if regime_relevant_indices else features
-            
+
             tprint(f"Feature filtering: {features.shape[1]} -> {filtered_features.shape[1]} regime-relevant features", "SUCCESS")
             return filtered_features, regime_relevant_names
-            
+
         except Exception as e:
             tprint(f"Feature filtering failed: {e}", "ERROR")
             return features, [f'feature_{i}' for i in range(features.shape[1])]
-    
+
     def _is_regime_relevant_feature(self, feature_values: np.ndarray, market_data: pd.DataFrame) -> bool:
         """Test if a feature is relevant for regime classification."""
         try:
@@ -8323,13 +8323,13 @@ class CachedClusteringState:
             )
         except:
             return False
-    
+
     def _calculate_feature_regime_persistence(self, feature_values: np.ndarray, market_data: pd.DataFrame) -> float:
         """Calculate regime persistence for a feature."""
         try:
             if len(feature_values) < 10:
                 return 0.0
-            
+
             # Calculate autocorrelation as a proxy for regime persistence
             if len(feature_values) > 1:
                 corr = np.corrcoef(feature_values[:-1], feature_values[1:])[0, 1]
@@ -8337,59 +8337,59 @@ class CachedClusteringState:
             return 0.0
         except:
             return 0.0
-    
+
     def _calculate_feature_noise_ratio(self, feature_values: np.ndarray) -> float:
         """Calculate noise-to-signal ratio for a feature."""
         try:
             if len(feature_values) < 5:
                 return 1.0
-            
+
             # Noise ratio based on coefficient of variation
             mean_val = np.mean(feature_values)
             std_val = np.std(feature_values)
             return std_val / (abs(mean_val) + 1e-8)
         except:
             return 1.0
-    
+
     def _calculate_feature_temporal_stability(self, feature_values: np.ndarray) -> float:
         """Calculate temporal stability for a feature."""
         try:
             if len(feature_values) < 5:
                 return 0.0
-            
+
             # Temporal stability based on low variance of rolling statistics
             window = min(5, len(feature_values) // 2)
             if window < 2:
                 return 0.0
-            
+
             rolling_means = []
             for i in range(window, len(feature_values)):
                 rolling_means.append(np.mean(feature_values[i-window:i]))
-            
+
             if len(rolling_means) > 1:
                 stability = 1.0 - (np.std(rolling_means) / (np.mean(np.abs(rolling_means)) + 1e-8))
                 return max(0, min(1, stability))
             return 0.0
         except:
             return 0.0
-    
+
     def _calculate_temporal_feature_importance(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Calculate temporal feature importance based on temporal stability with M1 hardware optimization and vectorized operations."""
         try:
             tprint("  📊 Calculating temporal feature importance with M1 hardware optimization and vectorized operations...", "INFO")
-            
+
             # Initialize M1 hardware optimization for temporal analysis
             if self.m1_cpu_optimizer:
                 tprint("    ⚡ Using M1 CPU optimization for vectorized temporal analysis", "INFO")
             if self.m1_memory_optimizer:
                 tprint("    💾 Using M1 memory optimization for vectorized temporal analysis", "INFO")
-            
+
             # VECTORIZED CALCULATION: Process all features simultaneously
             tprint("    🔄 Using vectorized operations for all features simultaneously...", "INFO")
-            
+
             # 1. Vectorized autocorrelation calculation for all features
             autocorr_weights = self._calculate_vectorized_autocorrelation(features)
-            
+
             # 2. Vectorized temporal variance calculation for all features
             temporal_var_weights = self._calculate_vectorized_temporal_variance(features)
 
@@ -8420,158 +8420,158 @@ class CachedClusteringState:
             # Normalize weights to [0, 1] range
             if np.max(temporal_weights) > 0:
                 temporal_weights = temporal_weights / np.max(temporal_weights)
-            
+
             tprint(f"  ✅ Temporal importance calculated for {features.shape[1]} features", "SUCCESS")
             tprint(f"  📈 Top 5 temporal features: {np.argsort(temporal_weights)[-5:][::-1]}", "INFO")
-            
+
             return temporal_weights
-            
+
         except Exception as e:
             tprint(f"Temporal feature importance calculation failed: {e}")
             return np.ones(features.shape[1])  # Fallback to uniform weights
-    
+
     def _calculate_vectorized_autocorrelation(self, features: np.ndarray) -> np.ndarray:
         """Calculate autocorrelation for all features using vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized autocorrelation for all features...", "INFO")
-            
+
             if features.shape[0] < 2:
                 return np.zeros(features.shape[1])
-            
+
             # Vectorized autocorrelation calculation
             # Calculate mean for each feature
             feature_means = np.mean(features, axis=0, keepdims=True)
-            
+
             # Calculate autocorrelation using vectorized operations
             # Autocorr = E[(X_t - μ)(X_{t+1} - μ)] / E[(X_t - μ)²]
             centered_features = features - feature_means
-            
+
             # Calculate numerator: (X_t - μ)(X_{t+1} - μ) for all features
             numerator = np.sum(centered_features[:-1] * centered_features[1:], axis=0)
-            
+
             # Calculate denominator: (X_t - μ)² for all features
             denominator = np.sum(centered_features ** 2, axis=0)
-            
+
             # Avoid division by zero
             autocorr = np.where(denominator != 0, np.abs(numerator / denominator), 0)
-            
+
             tprint(f"      ✅ Vectorized autocorrelation calculated for {features.shape[1]} features", "SUCCESS")
             return autocorr
-            
+
         except Exception as e:
             tprint(f"Vectorized autocorrelation calculation failed: {e}")
             return np.zeros(features.shape[1])
-    
+
     def _calculate_vectorized_temporal_variance(self, features: np.ndarray) -> np.ndarray:
         """Calculate temporal variance for all features using optimized vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized temporal variance for all features...", "INFO")
-            
+
             if features.shape[0] < 2:
                 return np.zeros(features.shape[1])
-            
+
             # Optimized rolling variance calculation using pandas rolling window
             window_size = min(10, features.shape[0] // 4)
             if window_size < 2:
                 return np.var(features, axis=0)
-            
+
             # Use pandas rolling window for efficient computation
             import pandas as pd
             df_features = pd.DataFrame(features)
-            
+
             # Calculate rolling variance using pandas (implemented in C)
             rolling_vars = df_features.rolling(window=window_size, min_periods=1).var()
-            
+
             # Calculate mean rolling variance for each feature, ignoring NaN values
             temporal_vars = rolling_vars.mean(skipna=True).values
-            
+
             # Handle any remaining NaN values
             temporal_vars = np.nan_to_num(temporal_vars, nan=0.0)
-            
+
             tprint(f"      ✅ Vectorized temporal variance calculated for {features.shape[1]} features", "SUCCESS")
-            
+
             # Clean up temporary DataFrame
             del df_features, rolling_vars
-            
+
             return temporal_vars
-            
+
         except Exception as e:
             tprint(f"Vectorized temporal variance calculation failed: {e}")
             # Fallback to simple variance if rolling fails
             return np.var(features, axis=0)
-    
+
     def _calculate_vectorized_trend_consistency(self, features: np.ndarray) -> np.ndarray:
         """Calculate trend consistency for all features using vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized trend consistency for all features...", "INFO")
-            
+
             if features.shape[0] < 3:
                 return np.zeros(features.shape[1])
-            
+
             # Vectorized trend consistency calculation
             # Calculate first differences for all features
             diffs = np.diff(features, axis=0)
-            
+
             # Calculate direction changes for all features
             direction_changes = np.sum(np.diff(np.sign(diffs), axis=0) != 0, axis=0)
             max_changes = diffs.shape[0] - 1
-            
+
             # Calculate consistency for all features
             consistency = np.where(max_changes > 0, 1.0 - (direction_changes / max_changes), 1.0)
             consistency = np.maximum(0.0, consistency)
-            
+
             tprint(f"      ✅ Vectorized trend consistency calculated for {features.shape[1]} features", "SUCCESS")
             return consistency
-            
+
         except Exception as e:
             tprint(f"Vectorized trend consistency calculation failed: {e}")
             return np.zeros(features.shape[1])
-    
+
     def _calculate_vectorized_regime_persistence(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Calculate regime persistence for all features using vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized regime persistence for all features...", "INFO")
-            
+
             # Get regime assignments if available
             tas_assignments, nas_assignments = self._get_tas_nas_assignments()
-            
+
             if tas_assignments is None or len(tas_assignments) != len(features):
                 tprint("      ⚠️  No regime data available, using neutral persistence", "WARNING")
                 return np.ones(features.shape[1]) * 0.5
-            
+
             # Vectorized regime persistence calculation
             unique_regimes = np.unique(tas_assignments)
             regime_stabilities = []
-            
+
             for regime in unique_regimes:
                 regime_mask = tas_assignments == regime
                 regime_features = features[regime_mask]
-                
+
                 if len(regime_features) > 1:
                     # Calculate CV for each feature within the regime using vectorized operations
                     feature_means = np.mean(regime_features, axis=0)
                     feature_stds = np.std(regime_features, axis=0)
-                    
+
                     # Avoid division by zero
                     feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
-                    
+
                     # Stability = 1 / (1 + CV) for all features
                     regime_stability = 1.0 / (1.0 + feature_cvs)
                     regime_stabilities.append(regime_stability)
-            
+
             # Calculate average stability across regimes for each feature
             if regime_stabilities:
                 persistence_weights = np.mean(regime_stabilities, axis=0)
             else:
                 persistence_weights = np.ones(features.shape[1]) * 0.5
-            
+
             tprint(f"      ✅ Vectorized regime persistence calculated for {features.shape[1]} features", "SUCCESS")
             return persistence_weights
-            
+
         except Exception as e:
             tprint(f"Vectorized regime persistence calculation failed: {e}")
             return np.ones(features.shape[1]) * 0.5
-    
+
     # REMOVED: Legacy single-feature methods replaced by vectorized versions
     # These methods were replaced by _calculate_vectorized_* methods for better performance
 
@@ -8580,10 +8580,10 @@ class CachedClusteringState:
         try:
             disagreement_mask = tas_assignments != nas_assignments
             numerical_divergence_rate = np.mean(disagreement_mask)
-            
+
             # Simple confidence scoring for numerical disagreement
             confidence_scores = np.ones(len(tas_assignments)) * 0.5  # Neutral confidence
-            
+
             return {
                 'semantic_divergence_rate': numerical_divergence_rate,
                 'mapping_quality': 0.5,  # Neutral quality for numerical-only assessment
@@ -8592,7 +8592,7 @@ class CachedClusteringState:
                 'confidence_scores': confidence_scores,
                 'assessment_method': 'numerical_only'
             }
-            
+
         except Exception as e:
             tprint(f"Numerical divergence assessment with confidence failed: {e}")
             return {
@@ -8603,38 +8603,38 @@ class CachedClusteringState:
                 'confidence_scores': np.zeros(len(tas_assignments)),
                 'assessment_method': 'failed'
             }
-    
-    def _calculate_divergence_confidence_scores(self, features: np.ndarray, tas_assignments: np.ndarray, 
+
+    def _calculate_divergence_confidence_scores(self, features: np.ndarray, tas_assignments: np.ndarray,
                                              nas_assignments: np.ndarray, disagreement_mask: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for divergence detection."""
         try:
             confidence_scores = np.zeros(len(tas_assignments))
-            
+
             for i in range(len(tas_assignments)):
                 if disagreement_mask[i]:
                     # Calculate confidence based on multiple factors
-                    
+
                     # 1. Feature space distance between TAS and NAS regimes
                     tas_regime = tas_assignments[i]
                     nas_regime = nas_assignments[i]
-                    
+
                     # Get regime centroids
                     tas_centroid = self._get_regime_centroid(features, tas_assignments, tas_regime)
                     nas_centroid = self._get_regime_centroid(features, nas_assignments, nas_regime)
-                    
+
                     if tas_centroid is not None and nas_centroid is not None:
                         # Distance-based confidence (higher distance = higher confidence in divergence)
                         distance = np.linalg.norm(tas_centroid - nas_centroid)
                         distance_confidence = min(1.0, distance / np.std(features))
                     else:
                         distance_confidence = 0.5
-                    
+
                     # 2. Local neighborhood consistency
                     neighborhood_confidence = self._calculate_neighborhood_consistency(features, i, tas_regime, nas_regime)
-                    
+
                     # 3. Temporal consistency
                     temporal_confidence = self._calculate_temporal_divergence_confidence(i, tas_assignments, nas_assignments)
-                    
+
                     # Combine confidence factors
                     confidence_scores[i] = (
                         0.4 * distance_confidence +
@@ -8644,13 +8644,13 @@ class CachedClusteringState:
                 else:
                     # No disagreement, high confidence in agreement
                     confidence_scores[i] = 0.9
-            
+
             return confidence_scores
-            
+
         except Exception as e:
             tprint(f"Confidence score calculation failed: {e}")
             return np.ones(len(tas_assignments)) * 0.5
-    
+
     def _get_regime_centroid(self, features: np.ndarray, assignments: np.ndarray, regime: int) -> Optional[np.ndarray]:
         """Get centroid for a specific regime."""
         try:
@@ -8661,7 +8661,7 @@ class CachedClusteringState:
         except Exception as e:
             tprint(f"Regime centroid calculation failed: {e}")
             return None
-    
+
     def _calculate_neighborhood_consistency(self, features: np.ndarray, sample_idx: int, tas_regime: int, nas_regime: int, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> float:
         """Calculate neighborhood consistency for divergence confidence."""
         try:
@@ -8669,19 +8669,19 @@ class CachedClusteringState:
             k = min(5, len(features) - 1)
             distances = np.linalg.norm(features - features[sample_idx], axis=1)
             neighbor_indices = np.argsort(distances)[1:k+1]  # Exclude self
-            
+
             # Count neighbors that agree with divergence
             tas_neighbors = np.sum([tas_assignments[idx] == tas_regime for idx in neighbor_indices])
             nas_neighbors = np.sum([nas_assignments[idx] == nas_regime for idx in neighbor_indices])
-            
+
             # Consistency = proportion of neighbors that support the divergence
             consistency = (tas_neighbors + nas_neighbors) / (2 * k)
             return consistency
-            
+
         except Exception as e:
             tprint(f"Neighborhood consistency calculation failed: {e}")
             return 0.5
-    
+
     def _calculate_temporal_divergence_confidence(self, sample_idx: int, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> float:
         """Calculate temporal confidence for divergence."""
         try:
@@ -8689,16 +8689,16 @@ class CachedClusteringState:
             window_size = min(5, len(tas_assignments) // 4)
             start_idx = max(0, sample_idx - window_size // 2)
             end_idx = min(len(tas_assignments), sample_idx + window_size // 2 + 1)
-            
+
             # Count disagreements in temporal window
             window_tas = tas_assignments[start_idx:end_idx]
             window_nas = nas_assignments[start_idx:end_idx]
             window_disagreements = np.sum(window_tas != window_nas)
-            
+
             # Temporal confidence = proportion of disagreements in window
             temporal_confidence = window_disagreements / len(window_tas)
             return temporal_confidence
-            
+
         except Exception as e:
             tprint(f"Temporal divergence confidence calculation failed: {e}")
             return 0.5
@@ -8709,23 +8709,23 @@ class CachedClusteringState:
             unique_regimes = np.unique(assignments)
             n_regimes = len(unique_regimes)
             n_features = features.shape[1]
-            
+
             # Initialize centroids array
             centroids = np.zeros((n_regimes, n_features))
-            
+
             # Vectorized centroid calculation
             for i, regime in enumerate(unique_regimes):
                 regime_mask = assignments == regime
                 if np.any(regime_mask):
                     centroids[i] = np.mean(features[regime_mask], axis=0)
-            
+
             return centroids
-            
+
         except Exception as e:
             tprint_error(f"Error computing regime centroids: {e}")
             # Fallback to simple mean calculation
             unique_regimes = np.unique(assignments)
-            centroids = np.array([np.mean(features[assignments == regime], axis=0) 
+            centroids = np.array([np.mean(features[assignments == regime], axis=0)
                                  for regime in unique_regimes])
             return centroids
 
@@ -8735,75 +8735,75 @@ class CachedClusteringState:
             if not regime_mapping:
                 tprint("  ⚠️  No regime mapping available, returning original assignments", "WARNING")
                 return nas_assignments.copy()
-            
+
             # Create mapped assignments
             mapped_assignments = nas_assignments.copy()
             for nas_regime, tas_regime in regime_mapping.items():
                 mask = nas_assignments == nas_regime
                 mapped_assignments[mask] = tas_regime
-            
+
             mapped_count = np.sum([np.sum(nas_assignments == nas_regime) for nas_regime in regime_mapping.keys()])
             tprint(f"  🔄 Applied mapping to {mapped_count}/{len(nas_assignments)} samples", "INFO")
-            
+
             return mapped_assignments
-            
+
         except Exception as e:
             tprint(f"  ⚠️  Regime mapping application failed: {e}", "WARNING")
             return nas_assignments.copy()
 
-    def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+    def _calculate_multi_objective_flip_improvement(self, features: np.ndarray, assignments: np.ndarray,
                                                  sample_idx: int, target_regime: int) -> float:
         """Calculate multi-objective improvement using Pareto optimization principles with M1 hardware optimization."""
         try:
             tprint(f"    🎯 Calculating multi-objective improvement for sample {sample_idx} with M1 hardware optimization...", "INFO")
-            
+
             # Initialize M1 hardware optimization for multi-objective calculation
             if self.m1_cpu_optimizer:
                 tprint(f"      ⚡ Using M1 CPU optimization for sample {sample_idx}", "INFO")
             if self.m1_memory_optimizer:
                 tprint(f"      💾 Using M1 memory optimization for sample {sample_idx}", "INFO")
-            
+
             # Store original assignment
             original_regime = assignments[sample_idx]
-            
+
             # Calculate individual objective improvements
             objectives = self._calculate_multi_objective_scores(features, assignments, sample_idx, target_regime)
-            
+
             # Apply Pareto optimization weights
             pareto_weights = self._get_pareto_optimization_weights()
-            
+
             # Calculate weighted multi-objective improvement
             multi_objective_improvement = sum(
                 weight * objective for weight, objective in zip(pareto_weights, objectives.values())
             )
-            
+
             tprint(f"    ✅ Multi-objective improvement calculated: {multi_objective_improvement:.4f}", "SUCCESS")
             return multi_objective_improvement
-            
+
         except Exception as e:
             tprint(f"Multi-objective improvement calculation failed: {e}")
             # Fallback to single-objective improvement
             return self._calculate_single_flip_improvement(features, assignments, sample_idx, target_regime)
-    
-    def _calculate_multi_objective_scores(self, features: np.ndarray, assignments: np.ndarray, 
+
+    def _calculate_multi_objective_scores(self, features: np.ndarray, assignments: np.ndarray,
                                         sample_idx: int, target_regime: int) -> Dict[str, float]:
         """Calculate multiple objective scores for Pareto optimization."""
         try:
             # Store original assignment
             original_regime = assignments[sample_idx]
-            
+
             # Temporarily assign target regime
             assignments[sample_idx] = target_regime
-            
+
             # Calculate individual quality metrics
             quality_scores = self._calculate_individual_quality_scores(features, assignments)
-            
+
             # Restore original assignment
             assignments[sample_idx] = original_regime
-            
+
             # Calculate original scores for comparison
             original_scores = self._calculate_individual_quality_scores(features, assignments)
-            
+
             # Calculate improvements for each objective (reduced redundancy)
             objectives = {
                 'silhouette_improvement': quality_scores['silhouette'] - original_scores['silhouette'],
@@ -8820,9 +8820,9 @@ class CachedClusteringState:
                     features, assignments, sample_idx, target_regime
                 )
             }
-            
+
             return objectives
-            
+
         except Exception as e:
             tprint(f"Multi-objective scores calculation failed: {e}")
             return {
@@ -8834,7 +8834,7 @@ class CachedClusteringState:
                 'between_regime_cv_improvement': 0.0,
                 'temporal_improvement': 0.0
             }
-    
+
     def _get_pareto_optimization_weights(self) -> List[float]:
         """Get Pareto optimization weights for multi-objective optimization with reduced redundancy."""
         try:
@@ -8849,14 +8849,14 @@ class CachedClusteringState:
                 0.15,  # Between-regime CV improvement (inter-regime divergence - reduced from 0.20)
                 0.15   # Temporal improvement (smoothness - reduced from 0.20)
             ]
-            
+
             return weights
-            
+
         except Exception as e:
             tprint(f"Pareto weights calculation failed: {e}")
             return [0.15, 0.00, 0.00, 0.35, 0.20, 0.15, 0.15]  # Default weights with enhanced balance
-    
-    def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+
+    def _calculate_temporal_consistency_improvement(self, features: np.ndarray, assignments: np.ndarray,
                                                  sample_idx: int, target_regime: int) -> float:
         """Calculate temporal consistency improvement for regime flip."""
         try:
@@ -8875,7 +8875,7 @@ class CachedClusteringState:
                         original_consistency += 0.5
                     if i < len(assignments) - 1 and assignments[i] == assignments[i+1]:
                         original_consistency += 0.5
-            
+
             # Calculate temporal consistency after flip
             assignments[sample_idx] = target_regime
             new_consistency = 0.0
@@ -8892,169 +8892,169 @@ class CachedClusteringState:
 
             # Return improvement
             return new_consistency - original_consistency
-            
+
         except Exception as e:
             tprint(f"Temporal consistency improvement calculation failed: {e}")
             return 0.0
-    
-    def _calculate_within_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+
+    def _calculate_within_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray,
                                              sample_idx: int, target_regime: int) -> float:
         """Calculate within-regime CV improvement for regime flip (intra-regime stability)."""
         try:
             # Store original assignment
             original_regime = assignments[sample_idx]
-            
+
             # Calculate within-regime CV before flip
             original_within_cv = self._calculate_within_regime_cv(features, assignments)
-            
+
             # Temporarily assign target regime
             assignments[sample_idx] = target_regime
-            
+
             # Calculate within-regime CV after flip
             new_within_cv = self._calculate_within_regime_cv(features, assignments)
-            
+
             # Restore original assignment
             assignments[sample_idx] = original_regime
-            
+
             # Return improvement (lower CV = higher stability = better)
             improvement = original_within_cv - new_within_cv
             return improvement
-            
+
         except Exception as e:
             tprint(f"Within-regime CV improvement calculation failed: {e}")
             return 0.0
-    
-    def _calculate_between_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray, 
+
+    def _calculate_between_regime_cv_improvement(self, features: np.ndarray, assignments: np.ndarray,
                                               sample_idx: int, target_regime: int) -> float:
         """Calculate between-regime CV improvement for regime flip (inter-regime divergence)."""
         try:
             # Store original assignment
             original_regime = assignments[sample_idx]
-            
+
             # Calculate between-regime CV before flip
             original_between_cv = self._calculate_between_regime_cv(features, assignments)
-            
+
             # Temporarily assign target regime
             assignments[sample_idx] = target_regime
-            
+
             # Calculate between-regime CV after flip
             new_between_cv = self._calculate_between_regime_cv(features, assignments)
-            
+
             # Restore original assignment
             assignments[sample_idx] = original_regime
-            
+
             # Return improvement (higher CV = higher divergence = better for NAS/TAS detection)
             improvement = new_between_cv - original_between_cv
             return improvement
-            
+
         except Exception as e:
             tprint(f"Between-regime CV improvement calculation failed: {e}")
             return 0.0
-    
+
     def _calculate_within_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Calculate within-regime coefficient of variation (intra-regime stability) using vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized within-regime CV...", "INFO")
-            
+
             unique_regimes = np.unique(assignments)
             within_cvs = []
-            
+
             for regime in unique_regimes:
                 regime_mask = assignments == regime
                 regime_features = features[regime_mask]
-                
+
                 if len(regime_features) > 1:
                     # VECTORIZED CV calculation for all features within regime
                     feature_means = np.mean(regime_features, axis=0)
                     feature_stds = np.std(regime_features, axis=0)
-                    
+
                     # Avoid division by zero - vectorized operation
                     feature_cvs = np.where(feature_means != 0, feature_stds / np.abs(feature_means), 0)
-                    
+
                     # Average CV across features for this regime
                     regime_cv = np.mean(feature_cvs)
                     within_cvs.append(regime_cv)
-            
+
             # Return average within-regime CV (lower = more stable)
             result = np.mean(within_cvs) if within_cvs else 0.0
             tprint(f"      ✅ Vectorized within-regime CV calculated: {result:.4f}", "SUCCESS")
             return result
-            
+
         except Exception as e:
             tprint(f"Within-regime CV calculation failed: {e}")
             return 0.0
-    
+
     def _calculate_between_regime_cv(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Calculate between-regime coefficient of variation (inter-regime divergence) using vectorized operations."""
         try:
             tprint("      🔄 Calculating vectorized between-regime CV...", "INFO")
-            
+
             unique_regimes = np.unique(assignments)
-            
+
             if len(unique_regimes) < 2:
                 return 0.0
-            
+
             # VECTORIZED regime centroid calculation
             regime_centroids = []
             for regime in unique_regimes:
                 regime_mask = assignments == regime
                 regime_features = features[regime_mask]
-                
+
                 if len(regime_features) > 0:
                     # Vectorized centroid calculation
                     centroid = np.mean(regime_features, axis=0)
                     regime_centroids.append(centroid)
-            
+
             if len(regime_centroids) < 2:
                 return 0.0
-            
+
             # VECTORIZED pairwise distance calculation
             regime_centroids = np.array(regime_centroids)
-            
+
             # Calculate all pairwise distances using vectorized operations
             # Using broadcasting to calculate distances efficiently
             n_centroids = len(regime_centroids)
             distances = np.zeros((n_centroids, n_centroids))
-            
+
             for i in range(n_centroids):
                 for j in range(i + 1, n_centroids):
                     distances[i, j] = np.linalg.norm(regime_centroids[i] - regime_centroids[j])
-            
+
             # Extract upper triangular distances
             upper_triangular = distances[np.triu_indices(n_centroids, k=1)]
             centroid_distances = upper_triangular[upper_triangular > 0]
-            
+
             if len(centroid_distances) == 0:
                 return 0.0
-            
+
             # VECTORIZED CV calculation
             mean_distance = np.mean(centroid_distances)
             std_distance = np.std(centroid_distances)
-            
+
             if mean_distance != 0:
                 between_cv = std_distance / mean_distance
             else:
                 between_cv = 0.0
-            
+
             tprint(f"      ✅ Vectorized between-regime CV calculated: {between_cv:.4f}", "SUCCESS")
             return between_cv
-            
+
         except Exception as e:
             tprint(f"Between-regime CV calculation failed: {e}")
             return 0.0
-    
+
     def _update_convergence_history(self, improvement: float):
         """Update convergence history for adaptive batch sizing."""
         try:
             if not hasattr(self, '_convergence_history'):
                 self._convergence_history = []
-            
+
             self._convergence_history.append(improvement)
-            
+
             # Keep only recent history (last 10 iterations)
             if len(self._convergence_history) > 10:
                 self._convergence_history = self._convergence_history[-10:]
-                
+
         except Exception as e:
             tprint(f"Convergence history update failed: {e}")
 
@@ -9242,21 +9242,21 @@ class CachedClusteringState:
         """Apply Dawid-Skene fusion to combine TAS and NAS regime assignments."""
         try:
             tprint("Starting Dawid-Skene fusion process...", "INFO")
-            
+
             # Validate inputs
             if tas_assignments is None or nas_assignments is None:
                 raise ValueError("Both TAS and NAS assignments are required for fusion")
-            
+
             if len(tas_assignments) != len(nas_assignments):
                 raise ValueError(f"Assignment length mismatch: TAS={len(tas_assignments)}, NAS={len(nas_assignments)}")
-            
+
             # Determine target K based on unique regimes in both assignments
             tas_unique = len(np.unique(tas_assignments))
             nas_unique = len(np.unique(nas_assignments))
             target_k = max(tas_unique, nas_unique, 8)  # Use at least 8 clusters
-            
+
             tprint(f"Target K for fusion: {target_k} (TAS: {tas_unique}, NAS: {nas_unique})", "INFO")
-            
+
             # Use the existing regime optimization service for Dawid-Skene fusion
             if hasattr(self, 'regime_optimization_service') and self.regime_optimization_service:
                 # Use the service's Dawid-Skene implementation
@@ -9268,21 +9268,21 @@ class CachedClusteringState:
                     max_iterations=50,
                     tolerance=1e-6
                 )
-                
+
                 if hasattr(fusion_result, 'assignments'):
                     fused_assignments = fusion_result.assignments
                 elif isinstance(fusion_result, tuple) and len(fusion_result) > 0:
                     fused_assignments = fusion_result[0]
                 else:
                     fused_assignments = fusion_result
-                    
+
                 tprint(f"Dawid-Skene fusion completed successfully: {len(fused_assignments)} samples", "SUCCESS")
                 return fused_assignments
             else:
                 # Fallback: simple majority voting if service is not available
                 tprint("Regime optimization service not available, using simple majority voting", "WARNING")
                 return self._simple_majority_voting(tas_assignments, nas_assignments, target_k)
-                
+
         except Exception as e:
             tprint_error(f"Dawid-Skene fusion failed: {e}")
             # Fallback to simple majority voting
@@ -9293,61 +9293,61 @@ class CachedClusteringState:
                 tprint_error(f"Fallback fusion also failed: {fallback_error}")
                 # Last resort: return TAS assignments
                 return tas_assignments
-    
+
     def _simple_majority_voting(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray, target_k: int) -> np.ndarray:
         """Simple majority voting fallback for regime fusion."""
         try:
             # Create a simple consensus by taking the mode of both assignments
             # If they disagree, prefer TAS assignments (can be changed to NAS if preferred)
             consensus_assignments = np.copy(tas_assignments)
-            
+
             # For points where TAS and NAS disagree, use a weighted approach
             disagreement_mask = tas_assignments != nas_assignments
-            
+
             if np.any(disagreement_mask):
                 tprint(f"Found {np.sum(disagreement_mask)} points with TAS/NAS disagreement, using TAS preference", "INFO")
                 # Could implement more sophisticated voting here
-            
+
             # Ensure assignments are in valid range [0, target_k-1]
             consensus_assignments = np.clip(consensus_assignments, 0, target_k - 1)
-            
+
             return consensus_assignments
-            
+
         except Exception as e:
             tprint_error(f"Simple majority voting failed: {e}")
             # Return TAS assignments as last resort
             return np.clip(tas_assignments, 0, target_k - 1)
-    
+
     def _analyze_cluster_quality_enhanced(self, assignments: np.ndarray, features: np.ndarray) -> Dict[int, Dict[str, float]]:
         """Analyze cluster quality with enhanced metrics for dynamic splitting - FULLY VECTORIZED."""
         try:
             unique_regimes = np.unique(assignments)
             cluster_metrics = {}
-            
+
             # VECTORIZED: Compute all cluster metrics at once
             regime_sizes = np.bincount(assignments, minlength=len(unique_regimes))
             regime_percentages = regime_sizes / len(assignments)
-            
+
             # VECTORIZED: Compute centroids for all regimes at once
             centroids = self._compute_regime_centroids_vectorized(features, assignments, len(unique_regimes))
-            
+
             # VECTORIZED: Compute quality metrics for all clusters simultaneously
             for i, regime in enumerate(unique_regimes):
                 regime_mask = assignments == regime
                 regime_size = regime_sizes[i]
                 regime_percentage = regime_percentages[i]
-                
+
                 if regime_size > 0:
                     regime_features = features[regime_mask]
-                    
+
                     # VECTORIZED: Compute all quality metrics efficiently
                     internal_cv = self._calculate_internal_cv_score_vectorized(regime_features)
                     compactness = self._calculate_compactness_score_vectorized(regime_features, centroids[regime])
                     quality_score = self._calculate_cluster_quality_score_vectorized(regime_features, regime_percentage)
-                    
+
                     # Approximate silhouette contribution (simplified for performance)
                     silhouette_contribution = max(0.0, min(1.0, compactness * regime_percentage))
-                    
+
                     cluster_metrics[regime] = {
                         'size_percentage': regime_percentage,
                         'internal_cv': internal_cv,
@@ -9365,33 +9365,33 @@ class CachedClusteringState:
                         'quality_score': 0.0,
                         'regime_size': 0
                     }
-            
+
             return cluster_metrics
-            
+
         except Exception as e:
             tprint(f"Cluster quality analysis failed: {e}", "ERROR")
             return {}
-    
+
     def _calculate_internal_cv_score(self, cluster_features: np.ndarray) -> float:
         """Calculate internal coefficient of variation for cluster coherence."""
         try:
             if len(cluster_features) < 2:
                 return 0.0
-            
+
             # Calculate within-cluster variance
             within_var = np.var(cluster_features, axis=0).mean()
-            
+
             # Calculate mean of features
             mean_features = np.mean(cluster_features, axis=0)
             mean_value = np.mean(mean_features)
-            
+
             # CV score (lower is better for coherence)
             if mean_value == 0:
                 return 1.0
-            
+
             cv_score = np.sqrt(within_var) / abs(mean_value)
             return min(cv_score, 1.0)
-            
+
         except Exception:
             return 1.0
 
@@ -9400,41 +9400,41 @@ class CachedClusteringState:
         try:
             if len(cluster_features) < 2:
                 return 0.0
-            
+
             # VECTORIZED: Calculate variance and mean in one pass
             feature_means = np.mean(cluster_features, axis=0)
             feature_vars = np.var(cluster_features, axis=0)
-            
+
             # VECTORIZED: Compute CV score efficiently
             mean_value = np.mean(feature_means)
             avg_variance = np.mean(feature_vars)
-            
+
             if mean_value == 0:
                 return 1.0
-            
+
             cv_score = np.sqrt(avg_variance) / abs(mean_value)
             return min(cv_score, 1.0)
-            
+
         except Exception:
             return 1.0
-    
+
     def _calculate_compactness_score(self, cluster_features: np.ndarray) -> float:
         """Calculate compactness score for cluster (higher = more compact)."""
         try:
             if len(cluster_features) < 2:
                 return 0.0
-            
+
             # Calculate centroid
             centroid = np.mean(cluster_features, axis=0)
-            
+
             # Calculate average distance from centroid
             distances = np.linalg.norm(cluster_features - centroid, axis=1)
             avg_distance = np.mean(distances)
-            
+
             # Compactness score (higher = more compact)
             compactness = 1.0 / (1.0 + avg_distance)
             return min(compactness, 1.0)
-            
+
         except Exception:
             return 0.0
 
@@ -9443,38 +9443,38 @@ class CachedClusteringState:
         try:
             if len(cluster_features) < 2:
                 return 0.0
-            
+
             # VECTORIZED: Calculate distances from provided centroid
             distances = np.linalg.norm(cluster_features - centroid, axis=1)
             avg_distance = np.mean(distances)
-            
+
             # Compactness score (higher = more compact)
             compactness = 1.0 / (1.0 + avg_distance)
             return min(compactness, 1.0)
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_silhouette_contribution(self, features: np.ndarray, assignments: np.ndarray, cluster_id: int) -> float:
         """Calculate silhouette contribution of a specific cluster."""
         try:
             if len(np.unique(assignments)) < 2:
                 return 0.0
-            
+
             # Get cluster samples
             cluster_mask = assignments == cluster_id
             cluster_features = features[cluster_mask]
-            
+
             if len(cluster_features) < 2:
                 return 0.0
-            
+
             # Calculate average silhouette score for this cluster
             from sklearn.metrics import silhouette_samples
             silhouette_scores = silhouette_samples(features, assignments)
             cluster_silhouette = np.mean(silhouette_scores[cluster_mask])
-            
+
             return cluster_silhouette
-            
+
         except Exception:
             return 0.0
 
@@ -9588,15 +9588,15 @@ class CachedClusteringState:
 
         except Exception:
             return 0.0
-    
+
     def _should_split_cluster_enhanced(self, cluster_metrics: Dict[int, Dict[str, float]], cluster_id: int) -> Tuple[bool, Dict[str, Any]]:
         """Enhanced cluster splitting decision with size-based thresholds and quality requirements."""
         try:
             cluster = cluster_metrics[cluster_id]
-            
+
             # Calculate quality score percentiles for relative comparison
             all_quality_scores = [metrics['quality_score'] for metrics in cluster_metrics.values()]
-            
+
             # Use numpy for robust percentile calculation
             import numpy as np
             if len(all_quality_scores) > 1:
@@ -9606,14 +9606,14 @@ class CachedClusteringState:
                 # Fallback for single cluster
                 bottom_50_percentile = 0.3
                 bottom_25_percentile = 0.2
-            
+
             current_quality = cluster['quality_score']
             cluster_size = cluster['size_percentage']
-            
+
             # Debug logging
             tprint(f"   🔍 Cluster {cluster_id} analysis: size={cluster_size:.3f}, quality={current_quality:.3f}", "DEBUG")
             tprint(f"   📊 Percentiles: 50%={bottom_50_percentile:.3f}, 25%={bottom_25_percentile:.3f}", "DEBUG")
-            
+
             # CORRECTED SPLITTING LOGIC: Split large clusters for better regime separation
             # 1. Size > 16% + no criteria required (for any large cluster)
             condition_1 = cluster_size > 0.16
@@ -9625,12 +9625,12 @@ class CachedClusteringState:
             # 3. Size > 10% + is very low quality (bottom 25%) (large and very poor quality)
             is_very_low_quality = current_quality <= bottom_25_percentile
             condition_3 = cluster_size > 0.10 and is_very_low_quality
-            
+
             tprint(f"   🎯 Conditions: 1={condition_1}, 2={condition_2}, 3={condition_3}", "DEBUG")
-            
+
             # Determine if cluster should be split
             should_split = condition_1 or condition_2 or condition_3
-            
+
             # Determine the reason for splitting
             if condition_1:
                 reason = 'size_over_16_percent'
@@ -9640,7 +9640,7 @@ class CachedClusteringState:
                 reason = 'size_over_10_percent_very_low_quality'
             else:
                 reason = 'no_split'
-            
+
             return should_split, {
                 'reason': reason,
                 'cluster_size': cluster_size,
@@ -9650,28 +9650,28 @@ class CachedClusteringState:
                 'bottom_50_percentile': bottom_50_percentile,
                 'bottom_25_percentile': bottom_25_percentile
             }
-            
+
         except Exception as e:
             tprint(f"Error in _should_split_cluster_enhanced for cluster {cluster_id}: {e}", "ERROR")
             return False, {'reason': 'error', 'error': str(e)}
-    
+
     def _estimate_split_improvement(self, cluster_metrics: Dict[int, Dict[str, float]], cluster_id: int) -> float:
         """Estimate expected improvement from splitting a cluster."""
         try:
             cluster = cluster_metrics[cluster_id]
-            
+
             # Base improvement factors
             size_factor = min(cluster['size_percentage'] / 0.16, 2.0)  # Cap at 2x
             coherence_factor = max(0.3 - cluster['internal_cv'], 0) / 0.3
             compactness_factor = max(0.4 - cluster['compactness'], 0) / 0.4
-            
+
             # Quality degradation factors
             silhouette_factor = max(0.0 - cluster['silhouette_contribution'], 0)
             balance_factor = self._calculate_balance_improvement_potential(cluster)
-            
+
             # Feature complexity factor
             complexity_factor = self._estimate_feature_complexity(cluster)
-            
+
             # Weighted improvement prediction
             expected_improvement = (
                 size_factor * 0.25 +
@@ -9681,12 +9681,12 @@ class CachedClusteringState:
                 balance_factor * 0.10 +
                 complexity_factor * 0.15
             )
-            
+
             return min(expected_improvement, 1.0)
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_balance_improvement_potential(self, cluster: Dict[str, float]) -> float:
         """Calculate potential balance improvement from splitting."""
         try:
@@ -9696,7 +9696,7 @@ class CachedClusteringState:
             return 0.0
         except Exception:
             return 0.0
-    
+
     def _estimate_feature_complexity(self, cluster: Dict[str, float]) -> float:
         """Estimate feature complexity factor for splitting."""
         try:
@@ -9705,34 +9705,34 @@ class CachedClusteringState:
             return min(complexity, 1.0)
         except Exception:
             return 0.0
-    
+
     def _estimate_cv_improvement_from_split(self, cluster_metrics: Dict[int, Dict[str, float]], cluster_id: int) -> float:
         """Estimate CV improvement from splitting a cluster."""
         try:
             cluster = cluster_metrics[cluster_id]
-            
+
             # Calculate current CV score for the cluster
             current_cv = cluster.get('cv_score', 0.0)
-            
+
             # Estimate CV improvement based on cluster characteristics
             size_factor = cluster['size_percentage']
             coherence_factor = cluster['internal_cv']
             compactness_factor = cluster['compactness']
-            
+
             # Larger, less coherent clusters will benefit more from splitting
             size_benefit = min(size_factor * 0.5, 0.3)  # Up to 30% benefit from size
             coherence_benefit = (1.0 - coherence_factor) * 0.2  # Up to 20% benefit from low coherence
             compactness_benefit = (1.0 - compactness_factor) * 0.1  # Up to 10% benefit from low compactness
-            
+
             # Total estimated CV improvement
             estimated_improvement = size_benefit + coherence_benefit + compactness_benefit
-            
+
             # Cap the improvement at 50% to be realistic
             return min(estimated_improvement, 0.5)
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_split_confidence(self, cluster: Dict[str, float], expected_improvement: float) -> float:
         """Calculate confidence in split decision."""
         try:
@@ -9740,55 +9740,55 @@ class CachedClusteringState:
             size_confidence = min(cluster['size_percentage'] / 0.20, 1.0)  # Higher confidence for larger clusters
             quality_confidence = 1.0 - cluster['quality_score']  # Higher confidence for lower quality
             improvement_confidence = expected_improvement
-            
+
             # Composite confidence
             confidence = (size_confidence * 0.4 + quality_confidence * 0.3 + improvement_confidence * 0.3)
             return min(confidence, 1.0)
-            
+
         except Exception:
             return 0.0
-    
+
     def _discover_optimal_split_frontier(self, features: np.ndarray, assignments: np.ndarray, cluster_id: int) -> Dict[str, Any]:
         """Discover optimal split frontier using pre-existing code + feature importance."""
         try:
             cluster_mask = assignments == cluster_id
             cluster_features = features[cluster_mask]
             cluster_indices = np.where(cluster_mask)[0]
-            
+
             frontier_candidates = []
-            
+
             # Approach 1: Use existing K-means implementation
             kmeans_frontier = self._discover_kmeans_frontier(cluster_features, cluster_indices)
             frontier_candidates.append(kmeans_frontier)
-            
+
             # Approach 2: Use existing GMM implementation
             gmm_frontier = self._discover_gmm_frontier(cluster_features, cluster_indices)
             frontier_candidates.append(gmm_frontier)
-            
+
             # Approach 3: Feature importance-based splitting
             feature_importance_frontier = self._discover_feature_importance_frontier(cluster_features, cluster_indices)
             frontier_candidates.append(feature_importance_frontier)
-            
+
             # Evaluate and select best frontier
             best_frontier = self._select_optimal_frontier(frontier_candidates, cluster_features)
-            
+
             return best_frontier
-            
+
         except Exception as e:
             tprint(f"Frontier discovery failed: {e}", "ERROR")
             return {'method': 'fallback', 'quality': 0.0, 'sub_cluster_count': 2}
-    
+
     def _discover_kmeans_frontier(self, cluster_features: np.ndarray, cluster_indices: np.ndarray) -> Dict[str, Any]:
         """Vectorized K-means frontier discovery with batch processing."""
         try:
             from sklearn.cluster import KMeans
             from joblib import Parallel, delayed
-            
+
             # Vectorized approach: batch all K-means attempts
             # LIMITED: Maximum 3 sub-clusters to prevent over-splitting
             k_values = [2, 3]
             seeds = [42, 123, 456, 789]
-            
+
             def _run_kmeans_batch(k, seed):
                 """Run single K-means attempt."""
                 try:
@@ -9798,23 +9798,23 @@ class CachedClusteringState:
                     return quality, labels, k
                 except Exception:
                     return 0.0, None, k
-            
+
             # Parallel execution of all K-means attempts
             results = Parallel(n_jobs=-1, prefer="threads")(
                 delayed(_run_kmeans_batch)(k, seed) for k in k_values for seed in seeds
             )
-            
+
             # Find best result
             best_quality = 0.0
             best_labels = None
             best_k = 2
-            
+
             for quality, labels, k in results:
                 if quality > best_quality:
                     best_quality = quality
                     best_labels = labels
                     best_k = k
-            
+
             return {
                 'method': 'kmeans_vectorized',
                 'quality': best_quality,
@@ -9822,22 +9822,22 @@ class CachedClusteringState:
                 'sub_cluster_count': best_k,
                 'indices': cluster_indices
             }
-            
+
         except Exception:
             return {'method': 'kmeans_vectorized', 'quality': 0.0, 'sub_cluster_count': 2}
-    
+
     def _discover_gmm_frontier(self, cluster_features: np.ndarray, cluster_indices: np.ndarray) -> Dict[str, Any]:
         """Vectorized GMM frontier discovery with batch processing."""
         try:
             from sklearn.mixture import GaussianMixture
             from joblib import Parallel, delayed
-            
+
             # Vectorized approach: batch all GMM attempts
             # LIMITED: Maximum 3 sub-clusters to prevent over-splitting
             k_values = [2, 3]
             seeds = [42, 123, 456, 789]
             cov_types = ['full', 'tied', 'diag']
-            
+
             def _run_gmm_batch(k, seed, cov_type):
                 """Run single GMM attempt."""
                 try:
@@ -9847,24 +9847,24 @@ class CachedClusteringState:
                     return quality, labels, k
                 except Exception:
                     return 0.0, None, k
-            
+
             # Parallel execution of all GMM attempts
             results = Parallel(n_jobs=-1, prefer="threads")(
-                delayed(_run_gmm_batch)(k, seed, cov_type) 
+                delayed(_run_gmm_batch)(k, seed, cov_type)
                 for k in k_values for seed in seeds for cov_type in cov_types
             )
-            
+
             # Find best result
             best_quality = 0.0
             best_labels = None
             best_k = 2
-            
+
             for quality, labels, k in results:
                             if quality > best_quality:
                                 best_quality = quality
                                 best_labels = labels
                                 best_k = k
-            
+
             return {
                 'method': 'gmm_vectorized',
                 'quality': best_quality,
@@ -9872,35 +9872,35 @@ class CachedClusteringState:
                 'sub_cluster_count': best_k,
                 'indices': cluster_indices
             }
-            
+
         except Exception:
             return {'method': 'gmm_vectorized', 'quality': 0.0, 'sub_cluster_count': 2}
-    
+
     def _discover_feature_importance_frontier(self, cluster_features: np.ndarray, cluster_indices: np.ndarray) -> Dict[str, Any]:
         """Use feature importance for frontier discovery."""
         try:
             # Calculate feature importance within cluster
             feature_importance = self._calculate_feature_importance_within_cluster(cluster_features)
-            
+
             # Identify top discriminative features
             top_features = self._identify_top_discriminative_features(feature_importance, n_features=5)
-            
+
             # Test different splitting strategies
             best_quality = 0.0
             best_labels = None
             best_strategy = None
-            
+
             # Strategy 1: Single feature threshold
             for feature_idx in top_features[:3]:  # Test top 3 features
                 threshold = np.median(cluster_features[:, feature_idx])
                 labels = (cluster_features[:, feature_idx] > threshold).astype(int)
                 quality = self._evaluate_frontier_quality(labels, cluster_features)
-                
+
                 if quality > best_quality:
                     best_quality = quality
                     best_labels = labels
                     best_strategy = f'single_feature_{feature_idx}'
-            
+
             return {
                 'method': 'feature_importance',
                 'quality': best_quality,
@@ -9911,74 +9911,74 @@ class CachedClusteringState:
                 'top_features': top_features,
                 'indices': cluster_indices
             }
-            
+
         except Exception:
             return {'method': 'feature_importance', 'quality': 0.0, 'sub_cluster_count': 2}
-    
+
     def _calculate_feature_importance_within_cluster(self, cluster_features: np.ndarray) -> np.ndarray:
         """Calculate feature importance within a cluster."""
         try:
             n_features = cluster_features.shape[1]
             feature_importance = np.zeros(n_features)
-            
+
             # Method 1: Variance-based importance
             variance_importance = np.var(cluster_features, axis=0)
             feature_importance += variance_importance * 0.4
-            
+
             # Method 2: Range-based importance
             range_importance = np.ptp(cluster_features, axis=0)  # Peak-to-peak
             feature_importance += range_importance * 0.3
-            
+
             # Method 3: Skewness-based importance
             skewness_importance = np.abs(self._calculate_skewness_vectorized(cluster_features))
             feature_importance += skewness_importance * 0.3
-            
+
             # Normalize importance scores
             if np.sum(feature_importance) > 0:
                 feature_importance = feature_importance / np.sum(feature_importance)
-            
+
             return feature_importance
-            
+
         except Exception:
             return np.ones(cluster_features.shape[1]) / cluster_features.shape[1]
-    
+
     def _identify_top_discriminative_features(self, feature_importance: np.ndarray, n_features: int = 5) -> np.ndarray:
         """Identify top discriminative features."""
         try:
             return np.argsort(feature_importance)[-n_features:][::-1]
         except Exception:
             return np.array([0, 1, 2, 3, 4])[:n_features]
-    
+
     def _evaluate_frontier_quality(self, labels: np.ndarray, cluster_features: np.ndarray) -> float:
         """Evaluate frontier quality using comprehensive metrics for optimal splitting."""
         try:
             if len(np.unique(labels)) < 2:
                 return 0.0
-            
+
             # Calculate comprehensive quality metrics
             tprint("⚠️ WARNING: _calculate_silhouette_score_optimized is not defined - using fallback", "WARNING")
             silhouette_score = 0.5  # Fallback value
             compactness = self._calculate_compactness_score(cluster_features)
             tprint("⚠️ WARNING: _calculate_regime_balance_optimized is not defined - using fallback", "WARNING")
             balance = 0.5  # Fallback value
-            
+
             # ENHANCED: Add separation quality metrics
             from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
-            
+
             # Davies-Bouldin score (lower is better, normalize)
             try:
                 db_score = davies_bouldin_score(cluster_features, labels)
                 normalized_db = min(1.0, 1.0 / max(0.1, db_score))  # Convert to higher-is-better
             except:
                 normalized_db = 0.5
-            
+
             # Calinski-Harabasz score (higher is better)
             try:
                 ch_score = calinski_harabasz_score(cluster_features, labels)
                 normalized_ch = min(1.0, ch_score / 1000.0)  # Normalize
             except:
                 normalized_ch = 0.5
-            
+
             # ENHANCED: Comprehensive quality score with separation emphasis
             quality_score = (
                 silhouette_score * 0.35 +      # Primary: silhouette separation
@@ -9987,42 +9987,42 @@ class CachedClusteringState:
                 compactness * 0.15 +           # Quaternary: cluster compactness
                 balance * 0.05                 # Quinary: balance (minimal weight)
             )
-            
+
             return max(0.0, min(1.0, quality_score))
-            
+
         except Exception:
             return 0.0
-    
+
     def _evaluate_frontier_quality_vectorized(self, labels: np.ndarray, cluster_features: np.ndarray) -> float:
         """Vectorized frontier quality evaluation with optimized metrics."""
         try:
             if len(np.unique(labels)) < 2:
                 return 0.0
-            
+
             # Vectorized silhouette score calculation
             silhouette_score = self._calculate_silhouette_score_vectorized(cluster_features, labels)
-            
+
             # Vectorized balance calculation
             balance = self._calculate_regime_balance_vectorized(labels)
-            
+
             # Vectorized compactness calculation
             compactness = self._calculate_compactness_vectorized(cluster_features, labels)
-            
+
             # Vectorized Davies-Bouldin and Calinski-Harabasz scores
             from sklearn.metrics import davies_bouldin_score, calinski_harabasz_score
-            
+
             try:
                 db_score = davies_bouldin_score(cluster_features, labels)
                 normalized_db = min(1.0, 1.0 / max(0.1, db_score))
             except:
                 normalized_db = 0.5
-            
+
             try:
                 ch_score = calinski_harabasz_score(cluster_features, labels)
                 normalized_ch = min(1.0, ch_score / 1000.0)
             except:
                 normalized_ch = 0.5
-            
+
             # Optimized quality score
             quality_score = (
                 silhouette_score * 0.35 +
@@ -10031,12 +10031,12 @@ class CachedClusteringState:
                 compactness * 0.15 +
                 balance * 0.05
             )
-            
+
             return max(0.0, min(1.0, quality_score))
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_silhouette_score_vectorized(self, features: np.ndarray, labels: np.ndarray) -> float:
         """Vectorized silhouette score calculation."""
         try:
@@ -10044,7 +10044,7 @@ class CachedClusteringState:
             return max(0.0, silhouette_score(features, labels))
         except Exception:
             return 0.0
-    
+
     def _calculate_regime_balance_vectorized(self, labels: np.ndarray) -> float:
         """Vectorized regime balance calculation."""
         try:
@@ -10052,24 +10052,24 @@ class CachedClusteringState:
             n_clusters = len(unique_labels)
             if n_clusters <= 1:
                 return 0.0
-            
+
             # Calculate balance as 1 - coefficient of variation
             mean_size = np.mean(counts)
             std_size = np.std(counts)
             cv = std_size / mean_size if mean_size > 0 else 1.0
             balance = max(0.0, 1.0 - cv)
-            
+
             return balance
         except Exception:
             return 0.0
-    
+
     def _calculate_compactness_vectorized(self, features: np.ndarray, labels: np.ndarray) -> float:
         """Vectorized compactness calculation."""
         try:
             unique_labels = np.unique(labels)
             if len(unique_labels) <= 1:
                 return 0.0
-            
+
             # Calculate intra-cluster distances vectorized
             intra_distances = []
             for label in unique_labels:
@@ -10078,65 +10078,65 @@ class CachedClusteringState:
                     centroid = np.mean(cluster_points, axis=0)
                     distances = np.linalg.norm(cluster_points - centroid, axis=1)
                     intra_distances.extend(distances)
-            
+
             if not intra_distances:
                 return 0.0
-            
+
             # Compactness as inverse of average intra-cluster distance
             avg_intra_distance = np.mean(intra_distances)
             compactness = max(0.0, 1.0 - min(1.0, avg_intra_distance / 2.0))
-            
+
             return compactness
         except Exception:
             return 0.0
-    
+
     def _select_optimal_frontier(self, frontier_candidates: List[Dict[str, Any]], cluster_features: np.ndarray) -> Dict[str, Any]:
         """Select optimal frontier from candidates."""
         try:
             if not frontier_candidates:
                 return {'method': 'fallback', 'quality': 0.0, 'sub_cluster_count': 2}
-            
+
             # Select best frontier based on quality
             best_frontier = max(frontier_candidates, key=lambda x: x.get('quality', 0.0))
-            
+
             return best_frontier
-            
+
         except Exception:
             return {'method': 'fallback', 'quality': 0.0, 'sub_cluster_count': 2}
-    
+
     def _apply_frontier_split(self, assignments: np.ndarray, cluster_id: int, frontier: Dict[str, Any]) -> np.ndarray:
         """Apply frontier split to assignments with optimal cluster ID management."""
         try:
             new_assignments = assignments.copy()
-            
+
             # Get cluster mask
             cluster_mask = assignments == cluster_id
             cluster_indices = np.where(cluster_mask)[0]
-            
+
             if 'labels' in frontier and frontier['labels'] is not None:
                 # Apply sub-cluster labels
                 sub_labels = frontier['labels']
                 unique_sub_labels = np.unique(sub_labels)
-                
+
                 # ENHANCED: Find the next available cluster ID to avoid conflicts
                 if isinstance(assignments, np.ndarray):
                     max_existing_id = np.max(assignments) if assignments.size > 0 else -1
                 else:
                     max_existing_id = np.max(assignments) if len(assignments) > 0 else -1
                 next_available_id = max_existing_id + 1
-                
+
                 # Map sub-labels to new cluster IDs
                 for i, sub_label in enumerate(unique_sub_labels):
                     sub_mask = sub_labels == sub_label
                     sub_indices = cluster_indices[sub_mask]
-                    
+
                     if i == 0:
                         # Keep original cluster ID for first sub-cluster
                         new_assignments[sub_indices] = cluster_id
                     else:
                         # Assign new cluster ID for additional sub-clusters (avoid conflicts)
                         new_assignments[sub_indices] = next_available_id + (i - 1)
-                
+
                 # Log the split for debugging
                 tprint(f"   🔄 Split cluster {cluster_id} into {len(unique_sub_labels)} sub-clusters", "INFO")
                 for i, sub_label in enumerate(unique_sub_labels):
@@ -10144,92 +10144,92 @@ class CachedClusteringState:
                     sub_size = np.sum(sub_mask)
                     new_id = cluster_id if i == 0 else next_available_id + (i - 1)
                     tprint(f"      📊 Sub-cluster {i}: {sub_size} samples → regime {new_id}", "INFO")
-            
+
             return new_assignments
-            
+
         except Exception as e:
             tprint(f"Frontier split application failed: {e}", "ERROR")
             return assignments
-    
+
     def _smart_cluster_splitting_decision(self, assignments: np.ndarray, features: np.ndarray, current_k: int, iteration: int, baseline_score: float) -> Tuple[np.ndarray, int, Dict]:
         """Smart cluster splitting decision using unified objective J."""
         try:
             from sklearn.cluster import KMeans
             from sklearn.metrics import davies_bouldin_score
-            
+
             n_samples = len(assignments)
             k_max = 12  # Maximum allowed clusters
-            
+
             # Compute current objective J
             current_J = self._compute_unified_objective(features, assignments, current_k, k_max)
             tprint(f"🔍 Current objective J={current_J:.4f} for k={current_k}", "INFO")
-            
+
             # Split gating constraints
             min_child_size = max(25, int(0.005 * n_samples))  # Min 25 or 0.5% of N
             max_splits_per_round = min(3, max(1, int(0.1 * current_k)))  # Cap at 3 or 10% of k
             delta_J_threshold = 0.005  # 0.5% improvement required
-            
+
             clusters_to_split = []
             tprint(f"🔍 Analyzing {current_k} clusters for splitting (max {max_splits_per_round} splits/round)...", "INFO")
-            
+
             for cluster_id in range(current_k):
                 cluster_mask = assignments == cluster_id
                 cluster_size = np.sum(cluster_mask)
-                
+
                 # Size constraint: must be large enough to split
                 if cluster_size < min_child_size * 2:  # Need 2x min size to split
                     tprint(f"   ❌ Cluster {cluster_id}: too small ({cluster_size} < {min_child_size * 2})", "INFO")
                     continue
-                
+
                 # Test split: try k=2 on this cluster
                 cluster_features = features[cluster_mask]
                 try:
                     kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
                     sub_labels = kmeans.fit_predict(cluster_features)
-                    
+
                     # Create hypothetical assignments with split
                     test_assignments = assignments.copy()
                     max_existing_id = np.max(assignments)
                     new_cluster_id = max_existing_id + 1
-                    
+
                     # Apply split
                     split_mask = sub_labels == 1
                     test_assignments[cluster_mask & split_mask] = new_cluster_id
-                    
+
                     # Compute objective for split scenario
                     split_k = current_k + 1
                     split_J = self._compute_unified_objective(features, test_assignments, split_k, k_max)
                     delta_J = split_J - current_J
-                    
+
                     # Check DBI improvement
                     current_dbi = davies_bouldin_score(features, assignments)
                     split_dbi = davies_bouldin_score(features, test_assignments)
                     dbi_improvement = current_dbi - split_dbi  # Lower DBI is better
-                    
+
                     # Check bimodality (simplified: check if split creates distinct clusters)
                     cluster_1_features = cluster_features[sub_labels == 0]
                     cluster_2_features = cluster_features[sub_labels == 1]
-                    
+
                     if len(cluster_1_features) > 0 and len(cluster_2_features) > 0:
                         # Check if clusters are well-separated
                         centroid_1 = np.mean(cluster_1_features, axis=0)
                         centroid_2 = np.mean(cluster_2_features, axis=0)
                         separation = np.linalg.norm(centroid_1 - centroid_2)
-                        
+
                         # Check internal compactness
                         intra_1 = np.mean([np.linalg.norm(p - centroid_1) for p in cluster_1_features])
                         intra_2 = np.mean([np.linalg.norm(p - centroid_2) for p in cluster_2_features])
                         avg_intra = (intra_1 + intra_2) / 2
-                        
+
                         bimodality_score = separation / max(avg_intra, 1e-6)
                     else:
                         bimodality_score = 0.0
-                    
+
                     # Acceptance criteria
                     size_ok = cluster_size >= min_child_size * 2
                     delta_J_ok = delta_J >= delta_J_threshold
                     dbi_ok = dbi_improvement > 0 or bimodality_score > 2.0  # DBI improves OR clear bimodality
-                    
+
                     if size_ok and delta_J_ok and dbi_ok:
                         clusters_to_split.append({
                             'cluster_id': cluster_id,
@@ -10244,51 +10244,51 @@ class CachedClusteringState:
                     else:
                         tprint(f"   ❌ Cluster {cluster_id}: ΔJ={delta_J:.4f}, DBI_Δ={dbi_improvement:.3f}, "
                                f"bimodality={bimodality_score:.2f} (rejected)", "INFO")
-                        
+
                 except Exception as e:
                     tprint(f"   ❌ Cluster {cluster_id}: split test failed - {e}", "WARNING")
                     continue
-            
+
             # Sort by delta_J and apply cap
             clusters_to_split.sort(key=lambda x: x['delta_J'], reverse=True)
             clusters_to_split = clusters_to_split[:max_splits_per_round]
-            
+
             # Apply splits
             new_assignments = assignments.copy()
             new_k = current_k
-            
+
             if clusters_to_split:
                 tprint(f"🔀 Applying {len(clusters_to_split)} splits...", "INFO")
                 for split_info in clusters_to_split:
                     cluster_id = split_info['cluster_id']
                     new_cluster_id = split_info['new_cluster_id']
-                    
+
                     # Apply the split
                     cluster_mask = assignments == cluster_id
                     cluster_features = features[cluster_mask]
-                    
+
                     kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
                     sub_labels = kmeans.fit_predict(cluster_features)
-                    
+
                     # Update assignments
                     split_mask = sub_labels == 1
                     new_assignments[cluster_mask & split_mask] = new_cluster_id
                     new_k += 1
-                    
+
                     tprint(f"🔀 Split cluster {cluster_id} into clusters {cluster_id} and {new_cluster_id}", "SUCCESS")
-                
+
                 # Verify final objective improvement
                 final_J = self._compute_unified_objective(features, new_assignments, new_k, k_max)
                 final_delta_J = final_J - current_J
-                
+
                 if final_delta_J < delta_J_threshold:
                     tprint(f"⚠️ Final ΔJ={final_delta_J:.4f} below threshold, reverting splits", "WARNING")
                     return assignments, current_k, {'splits_applied': 0, 'delta_J': 0.0}
-                
+
                 tprint(f"📈 Cluster splitting: {current_k} → {new_k} (ΔJ={final_delta_J:.4f})", "SUCCESS")
             else:
                 tprint(f"📊 No cluster splitting needed (clusters remain at {current_k})", "INFO")
-            
+
             # Return results
             final_stats = {
                 'splits_applied': len(clusters_to_split),
@@ -10296,37 +10296,37 @@ class CachedClusteringState:
                 'final_k': new_k,
                 'final_J': final_J if clusters_to_split else current_J
             }
-            
+
             return new_assignments, new_k, final_stats
 
         except Exception as e:
             tprint(f"Smart cluster splitting failed: {e}", "ERROR")
             return assignments, current_k, {'accepted': 0, 'proposed': 0, 'error': str(e)}
 
-    def validate_clustering_robustness(self, features: np.ndarray, assignments: np.ndarray, 
+    def validate_clustering_robustness(self, features: np.ndarray, assignments: np.ndarray,
                                      market_data: pd.DataFrame = None) -> Dict[str, Any]:
         """Lightweight validation framework for clustering robustness."""
         try:
             tprint("🔍 Starting clustering validation...", "INFO")
-            
+
             validation_results = {}
-            
+
             # 1. Basic clustering metrics
             tprint("📊 Computing basic clustering metrics...", "INFO")
             tprint(f"🔍 DEBUG: Computing metrics for {len(np.unique(assignments))} clusters, {features.shape[0]} samples, {features.shape[1]} features", "INFO")
             with tprint_timer("Basic clustering metrics computation"):
                 validation_results['basic_metrics'] = self._compute_basic_clustering_metrics(features, assignments)
-            
+
             # 2. Generate validation report
             validation_summary = self._generate_validation_summary(validation_results)
-            
+
             tprint(f"✅ Clustering validation completed - Overall quality: {validation_summary['overall_robustness']:.3f}", "SUCCESS")
-            
+
             return {
                 'detailed_results': validation_results,
                 'summary': validation_summary
             }
-            
+
         except Exception as e:
             tprint(f"Clustering validation failed: {e}", "ERROR")
             tprint(f"🔍 DEBUG: Validation failure details - features shape: {features.shape}, assignments shape: {assignments.shape}, n_clusters: {len(np.unique(assignments))}", "ERROR")
@@ -10336,7 +10336,7 @@ class CachedClusteringState:
         """Compute basic clustering quality metrics."""
         try:
             from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
-            
+
             n_clusters = len(np.unique(assignments))
             n_samples = features.shape[0]
 
@@ -10347,7 +10347,7 @@ class CachedClusteringState:
             davies_bouldin = davies_bouldin_score(features, assignments)
             tprint(f"🔍 DEBUG: Computing Calinski-Harabasz score", "INFO")
             calinski_harabasz = calinski_harabasz_score(features, assignments)
-            
+
             # Regime balance
             unique, counts = np.unique(assignments, return_counts=True)
             balance = 1.0 - (np.std(counts) / np.mean(counts))
@@ -10356,7 +10356,7 @@ class CachedClusteringState:
             # Overall quality score
             overall_quality = (silhouette + (1.0 - davies_bouldin) + balance) / 3.0
             tprint(f"🔍 DEBUG: Overall quality calculated - silhouette: {silhouette:.3f}, db_score: {davies_bouldin:.3f}, balance: {balance:.3f}, overall: {overall_quality:.3f}", "INFO")
-            
+
             return {
                 'silhouette_score': silhouette,
                 'davies_bouldin_score': davies_bouldin,
@@ -10366,27 +10366,27 @@ class CachedClusteringState:
                 'n_samples': n_samples,
                 'overall_quality': overall_quality
             }
-            
+
         except Exception as e:
             tprint(f"Basic metrics computation failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    def _temporal_cross_validation(self, features: np.ndarray, assignments: np.ndarray, 
+    def _temporal_cross_validation(self, features: np.ndarray, assignments: np.ndarray,
                                   market_data: pd.DataFrame = None, n_splits: int = 5) -> Dict[str, Any]:
         """Temporal cross-validation across different time periods."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
             from sklearn.cluster import KMeans
             from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
-            
+
             n_samples = features.shape[0]
-            
+
             # Use TimeSeriesSplit for temporal validation
             tscv = TimeSeriesSplit(n_splits=n_splits)
-            
+
             cv_scores = []
             stability_scores = []
-            
+
             for fold, (train_idx, test_idx) in enumerate(tscv.split(features)):
                 tprint(f"   📅 Processing temporal fold {fold + 1}/{n_splits}...", "INFO")
                 tprint(f"   🔍 DEBUG: Fold {fold + 1} - train: {len(train_idx)} samples, test: {len(test_idx)} samples", "INFO")
@@ -10394,14 +10394,14 @@ class CachedClusteringState:
                 # Split data temporally
                 X_train, X_test = features[train_idx], features[test_idx]
                 y_train, y_test = assignments[train_idx], assignments[test_idx]
-                
+
                 # Train clustering on training data
                 kmeans = KMeans(n_clusters=len(np.unique(assignments)), random_state=42, n_init=10)
                 train_pred = kmeans.fit_predict(X_train)
-                
+
                 # Predict on test data
                 test_pred = kmeans.predict(X_test)
-                
+
                 # Calculate similarity scores
                 ari_score = adjusted_rand_score(y_test, test_pred)
                 nmi_score = normalized_mutual_info_score(y_test, test_pred)
@@ -10414,16 +10414,16 @@ class CachedClusteringState:
                     'train_size': len(train_idx),
                     'test_size': len(test_idx)
                 })
-                
+
                 # Calculate stability (consistency of cluster assignments)
                 stability = self._calculate_temporal_stability(train_pred, test_pred, y_train, y_test)
                 stability_scores.append(stability)
-            
+
             # Aggregate results
             avg_ari = np.mean([s['ari_score'] for s in cv_scores])
             avg_nmi = np.mean([s['nmi_score'] for s in cv_scores])
             avg_stability = np.mean(stability_scores)
-            
+
             return {
                 'cv_scores': cv_scores,
                 'average_ari': avg_ari,
@@ -10431,54 +10431,54 @@ class CachedClusteringState:
                 'average_stability': avg_stability,
                 'temporal_robustness': (avg_ari + avg_nmi + avg_stability) / 3.0
             }
-            
+
         except Exception as e:
             tprint(f"Temporal cross-validation failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    def _bootstrap_stability_assessment(self, features: np.ndarray, assignments: np.ndarray, 
+    def _bootstrap_stability_assessment(self, features: np.ndarray, assignments: np.ndarray,
                                        n_bootstrap: int = 100) -> Dict[str, Any]:
         """Bootstrap sampling for stability assessment."""
         try:
             from sklearn.utils import resample
             from sklearn.cluster import KMeans
             from sklearn.metrics import adjusted_rand_score
-            
+
             n_samples = features.shape[0]
             bootstrap_scores = []
             cluster_counts = []
-            
+
             tprint(f"   🎲 Running {n_bootstrap} bootstrap samples...", "INFO")
-            
+
             for i in range(n_bootstrap):
                 if i % 20 == 0:
                     tprint(f"   📊 Bootstrap progress: {i}/{n_bootstrap}", "INFO")
-                
+
                 # Bootstrap sample
                 bootstrap_idx = resample(range(n_samples), n_samples=n_samples, random_state=i)
                 X_bootstrap = features[bootstrap_idx]
                 y_bootstrap = assignments[bootstrap_idx]
-                
+
                 # Cluster on bootstrap sample
                 kmeans = KMeans(n_clusters=len(np.unique(assignments)), random_state=42, n_init=10)
                 bootstrap_pred = kmeans.fit_predict(X_bootstrap)
-                
+
                 # Calculate similarity with original assignments
                 ari_score = adjusted_rand_score(y_bootstrap, bootstrap_pred)
                 bootstrap_scores.append(ari_score)
-                
+
                 # Track cluster count stability
                 n_clusters = len(np.unique(bootstrap_pred))
                 cluster_counts.append(n_clusters)
-            
+
             # Calculate stability metrics
             mean_ari = np.mean(bootstrap_scores)
             std_ari = np.std(bootstrap_scores)
             stability_confidence = mean_ari / (std_ari + 1e-8)  # Signal-to-noise ratio
-            
+
             # Cluster count stability
             cluster_count_consistency = 1.0 - (np.std(cluster_counts) / np.mean(cluster_counts))
-            
+
             return {
                 'bootstrap_scores': bootstrap_scores,
                 'mean_ari': mean_ari,
@@ -10487,27 +10487,27 @@ class CachedClusteringState:
                 'cluster_count_consistency': cluster_count_consistency,
                 'overall_stability': (stability_confidence + cluster_count_consistency) / 2.0
             }
-            
+
         except Exception as e:
             tprint(f"Bootstrap stability assessment failed: {e}", "ERROR")
             return {'error': str(e)}
 
-    def _calculate_temporal_stability(self, train_pred: np.ndarray, test_pred: np.ndarray, 
+    def _calculate_temporal_stability(self, train_pred: np.ndarray, test_pred: np.ndarray,
                                     y_train: np.ndarray, y_test: np.ndarray) -> float:
         """Calculate temporal stability of cluster assignments."""
         try:
             # Calculate consistency of cluster assignments across time
             from sklearn.metrics import adjusted_rand_score
-            
+
             # Measure consistency between train and test predictions
             train_consistency = adjusted_rand_score(y_train, train_pred)
             test_consistency = adjusted_rand_score(y_test, test_pred)
-            
+
             # Average consistency
             temporal_stability = (train_consistency + test_consistency) / 2.0
-            
+
             return temporal_stability
-            
+
         except Exception as e:
             return 0.0
 
@@ -10516,12 +10516,12 @@ class CachedClusteringState:
         try:
             # Extract basic metrics
             basic_metrics = validation_results.get('basic_metrics', {})
-            
+
             # Overall robustness score based on basic metrics
             overall_robustness = basic_metrics.get('overall_quality', 0.0)
             silhouette = basic_metrics.get('silhouette_score', 0.0)
             balance = basic_metrics.get('regime_balance', 0.0)
-            
+
             # Risk assessment based on clustering quality
             risk_factors = []
             if silhouette < 0.3:
@@ -10530,9 +10530,9 @@ class CachedClusteringState:
                 risk_factors.append("poor_balance")
             if overall_robustness < 0.5:
                 risk_factors.append("low_overall_quality")
-            
+
             risk_level = 'high' if len(risk_factors) >= 2 else 'medium' if len(risk_factors) == 1 else 'low'
-            
+
             summary = {
                 'overall_robustness': overall_robustness,
                 'silhouette_score': silhouette,
@@ -10541,35 +10541,35 @@ class CachedClusteringState:
                 'risk_factors': risk_factors,
                 'recommendations': self._generate_validation_recommendations(validation_results)
             }
-            
+
             return summary
-            
+
         except Exception as e:
             return {'error': str(e), 'overall_robustness': 0.0}
 
     def _generate_validation_recommendations(self, validation_results: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on validation results."""
         recommendations = []
-        
+
         basic_metrics = validation_results.get('basic_metrics', {})
-        
+
         # Quality-based recommendations
         silhouette = basic_metrics.get('silhouette_score', 0.0)
         balance = basic_metrics.get('regime_balance', 0.0)
         overall_quality = basic_metrics.get('overall_quality', 0.0)
-        
+
         if silhouette < 0.3:
             recommendations.append("Low silhouette score - consider feature selection or different clustering parameters")
-        
+
         if balance < 0.7:
             recommendations.append("Poor regime balance - consider adjusting clustering thresholds or splitting large clusters")
-        
+
         if overall_quality < 0.5:
             recommendations.append("Low overall quality - review feature engineering and clustering configuration")
-        
+
         if not recommendations:
             recommendations.append("Clustering quality is good - regime detection is working well")
-        
+
         return recommendations
 
     def _calculate_optimal_batch_size(self, total_samples: int, iteration: int) -> int:
@@ -10585,33 +10585,33 @@ class CachedClusteringState:
             else:
                 # Later iterations: larger batches for efficiency
                 base_batch_size = min(400, total_samples // 8)
-            
+
             # GLOBAL OPTIMIZATION STRATEGY 2: Memory-aware sizing
             # Estimate memory usage and adjust batch size accordingly
             estimated_memory_per_sample = 95 * 8  # features * bytes_per_float64
             max_memory_batch = 100000000 // estimated_memory_per_sample  # 100MB limit
             base_batch_size = min(base_batch_size, max_memory_batch)
-            
+
             # GLOBAL OPTIMIZATION STRATEGY 3: CPU core optimization
             import os
             cpu_cores = os.cpu_count() or 4
             optimal_batch_size = base_batch_size * cpu_cores // 2  # Utilize 50% of cores
-            
+
             return max(50, min(optimal_batch_size, total_samples // 4))  # Reasonable bounds
-            
+
         except Exception:
             return min(160, total_samples // 12)  # Fallback to original logic
-    
+
     def _calculate_optimal_batch_size_enhanced(self, total_samples: int, iteration: int, features: np.ndarray = None) -> int:
         """Calculate optimal batch size with feature-aware sizing."""
         try:
             # Start with base batch size calculation
             base_batch_size = self._calculate_optimal_batch_size(total_samples, iteration)
-            
+
             if features is not None:
                 # Calculate feature complexity
                 feature_complexity = self._estimate_feature_complexity(features)
-                
+
                 # Adjust batch size based on feature complexity
                 if feature_complexity > 0.7:  # High complexity
                     complexity_factor = 0.8  # Smaller batches for complex features
@@ -10621,7 +10621,7 @@ class CachedClusteringState:
                     tprint(f"   🔍 Low feature complexity ({feature_complexity:.3f}), increasing batch size", "INFO")
                 else:
                     complexity_factor = 1.0  # No adjustment for medium complexity
-                
+
                 # Adjust based on iteration progress and complexity
                 if iteration < 5 and feature_complexity > 0.6:
                     # Early iterations with complex features: very small batches
@@ -10631,129 +10631,129 @@ class CachedClusteringState:
                     # Late iterations with simple features: larger batches
                     complexity_factor *= 1.3
                     tprint(f"   🔍 Late iteration with simple features, using larger batches", "INFO")
-                
+
                 # Apply complexity adjustment
                 enhanced_batch_size = int(base_batch_size * complexity_factor)
-                
+
                 # Memory-aware adjustment
                 estimated_memory_per_sample = features.shape[1] * 8  # features * bytes_per_float64
                 max_memory_batch = 100000000 // estimated_memory_per_sample  # 100MB limit
                 enhanced_batch_size = min(enhanced_batch_size, max_memory_batch)
-                
+
                 # Ensure reasonable bounds
                 final_batch_size = max(50, min(enhanced_batch_size, total_samples // 4))
-                
+
                 tprint(f"   📊 Enhanced batch size: {base_batch_size} → {final_batch_size} "
                       f"(complexity: {feature_complexity:.3f})", "INFO")
-                
+
                 return final_batch_size
             else:
                 return base_batch_size
-            
+
         except Exception as e:
             tprint(f"Enhanced batch size calculation failed: {e}", "ERROR")
             return self._calculate_optimal_batch_size(total_samples, iteration)
-    
+
     def _apply_global_optimization_strategies(self, features: np.ndarray, assignments: np.ndarray, k: int) -> np.ndarray:
         """Apply global optimization strategies to overcome batch processing limitations."""
         try:
             tprint("🚀 Applying global optimization strategies...", "INFO")
-            
+
             # STRATEGY 1: Pre-compute global cluster statistics
             tprint("⚠️ WARNING: _precompute_global_cluster_statistics is not defined - using fallback", "WARNING")
             global_stats = {'centroids': {}, 'cluster_sizes': {}, 'cluster_weights': {}}  # Fallback value
-            
+
             # STRATEGY 2: Vectorized distance matrix computation
             distance_matrix = self._compute_vectorized_distance_matrix(features, global_stats['centroids'])
-            
+
             # STRATEGY 3: Parallel batch processing with threading
             optimized_assignments = self._parallel_batch_optimization(
                 features, assignments, k, global_stats, distance_matrix
             )
-            
+
             # STRATEGY 4: Global convergence acceleration
             final_assignments = self._apply_global_convergence_acceleration(
                 features, optimized_assignments, k, global_stats
             )
-            
+
             # STRATEGY 5: Regime-aware optimization
             tprint("⚠️ WARNING: _apply_regime_aware_optimization is not defined - using fallback", "WARNING")
             regime_aware_assignments = assignments  # Fallback value
-            
+
             # STRATEGY 6: Feature importance-guided optimization
             tprint("⚠️ WARNING: _apply_feature_importance_optimization is not defined - using fallback", "WARNING")
             importance_guided_assignments = regime_aware_assignments  # Fallback value
-            
+
             tprint("✅ Global optimization strategies completed", "SUCCESS")
             return importance_guided_assignments
-            
+
         except Exception as e:
             tprint(f"Global optimization failed: {e}", "ERROR")
             return assignments
-    
+
     def _apply_regime_aware_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int, global_stats: dict) -> np.ndarray:
         """Apply regime-aware optimization strategies."""
         try:
             tprint("   🎯 Applying regime-aware optimization...", "INFO")
-            
+
             optimized_assignments = assignments.copy()
-            
+
             # Calculate regime stability scores
             tprint("⚠️ WARNING: _calculate_regime_stability_scores is not defined - using fallback", "WARNING")
             regime_stability = {i: 0.5 for i in range(k)}  # Fallback value
-            
+
             # Identify unstable regimes (high change probability)
             unstable_regimes = [regime for regime, stability in regime_stability.items() if stability < 0.3]
-            
+
             if unstable_regimes:
                 tprint(f"   🔄 Found {len(unstable_regimes)} unstable regimes: {unstable_regimes}", "INFO")
-                
+
                 # Apply regime-specific optimization
                 for regime in unstable_regimes:
                     regime_mask = assignments == regime
                     regime_indices = np.where(regime_mask)[0]
-                    
+
                     if len(regime_indices) > 10:  # Only optimize if regime has enough samples
                         # Calculate volatility regime features for this regime
                         regime_features = features[regime_mask]
                         regime_assignments = assignments[regime_mask]
                         tprint("⚠️ WARNING: _calculate_volatility_regime_features is not defined - using fallback", "WARNING")
                         volatility_features = np.zeros((len(regime_features), 3))  # Fallback value
-                        
+
                         # Enhanced features for regime optimization
                         enhanced_regime_features = np.column_stack([regime_features, volatility_features])
-                        
+
                         # Apply local optimization within the regime
                         tprint("⚠️ WARNING: _optimize_regime_locally is not defined - using fallback", "WARNING")
                         optimized_regime_assignments = regime_assignments  # Fallback value
-                        
+
                         # Update assignments
                         optimized_assignments[regime_mask] = optimized_regime_assignments
-            
+
             return optimized_assignments
-            
+
         except Exception as e:
             tprint(f"Regime-aware optimization failed: {e}", "ERROR")
             return assignments
-    
+
     def _calculate_regime_stability_scores(self, features: np.ndarray, assignments: np.ndarray, k: int) -> dict:
         """Calculate stability scores for each regime."""
         try:
             regime_stability = {}
-            
+
             for regime in range(k):
                 regime_mask = assignments == regime
                 regime_samples = features[regime_mask]
-                
+
                 if len(regime_samples) < 2:
                     regime_stability[regime] = 0.0
                     continue
-                
+
                 # Calculate intra-cluster variance (lower = more stable)
                 regime_center = np.mean(regime_samples, axis=0)
                 distances = np.linalg.norm(regime_samples - regime_center, axis=1)
                 intra_cluster_variance = np.var(distances)
-                
+
                 # Calculate temporal stability (consistency over time)
                 regime_indices = np.where(regime_mask)[0]
                 if len(regime_indices) > 1:
@@ -10762,25 +10762,25 @@ class CachedClusteringState:
                     for i in range(1, len(regime_indices)):
                         if regime_indices[i] - regime_indices[i-1] > 1:  # Gap in sequence
                             regime_changes += 1
-                    
+
                     temporal_stability = 1.0 - (regime_changes / len(regime_indices))
                 else:
                     temporal_stability = 1.0
-                
+
                 # Combine stability metrics
                 stability_score = (1.0 / (1.0 + intra_cluster_variance)) * temporal_stability
                 regime_stability[regime] = min(1.0, stability_score)
-            
+
             return regime_stability
-            
+
         except Exception as e:
             return {regime: 0.5 for regime in range(k)}
-    
+
     def _optimize_regime_locally(self, enhanced_features: np.ndarray, regime_assignments: np.ndarray, regime: int, k: int) -> np.ndarray:
         """Apply local optimization within a specific regime."""
         try:
             optimized_assignments = regime_assignments.copy()
-            
+
             # Calculate regime-specific centroids
             regime_centroids = {}
             for target_regime in range(k):
@@ -10789,85 +10789,85 @@ class CachedClusteringState:
                 else:
                     # Use a subset of features for other regimes
                     regime_centroids[target_regime] = np.mean(enhanced_features[:, :enhanced_features.shape[1]//2], axis=0)
-            
+
             # Apply local reassignment optimization
             for i in range(len(regime_assignments)):
                 current_regime = regime_assignments[i]
                 sample_features = enhanced_features[i]
-                
+
                 best_regime = current_regime
                 best_distance = float('inf')
-                
+
                 # Try all possible regimes
                 for candidate_regime in range(k):
                     centroid = regime_centroids[candidate_regime]
                     distance = np.linalg.norm(sample_features - centroid)
-                    
+
                     if distance < best_distance:
                         best_distance = distance
                         best_regime = candidate_regime
-                
+
                 optimized_assignments[i] = best_regime
-            
+
             return optimized_assignments
-            
+
         except Exception as e:
             return regime_assignments
-    
+
     def _apply_feature_importance_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int, global_stats: dict) -> np.ndarray:
         """Apply feature importance-guided optimization."""
         try:
             tprint("   🎯 Applying feature importance-guided optimization...", "INFO")
-            
+
             optimized_assignments = assignments.copy()
-            
+
             # Calculate feature importance scores
             feature_importance = self._calculate_feature_importance_scores(features, assignments, k)
-            
+
             # Identify most important features
             top_features_idx = np.argsort(feature_importance)[-min(10, len(feature_importance)):]
             tprint(f"   📊 Top features for optimization: {len(top_features_idx)} features", "INFO")
-            
+
             # Apply importance-weighted optimization
             for i in range(len(assignments)):
                 current_regime = assignments[i]
                 sample_features = features[i]
-                
+
                 best_regime = current_regime
                 best_score = float('-inf')
-                
+
                 # Try each possible regime
                 for candidate_regime in range(k):
                     # Calculate importance-weighted distance
                     regime_center = global_stats['centroids'][candidate_regime]
                     feature_distances = np.abs(sample_features - regime_center)
-                    
+
                     # Weight distances by feature importance
                     weighted_distance = np.sum(feature_distances * feature_importance)
                     importance_score = 1.0 / (1.0 + weighted_distance)
-                    
+
                     if importance_score > best_score:
                         best_score = importance_score
                         best_regime = candidate_regime
-                
+
                 optimized_assignments[i] = best_regime
-            
+
             return optimized_assignments
-            
+
         except Exception as e:
             tprint(f"Feature importance optimization failed: {e}", "ERROR")
             return assignments
-    
+
     def _calculate_feature_importance_scores(self, features: np.ndarray, assignments: np.ndarray, k: int) -> np.ndarray:
         """Calculate feature importance scores for optimization."""
         try:
             n_features = features.shape[1]
             feature_importance = np.zeros(n_features)
-            
+
             # Calculate importance based on inter-cluster vs intra-cluster variance
             for feature_idx in range(n_features):
                 feature_values = features[:, feature_idx]
-                
+
                 # Calculate intra-cluster variance
                 intra_cluster_var = 0.0
                 for regime in range(k):
@@ -10875,42 +10875,42 @@ class CachedClusteringState:
                     if np.sum(regime_mask) > 1:
                         regime_values = feature_values[regime_mask]
                         intra_cluster_var += np.var(regime_values)
-                
+
                 intra_cluster_var /= k
-                
+
                 # Calculate inter-cluster variance
                 regime_means = []
                 for regime in range(k):
                     regime_mask = assignments == regime
                     if np.sum(regime_mask) > 0:
                         regime_means.append(np.mean(feature_values[regime_mask]))
-                
+
                 if len(regime_means) > 1:
                     inter_cluster_var = np.var(regime_means)
                 else:
                     inter_cluster_var = 0.0
-                
+
                 # Feature importance is the ratio of inter-cluster to intra-cluster variance
                 if intra_cluster_var > 0:
                     feature_importance[feature_idx] = inter_cluster_var / intra_cluster_var
                 else:
                     feature_importance[feature_idx] = 0.0
-            
+
             # Normalize importance scores
             if np.max(feature_importance) > 0:
                 feature_importance = feature_importance / np.max(feature_importance)
-            
+
             return feature_importance
-            
+
         except Exception as e:
             return np.ones(features.shape[1])  # Equal importance if calculation fails
-    
+
     def _calculate_dynamic_convergence_tolerance(self, iteration: int, convergence_history: List[Dict], base_tolerance: float) -> float:
         """Calculate dynamic convergence tolerance with quality-first approach."""
         try:
             # Base tolerance adjustment
             dynamic_tolerance = base_tolerance
-            
+
             # Adjust based on iteration progress
             if iteration < 10:
                 # Early iterations: more lenient tolerance
@@ -10918,19 +10918,19 @@ class CachedClusteringState:
             elif iteration > 20:
                 # Late iterations: stricter tolerance
                 dynamic_tolerance *= 0.5  # Stricter for late iterations
-            
+
             # Adjust based on convergence history
             if len(convergence_history) >= 3:
                 recent_improvements = [h['improvement'] for h in convergence_history[-3:]]
                 improvement_variance = np.var(recent_improvements)
-                
+
                 # High variance = unstable convergence, use more lenient tolerance
                 if improvement_variance > 0.001:
                     dynamic_tolerance *= 1.5  # More lenient for unstable convergence
                 # Low variance = stable convergence, use stricter tolerance
                 elif improvement_variance < 0.0001:
                     dynamic_tolerance *= 0.6  # Stricter for stable convergence
-            
+
             # CRITICAL: Adjust based on score quality
             if len(convergence_history) > 0:
                 current_score = convergence_history[-1]['composite_score']
@@ -10939,13 +10939,13 @@ class CachedClusteringState:
                 elif current_score < 0.3:  # Low quality score
                     dynamic_tolerance *= 3.0  # Much more lenient tolerance for low quality
                     tprint(f"   🔧 Low quality ({current_score:.3f}), using lenient tolerance: {dynamic_tolerance:.2e}", "WARNING")
-            
+
             return max(0.0001, min(0.01, dynamic_tolerance))  # Reasonable bounds
-            
+
         except Exception as e:
             return base_tolerance
-    
-    def _evaluate_adaptive_convergence(self, avg_improvement: float, silhouette_trend: float, 
+
+    def _evaluate_adaptive_convergence(self, avg_improvement: float, silhouette_trend: float,
                                      convergence_history: List[Dict], iteration: int) -> bool:
         """Evaluate adaptive convergence criteria with quality-first approach."""
         try:
@@ -10954,49 +10954,49 @@ class CachedClusteringState:
                 current_score = convergence_history[-1]['composite_score']
                 if current_score < 0.3:  # Minimum acceptable quality
                     return False  # Force continuation for poor quality
-            
+
             # Criterion 1: Very small improvement AND good quality
             if avg_improvement < 0.0001 and len(convergence_history) > 0:
                 current_score = convergence_history[-1]['composite_score']
                 if current_score > 0.4:  # Only converge if quality is good
                     return True
-            
+
             # Criterion 2: Silhouette stability AND good quality
             if silhouette_trend >= -0.001 and len(convergence_history) > 0:
                 current_score = convergence_history[-1]['composite_score']
                 if current_score > 0.4:  # Only converge if quality is good
                     return True
-            
+
             # Criterion 3: Multiple consecutive small improvements AND good quality
             if len(convergence_history) >= 5:
                 recent_improvements = [h['improvement'] for h in convergence_history[-5:]]
                 current_score = convergence_history[-1]['composite_score']
                 if all(imp < 0.0005 for imp in recent_improvements) and current_score > 0.4:
                     return True
-            
+
             # Criterion 4: High quality score achieved (excellent quality)
             if len(convergence_history) > 0:
                 current_score = convergence_history[-1]['composite_score']
                 if current_score > 0.75:  # Excellent quality threshold (increased from 0.6)
                     return True
-            
+
             # Criterion 5: Maximum iterations reached with good quality
             if iteration >= 30:  # Increased from 20
                 if len(convergence_history) > 0:
                     current_score = convergence_history[-1]['composite_score']
                     if current_score > 0.4:  # Good quality threshold
                         return True
-            
+
             return False  # Don't converge by default
-            
+
         except Exception as e:
             return False  # Don't converge on error
-    
+
     def _precompute_global_cluster_statistics(self, features: np.ndarray, assignments: np.ndarray, k: int) -> Dict:
         """Pre-compute global cluster statistics for efficient batch processing."""
         try:
             stats = {}
-            
+
             # Compute cluster centroids
             centroids = {}
             for regime in range(k):
@@ -11005,21 +11005,21 @@ class CachedClusteringState:
                     centroids[regime] = np.mean(features[regime_mask], axis=0)
                 else:
                     centroids[regime] = np.zeros(features.shape[1])
-            
+
             # Compute cluster sizes and weights
             cluster_sizes = {}
             cluster_weights = {}
             total_samples = len(assignments)
-            
+
             for regime in range(k):
                 size = np.sum(assignments == regime)
                 cluster_sizes[regime] = size
                 cluster_weights[regime] = size / total_samples if total_samples > 0 else 0
-            
+
             # Compute global feature statistics
             global_mean = np.mean(features, axis=0)
             global_std = np.std(features, axis=0)
-            
+
             stats = {
                 'centroids': centroids,
                 'cluster_sizes': cluster_sizes,
@@ -11028,30 +11028,30 @@ class CachedClusteringState:
                 'global_std': global_std,
                 'total_samples': total_samples
             }
-            
+
             return stats
-            
+
         except Exception as e:
             tprint(f"Global statistics precomputation failed: {e}", "ERROR")
             return {}
-    
+
     def _compute_vectorized_distance_matrix(self, features: np.ndarray, centroids: Dict[int, np.ndarray]) -> Dict:
         """Compute vectorized distance matrix for efficient batch processing."""
         try:
             distance_matrix = {}
-            
+
             for regime, centroid in centroids.items():
                 # Vectorized distance computation
                 distances = np.linalg.norm(features - centroid, axis=1)
                 distance_matrix[regime] = distances
-            
+
             return distance_matrix
-            
+
         except Exception as e:
             tprint(f"Vectorized distance matrix computation failed: {e}", "ERROR")
             return {}
-    
-    def _parallel_batch_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int, 
+
+    def _parallel_batch_optimization(self, features: np.ndarray, assignments: np.ndarray, k: int,
                                    global_stats: Dict, distance_matrix: Dict) -> np.ndarray:
         """Parallel batch optimization using threading to overcome sequential limitations."""
         try:
@@ -11085,82 +11085,82 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-            
+
             new_assignments = assignments.copy()
-            
+
             # Split data into chunks for parallel processing
             chunk_size = len(assignments) // 4  # 4 parallel chunks
             chunks = []
             for i in range(0, len(assignments), chunk_size):
                 chunk_end = min(i + chunk_size, len(assignments))
                 chunks.append((i, chunk_end))
-            
+
             # Thread-safe optimization function
             def optimize_chunk(chunk_start, chunk_end):
                 chunk_assignments = new_assignments[chunk_start:chunk_end].copy()
                 chunk_features = features[chunk_start:chunk_end]
-                
+
                 # Apply chunk-specific optimization
                 for idx in range(len(chunk_assignments)):
                     global_idx = chunk_start + idx
                     current_regime = assignments[global_idx]
                     sample_features = chunk_features[idx]
-                    
+
                     # Find best regime using pre-computed distances
                     best_regime = current_regime
                     best_score = float('inf')
-                    
+
                     for regime in range(k):
                         if regime in distance_matrix:
                             distance = distance_matrix[regime][global_idx]
                             if distance < best_score:
                                 best_score = distance
                                 best_regime = regime
-                    
+
                     chunk_assignments[idx] = best_regime
-                
+
                 return chunk_start, chunk_end, chunk_assignments
-            
+
             # Execute parallel optimization
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 futures = [executor.submit(optimize_chunk, start, end) for start, end in chunks]
-                
+
                 for future in concurrent.futures.as_completed(futures):
                     start, end, chunk_assignments = future.result()
                     new_assignments[start:end] = chunk_assignments
-            
+
             return new_assignments
-            
+
         except Exception as e:
             tprint(f"Parallel batch optimization failed: {e}", "ERROR")
             return assignments
-    
-    def _apply_global_convergence_acceleration(self, features: np.ndarray, assignments: np.ndarray, 
+
+    def _apply_global_convergence_acceleration(self, features: np.ndarray, assignments: np.ndarray,
                                              k: int, global_stats: Dict) -> np.ndarray:
         """Apply global convergence acceleration techniques."""
         try:
             # STRATEGY: Global cluster reassignment based on statistical significance
             new_assignments = assignments.copy()
-            
+
             # Compute global improvement potential
             improvement_matrix = self._compute_global_improvement_matrix(features, assignments, k, global_stats)
-            
+
             # Apply global reassignments
             for sample_idx in range(len(assignments)):
                 current_regime = assignments[sample_idx]
                 best_regime = np.argmax(improvement_matrix[sample_idx])
-                
+
                 if best_regime != current_regime and improvement_matrix[sample_idx, best_regime] > 0.1:
                     new_assignments[sample_idx] = best_regime
-            
+
             return new_assignments
-            
+
         except Exception as e:
             tprint(f"Global convergence acceleration failed: {e}", "ERROR")
             return assignments
-    
+
     def _optimize_cross_cluster_boundaries(self, features: np.ndarray, assignments: np.ndarray, k: int) -> np.ndarray:
         """Stage 3: Cross-cluster boundary optimization for better cluster separation."""
         try:
@@ -11241,39 +11241,39 @@ except ImportError:
         try:
             n_samples = len(assignments)
             improvement_matrix = np.zeros((n_samples, k))
-            
+
             for sample_idx in range(n_samples):
                 sample_features = features[sample_idx]
                 current_regime = assignments[sample_idx]
-                
+
                 for regime in range(k):
                     if regime in global_stats['centroids']:
                         # Calculate improvement score
                         distance_to_regime = np.linalg.norm(sample_features - global_stats['centroids'][regime])
                         current_distance = np.linalg.norm(sample_features - global_stats['centroids'][current_regime])
-                        
+
                         # Improvement is negative distance change (lower distance = better)
                         improvement = current_distance - distance_to_regime
                         improvement_matrix[sample_idx, regime] = improvement
-            
+
             return improvement_matrix
-            
+
         except Exception as e:
             tprint(f"Global improvement matrix computation failed: {e}", "ERROR")
             return np.zeros((len(assignments), k))
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -11292,8 +11292,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -11310,13 +11310,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

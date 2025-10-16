@@ -108,7 +108,7 @@ logger = logging.getLogger(__name__)
 class TASEngine:
     """
     Trading Architecture Search Engine with extensive utility integration.
-    
+
     This engine provides comprehensive TAS capabilities with:
     - Extensive use of common operations for data processing
     - Math validation for safe computations
@@ -120,22 +120,22 @@ class TASEngine:
     - Advanced optimization algorithms
     - Data processing pipeline integration
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the TAS Engine with extensive utility integration.
-        
+
         Args:
             config: Configuration dictionary for TAS engine
         """
         tprint_info("🚀 Initializing TAS Engine with extensive utility integration")
         tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
-        
+
         # Initialize configuration
         self.config = config or {}
         tprint_debug(f"⚙️ TAS Engine config keys: {list(self.config.keys()) if self.config else 'None'}")
         self.logger = logger.getChild("TASEngine")
         tprint_debug(f"📝 Logger initialized: {self.logger.name}")
-        
+
         # Initialize utility classes
         tprint_debug("🔧 Initializing utility classes")
         self.common_ops = CommonUtilities()
@@ -146,7 +146,7 @@ class TASEngine:
         tprint_debug("✅ KlinesParquetManager initialized")
         self.serializer = UniversalSerializer()
         tprint_debug("✅ UniversalSerializer initialized")
-        
+
         # Initialize data processing utilities
         tprint_debug("🔧 Initializing data processing utilities")
         self.data_processor = DataProcessor()
@@ -159,7 +159,7 @@ class TASEngine:
         tprint_debug("✅ GapDetector initialized")
         self.unified_data_utils = UnifiedDataUtils()
         tprint_debug("✅ UnifiedDataUtils initialized")
-        
+
         # Initialize matrix operations
         tprint_debug("🔧 Initializing matrix operations")
         self.matrix_ops = UnifiedMatrixOperations()
@@ -172,7 +172,7 @@ class TASEngine:
         tprint_debug("✅ VectorizedProcessingCore initialized")
         self.matrix_convenience = MatrixConvenience()
         tprint_debug("✅ MatrixConvenience initialized")
-        
+
         # Initialize M1 hardware optimizations
         tprint_debug("🔧 Initializing M1 hardware optimizations")
         self.m1_integration = integrate_with_m1_optimizers()
@@ -191,7 +191,7 @@ class TASEngine:
             self.memory_optimizer = None
             self.cpu_optimizer = None
             tprint_debug("🔄 Using fallback configurations")
-        
+
         # Initialize optimization components
         tprint_debug("🔧 Initializing optimization components")
         self.bayesian_optimizer = BayesianEntryTimingOptimizer()
@@ -204,7 +204,7 @@ class TASEngine:
         tprint_debug("✅ HierarchicalHPO initialized")
         self.regime_tpsl_optimizer = RegimeSpecificTPSLOptimizer()
         tprint_debug("✅ RegimeSpecificTPSLOptimizer initialized")
-        
+
         # Initialize performance tracking
         self.performance_metrics = {}
         tprint_debug("✅ Performance metrics tracking initialized")
@@ -212,7 +212,7 @@ class TASEngine:
         tprint_debug("✅ Strategy history tracking initialized")
         self.trading_metrics = {}
         tprint_debug("✅ Trading metrics tracking initialized")
-        
+
         tprint_success("✅ TAS Engine initialized successfully")
         tprint_info(f"📊 Engine components: {len([attr for attr in dir(self) if not attr.startswith('_')])} public attributes")
         tprint_structured({
@@ -227,10 +227,10 @@ class TASEngine:
                 'optimization_components': True
             }
         }, LogLevel.INFO)
-    
+
     @tprint_timer("Data Loading and Processing")
     def load_and_process_data(
-        self, 
+        self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
         start_date: Optional[str] = None,
@@ -238,24 +238,24 @@ class TASEngine:
         apply_feature_engineering: bool = True
     ) -> Optional[pd.DataFrame]:
         """Load and process data using extensive utility integration.
-        
+
         Args:
             symbol: Trading symbol to load
             interval: Data interval
             start_date: Start date for data loading
             end_date: End date for data loading
             apply_feature_engineering: Whether to apply feature engineering
-            
+
         Returns:
             Processed DataFrame or None if loading fails
         """
         tprint_info(f"📊 Loading and processing data for {symbol} {interval}")
-        
+
         try:
             # Load data using klines parquet manager
             tprint_debug(f"📊 Loading data with parameters: symbol={symbol}, interval={interval}")
             tprint_debug(f"📅 Date range: {start_date} to {end_date}")
-            
+
             with memory_checkpoint("data_loading"):
                 tprint_debug("🔍 Accessing klines manager for data retrieval")
                 data = self.klines_manager.read_data(
@@ -266,12 +266,12 @@ class TASEngine:
                     data_type="processed"
                 )
                 tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
-            
+
             if data is None or data.empty:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
                 tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
                 return None
-            
+
             tprint_info(f"📊 Loaded {len(data)} records")
             tprint_debug(f"📋 Data columns: {list(data.columns)}")
             tprint_debug(f"📅 Data date range: {data.index.min()} to {data.index.max()}")
@@ -284,12 +284,12 @@ class TASEngine:
                     'memory_usage': get_memory_usage()
                 }
             }, LogLevel.DEBUG)
-            
+
             # Validate data using common utilities
             tprint_debug("🔍 Validating data quality")
             validation_result = validate_klines_data(data)
             tprint_debug(f"📋 Validation result: {validation_result}")
-            
+
             if not validation_result['valid']:
                 tprint_error(f"❌ Data validation failed: {validation_result['errors']}")
                 tprint_structured({
@@ -300,9 +300,9 @@ class TASEngine:
                     }
                 }, LogLevel.ERROR)
                 return None
-            
+
             tprint_success("✅ Data validation passed")
-            
+
             # Apply data quality metrics
             tprint_debug("📊 Calculating data quality metrics")
             quality_metrics = calculate_data_quality_metrics(data)
@@ -315,39 +315,39 @@ class TASEngine:
                     'memory_usage': data.memory_usage(deep=True).sum()
                 }
             }, LogLevel.INFO)
-            
+
             # Process data using unified data utilities
             tprint_debug(f"🔧 Starting data processing with feature engineering: {apply_feature_engineering}")
             with memory_checkpoint("data_processing"):
                 processed_data = self._process_trading_data(data, apply_feature_engineering)
-            
+
             if processed_data is None or processed_data.empty:
                 tprint_error("❌ Data processing failed")
                 tprint_debug(f"🔍 Processed data check: data is None={processed_data is None}, data.empty={processed_data.empty if processed_data is not None else 'N/A'}")
                 return None
-            
+
             tprint_info(f"✅ Data processing completed: {len(processed_data)} records")
             tprint_debug(f"📋 Processed data columns: {list(processed_data.columns)}")
-            
+
             # Optimize data types for memory efficiency
             tprint_debug("🔧 Optimizing data types")
             memory_before = processed_data.memory_usage(deep=True).sum()
             processed_data = optimize_dataframe_dtypes(processed_data)
             memory_after = processed_data.memory_usage(deep=True).sum()
             tprint_debug(f"💾 Memory optimization: {memory_before} -> {memory_after} bytes ({(memory_after/memory_before-1)*100:.1f}% change)")
-            
+
             # Guard against null values
             tprint_debug("🛡️ Applying null value guards")
             null_counts_before = processed_data.isnull().sum().sum()
             processed_data = guard_dataframe_nulls(processed_data, threshold=0.1)
             null_counts_after = processed_data.isnull().sum().sum()
             tprint_debug(f"🔍 Null values: {null_counts_before} -> {null_counts_after}")
-            
+
             # Create final data quality report
             tprint_debug("📊 Creating final data quality report")
             final_quality_report = create_data_quality_report(processed_data)
             tprint_structured(final_quality_report, LogLevel.INFO)
-            
+
             tprint_success(f"✅ Data loaded and processed: {len(processed_data)} records")
             tprint_info(f"📊 Final data summary: {processed_data.shape[0]} rows × {processed_data.shape[1]} columns")
             tprint_structured({
@@ -359,34 +359,34 @@ class TASEngine:
                 }
             }, LogLevel.SUCCESS)
             return processed_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Error loading and processing data: {e}")
             self.logger.exception("Data loading and processing error")
             return None
-    
+
     def _process_trading_data(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         apply_feature_engineering: bool = True
     ) -> Optional[pd.DataFrame]:
         """Process trading data using extensive utility integration."""
         try:
             tprint_debug("🔧 Processing trading data with feature engineering")
-            
+
             # Make a copy to avoid modifying original data
             processed_data = safe_copy(data)
-            
+
             # Apply basic returns engineering
             with memory_checkpoint("returns_engineering"):
                 processed_data = self.returns_engineer.add_basic_returns(processed_data)
-            
+
             # Detect gaps in data
             with memory_checkpoint("gap_detection"):
                 gaps = self.gap_detector.detect_gaps(processed_data)
                 if gaps:
                     tprint_info(f"🔍 Detected {len(gaps)} gaps in data")
-            
+
             # Apply feature engineering if requested
             if apply_feature_engineering:
                 with memory_checkpoint("feature_engineering"):
@@ -394,26 +394,26 @@ class TASEngine:
                     processed_data = self.feature_engineer.add_price_features(processed_data)
                     processed_data = self.feature_engineer.add_volume_features(processed_data)
                     processed_data = self.feature_engineer.add_time_features(processed_data)
-            
+
             # Apply unified data processing
             with memory_checkpoint("unified_processing"):
                 processed_data = self.unified_data_utils.standardize_data(processed_data)
                 processed_data = self.unified_data_utils.add_derived_features(processed_data)
-            
+
             # Validate processed data
             if not validate_dataframe_columns(processed_data, ['open', 'high', 'low', 'close', 'volume']):
                 tprint_error("❌ Processed data missing required columns")
                 return None
-            
+
             tprint_debug(f"🔧 Processed data shape: {processed_data.shape}")
             tprint_debug(f"🔧 Processed data columns: {list(processed_data.columns)}")
-            
+
             return processed_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Error processing trading data: {e}")
             return None
-    
+
     @tprint_timer("Strategy Search")
     def search_strategies(
         self,
@@ -424,26 +424,26 @@ class TASEngine:
         include_regime_specific: bool = True
     ) -> Dict[str, Any]:
         """Search for optimal trading strategies using extensive utility integration.
-        
+
         Args:
             data: Input data for strategy search
             search_space: Strategy search space
             optimization_method: Optimization method (bayesian_tpe, grid, hierarchical)
             n_trials: Number of optimization trials
             include_regime_specific: Whether to include regime-specific optimization
-            
+
         Returns:
             Dictionary with search results and best strategy
         """
         tprint_info(f"🔍 Starting strategy search with {optimization_method}")
-        
+
         try:
             # Validate input data
             tprint_debug("🔍 Validating input data for strategy search")
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             tprint_debug(f"📋 Required columns: {required_columns}")
             tprint_debug(f"📊 Available columns: {list(data.columns)}")
-            
+
             if not validate_dataframe_columns(data, required_columns):
                 tprint_error("❌ Invalid data columns for strategy search")
                 tprint_structured({
@@ -454,9 +454,9 @@ class TASEngine:
                     }
                 }, LogLevel.ERROR)
                 return {}
-            
+
             tprint_success("✅ Data validation passed for strategy search")
-            
+
             # Initialize search results
             tprint_debug("📊 Initializing search results structure")
             search_results = {
@@ -478,16 +478,16 @@ class TASEngine:
                     'search_space_keys': list(search_space.keys()) if search_space else []
                 }
             }, LogLevel.INFO)
-            
+
             start_time = time.time()
             tprint_debug(f"⏰ Search start time: {start_time}")
-            
+
             # Perform regime analysis if requested
             if include_regime_specific:
                 tprint_debug("🔍 Performing regime analysis")
                 with tprint_timer("Regime Analysis"):
                     regime_analysis = self._analyze_regimes(data)
-                
+
                 if regime_analysis:
                     tprint_info(f"📊 Regime analysis completed: {len(regime_analysis.get('regime_stats', {}))} regimes detected")
                     tprint_structured({
@@ -499,17 +499,17 @@ class TASEngine:
                     }, LogLevel.INFO)
                 else:
                     tprint_warning("⚠️ Regime analysis returned empty results")
-                
+
                 search_results['regime_analysis'] = regime_analysis
             else:
                 tprint_debug("⏭️ Skipping regime analysis as requested")
-            
+
             # Use M1 GPU context if available
             context_type = "GPU" if self.gpu_manager else "Memory"
             tprint_debug(f"🔧 Using {context_type} context for strategy search")
-            
+
             with gpu_context("strategy_search") if self.gpu_manager else memory_checkpoint("strategy_search"):
-                
+
                 if optimization_method == "bayesian_tpe":
                     tprint_info("🧠 Using Bayesian TPE optimization")
                     tprint_debug(f"🔧 Bayesian TPE parameters: n_trials={n_trials}, search_space_size={len(search_space)}")
@@ -535,28 +535,28 @@ class TASEngine:
                     tprint_error(f"❌ Unknown optimization method: {optimization_method}")
                     tprint_debug(f"📋 Available methods: ['bayesian_tpe', 'grid', 'hierarchical']")
                     return {}
-                
+
                 search_results.update({
                     'best_strategy': best_strategy,
                     'best_score': best_score,
                     'trials': trials
                 })
-                
+
                 tprint_info(f"📊 Search results updated: {len(trials)} trials completed")
                 tprint_debug(f"🏆 Best strategy found: {bool(best_strategy)}")
                 tprint_debug(f"📈 Best score: {best_score:.6f}")
-            
+
             search_time = time.time() - start_time
             search_results['search_time'] = search_time
-            
+
             # Calculate performance metrics
             tprint_debug("📊 Calculating strategy performance metrics")
             search_results['performance_metrics'] = self._calculate_strategy_metrics(trials)
-            
+
             tprint_success(f"✅ Strategy search completed in {search_time:.2f}s")
             tprint_info(f"🏆 Best score: {best_score:.4f}")
             tprint_info(f"📊 Total trials: {len(trials)}")
-            
+
             # Log comprehensive search summary
             tprint_structured({
                 'search_summary': {
@@ -569,43 +569,43 @@ class TASEngine:
                     'performance_metrics_available': bool(search_results['performance_metrics'])
                 }
             }, LogLevel.SUCCESS)
-            
+
             return search_results
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in strategy search: {e}")
             self.logger.exception("Strategy search error")
             return {}
-    
+
     def _analyze_regimes(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze market regimes using matrix operations and data processing utilities."""
         try:
             tprint_debug("🔍 Analyzing market regimes")
-            
+
             # Extract price data for regime analysis
             price_data = data[['open', 'high', 'low', 'close', 'volume']].values
-            
+
             # Use matrix operations for regime detection
             with memory_checkpoint("regime_analysis"):
                 # Calculate rolling statistics using matrix operations
                 rolling_returns = self.matrix_ops.calculate_rolling_returns(price_data)
                 volatility = self.matrix_ops.calculate_rolling_volatility(rolling_returns)
                 trend_strength = self.matrix_ops.calculate_trend_strength(price_data)
-                
+
                 # Combine features for regime classification
                 regime_features = np.column_stack([volatility, trend_strength])
-                
+
                 # Use vectorized operations for regime classification
                 regimes = self.vectorized_core.classify_regimes(regime_features)
-            
+
             # Calculate regime statistics
             regime_stats = {}
             unique_regimes = np.unique(regimes)
-            
+
             for regime in unique_regimes:
                 regime_mask = regimes == regime
                 regime_data = data[regime_mask]
-                
+
                 if not regime_data.empty:
                     regime_stats[f'regime_{regime}'] = {
                         'count': len(regime_data),
@@ -614,7 +614,7 @@ class TASEngine:
                         'avg_trend': safe_mean(trend_strength[regime_mask]),
                         'avg_return': safe_mean(rolling_returns[regime_mask])
                     }
-            
+
             tprint_info(f"🔍 Detected {len(unique_regimes)} market regimes")
             return {
                 'regimes': regimes,
@@ -625,25 +625,25 @@ class TASEngine:
                     'returns': rolling_returns
                 }
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in regime analysis: {e}")
             return {}
-    
+
     def _bayesian_strategy_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int,
         regime_analysis: Optional[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Bayesian TPE strategy search with extensive utility integration."""
         tprint_debug("🧠 Starting Bayesian TPE strategy search")
-        
+
         trials = []
         best_score = -np.inf
         best_strategy = None
-        
+
         try:
             # Configure Bayesian optimizer
             self.bayesian_optimizer.configure(
@@ -651,17 +651,17 @@ class TASEngine:
                 n_trials=n_trials,
                 random_state=42
             )
-            
+
             for trial_idx in range(n_trials):
                 tprint_progress(trial_idx, n_trials, f"Bayesian TPE trial {trial_idx}")
-                
+
                 # Get next trial parameters
                 trial_params = self.bayesian_optimizer.suggest()
-                
+
                 # Evaluate strategy
                 with tprint_timer(f"Strategy trial {trial_idx} evaluation"):
                     score = self._evaluate_strategy(data, trial_params, regime_analysis)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -670,41 +670,41 @@ class TASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_strategy = trial_params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Update optimizer
                 self.bayesian_optimizer.update(trial_params, score)
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Bayesian strategy search completed: {len(trials)} trials")
             return best_strategy, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Bayesian strategy search: {e}")
             return {}, -np.inf, []
-    
+
     def _grid_strategy_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int,
         regime_analysis: Optional[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Grid Search strategy search with extensive utility integration."""
         tprint_debug("🔧 Starting Grid Search strategy search")
-        
+
         trials = []
         best_score = -np.inf
         best_strategy = None
-        
+
         try:
             # Generate grid parameters
             grid_params = self.grid_optimizer.generate_grid(search_space, max_trials=n_trials)
@@ -715,14 +715,14 @@ class TASEngine:
 
             total_trials = len(grid_params)
             tprint_info(f"🔧 Grid search: {total_trials} parameter combinations")
-            
+
             for trial_idx, params in enumerate(grid_params):
                 tprint_progress(trial_idx, total_trials, f"Grid search trial {trial_idx}")
-                
+
                 # Evaluate strategy
                 with tprint_timer(f"Grid trial {trial_idx} evaluation"):
                     score = self._evaluate_strategy(data, params, regime_analysis)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -731,38 +731,38 @@ class TASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_strategy = params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Grid strategy search completed: {len(trials)} trials")
             return best_strategy, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Grid strategy search: {e}")
             return {}, -np.inf, []
-    
+
     def _hierarchical_strategy_search(
-        self, 
-        data: pd.DataFrame, 
-        search_space: Dict[str, Any], 
+        self,
+        data: pd.DataFrame,
+        search_space: Dict[str, Any],
         n_trials: int,
         regime_analysis: Optional[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], float, List[Dict[str, Any]]]:
         """Perform Hierarchical HPO strategy search with extensive utility integration."""
         tprint_debug("🏗️ Starting Hierarchical HPO strategy search")
-        
+
         trials = []
         best_score = -np.inf
         best_strategy = None
-        
+
         try:
             # Configure hierarchical HPO
             self.hierarchical_hpo.configure(
@@ -770,17 +770,17 @@ class TASEngine:
                 n_trials=n_trials,
                 hierarchy_levels=3
             )
-            
+
             for trial_idx in range(n_trials):
                 tprint_progress(trial_idx, n_trials, f"Hierarchical HPO trial {trial_idx}")
-                
+
                 # Get next trial parameters
                 trial_params = self.hierarchical_hpo.suggest()
-                
+
                 # Evaluate strategy
                 with tprint_timer(f"Hierarchical trial {trial_idx} evaluation"):
                     score = self._evaluate_strategy(data, trial_params, regime_analysis)
-                
+
                 # Record trial
                 trial_result = {
                     'trial_idx': trial_idx,
@@ -789,41 +789,41 @@ class TASEngine:
                     'timestamp': time.time()
                 }
                 trials.append(trial_result)
-                
+
                 # Update best if improved
                 if score > best_score:
                     best_score = score
                     best_strategy = trial_params.copy()
                     tprint_info(f"🏆 New best score: {best_score:.4f} at trial {trial_idx}")
-                
+
                 # Update hierarchical HPO
                 self.hierarchical_hpo.update(trial_params, score)
-                
+
                 # Memory optimization
                 if trial_idx % 10 == 0:
                     optimize_memory()
-            
+
             tprint_success(f"✅ Hierarchical strategy search completed: {len(trials)} trials")
             return best_strategy, best_score, trials
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in Hierarchical strategy search: {e}")
             return {}, -np.inf, []
-    
+
     @tprint_timer("Strategy Evaluation")
     def _evaluate_strategy(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         strategy_params: Dict[str, Any],
         regime_analysis: Optional[Dict[str, Any]] = None
     ) -> float:
         """Evaluate strategy performance with extensive utility integration.
-        
+
         Args:
             data: Input data for evaluation
             strategy_params: Strategy parameters to evaluate
             regime_analysis: Optional regime analysis results
-            
+
         Returns:
             Strategy performance score
         """
@@ -840,68 +840,68 @@ class TASEngine:
                 except ValueError as e:
                     tprint_warning(f"⚠️ Invalid parameter {param}: {e}")
                     continue
-            
+
             # Prepare data for evaluation
             with memory_checkpoint("strategy_data_preparation"):
                 # Create feature matrix using matrix operations
                 feature_matrix = self._create_strategy_feature_matrix(data)
-                
+
                 # Validate feature matrix
                 if not validate_correlation_matrix(feature_matrix):
                     tprint_warning("⚠️ Invalid feature matrix correlation structure")
                     return 0.0
-            
+
             # Simulate strategy evaluation (placeholder for actual strategy evaluation)
             with gpu_context("strategy_evaluation") if self.gpu_manager else memory_checkpoint("strategy_evaluation"):
                 # Use matrix operations for evaluation
                 score = self._compute_strategy_score(feature_matrix, validated_params, regime_analysis)
-            
+
             # Validate score
             score = validate_finite(score, "strategy_score")
-            
+
             tprint_debug(f"🔍 Strategy evaluation score: {score:.4f}")
             return score
-            
+
         except Exception as e:
             tprint_error(f"❌ Error evaluating strategy: {e}")
             return 0.0
-    
+
     def _create_strategy_feature_matrix(self, data: pd.DataFrame) -> np.ndarray:
         """Create strategy feature matrix using matrix operations utilities."""
         try:
             # Extract numeric columns for strategy features
             numeric_cols = data.select_dtypes(include=[np.number]).columns
             feature_data = data[numeric_cols].values
-            
+
             # Handle NaN values
             feature_data = np.nan_to_num(feature_data, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             # Validate numeric array
             feature_data = validate_numeric_array(feature_data, "strategy_features")
-            
+
             # Use matrix operations for feature engineering
             # Normalize features
             normalized_features = self.matrix_ops.normalize_matrix(feature_data)
-            
+
             # Add technical indicator features
             technical_features = self.enhanced_matrix_ops.add_technical_features(
                 normalized_features
             )
-            
+
             # Add trading-specific features
             trading_features = self.matrix_convenience.add_trading_features(
                 technical_features
             )
-            
+
             return trading_features
-            
+
         except Exception as e:
             tprint_error(f"❌ Error creating strategy feature matrix: {e}")
             return np.array([])
-    
+
     def _compute_strategy_score(
-        self, 
-        feature_matrix: np.ndarray, 
+        self,
+        feature_matrix: np.ndarray,
         params: Dict[str, Any],
         regime_analysis: Optional[Dict[str, Any]] = None
     ) -> float:
@@ -912,80 +912,80 @@ class TASEngine:
             exit_threshold = params.get('exit_threshold', 0.5)
             risk_factor = params.get('risk_factor', 1.0)
             position_size = params.get('position_size', 0.1)
-            
+
             # Compute base score using matrix operations
             base_score = self.vectorized_core.compute_strategy_performance(
                 feature_matrix, entry_threshold, exit_threshold
             )
-            
+
             # Apply regime-specific adjustments if available
             regime_adjustment = 1.0
             if regime_analysis and 'regime_stats' in regime_analysis:
                 regime_adjustment = self._calculate_regime_adjustment(
                     regime_analysis['regime_stats'], params
                 )
-            
+
             # Apply parameter-based adjustments
             risk_adjustment = safe_power(risk_factor, 0.5)
             position_adjustment = safe_sqrt(position_size)
-            
+
             # Combine factors using math validation utilities
             adjusted_score = safe_weighted_average(
                 [base_score, regime_adjustment, risk_adjustment, position_adjustment],
                 [0.6, 0.2, 0.1, 0.1]
             )
-            
+
             return adjusted_score
-            
+
         except Exception as e:
             tprint_error(f"❌ Error computing strategy score: {e}")
             return 0.0
-    
+
     def _calculate_regime_adjustment(
-        self, 
-        regime_stats: Dict[str, Any], 
+        self,
+        regime_stats: Dict[str, Any],
         params: Dict[str, Any]
     ) -> float:
         """Calculate regime-specific adjustment factor."""
         try:
             # Simple regime adjustment based on volatility and trend
             adjustments = []
-            
+
             for regime_key, stats in regime_stats.items():
                 if isinstance(stats, dict) and 'avg_volatility' in stats:
                     volatility = stats['avg_volatility']
                     trend = stats.get('avg_trend', 0.0)
                     percentage = stats.get('percentage', 0.0)
-                    
+
                     # Calculate regime-specific performance factor
                     regime_factor = safe_weighted_average(
                         [volatility, abs(trend)],
                         [0.7, 0.3]
                     )
-                    
+
                     # Weight by regime percentage
                     weighted_factor = safe_divide(regime_factor * percentage, 100.0)
                     adjustments.append(weighted_factor)
-            
+
             if adjustments:
                 return safe_mean(np.array(adjustments))
             else:
                 return 1.0
-                
+
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating regime adjustment: {e}")
             return 1.0
-    
+
     def _calculate_strategy_metrics(self, trials: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Calculate strategy search performance metrics using math validation utilities."""
         try:
             if not trials:
                 return {}
-            
+
             # Extract scores
             scores = [trial['score'] for trial in trials]
             scores_array = np.array(scores)
-            
+
             # Calculate metrics using math validation utilities
             metrics = {
                 'mean_score': safe_mean(scores_array),
@@ -999,99 +999,99 @@ class TASEngine:
                 'convergence_metric': self._calculate_strategy_convergence_metric(scores),
                 'risk_adjusted_score': self._calculate_risk_adjusted_score(scores)
             }
-            
+
             return metrics
-            
+
         except Exception as e:
             tprint_error(f"❌ Error calculating strategy metrics: {e}")
             return {}
-    
+
     def _calculate_strategy_improvement_rate(self, scores: List[float]) -> float:
         """Calculate strategy improvement rate using math validation utilities."""
         try:
             if len(scores) < 2:
                 return 0.0
-            
+
             improvements = 0
             for i in range(1, len(scores)):
                 if scores[i] > scores[i-1]:
                     improvements += 1
-            
+
             return safe_divide(improvements, len(scores) - 1)
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_strategy_convergence_metric(self, scores: List[float]) -> float:
         """Calculate strategy convergence metric using math validation utilities."""
         try:
             if len(scores) < 10:
                 return 0.0
-            
+
             # Use last 20% of trials for convergence analysis
             last_portion = max(1, len(scores) // 5)
             recent_scores = scores[-last_portion:]
-            
+
             # Calculate coefficient of variation
             mean_score = safe_mean(np.array(recent_scores))
             std_score = safe_std(np.array(recent_scores))
-            
+
             if mean_score == 0:
                 return 0.0
-            
+
             cv = safe_divide(std_score, abs(mean_score))
             return 1.0 - cv  # Lower CV means better convergence
-            
+
         except Exception:
             return 0.0
-    
+
     def _calculate_risk_adjusted_score(self, scores: List[float]) -> float:
         """Calculate risk-adjusted score using Kelly criterion."""
         try:
             if len(scores) < 2:
                 return 0.0
-            
+
             # Calculate win rate and average win/loss
             positive_scores = [s for s in scores if s > 0]
             negative_scores = [s for s in scores if s < 0]
-            
+
             if not positive_scores or not negative_scores:
                 return safe_mean(np.array(scores))
-            
+
             win_rate = safe_divide(len(positive_scores), len(scores))
             avg_win = safe_mean(np.array(positive_scores))
             avg_loss = abs(safe_mean(np.array(negative_scores)))
-            
+
             # Use Kelly criterion for risk adjustment
             kelly_fraction = safe_kelly_calculation(win_rate, avg_win, avg_loss)
-            
+
             # Apply Kelly adjustment to mean score
             mean_score = safe_mean(np.array(scores))
             risk_adjusted = mean_score * (1 + kelly_fraction)
-            
+
             return risk_adjusted
-            
+
         except Exception:
             return safe_mean(np.array(scores))
-    
+
     @tprint_timer("Results Serialization")
     def save_results(
-        self, 
-        results: Dict[str, Any], 
+        self,
+        results: Dict[str, Any],
         filepath: str
     ) -> bool:
         """Save strategy search results using serialization utilities.
-        
+
         Args:
             results: Strategy search results to save
             filepath: Path to save results
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             tprint_info(f"💾 Saving strategy results to {filepath}")
-            
+
             # Add metadata
             results_with_metadata = {
                 'results': results,
@@ -1103,80 +1103,80 @@ class TASEngine:
                     'trading_metrics': self.trading_metrics
                 }
             }
-            
+
             # Save using universal serializer
             success = self.serializer.save(results_with_metadata, filepath)
-            
+
             if success:
                 tprint_success(f"✅ Strategy results saved successfully to {filepath}")
             else:
                 tprint_error(f"❌ Failed to save strategy results to {filepath}")
-            
+
             return success
-            
+
         except Exception as e:
             tprint_error(f"❌ Error saving strategy results: {e}")
             return False
-    
+
     def load_results(self, filepath: str) -> Optional[Dict[str, Any]]:
         """Load strategy search results using serialization utilities.
-        
+
         Args:
             filepath: Path to load results from
-            
+
         Returns:
             Loaded results or None if loading fails
         """
         try:
             tprint_info(f"📂 Loading strategy results from {filepath}")
-            
+
             # Load using universal serializer
             results = self.serializer.load(filepath)
-            
+
             if results:
                 tprint_success(f"✅ Strategy results loaded successfully from {filepath}")
                 return results
             else:
                 tprint_error(f"❌ Failed to load strategy results from {filepath}")
                 return None
-                
+
         except Exception as e:
             tprint_error(f"❌ Error loading strategy results: {e}")
             return None
-    
+
     def cleanup(self):
         """Cleanup resources and M1 optimizations."""
         try:
             tprint_info("🧹 Cleaning up TAS Engine resources")
-            
+
             # Get memory usage before cleanup
             memory_before = get_memory_usage()
             tprint_debug(f"💾 Memory usage before cleanup: {memory_before}")
-            
+
             # Cleanup M1 optimizers
             tprint_debug("🔧 Cleaning up M1 optimizers")
             cleanup_m1_optimizers()
             tprint_debug("✅ M1 optimizers cleaned up")
-            
+
             # Clear strategy history
             strategy_count = len(self.strategy_history)
             tprint_debug(f"📊 Clearing {strategy_count} strategy history entries")
             self.strategy_history.clear()
-            
+
             # Clear trading metrics
             metrics_count = len(self.trading_metrics)
             tprint_debug(f"📊 Clearing {metrics_count} trading metrics entries")
             self.trading_metrics.clear()
-            
+
             # Clear performance metrics
             perf_count = len(self.performance_metrics)
             tprint_debug(f"📊 Clearing {perf_count} performance metrics entries")
             self.performance_metrics.clear()
-            
+
             # Get memory usage after cleanup
             memory_after = get_memory_usage()
             tprint_debug(f"💾 Memory usage after cleanup: {memory_after}")
-            
+
             tprint_success("✅ TAS Engine cleanup completed")
             tprint_structured({
                 'cleanup_summary': {
@@ -1188,7 +1188,7 @@ class TASEngine:
                     'cleanup_successful': True
                 }
             }, LogLevel.INFO)
-            
+
         except Exception as e:
             tprint_error(f"❌ Error during cleanup: {e}")
             tprint_structured({
@@ -1198,16 +1198,16 @@ class TASEngine:
                     'cleanup_failed': True
                 }
             }, LogLevel.ERROR)
-    
+
     def __enter__(self):
         """Context manager entry."""
         tprint_debug("🚪 Entering TAS Engine context manager")
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
         tprint_debug("🚪 Exiting TAS Engine context manager")
-        
+
         if exc_type is not None:
             tprint_error(f"❌ Exception in context manager: {exc_type.__name__}: {exc_val}")
             tprint_structured({
@@ -1219,37 +1219,35 @@ class TASEngine:
             }, LogLevel.ERROR)
         else:
             tprint_debug("✅ Context manager exited normally")
-        
-        self.cleanup()
 
+        self.cleanup()
 
 # Convenience function for quick TAS usage
 def create_tas_engine(config: Optional[Dict[str, Any]] = None) -> TASEngine:
     """Create a TAS engine instance with default configuration.
-    
+
     Args:
         config: Optional configuration dictionary
-        
+
     Returns:
         Configured TASEngine instance
     """
     tprint_info("🏭 Creating TAS Engine instance")
     tprint_debug(f"📋 Configuration provided: {'Yes' if config else 'No'}")
-    
+
     if config:
         tprint_debug(f"⚙️ Config keys: {list(config.keys())}")
-    
+
     engine = TASEngine(config)
     tprint_success("✅ TAS Engine instance created successfully")
     return engine
-
 
 # Example usage
 if __name__ == "__main__":
     # Configure tprint for better output
     tprint_info("🚀 Starting TAS Engine example")
     from ...tprint import TPrintConfig, configure_tprint
-    
+
     tprint_debug("⚙️ Configuring tprint for enhanced output")
     config = TPrintConfig(
         use_colors=True,
@@ -1259,18 +1257,18 @@ if __name__ == "__main__":
     )
     configure_tprint(config)
     tprint_success("✅ Tprint configuration applied")
-    
+
     # Create and use TAS engine
     tprint_info("🏭 Creating TAS engine for example usage")
     with create_tas_engine() as tas_engine:
         tprint_info("📊 Starting data loading and processing example")
-        
+
         # Load and process data
         data = tas_engine.load_and_process_data("ETHUSDT", "1m", apply_feature_engineering=True)
-        
+
         if data is not None:
             tprint_success("✅ Data loaded successfully, proceeding with strategy search")
-            
+
             # Define search space
             tprint_debug("🔧 Defining strategy search space")
             search_space = {
@@ -1281,7 +1279,7 @@ if __name__ == "__main__":
                 'stop_loss': [0.01, 0.02, 0.03, 0.04, 0.05],
                 'take_profit': [0.02, 0.03, 0.04, 0.05, 0.06]
             }
-            
+
             tprint_info(f"📋 Search space defined: {len(search_space)} parameters")
             tprint_structured({
                 'search_space_summary': {
@@ -1290,7 +1288,7 @@ if __name__ == "__main__":
                     'total_combinations': np.prod([len(v) for v in search_space.values()])
                 }
             }, LogLevel.INFO)
-            
+
             # Perform strategy search
             tprint_info("🔍 Starting strategy search")
             with tprint_timer("Complete Strategy Search Example"):
@@ -1301,7 +1299,7 @@ if __name__ == "__main__":
                     n_trials=50,
                     include_regime_specific=True
                 )
-            
+
             # Save results
             if results:
                 tprint_info("💾 Saving strategy search results")
@@ -1310,12 +1308,12 @@ if __name__ == "__main__":
                     tprint_success("✅ Results saved successfully")
                 else:
                     tprint_warning("⚠️ Failed to save results")
-                
+
                 tprint_info("📊 Displaying search results summary")
                 tprint_structured(results, LogLevel.INFO)
             else:
                 tprint_error("❌ No results to save")
         else:
             tprint_error("❌ Failed to load data, skipping strategy search")
-    
+
     tprint_success("✅ TAS Engine example completed")

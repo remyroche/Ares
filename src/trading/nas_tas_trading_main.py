@@ -29,14 +29,14 @@ async def main():
     """Main entry point for NAS/TAS enhanced trading."""
     try:
         tprint_info("🚀 Starting NAS/TAS Enhanced Trading...")
-        
+
         # Get trading configuration
         trading_config = get_trading_config()
-        
+
         # Initialize NAS/TAS configuration
         nas_config = NASConfig()
         tas_config = TASConfig()
-        
+
         # Update trading config with NAS/TAS settings
         trading_config.update({
             'nas_tas_enabled': True,
@@ -56,21 +56,21 @@ async def main():
                 'tas_timeframe': tas_config.tas_timeframe
             }
         })
-        
+
         # Initialize trading orchestrator
         orchestrator = TradingOrchestrator(trading_config)
-        
+
         # Initialize all components
         tprint_info("🔄 Initializing trading components...")
         await orchestrator.initialize()
-        
+
         # Start trading session
         tprint_info("📈 Starting trading session...")
         await orchestrator.start_trading_session()
-        
+
         tprint_success("✅ NAS/TAS enhanced trading started successfully!")
         tprint_info("🎯 Trading with enhanced Analyst (NAS) and Tactician (TAS) models")
-        
+
         # Keep running until interrupted
         try:
             while True:
@@ -79,9 +79,9 @@ async def main():
             tprint_info("🛑 Stopping trading session...")
             await orchestrator.stop_trading_session()
             tprint_success("✅ Trading session stopped gracefully")
-        
+
         return True
-        
+
     except Exception as e:
         tprint_error(f"❌ NAS/TAS trading failed: {str(e)}")
         logger.error(f"NAS/TAS trading failed: {str(e)}", exc_info=True)

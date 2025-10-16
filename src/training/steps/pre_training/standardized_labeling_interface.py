@@ -50,11 +50,9 @@ except ImportError as exc:  # pragma: no cover - defensive fallback
     DataFrameSchema = None  # type: ignore[assignment]
     Check = None  # type: ignore[assignment]
 
-
 if pa:
     def _namespace_check(df: pd.DataFrame) -> bool:
         return not find_nonconforming_columns(df.columns)
-
 
     LabelFrameSchema: DataFrameSchema = pa.DataFrameSchema(
         columns={},
@@ -87,7 +85,6 @@ else:
     LabelFrameSchema = None  # type: ignore[assignment]
     FeatureFrameSchema = None  # type: ignore[assignment]
 
-
 def validate_dataframe_schema(
     df: pd.DataFrame,
     required_columns: Optional[List[str]] = None,
@@ -99,27 +96,27 @@ def validate_dataframe_schema(
 ) -> Tuple[bool, List[str]]:
     """
     Validate DataFrame schema against expected structure.
-    
+
     Args:
         df: DataFrame to validate
         required_columns: List of columns that must be present
         expected_dtypes: Dictionary mapping column names to expected dtypes
         min_rows: Minimum number of rows required
         allow_nulls: Whether null values are acceptable
-    
+
     Returns:
         Tuple of (is_valid, list_of_issues)
     """
     issues = []
-    
+
     if df is None:
         issues.append("DataFrame is None")
         return False, issues
-    
+
     if df.empty:
         issues.append("DataFrame is empty")
         return False, issues
-    
+
     # Check minimum rows
     if len(df) < min_rows:
         issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
@@ -129,7 +126,7 @@ def validate_dataframe_schema(
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
             issues.append(f"Missing required columns: {missing_columns}")
-    
+
     # Check dtypes
     if expected_dtypes:
         for col, expected_dtype in expected_dtypes.items():
@@ -137,13 +134,13 @@ def validate_dataframe_schema(
                 actual_dtype = df[col].dtype
                 if not pd.api.types.is_dtype_equal(actual_dtype, expected_dtype):
                     issues.append(f"Column '{col}' has dtype {actual_dtype}, expected {expected_dtype}")
-    
+
     # Check for nulls if not allowed
     if not allow_nulls:
         null_columns = df.columns[df.isnull().any()].tolist()
         if null_columns:
             issues.append(f"Columns with null values: {null_columns}")
-    
+
     # Check namespace conventions
     try:
         validate_dataframe_names(df, allowed_unprefixed=allowed_unprefixed)
@@ -171,18 +168,17 @@ def validate_dataframe_schema(
     if df.index.has_duplicates:
         dup_count = df.index.duplicated().sum()
         issues.append(f"DataFrame has {dup_count} duplicate index values")
-    
+
     is_valid = len(issues) == 0
-    
+
     if is_valid:
         tprint(f"✅ DataFrame schema validation passed: {len(df)} rows, {len(df.columns)} columns")
     else:
         tprint_warning(f"⚠️ DataFrame schema validation found {len(issues)} issues:")
         for issue in issues:
             tprint_warning(f"  - {issue}")
-    
-    return is_valid, issues
 
+    return is_valid, issues
 
 def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) -> None:
     """Assert that label variance remains close to 1 (σ-normalized scale)."""
@@ -220,13 +216,11 @@ def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) ->
                 f"(expected ~1.0 ± {tolerance})."
             )
 
-
 class LabelingFormat(Enum):
     """Supported labeling formats."""
     STANDARDIZED = "standardized"
     MULTI_HORIZON = "multi_horizon"
     TRIPLE_BARRIER = "triple_barrier"
-
 
 @dataclass
 class LabelingMetadata:
@@ -242,7 +236,6 @@ class LabelingMetadata:
     n_horizons: int
     error: Optional[str] = None
 
-
 @dataclass
 class StandardizedLabelingResult:
     """Standardized labeling result that all components can use."""
@@ -253,7 +246,7 @@ class StandardizedLabelingResult:
     confidence_scores: pd.DataFrame
     eligibility_masks: pd.DataFrame
     metadata: LabelingMetadata
-    
+
     def is_valid(self) -> bool:
         """Check if the labeling result is valid."""
         return (
@@ -262,7 +255,7 @@ class StandardizedLabelingResult:
             self.metadata.pipeline_ready and
             self.metadata.error is None
         )
-    
+
     HORIZON_KEYWORD_MAPPING = [
         ("micro", ("micro",)),
         ("small", ("immediate", "small")),
@@ -301,10 +294,9 @@ class StandardizedLabelingResult:
 
         return None
 
-
 class StandardizedLabelingInterface:
     """Interface for standardized labeling data exchange between components."""
-    
+
     @staticmethod
     def create_from_multi_horizon_result(
         multi_horizon_result: Dict[str, Any],
@@ -315,7 +307,7 @@ class StandardizedLabelingInterface:
         """Create standardized result from multi_horizon_profit_labeler output."""
         try:
             tprint_info("🔄 Converting multi_horizon_profit_labeler result to standardized format")
-            
+
             # Extract data from multi_horizon_result
             labeled_data = multi_horizon_result.get('labeled_data', pd.DataFrame())
             horizon_weights = multi_horizon_result.get('horizon_weights', {})
@@ -345,7 +337,7 @@ class StandardizedLabelingInterface:
                 n_targets=len(target_columns),
                 n_horizons=len(horizon_weights)
             )
-            
+
             result = StandardizedLabelingResult(
                 labels=labeled_data,
                 weights=horizon_weights,
@@ -355,10 +347,10 @@ class StandardizedLabelingInterface:
                 eligibility_masks=eligibility_masks,
                 metadata=metadata
             )
-            
+
             tprint_success("✅ Successfully created standardized labeling result")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to create standardized result: {e}")
             # Return empty result with error
@@ -374,7 +366,7 @@ class StandardizedLabelingInterface:
                 n_horizons=0,
                 error=str(e)
             )
-            
+
             return StandardizedLabelingResult(
                 labels=pd.DataFrame(),
                 weights={},
@@ -384,7 +376,7 @@ class StandardizedLabelingInterface:
                 eligibility_masks=pd.DataFrame(),
                 metadata=metadata
             )
-    
+
     @staticmethod
     def create_from_standardized_output(
         standardized_output: Dict[str, Any],
@@ -427,7 +419,7 @@ class StandardizedLabelingInterface:
                 n_targets=len(target_columns),
                 n_horizons=len(weights)
             )
-            
+
             result = StandardizedLabelingResult(
                 labels=labels,
                 weights=weights,
@@ -437,10 +429,10 @@ class StandardizedLabelingInterface:
                 eligibility_masks=eligibility_masks,
                 metadata=metadata
             )
-            
+
             tprint_success("✅ Successfully processed standardized output")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to process standardized output: {e}")
             # Return empty result with error
@@ -456,7 +448,7 @@ class StandardizedLabelingInterface:
                 n_horizons=0,
                 error=str(e)
             )
-            
+
             return StandardizedLabelingResult(
                 labels=pd.DataFrame(),
                 weights={},
@@ -466,7 +458,7 @@ class StandardizedLabelingInterface:
                 eligibility_masks=pd.DataFrame(),
                 metadata=metadata
             )
-    
+
     @staticmethod
     def extract_from_pipeline_state(
         pipeline_state: Dict[str, Any],
@@ -477,21 +469,21 @@ class StandardizedLabelingInterface:
         """Extract standardized labeling result from pipeline state."""
         try:
             tprint_info("🔍 Extracting labeling result from pipeline state")
-            
+
             # Try standardized output format first
             if 'standardized_output' in pipeline_state:
                 tprint_info("📋 Found standardized output in pipeline state")
                 return StandardizedLabelingInterface.create_from_standardized_output(
                     pipeline_state['standardized_output'], symbol, exchange, timeframe
                 )
-            
+
             # Try multi_horizon_labeling_result format
             if 'multi_horizon_labeling_result' in pipeline_state:
                 tprint_info("📊 Found multi_horizon_labeling_result in pipeline state")
                 return StandardizedLabelingInterface.create_from_multi_horizon_result(
                     pipeline_state['multi_horizon_labeling_result'], symbol, exchange, timeframe
                 )
-            
+
             # Try artifacts
             artifacts = pipeline_state.get('artifacts', {})
             if 'standardized_output' in artifacts:
@@ -499,20 +491,20 @@ class StandardizedLabelingInterface:
                 return StandardizedLabelingInterface.create_from_standardized_output(
                     artifacts['standardized_output'], symbol, exchange, timeframe
                 )
-            
+
             if 'multi_horizon_labeling_result' in artifacts:
                 tprint_info("📊 Found multi_horizon_labeling_result in artifacts")
                 return StandardizedLabelingInterface.create_from_multi_horizon_result(
                     artifacts['multi_horizon_labeling_result'], symbol, exchange, timeframe
                 )
-            
+
             tprint_warning("⚠️ No labeling result found in pipeline state")
             return None
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to extract labeling result from pipeline state: {e}")
             return None
-    
+
     @staticmethod
     def validate_result(result: StandardizedLabelingResult) -> bool:
         """Validate a standardized labeling result."""
@@ -520,25 +512,25 @@ class StandardizedLabelingInterface:
             if not result.is_valid():
                 tprint_warning("⚠️ Labeling result is not valid")
                 return False
-            
+
             # Additional validation checks
             if result.labels.empty:
                 tprint_warning("⚠️ Labels DataFrame is empty")
                 return False
-            
+
             if not result.target_columns:
                 tprint_warning("⚠️ No target columns specified")
                 return False
-            
+
             # Check if target columns exist in labels
             missing_targets = [col for col in result.target_columns if col not in result.labels.columns]
             if missing_targets:
                 tprint_warning(f"⚠️ Missing target columns: {missing_targets}")
                 return False
-            
+
             tprint_success("✅ Labeling result validation passed")
             return True
-            
+
         except Exception as e:
             tprint_error(f"❌ Validation failed: {e}")
             return False

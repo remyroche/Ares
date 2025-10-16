@@ -1,6 +1,6 @@
-import numpy as np
-from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
+import numpy as np
 import pandas as pd
 
 'Tactician module for trading strategy execution.'
@@ -255,11 +255,11 @@ class Tactician:
         """
         Normalize probabilities to ensure they sum to 1 across both directions.
         Same logic as Analyst for consistency.
-        
+
         Args:
             upside_probabilities: Upside price target confidences
             downside_probabilities: Downside risk confidences
-            
+
         Returns:
             dict: Normalized probabilities for upside and downside
         """
@@ -293,11 +293,11 @@ class Tactician:
         """
         Calculate triple barrier analysis for tactician green light decision.
         Uses the same logic as Analyst for consistency.
-        
+
         Args:
             upside_probabilities: Normalized upside probabilities
             downside_probabilities: Normalized downside probabilities
-            
+
         Returns:
             dict: Triple barrier analysis results
         """
@@ -331,13 +331,13 @@ class Tactician:
     def _get_tactician_decision_reasoning(self, cumulative_upper_confidence: float, cumulative_lower_confidence: float, threshold_met: bool, green_light: bool) -> str:
         """
         Generate human-readable decision reasoning for tactician.
-        
+
         Args:
             cumulative_upper_confidence: Cumulative confidence for upper barrier
             cumulative_lower_confidence: Cumulative confidence for lower barrier
             threshold_met: Whether confidence threshold is met
             green_light: Whether green light decision is made
-            
+
         Returns:
             str: Decision reasoning
         """

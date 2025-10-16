@@ -46,7 +46,6 @@ except Exception as e:
 
 logger = _LOGGER
 
-
 class ModelRegistry:
     """Comprehensive model registry for persistence and versioning."""
 
@@ -55,7 +54,7 @@ class ModelRegistry:
         self.registry_path = Path(registry_path)
         self.config = config or {}
         self.logger = logger.getChild('ModelRegistry')
-        
+
         _LOGGER.info("🚀 Initializing ModelRegistry...")
         _LOGGER.info(f"📁 Registry path: {self.registry_path}")
 
@@ -76,7 +75,7 @@ class ModelRegistry:
         self.metadata_file = self.registry_path / "registry_metadata.json"
         _LOGGER.debug("🔧 Loading registry metadata...")
         self._load_registry_metadata()
-        
+
         _LOGGER.info("✅ ModelRegistry initialized successfully")
 
     def save_model_with_metadata(self, model: Any, metadata: Dict[str, Any],
@@ -98,7 +97,7 @@ class ModelRegistry:
         _LOGGER.info(f"💾 Starting model save with metadata...")
         _LOGGER.info(f"📊 Parameters - Version strategy: {version_strategy}, Model name: {model_name or 'auto-generated'}")
         _LOGGER.debug(f"📊 Metadata keys: {list(metadata.keys()) if metadata else 'None'}")
-        
+
         try:
             # Generate model name if not provided
             if model_name is None:
@@ -163,7 +162,7 @@ class ModelRegistry:
         start_time = time.time()
         _LOGGER.info(f"📂 Starting model load with validation...")
         _LOGGER.info(f"📊 Parameters - Model ID: {model_id}, Version: {version}")
-        
+
         try:
             # Resolve version
             _LOGGER.debug("🔧 Resolving version...")
@@ -799,17 +798,17 @@ class ModelRegistry:
     def _load_model_explanation(self, model_id: str, version: str) -> Optional[Dict[str, Any]]:
         """
         Load model explanation from registry.
-        
+
         Args:
             model_id: Model identifier
             version: Model version
-            
+
         Returns:
             Explanation data if found, None otherwise
         """
         try:
             explanation_path = self.registry_path / model_id / version / "explanation.json"
-            
+
             if explanation_path.exists():
                 _LOGGER.debug(f"📂 Loading explanation from: {explanation_path}")
                 explanation_data = safe_json_load(explanation_path)
@@ -817,7 +816,7 @@ class ModelRegistry:
             else:
                 _LOGGER.debug(f"📂 No explanation found for model {model_id} version {version}")
                 return None
-                
+
         except Exception as e:
             _LOGGER.warning(f"⚠️ Could not load explanation for {model_id}: {e}")
             return None

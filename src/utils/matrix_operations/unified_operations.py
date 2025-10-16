@@ -121,7 +121,7 @@ class UnifiedMatrixOperations:
     intelligently uses available hardware acceleration and existing utilities.
     """
 
-    def __init__(self, 
+    def __init__(self,
                  enable_gpu: bool = True,
                  enable_memory_optimization: bool = True,
                  enable_parallel: bool = True,
@@ -303,7 +303,7 @@ class UnifiedMatrixOperations:
                 result = self._fallback_matrix_multiply(A, B)
         else:
             result = self._fallback_matrix_multiply(A, B)
-        
+
         # Update performance stats
         execution_time = time.time() - start_time
         self.performance_stats['total_operations'] += 1
@@ -313,12 +313,12 @@ class UnifiedMatrixOperations:
         ) / self.performance_stats['total_operations']
 
         return result
-    
+
     def _should_use_vectorization_manager(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
         """Determine if UnifiedVectorizationManager should be used for the operation."""
         if not self.vectorization_manager:
             return False
-        
+
         # Use UnifiedVectorizationManager for medium to large matrices
         total_elements = A.size + B.size
         return total_elements > 5000  # 5K elements threshold
@@ -327,13 +327,13 @@ class UnifiedMatrixOperations:
         """Determine if UnifiedVectorizationManager should be used for correlation operations."""
         if not self.vectorization_manager:
             return False
-        
+
         # Convert to numpy array for size check
         if isinstance(data, pd.DataFrame):
             data_array = data.values
         else:
             data_array = data
-        
+
         # Use UnifiedVectorizationManager for medium to large datasets
         return data_array.size > 10000  # 10K elements threshold
 
@@ -341,13 +341,13 @@ class UnifiedMatrixOperations:
         """Determine if UnifiedVectorizationManager should be used for batch operations."""
         if not self.vectorization_manager:
             return False
-        
+
         # Convert to numpy array for size check
         if isinstance(data, pd.DataFrame):
             data_array = data.values
         else:
             data_array = data
-        
+
         # Use UnifiedVectorizationManager for supported operations and medium to large datasets
         supported_operations = ['correlation', 'rolling_features', 'trading_indicators', 'matrix_multiply', 'feature_engineering']
         return operation in supported_operations and data_array.size > 5000  # 5K elements threshold
@@ -356,7 +356,7 @@ class UnifiedMatrixOperations:
         """Determine if VectorBT should be used for the operation."""
         if not VECTORBT_OPTIMIZATIONS_AVAILABLE:
             return False
-        
+
         # Use VectorBT for medium to large matrices
         total_elements = A.size + B.size
         return total_elements > 10000  # 10K elements threshold
@@ -373,10 +373,10 @@ class UnifiedMatrixOperations:
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
-        
+
         # Fall back to standard implementation
         return self._standard_matrix_multiply(A, B)
-    
+
     def _standard_matrix_multiply(self, A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         """Standard matrix multiplication with hardware selection."""
         # Choose optimal method based on size and available hardware
@@ -389,7 +389,7 @@ class UnifiedMatrixOperations:
         else:
             result = self._cpu_matrix_multiply(A, B)
             self.performance_stats['cpu_operations'] += 1
-        
+
         return result
 
     def _should_use_gpu(self, A: 'np.ndarray', B: 'np.ndarray') -> bool:
@@ -484,7 +484,7 @@ class UnifiedMatrixOperations:
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ UnifiedVectorizationManager correlation matrix failed: {e}, falling back to VectorBT")
-        
+
         # Try VectorBT optimization if available
         if VECTORBT_OPTIMIZATIONS_AVAILABLE:
             try:
@@ -495,7 +495,7 @@ class UnifiedMatrixOperations:
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
-        
+
         # Fallback to standard implementation
         if isinstance(data, pd.DataFrame):
             data = data.values
@@ -787,28 +787,28 @@ class UnifiedMatrixOperations:
     def kmeans_plus_plus_init(self, data: 'np.ndarray', n_components: int, random_state: Optional[int] = None) -> 'np.ndarray':
         """
         K-means++ initialization for cluster centers.
-        
+
         Args:
             data: Input data matrix (n_samples, n_features)
             n_components: Number of cluster centers to initialize
             random_state: Random seed for reproducibility
-            
+
         Returns:
             Initial cluster centers (n_components, n_features)
         """
         if random_state is not None:
             np.random.seed(random_state)
-            
+
         n_samples, n_features = data.shape
-        
+
         if n_components >= n_samples:
             # If we have more components than samples, use all samples as centers
             return data[np.random.choice(n_samples, n_components, replace=True)]
-        
+
         # Initialize first center randomly
         centers = np.zeros((n_components, n_features))
         centers[0] = data[np.random.randint(n_samples)]
-        
+
         # Initialize remaining centers using k-means++ algorithm
         for i in range(1, n_components):
             # Calculate distances to nearest center for each point
@@ -816,27 +816,27 @@ class UnifiedMatrixOperations:
             for j in range(i):
                 dist_to_center = np.sum((data - centers[j])**2, axis=1)
                 distances = np.minimum(distances, dist_to_center)
-            
+
             # Choose next center with probability proportional to squared distance
             probabilities = distances / np.sum(distances)
             centers[i] = data[np.random.choice(n_samples, p=probabilities)]
-        
+
         return centers
 
     def normalize_matrix(self, data: 'np.ndarray', method: str = 'zscore') -> 'np.ndarray':
         """
         Normalize matrix data using specified method.
-        
+
         Args:
             data: Input data matrix (n_samples, n_features)
             method: Normalization method ('zscore', 'minmax', 'robust')
-            
+
         Returns:
             Normalized data matrix
         """
         if data.ndim != 2:
             raise ValueError("Data must be 2-dimensional")
-        
+
         if method == 'zscore':
             # Z-score normalization: (x - mean) / std
             mean = np.mean(data, axis=0)
@@ -844,7 +844,7 @@ class UnifiedMatrixOperations:
             # Avoid division by zero
             std = np.where(std == 0, 1.0, std)
             return (data - mean) / std
-            
+
         elif method == 'minmax':
             # Min-max normalization: (x - min) / (max - min)
             data_min = np.min(data, axis=0)
@@ -852,7 +852,7 @@ class UnifiedMatrixOperations:
             # Avoid division by zero
             data_range = np.where(data_max == data_min, 1.0, data_max - data_min)
             return (data - data_min) / data_range
-            
+
         elif method == 'robust':
             # Robust normalization using median and IQR
             median = np.median(data, axis=0)
@@ -861,25 +861,25 @@ class UnifiedMatrixOperations:
             # Avoid division by zero
             iqr = np.where(iqr == 0, 1.0, iqr)
             return (data - median) / iqr
-            
+
         else:
             raise ValueError(f"Unknown normalization method: {method}")
 
     def initialize_covariances(self, data: 'np.ndarray', means: 'np.ndarray', covariance_type: str = 'full') -> 'np.ndarray':
         """
         Initialize covariance matrices for HMM components.
-        
+
         Args:
             data: Input data matrix (n_samples, n_features)
             means: Component means (n_components, n_features)
             covariance_type: Type of covariance ('full', 'diag', 'spherical', 'tied')
-            
+
         Returns:
             Initialized covariance matrices
         """
         n_samples, n_features = data.shape
         n_components = means.shape[0]
-        
+
         if covariance_type == 'full':
             # Full covariance matrices
             covariances = np.zeros((n_components, n_features, n_features))
@@ -889,7 +889,7 @@ class UnifiedMatrixOperations:
                 covariances[i] = np.cov(centered_data.T)
                 # Add regularization to ensure positive definiteness
                 covariances[i] += np.eye(n_features) * 1e-6
-                
+
         elif covariance_type == 'diag':
             # Diagonal covariance matrices
             covariances = np.zeros((n_components, n_features))
@@ -898,7 +898,7 @@ class UnifiedMatrixOperations:
                 covariances[i] = np.var(centered_data, axis=0)
                 # Add regularization
                 covariances[i] += 1e-6
-                
+
         elif covariance_type == 'spherical':
             # Spherical covariance (same variance for all features)
             covariances = np.zeros(n_components)
@@ -906,7 +906,7 @@ class UnifiedMatrixOperations:
                 centered_data = data - means[i]
                 # Use average variance across features
                 covariances[i] = np.mean(np.var(centered_data, axis=0)) + 1e-6
-                
+
         elif covariance_type == 'tied':
             # Tied covariance (same for all components)
             # Calculate global covariance
@@ -917,10 +917,10 @@ class UnifiedMatrixOperations:
             covariances += np.eye(n_features) * 1e-6
             # Return as single matrix for tied case
             return covariances
-            
+
         else:
             raise ValueError(f"Unknown covariance type: {covariance_type}")
-        
+
         return covariances
 
     def get_hardware_info(self) -> Dict[str, Any]:
@@ -947,7 +947,7 @@ class UnifiedMatrixOperations:
 
         return info
 
-    def optimize_dataframe(self, df: Union['pd.DataFrame', 'np.ndarray'], 
+    def optimize_dataframe(self, df: Union['pd.DataFrame', 'np.ndarray'],
                           operations: Optional[List[str]] = None) -> Union['pd.DataFrame', 'np.ndarray']:
         """
         Optimize dataframe operations using available hardware acceleration.
@@ -960,9 +960,9 @@ class UnifiedMatrixOperations:
             Optimized dataframe or array
         """
         self.logger.info("🔧 Starting dataframe optimization...")
-        
+
         start_time = time.time()
-        
+
         try:
             # Convert to appropriate format for processing
             if isinstance(df, pd.DataFrame):
@@ -975,18 +975,18 @@ class UnifiedMatrixOperations:
                 is_dataframe = False
                 columns = None
                 index = None
-            
+
             # Default operations if none specified
             if operations is None:
                 operations = ['memory_optimization', 'dtype_optimization', 'nan_handling']
-            
+
             # Apply memory optimization
             if 'memory_optimization' in operations:
                 self.logger.debug("🧠 Applying memory optimization...")
                 memory_stats = self.optimize_memory_usage()
                 if memory_stats.get('status') == 'success':
                     self.logger.debug("✅ Memory optimization completed")
-            
+
             # Apply dtype optimization
             if 'dtype_optimization' in operations and is_dataframe:
                 self.logger.debug("🔢 Applying dtype optimization...")
@@ -1001,10 +1001,10 @@ class UnifiedMatrixOperations:
                         # Check if we can downcast to int32
                         if df[col].min() >= np.iinfo(np.int32).min and df[col].max() <= np.iinfo(np.int32).max:
                             df[col] = df[col].astype(np.int32)
-                
+
                 # Update data array
                 data = df.values
-            
+
             # Apply NaN handling
             if 'nan_handling' in operations:
                 self.logger.debug("🔍 Handling NaN values...")
@@ -1012,7 +1012,7 @@ class UnifiedMatrixOperations:
                     # Use safe operations for NaN handling
                     nan_count = np.isnan(data).sum()
                     self.logger.debug(f"Found {nan_count} NaN values")
-                    
+
                     # Replace NaN with median for numeric data
                     if data.dtype.kind in 'biufc':  # numeric types
                         for col_idx in range(data.shape[1]):
@@ -1021,7 +1021,7 @@ class UnifiedMatrixOperations:
                                 median_val = np.nanmedian(col_data)
                                 if not np.isnan(median_val):
                                     data[:, col_idx] = np.where(np.isnan(col_data), median_val, col_data)
-            
+
             # Apply vectorized operations if available
             if 'vectorized_operations' in operations and self.vectorized_core:
                 self.logger.debug("⚡ Applying vectorized optimizations...")
@@ -1031,7 +1031,7 @@ class UnifiedMatrixOperations:
                         data = self.vectorized_core.optimize_array(data)
                 except Exception as e:
                     self.logger.warning(f"⚠️ Vectorized optimization failed: {e}")
-            
+
             # Apply parallel processing for large datasets
             if 'parallel_processing' in operations and data.size > 100000:
                 self.logger.debug("🔄 Applying parallel processing optimizations...")
@@ -1042,13 +1042,13 @@ class UnifiedMatrixOperations:
                             data = self.cpu_optimizer.optimize_large_array(data)
                     except Exception as e:
                         self.logger.warning(f"⚠️ Parallel optimization failed: {e}")
-            
+
             # Convert back to original format
             if is_dataframe:
                 result = pd.DataFrame(data, columns=columns, index=index)
             else:
                 result = data
-            
+
             # Update performance stats
             execution_time = time.time() - start_time
             self.performance_stats['total_operations'] += 1
@@ -1056,35 +1056,35 @@ class UnifiedMatrixOperations:
                 (self.performance_stats['average_execution_time'] *
                  (self.performance_stats['total_operations'] - 1)) + execution_time
             ) / self.performance_stats['total_operations']
-            
+
             self.logger.info(f"✅ Dataframe optimization completed in {execution_time:.3f}s")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Dataframe optimization failed: {e}")
             # Return original data on failure
             return df
-    
+
     def calculate_pairwise_similarities(self, feature_vectors: 'np.ndarray', method: str = 'cosine_with_cv_filtering') -> 'np.ndarray':
         """
         Calculate pairwise similarities between feature vectors with M1 optimization.
-        
+
         Args:
             feature_vectors: Matrix of feature vectors (n_samples, n_features)
             method: Similarity calculation method
-            
+
         Returns:
             Similarity matrix (n_samples, n_samples)
         """
         if not NUMPY_AVAILABLE:
             raise ImportError("NumPy is required for similarity calculations")
-            
+
         try:
             self.logger.info(f"🔄 Calculating pairwise similarities using method: {method}")
             start_time = time.time()
-            
+
             n_samples = feature_vectors.shape[0]
-            
+
             if method == 'cosine_with_cv_filtering' or method == 'cosine':
                 # Normalize feature vectors for cosine similarity
                 if self.enable_gpu and self.gpu_manager and n_samples > 100:
@@ -1093,10 +1093,10 @@ class UnifiedMatrixOperations:
                         norms = self.gpu_manager.vector_norm(feature_vectors, axis=1, keepdims=True)
                         norms = np.where(norms == 0, 1, norms)  # Avoid division by zero
                         normalized_vectors = self.gpu_manager.divide(feature_vectors, norms)
-                        
+
                         # GPU-accelerated similarity calculation
                         similarity_matrix = self.gpu_manager.matrix_multiply(normalized_vectors, normalized_vectors.T)
-                        
+
                         self.logger.info("🚀 Used GPU acceleration for similarity calculation")
                     except Exception as gpu_error:
                         self.logger.warning(f"⚠️ GPU similarity calculation failed: {gpu_error}, using CPU")
@@ -1111,11 +1111,11 @@ class UnifiedMatrixOperations:
                     norms[norms == 0] = 1
                     normalized_vectors = feature_vectors / norms
                     similarity_matrix = np.dot(normalized_vectors, normalized_vectors.T)
-                
+
                 # Ensure diagonal is 1.0 and values are in [0, 1]
                 np.fill_diagonal(similarity_matrix, 1.0)
                 similarity_matrix = np.clip(similarity_matrix, 0.0, 1.0)
-                
+
             elif method == 'euclidean':
                 # Calculate Euclidean distance and convert to similarity
                 try:
@@ -1138,71 +1138,71 @@ class UnifiedMatrixOperations:
                             else:
                                 dist = np.linalg.norm(feature_vectors[i] - feature_vectors[j])
                                 similarity_matrix[i, j] = 1.0 / (1.0 + dist)  # Convert to similarity
-            
+
             else:
                 self.logger.warning(f"Unknown similarity method: {method}, using cosine")
                 return self.calculate_pairwise_similarities(feature_vectors, 'cosine')
-            
+
             execution_time = time.time() - start_time
             self.logger.info(f"✅ Similarity matrix calculated in {execution_time:.3f}s: {similarity_matrix.shape}")
-            
+
             # Update performance stats
             self.performance_stats['total_operations'] += 1
             self.performance_stats['average_execution_time'] = (
                 (self.performance_stats['average_execution_time'] *
                  (self.performance_stats['total_operations'] - 1)) + execution_time
             ) / self.performance_stats['total_operations']
-            
+
             return similarity_matrix
-            
+
         except Exception as e:
             self.logger.error(f"❌ Similarity calculation failed: {e}")
             # Return identity matrix as fallback
             return np.eye(feature_vectors.shape[0])
-    
+
     def apply_cv_filtering(self, similarity_matrix: 'np.ndarray', cv_values: 'np.ndarray', max_cv_difference: float = 0.5) -> 'np.ndarray':
         """
         Apply CV (coefficient of variation) filtering to similarity matrix with M1 optimization.
-        
+
         Args:
             similarity_matrix: Input similarity matrix
             cv_values: CV values for each sample
             max_cv_difference: Maximum allowed CV difference for similarity
-            
+
         Returns:
             Filtered similarity matrix
         """
         if not NUMPY_AVAILABLE:
             raise ImportError("NumPy is required for CV filtering")
-            
+
         try:
             self.logger.info(f"🔄 Applying CV filtering with max_cv_difference: {max_cv_difference}")
             start_time = time.time()
-            
+
             filtered_matrix = similarity_matrix.copy()
             n_samples = len(cv_values)
-            
+
             if self.enable_gpu and self.gpu_manager and n_samples > 100:
                 try:
                     # GPU-accelerated CV filtering
                     cv_diff_matrix = self.gpu_manager.abs(
                         self.gpu_manager.subtract(cv_values.reshape(-1, 1), cv_values.reshape(1, -1))
                     )
-                    
+
                     # Create reduction factor matrix
                     reduction_factors = np.where(
                         cv_diff_matrix > max_cv_difference,
                         np.minimum(cv_diff_matrix / max_cv_difference, 5.0),
                         1.0
                     )
-                    
+
                     # Apply filtering (keep diagonal unchanged)
                     mask = ~np.eye(n_samples, dtype=bool)
                     filtered_matrix[mask] = (similarity_matrix[mask] / reduction_factors[mask])
                     filtered_matrix[mask] = np.maximum(filtered_matrix[mask], 0.01)  # Minimum similarity
-                    
+
                     self.logger.info("🚀 Used GPU acceleration for CV filtering")
-                    
+
                 except Exception as gpu_error:
                     self.logger.warning(f"⚠️ GPU CV filtering failed: {gpu_error}, using CPU")
                     # Fallback to CPU
@@ -1224,92 +1224,92 @@ class UnifiedMatrixOperations:
                                 reduction_factor = min(cv_diff / max_cv_difference, 5.0)
                                 filtered_matrix[i, j] *= (1.0 / reduction_factor)
                                 filtered_matrix[i, j] = max(filtered_matrix[i, j], 0.01)
-            
+
             execution_time = time.time() - start_time
             self.logger.info(f"✅ CV filtering completed in {execution_time:.3f}s")
-            
+
             # Update performance stats
             self.performance_stats['total_operations'] += 1
             self.performance_stats['average_execution_time'] = (
                 (self.performance_stats['average_execution_time'] *
                  (self.performance_stats['total_operations'] - 1)) + execution_time
             ) / self.performance_stats['total_operations']
-            
+
             return filtered_matrix
-            
+
         except Exception as e:
             self.logger.error(f"❌ CV filtering failed: {e}")
             # Return original matrix on failure
             return similarity_matrix
 
-    def calculate_regime_stability(self, regime_predictions: 'np.ndarray', 
+    def calculate_regime_stability(self, regime_predictions: 'np.ndarray',
                                   timestamps: 'np.ndarray') -> 'np.ndarray':
         """
         Calculate regime stability scores for each time point.
-        
+
         Args:
             regime_predictions: Array of regime labels for each time point
             timestamps: Array of timestamps corresponding to regime predictions
-            
+
         Returns:
             Array of stability scores (0-1, higher is more stable)
         """
         try:
             stability_scores = np.zeros(len(regime_predictions))
-            
+
             for i in range(len(regime_predictions)):
                 current_regime = regime_predictions[i]
-                
+
                 # Look ahead and behind for regime consistency
                 lookback = min(10, i)
                 lookahead = min(10, len(regime_predictions) - i - 1)
-                
+
                 if lookback > 0:
                     past_regimes = regime_predictions[i-lookback:i]
                     past_consistency = np.mean(past_regimes == current_regime)
                 else:
                     past_consistency = 1.0
-                
+
                 if lookahead > 0:
                     future_regimes = regime_predictions[i+1:i+1+lookahead]
                     future_consistency = np.mean(future_regimes == current_regime)
                 else:
                     future_consistency = 1.0
-                
+
                 stability_scores[i] = (past_consistency + future_consistency) / 2.0
-            
+
             return stability_scores
-            
+
         except Exception as e:
             self.logger.warning(f"Regime stability calculation failed: {e}")
             return np.ones(len(regime_predictions)) * 0.5
 
-    def calculate_transition_probabilities(self, regime_predictions: 'np.ndarray', 
+    def calculate_transition_probabilities(self, regime_predictions: 'np.ndarray',
                                          n_regimes: int) -> 'np.ndarray':
         """
         Calculate regime transition probability matrix.
-        
+
         Args:
             regime_predictions: Array of regime labels for each time point
             n_regimes: Number of unique regimes
-            
+
         Returns:
             Transition probability matrix (n_regimes x n_regimes)
         """
         try:
             transition_matrix = np.zeros((n_regimes, n_regimes))
-            
+
             for i in range(len(regime_predictions) - 1):
                 current_regime = regime_predictions[i]
                 next_regime = regime_predictions[i + 1]
                 transition_matrix[current_regime, next_regime] += 1
-            
+
             # Normalize transition matrix
             row_sums = transition_matrix.sum(axis=1)
             transition_matrix = transition_matrix / (row_sums[:, np.newaxis] + 1e-8)
-            
+
             return transition_matrix
-            
+
         except Exception as e:
             self.logger.warning(f"Transition probability calculation failed: {e}")
             # Return uniform transition matrix as fallback
@@ -1350,13 +1350,13 @@ class UnifiedMatrixOperations:
         """Determine if VectorBTRollingOptimizer should be used for rolling operations."""
         if not self.rolling_optimizer:
             return False
-        
+
         # Convert to numpy array for size check
         if isinstance(data, pd.DataFrame):
             data_array = data.values
         else:
             data_array = data
-        
+
         # Use VectorBTRollingOptimizer for medium to large datasets
         return data_array.size > 1000  # 1K elements threshold
 
@@ -1391,7 +1391,6 @@ class UnifiedMatrixOperations:
 
         return result
 
-
 # Alias for backward compatibility
 M1EnhancedMatrixOperations = UnifiedMatrixOperations
 
@@ -1416,13 +1415,11 @@ def get_unified_matrix_operations(enable_gpu: bool = True,
         enable_parallel=enable_parallel
     )
 
-
 # Legacy compatibility functions (deprecated but maintained)
 def get_enhanced_matrix_operations():
     """Legacy function for backward compatibility."""
     logger.warning("⚠️ get_enhanced_matrix_operations() is deprecated. Use get_unified_matrix_operations() instead.")
     return get_unified_matrix_operations()
-
 
 def m1_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
     """Legacy M1 matrix multiplication function."""
@@ -1430,25 +1427,21 @@ def m1_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
     ops = get_unified_matrix_operations()
     return ops.matrix_multiply(A, B)
 
-
 # Convenience functions for common operations
 def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
     """Safe matrix multiplication with validation."""
     ops = get_unified_matrix_operations()
     return ops.matrix_multiply(A, B)
 
-
 def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
     """Safe correlation matrix computation."""
     ops = get_unified_matrix_operations()
     return ops.safe_correlation_matrix(data)
 
-
 def safe_matrix_inverse(matrix: 'np.ndarray') -> 'np.ndarray':
     """Safe matrix inversion."""
     ops = get_unified_matrix_operations()
     return ops.matrix_inverse(matrix)
-
 
 if __name__ == "__main__":
     # Example usage

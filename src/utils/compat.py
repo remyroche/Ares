@@ -11,7 +11,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 def handle_specific_errors(error_handlers: Optional[Dict[type, Tuple[Any, str]]] = None,
                           default_return: Any = None,
                           context: str = "operation") -> Callable:

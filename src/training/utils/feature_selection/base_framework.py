@@ -148,10 +148,9 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited feature selection functionality")
 
-
 class BaseFeatureSelectionFramework:
     """Base class for feature selection framework with core functionality."""
-    
+
     # Model-specific optimal feature counts
     MODEL_FEATURE_TARGETS = {
         # Linear models - work well with moderate feature counts
@@ -160,7 +159,7 @@ class BaseFeatureSelectionFramework:
         'lasso_regression': 50,
         'elastic_net': 70,
         'logistic_regression': 60,
-        
+
         # Tree-based models - can handle more features
         'random_forest': 100,
         'gradient_boosting': 120,
@@ -168,25 +167,25 @@ class BaseFeatureSelectionFramework:
         'lightgbm': 100,
         'catboost': 100,
         'extra_trees': 100,
-        
+
         # SVM models - sensitive to feature count
         'svm_linear': 50,
         'svm_rbf': 80,
         'svm_poly': 60,
-        
+
         # Neural networks - can handle many features
         'neural_network': 150,
         'deep_learning': 200,
-        
+
         # Ensemble methods
         'voting_classifier': 100,
         'stacking_classifier': 120,
         'bagging_classifier': 100,
-        
+
         # Default fallback
         'default': 80
     }
-    
+
     # Minimum feature count for intermediate stages
     MIN_FEATURES_INTERMEDIATE = 100
 
@@ -194,14 +193,14 @@ class BaseFeatureSelectionFramework:
         """Initialize base feature selection framework with comprehensive optimization tools."""
         self.config = config or {}
         self.logger = logger.getChild('BaseFramework')
-        
+
         _LOGGER.info("🚀 Initializing BaseFeatureSelectionFramework with comprehensive optimizations...")
 
         # Configuration defaults
         self.enable_gpu = self.config.get('enable_gpu', True)
         self.enable_parallel = self.config.get('enable_parallel', True)
         self.max_workers = self.config.get('max_workers', 4)
-        
+
         # Initialize comprehensive optimization tools
         self._initialize_optimization_tools()
         self.memory_threshold = self.config.get('memory_threshold', 0.8)
@@ -272,7 +271,7 @@ class BaseFeatureSelectionFramework:
         if 'method_configs' in self.config:
             _LOGGER.debug("🔧 Updating method configurations with user config...")
             self.method_configs.update(self.config['method_configs'])
-        
+
         _LOGGER.info("✅ BaseFeatureSelectionFramework initialized successfully")
 
     def _initialize_optimization_tools(self):
@@ -281,33 +280,33 @@ class BaseFeatureSelectionFramework:
             # Performance monitoring
             self.performance_monitor = PerformanceMonitor(max_history=1000)
             _LOGGER.info("📊 PerformanceMonitor initialized")
-            
+
             # Memory optimization
             self.memory_optimizer = M1MemoryOptimizer()
             self.memory_processor = MemoryEfficientProcessor()
             _LOGGER.info("🧠 Memory optimization tools initialized")
-            
+
             # Caching and shared resources (Unified)
             self.shared_cache = get_unified_cache(namespace="ml_common_feature_selection")
             _LOGGER.info("💾 Unified cache initialized for feature selection")
-            
+
             # Stability and thresholding
             self.stability_analyzer = StabilityAnalyzer()
             self.adaptive_thresholding = AdaptiveThresholding()
             _LOGGER.info("📈 Stability and thresholding tools initialized")
-            
+
             # Setup optimization settings
             self._setup_optimization_settings()
-            
+
             # Add comprehensive optimization hooks
             self._add_safe_math_operations()
             self._add_memory_optimization_hooks()
             self._add_performance_monitoring_hooks()
             self._add_caching_hooks()
-            
+
             # Enhance all existing methods
             self._enhance_existing_methods()
-            
+
         except Exception as e:
             _LOGGER.warning(f"⚠️ Some optimization tools failed to initialize: {e}")
             # Initialize fallback tools
@@ -325,18 +324,18 @@ class BaseFeatureSelectionFramework:
         self.memory_efficient_mode = self._validate_boolean_setting('memory_efficient_mode', True)
         self.performance_monitoring = self._validate_boolean_setting('performance_monitoring', True)
         self.stability_analysis = self._validate_boolean_setting('stability_analysis', True)
-        
+
         # Memory management settings with validation
         self.chunk_size = self._validate_positive_int('chunk_size', 10000, min_val=1000, max_val=100000)
         self.memory_limit_gb = self._validate_positive_float('memory_limit_gb', 8.0, min_val=1.0, max_val=128.0)
         self.gc_frequency = self._validate_positive_int('gc_frequency', 100, min_val=10, max_val=1000)
-        
+
         # Additional production settings
         self.max_features_per_method = self._validate_positive_int('max_features_per_method', 1000, min_val=10, max_val=10000)
         self.min_samples_for_analysis = self._validate_positive_int('min_samples_for_analysis', 10, min_val=5, max_val=1000)
         self.correlation_threshold = self._validate_float_range('correlation_threshold', 0.95, 0.0, 1.0)
         self.stability_threshold = self._validate_float_range('stability_threshold', 0.6, 0.0, 1.0)
-        
+
         _LOGGER.info(f"⚙️ Optimization settings - Cache: {self.cache_enabled}")
         _LOGGER.info(f"⚙️ Optimization settings - Memory efficient: {self.memory_efficient_mode}")
         _LOGGER.info(f"⚙️ Optimization settings - Performance monitoring: {self.performance_monitoring}")
@@ -385,7 +384,7 @@ class BaseFeatureSelectionFramework:
         """Optimize method execution with comprehensive monitoring and caching."""
         start_time = time.time()
         start_memory = self._get_memory_usage()
-        
+
         try:
             # Check cache first
             if self.cache_enabled and hasattr(self, 'shared_cache'):
@@ -397,14 +396,14 @@ class BaseFeatureSelectionFramework:
                         return cached_result
                 except Exception as e:
                     _LOGGER.debug(f"Cache lookup failed: {e}")
-            
+
             # Execute method with monitoring
             if self.performance_monitoring and hasattr(self, 'performance_monitor'):
                 with self.performance_monitor.monitor(method_name):
                     result = func(*args, **kwargs)
             else:
                 result = func(*args, **kwargs)
-            
+
             # Cache result
             if self.cache_enabled and hasattr(self, 'shared_cache'):
                 try:
@@ -412,16 +411,16 @@ class BaseFeatureSelectionFramework:
                     _LOGGER.debug(f"💾 Cached result for {method_name}")
                 except Exception as e:
                     _LOGGER.debug(f"Cache storage failed: {e}")
-            
+
             # Log performance
             execution_time = time.time() - start_time
             end_memory = self._get_memory_usage()
             memory_delta = end_memory - start_memory
-            
+
             _LOGGER.info(f"⏱️ {method_name} completed in {execution_time:.3f}s, memory delta: {memory_delta:.2f}MB")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Error in {method_name}: {e}")
             raise
@@ -470,7 +469,7 @@ class BaseFeatureSelectionFramework:
             _LOGGER.warning(f"⚠️ Memory efficient correlation failed: {e}")
             return np.corrcoef(X.T)
 
-    def _adaptive_threshold_selection(self, scores: Dict[str, float], 
+    def _adaptive_threshold_selection(self, scores: Dict[str, float],
                                     method: str = 'percentile') -> float:
         """Select adaptive threshold based on score distribution."""
         try:
@@ -520,19 +519,19 @@ class BaseFeatureSelectionFramework:
         try:
             corr_matrix = self._memory_efficient_correlation_matrix(X)
             high_corr_pairs = []
-            
+
             for i in range(corr_matrix.shape[0]):
                 for j in range(i + 1, corr_matrix.shape[1]):
                     corr = abs(corr_matrix[i, j])
                     if corr > threshold:
                         high_corr_pairs.append((i, j, corr))
-            
+
             return high_corr_pairs
         except Exception as e:
             _LOGGER.warning(f"⚠️ High correlation detection failed: {e}")
             return []
 
-    def _detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray, 
+    def _detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray,
                                              threshold: float = 0.99) -> List[Tuple[int, float]]:
         """Detect suspiciously high correlations with target."""
         try:
@@ -574,7 +573,7 @@ class BaseFeatureSelectionFramework:
         """Detect perfectly correlated feature pairs."""
         return self._detect_high_correlation_features(X, threshold)
 
-    def _detect_suspicious_mutual_information(self, X: np.ndarray, y: np.ndarray, 
+    def _detect_suspicious_mutual_information(self, X: np.ndarray, y: np.ndarray,
                                             threshold: float = 0.99) -> List[Tuple[int, float]]:
         """Detect suspiciously high mutual information with target."""
         try:
@@ -593,20 +592,20 @@ class BaseFeatureSelectionFramework:
         try:
             # Get all methods of this class
             methods = [method for method in dir(self) if callable(getattr(self, method)) and not method.startswith('_')]
-            
+
             for method_name in methods:
                 original_method = getattr(self, method_name)
-                
+
                 def create_enhanced_wrapper(original_func, name):
                     def enhanced_wrapper(*args, **kwargs):
                         return self._optimize_method_execution(name, original_func, *args, **kwargs)
                     return enhanced_wrapper
-                
+
                 # Replace method with enhanced version
                 setattr(self, method_name, create_enhanced_wrapper(original_method, method_name))
-            
+
             _LOGGER.info(f"🔧 Enhanced {len(methods)} methods with optimization hooks")
-            
+
         except Exception as e:
             _LOGGER.warning(f"⚠️ Method enhancement failed: {e}")
 
@@ -628,7 +627,7 @@ class BaseFeatureSelectionFramework:
             if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
                 def memory_optimization_hook():
                     self.memory_optimizer.optimize_memory_usage()
-                
+
                 self.memory_optimization_hook = memory_optimization_hook
                 _LOGGER.info("🧠 Memory optimization hooks added")
         except Exception as e:
@@ -640,7 +639,7 @@ class BaseFeatureSelectionFramework:
             if hasattr(self, 'performance_monitor') and self.performance_monitor:
                 def performance_hook(method_name, start_time, end_time, memory_usage):
                     self.performance_monitor.record_execution(method_name, end_time - start_time, memory_usage)
-                
+
                 self.performance_hook = performance_hook
                 _LOGGER.info("📊 Performance monitoring hooks added")
         except Exception as e:
@@ -655,7 +654,7 @@ class BaseFeatureSelectionFramework:
                         _LOGGER.debug(f"🎯 Cache hit for {operation}")
                     else:
                         _LOGGER.debug(f"💾 Cache miss for {operation}")
-                
+
                 self.cache_hook = cache_hook
                 _LOGGER.info("💾 Caching hooks added")
         except Exception as e:
@@ -675,21 +674,21 @@ class BaseFeatureSelectionFramework:
             'performance_monitoring': getattr(self, 'performance_monitoring', False),
             'stability_analysis': getattr(self, 'stability_analysis', False)
         }
-        
+
         # Add performance monitor stats if available
         if hasattr(self, 'performance_monitor') and self.performance_monitor:
             stats['performance_stats'] = self.performance_monitor.get_stats()
-        
+
         # Add memory optimizer stats if available
         if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
             stats['memory_stats'] = self.memory_optimizer.get_stats()
-        
+
         # Add cache stats if available
         try:
             stats['cache_stats'] = self.shared_cache.get_stats() if hasattr(self, 'shared_cache') else {'status': 'disabled'}
         except Exception as e:
             stats['cache_stats'] = {'error': str(e)}
-        
+
         return stats
 
     def check_system_requirements(self) -> Dict[str, Any]:
@@ -703,19 +702,19 @@ class BaseFeatureSelectionFramework:
             'memory_available_gb': 0,
             'cpu_count': 1
         }
-        
+
         try:
             requirements['memory_available_gb'] = psutil.virtual_memory().available / (1024**3)
             requirements['cpu_count'] = psutil.cpu_count()
         except ImportError:
             pass
-        
+
         try:
             if hasattr(self, 'gpu_manager') and self.gpu_manager:
                 requirements['gpu_available'] = self.gpu_manager.is_available()
         except Exception:
             pass
-        
+
         return requirements
 
     def generate_error_report(self, error_context: Dict[str, Any], requirements: Dict[str, Any] = None) -> str:
@@ -754,7 +753,7 @@ Stack Trace:
         """Log error with comprehensive context."""
         requirements = self.check_system_requirements()
         error_report = self.generate_error_report(error_context, requirements)
-        
+
         if level.upper() == "ERROR":
             _LOGGER.error(error_report)
         elif level.upper() == "WARNING":
@@ -770,9 +769,9 @@ Stack Trace:
         """Auto-detect model type from model object."""
         if model is None:
             return 'default'
-        
+
         model_name = str(type(model)).lower()
-        
+
         if 'linear' in model_name or 'logistic' in model_name:
             return 'linear_regression' if 'regression' in model_name else 'logistic_regression'
         elif 'lasso' in model_name:
@@ -789,7 +788,6 @@ Stack Trace:
             return 'neural_network'
         else:
             return 'default'
-
 
 # Alias for backward compatibility
 FeatureSelectionFramework = BaseFeatureSelectionFramework

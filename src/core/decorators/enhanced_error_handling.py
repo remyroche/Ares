@@ -106,7 +106,7 @@ class EnhancedErrorHandler:
     def __init__(self, enable_automatic_recovery: bool = True, enable_error_pattern_detection: bool = True, enable_performance_impact_analysis: bool = True, max_recovery_attempts: int = 3, recovery_timeout_seconds: float = 30.0, log_level: str='INFO', generate_error_reports: bool = True, error_report_path: Optional[str]=None) -> None:
         """
         Initialize the enhanced error handler.
-        
+
         Args:
             enable_automatic_recovery: Enable automatic error recovery
             enable_error_pattern_detection: Enable error pattern detection
@@ -369,7 +369,7 @@ class EnhancedErrorHandler:
 def handle_errors_enhanced(enable_automatic_recovery: bool = True, enable_error_pattern_detection: bool = True, enable_performance_impact_analysis: bool = True, max_recovery_attempts: int = 3, recovery_timeout_seconds: float = 30.0, log_level: str='INFO', generate_error_reports: bool = True, error_report_path: Optional[str]=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator factory for enhanced error handling.
-    
+
     Args:
         enable_automatic_recovery: Enable automatic error recovery
         enable_error_pattern_detection: Enable error pattern detection
@@ -379,7 +379,7 @@ def handle_errors_enhanced(enable_automatic_recovery: bool = True, enable_error_
         log_level: Logging level for error handling
         generate_error_reports: Generate detailed error reports
         error_report_path: Path to save error reports
-    
+
     Returns:
         Decorator function for enhanced error handling
     """

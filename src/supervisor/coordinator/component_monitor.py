@@ -3,7 +3,7 @@ from ..core.decorators import handles_errors
 from ...utils.logger import system_logger
 Component Monitor Module.
 
-This module monitors individual trading system components (Analyst, Strategist, 
+This module monitors individual trading system components (Analyst, Strategist,
 Tactician, etc.) for health, performance, and feature extraction.
 """
 
@@ -21,7 +21,7 @@ class ComponentMonitor:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize component monitor.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -38,10 +38,10 @@ class ComponentMonitor:
     def monitor_analyst_features(self, analyst: Any) -> Dict[str, Any]:
         """
         Monitor Analyst component features.
-        
+
         Args:
             analyst: Analyst component instance
-            
+
         Returns:
             Dictionary of extracted features
         """
@@ -77,10 +77,10 @@ class ComponentMonitor:
     def monitor_strategist_features(self, strategist: Any) -> Dict[str, Any]:
         """
         Monitor Strategist component features.
-        
+
         Args:
             strategist: Strategist component instance
-            
+
         Returns:
             Dictionary of extracted features
         """
@@ -115,10 +115,10 @@ class ComponentMonitor:
     def monitor_tactician_features(self, tactician: Any) -> Dict[str, Any]:
         """
         Monitor Tactician component features.
-        
+
         Args:
             tactician: Tactician component instance
-            
+
         Returns:
             Dictionary of extracted features
         """
@@ -154,10 +154,10 @@ class ComponentMonitor:
     def monitor_training_manager_features(self, training_manager: Any) -> Dict[str, Any]:
         """
         Monitor Enhanced Training Manager features.
-        
+
         Args:
             training_manager: Training manager instance
-            
+
         Returns:
             Dictionary of extracted features
         """
@@ -190,9 +190,9 @@ class ComponentMonitor:
         """Store features in history with size limit."""
         if component_name not in self.feature_history:
             self.feature_history[component_name] = []
-        
+
         self.feature_history[component_name].append(features)
-        
+
         # Maintain history size limit
         if len(self.feature_history[component_name]) > self.max_history:
             self.feature_history[component_name].pop(0)
@@ -200,20 +200,20 @@ class ComponentMonitor:
     def get_component_status(self, component_name: str) -> Dict[str, Any]:
         """
         Get current status of a component.
-        
+
         Args:
             component_name: Name of the component
-            
+
         Returns:
             Component status dictionary
         """
         if component_name not in self.feature_history:
             return {"status": "unknown", "message": "No monitoring data available"}
-        
+
         history = self.feature_history[component_name]
         if not history:
             return {"status": "unknown", "message": "No monitoring data available"}
-        
+
         latest = history[-1]
         return {
             "status": "active" if latest.get(f"is_{component_name.split('_')[0]}ing", False) else "idle",

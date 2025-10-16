@@ -23,7 +23,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class PatchTSTWrapper(BaseEstimator, RegressorMixin):
     """PatchTST-style transformer wrapper for tree-based models."""
 
@@ -70,17 +69,17 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         try:
             n_samples, n_features = X.shape
             patches = []
-            
+
             for i in range(0, n_samples - self.patch_len + 1, self.stride):
                 patch = X[i:i + self.patch_len, :]
                 patches.append(patch.flatten())
-            
+
             if not patches:
                 # If no patches can be created, use the original data
                 return X
-            
+
             return np.array(patches)
-        
+
         except Exception as e:
             logger.warning(f"⚠️ Patch creation failed: {e}")
             return X
@@ -89,10 +88,10 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         """Compute attention weights for patches using transformer-style mechanism."""
         try:
             n_patches, patch_dim = patches.shape
-            
+
             # Initialize attention weights
             attention_weights = np.ones(n_patches)
-            
+
             if self.use_transformer_attention:
                 # Compute patch importance using mutual information
                 if len(y) >= len(patches):
@@ -100,7 +99,7 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                 else:
                     # Repeat y to match patch length
                     y_aligned = np.tile(y, (len(patches) // len(y) + 1))[:len(patches)]
-                
+
                 # Use mutual information for patch importance
                 mi_scores = []
                 for i in range(0, patch_dim, self.patch_len):
@@ -110,7 +109,7 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                             patch_features, y_aligned, random_state=42
                         )
                         mi_scores.extend(mi_score)
-                
+
                 if mi_scores:
                     # Average MI scores for each patch
                     patch_scores = []
@@ -122,13 +121,13 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                             patch_scores.append(patch_score)
                         else:
                             patch_scores.append(0.0)
-                    
+
                     # Normalize and apply softmax
                     patch_scores = np.array(patch_scores)
                     if np.sum(patch_scores) > 0:
                         patch_scores = patch_scores / np.max(patch_scores)
                         attention_weights = np.exp(patch_scores) / np.sum(np.exp(patch_scores))
-            
+
             return attention_weights
 
         except Exception as e:
@@ -256,11 +255,11 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         try:
             # Create patches
             patches = self._create_patches(X)
-            
+
             # Apply attention if available
             if self.attention_weights is not None:
                 patches = self._apply_patch_attention(patches)
-            
+
             # Create enhanced features by combining original and patch features
             if patches.shape[0] > 0:
                 # Pad or truncate patches to match original data length
@@ -271,12 +270,12 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                 elif patches.shape[0] > X.shape[0]:
                     # Truncate to match original length
                     patches = patches[:X.shape[0]]
-                
+
                 # Combine original features with patch features
                 enhanced_features = np.hstack([X, patches])
             else:
                 enhanced_features = X
-            
+
             return enhanced_features
 
         except Exception as e:
@@ -376,7 +375,6 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
             logger.warning("⚠️ Base model does not support feature importance")
             return np.array([])
 
-
 # Factory function for creating PatchTST wrappers
 def create_patchtst_wrapper(base_model, patch_len=16, stride=8, use_transformer_attention=True,
                           regime_aware=True, attention_dropout=0.1, num_heads=4,
@@ -393,7 +391,6 @@ def create_patchtst_wrapper(base_model, patch_len=16, stride=8, use_transformer_
         sign_dropout_rate=sign_dropout_rate,
         sign_threshold=sign_threshold
     )
-
 
 # Integration with existing model factory
 def integrate_patchtst_with_existing_models():

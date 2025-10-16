@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Dict, Mapping, Optional
 import os
 
-
 def _default_data_paths() -> Dict[str, str]:
     """Return default data path mappings relative to the data root."""
 
@@ -22,12 +21,10 @@ def _default_data_paths() -> Dict[str, str]:
     # keeps compatibility with callers expecting the resolved directory itself.
     return {"market_data": "."}
 
-
 def _default_cache_paths() -> Dict[str, str]:
     """Return default cache path mappings relative to the cache root."""
 
     return {"default": "."}
-
 
 def _default_artifact_paths() -> Dict[str, str]:
     """Return default artifact path mappings relative to the artifact root."""
@@ -41,7 +38,6 @@ def _default_artifact_paths() -> Dict[str, str]:
         "multi_horizon_outcomes": "../outcomes",
     }
 
-
 def _default_generated_paths() -> Dict[str, str]:
     """Return default generated path mappings relative to the generated root."""
 
@@ -51,14 +47,12 @@ def _default_generated_paths() -> Dict[str, str]:
         "final_feature_selection": "market_analysis/final_feature_selection",
     }
 
-
 def _default_config_paths() -> Dict[str, str]:
     """Return default configuration path mappings relative to the config root."""
 
     return {
         "multi_horizon_labeling": "multi_horizon_labeling_config.yaml",
     }
-
 
 @dataclass
 class DataLocatorConfig:
@@ -74,7 +68,6 @@ class DataLocatorConfig:
     base_artifacts_dir: Optional[str] = None
     base_generated_dir: Optional[str] = None
     base_config_dir: Optional[str] = None
-
 
 class DataLocator:
     """Resolve filesystem paths for training artefacts.
@@ -301,7 +294,6 @@ class DataLocator:
             f"base_generated_dir={self.base_generated_dir!s})"
         )
 
-
 class _LocatorCategoryView:
     """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
 
@@ -333,7 +325,6 @@ class _LocatorCategoryView:
 
     def __repr__(self) -> str:  # pragma: no cover - debug helper
         return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
-
 
 class LocatorPaths:
     """Collection of category views backed by a :class:`DataLocator`."""

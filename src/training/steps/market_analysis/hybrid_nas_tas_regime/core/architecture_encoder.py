@@ -24,12 +24,11 @@ import json
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class EncodingMethod(Enum):
     """Methods for architecture encoding."""
@@ -40,14 +39,12 @@ class EncodingMethod(Enum):
     AUTOENCODER = "autoencoder"
     HYBRID = "hybrid"
 
-
 class DecoderType(Enum):
     """Types of architecture decoders."""
     MLP = "mlp"
     LSTM = "lstm"
     TRANSFORMER = "transformer"
     GRAPH_ATTENTION = "graph_attention"
-
 
 @dataclass
 class ArchitectureEncodingConfig:
@@ -72,7 +69,6 @@ class ArchitectureEncodingConfig:
     reconstruction_loss_weight: float = 1.0
     prediction_loss_weight: float = 1.0
 
-
 @dataclass
 class EncodingResult:
     """Result from architecture encoding."""
@@ -82,7 +78,6 @@ class EncodingResult:
     reconstruction_error: float
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class DecodingResult:
     """Result from architecture decoding."""
@@ -91,7 +86,6 @@ class DecodingResult:
     decoding_time: float
     reconstruction_accuracy: float
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class ArchitectureAutoencoder(nn.Module):
     """
@@ -165,7 +159,6 @@ class ArchitectureAutoencoder(nn.Module):
         with torch.no_grad():
             reconstruction = self.decoder(latent)
         return reconstruction
-
 
 class UnifiedArchitectureEncoder:
     """
@@ -705,11 +698,9 @@ class UnifiedArchitectureEncoder:
             self.logger.error(f"❌ Failed to load encoder state: {e}")
             return False
 
-
 def create_unified_architecture_encoder(config: Dict[str, Any]) -> UnifiedArchitectureEncoder:
     """Create a unified architecture encoder instance."""
     return UnifiedArchitectureEncoder(config)
-
 
 def quick_architecture_encode(architecture: Dict[str, Any],
                              config: Optional[Dict[str, Any]] = None) -> np.ndarray:

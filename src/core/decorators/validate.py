@@ -570,7 +570,6 @@ def _validate_against_schema(
             )
         return value
 
-
 def validate_data_quality(
     *,
     check_duplicates: bool = True,
@@ -657,7 +656,6 @@ def validate_data_quality(
 
     return uniform_wrapper("validate_data_quality", sync_handler, async_handler)
 
-
 def monitor_step_execution(
     *,
     step_name: str = None,
@@ -743,7 +741,6 @@ def monitor_step_execution(
 
     return uniform_wrapper("monitor_step_execution", sync_handler, async_handler)
 
-
 def ensure_data_integrity(
     *,
     check_types: bool = True,
@@ -802,7 +799,6 @@ def ensure_data_integrity(
         return await func(*args, **kwargs)
 
     return uniform_wrapper("ensure_data_integrity", sync_handler, async_handler)
-
 
 def validate_pipeline_step(
     *,
@@ -895,7 +891,6 @@ def validate_pipeline_step(
 
     return uniform_wrapper("validate_pipeline_step", sync_handler, async_handler)
 
-
 # Helper functions for data quality validation
 
 def _validate_dataframe_quality(df: pd.DataFrame, param_name: str,
@@ -923,7 +918,6 @@ def _validate_dataframe_quality(df: pd.DataFrame, param_name: str,
                 if outlier_pct > 0.05:  # More than 5% outliers
                     msg = f"Column {col} has too many outliers: {outlier_pct:.1%}"
                     raise ValidationError(message=msg, field=f"{param_name}.{col}")
-
 
 def _validate_list_quality(data: list, param_name: str,
                           check_duplicates: bool, check_missing: bool,
@@ -959,13 +953,11 @@ def _validate_list_quality(data: list, param_name: str,
                     msg = f"List has too many outliers: {outlier_pct:.1%}"
                     raise ValidationError(message=msg, field=param_name)
 
-
 def _validate_data_types(data: Any, param_name: str) -> None:
     """Validate basic data types."""
     if data is None:
         msg = f"Parameter {param_name} cannot be None"
         raise ValidationError(message=msg, field=param_name)
-
 
 def _validate_data_ranges(data: Any, param_name: str) -> None:
     """Validate data value ranges (basic implementation)."""

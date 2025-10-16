@@ -15,12 +15,11 @@ import time
 from datetime import datetime
 import json
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class MetricsReportingConfig:
@@ -33,7 +32,6 @@ class MetricsReportingConfig:
     report_format: str = "json"  # "json", "csv", "html"
     save_to_file: bool = True
     output_directory: str = "reports"
-
 
 @dataclass
 class ConsolidatedMetricsReport:
@@ -51,62 +49,61 @@ class ConsolidatedMetricsReport:
     success: bool
     error_message: Optional[str] = None
 
-
 class MetricsReporter:
     """Reporter for consolidated metrics and analysis results."""
-    
+
     def __init__(self, config: MetricsReportingConfig):
         """Initialize the metrics reporter.
-        
+
         Args:
             config: Metrics reporting configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Create output directory if needed
         if config.save_to_file:
             import os
             os.makedirs(config.output_directory, exist_ok=True)
-        
+
         self.logger.info("✅ Metrics Reporter initialized")
-    
-    def generate_consolidated_report(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def generate_consolidated_report(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                    hybrid_results: Dict[str, Any]) -> ConsolidatedMetricsReport:
         """Generate consolidated metrics report.
-        
+
         Args:
             nas_results: NAS regime detection results
             tas_results: TAS regime detection results
             hybrid_results: Hybrid consolidation results
-            
+
         Returns:
             ConsolidatedMetricsReport with comprehensive metrics
         """
         try:
             self.logger.info("📊 Generating consolidated metrics report...")
             start_time = time.time()
-            
+
             # Extract metrics from each system
             nas_metrics = self._extract_nas_metrics(nas_results)
             tas_metrics = self._extract_tas_metrics(tas_results)
             hybrid_metrics = self._extract_hybrid_metrics(hybrid_results)
-            
+
             # Generate comparison metrics
             comparison_metrics = self._generate_comparison_metrics(nas_metrics, tas_metrics, hybrid_metrics)
-            
+
             # Generate performance summary
             performance_summary = self._generate_performance_summary(nas_results, tas_results, hybrid_results)
-            
+
             # Generate economic summary
             economic_summary = self._generate_economic_summary(nas_results, tas_results, hybrid_results)
-            
+
             # Generate trading summary
             trading_summary = self._generate_trading_summary(nas_results, tas_results, hybrid_results)
-            
+
             # Generate consolidated clusters
             consolidated_clusters = self._generate_consolidated_clusters(nas_results, tas_results, hybrid_results)
-            
+
             # Create report metadata
             report_metadata = {
                 'report_timestamp': datetime.now().isoformat(),
@@ -120,9 +117,9 @@ class MetricsReporter:
                     'include_performance_metrics': self.config.include_performance_metrics
                 }
             }
-            
+
             execution_time = time.time() - start_time
-            
+
             # Create consolidated report
             consolidated_report = ConsolidatedMetricsReport(
                 nas_metrics=nas_metrics,
@@ -137,15 +134,15 @@ class MetricsReporter:
                 execution_time=execution_time,
                 success=True
             )
-            
+
             # Save report if configured
             if self.config.save_to_file:
                 self._save_report(consolidated_report)
-            
+
             self.logger.info(f"✅ Consolidated metrics report generated in {execution_time:.2f}s")
-            
+
             return consolidated_report
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             self.logger.error(f"❌ Consolidated report generation failed: {e}")
@@ -163,7 +160,7 @@ class MetricsReporter:
                 success=False,
                 error_message=str(e)
             )
-    
+
     def _extract_nas_metrics(self, nas_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metrics from NAS results."""
         try:
@@ -177,13 +174,13 @@ class MetricsReporter:
                 'execution_time': nas_results.get('execution_time', 0.0),
                 'success': nas_results.get('success', False)
             }
-            
+
             return nas_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ NAS metrics extraction failed: {e}")
             return {}
-    
+
     def _extract_tas_metrics(self, tas_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metrics from TAS results."""
         try:
@@ -197,13 +194,13 @@ class MetricsReporter:
                 'execution_time': tas_results.get('execution_time', 0.0),
                 'success': tas_results.get('success', False)
             }
-            
+
             return tas_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ TAS metrics extraction failed: {e}")
             return {}
-    
+
     def _extract_hybrid_metrics(self, hybrid_results: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metrics from hybrid results."""
         try:
@@ -217,14 +214,14 @@ class MetricsReporter:
                 'execution_time': hybrid_results.get('execution_time', 0.0),
                 'success': hybrid_results.get('success', False)
             }
-            
+
             return hybrid_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Hybrid metrics extraction failed: {e}")
             return {}
-    
-    def _generate_comparison_metrics(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any], 
+
+    def _generate_comparison_metrics(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any],
                                    hybrid_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Generate comparison metrics between systems."""
         try:
@@ -251,21 +248,21 @@ class MetricsReporter:
                 'economic_significance_comparison': self._compare_economic_significance(nas_metrics, tas_metrics, hybrid_metrics),
                 'trading_viability_comparison': self._compare_trading_viability(nas_metrics, tas_metrics, hybrid_metrics)
             }
-            
+
             return comparison_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Comparison metrics generation failed: {e}")
             return {}
-    
-    def _compare_clustering_quality(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any], 
+
+    def _compare_clustering_quality(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any],
                                   hybrid_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Compare clustering quality between systems."""
         try:
             nas_quality = nas_metrics.get('clustering_quality', {})
             tas_quality = tas_metrics.get('clustering_quality', {})
             hybrid_quality = hybrid_metrics.get('consolidation_quality', {})
-            
+
             comparison = {
                 'silhouette_scores': {
                     'nas': nas_quality.get('silhouette_score', 0.0),
@@ -279,21 +276,21 @@ class MetricsReporter:
                 },
                 'best_system': self._determine_best_system(nas_quality, tas_quality, hybrid_quality)
             }
-            
+
             return comparison
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Clustering quality comparison failed: {e}")
             return {}
-    
-    def _compare_economic_significance(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any], 
+
+    def _compare_economic_significance(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any],
                                      hybrid_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Compare economic significance between systems."""
         try:
             nas_economic = nas_metrics.get('economic_significance', {})
             tas_economic = tas_metrics.get('economic_significance', {})
             hybrid_economic = hybrid_metrics.get('consensus_metrics', {})
-            
+
             comparison = {
                 'overall_scores': {
                     'nas': nas_economic.get('overall_score', 0.0),
@@ -306,21 +303,21 @@ class MetricsReporter:
                     'hybrid': hybrid_economic.get('consolidated_significant_regimes', 0)
                 }
             }
-            
+
             return comparison
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Economic significance comparison failed: {e}")
             return {}
-    
-    def _compare_trading_viability(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any], 
+
+    def _compare_trading_viability(self, nas_metrics: Dict[str, Any], tas_metrics: Dict[str, Any],
                                  hybrid_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Compare trading viability between systems."""
         try:
             nas_trading = nas_metrics.get('trading_viability', {})
             tas_trading = tas_metrics.get('trading_viability', {})
             hybrid_trading = hybrid_metrics.get('consensus_metrics', {})
-            
+
             comparison = {
                 'overall_scores': {
                     'nas': nas_trading.get('overall_score', 0.0),
@@ -333,39 +330,39 @@ class MetricsReporter:
                     'hybrid': hybrid_trading.get('consolidated_viable_regimes', 0)
                 }
             }
-            
+
             return comparison
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Trading viability comparison failed: {e}")
             return {}
-    
-    def _determine_best_system(self, nas_quality: Dict[str, Any], tas_quality: Dict[str, Any], 
+
+    def _determine_best_system(self, nas_quality: Dict[str, Any], tas_quality: Dict[str, Any],
                               hybrid_quality: Dict[str, Any]) -> str:
         """Determine the best performing system."""
         try:
             nas_score = nas_quality.get('silhouette_score', 0.0)
             tas_score = tas_quality.get('silhouette_score', 0.0)
             hybrid_score = hybrid_quality.get('silhouette_score', 0.0)
-            
+
             if hybrid_score >= max(nas_score, tas_score):
                 return 'hybrid'
             elif nas_score >= tas_score:
                 return 'nas'
             else:
                 return 'tas'
-                
+
         except Exception:
             return 'unknown'
-    
-    def _generate_performance_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _generate_performance_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                     hybrid_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate performance summary."""
         try:
             performance_summary = {
                 'total_execution_time': (
-                    nas_results.get('execution_time', 0.0) + 
-                    tas_results.get('execution_time', 0.0) + 
+                    nas_results.get('execution_time', 0.0) +
+                    tas_results.get('execution_time', 0.0) +
                     hybrid_results.get('execution_time', 0.0)
                 ),
                 'system_breakdown': {
@@ -384,14 +381,14 @@ class MetricsReporter:
                     'hybrid_optimization': hybrid_results.get('hardware_optimization', {})
                 }
             }
-            
+
             return performance_summary
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Performance summary generation failed: {e}")
             return {}
-    
-    def _generate_economic_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _generate_economic_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                  hybrid_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate economic summary."""
         try:
@@ -405,14 +402,14 @@ class MetricsReporter:
                 'economic_disagreement': hybrid_results.get('disagreement_metrics', {}).get('economic_disagreement_score', 0.0),
                 'recommended_system': self._recommend_economic_system(nas_results, tas_results, hybrid_results)
             }
-            
+
             return economic_summary
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Economic summary generation failed: {e}")
             return {}
-    
-    def _generate_trading_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _generate_trading_summary(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                 hybrid_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate trading summary."""
         try:
@@ -426,14 +423,14 @@ class MetricsReporter:
                 'trading_disagreement': hybrid_results.get('disagreement_metrics', {}).get('trading_disagreement_score', 0.0),
                 'recommended_system': self._recommend_trading_system(nas_results, tas_results, hybrid_results)
             }
-            
+
             return trading_summary
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Trading summary generation failed: {e}")
             return {}
-    
-    def _generate_consolidated_clusters(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _generate_consolidated_clusters(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                       hybrid_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate consolidated cluster information."""
         try:
@@ -456,58 +453,58 @@ class MetricsReporter:
                     'disagreement_analysis': hybrid_results.get('disagreement_analysis', {})
                 }
             }
-            
+
             return consolidated_clusters
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Consolidated clusters generation failed: {e}")
             return {}
-    
-    def _recommend_economic_system(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _recommend_economic_system(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                   hybrid_results: Dict[str, Any]) -> str:
         """Recommend the best system for economic analysis."""
         try:
             nas_score = nas_results.get('economic_significance', {}).get('overall_score', 0.0)
             tas_score = tas_results.get('economic_significance', {}).get('overall_score', 0.0)
             hybrid_score = hybrid_results.get('consensus_metrics', {}).get('economic_consensus_score', 0.0)
-            
+
             if hybrid_score >= max(nas_score, tas_score):
                 return 'hybrid'
             elif nas_score >= tas_score:
                 return 'nas'
             else:
                 return 'tas'
-                
+
         except Exception:
             return 'hybrid'
-    
-    def _recommend_trading_system(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any], 
+
+    def _recommend_trading_system(self, nas_results: Dict[str, Any], tas_results: Dict[str, Any],
                                 hybrid_results: Dict[str, Any]) -> str:
         """Recommend the best system for trading analysis."""
         try:
             nas_score = nas_results.get('trading_viability', {}).get('overall_score', 0.0)
             tas_score = tas_results.get('trading_viability', {}).get('overall_score', 0.0)
             hybrid_score = hybrid_results.get('consensus_metrics', {}).get('trading_consensus_score', 0.0)
-            
+
             if hybrid_score >= max(nas_score, tas_score):
                 return 'hybrid'
             elif nas_score >= tas_score:
                 return 'nas'
             else:
                 return 'tas'
-                
+
         except Exception:
             return 'hybrid'
-    
+
     def _save_report(self, report: ConsolidatedMetricsReport):
         """Save the consolidated report to file."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             if self.config.report_format == "json":
                 filename = f"consolidated_metrics_report_{timestamp}.json"
                 filepath = f"{self.config.output_directory}/{filename}"
-                
+
                 # Convert report to JSON-serializable format
                 report_dict = {
                     'nas_metrics': report.nas_metrics,
@@ -522,20 +519,20 @@ class MetricsReporter:
                     'execution_time': report.execution_time,
                     'success': report.success
                 }
-                
+
                 with open(filepath, 'w') as f:
                     json.dump(report_dict, f, indent=2, default=str)
-                
+
                 self.logger.info(f"📄 Report saved to: {filepath}")
-            
+
             elif self.config.report_format == "csv":
                 # Save key metrics as CSV
                 filename = f"consolidated_metrics_summary_{timestamp}.csv"
                 filepath = f"{self.config.output_directory}/{filename}"
-                
+
                 # Create summary DataFrame
                 summary_data = {
-                    'Metric': ['NAS Regime Count', 'TAS Regime Count', 'Hybrid Regime Count', 
+                    'Metric': ['NAS Regime Count', 'TAS Regime Count', 'Hybrid Regime Count',
                               'NAS Execution Time', 'TAS Execution Time', 'Hybrid Execution Time',
                               'Overall Success'],
                     'Value': [
@@ -548,15 +545,15 @@ class MetricsReporter:
                         report.success
                     ]
                 }
-                
+
                 df = pd.DataFrame(summary_data)
                 df.to_csv(filepath, index=False)
-                
+
                 self.logger.info(f"📄 Summary saved to: {filepath}")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Report saving failed: {e}")
-    
+
     def generate_summary_report(self, consolidated_report: ConsolidatedMetricsReport) -> str:
         """Generate a human-readable summary report."""
         try:
@@ -592,20 +589,19 @@ class MetricsReporter:
 2. **Trading System**: Use {consolidated_report.trading_summary.get('recommended_system', 'hybrid')} for trading decisions
 3. **Overall**: The hybrid system provides the most comprehensive analysis combining both NAS and TAS strengths
 """
-            
+
             return summary
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Summary report generation failed: {e}")
             return f"Error generating summary: {e}"
 
-
 def create_metrics_reporter(config: MetricsReportingConfig) -> MetricsReporter:
     """Create a metrics reporter instance.
-    
+
     Args:
         config: Metrics reporting configuration
-        
+
     Returns:
         MetricsReporter instance
     """

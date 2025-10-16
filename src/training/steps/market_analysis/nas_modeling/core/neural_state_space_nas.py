@@ -9,13 +9,11 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-
 class StateSpaceType(Enum):
     """Types of state space models."""
     LINEAR = "linear"
     NONLINEAR = "nonlinear"
     HYBRID = "hybrid"
-
 
 @dataclass
 class StateSpaceConfig:
@@ -28,13 +26,12 @@ class StateSpaceConfig:
     activation: str = "tanh"
     state_space_type: StateSpaceType = StateSpaceType.LINEAR
 
-
 class NeuralSSM_NAS_Optimizer:
     """Neural State Space Model NAS Optimizer."""
-    
+
     def __init__(self, config: StateSpaceConfig, search_space: Optional[Dict] = None):
         """Initialize the NAS optimizer.
-        
+
         Args:
             config: State space model configuration
             search_space: Optional search space configuration
@@ -44,7 +41,7 @@ class NeuralSSM_NAS_Optimizer:
         self.optimization_history = []
         self.best_architecture = None
         self.best_score = float('-inf')
-        
+
     def _get_default_search_space(self) -> Dict:
         """Get default search space configuration."""
         return {
@@ -53,33 +50,33 @@ class NeuralSSM_NAS_Optimizer:
             'activations': ['tanh', 'relu', 'sigmoid', 'swish'],
             'state_space_types': [StateSpaceType.LINEAR, StateSpaceType.NONLINEAR]
         }
-    
-    def optimize(self, data: np.ndarray, target: np.ndarray, 
+
+    def optimize(self, data: np.ndarray, target: np.ndarray,
                  epochs: int = 100, population_size: int = 50) -> Dict:
         """Optimize neural architecture using evolutionary search.
-        
+
         Args:
             data: Input data
             target: Target data
             epochs: Number of optimization epochs
             population_size: Size of population for evolutionary search
-            
+
         Returns:
             Dictionary containing optimization results
         """
         population = self._initialize_population(population_size)
-        
+
         for epoch in range(epochs):
             # Evaluate population
             scores = []
             for individual in population:
                 score = self._evaluate_architecture(individual, data, target)
                 scores.append(score)
-                
+
                 if score > self.best_score:
                     self.best_score = score
                     self.best_architecture = individual.copy()
-            
+
             # Record optimization progress
             self.optimization_history.append({
                 'epoch': epoch,
@@ -87,16 +84,16 @@ class NeuralSSM_NAS_Optimizer:
                 'avg_score': np.mean(scores),
                 'std_score': np.std(scores)
             })
-            
+
             # Evolve population
             population = self._evolve_population(population, scores)
-        
+
         return {
             'best_architecture': self.best_architecture,
             'best_score': self.best_score,
             'optimization_history': self.optimization_history
         }
-    
+
     def _initialize_population(self, size: int) -> List[Dict]:
         """Initialize random population of architectures."""
         population = []
@@ -109,8 +106,8 @@ class NeuralSSM_NAS_Optimizer:
             }
             population.append(architecture)
         return population
-    
-    def _evaluate_architecture(self, architecture: Dict, data: np.ndarray, 
+
+    def _evaluate_architecture(self, architecture: Dict, data: np.ndarray,
                               target: np.ndarray) -> float:
         """Evaluate architecture performance."""
         try:
@@ -121,7 +118,7 @@ class NeuralSSM_NAS_Optimizer:
         except Exception as e:
             # Return low score for invalid architectures
             return -1.0
-    
+
     def _create_model(self, architecture: Dict) -> Any:
         """Create model based on architecture specification."""
         # This would create an actual neural state space model
@@ -130,45 +127,45 @@ class NeuralSSM_NAS_Optimizer:
             'architecture': architecture,
             'model_type': 'neural_ssm'
         }
-    
-    def _train_and_evaluate(self, model: Any, data: np.ndarray, 
+
+    def _train_and_evaluate(self, model: Any, data: np.ndarray,
                            target: np.ndarray) -> float:
         """Train model and evaluate performance."""
         # This would implement actual training and evaluation
         # For now, return a random score
         return np.random.random()
-    
+
     def _evolve_population(self, population: List[Dict], scores: List[float]) -> List[Dict]:
         """Evolve population using genetic operators."""
         # Select top performers
         sorted_indices = np.argsort(scores)[::-1]
         elite_size = len(population) // 4
         elite = [population[i] for i in sorted_indices[:elite_size]]
-        
+
         # Create new population
         new_population = elite.copy()
-        
+
         while len(new_population) < len(population):
             # Select parents
             parent1 = self._tournament_selection(population, scores)
             parent2 = self._tournament_selection(population, scores)
-            
+
             # Create offspring
             offspring = self._crossover(parent1, parent2)
             offspring = self._mutate(offspring)
-            
+
             new_population.append(offspring)
-        
+
         return new_population[:len(population)]
-    
-    def _tournament_selection(self, population: List[Dict], scores: List[float], 
+
+    def _tournament_selection(self, population: List[Dict], scores: List[float],
                              tournament_size: int = 3) -> Dict:
         """Select individual using tournament selection."""
         tournament_indices = np.random.choice(len(population), tournament_size, replace=False)
         tournament_scores = [scores[i] for i in tournament_indices]
         winner_idx = tournament_indices[np.argmax(tournament_scores)]
         return population[winner_idx].copy()
-    
+
     def _crossover(self, parent1: Dict, parent2: Dict) -> Dict:
         """Create offspring through crossover."""
         offspring = {}
@@ -178,7 +175,7 @@ class NeuralSSM_NAS_Optimizer:
             else:
                 offspring[key] = parent2[key]
         return offspring
-    
+
     def _mutate(self, individual: Dict, mutation_rate: float = 0.1) -> Dict:
         """Mutate individual."""
         mutated = individual.copy()
@@ -193,11 +190,11 @@ class NeuralSSM_NAS_Optimizer:
                 elif key == 'state_space_type':
                     mutated[key] = np.random.choice(self.search_space['state_space_types'])
         return mutated
-    
+
     def get_best_architecture(self) -> Optional[Dict]:
         """Get the best architecture found during optimization."""
         return self.best_architecture
-    
+
     def get_optimization_history(self) -> List[Dict]:
         """Get optimization history."""
         return self.optimization_history

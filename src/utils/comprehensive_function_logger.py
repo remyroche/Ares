@@ -69,10 +69,10 @@ def log_function_call(
     depth = get_call_depth()
     call_id = get_call_id()
     indent = "  " * depth
-    
+
     # Create descriptive log message
     log_message = f"{indent}🔵 {call_type} [{call_id}] {module_name}.{func_name}: {message}"
-    
+
     # Add additional context if provided
     if kwargs:
         context_parts = []
@@ -83,10 +83,10 @@ def log_function_call(
                 context_parts.append(f"{key}={{keys: {list(value.keys())[:3]}}}")
             else:
                 context_parts.append(f"{key}={value}")
-        
+
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
-    
+
     # Log with appropriate level
     logger = get_logger('FunctionLogger')
     if level.upper() == "DEBUG":
@@ -108,7 +108,7 @@ def comprehensive_logging(
 ) -> Callable:
     """
     Comprehensive logging decorator for all functions.
-    
+
     Args:
         log_internal_calls: Whether to log internal function calls
         log_execution_time: Whether to log execution time
@@ -129,7 +129,7 @@ def comprehensive_logging(
                 log_errors=log_errors,
                 min_execution_time=min_execution_time
             )
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             return _execute_with_comprehensive_logging_sync(
@@ -141,7 +141,7 @@ def comprehensive_logging(
                 log_errors=log_errors,
                 min_execution_time=min_execution_time
             )
-        
+
         return async_wrapper if inspect.iscoroutinefunction(func) else sync_wrapper
     return decorator
 
@@ -206,22 +206,22 @@ async def _execute_with_comprehensive_logging(
             )
 
         return result
-        
+
     except Exception as e:
         execution_time = time.time() - start_time
-        
+
         if log_errors:
             error_message = f"Function failed with {type(e).__name__}: {str(e)}"
             if log_execution_time:
                 error_message += f" after {execution_time:.4f}s"
-            
+
             log_function_call(
                 func_name, module_name, "ERROR", error_message,
                 level="ERROR",
                 error_type=type(e).__name__,
                 execution_time=execution_time if log_execution_time else None
             )
-            
+
             # Log full traceback for debugging
             get_logger('FunctionLogger').debug(
                 f"Full traceback for {module_name}.{func_name}:\n{traceback.format_exc()}"
@@ -235,7 +235,7 @@ async def _execute_with_comprehensive_logging(
             )
 
         raise
-    
+
     finally:
         decrement_call_depth()
 
@@ -333,7 +333,7 @@ def _execute_with_comprehensive_logging_sync(
 def _format_parameters(args: tuple, kwargs: dict) -> str:
     """Format function parameters for logging."""
     parts = []
-    
+
     if args:
         # Format positional arguments
         arg_strs = []
@@ -346,7 +346,7 @@ def _format_parameters(args: tuple, kwargs: dict) -> str:
             else:
                 arg_strs.append(f"arg{i}={arg}")
         parts.append(f"args=[{', '.join(arg_strs)}]")
-    
+
     if kwargs:
         # Format keyword arguments
         kwarg_strs = []
@@ -359,7 +359,7 @@ def _format_parameters(args: tuple, kwargs: dict) -> str:
             else:
                 kwarg_strs.append(f"{key}={value}")
         parts.append(f"kwargs=[{', '.join(kwarg_strs)}]")
-    
+
     return ", ".join(parts)
 
 def _format_return_value(result: Any) -> str:
@@ -380,46 +380,46 @@ def log_internal_call(caller_func: str, called_func: str, message: str = "", **k
     depth = get_call_depth()
     call_id = get_call_id()
     indent = "  " * depth
-    
+
     log_message = f"{indent}🔄 INTERNAL CALL [{call_id}] {caller_func} -> {called_func}"
     if message:
         log_message += f": {message}"
-    
+
     if kwargs:
         context_parts = []
         for key, value in kwargs.items():
             context_parts.append(f"{key}={value}")
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
-    
+
     get_logger('FunctionLogger').info(log_message)
 
 def log_step_progress(step_name: str, progress_message: str, **kwargs) -> None:
     """Log step progress with consistent formatting."""
     call_id = get_call_id()
     log_message = f"📊 STEP PROGRESS [{call_id}] {step_name}: {progress_message}"
-    
+
     if kwargs:
         context_parts = []
         for key, value in kwargs.items():
             context_parts.append(f"{key}={value}")
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
-    
+
     get_logger('StepLogger').info(log_message)
 
 def log_data_operation(operation: str, data_info: str, **kwargs) -> None:
     """Log data operations with consistent formatting."""
     call_id = get_call_id()
     log_message = f"📈 DATA OP [{call_id}] {operation}: {data_info}"
-    
+
     if kwargs:
         context_parts = []
         for key, value in kwargs.items():
             context_parts.append(f"{key}={value}")
         if context_parts:
             log_message += f" | {', '.join(context_parts)}"
-    
+
     get_logger('DataLogger').info(log_message)
 
 # Convenience decorators for different logging levels

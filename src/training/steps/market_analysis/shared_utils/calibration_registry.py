@@ -11,7 +11,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict
 
-
 _DEFAULT_CALIBRATION: Dict[str, Any] = {
     "history": {
         "persistence": [],
@@ -55,9 +54,7 @@ _DEFAULT_CALIBRATION: Dict[str, Any] = {
     },
 }
 
-
 _CALIBRATION_STATE: Dict[str, Any] = deepcopy(_DEFAULT_CALIBRATION)
-
 
 def _merge_nested_dict(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str, Any]:
     """Safely merge nested dictionaries while keeping copies."""
@@ -70,13 +67,11 @@ def _merge_nested_dict(base: Dict[str, Any], update: Dict[str, Any]) -> Dict[str
             merged[key] = deepcopy(value)
     return merged
 
-
 def reset_quality_calibration() -> None:
     """Reset calibration state to defaults."""
 
     global _CALIBRATION_STATE
     _CALIBRATION_STATE = deepcopy(_DEFAULT_CALIBRATION)
-
 
 def update_quality_calibration(calibration: Dict[str, Any] | None) -> None:
     """Update the global calibration registry with new values.
@@ -95,31 +90,26 @@ def update_quality_calibration(calibration: Dict[str, Any] | None) -> None:
     merged = _merge_nested_dict(_DEFAULT_CALIBRATION, calibration)
     _CALIBRATION_STATE = merged
 
-
 def get_current_calibration() -> Dict[str, Any]:
     """Return a deepcopy of the current calibration state."""
 
     return deepcopy(_CALIBRATION_STATE)
-
 
 def get_quality_thresholds() -> Dict[str, float]:
     """Get calibrated feature-quality thresholds with defaults applied."""
 
     return deepcopy(_CALIBRATION_STATE.get("quality_thresholds", {}))
 
-
 def get_confidence_levels() -> Dict[str, float]:
     """Return calibrated confidence levels for reporting."""
 
     return deepcopy(_CALIBRATION_STATE.get("confidence_levels", {}))
-
 
 def get_metric_thresholds(metric: str) -> Dict[str, float]:
     """Resolve label thresholds for a metric such as silhouette or CV."""
 
     metric_thresholds = _CALIBRATION_STATE.get("metric_thresholds", {})
     return deepcopy(metric_thresholds.get(metric, {}))
-
 
 __all__ = [
     "get_confidence_levels",
@@ -129,4 +119,3 @@ __all__ = [
     "reset_quality_calibration",
     "update_quality_calibration",
 ]
-

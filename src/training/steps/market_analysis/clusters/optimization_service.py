@@ -25,7 +25,6 @@ from .step1_feature_preparation import ClusteringContext
 from .iterative_optimization import IterativeOptimization, ClusteringStats
 from .risk_mitigation import RiskMitigationSystem, RiskMitigationConfig
 
-
 @dataclass
 class OptimizationResult:
     """Result from optimization service."""
@@ -36,7 +35,6 @@ class OptimizationResult:
     risk_violations: int
     total_execution_time: float
 
-
 @dataclass
 class ObjectiveWeights:
     """Standardized objective function weights across all modules."""
@@ -46,7 +44,6 @@ class ObjectiveWeights:
     balance_weight: float = 0.10     # Minimal: Balance constraint (will be removed from objective)
     k_penalty_weight: float = 0.15   # K complexity penalty (softened from 0.25)
 
-
 @dataclass
 class StepSpecificWeights:
     """Step-specific weighting for optimization phases."""
@@ -55,19 +52,18 @@ class StepSpecificWeights:
     step1_temp_weight: float = 0.20
     step1_sil_weight: float = 0.10
     step1_bal_weight: float = 0.00  # Balance used as constraint, not weight
-    
+
     # Step 2: Global reallocation - focus on temporal smoothness + CV (balance as constraint)
     step2_cv_weight: float = 0.40
     step2_temp_weight: float = 0.50
     step2_sil_weight: float = 0.10
     step2_bal_weight: float = 0.00  # Balance used as constraint, not weight
-    
+
     # Step 3: Break large clusters - balanced approach (balance as constraint)
     step3_cv_weight: float = 0.50
     step3_temp_weight: float = 0.30
     step3_sil_weight: float = 0.10
     step3_bal_weight: float = 0.00  # Balance used as constraint, not weight
-
 
 class OptimizationService:
     """
@@ -104,7 +100,7 @@ class OptimizationService:
 
         # Default objective weights
         self.objective_weights = ObjectiveWeights()
-        
+
         # Step-specific weights for different optimization phases
         self.step_weights = StepSpecificWeights()
 
@@ -162,7 +158,7 @@ class OptimizationService:
             # Initialize optimized_assignments if not set
             if not hasattr(context, 'optimized_assignments') or context.optimized_assignments is None:
                 context.optimized_assignments = context.initial_assignments.copy()
-            
+
             # Run optimization loop
             current_context = context
             convergence_achieved = False
@@ -486,7 +482,7 @@ class OptimizationService:
         except Exception as e:
             tprint(f"❌ Weight update failed: {e}", "ERROR")
             raise
-    
+
     def get_step_weights(self, step: int) -> Dict[str, float]:
         """Get step-specific weights for the given optimization step."""
         try:

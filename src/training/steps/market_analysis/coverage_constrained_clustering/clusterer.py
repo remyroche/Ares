@@ -15,7 +15,6 @@ from .utils import (
 	map_regime_key_to_int,
 )
 
-
 @dataclass
 class ClusteringOutputs:
 	cluster_labels: Dict[str, int]
@@ -25,7 +24,6 @@ class ClusteringOutputs:
 	noise_regime_keys: List[str]
 	cluster_sizes: Dict[int, int]
 	cluster_size_pct: Dict[int, float]
-
 
 class CoverageConstrainedClusterer:
 	def __init__(self, config: CoverageClusteringConfig) -> None:
@@ -84,7 +82,7 @@ class CoverageConstrainedClusterer:
 		# ZERO NOISE: If a cluster exceeds max_size, split it into multiple clusters instead of marking as noise
 		new_labels = labels.copy()
 		next_cluster_id = max(np.unique(labels)) + 1
-		
+
 		for k in np.unique(labels):
 			idx = np.where(new_labels == k)[0]
 			if idx.size > max_size:
@@ -322,4 +320,3 @@ class CoverageConstrainedClusterer:
 			cluster_sizes=cluster_sizes,
 			cluster_size_pct=cluster_size_pct,
 		)
-

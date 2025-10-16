@@ -78,28 +78,28 @@ class FinalFeatureSelectionStep:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the final feature selection step with comprehensive logging."""
         tprint("🚀 Initializing FinalFeatureSelectionStep")
-        
+
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
         self._settings = get_pre_training_settings()
 
         tprint_info(f"Configuration keys: {sorted(self.config.keys()) if self.config else 'None'}")
-        
+
         # Initialize configuration with comprehensive logging
         self._initialize_configuration()
-        
+
         # Initialize VectorBT optimization tools
         self._initialize_vectorbt_tools()
-        
+
         # Initialize feature selection configuration
         self._initialize_feature_selection_config()
-        
+
         tprint_success("✅ FinalFeatureSelectionStep initialization complete")
 
     def _initialize_configuration(self) -> None:
         """Initialize configuration parameters with comprehensive logging."""
         tprint_debug("🔧 Initializing configuration parameters")
-        
+
         # Drift monitoring configuration
         self.enable_drift_monitoring = self.config.get('enable_drift_monitoring', True)
         self.drift_thresholds = {
@@ -109,14 +109,14 @@ class FinalFeatureSelectionStep:
         }
         tprint_debug(f"Drift monitoring: {self.enable_drift_monitoring}")
         tprint_debug(f"Drift thresholds: {self.drift_thresholds}")
-        
+
         # Bootstrap validation configuration
         self.enable_bootstrap_validation = self.config.get('enable_bootstrap_validation', True)
         self.bootstrap_iterations = self.config.get('bootstrap_iterations', 10)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
         tprint_debug(f"Bootstrap validation: {self.enable_bootstrap_validation}")
         tprint_debug(f"Bootstrap iterations: {self.bootstrap_iterations}")
-        
+
         # Economic interpretability and robustness
         self.preserve_economic_themes = self.config.get('preserve_economic_themes', True)
         self.min_features_per_theme = self.config.get('min_features_per_theme', 1)
@@ -132,7 +132,7 @@ class FinalFeatureSelectionStep:
     def _initialize_vectorbt_tools(self) -> None:
         """Initialize VectorBT optimization tools with error handling."""
         tprint_debug("⚡ Initializing VectorBT optimization tools")
-        
+
         if not VECTORBT_UTILS_AVAILABLE:
             tprint_warning("⚠️ VectorBT utilities not available")
             self.vectorbt_optimizer = None
@@ -147,12 +147,12 @@ class FinalFeatureSelectionStep:
                 memory_efficient=True,
                 chunk_size=1000
             )
-            
+
             vectorbt_tools = create_vectorbt_tools(vectorbt_config)
             self.vectorbt_optimizer = vectorbt_tools['optimizer']
             self.vectorization_manager = vectorbt_tools['manager']
             self.vectorbt_enabled = vectorbt_tools['available']
-            
+
             if self.vectorbt_enabled:
                 tprint_success("✅ VectorBT optimization tools initialized")
             else:
@@ -166,7 +166,7 @@ class FinalFeatureSelectionStep:
     def _initialize_feature_selection_config(self) -> None:
         """Initialize feature selection configuration with model-aware defaults."""
         tprint_debug("🎯 Initializing feature selection configuration")
-        
+
         # Model-specific feature count profiles
         self.model_profiles = {
             'AdvancedMambaHybrid': {
@@ -193,7 +193,7 @@ class FinalFeatureSelectionStep:
 
         # Resolve output directories
         self._resolve_output_directories()
-        
+
         # Initialize feature selection configuration
         model_type = self.config.get('model_type', 'default')
         profile = self.model_profiles.get(model_type, {
@@ -235,14 +235,14 @@ class FinalFeatureSelectionStep:
             max_features=profile['max_features'],
             priority_categories=profile['priority_categories']
         )
-        
+
         tprint_info(f"Model type: {model_type}")
         tprint_info(f"Target features: {profile['target_features']}")
 
     def _resolve_output_directories(self) -> None:
         """Resolve output directories with proper error handling."""
         tprint_debug("📁 Resolving output directories")
-        
+
         locator_candidate = self.config.get('data_locator')
         self.data_locator: Optional[PipelineDataLocator] = (
             locator_candidate if isinstance(locator_candidate, PipelineDataLocator) else None
@@ -279,25 +279,25 @@ class FinalFeatureSelectionStep:
                 self.final_features_dir_key,
                 ensure_exists=True,
             ))
-        
+
             tprint_debug(f"Final features directory: {self.final_features_dir}")
 
     def _prepare_data_for_selection(self, feature_data: pd.DataFrame, target_data: Optional[pd.DataFrame]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """Prepare data for feature selection with comprehensive error handling."""
         tprint_debug("🔄 Preparing data for feature selection")
         tprint_debug(f"Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
-        
+
         try:
             # Clean feature data
             X = feature_data.copy()
-            
+
             # Remove non-numeric columns
             numeric_columns = X.select_dtypes(include=[np.number]).columns
             non_numeric_count = len(X.columns) - len(numeric_columns)
             if non_numeric_count > 0:
                 tprint_debug(f"Removing {non_numeric_count} non-numeric columns")
             X = X[numeric_columns]
-            
+
             # Handle missing values
             missing_count = X.isnull().sum().sum()
             if missing_count > 0:
@@ -305,7 +305,7 @@ class FinalFeatureSelectionStep:
                 X = X.fillna(X.median())
             else:
                 tprint_debug("No missing values found")
-            
+
             # Remove infinite values
             inf_count = np.isinf(X.values).sum()
             if inf_count > 0:
@@ -314,9 +314,9 @@ class FinalFeatureSelectionStep:
                 X = X.fillna(X.median())
             else:
                 tprint_debug("No infinite values found")
-            
+
             tprint_success(f"✅ Prepared {len(X)} samples with {len(X.columns)} numeric features")
-            
+
             # Prepare target data if available
             y = None
             if target_data is not None:
@@ -331,10 +331,10 @@ class FinalFeatureSelectionStep:
                     tprint_warning("⚠️ No common indices between features and target")
             else:
                 tprint_debug("No target data - will perform unsupervised feature selection")
-            
+
             tprint_success(f"✅ Data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
             return X, y
-            
+
         except Exception as e:
             tprint_error(f"❌ Data preparation failed: {e}")
             raise
@@ -364,28 +364,28 @@ class FinalFeatureSelectionStep:
     @log_execution_time()
     async def execute_final_feature_selection(self,
                                             symbol: str,
-                                            exchange: str, 
-                                            timeframe: str, 
+                                            exchange: str,
+                                            timeframe: str,
                                             data_dir: str,
                                             **kwargs) -> bool:
         """
         Execute final feature selection step with comprehensive logging.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Data timeframe
             data_dir: Data directory path
             **kwargs: Additional parameters
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
-        
+
         tprint("🔍 Starting Final Feature Selection Step")
         tprint_info(f"Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
         tprint_info(f"Data directory: {data_dir}")
-        
+
         try:
             # Load feature data
             tprint_debug("🔄 Loading feature data...")
@@ -393,31 +393,31 @@ class FinalFeatureSelectionStep:
             if feature_data is None:
                 tprint_error("❌ Failed to load feature data")
                 return False
-            
+
             tprint_success(f"✅ Feature data loaded: {feature_data.shape[0]} samples, {feature_data.shape[1]} features")
-            
+
             # Load target data
             tprint_debug("🔄 Loading target data...")
             target_data = await self._load_target_data(symbol, exchange, timeframe, data_dir)
-            
+
             if target_data is not None:
                 tprint_success(f"✅ Target data loaded: {target_data.shape[0]} samples, {target_data.shape[1]} columns")
             else:
                 tprint_warning("⚠️ No target data found - will perform unsupervised feature selection")
-            
+
             # Prepare data for feature selection
             tprint_debug("🔄 Preparing data for feature selection...")
             X, y = self._prepare_data_for_selection(feature_data, target_data)
             tprint_success(f"✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
-            
+
             # Run feature selection
             tprint("🚀 Running multi-stage feature selection...")
             selection_result = await self._run_feature_selection(X, y, symbol, exchange, timeframe)
-            
+
             # Save results
             tprint("💾 Saving selection results...")
             await self._save_selection_results(selection_result, symbol, exchange, timeframe, data_dir)
-            
+
             # Generate summary report
             tprint("📊 Generating summary report...")
             await self._generate_summary_report(selection_result, symbol, exchange, timeframe)
@@ -430,7 +430,7 @@ class FinalFeatureSelectionStep:
             tprint(f"   ⚡ VectorBT optimization: {'✅ Enabled' if self.vectorbt_enabled else '❌ Disabled'}")
             tprint(f"   💾 Caching: ✅ Enabled")
             tprint(f"   📊 tprint logging: ✅ Comprehensive")
-            
+
             # Log comprehensive VectorBT performance statistics if available
             if self.vectorbt_enabled:
                 try:
@@ -445,7 +445,7 @@ class FinalFeatureSelectionStep:
                     tprint(f"   📈 VectorBT usage rate: {vectorbt_stats.get('vectorbt_usage_rate', 0):.2%}")
                     tprint(f"   🎯 Average speedup: {vectorbt_stats.get('average_speedup', 0):.2f}x")
                     tprint(f"   💾 Total computation time: {vectorbt_stats.get('total_computation_time', 0):.2f}s")
-                    
+
                     # Log strategy usage if available
                     strategy_usage = vectorbt_stats.get('strategy_usage', {})
                     if strategy_usage:
@@ -453,7 +453,7 @@ class FinalFeatureSelectionStep:
                         for strategy, count in strategy_usage.items():
                             if count > 0:
                                 tprint(f"      - {strategy}: {count} operations")
-                                
+
                 except Exception as e:
                     tprint_warning(f"⚠️ Could not retrieve enhanced VectorBT performance stats: {e}")
 
@@ -488,23 +488,23 @@ class FinalFeatureSelectionStep:
         """Synchronous helper for loading standardized target data."""
         tprint("🔍 Loading target data from standardized format")
         tprint_debug(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
-        
+
         try:
             manifest = ArtifactManifest()
             tprint_debug("   📦 Artifact manifest initialized")
-            
+
             # Try multiple artifact base names to support both analyst and tactician labels
             possible_base_names = [
                 'pre_training_tactician_entry_labeler_outcome',      # Tactician labels (entry timing)
                 'pre_training_analyst_profit_labeler_outcome',       # Analyst labels (profit targets)
                 'market_analysis_multi_horizon_profit_labeler_outcome',  # Legacy format
             ]
-            
+
             tprint_debug(f"   🔍 Checking {len(possible_base_names)} possible artifact sources")
-            
+
             entry = None
             artifact_base_name = None
-            
+
             for i, base_name in enumerate(possible_base_names):
                 tprint_debug(f"   📂 Checking source {i+1}/{len(possible_base_names)}: {base_name}")
                 try:
@@ -525,7 +525,7 @@ class FinalFeatureSelectionStep:
                 except Exception as e:
                     tprint_warning(f"   ⚠️ Error checking {base_name}: {e}")
                     continue
-            
+
             if entry and artifact_base_name:
                 tprint_debug(f"   📂 Loading from manifest entry: {entry.resolved_path}")
                 try:
@@ -542,7 +542,7 @@ class FinalFeatureSelectionStep:
                         tprint_warning(f"   ⚠️ Manifest file loaded but returned None")
                 except Exception as e:
                     tprint_error(f"   ❌ Error loading from manifest: {e}")
-            
+
             # Fallback to outcomes directory
             tprint_debug("   🔄 Attempting fallback to outcomes directory")
             try:
@@ -551,7 +551,7 @@ class FinalFeatureSelectionStep:
                     pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
                     outcome_files = list(outcomes_dir.glob(pattern))
                     tprint_debug(f"   📂 Found {len(outcome_files)} fallback files matching pattern")
-                    
+
                     if outcome_files:
                         latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
                         tprint_debug(f"   📂 Using latest file: {latest_outcome_file}")
@@ -576,7 +576,7 @@ class FinalFeatureSelectionStep:
             # Final fallback
             tprint_warning(f"⚠️ No standardized target data found for {symbol}/{exchange}/{timeframe}")
             return None
-            
+
         except Exception as e:
             tprint_error(f"❌ Critical error in target data loading: {e}")
             import traceback
@@ -593,14 +593,14 @@ class FinalFeatureSelectionStep:
     ) -> Optional[pd.DataFrame]:
         """Load standardized target data from a manifest-referenced outcome file."""
         tprint_debug(f"📂 Loading standardized target from file: {outcome_file}")
-        
+
         try:
             # Load and parse JSON file
             tprint_debug("   📖 Reading outcome file...")
             with open(outcome_file, 'r', encoding='utf-8') as handle:
                 outcome_data = json.load(handle)
             tprint_debug("   ✅ JSON file loaded successfully")
-            
+
         except FileNotFoundError:
             tprint_error(f"❌ Outcome file not found: {outcome_file}")
             return None
@@ -618,7 +618,7 @@ class FinalFeatureSelectionStep:
             symbol_match = config_data.get('symbol') == expected_symbol if config_data.get('symbol') else True
             exchange_match = config_data.get('exchange') == expected_exchange if config_data.get('exchange') else True
             timeframe_match = config_data.get('timeframe') == expected_timeframe if config_data.get('timeframe') else True
-            
+
             if not symbol_match:
                 tprint_warning(f"⚠️ Symbol mismatch: expected {expected_symbol}, got {config_data.get('symbol')}")
                 return None
@@ -722,7 +722,7 @@ class FinalFeatureSelectionStep:
         tprint_debug(f"   📊 Available weights: {weights}")
         tprint_debug(f"   📊 Target columns: {target_columns}")
         tprint_debug(f"   📊 Label columns: {list(labels.columns)}")
-        
+
         try:
             if not weights or not target_columns:
                 tprint_debug("   ⚠️ No weights or target columns available, using first available target")
@@ -736,7 +736,7 @@ class FinalFeatureSelectionStep:
 
             # Priority order based on horizon weights (higher weight = higher priority)
             target_priority = []
-            
+
             tprint_debug("   🔍 Mapping target columns to horizon weights...")
             for target in target_columns:
                 if target in labels.columns:
@@ -754,7 +754,7 @@ class FinalFeatureSelectionStep:
                         # Default to small horizon if unclear
                         horizon_weight = weights.get('small', 0.0)
                         horizon_type = 'small (default)'
-                    
+
                     target_priority.append((target, horizon_weight, horizon_type))
                     tprint_debug(f"   📊 {target}: {horizon_type} horizon, weight={horizon_weight:.3f}")
 
@@ -774,7 +774,7 @@ class FinalFeatureSelectionStep:
             tprint_error(f"❌ Error selecting best target with weights: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
-            
+
             # Fallback to first available target
             tprint_debug("   🔄 Attempting fallback to first available target...")
             try:
@@ -810,7 +810,7 @@ class FinalFeatureSelectionStep:
         tprint("📥 Loading feature data for final selection")
         tprint_debug(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
         tprint_debug(f"   📁 Data directory: {data_dir}")
-        
+
         try:
             # Try different possible file locations and formats
             possible_files = [
@@ -831,11 +831,11 @@ class FinalFeatureSelectionStep:
             for i, filename in enumerate(possible_files):
                 file_path = data_path / filename
                 tprint_debug(f"   🔍 Checking file {i+1}/{len(possible_files)}: {filename}")
-                
+
                 if file_path.exists():
                     tprint_success(f"   📂 Found feature file: {file_path.name}")
                     tprint_debug(f"   📊 File size: {file_path.stat().st_size / 1024 / 1024:.2f} MB")
-                    
+
                     try:
                         # Load parquet file
                         data = pd.read_parquet(file_path)
@@ -849,7 +849,7 @@ class FinalFeatureSelectionStep:
 
                         tprint_success(f"   ✅ Successfully loaded feature data: {data.shape}")
                         return data
-                        
+
                     except Exception as e:
                         tprint_error(f"   ❌ Error loading {filename}: {e}")
                         continue
@@ -869,7 +869,7 @@ class FinalFeatureSelectionStep:
 
             tprint_warning("⚠️ No feature data files found")
             return None
-            
+
         except Exception as e:
             tprint_error(f"❌ Critical error loading feature data: {e}")
             import traceback
@@ -879,7 +879,7 @@ class FinalFeatureSelectionStep:
     def _apply_data_cleaning(self, data: pd.DataFrame, data_type: str) -> pd.DataFrame:
         """Apply data cleaning utilities if available."""
         tprint_debug(f"   🧹 Applying data cleaning to {data_type}...")
-        
+
         try:
             from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
 
@@ -914,7 +914,7 @@ class FinalFeatureSelectionStep:
             tprint_warning(f"   ⚠️ Data cleaning failed, proceeding with original data: {e}")
 
         return data
-    
+
     async def _load_target_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.Series]:
         """Load target data if available."""
 
@@ -936,7 +936,7 @@ class FinalFeatureSelectionStep:
         tprint("📥 Attempting fallback target data load")
         tprint_debug(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
         tprint_debug(f"   📁 Data directory: {data_dir}")
-        
+
         try:
             # Try to load target data from labeling step
             possible_target_files = [
@@ -954,13 +954,13 @@ class FinalFeatureSelectionStep:
             for i, filename in enumerate(possible_target_files):
                 file_path = data_path / filename
                 tprint_debug(f"   🔍 Checking target file {i+1}/{len(possible_target_files)}: {filename}")
-                
+
                 if file_path.exists():
                     tprint_success(f"   📂 Found target file: {file_path.name}")
                     try:
                         data = pd.read_parquet(file_path)
                         tprint_debug(f"   ✅ Loaded target data shape: {data.shape}")
-                        
+
                         # Standardize target frame
                         data = self._standardize_target_frame(data)
                         tprint_debug("   🔧 Standardized target frame")
@@ -968,7 +968,7 @@ class FinalFeatureSelectionStep:
                         # Find canonical target columns
                         canonical_targets = filter_namespace_columns(data.columns, ColumnNamespace.TARGET)
                         tprint_debug(f"   🎯 Found {len(canonical_targets)} canonical target columns: {canonical_targets}")
-                        
+
                         if canonical_targets:
                             target_col = canonical_targets[0]
                             target_data = data[target_col]
@@ -977,45 +977,45 @@ class FinalFeatureSelectionStep:
                         else:
                             tprint_warning(f"   ⚠️ No canonical target columns found in {filename}")
                             continue
-                            
+
                     except Exception as e:
                         tprint_error(f"   ❌ Error loading {filename}: {e}")
                         continue
 
             tprint_warning("⚠️ No target data located, defaulting to unsupervised selection")
             return None
-            
+
         except Exception as e:
             tprint_error(f"❌ Critical error in fallback target data loading: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return None
-    
+
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """Prepare data for feature selection with comprehensive logging."""
         tprint("🔄 Preparing data for feature selection...")
         tprint_debug(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
-        
+
         try:
             # Clean feature data
             X = feature_data.copy()
             tprint_debug("   📋 Created feature data copy")
-            
+
             # Remove non-numeric columns
             tprint_debug("   🔍 Identifying numeric columns...")
             numeric_columns = X.select_dtypes(include=[np.number]).columns
             non_numeric_count = len(X.columns) - len(numeric_columns)
-            
+
             if non_numeric_count > 0:
                 tprint_info(f"   🗑️ Removing {non_numeric_count} non-numeric columns")
                 non_numeric_cols = [col for col in X.columns if col not in numeric_columns]
                 tprint_debug(f"   📋 Non-numeric columns: {non_numeric_cols}")
             else:
                 tprint_debug("   ✅ All columns are numeric")
-            
+
             X = X[numeric_columns]
             tprint_debug(f"   ✅ Kept {len(X.columns)} numeric columns")
-            
+
             # Handle missing values
             tprint_debug("   🔍 Checking for missing values...")
             missing_count = X.isnull().sum().sum()
@@ -1025,7 +1025,7 @@ class FinalFeatureSelectionStep:
                 tprint_debug("   ✅ Missing values imputed")
             else:
                 tprint_debug("   ✅ No missing values found")
-            
+
             # Remove infinite values
             tprint_debug("   🔍 Checking for infinite values...")
             inf_count = np.isinf(X.values).sum()
@@ -1036,20 +1036,20 @@ class FinalFeatureSelectionStep:
                 tprint_debug("   ✅ Infinite values handled")
             else:
                 tprint_debug("   ✅ No infinite values found")
-            
+
             tprint_success(f"   ✅ Prepared {len(X)} samples with {len(X.columns)} numeric features")
-            
+
             # Prepare target data if available
             y = None
             if target_data is not None:
                 tprint_debug(f"   🎯 Processing target data: {target_data.shape[0]} samples")
                 tprint_debug(f"   📊 Target data type: {type(target_data)}")
-                
+
                 # Align target data with feature data
                 tprint_debug("   🔄 Aligning target data with feature data...")
                 common_indices = X.index.intersection(target_data.index)
                 tprint_debug(f"   📊 Common indices: {len(common_indices)}")
-                
+
                 if len(common_indices) > 0:
                     X = X.loc[common_indices]
                     y = target_data.loc[common_indices]
@@ -1060,10 +1060,10 @@ class FinalFeatureSelectionStep:
                     tprint_debug(f"   📊 Target indices: {len(target_data.index)}")
             else:
                 tprint_info("   ℹ️ No target data - will perform unsupervised feature selection")
-            
+
             tprint_success(f"✅ Data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
             return X, y
-            
+
         except Exception as e:
             tprint_error(f"❌ Error in data preparation: {e}")
             import traceback
@@ -1076,39 +1076,39 @@ class FinalFeatureSelectionStep:
         tprint_debug(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
         tprint_debug(f"   ⚡ VectorBT enabled: {self.vectorbt_enabled}")
         tprint_debug(f"   🔧 VectorBT manager available: {self.vectorization_manager is not None}")
-        
+
         if not self.vectorbt_enabled or self.vectorization_manager is None:
             tprint_warning("   ⚠️ VectorBT not available, falling back to standard preparation")
             return self._prepare_data(feature_data, target_data)
-        
+
         try:
             # Clean feature data
             tprint_debug("   📋 Creating feature data copy...")
             X = feature_data.copy()
-            
+
             # Remove non-numeric columns
             tprint_debug("   🔍 Identifying numeric columns...")
             numeric_columns = X.select_dtypes(include=[np.number]).columns
             non_numeric_count = len(X.columns) - len(numeric_columns)
-            
+
             if non_numeric_count > 0:
                 tprint_info(f"   🗑️ Removing {non_numeric_count} non-numeric columns")
                 non_numeric_cols = [col for col in X.columns if col not in numeric_columns]
                 tprint_debug(f"   📋 Non-numeric columns: {non_numeric_cols}")
             else:
                 tprint_debug("   ✅ All columns are numeric")
-            
+
             X = X[numeric_columns]
             tprint_debug(f"   ✅ Kept {len(X.columns)} numeric columns")
-            
+
             # Use VectorBTRollingOptimizer for enhanced statistical operations
             if self.vectorbt_optimizer:
                 tprint_debug("   ⚡ Using VectorBT optimizer for enhanced processing...")
-                
+
                 # Optimize data types for VectorBT processing
                 tprint_debug("   🔧 Optimizing data types for VectorBT...")
                 X = self._optimize_dataframe_for_vectorbt(X)
-                
+
                 # Use VectorBT for missing value imputation with rolling statistics
                 tprint_debug("   🔍 Checking for missing values...")
                 missing_count = X.isnull().sum().sum()
@@ -1123,11 +1123,11 @@ class FinalFeatureSelectionStep:
                     tprint_debug("   ✅ Missing values imputed with VectorBT")
                 else:
                     tprint_debug("   ✅ No missing values found")
-                
+
                 # Use VectorBT for outlier detection and handling
                 tprint_debug("   🔍 Applying VectorBT outlier handling...")
                 X = self._vectorbt_outlier_handling(X)
-                
+
                 # Use VectorBT for data normalization
                 tprint_debug("   📊 Applying VectorBT normalization...")
                 X = self._vectorbt_normalize_data(X)
@@ -1140,7 +1140,7 @@ class FinalFeatureSelectionStep:
                     X = X.fillna(X.median())
                 else:
                     tprint_debug("   ✅ No missing values found")
-            
+
             # Remove infinite values
             tprint_debug("   🔍 Checking for infinite values...")
             inf_count = np.isinf(X.values).sum()
@@ -1151,186 +1151,186 @@ class FinalFeatureSelectionStep:
                 tprint_debug("   ✅ Infinite values handled")
             else:
                 tprint_debug("   ✅ No infinite values found")
-            
+
             # Optimize DataFrame for VectorBT processing
             tprint_debug("   ⚡ Optimizing DataFrame with VectorBT manager...")
             X_optimized = self.vectorization_manager.optimize_dataframe(X)
             tprint_success(f"   ✅ VectorBT-optimized data: {len(X_optimized)} samples, {len(X_optimized.columns)} features")
-            
+
             # Prepare target data with VectorBT optimization
             tprint_debug("   🎯 Optimizing target data with VectorBT...")
             y = self._vectorbt_optimize_target_data(target_data, X_optimized)
-            
+
             tprint_success(f"✅ Enhanced VectorBT data preparation completed: {X_optimized.shape[0]} samples, {X_optimized.shape[1]} features")
             return X_optimized, y
-            
+
         except Exception as e:
             tprint_error(f"❌ Enhanced VectorBT data preparation failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             tprint_warning("   🔄 Falling back to standard data preparation...")
             return self._prepare_data(feature_data, target_data)
-    
+
     def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for VectorBT processing."""
         tprint_debug("⚡ Optimizing DataFrame for VectorBT processing")
         tprint_debug(f"   📊 Input shape: {data.shape}")
         tprint_debug(f"   📊 Input dtypes: {data.dtypes.value_counts().to_dict()}")
-        
+
         try:
             optimized_data = data.copy()
             conversions_made = 0
-            
+
             # Convert to more memory-efficient types
             for col in optimized_data.columns:
                 original_dtype = optimized_data[col].dtype
-                
+
                 if original_dtype == 'float64':
                     # Check if we can use float32
                     col_min = optimized_data[col].min()
                     col_max = optimized_data[col].max()
-                    
-                    if (col_min >= np.finfo(np.float32).min and 
+
+                    if (col_min >= np.finfo(np.float32).min and
                         col_max <= np.finfo(np.float32).max):
                         optimized_data[col] = optimized_data[col].astype(np.float32)
                         conversions_made += 1
                         tprint_debug(f"   🔧 Converted {col}: float64 -> float32")
-                        
+
                 elif original_dtype == 'int64':
                     # Check if we can use int32
                     col_min = optimized_data[col].min()
                     col_max = optimized_data[col].max()
-                    
-                    if (col_min >= np.iinfo(np.int32).min and 
+
+                    if (col_min >= np.iinfo(np.int32).min and
                         col_max <= np.iinfo(np.int32).max):
                         optimized_data[col] = optimized_data[col].astype(np.int32)
                         conversions_made += 1
                         tprint_debug(f"   🔧 Converted {col}: int64 -> int32")
-            
+
             tprint_debug(f"   ✅ Optimized {conversions_made} columns for VectorBT")
             tprint_debug(f"   📊 Output dtypes: {optimized_data.dtypes.value_counts().to_dict()}")
             return optimized_data
-            
+
         except Exception as e:
             tprint_error(f"❌ DataFrame optimization failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return data
-    
+
     def _vectorbt_outlier_handling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Handle outliers using VectorBT rolling operations."""
         tprint_debug("🔧 Handling outliers with VectorBT operations")
         tprint_debug(f"   📊 Input shape: {data.shape}")
-        
+
         try:
             if not self.vectorbt_optimizer:
                 tprint_debug("   ⚠️ VectorBT optimizer not available, skipping outlier handling")
                 return data
-            
+
             processed_data = data.copy()
             columns_processed = 0
-            
+
             for col in processed_data.columns:
                 if processed_data[col].dtype in [np.float32, np.float64]:
                     tprint_debug(f"   🔧 Processing column: {col}")
-                    
+
                     # Use VectorBT rolling quantiles for outlier detection
                     rolling_q25 = self.vectorbt_optimizer.rolling_quantile(processed_data[col], window=50, q=0.25)
                     rolling_q75 = self.vectorbt_optimizer.rolling_quantile(processed_data[col], window=50, q=0.75)
                     rolling_iqr = rolling_q75 - rolling_q25
-                    
+
                     # Define outlier bounds
                     lower_bound = rolling_q25 - 1.5 * rolling_iqr
                     upper_bound = rolling_q75 + 1.5 * rolling_iqr
-                    
+
                     # Count outliers before clipping
                     outliers_before = ((processed_data[col] < lower_bound) | (processed_data[col] > upper_bound)).sum()
-                    
+
                     # Cap outliers instead of removing them
                     processed_data[col] = processed_data[col].clip(lower=lower_bound, upper=upper_bound)
-                    
+
                     # Count outliers after clipping
                     outliers_after = ((processed_data[col] < lower_bound) | (processed_data[col] > upper_bound)).sum()
-                    
+
                     if outliers_before > 0:
                         tprint_debug(f"   📊 {col}: clipped {outliers_before} outliers")
                         columns_processed += 1
                     else:
                         tprint_debug(f"   ✅ {col}: no outliers found")
-            
+
             tprint_debug(f"   ✅ Processed {columns_processed} columns for outlier handling")
             return processed_data
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT outlier handling failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return data
-    
+
     def _vectorbt_normalize_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Normalize data using VectorBT rolling operations."""
         tprint_debug("📊 Normalizing data with VectorBT operations")
         tprint_debug(f"   📊 Input shape: {data.shape}")
-        
+
         try:
             if not self.vectorbt_optimizer:
                 tprint_debug("   ⚠️ VectorBT optimizer not available, skipping normalization")
                 return data
-            
+
             normalized_data = data.copy()
             columns_processed = 0
-            
+
             for col in normalized_data.columns:
                 if normalized_data[col].dtype in [np.float32, np.float64]:
                     tprint_debug(f"   📊 Normalizing column: {col}")
-                    
+
                     # Use VectorBT rolling mean and std for normalization
                     rolling_mean = self.vectorbt_optimizer.rolling_mean(normalized_data[col], window=100)
                     rolling_std = self.vectorbt_optimizer.rolling_std(normalized_data[col], window=100)
-                    
+
                     # Avoid division by zero
                     zero_std_count = (rolling_std == 0).sum()
                     if zero_std_count > 0:
                         tprint_debug(f"   ⚠️ {col}: found {zero_std_count} zero std values, replacing with 1")
                         rolling_std = rolling_std.replace(0, 1)
-                    
+
                     # Z-score normalization
                     normalized_data[col] = (normalized_data[col] - rolling_mean) / rolling_std
                     columns_processed += 1
                     tprint_debug(f"   ✅ {col}: normalized successfully")
-            
+
             tprint_debug(f"   ✅ Normalized {columns_processed} columns")
             return normalized_data
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT normalization failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return data
-    
+
     def _vectorbt_optimize_target_data(self, target_data: Optional[pd.Series], feature_data: pd.DataFrame) -> Optional[pd.Series]:
         """Optimize target data using VectorBT operations."""
         tprint_debug("🎯 Optimizing target data with VectorBT")
         tprint_debug(f"   📊 Feature data shape: {feature_data.shape}")
         tprint_debug(f"   📊 Target data type: {type(target_data)}")
-        
+
         if target_data is None:
             tprint_info("   ℹ️ No target data - will perform unsupervised feature selection")
             return None
-        
+
         try:
             tprint_debug(f"   🎯 Processing target data: {target_data.shape[0]} samples")
             tprint_debug(f"   📊 Target data dtype: {target_data.dtype}")
-            
+
             # Align target data with feature data
             tprint_debug("   🔄 Aligning target data with feature data...")
             common_indices = feature_data.index.intersection(target_data.index)
             tprint_debug(f"   📊 Common indices: {len(common_indices)}")
-            
+
             if len(common_indices) > 0:
                 aligned_target = target_data.loc[common_indices]
                 tprint_success(f"   ✅ Aligned target data: {len(aligned_target)} samples")
-                
+
                 # Use VectorBT for target data optimization if available
                 if self.vectorbt_optimizer and len(aligned_target) > 50:
                     tprint_debug("   ⚡ Applying VectorBT smoothing to target data...")
@@ -1351,13 +1351,13 @@ class FinalFeatureSelectionStep:
                 tprint_debug(f"   📊 Feature indices: {len(feature_data.index)}")
                 tprint_debug(f"   📊 Target indices: {len(target_data.index)}")
                 return None
-                
+
         except Exception as e:
             tprint_error(f"❌ VectorBT target optimization failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return target_data
-    
+
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
         """Run the multi-stage feature selection with comprehensive logging."""
@@ -1365,17 +1365,17 @@ class FinalFeatureSelectionStep:
         tprint_debug(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
         tprint_debug(f"   🎯 Target: Variable→60 pipeline (mRMR/Ensemble/RFE)")
         tprint_debug(f"   📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
-        
+
         if y is not None:
             tprint_info(f"   🎯 Target: {len(y)} samples (supervised learning)")
             tprint_debug(f"   📊 Target type: {'classification' if len(y.unique()) <= 10 else 'regression'}")
             tprint_debug(f"   📊 Target unique values: {len(y.unique())}")
         else:
             tprint_info("   🎯 No target data (unsupervised learning)")
-        
+
         tprint_debug("   ⚡ Using vectorized operations and caching")
         tprint_debug("   🔄 Starting feature selection pipeline...")
-        
+
         try:
             # Run feature selection in a thread pool to avoid blocking
             tprint_debug("   🔄 Executing feature selection in thread pool...")
@@ -1392,7 +1392,7 @@ class FinalFeatureSelectionStep:
             final_scores = getattr(selection_result, 'final_scores', {}) or {}
             selection_result.eligible_for_selection = bool(final_scores.get('eligible_for_selection', True))
             selection_result.turnover_rejection_reason = final_scores.get('turnover_rejection_reason')
-            
+
             if not selection_result.eligible_for_selection:
                 reason = selection_result.turnover_rejection_reason or 'Turnover constraints violated'
                 tprint_warning(f"🚫 Selection result marked ineligible: {reason}")
@@ -1425,7 +1425,7 @@ class FinalFeatureSelectionStep:
                 feature_results=feature_p_values,
                 lookback_results=lookback_p_values,
             )
-            
+
             if hypothesis_report.get("warning"):
                 tprint_warning(hypothesis_report["warning"])
             else:
@@ -1480,7 +1480,7 @@ class FinalFeatureSelectionStep:
             tprint_info(f"   ⏱️ Selection time: {selection_result.selection_time:.3f} seconds")
 
             return selection_result
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature selection failed: {e}")
             import traceback
@@ -1493,13 +1493,13 @@ class FinalFeatureSelectionStep:
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
         tprint_debug(f"   ⚡ VectorBT enabled: {self.vectorbt_enabled}")
         tprint_debug(f"   🎯 Target available: {y is not None}")
-        
+
         try:
             # Use VectorBT enhanced feature selection if available
             if self.vectorbt_enabled:
                 tprint_debug("   ⚡ Using VectorBT enhanced feature selection...")
                 return self._vectorbt_enhanced_feature_selection(X, y)
-            
+
             # Fallback to standard selection
             tprint_debug("   🔄 Using standard feature selection...")
             if not getattr(self, "_pipeline_available", False):
@@ -1529,35 +1529,35 @@ class FinalFeatureSelectionStep:
 
             tprint_success("   ✅ Synchronous selection complete")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Synchronous selection failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             raise
-    
+
     def _vectorbt_enhanced_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
         """Enhanced feature selection using VectorBT optimizations."""
         tprint("🚀 Running VectorBT-enhanced feature selection")
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
         tprint_debug(f"   ⚡ VectorBT optimizer available: {self.vectorbt_optimizer is not None}")
-        
+
         try:
             # Use VectorBT for feature importance calculations
             tprint_debug("   📊 Calculating VectorBT feature importance...")
             feature_importance = self._vectorbt_calculate_feature_importance(X, y)
             tprint_debug(f"   ✅ Feature importance calculated: {len(feature_importance)} features")
-            
+
             # Use VectorBT for stability analysis
             tprint_debug("   🔍 Performing VectorBT stability analysis...")
             stability_scores = self._vectorbt_stability_analysis(X, y)
             tprint_debug(f"   ✅ Stability analysis completed: {len(stability_scores)} features")
-            
+
             # Use VectorBT for correlation-based feature selection
             tprint_debug("   🔗 Computing VectorBT correlation analysis...")
             correlation_matrix = self._vectorbt_correlation_analysis(X)
             tprint_debug(f"   ✅ Correlation matrix computed: {correlation_matrix.shape}")
-            
+
             # Create enhanced config with VectorBT parameters
             tprint_debug("   ⚙️ Creating enhanced configuration...")
             enhanced_config = self.feature_config
@@ -1566,7 +1566,7 @@ class FinalFeatureSelectionStep:
             enhanced_config.stability_scores = stability_scores
             enhanced_config.correlation_matrix = correlation_matrix
             tprint_debug("   ✅ Enhanced configuration created")
-            
+
             # Import and use the feature selector
             if not getattr(self, "_pipeline_available", False):
                 error_msg = "Feature selection pipeline is unavailable"
@@ -1576,7 +1576,7 @@ class FinalFeatureSelectionStep:
             from .feature_selection import MultiStageFeatureSelectionPipeline
             tprint_debug("   📦 Creating MultiStageFeatureSelectionPipeline with VectorBT enhancements...")
             selector = MultiStageFeatureSelectionPipeline(enhanced_config)
-            
+
             if y is not None:
                 tprint_info("   🎯 Using VectorBT-enhanced supervised selector")
                 tprint_debug(f"   📊 Target shape: {y.shape}")
@@ -1589,7 +1589,7 @@ class FinalFeatureSelectionStep:
                 result = selector.select_features(X, dummy_target)
                 result.is_unsupervised = True
                 tprint_debug("   ✅ VectorBT unsupervised selection completed")
-            
+
             # Add VectorBT performance metrics to result
             tprint_debug("   📊 Adding VectorBT metrics to result...")
             result.vectorbt_enhanced = True
@@ -1597,22 +1597,22 @@ class FinalFeatureSelectionStep:
             result.stability_scores = stability_scores
             result.correlation_matrix = correlation_matrix
             tprint_debug("   ✅ VectorBT metrics added to result")
-            
+
             tprint_success("   ✅ VectorBT-enhanced selection complete")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT enhanced feature selection failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             tprint_warning("   🔄 Falling back to standard feature selection...")
             return self._run_standard_feature_selection(X, y)
-    
+
     def _run_standard_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
         """Standard feature selection fallback."""
         tprint_debug("🔄 Running standard feature selection fallback")
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
-        
+
         try:
             if not getattr(self, "_pipeline_available", False):
                 error_msg = "Feature selection pipeline is unavailable"
@@ -1636,31 +1636,31 @@ class FinalFeatureSelectionStep:
 
             tprint_debug("   ✅ Standard feature selection completed")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Standard feature selection failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             raise
-    
+
     def _vectorbt_calculate_feature_importance(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
         """Calculate feature importance using VectorBT operations."""
         tprint_debug("📊 Calculating feature importance with VectorBT")
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
-        
+
         try:
             if not self.vectorbt_optimizer:
                 tprint_debug("   ⚠️ VectorBT optimizer not available, returning empty importance scores")
                 return {}
-            
+
             if y is None:
                 tprint_debug("   ⚠️ No target data available, returning empty importance scores")
                 return {}
-            
+
             tprint_debug(f"   📊 Target shape: {y.shape}")
             importance_scores = {}
             columns_processed = 0
-            
+
             for col in X.columns:
                 if X[col].dtype in [np.float32, np.float64]:
                     tprint_debug(f"   📊 Processing column: {col}")
@@ -1675,29 +1675,29 @@ class FinalFeatureSelectionStep:
                     except Exception as col_error:
                         tprint_warning(f"   ⚠️ Error processing {col}: {col_error}")
                         continue
-            
+
             tprint_debug(f"   ✅ Processed {columns_processed} columns for importance calculation")
             return importance_scores
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT feature importance calculation failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return {}
-    
+
     def _vectorbt_stability_analysis(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Dict[str, float]:
         """Perform stability analysis using VectorBT operations."""
         tprint_debug("🔍 Performing stability analysis with VectorBT")
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
-        
+
         try:
             if not self.vectorbt_optimizer:
                 tprint_debug("   ⚠️ VectorBT optimizer not available, returning empty stability scores")
                 return {}
-            
+
             stability_scores = {}
             columns_processed = 0
-            
+
             for col in X.columns:
                 if X[col].dtype in [np.float32, np.float64]:
                     tprint_debug(f"   🔍 Processing column: {col}")
@@ -1712,33 +1712,33 @@ class FinalFeatureSelectionStep:
                     except Exception as col_error:
                         tprint_warning(f"   ⚠️ Error processing {col}: {col_error}")
                         continue
-            
+
             tprint_debug(f"   ✅ Processed {columns_processed} columns for stability analysis")
             return stability_scores
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT stability analysis failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             return {}
-    
+
     def _vectorbt_correlation_analysis(self, X: pd.DataFrame, window: int = 50) -> pd.DataFrame:
         """Perform correlation analysis using VectorBT optimization."""
         tprint_debug(f"🔗 Performing correlation analysis with VectorBT (window={window})")
         tprint_debug(f"   📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
-        
+
         try:
             if not self.vectorbt_optimizer:
                 tprint_debug("   ⚠️ VectorBT optimizer not available, using pandas correlation")
                 return X.corr()
-            
+
             tprint_debug(f"   ⚡ Using VectorBT for correlation analysis...")
-            
+
             # Use VectorBT for rolling correlation analysis
             try:
                 correlation_matrix = self.vectorbt_optimizer.rolling_correlation_matrix(X, window=window)
                 tprint_debug(f"   ✅ VectorBT rolling correlation matrix computed: {correlation_matrix.shape}")
-                
+
                 # Compute final correlation using VectorBT
                 if len(X) > window:
                     tprint_debug("   ⚡ Computing final correlation with VectorBT...")
@@ -1748,23 +1748,23 @@ class FinalFeatureSelectionStep:
                 else:
                     tprint_debug("   ⚠️ Data too small for VectorBT rolling correlation, using standard correlation")
                     return X.corr()
-                    
+
             except Exception as vectorbt_error:
                 tprint_warning(f"   ⚠️ VectorBT correlation failed: {vectorbt_error}, using pandas fallback")
                 return X.corr()
-            
+
         except Exception as e:
             tprint_error(f"❌ VectorBT correlation analysis failed: {e}")
             import traceback
             tprint_debug(f"   🔍 Error details: {traceback.format_exc()}")
             tprint_warning("   🔄 Using pandas correlation fallback...")
             return X.corr()
-    
+
     def _get_enhanced_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive VectorBT performance statistics."""
         tprint_debug("📊 Getting enhanced VectorBT performance statistics")
         stats = {}
-        
+
         try:
             # Get VectorBT rolling optimizer stats
             if self.vectorbt_optimizer:
@@ -1785,7 +1785,7 @@ class FinalFeatureSelectionStep:
                     tprint_warning(f"   ⚠️ Error getting VectorBT optimizer stats: {e}")
             else:
                 tprint_debug("   ⚠️ VectorBT optimizer not available")
-            
+
             # Get unified vectorization manager stats
             if self.vectorization_manager:
                 tprint_debug("   🔧 Getting vectorization manager stats...")
@@ -1802,10 +1802,10 @@ class FinalFeatureSelectionStep:
                     tprint_warning(f"   ⚠️ Error getting vectorization manager stats: {e}")
             else:
                 tprint_debug("   ⚠️ Vectorization manager not available")
-            
+
             tprint_debug(f"   ✅ Total stats collected: {len(stats)} metrics")
             return stats
-            
+
         except Exception as e:
             tprint_error(f"❌ Error getting VectorBT performance stats: {e}")
             import traceback
@@ -1816,7 +1816,7 @@ class FinalFeatureSelectionStep:
         """Extract horizon, feature, and lookback p-values from the selection result."""
         tprint_debug("📊 Collecting hypothesis p-values from selection result")
         tprint_debug(f"   📊 Selection result type: {type(selection_result)}")
-        
+
         try:
             tprint_debug("   🔍 Extracting p-value mapping...")
             flattened = extract_p_value_mapping(vars(selection_result))
@@ -1846,7 +1846,7 @@ class FinalFeatureSelectionStep:
         tprint_debug(f"   📊 Feature p-values: {len(feature_p_values)}")
 
         return horizon_p_values, feature_p_values, lookback_p_values
-    
+
     async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
                                     timeframe: str, data_dir: str) -> None:
         """Save feature selection results."""
@@ -1924,11 +1924,11 @@ class FinalFeatureSelectionStep:
             json.dump(results_dict, f, indent=2, default=str)
 
         self.logger.info(f"💾 Detailed results saved to: {detailed_results_file}")
-    
+
     async def _generate_summary_report(self, selection_result: Any, symbol: str,
                                      exchange: str, timeframe: str) -> None:
         """Generate comprehensive summary report of feature selection."""
-        
+
         try:
             tprint("📊 FEATURE SELECTION SUMMARY REPORT")
             tprint("=" * 60)
@@ -1937,7 +1937,7 @@ class FinalFeatureSelectionStep:
             tprint(f"⏰ Timeframe: {timeframe}")
             tprint(f"⏱️ Selection Time: {selection_result.selection_time:.3f}s")
             tprint("")
-            
+
             tprint("📈 FEATURE REDUCTION PIPELINE:")
             tprint(f"   🔢 Initial Features: {selection_result.feature_counts.get('initial', 'N/A')}")
             tprint(f"   📊 Stage 1 (mRMR): {selection_result.feature_counts.get('stage_1', 'N/A')} features")
@@ -1945,7 +1945,7 @@ class FinalFeatureSelectionStep:
             tprint(f"   📊 Stage 3 (RFE): {selection_result.feature_counts.get('stage_3', 'N/A')} features")
             tprint(f"   📊 Final: {selection_result.feature_counts.get('final', 'N/A')} features")
             tprint("")
-            
+
             tprint("📊 STAGE SCORES:")
             if selection_result.stage_1_scores:
                 score = selection_result.stage_1_scores.get('model_importance_score', 'N/A')
@@ -2032,18 +2032,18 @@ class FinalFeatureSelectionStep:
                         else:
                             tprint(f"   🎯 Final {label}: {metric_value}")
             tprint("")
-            
+
             # Show top 10 final features
             if hasattr(selection_result, 'model_performance') and 'feature_importance' in selection_result.model_performance:
                 top_features = sorted(
                     selection_result.model_performance['feature_importance'].items(),
                     key=lambda x: x[1], reverse=True
                 )[:10]
-                
+
                 tprint("🏆 TOP 10 FINAL FEATURES:")
                 for i, (feature, importance) in enumerate(top_features, 1):
                     tprint(f"   {i:2d}. {feature}: {importance:.4f}")
-            
+
             tprint("")
             tprint("⚡ VECTORBT OPTIMIZATION SUMMARY:")
             if self.vectorbt_enabled:
@@ -2053,7 +2053,7 @@ class FinalFeatureSelectionStep:
                 tprint("   ✅ VectorBT matrix operations: Enabled")
                 tprint("   ✅ VectorBT feature importance: Enabled")
                 tprint("   ✅ VectorBT stability analysis: Enabled")
-                
+
                 # Show VectorBT performance metrics
                 try:
                     vectorbt_stats = self._get_enhanced_vectorbt_performance_stats()
@@ -2069,31 +2069,31 @@ class FinalFeatureSelectionStep:
                     tprint_warning(f"   ⚠️ Could not retrieve VectorBT metrics: {e}")
             else:
                 tprint("   ❌ VectorBT optimization: Disabled")
-            
+
             tprint("⚡ GENERAL OPTIMIZATION SUMMARY:")
             tprint("   ✅ Vectorized operations: Enabled")
             tprint("   ✅ Caching: Enabled")
             tprint("   ✅ Comprehensive logging: Enabled")
             tprint("   ✅ Multi-stage reduction: Variable→60 (mRMR/Ensemble/RFE)")
-            
+
             tprint("=" * 60)
-            
+
         except Exception as e:
             tprint(f"❌ Failed to generate summary report: {e}")
             import traceback
             tprint(f"🔍 Error details: {traceback.format_exc()}")
 
 # Convenience function for pipeline integration
-def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.DataFrame, 
+def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.DataFrame,
                                 max_mean_shift: float = 2.0) -> Dict[str, Any]:
     """
     Simple feature drift detection between training and validation sets.
-    
+
     Args:
         train_features: Training feature DataFrame
         val_features: Validation feature DataFrame
         max_mean_shift: Maximum allowed mean shift in standard deviations
-    
+
     Returns:
         Dictionary with drift detection results
     """
@@ -2101,45 +2101,44 @@ def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.D
     tprint_debug(f"   📊 Training features: {train_features.shape}")
     tprint_debug(f"   📊 Validation features: {val_features.shape}")
     tprint_debug(f"   📊 Max mean shift threshold: {max_mean_shift}")
-    
+
     drift_results = {
         'drifted_features': [],
         'drift_scores': {},
         'n_drifted': 0,
         'drift_detected': False
     }
-    
+
     common_features = list(set(train_features.columns).intersection(set(val_features.columns)))
-    
+
     for feature in common_features:
         train_data = train_features[feature].dropna()
         val_data = val_features[feature].dropna()
-        
+
         if len(train_data) < 10 or len(val_data) < 10:
             continue
-        
+
         # Calculate mean shift
         train_mean = train_data.mean()
         train_std = train_data.std()
         val_mean = val_data.mean()
-        
+
         mean_shift = abs(val_mean - train_mean) / (train_std + 1e-8)
-        
+
         # Check threshold
         if mean_shift > max_mean_shift:
             drift_results['drifted_features'].append(feature)
             drift_results['drift_scores'][feature] = float(mean_shift)
             drift_results['n_drifted'] += 1
-    
+
     drift_results['drift_detected'] = drift_results['n_drifted'] > 0
-    
+
     if drift_results['drift_detected']:
         tprint_warning(f"⚠️ Drift detected in {drift_results['n_drifted']} features")
     else:
         tprint_success(f"✅ No significant drift detected")
-    
-    return drift_results
 
+    return drift_results
 
 async def run_final_feature_selection_step(symbol: str,
                                          exchange: str,
@@ -2237,4 +2236,3 @@ async def run_final_feature_selection_step(symbol: str,
     step = FinalFeatureSelectionStep(runtime_config)
     tprint("🔄 Delegating execution to FinalFeatureSelectionStep instance")
     return await step.execute_final_feature_selection(symbol, exchange, resolved_timeframe, data_dir)
-

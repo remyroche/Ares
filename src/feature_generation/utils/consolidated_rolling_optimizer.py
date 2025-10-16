@@ -25,7 +25,7 @@ from enum import Enum
 try:
     import vectorbt as vbt
     from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, rolling_corr, rolling_cov,
         rolling_skew, rolling_kurt, rolling_quantile
     )
@@ -52,9 +52,9 @@ cp = None
 # Unified Vectorization Manager
 try:
     from ...utils.ml_common.unified_vectorization_manager import (
-        get_unified_vectorization_manager, 
-        UnifiedVectorizationManager, 
-        OperationType, 
+        get_unified_vectorization_manager,
+        UnifiedVectorizationManager,
+        OperationType,
         OptimizationStrategy,
         OperationConfig,
         OptimizationResult
@@ -123,21 +123,21 @@ class BatchRollingConfig:
 class ConsolidatedRollingOptimizer:
     """
     Consolidated rolling operations optimizer with VectorBT acceleration.
-    
+
     This class provides a unified interface for all rolling operations across
     feature generators, with automatic optimization selection and fallback handling.
     """
-    
+
     def __init__(self, config: Optional[BatchRollingConfig] = None):
         """
         Initialize the consolidated rolling optimizer.
-        
+
         Args:
             config: Configuration for batch rolling operations
         """
         self.config = config or BatchRollingConfig(operations=[])
         self.logger = logging.getLogger(__name__)
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_operations': 0,
@@ -149,10 +149,10 @@ class ConsolidatedRollingOptimizer:
             'average_time_per_operation': 0.0,
             'memory_savings_mb': 0.0
         }
-        
+
         # Initialize optimization components
         self._initialize_components()
-    
+
     def _initialize_components(self):
         """Initialize optimization components."""
         # Initialize Unified Vectorization Manager
@@ -161,7 +161,7 @@ class ConsolidatedRollingOptimizer:
         else:
             self.unified_manager = None
             self.logger.warning("Unified Vectorization Manager not available")
-        
+
         # Check GPU availability
         self.gpu_available =  self.config.enable_gpu
         if self.gpu_available:
@@ -173,87 +173,87 @@ class ConsolidatedRollingOptimizer:
             except Exception as e:
                 self.gpu_available = False
                 self.logger.warning(f"GPU not available: {e}")
-    
+
     def should_use_vectorbt(self, data_size: int) -> bool:
         """Determine if VectorBT optimization should be used."""
-        return (VECTORBT_AVAILABLE and 
+        return (VECTORBT_AVAILABLE and
                 data_size >= self.config.performance_threshold)
-    
+
     def should_use_gpu(self, data_size: int) -> bool:
         """Determine if GPU should be used for this operation."""
         return (self.gpu_available and
                 data_size >= self.config.performance_threshold * 2)
-    
-    def single_rolling_operation(self, 
-                                data: Union[pd.Series, pd.DataFrame], 
+
+    def single_rolling_operation(self,
+                                data: Union[pd.Series, pd.DataFrame],
                                 config: RollingOperationConfig) -> Union[pd.Series, pd.DataFrame]:
         """
         Perform a single rolling operation with optimization.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             config: Rolling operation configuration
-            
+
         Returns:
             Result of the rolling operation
         """
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
-        
+
         try:
             # Determine optimization strategy
             data_size = len(data) if hasattr(data, '__len__') else data.shape[0]
-            
+
             if self.should_use_vectorbt(data_size):
                 result = self._vectorbt_rolling_operation(data, config)
                 self.performance_stats['vectorbt_operations'] += 1
             else:
                 result = self._pandas_rolling_operation(data, config)
                 self.performance_stats['pandas_fallbacks'] += 1
-            
+
             # Update performance stats
             operation_time = time.time() - start_time
             self.performance_stats['total_time'] += operation_time
             self.performance_stats['average_time_per_operation'] = (
                 self.performance_stats['total_time'] / self.performance_stats['total_operations']
             )
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Rolling operation failed: {e}, using fallback")
             return self._pandas_rolling_operation(data, config)
-    
-    def batch_rolling_operations(self, 
-                                data: Union[pd.Series, pd.DataFrame], 
+
+    def batch_rolling_operations(self,
+                                data: Union[pd.Series, pd.DataFrame],
                                 configs: List[RollingOperationConfig]) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """
         Perform multiple rolling operations in batch for efficiency.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             configs: List of rolling operation configurations
-            
+
         Returns:
             Dictionary mapping operation names to results
         """
         start_time = time.time()
         self.performance_stats['batch_operations'] += 1
-        
+
         results = {}
         data_size = len(data) if hasattr(data, '__len__') else data.shape[0]
-        
+
         # Use unified manager if available and data is large enough
-        if (self.unified_manager and 
-            data_size >= self.config.performance_threshold and 
+        if (self.unified_manager and
+            data_size >= self.config.performance_threshold and
             len(configs) > 1):
-            
+
             try:
                 results = self._unified_batch_operations(data, configs)
                 return results
             except Exception as e:
                 self.logger.warning(f"Unified batch operations failed: {e}, using individual operations")
-        
+
         # Fallback to individual operations
         for i, config in enumerate(configs):
             try:
@@ -263,14 +263,14 @@ class ConsolidatedRollingOptimizer:
             except Exception as e:
                 self.logger.error(f"Batch operation {i} failed: {e}")
                 continue
-        
+
         batch_time = time.time() - start_time
         self.performance_stats['total_time'] += batch_time
-        
+
         return results
-    
-    def _vectorbt_rolling_operation(self, 
-                                   data: Union[pd.Series, pd.DataFrame], 
+
+    def _vectorbt_rolling_operation(self,
+                                   data: Union[pd.Series, pd.DataFrame],
                                    config: RollingOperationConfig) -> Union[pd.Series, pd.DataFrame]:
         """Perform rolling operation using VectorBT."""
         if config.operation == RollingOperationType.MEAN:
@@ -307,13 +307,13 @@ class ConsolidatedRollingOptimizer:
             return rolling_apply(data, config.apply_func, window=config.window, min_periods=config.min_periods)
         else:
             raise ValueError(f"Unsupported operation: {config.operation}")
-    
-    def _pandas_rolling_operation(self, 
-                                 data: Union[pd.Series, pd.DataFrame], 
+
+    def _pandas_rolling_operation(self,
+                                 data: Union[pd.Series, pd.DataFrame],
                                  config: RollingOperationConfig) -> Union[pd.Series, pd.DataFrame]:
         """Fallback rolling operation using pandas."""
         rolling_obj = data.rolling(
-            window=config.window, 
+            window=config.window,
             min_periods=config.min_periods,
             center=config.center,
             win_type=config.win_type,
@@ -322,7 +322,7 @@ class ConsolidatedRollingOptimizer:
             closed=config.closed,
             method=config.method
         )
-        
+
         if config.operation == RollingOperationType.MEAN:
             return rolling_obj.mean()
         elif config.operation == RollingOperationType.STD:
@@ -357,14 +357,14 @@ class ConsolidatedRollingOptimizer:
             return rolling_obj.apply(config.apply_func, raw=True)
         else:
             raise ValueError(f"Unsupported operation: {config.operation}")
-    
-    def _unified_batch_operations(self, 
-                                 data: Union[pd.Series, pd.DataFrame], 
+
+    def _unified_batch_operations(self,
+                                 data: Union[pd.Series, pd.DataFrame],
                                  configs: List[RollingOperationConfig]) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
         """Perform batch operations using Unified Vectorization Manager."""
         if not self.unified_manager:
             raise RuntimeError("Unified Vectorization Manager not available")
-        
+
         def batch_rolling_func(data, configs):
             """Batch rolling function for unified manager."""
             results = {}
@@ -373,7 +373,7 @@ class ConsolidatedRollingOptimizer:
                 operation_name = f"{config.operation.value}_{config.window}_{i}"
                 results[operation_name] = result
             return results
-        
+
         # Create operation config
         op_config = OperationConfig(
             operation_type=OperationType.TECHNICAL_INDICATORS,
@@ -382,7 +382,7 @@ class ConsolidatedRollingOptimizer:
             memory_budget_mb=1024.0,
             parallel_workers=None
         )
-        
+
         # Execute through unified manager
         result = self.unified_manager.optimize_operation(
             operation_type=OperationType.TECHNICAL_INDICATORS,
@@ -390,13 +390,13 @@ class ConsolidatedRollingOptimizer:
             operation_func=lambda x: batch_rolling_func(x, configs),
             config=op_config
         )
-        
+
         return result.result
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
-    
+
     def reset_performance_stats(self):
         """Reset performance statistics."""
         self.performance_stats = {
@@ -411,7 +411,7 @@ class ConsolidatedRollingOptimizer:
         }
 
 # Convenience functions
-def create_rolling_optimizer(enable_gpu: bool = True, 
+def create_rolling_optimizer(enable_gpu: bool = True,
                            enable_parallel: bool = True,
                            performance_threshold: int = 1000) -> ConsolidatedRollingOptimizer:
     """Create a rolling optimizer with specified configuration."""
@@ -429,19 +429,19 @@ def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
                            enable_gpu: bool = True) -> Dict[str, Union[pd.Series, pd.DataFrame]]:
     """
     Convenience function for batch rolling operations.
-    
+
     Args:
         data: Input data
         operations: List of operation names ('mean', 'std', 'var', etc.)
         windows: List of window sizes
         columns: List of columns to process (None for all)
-        enable_gpu: Whether to enable 
-        
+        enable_gpu: Whether to enable
+
     Returns:
         Dictionary of results
     """
     optimizer = create_rolling_optimizer(enable_gpu=enable_gpu)
-    
+
     # Create operation configs
     configs = []
     for operation in operations:
@@ -451,7 +451,7 @@ def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
                 window=window
             )
             configs.append(config)
-    
+
     return optimizer.batch_rolling_operations(data, configs)
 
 # Global instance for easy access

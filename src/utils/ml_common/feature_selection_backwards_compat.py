@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 
-
 @dataclass
 class FeatureSelectionConfig:
     """Configuration for feature selection operations."""
@@ -20,7 +19,6 @@ class FeatureSelectionConfig:
     scoring: str = "neg_mean_squared_error"
     random_state: int = 42
     n_jobs: int = -1
-
 
 class FeatureSelector:
     """Backward-compatible feature selector wrapper."""
@@ -104,12 +102,10 @@ class FeatureSelector:
         """Number of features selected."""
         return len(self.selected_features)
 
-
 # Convenience functions for backward compatibility
 def create_feature_selector(config: Optional[FeatureSelectionConfig] = None) -> FeatureSelector:
     """Create a feature selector instance."""
     return FeatureSelector(config)
-
 
 def select_features(X: pd.DataFrame, y: pd.Series,
                    method: str = "correlation",
@@ -119,7 +115,6 @@ def select_features(X: pd.DataFrame, y: pd.Series,
     selector = FeatureSelector(config)
     selector.fit(X, y)
     return selector.selected_features
-
 
 __all__ = [
     'FeatureSelector',

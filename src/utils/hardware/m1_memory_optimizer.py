@@ -80,15 +80,15 @@ class M1MemoryOptimizer:
 
         # Track objects to prevent premature garbage collection
         self.protected_objects: Set[int] = set()
-        
+
         # M1-specific compatibility flags
         self._legacy_mode = False
         self._m1_detected = self._detect_m1_system()
         self._m1_generation = self._detect_m1_generation()
-        
+
         if not self._m1_detected:
             self.logger.warning("⚠️ Non-M1 system detected - some optimizations may not be effective")
-        
+
         # Initialize M1-specific features
         self._initialize_m1_features()
 
@@ -97,10 +97,10 @@ class M1MemoryOptimizer:
         try:
             import platform
             import subprocess
-            
+
             if platform.system() != 'Darwin':
                 return False
-                
+
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
                                   capture_output=True, text=True, timeout=5)
             if result.returncode == 0:
@@ -116,7 +116,7 @@ class M1MemoryOptimizer:
         """Detect M1 chip generation for optimization purposes."""
         if not self._m1_detected:
             return "none"
-            
+
         try:
             import subprocess
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
@@ -158,7 +158,7 @@ class M1MemoryOptimizer:
                     'high': 0.80,
                     'critical': 0.90
                 })
-            
+
             self.logger.info(f"🧠 M1 Memory Optimizer initialized for {self._m1_generation.upper()}")
         else:
             self.logger.warning("⚠️ M1-specific optimizations disabled - non-M1 system detected")
@@ -210,7 +210,7 @@ class M1MemoryOptimizer:
         if not PSUTIL_AVAILABLE:
             self.memory_pressure = 0.0
             return
-            
+
         try:
             memory = psutil.virtual_memory()
             self.memory_pressure = float(memory.percent) / 100.0
@@ -243,21 +243,21 @@ class M1MemoryOptimizer:
         """Handle critical memory pressure on M1 systems."""
         if not self._m1_detected:
             return
-            
+
         try:
             # M1-specific critical memory handling
             self.logger.warning("🚨 M1 Critical memory pressure - applying aggressive cleanup")
-            
+
             # Force multiple garbage collections
             for _ in range(5):
                 gc.collect()
-            
+
             # Clear M1-specific caches
             self._clear_m1_caches()
-            
+
             # Attempt to free M1 unified memory
             self._free_m1_unified_memory()
-            
+
         except Exception as e:
             self.logger.error(f"M1 critical memory handling failed: {e}")
 
@@ -265,17 +265,17 @@ class M1MemoryOptimizer:
         """Handle high memory pressure on M1 systems."""
         if not self._m1_detected:
             return
-            
+
         try:
             # M1-specific high memory handling
             self.logger.info("⚠️ M1 High memory pressure - applying moderate cleanup")
-            
+
             # Force garbage collection
             gc.collect()
-            
+
             # Clear M1-specific caches
             self._clear_m1_caches()
-            
+
         except Exception as e:
             self.logger.error(f"M1 high memory handling failed: {e}")
 
@@ -283,7 +283,7 @@ class M1MemoryOptimizer:
         """Clear M1-specific caches and optimizations."""
         if not self._m1_detected:
             return
-            
+
         try:
             # Clear pandas cache if available
             if PANDAS_AVAILABLE and hasattr(pd, '_cache'):
@@ -308,7 +308,7 @@ class M1MemoryOptimizer:
         """Attempt to free M1 unified memory."""
         if not self._m1_detected:
             return
-            
+
         try:
             # Get current memory usage
             before = psutil.virtual_memory().used
@@ -408,7 +408,7 @@ class M1MemoryOptimizer:
         if not PSUTIL_AVAILABLE:
             gc.collect()
             return
-            
+
         try:
             # Get current memory usage
             before = psutil.virtual_memory().used
@@ -501,7 +501,7 @@ class M1MemoryOptimizer:
                 'protected_objects': len(self.protected_objects),
                 'psutil_available': False
             }
-            
+
         try:
             memory = psutil.virtual_memory()
             return {
@@ -522,18 +522,18 @@ class M1MemoryOptimizer:
 
     def load_dataframe(self, file_path: str, **kwargs):
         """Load a DataFrame from file with M1 memory optimization.
-        
+
         Args:
             file_path: Path to the data file
             **kwargs: Additional arguments passed to pandas read function
-            
+
         Returns:
             Optimized DataFrame
         """
         if not PANDAS_AVAILABLE:
             self.logger.error("Pandas not available, cannot load DataFrame")
             raise ImportError("Pandas is required to load DataFrames")
-            
+
         try:
             # Determine file type and load accordingly
             if file_path.endswith('.parquet'):
@@ -547,13 +547,13 @@ class M1MemoryOptimizer:
             else:
                 # Try to infer from file extension
                 df = pd.read_csv(file_path, **kwargs)
-            
+
             # Apply memory optimization
             optimized_df = self.optimize_dataframe_memory(df)
-            
+
             self.logger.info(f"📊 Loaded DataFrame from {file_path}: {optimized_df.shape}")
             return optimized_df
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load DataFrame from {file_path}: {e}")
             raise
@@ -561,52 +561,52 @@ class M1MemoryOptimizer:
     def optimize_dataframe(self, df):
         """Alias for optimize_dataframe_memory for compatibility."""
         return self.optimize_dataframe_memory(df)
-    
+
     def optimize_memory(self) -> Dict[str, Any]:
         """
         Optimize memory usage for M1 architecture (alias for optimize_memory_usage).
-        
+
         Returns:
             Dictionary with optimization results
         """
         return self.optimize_memory_usage(aggressive=False)
-    
+
     def optimize_memory_usage(self, aggressive: bool = False) -> Dict[str, Any]:
         """
         Optimize memory usage for M1 architecture.
-        
+
         Args:
             aggressive: Whether to use aggressive optimization
-            
+
         Returns:
             Dictionary with optimization results
         """
         start_time = time.time()
         initial_stats = self.get_memory_stats()
         initial_memory = initial_stats.get('current_mb', 0)
-        
+
         try:
             # Force garbage collection
             collected = gc.collect()
-            
+
             # Clear unnecessary caches
             if hasattr(sys, 'intern'):
                 # Clear string interning cache if possible
                 pass
-            
+
             # Optimize memory pressure monitoring
             if self.monitoring_active and aggressive:
                 self.stop_monitoring()
                 time.sleep(0.1)  # Brief pause
                 self.start_monitoring()
-            
+
             # Get final stats
             final_stats = self.get_memory_stats()
             final_memory = final_stats.get('current_mb', 0)
             memory_saved = initial_memory - final_memory
-            
+
             optimization_time = time.time() - start_time
-            
+
             result = {
                 'success': True,
                 'memory_saved_mb': memory_saved,
@@ -616,14 +616,14 @@ class M1MemoryOptimizer:
                 'gc_collected': collected,
                 'aggressive_mode': aggressive
             }
-            
+
             if memory_saved > 0:
                 self.logger.info(f"🧠 Memory optimized: {memory_saved:.1f} MB saved in {optimization_time:.3f}s")
             else:
                 self.logger.debug(f"🧠 Memory optimization completed in {optimization_time:.3f}s (no reduction)")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Memory optimization failed: {e}")
             return {
@@ -654,12 +654,12 @@ class M1MemoryOptimizer:
     def memory_checkpoint(self, checkpoint_name: str):
         """Create a memory checkpoint context manager."""
         from contextlib import contextmanager
-        
+
         @contextmanager
         def checkpoint_context():
             start_memory = self.get_current_memory_usage_mb()
             start_time = time.time()
-            
+
             try:
                 self.logger.debug(f"🧠 Memory checkpoint '{checkpoint_name}' started: {start_memory:.1f} MB")
                 yield
@@ -668,12 +668,12 @@ class M1MemoryOptimizer:
                 end_time = time.time()
                 memory_diff = end_memory - start_memory
                 time_diff = end_time - start_time
-                
+
                 if memory_diff > 10:  # Log if memory increased by more than 10MB
                     self.logger.info(f"🧠 Memory checkpoint '{checkpoint_name}' completed: +{memory_diff:.1f} MB in {time_diff:.3f}s")
                 else:
                     self.logger.debug(f"🧠 Memory checkpoint '{checkpoint_name}' completed: {memory_diff:+.1f} MB in {time_diff:.3f}s")
-        
+
         return checkpoint_context()
 
     def force_garbage_collection(self) -> None:
@@ -698,7 +698,6 @@ class M1MemoryOptimizer:
 
         self.logger.debug(f"🧹 Forced garbage collection: freed {objects_freed} objects, cleared {garbage_cleared} garbage")
 
-
 # Global instance - lazy initialization to avoid circular import issues
 _m1_memory_optimizer_instance: Optional[M1MemoryOptimizer] = None
 
@@ -707,7 +706,6 @@ m1_memory_optimizer = None
 
 # M1-specific initialization flag
 _m1_initialized = False
-
 
 def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibility_mode: str = "auto") -> M1MemoryOptimizer:
     """Get the M1 memory optimizer instance with enhanced backwards compatibility.
@@ -725,7 +723,7 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibili
         # Lazy initialization to avoid circular import issues
         if _m1_memory_optimizer_instance is None or not _m1_initialized:
             _m1_memory_optimizer_instance = M1MemoryOptimizer(
-                memory_limit_gb=memory_limit_gb, 
+                memory_limit_gb=memory_limit_gb,
                 compatibility_mode=compatibility_mode
             )
             m1_memory_optimizer = _m1_memory_optimizer_instance
@@ -750,7 +748,6 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibili
         _m1_initialized = True
         return _m1_memory_optimizer_instance
 
-
 def start_m1_memory_monitoring():
     """Start M1 memory monitoring."""
     global _m1_memory_optimizer_instance
@@ -758,13 +755,11 @@ def start_m1_memory_monitoring():
         _m1_memory_optimizer_instance = get_m1_memory_optimizer()
     _m1_memory_optimizer_instance.start_monitoring()
 
-
 def stop_m1_memory_monitoring():
     """Stop M1 memory monitoring."""
     global _m1_memory_optimizer_instance
     if _m1_memory_optimizer_instance is not None:
         _m1_memory_optimizer_instance.stop_monitoring()
-
 
 def optimize_dataframe_memory(df):
     """Optimize DataFrame memory usage."""
@@ -773,11 +768,9 @@ def optimize_dataframe_memory(df):
         _m1_memory_optimizer_instance = get_m1_memory_optimizer()
     return _m1_memory_optimizer_instance.optimize_dataframe_memory(df)
 
-
 def optimize_dataframe(df):
     """Optimize DataFrame memory usage (alias for optimize_dataframe_memory)."""
     return optimize_dataframe_memory(df)
-
 
 def optimize_memory() -> Dict[str, Any]:
     """Optimize memory usage and return statistics.
@@ -827,14 +820,12 @@ def get_memory_usage() -> Dict[str, Any]:
         _m1_memory_optimizer_instance = get_m1_memory_optimizer()
     return _m1_memory_optimizer_instance.get_memory_stats()
 
-
 def get_memory_manager() -> M1MemoryOptimizer:
     """Get memory manager instance for parallel processing."""
     global _m1_memory_optimizer_instance
     if _m1_memory_optimizer_instance is None:
         _m1_memory_optimizer_instance = get_m1_memory_optimizer()
     return _m1_memory_optimizer_instance
-
 
 def get_vectorized_processing_core() -> M1MemoryOptimizer:
     """Get vectorized processing core instance."""

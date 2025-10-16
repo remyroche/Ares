@@ -592,7 +592,6 @@ class MemoryManager:
 
         self.logger.info("Memory Manager shutdown complete")
 
-
 # Global instance for easy access
 _memory_manager_instance = None
 
@@ -609,26 +608,22 @@ def get_memory_manager(memory_limit_gb: Optional[float] = None,
 
     return _memory_manager_instance
 
-
 # Convenience functions
 def register_feature_matrix(name: str, matrix: Any, critical: bool = False) -> bool:
     """Register a feature matrix for memory tracking."""
     manager = get_memory_manager()
     return manager.register_feature_matrix(name, matrix, critical)
 
-
 def optimize_dataframe_memory(df: Any) -> Any:
     """Optimize DataFrame memory usage."""
     manager = get_memory_manager()
     return manager.optimize_dataframe(df)
-
 
 def stream_large_dataset(data_loader: Callable, batch_size: Optional[int] = None,
                         max_memory_mb: Optional[float] = None):
     """Stream large dataset in batches."""
     manager = get_memory_manager()
     return manager.stream_large_dataset(data_loader, batch_size, max_memory_mb)
-
 
 def get_memory_report() -> Dict[str, Any]:
     """Get comprehensive memory report."""

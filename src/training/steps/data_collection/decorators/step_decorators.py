@@ -67,11 +67,11 @@ class DataOperationContext:
 
 class DataOperationLogger:
     """Logger for data operations with audit trail."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.audit_log: List[Dict[str, Any]] = []
-    
+
     def log_operation(
         self,
         context: DataOperationContext,
@@ -98,9 +98,9 @@ class DataOperationLogger:
             "success": success,
             "execution_time": execution_time
         }
-        
+
         self.audit_log.append(log_entry)
-        
+
         level = logging.INFO if success else logging.ERROR
         self.logger.log(
             level,
@@ -126,7 +126,7 @@ def data_operation_protection(
 ) -> Callable[[F], F]:
     """
     Comprehensive decorator for protecting data operations.
-    
+
     Args:
         operation_type: Type of data operation
         security_level: Security level for the operation
@@ -142,10 +142,10 @@ def data_operation_protection(
         async def async_wrapper(*args, **kwargs) -> Any:
             # Extract context from function arguments
             context = _extract_context_from_args(args, kwargs, operation_type, security_level)
-            
+
             start_time = time.time()
             operation_name = f"{func.__name__}_{operation_type.value.lower()}"
-            
+
             # Setup logging
             logger = logging.getLogger(f'secure_data_operation.{func.__name__}')
             logger.info(f'🔒 Starting secure data operation: {operation_name}')
@@ -156,14 +156,14 @@ def data_operation_protection(
             logger.info(f'📋 Audit logging: {audit}')
             logger.info(f'⏱️ Timeout: {timeout_seconds}s' if timeout_seconds else '⏱️ No timeout')
             logger.info(f'🔄 Retry attempts: {retry_attempts}')
-            
+
             try:
                 # Input validation
                 if validate_inputs:
                     logger.info('🔍 Validating operation inputs...')
                     await _validate_operation_inputs(func, args, kwargs, validation_kwargs)
                     logger.info('✅ Input validation passed')
-                
+
                 # Execute operation with timeout if specified
                 logger.info('🚀 Executing operation...')
                 if timeout_seconds:
@@ -174,19 +174,19 @@ def data_operation_protection(
                     )
                 else:
                     result = await func(*args, **kwargs)
-                
+
                 logger.info('✅ Operation execution completed')
                 logger.info(f'📊 Result type: {type(result).__name__}')
-                
+
                 # Output validation
                 if validate_outputs:
                     logger.info('🔍 Validating operation outputs...')
                     await _validate_operation_outputs(result, validation_kwargs)
                     logger.info('✅ Output validation passed')
-                
+
                 execution_time = time.time() - start_time
                 logger.info(f'⏱️ Total execution time: {execution_time:.2f}s')
-                
+
                 # Log successful operation
                 if audit:
                     logger.info('📝 Logging operation to audit trail...')
@@ -198,16 +198,16 @@ def data_operation_protection(
                         execution_time = execution_time
                     )
                     logger.info('✅ Operation logged to audit trail')
-                
+
                 logger.info('✅ Secure data operation completed successfully')
                 return result
-                
+
             except Exception as e:
                 execution_time = time.time() - start_time
                 logger.error(f'❌ Secure data operation failed: {e}')
                 logger.error(f'📊 Error type: {type(e).__name__}')
                 logger.error(f'⏱️ Execution time before failure: {execution_time:.2f}s')
-                
+
                 # Log failed operation
                 if audit:
                     logger.info('📝 Logging failed operation to audit trail...')
@@ -219,7 +219,7 @@ def data_operation_protection(
                         execution_time = execution_time
                     )
                     logger.info('✅ Failed operation logged to audit trail')
-                
+
                 # Retry logic
                 if retry_attempts > 0:
                     logger.info(f'🔄 Attempting retry with {retry_attempts} attempts remaining...')
@@ -228,31 +228,31 @@ def data_operation_protection(
                     )
                 else:
                     logger.error('❌ No retry attempts remaining, raising exception')
-                
+
                 raise
-        
+
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs) -> Any:
             # Extract context from function arguments
             context = _extract_context_from_args(args, kwargs, operation_type, security_level)
-            
+
             start_time = time.time()
             operation_name = f"{func.__name__}_{operation_type.value.lower()}"
-            
+
             try:
                 # Input validation
                 if validate_inputs:
                     _validate_operation_inputs_sync(func, args, kwargs, validation_kwargs)
-                
+
                 # Execute operation
                 result = func(*args, **kwargs)
-                
+
                 # Output validation
                 if validate_outputs:
                     _validate_operation_outputs_sync(result, validation_kwargs)
-                
+
                 execution_time = time.time() - start_time
-                
+
                 # Log successful operation
                 if audit:
                     operation_logger.log_operation(
@@ -262,12 +262,12 @@ def data_operation_protection(
                         success = True,
                         execution_time = execution_time
                     )
-                
+
                 return result
-                
+
             except Exception as e:
                 execution_time = time.time() - start_time
-                
+
                 # Log failed operation
                 if audit:
                     operation_logger.log_operation(
@@ -277,21 +277,21 @@ def data_operation_protection(
                         success = False,
                         execution_time = execution_time
                     )
-                
+
                 # Retry logic
                 if retry_attempts > 0:
                     return _retry_operation_sync(
                         func, args, kwargs, retry_attempts, context, operation_name
                     )
-                
+
                 raise
-        
+
         # Return appropriate wrapper based on function type
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 def data_formatting_protection(
@@ -305,7 +305,7 @@ def data_formatting_protection(
 ) -> Callable[[F], F]:
     """
     Decorator for protecting data formatting operations.
-    
+
     Ensures data integrity and proper formatting before and after operations.
     """
     def decorator(func: F) -> F:
@@ -315,22 +315,22 @@ def data_formatting_protection(
             for arg in args:
                 if isinstance(arg, pd.DataFrame):
                     _validate_dataframe_format(
-                        arg, required_columns, data_types, min_rows, 
+                        arg, required_columns, data_types, min_rows,
                         max_null_ratio, check_duplicates, check_timestamps
                     )
-            
+
             # Execute operation
             result = func(*args, **kwargs)
-            
+
             # Post-operation validation
             if isinstance(result, pd.DataFrame):
                 _validate_dataframe_format(
                     result, required_columns, data_types, min_rows,
                     max_null_ratio, check_duplicates, check_timestamps
                 )
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -343,7 +343,7 @@ def data_analysis_protection(
 ) -> Callable[[F], F]:
     """
     Decorator for protecting data analysis operations.
-    
+
     Prevents data leakage and ensures statistical validity.
     """
     def decorator(func: F) -> F:
@@ -354,16 +354,16 @@ def data_analysis_protection(
                 for arg in args:
                     if isinstance(arg, pd.DataFrame) and temporal_column in arg.columns:
                         _check_lookahead_bias(arg, temporal_column, max_lookahead)
-            
+
             # Execute operation
             result = func(*args, **kwargs)
-            
+
             # Validate statistical properties
             if validate_statistical_properties and isinstance(result, dict):
                 _validate_statistical_properties(result)
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -375,7 +375,7 @@ def data_access_protection(
 ) -> Callable[[F], F]:
     """
     Decorator for protecting data access operations.
-    
+
     Controls access to sensitive data and operations.
     """
     def decorator(func: F) -> F:
@@ -384,22 +384,22 @@ def data_access_protection(
             # Check authentication if required
             if require_authentication:
                 _check_authentication()
-            
+
             # Check operation permissions
             if allowed_operations:
                 operation_name = func.__name__
                 if operation_name not in allowed_operations:
                     raise PermissionError(f"Operation {operation_name} not allowed")
-            
+
             # Rate limiting
             if rate_limit:
                 _check_rate_limit(func.__name__, rate_limit)
-            
+
             # Execute operation
             result = func(*args, **kwargs)
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -413,34 +413,34 @@ def step_execution_protection(
 ) -> Callable[[F], F]:
     """
     Comprehensive decorator for protecting pipeline step execution.
-    
+
     Combines multiple protection mechanisms for robust step execution.
     """
     def decorator(func: F) -> F:
         # Compose multiple decorators
         protected_func = func
-        
+
         # Add step monitoring
         protected_func = monitor_function_calls(
             step_name = step_name,
             enable_performance_monitoring = True
         )(protected_func)
-        
+
         # Add data integrity protection
         protected_func = validate_dataframe(protected_func)
-        
+
         # Add quality gate
         protected_func = log_call(step_name = step_name)(protected_func)
-        
+
         # Add pipeline step validation
         protected_func = validate_pipeline_step(
             prerequisites = prerequisites,
             outputs = outputs,
             stage = step_name
         )(protected_func)
-        
+
         return protected_func
-    
+
     return decorator
 
 # Helper functions
@@ -457,7 +457,7 @@ def _extract_context_from_args(
     exchange = kwargs.get('exchange', 'UNKNOWN')
     data_dir = kwargs.get('data_dir', 'historical_data')
     step_name = kwargs.get('step_name', 'unknown_step')
-    
+
     return DataOperationContext(
         operation_type = operation_type,
         security_level = security_level,
@@ -512,10 +512,10 @@ def _validate_dataframe_basic(df: pd.DataFrame) -> None:
     """Basic DataFrame validation."""
     if df is None:
         raise ValueError("DataFrame cannot be None")
-    
+
     if len(df) == 0:
         raise ValueError("DataFrame cannot be empty")
-    
+
     if df.isnull().all().all():
         raise ValueError("DataFrame cannot contain only null values")
 
@@ -534,29 +534,29 @@ def _validate_dataframe_format(
         missing_cols = set(required_columns) - set(df.columns)
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}")
-    
+
     # Check data types
     if data_types:
         for col, expected_type in data_types.items():
             if col in df.columns:
                 if not isinstance(df[col].iloc[0] if len(df) > 0 else None, expected_type):
                     raise ValueError(f"Column {col} has wrong data type")
-    
+
     # Check minimum rows
     if len(df) < min_rows:
         raise ValueError(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
-    
+
     # Check null ratio
     if max_null_ratio < 1.0:
         null_ratios = df.isnull().sum() / len(df)
         high_null_cols = null_ratios[null_ratios > max_null_ratio]
         if not high_null_cols.empty:
             raise ValueError(f"Columns with high null ratio: {high_null_cols.to_dict()}")
-    
+
     # Check duplicates
     if check_duplicates and df.duplicated().any():
         raise ValueError(f"Found {df.duplicated().sum()} duplicate rows")
-    
+
     # Check timestamps
     if check_timestamps and 'timestamp' in df.columns:
         if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
@@ -570,10 +570,10 @@ def _check_lookahead_bias(
     """Check for lookahead bias in time series data."""
     if temporal_column not in df.columns:
         return
-    
+
     # Sort by timestamp
     df_sorted = df.sort_values(temporal_column)
-    
+
     # Check for future data leakage
     # This is a simplified check - more sophisticated checks would be needed
     # for complex feature engineering scenarios
@@ -583,7 +583,7 @@ def _validate_statistical_properties(result: dict) -> None:
     """Validate statistical properties of analysis results."""
     if 'metrics' in result:
         metrics = result['metrics']
-        
+
         # Check for reasonable metric values
         for key, value in metrics.items():
             if isinstance(value, (int, float)):
@@ -645,16 +645,16 @@ def validate_pipeline_step(
         def wrapper(*args, **kwargs) -> Any:
             if prerequisites:
                 logging.info(f'Checking prerequisites for {func.__name__}: {prerequisites}')
-            
+
             result = func(*args, **kwargs)
-            
+
             if outputs and isinstance(result, dict):
                 missing_outputs = set(outputs) - set(result.keys())
                 if missing_outputs:
                     raise ValueError(f'Missing required outputs: {missing_outputs}')
-            
+
             return result
-        
+
         return wrapper
     return decorator
 

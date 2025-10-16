@@ -7,7 +7,6 @@ This module provides a base validator class for step validation.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-
 class BaseValidator(ABC):
     """
     Base validator class for step validation.

@@ -21,7 +21,7 @@ from .hybrid_integration import HybridModelSelector
 
 __all__ = [
     'DataDrivenModelSelector',
-    'ModelSelectorConfig', 
+    'ModelSelectorConfig',
     'ModelPerformanceMetrics',
     'RegimeModelMapping',
     'HybridModelSelector'

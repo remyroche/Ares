@@ -1,6 +1,5 @@
 """Model persistence components module."""
 
-
 __all__ = [
     "MetadataTracker",
     "ModelPersistenceStep",

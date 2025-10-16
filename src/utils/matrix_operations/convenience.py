@@ -95,7 +95,7 @@ def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
             return vectorbt_matrix_multiply(A, B)
         except Exception as e:
             logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
-    
+
     return _safe_matrix_multiply(A, B)
 
 def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
@@ -106,7 +106,7 @@ def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.nd
             return vectorbt_correlation_matrix(data)
         except Exception as e:
             logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
-    
+
     return _safe_correlation_matrix(data)
 
 def safe_matrix_inverse(matrix: 'np.ndarray') -> 'np.ndarray':
@@ -144,7 +144,7 @@ def vectorized_rolling_features(data: 'pd.DataFrame',
             return vectorbt_rolling_features(data, windows, features)
         except Exception as e:
             logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
-    
+
     return _vectorized_rolling_features(data, windows, features)
 
 def matrix_correlation_analysis(data: 'pd.DataFrame',
@@ -168,15 +168,15 @@ def batch_matrix_multiply(matrices_a: List['np.ndarray'], matrices_b: List['np.n
             return vectorbt_batch_processing(matrices_a, 'batch_matrix_multiply', matrices_b=matrices_b)
         except Exception as e:
             logger.warning(f"⚠️ VectorBT batch processing failed: {e}, falling back to standard method")
-    
+
     return _batch_matrix_multiply(matrices_a, matrices_b)
 
-def batch_feature_transformation(data: Union['np.ndarray', 'pd.DataFrame'], 
+def batch_feature_transformation(data: Union['np.ndarray', 'pd.DataFrame'],
                                transformations: List[Dict[str, Any]]) -> Union['np.ndarray', 'pd.DataFrame']:
     """Convenience function for batch feature transformation."""
     return _batch_feature_transformation(data, transformations)
 
-def batch_correlation_analysis(data: Union['np.ndarray', 'pd.DataFrame'], 
+def batch_correlation_analysis(data: Union['np.ndarray', 'pd.DataFrame'],
                              method: str = 'pearson') -> Tuple['np.ndarray', 'np.ndarray']:
     """Convenience function for batch correlation analysis."""
     return _batch_correlation_analysis(data, method)
@@ -260,7 +260,7 @@ def get_batch_optimization_stats() -> Dict[str, Any]:
     return _get_batch_optimization_stats()
 
 # Trading indicators convenience functions
-def compute_trading_indicators(data: 'pd.DataFrame', 
+def compute_trading_indicators(data: 'pd.DataFrame',
                               config: Optional[Dict[str, Any]] = None,
                               use_hardware_optimization: bool = True) -> 'pd.DataFrame':
     """Compute comprehensive trading indicators with VectorBT and hardware optimization."""
@@ -270,11 +270,11 @@ def compute_trading_indicators(data: 'pd.DataFrame',
             return vectorbt_trading_indicators(data, config)
         except Exception as e:
             logger.warning(f"⚠️ VectorBT trading indicators failed: {e}, falling back to standard method")
-    
+
     core = get_vectorized_processing_core()
     return core.compute_trading_indicators(data, config)
 
-def compute_moving_averages(data: 'pd.DataFrame', 
+def compute_moving_averages(data: 'pd.DataFrame',
                            sma_periods: List[int] = None,
                            ema_periods: List[int] = None) -> 'pd.DataFrame':
     """Compute moving averages with custom periods."""
@@ -282,12 +282,12 @@ def compute_moving_averages(data: 'pd.DataFrame',
         sma_periods = [9, 21, 50, 200]
     if ema_periods is None:
         ema_periods = [12, 26, 50]
-    
+
     config = {
         'sma_periods': sma_periods,
         'ema_periods': ema_periods
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_moving_averages(data, config)
 
@@ -303,7 +303,7 @@ def compute_momentum_indicators(data: 'pd.DataFrame',
         'macd_slow': macd_slow,
         'macd_signal': macd_signal
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_momentum_indicators(data, config)
 
@@ -317,7 +317,7 @@ def compute_volatility_indicators(data: 'pd.DataFrame',
         'bb_std': bb_std,
         'atr_period': atr_period
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_volatility_indicators(data, config)
 
@@ -329,7 +329,7 @@ def compute_volume_indicators(data: 'pd.DataFrame',
         'volume_sma_period': volume_sma_period,
         'obv_smooth': obv_smooth
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_volume_indicators(data, config)
 
@@ -339,7 +339,7 @@ def compute_trend_indicators(data: 'pd.DataFrame',
     config = {
         'adx_period': adx_period
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_trend_indicators(data, config)
 
@@ -355,7 +355,7 @@ def compute_oscillator_indicators(data: 'pd.DataFrame',
         'williams_period': williams_period,
         'cci_period': cci_period
     }
-    
+
     core = get_vectorized_processing_core()
     return core._compute_oscillator_indicators(data, config)
 
@@ -370,7 +370,7 @@ def get_hardware_performance_report() -> Optional[Dict[str, Any]]:
     core = get_vectorized_processing_core()
     return core.get_hardware_performance_report()
 
-def optimize_matrix_operation_with_hardware(data: Union['np.ndarray', 'pd.DataFrame'], 
+def optimize_matrix_operation_with_hardware(data: Union['np.ndarray', 'pd.DataFrame'],
                                           operation_func: Callable,
                                           *args, **kwargs) -> Any:
     """Optimize a matrix operation using available hardware."""
@@ -403,7 +403,7 @@ def matrix_multiply(a: 'np.ndarray', b: 'np.ndarray', use_gpu: bool = True) -> '
     else:
         return safe_matrix_multiply(a, b)
 
-def correlation_matrix(data: Union['pd.DataFrame', 'np.ndarray'], 
+def correlation_matrix(data: Union['pd.DataFrame', 'np.ndarray'],
                      method: str = 'pearson', use_gpu: bool = True) -> 'np.ndarray':
     """Convenient correlation matrix computation with GPU option."""
     if use_gpu:
@@ -440,7 +440,7 @@ def eigendecomposition(matrix: 'np.ndarray', use_gpu: bool = True) -> Tuple['np.
         ops = get_unified_matrix_operations()
         return ops.eigendecomposition(matrix)
 
-def svd_decomposition(matrix: 'np.ndarray', k: Optional[int] = None, 
+def svd_decomposition(matrix: 'np.ndarray', k: Optional[int] = None,
                      use_gpu: bool = True) -> Tuple['np.ndarray', 'np.ndarray', 'np.ndarray']:
     """Convenient SVD decomposition with GPU option."""
     if use_gpu:
@@ -467,7 +467,7 @@ def optimize_memory_usage() -> Dict[str, Any]:
 def get_performance_stats() -> Dict[str, Any]:
     """Get comprehensive performance statistics from all components."""
     stats = {}
-    
+
     # Get stats from unified operations
     try:
         ops = get_unified_matrix_operations()
@@ -475,34 +475,34 @@ def get_performance_stats() -> Dict[str, Any]:
         stats['hardware_info'] = ops.get_hardware_info()
     except Exception as e:
         stats['unified_operations_error'] = str(e)
-    
+
     # Get stats from vectorized core
     try:
         core = get_vectorized_processing_core()
         stats['vectorized_core'] = core.get_processing_stats()
     except Exception as e:
         stats['vectorized_core_error'] = str(e)
-    
+
     # Get stats from enhanced operations
     try:
         enhanced_ops = get_enhanced_matrix_operations()
         stats['enhanced_operations'] = enhanced_ops.get_performance_stats()
     except Exception as e:
         stats['enhanced_operations_error'] = str(e)
-    
+
     # Get batch optimization stats
     try:
         stats['batch_optimization'] = get_batch_optimization_stats()
     except Exception as e:
         stats['batch_optimization_error'] = str(e)
-    
+
     return stats
 
 def get_system_info() -> Dict[str, Any]:
     """Get comprehensive system information."""
     import psutil
     import platform
-    
+
     info = {
         'platform': platform.platform(),
         'python_version': platform.python_version(),
@@ -511,7 +511,7 @@ def get_system_info() -> Dict[str, Any]:
         'memory_available_gb': psutil.virtual_memory().available / (1024**3),
         'memory_percent': psutil.virtual_memory().percent
     }
-    
+
     # Add GPU info if available
     try:
         import torch
@@ -524,14 +524,14 @@ def get_system_info() -> Dict[str, Any]:
             info['gpu_available'] = False
     except ImportError:
         info['torch_available'] = False
-    
+
     # Add unified operations hardware info
     try:
         ops = get_unified_matrix_operations()
         info['unified_operations_hardware'] = ops.get_hardware_info()
     except Exception as e:
         info['unified_operations_hardware_error'] = str(e)
-    
+
     return info
 
 # Backwards compatibility aliases
@@ -570,16 +570,15 @@ class MatrixConvenience:
         """Convenient SVD with hardware optimization."""
         return svd_decomposition(matrix, k, use_gpu=use_gpu)
 
-
 def safe_matrix_operations(operation: str, *args, **kwargs):
     """
     Unified safe matrix operations interface.
-    
+
     Args:
         operation: The operation to perform ('multiply', 'correlation', 'inverse')
         *args: Arguments for the operation
         **kwargs: Keyword arguments for the operation
-    
+
     Returns:
         Result of the matrix operation
     """
@@ -592,20 +591,19 @@ def safe_matrix_operations(operation: str, *args, **kwargs):
     else:
         raise ValueError(f"Unknown operation: {operation}. Supported operations: 'multiply', 'correlation', 'inverse'")
 
-
 def validate_matrix_properties(matrix: 'np.ndarray') -> Dict[str, Any]:
     """
     Validate matrix properties for machine learning operations.
-    
+
     Args:
         matrix: Input matrix to validate
-    
+
     Returns:
         Dictionary containing validation results
     """
     if not NUMPY_AVAILABLE:
         raise ImportError("NumPy is required for matrix validation")
-    
+
     validation_results = {
         'is_finite': np.all(np.isfinite(matrix)),
         'has_nan': np.any(np.isnan(matrix)),
@@ -618,7 +616,7 @@ def validate_matrix_properties(matrix: 'np.ndarray') -> Dict[str, Any]:
         'condition_number': None,
         'rank': None
     }
-    
+
     if len(matrix.shape) == 2:
         validation_results['is_symmetric'] = np.allclose(matrix, matrix.T)
         try:
@@ -627,26 +625,25 @@ def validate_matrix_properties(matrix: 'np.ndarray') -> Dict[str, Any]:
         except np.linalg.LinAlgError:
             validation_results['condition_number'] = float('inf')
             validation_results['rank'] = 0
-    
-    return validation_results
 
+    return validation_results
 
 def optimize_matrix_computations(matrix: 'np.ndarray', operation: str = 'multiply') -> Dict[str, Any]:
     """
     Optimize matrix computations based on matrix properties.
-    
+
     Args:
         matrix: Input matrix
         operation: Type of operation to optimize for
-    
+
     Returns:
         Dictionary containing optimization recommendations
     """
     if not NUMPY_AVAILABLE:
         raise ImportError("NumPy is required for matrix optimization")
-    
+
     validation = validate_matrix_properties(matrix)
-    
+
     optimization_results = {
         'use_sparse': False,
         'use_gpu': False,
@@ -655,30 +652,29 @@ def optimize_matrix_computations(matrix: 'np.ndarray', operation: str = 'multipl
         'recommended_dtype': matrix.dtype,
         'warnings': []
     }
-    
+
     # Check for sparsity
     if len(matrix.shape) == 2:
         sparsity = np.count_nonzero(matrix) / matrix.size
         if sparsity < 0.1:  # Less than 10% non-zero elements
             optimization_results['use_sparse'] = True
             optimization_results['warnings'].append("Matrix is sparse - consider using sparse operations")
-    
+
     # Check memory usage
     if validation['memory_usage'] > 100 * 1024 * 1024:  # 100MB
         optimization_results['memory_efficient'] = True
         optimization_results['chunk_size'] = min(1000, matrix.shape[0] // 4)
         optimization_results['warnings'].append("Large matrix detected - consider chunked processing")
-    
+
     # Check condition number
     if validation['condition_number'] and validation['condition_number'] > 1e12:
         optimization_results['warnings'].append("Matrix is ill-conditioned - numerical stability issues possible")
-    
+
     # Check for NaN/Inf
     if validation['has_nan'] or validation['has_inf']:
         optimization_results['warnings'].append("Matrix contains NaN or Inf values - clean data before processing")
-    
-    return optimization_results
 
+    return optimization_results
 
 def get_enhanced_matrix_operations():
     """Legacy function for backward compatibility."""
@@ -686,16 +682,15 @@ def get_enhanced_matrix_operations():
     logger.warning("⚠️ get_enhanced_matrix_operations() is deprecated. Use get_unified_matrix_operations() instead.")
     return get_unified_matrix_operations()
 
-
 def safe_matrix_operations(operation_func, *args, **kwargs):
     """
     Safe wrapper for matrix operations with error handling.
-    
+
     Args:
         operation_func: The matrix operation function to execute
         *args: Arguments to pass to the operation function
         **kwargs: Keyword arguments to pass to the operation function
-        
+
     Returns:
         Result of the operation or None if it fails
     """
@@ -706,15 +701,14 @@ def safe_matrix_operations(operation_func, *args, **kwargs):
         logger.warning(f"Matrix operation failed: {e}")
         return None
 
-
 def validate_matrix_properties(matrix, **kwargs):
     """
     Validate matrix properties for safe operations.
-    
+
     Args:
         matrix: The matrix to validate
         **kwargs: Additional validation parameters
-        
+
     Returns:
         bool: True if matrix is valid, False otherwise
     """
@@ -729,15 +723,14 @@ def validate_matrix_properties(matrix, **kwargs):
         logger.warning(f"Matrix validation failed: {e}")
         return False
 
-
 def optimize_matrix_computations(matrix, **kwargs):
     """
     Optimize matrix computations for better performance.
-    
+
     Args:
         matrix: The matrix to optimize
         **kwargs: Additional optimization parameters
-        
+
     Returns:
         The optimized matrix or the original matrix if optimization fails
     """

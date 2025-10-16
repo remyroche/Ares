@@ -1,6 +1,6 @@
 from ....core.decorators import handles_errors
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 """Version manager component for model persistence."""
 import json
@@ -18,7 +18,7 @@ class VersionManager:
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the version manager.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -45,12 +45,12 @@ class VersionManager:
     @handles_errors(exceptions=(Exception,), default_return={}, context='version creation')
     async def create_version(self, symbol: str, exchange: str, timestamp: Optional[datetime]=None) -> Dict[str, Any]:
         """Create a new version for model storage.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timestamp: Optional timestamp (uses current time if None)
-            
+
         Returns:
             Version information dictionary
         """
@@ -138,12 +138,12 @@ class VersionManager:
     @handles_errors(exceptions=(Exception,), default_return=[], context='version listing')
     async def list_versions(self, symbol: Optional[str]=None, exchange: Optional[str]=None, status: Optional[str]=None) -> List[Dict[str, Any]]:
         """List available versions with optional filtering.
-        
+
         Args:
             symbol: Filter by symbol
             exchange: Filter by exchange
             status: Filter by status
-            
+
         Returns:
             List of version information
         """
@@ -163,10 +163,10 @@ class VersionManager:
     @handles_errors(exceptions=(Exception,), default_return = None, context='version retrieval')
     async def get_version(self, version: str) -> Optional[Dict[str, Any]]:
         """Get information for a specific version.
-        
+
         Args:
             version: Version string
-            
+
         Returns:
             Version information or None
         """
@@ -178,11 +178,11 @@ class VersionManager:
     @handles_errors(exceptions=(Exception,), default_return = None, context='latest version retrieval')
     async def get_latest_version(self, symbol: Optional[str]=None, exchange: Optional[str]=None) -> Optional[Dict[str, Any]]:
         """Get the latest version.
-        
+
         Args:
             symbol: Filter by symbol
             exchange: Filter by exchange
-            
+
         Returns:
             Latest version information or None
         """
@@ -194,11 +194,11 @@ class VersionManager:
     @handles_errors(exceptions=(Exception,), default_return = False, context='version comparison')
     async def compare_versions(self, version1: str, version2: str) -> Dict[str, Any]:
         """Compare two versions.
-        
+
         Args:
             version1: First version
             version2: Second version
-            
+
         Returns:
             Comparison results
         """
@@ -221,12 +221,12 @@ class VersionManager:
 
     async def tag_version(self, version: str, tag: str, description: Optional[str]=None) -> bool:
         """Tag a version for easy reference.
-        
+
         Args:
             version: Version to tag
             tag: Tag name
             description: Optional description
-            
+
         Returns:
             Success status
         """

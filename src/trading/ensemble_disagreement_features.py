@@ -18,17 +18,17 @@ class TradingDisagreementAnalyzer:
     Trading-specific disagreement analyzer that provides trading signals
     based on ensemble disagreement and uncertainty.
     """
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize the trading disagreement analyzer.
-        
+
         Args:
             logger: Optional logger instance
         """
         self.logger = logger or logging.getLogger(__name__)
         self.meta_feature_generator = EnsembleMetaFeatureGenerator(logger)
-        
+
         # Trading thresholds for disagreement features
         self.disagreement_thresholds = {
             'high_disagreement': 0.3,  # Above this, avoid trading
@@ -36,21 +36,21 @@ class TradingDisagreementAnalyzer:
             'confidence_threshold': 0.7,  # Minimum confidence for trading
             'direction_agreement_threshold': 0.7  # Minimum agreement for trading
         }
-    
+
     def analyze_trading_signal_reliability(
-        self, 
+        self,
         ensemble_predictions: Dict[str, Any],
         current_features: pd.DataFrame,
         is_live: bool = True
     ) -> Dict[str, Any]:
         """
         Analyze the reliability of trading signals based on ensemble disagreement.
-        
+
         Args:
             ensemble_predictions: Dict containing ensemble prediction data
             current_features: Current market features
             is_live: Whether this is for live trading or backtesting
-            
+
         Returns:
             Dict containing trading signal reliability analysis
         """
@@ -59,7 +59,7 @@ class TradingDisagreementAnalyzer:
             disagreement_features = self.meta_feature_generator.disagreement_calculator.calculate_disagreement_features_for_ensemble(
                 ensemble_predictions, is_live=is_live
             )
-            
+
             # Analyze signal reliability
             reliability_analysis = {
                 'signal_reliable': True,
@@ -70,7 +70,7 @@ class TradingDisagreementAnalyzer:
                 'risk_factors': [],
                 'disagreement_features': disagreement_features
             }
-            
+
             # Check prediction dispersion
             prediction_dispersion = disagreement_features.get('prediction_dispersion', 0.0)
             if prediction_dispersion > self.disagreement_thresholds['high_disagreement']:
@@ -84,11 +84,11 @@ class TradingDisagreementAnalyzer:
                 reliability_analysis['confidence_level'] = 'MEDIUM'
                 reliability_analysis['disagreement_level'] = 'MODERATE'
                 reliability_analysis['risk_factors'].append('Moderate prediction dispersion')
-            
+
             # Check direction conflict
             direction_conflict = disagreement_features.get('direction_conflict', 0.0)
             long_ratio = disagreement_features.get('long_ratio', 0.5)
-            
+
             if direction_conflict > self.disagreement_thresholds['high_disagreement']:
                 reliability_analysis['signal_reliable'] = False
                 reliability_analysis['recommended_action'] = 'AVOID'
@@ -98,11 +98,11 @@ class TradingDisagreementAnalyzer:
                 reliability_analysis['position_size_multiplier'] *= 0.7
                 reliability_analysis['confidence_level'] = 'MEDIUM'
                 reliability_analysis['risk_factors'].append('Moderate direction conflict')
-            
+
             # Check confidence gap
             confidence_gap = disagreement_features.get('confidence_gap', 0.0)
             max_confidence = disagreement_features.get('max_confidence', 0.0)
-            
+
             if max_confidence < self.disagreement_thresholds['confidence_threshold']:
                 reliability_analysis['signal_reliable'] = False
                 reliability_analysis['recommended_action'] = 'AVOID'
@@ -112,7 +112,7 @@ class TradingDisagreementAnalyzer:
                 reliability_analysis['position_size_multiplier'] *= 0.8
                 reliability_analysis['confidence_level'] = 'MEDIUM'
                 reliability_analysis['risk_factors'].append('Small confidence gap')
-            
+
             # Check entropy/uncertainty
             uncertainty = disagreement_features.get('uncertainty', 0.0)
             if uncertainty > 0.8:  # High uncertainty
@@ -124,21 +124,21 @@ class TradingDisagreementAnalyzer:
                 reliability_analysis['position_size_multiplier'] *= 0.6
                 reliability_analysis['confidence_level'] = 'MEDIUM'
                 reliability_analysis['risk_factors'].append('Moderate market uncertainty')
-            
+
             # Check pairwise divergence
             avg_divergence = disagreement_features.get('avg_divergence', 0.0)
             if avg_divergence > 0.5:  # High divergence between models
                 reliability_analysis['position_size_multiplier'] *= 0.7
                 reliability_analysis['confidence_level'] = 'MEDIUM'
                 reliability_analysis['risk_factors'].append('High model divergence')
-            
+
             # Final recommendation
             if reliability_analysis['position_size_multiplier'] < 0.3:
                 reliability_analysis['recommended_action'] = 'AVOID'
                 reliability_analysis['signal_reliable'] = False
-            
+
             return reliability_analysis
-            
+
         except Exception as e:
             self.logger.error(f"Error analyzing trading signal reliability: {e}")
             return {
@@ -150,9 +150,9 @@ class TradingDisagreementAnalyzer:
                 'risk_factors': ['Analysis failed'],
                 'disagreement_features': {}
             }
-    
+
     def get_trading_recommendation(
-        self, 
+        self,
         analyst_predictions: Dict[str, Any],
         tactician_predictions: Dict[str, Any],
         current_features: pd.DataFrame,
@@ -160,13 +160,13 @@ class TradingDisagreementAnalyzer:
     ) -> Dict[str, Any]:
         """
         Get comprehensive trading recommendation based on both analyst and tactician disagreement.
-        
+
         Args:
             analyst_predictions: Analyst ensemble predictions
             tactician_predictions: Tactician ensemble predictions
             current_features: Current market features
             is_live: Whether this is for live trading or backtesting
-            
+
         Returns:
             Dict containing comprehensive trading recommendation
         """
@@ -175,12 +175,12 @@ class TradingDisagreementAnalyzer:
             analyst_analysis = self.analyze_trading_signal_reliability(
                 analyst_predictions, current_features, is_live
             )
-            
+
             # Analyze tactician signal reliability
             tactician_analysis = self.analyze_trading_signal_reliability(
                 tactician_predictions, current_features, is_live
             )
-            
+
             # Combine analyses
             combined_recommendation = {
                 'analyst_analysis': analyst_analysis,
@@ -191,11 +191,11 @@ class TradingDisagreementAnalyzer:
                 'risk_factors': [],
                 'trading_decision': 'HOLD'
             }
-            
+
             # Determine overall recommendation
             analyst_reliable = analyst_analysis['signal_reliable']
             tactician_reliable = tactician_analysis['signal_reliable']
-            
+
             if analyst_reliable and tactician_reliable:
                 combined_recommendation['overall_recommendation'] = 'TRADE'
                 combined_recommendation['overall_confidence'] = 'HIGH'
@@ -214,14 +214,14 @@ class TradingDisagreementAnalyzer:
                 combined_recommendation['overall_confidence'] = 'LOW'
                 combined_recommendation['position_size_multiplier'] = 0.0
                 combined_recommendation['trading_decision'] = 'HOLD'
-            
+
             # Collect all risk factors
             combined_recommendation['risk_factors'] = (
                 analyst_analysis['risk_factors'] + tactician_analysis['risk_factors']
             )
-            
+
             return combined_recommendation
-            
+
         except Exception as e:
             self.logger.error(f"Error getting trading recommendation: {e}")
             return {
@@ -233,11 +233,11 @@ class TradingDisagreementAnalyzer:
                 'risk_factors': ['Analysis failed'],
                 'trading_decision': 'HOLD'
             }
-    
+
     def update_disagreement_thresholds(self, new_thresholds: Dict[str, float]) -> None:
         """
         Update disagreement thresholds for trading decisions.
-        
+
         Args:
             new_thresholds: Dict containing new threshold values
         """
@@ -246,20 +246,20 @@ class TradingDisagreementAnalyzer:
             self.logger.info(f"Updated disagreement thresholds: {self.disagreement_thresholds}")
         except Exception as e:
             self.logger.error(f"Error updating disagreement thresholds: {e}")
-    
+
     def get_disagreement_summary(self, disagreement_features: Dict[str, float]) -> str:
         """
         Get a human-readable summary of disagreement features.
-        
+
         Args:
             disagreement_features: Dict containing disagreement features
-            
+
         Returns:
             String summary of disagreement analysis
         """
         try:
             summary_parts = []
-            
+
             # Prediction dispersion
             dispersion = disagreement_features.get('prediction_dispersion', 0.0)
             if dispersion > 0.3:
@@ -268,7 +268,7 @@ class TradingDisagreementAnalyzer:
                 summary_parts.append("Moderate prediction dispersion - some model disagreement")
             else:
                 summary_parts.append("Low prediction dispersion - models agree well")
-            
+
             # Direction conflict
             conflict = disagreement_features.get('direction_conflict', 0.0)
             if conflict > 0.3:
@@ -277,7 +277,7 @@ class TradingDisagreementAnalyzer:
                 summary_parts.append("Moderate direction conflict - some directional disagreement")
             else:
                 summary_parts.append("Low direction conflict - consistent directional signals")
-            
+
             # Confidence gap
             gap = disagreement_features.get('confidence_gap', 0.0)
             if gap > 0.3:
@@ -286,7 +286,7 @@ class TradingDisagreementAnalyzer:
                 summary_parts.append("Moderate confidence gap - somewhat clear top prediction")
             else:
                 summary_parts.append("Low confidence gap - uncertain top prediction")
-            
+
             # Uncertainty
             uncertainty = disagreement_features.get('uncertainty', 0.0)
             if uncertainty > 0.8:
@@ -295,9 +295,9 @@ class TradingDisagreementAnalyzer:
                 summary_parts.append("Moderate market uncertainty - some scattered beliefs")
             else:
                 summary_parts.append("Low market uncertainty - focused beliefs")
-            
+
             return " | ".join(summary_parts)
-            
+
         except Exception as e:
             self.logger.error(f"Error generating disagreement summary: {e}")
             return "Unable to analyze disagreement features"

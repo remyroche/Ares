@@ -36,11 +36,11 @@ class SystemCoordinator:
     - Online Learning: Model weighting based on system performance
     - Recovery Management: Automatic recovery and fallback mechanisms
     """
-    
+
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize System Coordinator.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -97,11 +97,11 @@ class SystemCoordinator:
             if not self._validate_configuration():
                 self.logger.error("Invalid configuration for supervisor")
                 return False
-            
+
             await self._initialize_components()
             await self._setup_circuit_breakers()
             await self._initialize_enhanced_prediction_service()
-            
+
             self.is_initialized = True
             self.logger.info("✅ System Coordinator initialization completed successfully")
             return True
@@ -139,15 +139,15 @@ class SystemCoordinator:
 
     async def _setup_circuit_breakers(self) -> None:
         """Set up circuit breakers for each component."""
-        component_names = ["analyst", "strategist", "tactician", "sentinel", 
+        component_names = ["analyst", "strategist", "tactician", "sentinel",
                         "enhanced_training_manager", "risk_allocator"]
-        
+
         for component in component_names:
             self.circuit_breakers[component] = CircuitBreaker(
                 failure_threshold = self.supervisor_config.get("circuit_breaker_threshold", 5),
                 timeout = self.supervisor_config.get("circuit_breaker_timeout", 60)
             )
-        
+
         self.logger.info("Circuit breakers configured for all components")
 
     async def _initialize_enhanced_prediction_service(self) -> bool:
@@ -176,11 +176,11 @@ class SystemCoordinator:
         try:
             self.is_running = True
             self.logger.info("🚦 System Coordinator started.")
-            
+
             while self.is_running:
                 await self._perform_supervision()
                 await asyncio.sleep(self.supervision_interval)
-            
+
             return True
         except Exception as e:
             self.logger.exception(f"Error in supervisor run: {e}")
@@ -195,19 +195,19 @@ class SystemCoordinator:
 
             # Monitor system health
             health_status = await self.health_monitor.check_system_health()
-            
+
             # Monitor components
             await self._monitor_all_components()
-            
+
             # Coordinate components
             await self._coordinate_components()
-            
+
             # Update online learning
             await self._update_online_learning()
-            
+
             # Handle any failures
             await self._handle_system_failures()
-            
+
             # Update status
             self.status = {
                 "timestamp": now.isoformat(),
@@ -216,10 +216,10 @@ class SystemCoordinator:
                 "active_components": len(self.components),
                 "supervision_results": self.supervision_results,
             }
-            
+
             # Update history
             self._update_history()
-            
+
         except Exception as e:
             self.logger.error(error(f"Error in supervision: {e}"))
 
@@ -243,13 +243,13 @@ class SystemCoordinator:
         try:
             # Coordinate Analyst-Strategist
             await self._coordinate_analyst_strategist()
-            
+
             # Coordinate Strategist-Tactician
             await self._coordinate_strategist_tactician()
-            
+
             # Coordinate Training Manager
             await self._coordinate_training_manager()
-            
+
         except Exception as e:
             self.logger.error(error(f"Error coordinating components: {e}"))
 
@@ -257,20 +257,20 @@ class SystemCoordinator:
         """Coordinate Analyst and Strategist components."""
         if "analyst" not in self.components or "strategist" not in self.components:
             return
-            
+
         try:
             analyst = self.components["analyst"]
             strategist = self.components["strategist"]
-            
+
             # Share regime classification results
             if hasattr(analyst, "regime_classifier") and analyst.regime_classifier:
                 regime_info = getattr(analyst, "regime_info", {})
                 if regime_info and hasattr(strategist, "current_regime"):
                     strategist.current_regime = regime_info.get("regime")
                     strategist.regime_confidence = regime_info.get("confidence", 0.0)
-            
+
             self.logger.debug("Analyst-Strategist coordination completed")
-            
+
         except Exception as e:
             self.logger.error(error(f"Error coordinating Analyst-Strategist: {e}"))
 
@@ -278,18 +278,18 @@ class SystemCoordinator:
         """Coordinate Strategist and Tactician components."""
         if "strategist" not in self.components or "tactician" not in self.components:
             return
-            
+
         try:
             strategist = self.components["strategist"]
             tactician = self.components["tactician"]
-            
+
             # Share strategy information
             if hasattr(strategist, "current_strategy") and strategist.current_strategy:
                 if hasattr(tactician, "strategy_input"):
                     tactician.strategy_input = strategist.current_strategy
-            
+
             self.logger.debug("Strategist-Tactician coordination completed")
-            
+
         except Exception as e:
             self.logger.error(error(f"Error coordinating Strategist-Tactician: {e}"))
 
@@ -297,18 +297,18 @@ class SystemCoordinator:
         """Coordinate Enhanced Training Manager with other components."""
         if "enhanced_training_manager" not in self.components:
             return
-            
+
         try:
             training_manager = self.components["enhanced_training_manager"]
-            
+
             # Coordinate with Analyst for model updates
             if "analyst" in self.components and hasattr(training_manager, "get_enhanced_training_results"):
                 training_results = training_manager.get_enhanced_training_results()
                 if training_results and hasattr(self.components["analyst"], "update_models"):
                     await self.components["analyst"].update_models(training_results)
-            
+
             self.logger.debug("Training Manager coordination completed")
-            
+
         except Exception as e:
             self.logger.error(error(f"Error coordinating Training Manager: {e}"))
 
@@ -323,18 +323,18 @@ class SystemCoordinator:
                         await self.online_learning.update_model_performance(
                             name, metrics["performance_score"]
                         )
-            
+
         except Exception as e:
             self.logger.error(f"Error updating online learning: {e}")
 
     async def _handle_system_failures(self) -> None:
         """Handle any system failures detected."""
         health_status = self.health_monitor.get_health_status()
-        
+
         if health_status.get("errors"):
             for error_msg in health_status["errors"]:
                 self.logger.error(failed(f"System error: {error_msg}"))
-                
+
                 # Attempt recovery for critical errors
                 if "component" in error_msg:
                     # Extract component name from error message

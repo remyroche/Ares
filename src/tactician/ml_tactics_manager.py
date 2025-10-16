@@ -1,10 +1,10 @@
-from typing import List
-from typing import Any
-import pandas as pd
-from datetime import datetime
-from pathlib import Path
 from ..utils.logger import system_logger
 from ..utils.warning_symbols import invalid, warning, failed
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from typing import List
+import pandas as pd
 
 import numpy as np
 from ..core.decorators import handles_errors
@@ -669,29 +669,29 @@ class MLTacticsManager:
             predictions = {}
             for movement_type in ['micro_immediate_long', 'micro_immediate_short', 'micro_short_long', 'micro_short_short']:
                 movement_prediction = await self._generate_micro_movement_prediction(
-                    movement_type=movement_type, 
-                    market_data=market_data, 
-                    symbol=symbol, 
+                    movement_type=movement_type,
+                    market_data=market_data,
+                    symbol=symbol,
                     timeframe=timeframe
                 )
                 if movement_prediction:
                     predictions[movement_type] = movement_prediction
-            
+
             # Calculate directional analysis
             directional_analysis = self._calculate_directional_analysis(predictions)
             combined_confidence = self._calculate_combined_micro_confidence(predictions, analyst_confidence)
             green_light_signal = self._evaluate_micro_movement_signal(predictions, combined_confidence, directional_analysis)
-            
+
             result = {
-                **predictions, 
-                'combined_confidence': combined_confidence, 
+                **predictions,
+                'combined_confidence': combined_confidence,
                 'directional_analysis': directional_analysis,
-                'green_light_signal': green_light_signal, 
+                'green_light_signal': green_light_signal,
                 'metadata': {
-                    'symbol': symbol, 
-                    'timeframe': timeframe, 
-                    'generation_timestamp': datetime.now().isoformat(), 
-                    'model_type': 'tactician_micro_movement', 
+                    'symbol': symbol,
+                    'timeframe': timeframe,
+                    'generation_timestamp': datetime.now().isoformat(),
+                    'model_type': 'tactician_micro_movement',
                     'micro_movement_config': self.micro_movement_config
                 }
             }
@@ -1160,10 +1160,10 @@ class MLTacticsManager:
         """
         Generate triple barrier analysis for tactician predictions.
         Converts tactician predictions to price target format and applies triple barrier logic.
-        
+
         Args:
             predictions: Tactician predictions dictionary
-            
+
         Returns:
             dict: Triple barrier analysis results
         """
@@ -1212,13 +1212,13 @@ class MLTacticsManager:
     def _get_tactician_ml_decision_reasoning(self, cumulative_upper_confidence: float, cumulative_lower_confidence: float, threshold_met: bool, green_light: bool) -> str:
         """
         Generate human-readable decision reasoning for tactician ML predictions.
-        
+
         Args:
             cumulative_upper_confidence: Cumulative confidence for upper barrier
             cumulative_lower_confidence: Cumulative confidence for lower barrier
             threshold_met: Whether confidence threshold is met
             green_light: Whether green light decision is made
-            
+
         Returns:
             str: Decision reasoning
         """
@@ -1244,19 +1244,19 @@ class MLTacticsManager:
         """
         try:
             features = self._extract_features(market_data)
-            
+
             if self.multi_output_models.get(movement_type, {}).get('model') == 'fallback':
                 probability = self._generate_fallback_micro_probability(movement_type, features)
             else:
                 probability = self._predict_micro_movement_with_model(movement_type, features)
-            
+
             probability = np.clip(probability, 0.0, 1.0)
-            
+
             config = self.micro_movement_config.get(
-                movement_type.replace('_long', '').replace('_short', ''), 
+                movement_type.replace('_long', '').replace('_short', ''),
                 {'target': 0.003, 'timeframe': '1m', 'horizon': 'immediate'}
             )
-            
+
             return {
                 'probability': probability,
                 'movement_type': movement_type,
@@ -1284,19 +1284,19 @@ class MLTacticsManager:
             short_immediate = predictions.get('micro_immediate_short', {}).get('probability', 0.5)
             long_short = predictions.get('micro_short_long', {}).get('probability', 0.5)
             short_short = predictions.get('micro_short_short', {}).get('probability', 0.5)
-            
+
             # Calculate overall directional probabilities
             long_overall = (long_immediate + long_short) / 2
             short_overall = (short_immediate + short_short) / 2
-            
+
             # Calculate directional bias and confidence
             directional_difference = long_overall - short_overall
             directional_confidence = abs(directional_difference)
             directional_bias = 'LONG' if directional_difference > 0 else 'SHORT'
-            
+
             # Calculate opportunity asymmetry
             opportunity_asymmetry = abs(long_overall - short_overall)
-            
+
             return {
                 'long_overall_probability': long_overall,
                 'short_overall_probability': short_overall,
@@ -1341,16 +1341,16 @@ class MLTacticsManager:
                 'immediate_vs_short_ratio': {'long': 1.0, 'short': 1.0}
             },
             'green_light_signal': {
-                'signal': 'RED_LIGHT', 
-                'reason': 'Fallback mode - models not trained', 
-                'micro_immediate_long_ok': False, 
-                'micro_immediate_short_ok': False, 
-                'combined_ok': False, 
-                'combined_confidence': 0.5, 
+                'signal': 'RED_LIGHT',
+                'reason': 'Fallback mode - models not trained',
+                'micro_immediate_long_ok': False,
+                'micro_immediate_short_ok': False,
+                'combined_ok': False,
+                'combined_confidence': 0.5,
                 'thresholds': self.green_light_thresholds
             },
             'metadata': {
-                'model_type': 'fallback_micro_movement', 
+                'model_type': 'fallback_micro_movement',
                 'generation_timestamp': datetime.now().isoformat()
             }
         }
@@ -1381,29 +1381,29 @@ class MLTacticsManager:
 
             # Get position direction from context
             position_side = position_context.get('side', '').upper()
-            
+
             # Evaluate exit conditions based on position direction (immediate probabilities only)
             if position_side == 'LONG':
                 micro_immediate_prob = current_predictions.get('micro_immediate_long', {}).get('probability', 0.5)
-                
+
                 # Check if immediate probability drops below exit threshold (using adaptive thresholds)
                 immediate_exit = micro_immediate_prob <= current_thresholds['micro_immediate_long']
-                
+
             elif position_side == 'SHORT':
                 micro_immediate_prob = current_predictions.get('micro_immediate_short', {}).get('probability', 0.5)
-                
+
                 # Check if immediate probability drops below exit threshold (using adaptive thresholds)
                 immediate_exit = micro_immediate_prob <= current_thresholds['micro_immediate_short']
-                
+
             else:
                 # No position or unknown direction
                 immediate_exit = False
                 micro_immediate_prob = 0.5
-            
+
             # Check directional confidence degradation (MAIN EXIT TRIGGER for price reversals)
             directional_confidence = directional_analysis.get('directional_confidence', 0.0)
             directional_bias = directional_analysis.get('directional_bias', 'NEUTRAL')
-            
+
             # Directional reversal detection - exit when direction confidence drops OR bias changes against position
             directional_reversal = (
                 directional_confidence < current_thresholds['directional_confidence_min'] or
@@ -1413,7 +1413,7 @@ class MLTacticsManager:
 
             # Check combined confidence exit
             combined_exit = combined_confidence <= current_thresholds['combined_exit_threshold']
-            
+
             # Determine exit signal - PRIORITIZE directional reversal as main exit trigger
             if directional_reversal:
                 exit_signal = 'EXIT'
@@ -1430,7 +1430,7 @@ class MLTacticsManager:
             else:
                 exit_signal = 'HOLD'
                 reason = f'No exit signals - immediate: {micro_immediate_prob:.3f}, directional: {directional_confidence:.3f} ({directional_bias}), combined: {combined_confidence:.3f}'
-            
+
             return {
                 'exit_signal': exit_signal,
                 'reason': reason,
@@ -1498,7 +1498,6 @@ class MLTacticsManager:
         except Exception as e:
             self.logger.exception(f"❌ Adaptive threshold adjustment failed: {e}")
             return self.exit_thresholds.copy()
-
 
 class ExitStrategyOptimizer:
     """

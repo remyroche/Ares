@@ -71,7 +71,7 @@ class PipelineResult:
 class EnhancedPipelineOrchestrator:
     """
     Enhanced Pipeline Orchestrator for ML Training Pipelines.
-    
+
     This orchestrator replaces the monolithic enhanced_training_manager.py with:
     - Configuration-driven pipeline execution
     - Dependency injection for clean component management
@@ -103,13 +103,13 @@ class EnhancedPipelineOrchestrator:
     async def run(self, start_from_step: Optional[str]=None, stop_at_step: Optional[str]=None, parallel_execution: bool = True, checkpoint_interval: int = 5) -> PipelineResult:
         """
         Execute the complete pipeline.
-        
+
         Args:
             start_from_step: Step to start execution from (for resuming)
             stop_at_step: Step to stop execution at
             parallel_execution: Whether to execute independent steps in parallel
             checkpoint_interval: Save checkpoint every N steps
-            
+
         Returns:
             PipelineResult with execution details
         """
@@ -370,12 +370,12 @@ class EnhancedPipelineOrchestrator:
 def create_pipeline(config_path: Union[str, Path], environment: Optional[Environment]=None, logger: Optional[logging.Logger]=None) -> EnhancedPipelineOrchestrator:
     """
     Create a pipeline orchestrator from configuration file.
-    
+
     Args:
         config_path: Path to pipeline configuration file
         environment: Environment override
         logger: Logger instance
-        
+
     Returns:
         Configured pipeline orchestrator
     """

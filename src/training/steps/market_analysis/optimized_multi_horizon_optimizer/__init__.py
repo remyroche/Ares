@@ -20,7 +20,7 @@ from .optimization_config import OptimizationConfig, ModelType, OptimizationMeth
 
 __all__ = [
     'OptimizedTimeframeOptimizer',
-    'GridBayesianOptimizer', 
+    'GridBayesianOptimizer',
     'EnhancedValidator',
     'OptimizationConfig',
     'ModelType',

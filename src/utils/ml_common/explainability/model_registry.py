@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 
-
 class ModelType(Enum):
     """Supported model types for explainability."""
     LINEAR = "linear"
@@ -17,7 +16,6 @@ class ModelType(Enum):
     NEURAL_NETWORK = "neural_network"
     ENSEMBLE = "ensemble"
     OTHER = "other"
-
 
 @dataclass
 class ExplainabilityConfig:
@@ -30,7 +28,6 @@ class ExplainabilityConfig:
     categorical_features: Optional[List[str]] = None
     target_names: Optional[List[str]] = None
     random_state: int = 42
-
 
 class ExplainabilityRegistry:
     """Registry for explainable models and their configurations."""
@@ -114,25 +111,20 @@ class ExplainabilityRegistry:
             explainer_type=self.get_supported_explainers(model_type)[0] if self.get_supported_explainers(model_type) else "lime"
         )
 
-
 # Global registry instance
 _explainability_registry = ExplainabilityRegistry()
-
 
 def get_explainability_registry() -> ExplainabilityRegistry:
     """Get the global explainability registry instance."""
     return _explainability_registry
 
-
 def register_model_for_explainability(model_id: str, config: ExplainabilityConfig) -> None:
     """Register a model for explainability analysis."""
     _explainability_registry.register_model(model_id, config)
 
-
 def get_model_explainability_config(model_id: str) -> Optional[ExplainabilityConfig]:
     """Get the explainability configuration for a model."""
     return _explainability_registry.get_config(model_id)
-
 
 __all__ = [
     'ExplainabilityRegistry',

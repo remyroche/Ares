@@ -41,13 +41,13 @@ try:
 except ImportError as e:
     logging.warning(f"ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
-    
+
     # Define fallback classes
     class ValidationLevel:
         LAX = "lax"
         STANDARD = "standard"
         STRICT = "strict"
-    
+
     class MathValidator:
         def __init__(self, validation_level=None):
             self.validation_level = validation_level
@@ -75,7 +75,7 @@ class MLCommonConfig:
 class EnhancedMLCommonIntegration:
     """
     Enhanced ML Common Integration for Perfect NAS Regime System.
-    
+
     Integrates with existing ML common utilities for:
     - Data validation with safe math
     - Feature selection with hardware optimization
@@ -84,22 +84,22 @@ class EnhancedMLCommonIntegration:
     - Optimization utilities with serialization
     - Hardware optimization and memory management
     """
-    
+
     def __init__(self, config: MLCommonConfig = None):
         """Initialize enhanced ML common integration.
-        
+
         Args:
             config: ML common configuration
         """
         self.config = config or MLCommonConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize serialization
         if self.config.enable_serialization:
             self.serializer = UniversalSerializer()
         else:
             self.serializer = None
-        
+
         # Initialize math validator
         if self.config.enable_safe_math:
             # Convert string to ValidationLevel enum member
@@ -112,7 +112,7 @@ class EnhancedMLCommonIntegration:
             self.math_validator = MathValidator(validation_level)
         else:
             self.math_validator = None
-        
+
         # Initialize hardware optimization
         if self.config.enable_hardware_optimization:
             self._initialize_hardware_optimization()
@@ -120,7 +120,7 @@ class EnhancedMLCommonIntegration:
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
-        
+
         # Initialize ML common utilities if available
         if ML_COMMON_AVAILABLE:
             try:
@@ -136,7 +136,7 @@ class EnhancedMLCommonIntegration:
         else:
             self.logger.warning("ML common utilities not available - using fallback implementations")
             self._initialize_fallback_utilities()
-    
+
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization components."""
         try:
@@ -154,7 +154,7 @@ class EnhancedMLCommonIntegration:
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
-    
+
     def _initialize_fallback_utilities(self):
         """Initialize fallback utilities when ML common is not available."""
         self.ml_common_ops = None
@@ -162,7 +162,7 @@ class EnhancedMLCommonIntegration:
         self.feature_selection_utils = None
         self.ensemble_utils = None
         self.evaluation_utils = None
-    
+
     @timed_operation
     def validate_data(self, data: np.ndarray, data_type: str = 'market_data') -> Dict[str, Any]:
         """Validate data using enhanced validation framework with safe math."""
@@ -179,17 +179,17 @@ class EnhancedMLCommonIntegration:
                             'warnings': math_validation.warnings,
                             'data_quality_score': 0.0
                         }
-                
+
                 # Then use ML common validation framework if available
                 if self.validation_framework:
                     result = self.validation_framework.validate_data(data, data_type)
-                    
+
                     # Enhance with safe math validation
                     if self.math_validator and 'is_valid' in result and result['is_valid']:
                         # Additional checks for financial data
                         if data_type == 'market_data':
                             result = self._enhance_financial_validation(data, result)
-                    
+
                     return result
                 else:
                     # Enhanced fallback validation with safe math
@@ -201,12 +201,12 @@ class EnhancedMLCommonIntegration:
                 'errors': [f"Validation failed: {str(e)}"],
                 'data_quality_score': 0.0
             }
-    
+
     def _enhance_financial_validation(self, data: np.ndarray, base_result: Dict[str, Any]) -> Dict[str, Any]:
         """Enhance validation results with financial-specific checks."""
         try:
             enhanced_result = base_result.copy()
-            
+
             # Check for negative prices (should not occur in OHLCV data)
             if data.ndim == 2 and data.shape[1] >= 4:  # OHLC data
                 negative_prices = np.any(data < 0, axis=1).sum()
@@ -214,14 +214,14 @@ class EnhancedMLCommonIntegration:
                     enhanced_result['warnings'] = enhanced_result.get('warnings', [])
                     enhanced_result['warnings'].append(f"Found {negative_prices} records with negative prices")
                     enhanced_result['data_quality_score'] = max(0.0, enhanced_result.get('data_quality_score', 1.0) - 0.1)
-            
+
             # Check for zero volume
             if data.ndim == 2 and data.shape[1] >= 5:  # OHLCV data
                 zero_volume = (data[:, -1] == 0).sum()  # Volume is typically last column
                 if zero_volume > 0:
                     enhanced_result['warnings'] = enhanced_result.get('warnings', [])
                     enhanced_result['warnings'].append(f"Found {zero_volume} records with zero volume")
-            
+
             # Check for price relationships (High >= Low, etc.)
             if data.ndim == 2 and data.shape[1] >= 4:
                 invalid_relationships = 0
@@ -230,18 +230,18 @@ class EnhancedMLCommonIntegration:
                         invalid_relationships += 1
                     if data[i, 2] > data[i, 0] or data[i, 2] > data[i, 1] or data[i, 2] > data[i, 3]:  # Low > Open/High/Close
                         invalid_relationships += 1
-                
+
                 if invalid_relationships > 0:
                     enhanced_result['warnings'] = enhanced_result.get('warnings', [])
                     enhanced_result['warnings'].append(f"Found {invalid_relationships} records with invalid price relationships")
                     enhanced_result['data_quality_score'] = max(0.0, enhanced_result.get('data_quality_score', 1.0) - 0.2)
-            
+
             return enhanced_result
-            
+
         except Exception as e:
             self.logger.warning(f"Financial validation enhancement failed: {e}")
             return base_result
-    
+
     def _fallback_validation(self, data: np.ndarray, data_type: str) -> Dict[str, Any]:
         """Enhanced fallback validation with safe math operations."""
         try:
@@ -253,24 +253,24 @@ class EnhancedMLCommonIntegration:
                 'data_distribution': 'normal',
                 'recommendations': []
             }
-            
+
             # Basic validation checks
             if np.isnan(data).any():
                 validation_result['is_valid'] = False
                 validation_result['missing_values'] = np.isnan(data).sum()
                 validation_result['recommendations'].append('Handle missing values')
-            
+
             if np.isinf(data).any():
                 validation_result['is_valid'] = False
                 validation_result['recommendations'].append('Handle infinite values')
-            
+
             return validation_result
-                
+
         except Exception as e:
             self.logger.warning(f"Data validation failed: {e}")
             return {'is_valid': False, 'error': str(e)}
-    
-    def select_features(self, data: np.ndarray, target: np.ndarray = None, 
+
+    def select_features(self, data: np.ndarray, target: np.ndarray = None,
                        method: str = 'correlation') -> Dict[str, Any]:
         """Select features using ML common feature selection utilities."""
         try:
@@ -280,18 +280,18 @@ class EnhancedMLCommonIntegration:
                 # Fallback feature selection
                 n_features = data.shape[1]
                 selected_features = list(range(n_features))  # Select all features
-                
+
                 return {
                     'selected_features': selected_features,
                     'feature_importance': np.ones(n_features),
                     'selection_method': 'fallback',
                     'n_selected': n_features
                 }
-                
+
         except Exception as e:
             self.logger.warning(f"Feature selection failed: {e}")
             return {'selected_features': [], 'error': str(e)}
-    
+
     def create_ensemble(self, models: List[Any], method: str = 'voting') -> Any:
         """Create ensemble using ML common ensemble utilities."""
         try:
@@ -302,7 +302,7 @@ class EnhancedMLCommonIntegration:
                 class FallbackEnsemble:
                     def __init__(self, models):
                         self.models = models
-                    
+
                     def predict(self, X):
                         predictions = []
                         for model in self.models:
@@ -311,20 +311,20 @@ class EnhancedMLCommonIntegration:
                             else:
                                 pred = model(X)
                             predictions.append(pred)
-                        
+
                         # Simple voting
                         if isinstance(predictions[0], np.ndarray):
                             return np.mean(predictions, axis=0)
                         else:
                             return torch.mean(torch.stack(predictions), dim=0)
-                
+
                 return FallbackEnsemble(models)
-                
+
         except Exception as e:
             self.logger.warning(f"Ensemble creation failed: {e}")
             return None
-    
-    def evaluate_model(self, model: Any, X: np.ndarray, y: np.ndarray, 
+
+    def evaluate_model(self, model: Any, X: np.ndarray, y: np.ndarray,
                       metrics: List[str] = None) -> Dict[str, float]:
         """Evaluate model using ML common evaluation utilities."""
         try:
@@ -336,30 +336,30 @@ class EnhancedMLCommonIntegration:
                     predictions = model.predict(X)
                 else:
                     predictions = model(X)
-                
+
                 # Basic metrics
                 if isinstance(predictions, torch.Tensor):
                     predictions = predictions.detach().cpu().numpy()
-                
+
                 if isinstance(y, torch.Tensor):
                     y = y.detach().cpu().numpy()
-                
+
                 # Calculate basic metrics
                 mse = np.mean((predictions - y) ** 2)
                 mae = np.mean(np.abs(predictions - y))
                 r2 = 1 - (np.sum((y - predictions) ** 2) / np.sum((y - np.mean(y)) ** 2))
-                
+
                 return {
                     'mse': mse,
                     'mae': mae,
                     'r2': r2,
                     'rmse': np.sqrt(mse)
                 }
-                
+
         except Exception as e:
             self.logger.warning(f"Model evaluation failed: {e}")
             return {'error': str(e)}
-    
+
     def optimize_hyperparameters(self, model_class: Any, X: np.ndarray, y: np.ndarray,
                                 param_grid: Dict[str, List] = None) -> Dict[str, Any]:
         """Optimize hyperparameters using ML common optimization utilities."""
@@ -370,10 +370,10 @@ class EnhancedMLCommonIntegration:
                 # Fallback hyperparameter optimization
                 if param_grid is None:
                     param_grid = {'learning_rate': [0.001, 0.01, 0.1]}
-                
+
                 best_params = {}
                 best_score = float('inf')
-                
+
                 # Simple grid search
                 for param_name, param_values in param_grid.items():
                     for param_value in param_values:
@@ -381,31 +381,31 @@ class EnhancedMLCommonIntegration:
                         if hasattr(model_class, '__init__'):
                             try:
                                 model = model_class(**{param_name: param_value})
-                                
+
                                 # Simple evaluation
                                 if hasattr(model, 'fit'):
                                     model.fit(X, y)
-                                
+
                                 if hasattr(model, 'predict'):
                                     predictions = model.predict(X)
                                     score = np.mean((predictions - y) ** 2)
-                                    
+
                                     if score < best_score:
                                         best_score = score
                                         best_params[param_name] = param_value
                             except Exception:
                                 continue
-                
+
                 return {
                     'best_params': best_params,
                     'best_score': best_score,
                     'optimization_method': 'fallback_grid_search'
                 }
-                
+
         except Exception as e:
             self.logger.warning(f"Hyperparameter optimization failed: {e}")
             return {'error': str(e)}
-    
+
     def create_search_space(self, param_ranges: Dict[str, Tuple[float, float]]) -> Dict[str, Any]:
         """Create search space for optimization."""
         try:
@@ -421,12 +421,12 @@ class EnhancedMLCommonIntegration:
                         'type': 'continuous'
                     }
                 return search_space
-                
+
         except Exception as e:
             self.logger.warning(f"Search space creation failed: {e}")
             return {}
-    
-    def build_optimization_grid(self, search_space: Dict[str, Any], 
+
+    def build_optimization_grid(self, search_space: Dict[str, Any],
                                grid_size: int = 10) -> List[Dict[str, Any]]:
         """Build optimization grid using ML common utilities."""
         try:
@@ -435,13 +435,13 @@ class EnhancedMLCommonIntegration:
             else:
                 # Fallback grid building
                 grid_points = []
-                
+
                 for param_name, param_config in search_space.items():
                     if param_config.get('type') == 'continuous':
                         min_val = param_config['min']
                         max_val = param_config['max']
                         values = np.linspace(min_val, max_val, grid_size)
-                        
+
                         if not grid_points:
                             grid_points = [{param_name: val} for val in values]
                         else:
@@ -452,13 +452,13 @@ class EnhancedMLCommonIntegration:
                                     new_point[param_name] = val
                                     new_points.append(new_point)
                             grid_points = new_points
-                
+
                 return grid_points
-                
+
         except Exception as e:
             self.logger.warning(f"Optimization grid building failed: {e}")
             return []
-    
+
     def get_validation_metrics(self) -> Dict[str, Any]:
         """Get validation metrics from ML common integration."""
         try:
@@ -477,7 +477,7 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Validation metrics collection failed: {e}")
             return {}
-    
+
     def get_feature_selection_metrics(self) -> Dict[str, Any]:
         """Get feature selection metrics from ML common integration."""
         try:
@@ -496,7 +496,7 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Feature selection metrics collection failed: {e}")
             return {}
-    
+
     def get_ensemble_metrics(self) -> Dict[str, Any]:
         """Get ensemble metrics from ML common integration."""
         try:
@@ -515,7 +515,7 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Ensemble metrics collection failed: {e}")
             return {}
-    
+
     def get_evaluation_metrics(self) -> Dict[str, Any]:
         """Get evaluation metrics from ML common integration."""
         try:
@@ -534,7 +534,7 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Evaluation metrics collection failed: {e}")
             return {}
-    
+
     def get_optimization_metrics(self) -> Dict[str, Any]:
         """Get optimization metrics from ML common integration."""
         try:
@@ -553,7 +553,7 @@ class EnhancedMLCommonIntegration:
         except Exception as e:
             self.logger.warning(f"Optimization metrics collection failed: {e}")
             return {}
-    
+
     def get_all_metrics(self) -> Dict[str, Any]:
         """Get all metrics from ML common integration."""
         return {

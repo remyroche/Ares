@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
 class EnsembleMethod(Enum):
     """Enum for ensemble gathering methods."""
 
@@ -19,7 +18,6 @@ class EnsembleMethod(Enum):
     WEIGHTED_AVERAGE = "weighted_average"
     META_LEARNER = "meta_learner"
     CONFIDENCE_WEIGHTED = "confidence_weighted"
-
 
 @dataclass
 class EnsembleConfig:
@@ -60,11 +58,9 @@ class EnsembleConfig:
     stability_threshold: float = 0.8
     stability_lookback_periods: int = 10
 
-
 def get_ensemble_config() -> EnsembleConfig:
     """Get ensemble configuration."""
     return EnsembleConfig()
-
 
 def get_ensemble_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for ensemble optimization."""

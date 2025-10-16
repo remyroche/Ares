@@ -1,6 +1,6 @@
 from typing import Dict, Optional, Any
-import logging
 import asyncio
+import logging
 
 from src.utils.unified_cache import UnifiedCache, cached
 
@@ -8,12 +8,10 @@ from src.utils.unified_cache import UnifiedCache, cached
 
 logger = logging.getLogger(__name__)
 
-
 """
 NOTE: This module now only provides IntelligentCache. Use src.utils.unified_cache
 for the core UnifiedCache and decorators (cached).
 """
-
 
 class IntelligentCache:
     """Async-friendly cache wrapper built on UnifiedCache.
@@ -58,7 +56,6 @@ class IntelligentCache:
 
     def get_stats(self) -> Dict[str, Any]:
         return self._cache.get_stats()
-
 
 # Export the cached decorator as intelligent_caching for backwards compatibility
 intelligent_caching = cached

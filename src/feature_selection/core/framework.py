@@ -24,48 +24,45 @@ logger = logging.getLogger(__name__)
 # Global VectorBT framework instance
 _GLOBAL_VECTORBT_FRAMEWORK: Optional[VectorBTUnifiedFramework] = None
 
-
 def get_feature_selection_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
     """
     Get a global instance of the VectorBT feature selection framework.
-    
+
     Args:
         config: Optional configuration dictionary
-        
+
     Returns:
         VectorBTUnifiedFramework instance
     """
     tprint("🚀 Getting VectorBT feature selection framework")
     global _GLOBAL_VECTORBT_FRAMEWORK
-    
+
     if _GLOBAL_VECTORBT_FRAMEWORK is None:
         tprint("🔧 Initializing new VectorBT feature selection framework")
-        
+
         # Convert dict config to VectorBT config if provided
         vectorbt_config = None
         if config:
             vectorbt_config = VectorBTFeatureSelectionConfig.from_dict(config)
-        
+
         _GLOBAL_VECTORBT_FRAMEWORK = create_vectorbt_unified_framework(vectorbt_config)
         tprint_success("✅ VectorBT framework initialized successfully")
-    
-    return _GLOBAL_VECTORBT_FRAMEWORK
 
+    return _GLOBAL_VECTORBT_FRAMEWORK
 
 def _ensure_feature_names(X: Union[np.ndarray, pd.DataFrame], feature_names: Optional[List[str]]) -> Tuple[np.ndarray, List[str]]:
     """Ensure feature names are available."""
     tprint_debug("🔍 Ensuring feature names are available")
-    
+
     if hasattr(X, "values"):
         X_np = X.values
         names = feature_names or list(getattr(X, "columns"))
     else:
         X_np = np.asarray(X)
         names = feature_names or [f"feature_{i}" for i in range(X_np.shape[1])]
-    
+
     tprint_debug(f"📊 Feature matrix shape: {X_np.shape}, {len(names)} feature names")
     return X_np, names
-
 
 def select_features(
     X: Union[np.ndarray, pd.DataFrame],
@@ -79,7 +76,7 @@ def select_features(
 ) -> Dict[str, Any]:
     """
     Unified VectorBT feature selection API.
-    
+
     Args:
         X: Feature matrix (np.ndarray or pandas DataFrame)
         y: Target vector
@@ -89,24 +86,24 @@ def select_features(
         feature_names: Optional list of feature names
         framework_config: Optional configuration for the VectorBT framework
         **kwargs: Additional method-specific parameters
-        
+
     Returns:
         Dictionary with selection results
     """
     tprint(f"🚀 Starting VectorBT feature selection: method={method}, max_features={max_features}")
-    
+
     try:
         # Get VectorBT framework
         framework = get_feature_selection_framework(framework_config)
-        
+
         # Normalize inputs
         X_np, names = _ensure_feature_names(X, feature_names)
         y_arr = np.asarray(y)
-        
+
         # Map legacy method names to VectorBT methods
         method_mapping = {
             "auto": "auto",
-            "comprehensive": "comprehensive", 
+            "comprehensive": "comprehensive",
             "filter": "correlation",
             "correlation": "correlation",
             "mutual_info": "mutual_information",
@@ -117,10 +114,10 @@ def select_features(
             "rfe": "rfe",
             "adaptive": "adaptive"
         }
-        
+
         vectorbt_method = method_mapping.get(method, method)
         tprint_debug(f"📊 Mapped method '{method}' to VectorBT method '{vectorbt_method}'")
-        
+
         # Perform feature selection using VectorBT
         result = framework.select_features(
             X=X_np,
@@ -130,11 +127,11 @@ def select_features(
             feature_names=names,
             **kwargs
         )
-        
+
         # Convert VectorBT result to expected format
         if result.success:
             tprint_success(f"✅ VectorBT selection completed: {result.n_selected}/{result.n_total} features selected")
-            
+
             return {
                 'success': True,
                 'selected_features': result.selected_features,
@@ -160,11 +157,11 @@ def select_features(
                 'method': result.method,
                 'execution_time': result.execution_time
             }
-            
+
     except Exception as e:
         tprint_warning(f"⚠️ Feature selection failed: {e}")
         logger.error(f"Feature selection error: {e}")
-        
+
         return {
             'success': False,
             'error': str(e),
@@ -177,7 +174,6 @@ def select_features(
             'execution_time': 0.0
         }
 
-
 def benchmark_methods(
     X: Union[np.ndarray, pd.DataFrame],
     y: Union[np.ndarray, pd.Series, List[float], List[int]],
@@ -187,27 +183,27 @@ def benchmark_methods(
 ) -> Dict[str, Any]:
     """
     Benchmark all VectorBT feature selection methods.
-    
+
     Args:
         X: Feature matrix
         y: Target vector
         max_features: Maximum features to select
         feature_names: Optional list of feature names
         framework_config: Optional configuration
-        
+
     Returns:
         Dictionary with benchmark results
     """
     tprint("🚀 Starting VectorBT method benchmarking")
-    
+
     try:
         # Get VectorBT framework
         framework = get_feature_selection_framework(framework_config)
-        
+
         # Normalize inputs
         X_np, names = _ensure_feature_names(X, feature_names)
         y_arr = np.asarray(y)
-        
+
         # Run benchmark
         result = framework.benchmark_methods(
             X=X_np,
@@ -215,42 +211,41 @@ def benchmark_methods(
             k=max_features,
             feature_names=names
         )
-        
+
         if result['success']:
             tprint_success(f"✅ Benchmarking completed: {result['n_successful']}/{result['n_methods_tested']} methods successful")
         else:
             tprint_warning(f"⚠️ Benchmarking failed: {result.get('error', 'Unknown error')}")
-        
+
         return result
-        
+
     except Exception as e:
         tprint_warning(f"⚠️ Benchmarking failed: {e}")
         logger.error(f"Benchmarking error: {e}")
-        
+
         return {
             'success': False,
             'error': str(e),
             'benchmark_results': {}
         }
 
-
 def get_performance_stats() -> Dict[str, Any]:
     """Get performance statistics from the VectorBT framework."""
     tprint("📊 Getting VectorBT performance statistics")
-    
+
     try:
         framework = get_feature_selection_framework()
         stats = framework.get_performance_stats()
-        
+
         tprint_performance(f"📊 VectorBT Performance: {stats['total_selections']} total selections, "
                          f"{stats['success_rate']:.2%} success rate")
-        
+
         return stats
-        
+
     except Exception as e:
         tprint_warning(f"⚠️ Failed to get performance stats: {e}")
         logger.error(f"Performance stats error: {e}")
-        
+
         return {
             'total_selections': 0,
             'successful_selections': 0,
@@ -260,7 +255,6 @@ def get_performance_stats() -> Dict[str, Any]:
             'error': str(e)
         }
 
-
 def reset_framework():
     """Reset the global framework instance."""
     tprint("🔄 Resetting VectorBT framework")
@@ -268,13 +262,11 @@ def reset_framework():
     _GLOBAL_VECTORBT_FRAMEWORK = None
     tprint_success("✅ Framework reset complete")
 
-
 # Legacy compatibility functions
 def get_enhanced_framework(config: Optional[Dict[str, Any]] = None) -> VectorBTUnifiedFramework:
     """Legacy compatibility function."""
     tprint("⚠️ Using legacy get_enhanced_framework - consider using get_feature_selection_framework")
     return get_feature_selection_framework(config)
-
 
 def enhanced_select_features(
     X: Union[np.ndarray, pd.DataFrame],
@@ -286,7 +278,6 @@ def enhanced_select_features(
     """Legacy compatibility function."""
     tprint("⚠️ Using legacy enhanced_select_features - consider using select_features")
     return select_features(X, y, method, max_features, **kwargs)
-
 
 def run_comprehensive_feature_selection(
     X: Union[np.ndarray, pd.DataFrame],

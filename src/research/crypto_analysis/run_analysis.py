@@ -58,12 +58,12 @@ def main():
                        help="Only validate configuration and exit")
     parser.add_argument("--config-summary", action="store_true",
                        help="Show configuration summary and exit")
-    
+
     args = parser.parse_args()
-    
+
     # Print banner
     print_banner()
-    
+
     # Validate configuration
     errors = validate_config()
     if errors:
@@ -71,20 +71,20 @@ def main():
         for error in errors:
             print(f"  • {error}")
         return 1
-    
+
     # Show configuration summary if requested
     if args.config_summary:
         print_configuration()
         return 0
-    
+
     # Validate only if requested
     if args.validate_only:
         print("✅ Configuration is valid")
         return 0
-    
+
     # Create directories
     create_directories()
-    
+
     # Update configuration with command line arguments
     DATA_CONFIG["years"] = args.years
     DATA_CONFIG["output_dir"] = args.output_dir
@@ -92,10 +92,10 @@ def main():
     API_CONFIG["binance_api_key"] = args.api_key
     API_CONFIG["binance_api_secret"] = args.api_secret
     HARDWARE_CONFIG["use_m1_optimizations"] = not args.no_hardware_optimization
-    
+
     # Print configuration
     print_configuration()
-    
+
     # Run the analysis
     async def run_analysis():
         """Run the analysis pipeline."""
@@ -105,18 +105,18 @@ def main():
                 data_dir=args.data_dir,
                 output_dir=args.output_dir
             )
-            
+
             # Update assets if specified
             if args.assets != ASSETS:
                 processor.assets = args.assets
-            
+
             # Run the pipeline
             results = await processor.process_all_assets(
                 years=args.years,
                 api_key=args.api_key,
                 api_secret=args.api_secret
             )
-            
+
             # Print final results
             print("\n" + "=" * 80)
             print("🎉 ENHANCED ANALYSIS COMPLETED")
@@ -124,7 +124,7 @@ def main():
             print(f"✅ Successfully processed: {results['summary']['successfully_processed']}/{results['summary']['total_assets']} assets")
             print(f"📊 Success rate: {results['summary']['success_rate']:.1f}%")
             print(f"📁 Results saved to: {args.output_dir}")
-            
+
             # Show optimization status if available
             if "optimization_status" in results:
                 opt_status = results["optimization_status"]
@@ -136,26 +136,26 @@ def main():
                 print(f"   GPU Acceleration: {'✅' if opt_status['gpu_acceleration_enabled'] else '❌'}")
                 print(f"   CPU Optimization: {'✅' if opt_status['cpu_optimization_enabled'] else '❌'}")
                 print(f"   Enhanced Processing: {'✅' if results.get('enhanced_processing', False) else '❌'}")
-            
+
             if results['assets_processed']:
                 print("\n📈 Processed assets:")
                 for asset in results['assets_processed']:
                     metrics = results['all_metrics'][asset]
                     print(f"  • {asset}: {metrics['price_metrics']['total_return']*100:.2f}% return, "
                           f"{metrics['price_metrics']['price_volatility']*100:.2f}% volatility")
-            
+
             if results['assets_failed']:
                 print("\n❌ Failed assets:")
                 for failed in results['assets_failed']:
                     print(f"  • {failed['asset']}: {failed['error']}")
-            
+
             print(f"\n📊 Check the following directories:")
             print(f"  • {args.output_dir}/reports/ - Human-readable reports and detailed metrics")
             print(f"  • {args.output_dir}/csv/ - CSV files for further analysis")
             print(f"  • {args.output_dir}/charts/ - Visualization charts")
-            
+
             return 0
-            
+
         except KeyboardInterrupt:
             print("\n⚠️ Analysis interrupted by user")
             return 1
@@ -170,7 +170,7 @@ def main():
                 processor.cleanup()
             except:
                 pass
-    
+
     # Run the async analysis
     return asyncio.run(run_analysis())
 

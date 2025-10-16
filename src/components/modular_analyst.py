@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 from datetime import datetime
 from typing import Any
 
@@ -18,7 +17,6 @@ import logging
 import time
 
 # src/components/modular_analyst.py
-
 
 class ModularAnalyst:
     """
@@ -863,10 +861,8 @@ class ModularAnalyst:
         except Exception as e:
             self.logger.exception(error(f"Error stopping modular analyst: {e}"))
 
-
 # Global modular analyst instance
 modular_analyst: ModularAnalyst | None = None
-
 
 async def setup_modular_analyst(
     config: dict[str, Any] | None = None,

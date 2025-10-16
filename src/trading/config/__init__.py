@@ -14,6 +14,6 @@ from .regime_config import RegimeConfig
 
 __all__ = [
     "TradingConfig",
-    "ExecutionConfig", 
+    "ExecutionConfig",
     "RegimeConfig"
 ]

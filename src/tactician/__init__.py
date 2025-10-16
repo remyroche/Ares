@@ -3,7 +3,6 @@
 
 # src/tactician/__init__.py
 
-
 __all__ = [
     "Tactician",
     "setup_tactician",

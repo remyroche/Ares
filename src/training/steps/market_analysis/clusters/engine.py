@@ -35,7 +35,6 @@ from .iterative_optimization import IterativeOptimization, ClusteringStats
 from .optimizer import ClusteringOptimizer
 from .metrics import ClusteringMetrics
 
-
 @dataclass
 class EngineConfig:
     """Configuration for the clustering engine."""
@@ -63,7 +62,6 @@ class EngineConfig:
     # Logging and reporting
     verbose: bool = True
     generate_detailed_reports: bool = True
-
 
 class ClusteringEngine:
     """

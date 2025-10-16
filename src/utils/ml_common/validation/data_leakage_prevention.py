@@ -154,15 +154,15 @@ class DataLeakagePrevention:
             if len(data.shape) == 1:
                 data = data.reshape(-1, 1)
             df = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(n_features)])
-            
+
             # Add timestamp column if not present
             if timestamp_column not in df.columns:
                 df[timestamp_column] = pd.date_range('2020-01-01', periods=len(df), freq='1H')
-            
+
             data = df
         elif not isinstance(data, pd.DataFrame):
             raise ValueError(f"Data must be pandas DataFrame or numpy array, got {type(data)}")
-        
+
         report = LeakageReport(dataset_name=dataset_name)
         report.total_samples = len(data)
         report.timestamp_columns = [timestamp_column]
@@ -262,17 +262,17 @@ class DataLeakagePrevention:
                 if len(data.shape) == 1:
                     data = data.reshape(-1, 1)
                 df = pd.DataFrame(data, columns=[f'feature_{i}' for i in range(n_features)])
-                
+
                 # Add labels if provided
                 if labels is not None:
                     df['target'] = labels
-                
+
                 # Add timestamp column
                 df['timestamp'] = pd.date_range('2020-01-01', periods=len(df), freq='1H')
                 data = df
             elif not isinstance(data, pd.DataFrame):
                 raise ValueError(f"Data must be pandas DataFrame or numpy array, got {type(data)}")
-            
+
             # Use timestamp column if available, otherwise use index
             timestamp_column = None
             for col in data.columns:

@@ -15,7 +15,7 @@ from .unified_optimizer import (
     optimize_feature_lookback,
     get_optimization_config,
     get_default_config,
-    
+
     # Backward compatibility aliases
     LookbackOptimizer,
     OptimizationSystemConfig
@@ -23,13 +23,13 @@ from .unified_optimizer import (
 
 __all__ = [
     'FeatureGenerationOptimizer',
-    'FeatureOptimizationConfig', 
+    'FeatureOptimizationConfig',
     'FeatureOptimizationResult',
     'OptimizationMethod',
     'ValidationLevel',
     'OptimizationConfigManager',
     'get_feature_optimizer',
-    'optimize_feature_lookback', 
+    'optimize_feature_lookback',
     'get_optimization_config',
     'get_default_config',
     'LookbackOptimizer',

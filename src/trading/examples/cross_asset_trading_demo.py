@@ -1,8 +1,7 @@
-import asyncio
 from typing import Any, Dict
+import asyncio
 
 from ..cross_asset.cross_asset_trading_manager import start_cross_asset_trading
-
 
 async def main():
     symbols = ["ETH", "BTC", "SOL", "ADA"]
@@ -29,7 +28,5 @@ async def main():
     finally:
         await manager.stop()
 
-
 if __name__ == "__main__":
     asyncio.run(main())
-

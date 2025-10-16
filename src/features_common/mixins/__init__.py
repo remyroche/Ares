@@ -14,7 +14,7 @@ from .monitoring_mixin import MonitoringMixin
 
 __all__ = [
     'OptimizationMixin',
-    'PerformanceMixin', 
+    'PerformanceMixin',
     'VectorBTMixin',
     'ValidationMixin',
     'CachingMixin',

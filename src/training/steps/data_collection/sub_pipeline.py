@@ -127,7 +127,7 @@ class SubPipelineConfig:
     data_locator: Optional[DataLocator] = None
     data_dir_key: str = "market_data"
     cache_dir_key: str = "default"
-    
+
     # Direction control (optional, not used by data collection but accepted for compatibility)
     enable_long_positions: bool = True
     enable_short_positions: bool = True
@@ -206,11 +206,11 @@ class SubPipelineResult:
 class DataCollectionSubPipeline:
     """
     Unified Data Collection Sub-Pipeline Manager.
-    
+
     Provides comprehensive data collection, validation, conversion, and processing
     using unified components with different execution modes and monitoring.
     """
-    
+
     def __init__(self, config: Optional[SubPipelineConfig] = None):
         """Initialize the unified data collection sub-pipeline."""
         self.config = config or SubPipelineConfig()
@@ -230,12 +230,12 @@ class DataCollectionSubPipeline:
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
-        
+
         # Initialize advanced systems
         self.error_recovery = get_error_recovery()
         self.streaming_processor = get_streaming_processor()
         self.quality_scorer = get_quality_scorer()
-        
+
         # Initialize unified components
         if UNIFIED_COMPONENTS_AVAILABLE:
             self.downloader = UnifiedDataDownloader(self.config.data_dir)
@@ -254,7 +254,7 @@ class DataCollectionSubPipeline:
             self.resampler = None
             self.gap_filler = None
             self.validators = {}
-        
+
         # Initialize sub-pipeline registry
         self.sub_pipelines = {
             'data_download': self._data_download_pipeline,
@@ -270,7 +270,7 @@ class DataCollectionSubPipeline:
             'data_monitoring': self._data_monitoring_pipeline,
             'data_export': self._data_export_pipeline
         }
-    
+
     def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
         try:
             level = getattr(logging, str(logging_cfg.level).upper(), logging.INFO)
@@ -297,33 +297,33 @@ class DataCollectionSubPipeline:
     ) -> SubPipelineResult:
         """
         Execute a specific sub-pipeline.
-        
+
         Args:
             sub_pipeline_name: Name of the sub-pipeline to execute
             config: Optional configuration override
-            
+
         Returns:
             SubPipelineResult with execution details
         """
         config = config or self.config
         self._prepare_filesystem(config)
         self.logger.info(f"🚀 Starting sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
-        
+
         start_time = datetime.now()
         result = SubPipelineResult(
             sub_pipeline_name=sub_pipeline_name,
             status=SubPipelineStatus.RUNNING,
             start_time=start_time
         )
-        
+
         try:
             if sub_pipeline_name not in self.sub_pipelines:
                 raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-            
+
             # Execute the sub-pipeline
             pipeline_func = self.sub_pipelines[sub_pipeline_name]
             artifacts = await pipeline_func(config)
-            
+
             # Update result
             end_time = datetime.now()
             result.status = SubPipelineStatus.COMPLETED
@@ -336,21 +336,21 @@ class DataCollectionSubPipeline:
                 'exchange': config.exchange,
                 'timeframe': config.timeframe
             }
-            
+
             self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed in {result.duration_seconds:.2f}s")
-            
+
         except Exception as e:
             end_time = datetime.now()
             result.status = SubPipelineStatus.FAILED
             result.end_time = end_time
             result.duration_seconds = (end_time - start_time).total_seconds()
             result.error_message = str(e)
-            
+
             self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed: {e}")
-        
+
         self.results.append(result)
         return result
-    
+
     async def execute_multiple_sub_pipelines(
         self,
         sub_pipeline_names: List[str],
@@ -359,19 +359,19 @@ class DataCollectionSubPipeline:
     ) -> List[SubPipelineResult]:
         """
         Execute multiple sub-pipelines.
-        
+
         Args:
             sub_pipeline_names: List of sub-pipeline names to execute
             config: Optional configuration override
             sequential: Whether to execute sequentially or in parallel
-            
+
         Returns:
             List of SubPipelineResult objects
         """
         config = config or self.config
         self._prepare_filesystem(config)
         self.logger.info(f"🚀 Starting {len(sub_pipeline_names)} sub-pipelines (sequential: {sequential})")
-        
+
         if sequential:
             results = []
             for name in sub_pipeline_names:
@@ -385,7 +385,7 @@ class DataCollectionSubPipeline:
             # Execute in parallel
             tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
             return await asyncio.gather(*tasks, return_exceptions=True)
-    
+
     # Sub-pipeline implementations
     @log_important_calls
     @with_error_recovery(service_name="data_download")
@@ -445,13 +445,13 @@ class DataCollectionSubPipeline:
                 start_date=start_date,
                 end_date=end_date
             )
-            
+
             if klines_success and klines_data:
                 # Save klines data
                 klines_file = f"klines_{config.exchange}_{config.symbol}_{config.timeframe}_raw.parquet"
                 klines_path = os.path.join(config.data_dir, klines_file)
                 os.makedirs(config.data_dir, exist_ok=True)
-                
+
                 klines_df = pd.DataFrame(klines_data)
                 standardized_parquet_handler.write_parquet_standardized(klines_df, klines_path, index=False)
                 artifacts['downloaded_files'].append(klines_file)
@@ -459,9 +459,9 @@ class DataCollectionSubPipeline:
                 self.logger.info(f"✅ Downloaded {len(klines_data)} klines records")
             else:
                 self.logger.warning(f"⚠️ Klines download failed: {klines_error}")
-            
+
             # NOTE: Only downloading klines data as per new setup - aggtrades and futures removed
-            
+
             # Get download statistics
             artifacts['download_stats'] = self.downloader.get_download_stats()
             artifacts['exchange_info'] = {
@@ -470,17 +470,17 @@ class DataCollectionSubPipeline:
                 'timeframe': config.timeframe,
                 'download_period': f"{start_date} to {end_date}"
             }
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data download pipeline: {e}")
             return await self._fallback_data_download(config)
-        
+
         # Log completion
         self.logger.info("🎉 DATA DOWNLOAD SUB-PIPELINE COMPLETED SUCCESSFULLY!")
         self.logger.info(f"📁 Downloaded Files: {artifacts['downloaded_files']}")
         self.logger.info(f"📊 Data Types: {artifacts['data_types']}")
         self.logger.info(f"📈 Download Stats: {artifacts['download_stats']}")
-        
+
         return artifacts
 
     async def _use_existing_data_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
@@ -566,24 +566,24 @@ class DataCollectionSubPipeline:
         self.logger.error("❌ Data download failed - no fallback data available")
         self.logger.error("Please ensure data downloaders are properly configured and available")
         raise RuntimeError("Data download failed - cannot proceed without real market data")
-    
+
     @log_important_calls
     async def _data_conversion_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data conversion sub-pipeline using unified components."""
         self.logger.info("🔄 Executing unified data conversion pipeline")
-        
+
         artifacts = {
             'converted_files': [],
             'conversion_stats': {},
             'format_info': {},
             'unified_data': {}
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual conversion")
             artifacts['converted_files'] = ['converted_data.parquet']
             return artifacts
-        
+
         try:
             # Load raw data files - only klines as per new setup
             raw_data = {}
@@ -593,58 +593,58 @@ class DataCollectionSubPipeline:
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
                     raw_data[data_type] = df
                     self.logger.info(f"📖 Loaded {len(df)} {data_type} records")
-            
+
             if not raw_data:
                 self.logger.warning("⚠️ No raw data found for conversion")
                 return artifacts
-            
+
             # Convert to unified format
             unified_data = await self._convert_to_unified_format(raw_data, config)
-            
+
             if unified_data is not None and not unified_data.empty:
                 # Save unified data
                 unified_file = f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
                 unified_path = os.path.join(config.data_dir, unified_file)
                 standardized_parquet_handler.write_parquet_standardized(unified_data, unified_path, index=False)
-                
+
                 artifacts['converted_files'].append(unified_file)
                 artifacts['unified_data'] = {
                     'rows': len(unified_data),
                     'columns': list(unified_data.columns),
                     'file_path': unified_path
                 }
-                
+
                 self.logger.info(f"✅ Converted to unified format: {len(unified_data)} rows")
             else:
                 self.logger.warning("⚠️ Unified conversion failed")
-            
+
             artifacts['conversion_stats'] = {
                 'input_data_types': list(raw_data.keys()),
                 'output_rows': len(unified_data) if unified_data is not None else 0,
                 'conversion_success': unified_data is not None and not unified_data.empty
             }
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data conversion pipeline: {e}")
             artifacts['conversion_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     async def _convert_to_unified_format(self, raw_data: Dict[str, pd.DataFrame], config: SubPipelineConfig) -> Optional[pd.DataFrame]:
         """Convert raw data to unified format."""
         try:
             if 'klines' not in raw_data:
                 self.logger.error("❌ Klines data is required for unified conversion")
                 return None
-            
+
             # Start with klines as base
             unified_df = raw_data['klines'].copy()
-            
+
             # Add metadata
             unified_df['exchange'] = config.exchange
             unified_df['symbol'] = config.symbol
             unified_df['timeframe'] = config.timeframe
-            
+
             # Add klines-only features (no aggtrades needed)
             self.logger.info("🔄 Adding klines-only features (aggtrades removed)")
             unified_df = await self._add_klines_only_features(unified_df)
@@ -665,11 +665,11 @@ class DataCollectionSubPipeline:
                     self.logger.warning(f"🧹 Removed {duplicates_removed} duplicate timestamps in sub-pipeline")
 
             return unified_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error converting to unified format: {e}")
             return None
-    
+
     async def _add_klines_only_features(self, klines_df: pd.DataFrame, skip_aggtrade_features: bool = True) -> pd.DataFrame:
         """Add features using only klines data (no aggtrades).
 
@@ -715,182 +715,182 @@ class DataCollectionSubPipeline:
     async def _data_resampling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data resampling sub-pipeline using unified resampler."""
         self.logger.info("📊 Executing unified data resampling pipeline")
-        
+
         artifacts = {
             'resampled_files': [],
             'resampling_stats': {},
             'timeframes': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual resampling")
             artifacts['resampled_files'] = ['resampled_data.parquet']
             return artifacts
-        
+
         if not self.resampler:
             self.logger.warning("⚠️ Unified resampler not available, using fallback")
             return await self._fallback_resampling(config)
-        
+
         try:
             # Load unified data
             unified_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
             if not os.path.exists(unified_file):
                 self.logger.warning("⚠️ No unified data found for resampling")
                 return artifacts
-            
+
             unified_data = standardized_parquet_handler.read_parquet_standardized(unified_file)
             if unified_data.empty:
                 self.logger.warning("⚠️ Empty unified data")
                 return artifacts
-            
+
             # Define target timeframes
             target_timeframes = config.custom_params.get('target_timeframes', ['5m', '15m', '30m', '1h'])
-            
+
             # Resample to each timeframe
             for timeframe in target_timeframes:
                 if timeframe == config.timeframe:
                     continue  # Skip source timeframe
-                
+
                 self.logger.info(f"📊 Resampling to {timeframe}...")
                 resampled_data = self.resampler.resample_to_timeframe(
                     unified_data, timeframe, config.symbol, config.exchange
                 )
-                
+
                 if resampled_data is not None and not resampled_data.empty:
                     # Save resampled data
                     resampled_file = f"resampled_{config.exchange}_{config.symbol}_{timeframe}.parquet"
                     resampled_path = os.path.join(config.data_dir, resampled_file)
                     standardized_parquet_handler.write_parquet_standardized(resampled_data, resampled_path, index=False)
-                    
+
                     artifacts['resampled_files'].append(resampled_file)
                     artifacts['timeframes'].append(timeframe)
                     self.logger.info(f"✅ Resampled to {timeframe}: {len(resampled_data)} rows")
                 else:
                     self.logger.warning(f"⚠️ Failed to resample to {timeframe}")
-            
+
             artifacts['resampling_stats'] = self.resampler.get_resample_stats()
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data resampling pipeline: {e}")
             artifacts['resampling_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     async def _fallback_resampling(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Fallback resampling method."""
         self.logger.info("🔄 Using fallback resampling method")
-        
+
         artifacts = {
             'resampled_files': [],
             'resampling_stats': {'fallback_mode': True},
             'timeframes': ['5m', '15m', '30m', '1h']
         }
-        
+
         # Create mock resampled files
         for timeframe in artifacts['timeframes']:
             filename = f"resampled_{config.exchange}_{config.symbol}_{timeframe}_mock.parquet"
             artifacts['resampled_files'].append(filename)
-        
+
         return artifacts
-    
+
     @log_important_calls
     async def _gap_filling_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Gap filling sub-pipeline using unified gap filler."""
         self.logger.info("🔧 Executing unified gap filling pipeline")
-        
+
         artifacts = {
             'gap_filled_files': [],
             'gap_stats': {},
             'gaps_detected': 0,
             'gaps_filled': 0
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual gap filling")
             artifacts['gap_filled_files'] = ['gap_filled_data.parquet']
             return artifacts
-        
+
         if not self.gap_filler:
             self.logger.warning("⚠️ Unified gap filler not available, using fallback")
             return await self._fallback_gap_filling(config)
-        
+
         try:
             # Load unified data
             unified_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
             if not os.path.exists(unified_file):
                 self.logger.warning("⚠️ No unified data found for gap filling")
                 return artifacts
-            
+
             unified_data = standardized_parquet_handler.read_parquet_standardized(unified_file)
             if unified_data.empty:
                 self.logger.warning("⚠️ Empty unified data")
                 return artifacts
-            
+
             # Detect and fill gaps
             gap_filled_data = await self.gap_filler.detect_and_fill_gaps(
                 unified_data, config.symbol, config.exchange, config.timeframe
             )
-            
+
             if gap_filled_data is not None and not gap_filled_data.empty:
                 # Save gap-filled data
                 gap_filled_file = f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
                 gap_filled_path = os.path.join(config.data_dir, gap_filled_file)
                 standardized_parquet_handler.write_parquet_standardized(gap_filled_data, gap_filled_path, index=False)
-                
+
                 artifacts['gap_filled_files'].append(gap_filled_file)
                 artifacts['gaps_detected'] = len(unified_data) - len(gap_filled_data)
                 artifacts['gaps_filled'] = len(gap_filled_data) - len(unified_data)
-                
+
                 self.logger.info(f"✅ Gap filling completed: {artifacts['gaps_detected']} gaps detected, {artifacts['gaps_filled']} gaps filled")
             else:
                 self.logger.warning("⚠️ Gap filling failed")
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in gap filling pipeline: {e}")
             artifacts['gap_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     async def _fallback_gap_filling(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Fallback gap filling method."""
         self.logger.info("🔄 Using fallback gap filling method")
-        
+
         artifacts = {
             'gap_filled_files': [],
             'gap_stats': {'fallback_mode': True},
             'gaps_detected': 0,
             'gaps_filled': 0
         }
-        
+
         # Create mock gap-filled file
         filename = f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}_mock.parquet"
         artifacts['gap_filled_files'].append(filename)
-        
+
         return artifacts
-    
+
     @log_important_calls
     async def _data_validation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data validation sub-pipeline using unified validators."""
         self.logger.info("✅ Executing unified data validation pipeline")
-        
+
         artifacts = {
             'validation_results': {},
             'quality_metrics': {},
             'validation_reports': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual validation")
             artifacts['validation_results'] = {'status': 'passed', 'issues': []}
             return artifacts
-        
+
         try:
             # Validate all data files - only klines as per new setup
             data_files = [
                 f"klines_{config.exchange}_{config.symbol}_{config.timeframe}_raw.parquet",
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             ]  # Removed aggtrades and futures validation
-            
+
             validation_results = {}
             for file_name in data_files:
                 file_path = os.path.join(config.data_dir, file_name)
@@ -903,7 +903,7 @@ class DataCollectionSubPipeline:
                             validator = self.validators[data_type]
                             rows = df.to_dict('records')
                             validated_rows = validator.validate_batch(rows)
-                            
+
                             validation_results[file_name] = {
                                 'data_type': data_type.value,
                                 'total_rows': len(rows),
@@ -911,21 +911,21 @@ class DataCollectionSubPipeline:
                                 'success_rate': len(validated_rows) / len(rows) * 100 if rows else 0,
                                 'validation_summary': validator.get_validation_summary()
                             }
-                            
+
                             self.logger.info(f"✅ Validated {file_name}: {len(validated_rows)}/{len(rows)} rows valid")
-            
+
             artifacts['validation_results'] = validation_results
             artifacts['quality_metrics'] = {
                 'overall_success_rate': sum(r['success_rate'] for r in validation_results.values()) / len(validation_results) if validation_results else 0,
                 'files_validated': len(validation_results)
             }
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data validation pipeline: {e}")
             artifacts['validation_results'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     def _determine_data_type(self, file_name: str) -> Optional[DataType]:
         """Determine data type from file name."""
         if 'klines' in file_name:
@@ -934,100 +934,100 @@ class DataCollectionSubPipeline:
             return DataType.UNIFIED
         # Removed aggtrades and futures data type determination as per new setup
         return None
-    
+
     @log_important_calls
     async def _data_preparation_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data preparation sub-pipeline."""
         self.logger.info("🔧 Executing data preparation pipeline")
-        
+
         artifacts = {
             'prepared_files': [],
             'preparation_stats': {},
             'data_info': {}
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual preparation")
             artifacts['prepared_files'] = ['prepared_data.parquet']
             return artifacts
-        
+
         try:
             # Load unified data
             unified_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
             if os.path.exists(unified_file):
                 df = standardized_parquet_handler.read_parquet_standardized(unified_file)
-                
+
                 # Basic data preparation
                 prepared_df = df.copy()
-                
+
                 # Add technical indicators if requested
                 if config.custom_params.get('add_technical_indicators', False):
                     prepared_df = self._add_technical_indicators(prepared_df)
-                
+
                 # Save prepared data
                 prepared_file = f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
                 prepared_path = os.path.join(config.data_dir, prepared_file)
                 standardized_parquet_handler.write_parquet_standardized(prepared_df, prepared_path, index=False)
-                
+
                 artifacts['prepared_files'].append(prepared_file)
                 artifacts['preparation_stats'] = {
                     'input_rows': len(df),
                     'output_rows': len(prepared_df),
                     'columns_added': len(prepared_df.columns) - len(df.columns)
                 }
-                
+
                 self.logger.info(f"✅ Data preparation completed: {len(prepared_df)} rows")
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data preparation pipeline: {e}")
             artifacts['preparation_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     async def _feature_engineering_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Feature engineering sub-pipeline - limited to price returns and volume returns."""
         self.logger.info("🔧 Executing feature engineering pipeline")
-        
+
         artifacts = {
             'feature_files': [],
             'feature_stats': {},
             'features_added': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual feature engineering")
             artifacts['feature_files'] = ['features_data.parquet']
             artifacts['features_added'] = ['price_returns', 'volume_returns']
             return artifacts
-        
+
         try:
             # Load prepared data
             prepared_file = os.path.join(config.data_dir, f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
             if not os.path.exists(prepared_file):
                 # Fallback to unified data if prepared data doesn't exist
                 prepared_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
-            
+
             if os.path.exists(prepared_file):
                 df = standardized_parquet_handler.read_parquet_standardized(prepared_file)
-                
+
                 # Create features DataFrame
                 features_df = df.copy()
-                
+
                 # Add limited feature engineering: price returns and volume returns
                 features_added = []
-                
+
                 # Price returns (if close price exists)
                 if 'close' in df.columns:
                     features_df['price_returns'] = df['close'].pct_change()
                     features_added.append('price_returns')
                     self.logger.info("✅ Added price returns feature")
-                
+
                 # Volume returns (if volume exists)
                 if 'volume' in df.columns:
                     features_df['volume_returns'] = df['volume'].pct_change()
                     features_added.append('volume_returns')
                     self.logger.info("✅ Added volume returns feature")
-                
+
                 # Handle infinite values in returns
                 for feature in features_added:
                     if feature in features_df.columns:
@@ -1035,12 +1035,12 @@ class DataCollectionSubPipeline:
                         features_df[feature] = features_df[feature].replace([np.inf, -np.inf], np.nan)
                         # Fill NaN values with 0 (first row will be NaN due to pct_change)
                         features_df[feature] = features_df[feature].fillna(0)
-                
+
                 # Save features data
                 features_file = f"features_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
                 features_path = os.path.join(config.data_dir, features_file)
                 standardized_parquet_handler.write_parquet_standardized(features_df, features_path, index=False)
-                
+
                 artifacts['feature_files'].append(features_file)
                 artifacts['features_added'] = features_added
                 artifacts['feature_stats'] = {
@@ -1049,18 +1049,18 @@ class DataCollectionSubPipeline:
                     'features_count': len(features_added),
                     'columns_added': len(features_df.columns) - len(df.columns)
                 }
-                
+
                 self.logger.info(f"✅ Feature engineering completed: {len(features_added)} features added")
             else:
                 self.logger.warning(f"⚠️ No prepared data found at {prepared_file}")
                 artifacts['feature_stats'] = {'error': 'No prepared data found'}
-        
+
         except Exception as e:
             self.logger.exception(f"❌ Error in feature engineering pipeline: {e}")
             artifacts['feature_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     def _add_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add basic technical indicators to the dataframe."""
         try:
@@ -1068,22 +1068,22 @@ class DataCollectionSubPipeline:
                 # Simple moving averages
                 df['sma_20'] = df['close'].rolling(window=20).mean()
                 df['sma_50'] = df['close'].rolling(window=50).mean()
-                
+
                 # RSI (simplified)
                 delta = df['close'].diff()
                 gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                 loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
                 rs = gain / loss
                 df['rsi'] = 100 - (100 / (1 + rs))
-                
+
                 # Bollinger Bands
                 df['bb_middle'] = df['close'].rolling(window=20).mean()
                 bb_std = df['close'].rolling(window=20).std()
                 df['bb_upper'] = df['bb_middle'] + (bb_std * 2)
                 df['bb_lower'] = df['bb_middle'] - (bb_std * 2)
-            
+
             return df
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error adding technical indicators: {e}")
             return df
@@ -1092,26 +1092,26 @@ class DataCollectionSubPipeline:
     async def _data_quality_check_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data quality check sub-pipeline."""
         self.logger.info("🔍 Executing data quality check pipeline")
-        
+
         artifacts = {
             'quality_reports': [],
             'quality_metrics': {},
             'quality_issues': [],
             'cleaning_results': {}
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual quality check")
             artifacts['quality_metrics'] = {'overall_score': 0.95, 'issues_count': 0}
             return artifacts
-        
+
         try:
             # Check all data files for quality issues - removed aggtrades/futures as per new setup
             data_files = [
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
                 f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             ]
-            
+
             quality_results = []
             for file_name in data_files:
                 file_path = os.path.join(config.data_dir, file_name)
@@ -1121,26 +1121,26 @@ class DataCollectionSubPipeline:
                         # Enhanced data cleaning integration with memory optimization
                         try:
                             from src.utils.data.quality.data_cleaning import DataCleaner
-                            
+
                             # Determine data type from filename - only klines as per new setup
                             data_type = 'klines'  # Default - only klines used now
-                            
+
                             # Create data cleaner with appropriate data type
                             cleaner = DataCleaner(data_type=data_type)
-                            
+
                             # Apply enhanced data cleaning with memory optimization
                             @with_memory_optimization(chunk_size=5000, max_memory_mb=1024)
                             def clean_dataframe_chunked(df_chunk):
                                 return cleaner.clean_dataframe(
-                                    df_chunk, 
+                                    df_chunk,
                                     remove_constant_features=True,
                                     symbol=config.symbol,
                                     exchange=config.exchange,
                                     timeframe=config.timeframe
                                 )
-                            
+
                             cleaned_df = clean_dataframe_chunked(df)
-                            
+
                             if cleaned_df is not None and not cleaned_df.empty:
                                 artifacts['cleaning_results'][file_name] = {
                                     'original_rows': len(df),
@@ -1149,15 +1149,15 @@ class DataCollectionSubPipeline:
                                     'cleaned_columns': len(cleaned_df.columns),
                                     'data_type': data_type
                                 }
-                                
+
                                 # Use comprehensive quality scoring
                                 quality_assessment = self.quality_scorer.assess_data_quality(
-                                    cleaned_df, 
+                                    cleaned_df,
                                     context="data_collection",
                                     step_name="data_quality_check",
                                     data_type=data_type
                                 )
-                                
+
                                 # Store comprehensive quality results
                                 artifacts['quality_assessments'][file_name] = {
                                     'overall_score': quality_assessment.overall_score,
@@ -1167,20 +1167,20 @@ class DataCollectionSubPipeline:
                                     'warnings': quality_assessment.warnings,
                                     'recommendations': quality_assessment.recommendations
                                 }
-                                
+
                                 # Use cleaned data for legacy quality assessment
                                 quality_score = self._calculate_quality_score(cleaned_df, file_name)
                             else:
                                 self.logger.warning(f"⚠️ Data cleaning failed for {file_name}, using original data")
-                                
+
                                 # Use comprehensive quality scoring on original data
                                 quality_assessment = self.quality_scorer.assess_data_quality(
-                                    df, 
+                                    df,
                                     context="data_collection",
                                     step_name="data_quality_check",
                                     data_type=data_type
                                 )
-                                
+
                                 # Store comprehensive quality results
                                 artifacts['quality_assessments'][file_name] = {
                                     'overall_score': quality_assessment.overall_score,
@@ -1190,18 +1190,18 @@ class DataCollectionSubPipeline:
                                     'warnings': quality_assessment.warnings,
                                     'recommendations': quality_assessment.recommendations
                                 }
-                                
+
                                 quality_score = self._calculate_quality_score(df, file_name)
-                                
+
                         except Exception as e:
                             self.logger.warning(f"⚠️ Enhanced data cleaning not available for {file_name}: {e}")
                             quality_score = self._calculate_quality_score(df, file_name)
-                        
+
                         quality_results.append(quality_score)
-                        
+
                         if quality_score < 0.8:
                             artifacts['quality_issues'].append(f"Low quality score for {file_name}: {quality_score:.2f}")
-            
+
             # Overall quality assessment
             overall_quality = sum(quality_results) / len(quality_results) if quality_results else 0.0
             artifacts['quality_metrics'] = {
@@ -1209,38 +1209,38 @@ class DataCollectionSubPipeline:
                 'files_checked': len(quality_results),
                 'issues_count': len(artifacts['quality_issues'])
             }
-            
+
             self.logger.info(f"✅ Quality check completed: overall score {overall_quality:.2f}")
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data quality check pipeline: {e}")
             artifacts['quality_metrics'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     def _calculate_quality_score(self, df: pd.DataFrame, file_name: str) -> float:
         """Calculate quality score for a DataFrame."""
         try:
             if df.empty:
                 return 0.0
-            
+
             score = 1.0
-            
+
             # Check for missing values
             missing_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns))
             score -= missing_ratio * 0.3
-            
+
             # Check for infinite values
             numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
             infinite_count = 0
             for col in numeric_cols:
                 col_data = df[col].values
                 infinite_count += np.sum(np.isinf(col_data))
-            
+
             if len(df) > 0:
                 infinite_ratio = infinite_count / (len(df) * len(numeric_cols))
                 score -= infinite_ratio * 0.4
-            
+
             # Check for zero values in price fields
             if 'klines' in file_name or 'unified' in file_name:
                 price_cols = ['open', 'high', 'low', 'close']
@@ -1248,30 +1248,30 @@ class DataCollectionSubPipeline:
                     if col in df.columns:
                         zero_ratio = (df[col] == 0).sum() / len(df)
                         score -= zero_ratio * 0.2
-            
+
             return max(0.0, min(1.0, score))
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating quality score: {e}")
             return 0.5
-    
+
     @log_important_calls
     async def _data_integration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data integration sub-pipeline - integrates multiple data sources with backwards compatibility."""
         self.logger.info("🔗 Executing data integration pipeline")
-        
+
         artifacts = {
             'integrated_files': [],
             'integration_stats': {},
             'sources_integrated': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual integration")
             artifacts['integrated_files'] = ['integrated_data.parquet']
             artifacts['sources_integrated'] = ['unified', 'features']
             return artifacts
-        
+
         try:
             # Define data sources to integrate (backwards compatible)
             data_sources = {
@@ -1280,29 +1280,29 @@ class DataCollectionSubPipeline:
                 'prepared': f"prepared_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
                 'gap_filled': f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             }
-            
+
             # Load base data (unified data as primary source)
             base_file = os.path.join(config.data_dir, data_sources['unified'])
             if not os.path.exists(base_file):
                 self.logger.warning(f"⚠️ Base unified data not found at {base_file}")
                 artifacts['integration_stats'] = {'error': 'Base unified data not found'}
                 return artifacts
-            
+
             # Load base DataFrame
             integrated_df = standardized_parquet_handler.read_parquet_standardized(base_file)
             sources_integrated = ['unified']
             self.logger.info(f"📊 Loaded base data: {len(integrated_df)} rows, {len(integrated_df.columns)} columns")
-            
+
             # Integrate additional data sources
             for source_name, file_name in data_sources.items():
                 if source_name == 'unified':
                     continue  # Skip base source
-                
+
                 source_file = os.path.join(config.data_dir, file_name)
                 if os.path.exists(source_file):
                     try:
                         source_df = standardized_parquet_handler.read_parquet_standardized(source_file)
-                        
+
                         # Find common index/identifier for merging
                         merge_key = None
                         if 'datetime' in integrated_df.columns and 'datetime' in source_df.columns:
@@ -1311,37 +1311,37 @@ class DataCollectionSubPipeline:
                             merge_key = 'timestamp'
                         elif integrated_df.index.name and source_df.index.name:
                             merge_key = None  # Use index
-                        
+
                         if merge_key or (integrated_df.index.name and source_df.index.name):
                             # Merge on common key
                             if merge_key:
                                 # Merge on datetime/timestamp column
                                 integrated_df = pd.merge(
-                                    integrated_df, 
-                                    source_df, 
-                                    on=merge_key, 
-                                    how='left', 
+                                    integrated_df,
+                                    source_df,
+                                    on=merge_key,
+                                    how='left',
                                     suffixes=('', f'_{source_name}')
                                 )
                             else:
                                 # Merge on index
                                 integrated_df = integrated_df.join(
-                                    source_df, 
-                                    how='left', 
+                                    source_df,
+                                    how='left',
                                     rsuffix=f'_{source_name}'
                                 )
-                            
+
                             sources_integrated.append(source_name)
                             self.logger.info(f"✅ Integrated {source_name} data: {len(source_df)} rows")
                         else:
                             self.logger.warning(f"⚠️ No common key found for {source_name} integration")
-                    
+
                     except Exception as e:
                         self.logger.warning(f"⚠️ Failed to integrate {source_name}: {e}")
                         continue
                 else:
                     self.logger.debug(f"📁 {source_name} data not found at {source_file}")
-            
+
             # Clean up duplicate columns (keep original, remove suffixed versions)
             columns_to_drop = []
             for col in integrated_df.columns:
@@ -1350,16 +1350,16 @@ class DataCollectionSubPipeline:
                     original_col = col.rsplit('_', 1)[0]
                     if original_col in integrated_df.columns:
                         columns_to_drop.append(col)
-            
+
             if columns_to_drop:
                 integrated_df = integrated_df.drop(columns=columns_to_drop)
                 self.logger.info(f"🧹 Cleaned up {len(columns_to_drop)} duplicate columns")
-            
+
             # Save integrated data
             integrated_file = f"integrated_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             integrated_path = os.path.join(config.data_dir, integrated_file)
             standardized_parquet_handler.write_parquet_standardized(integrated_df, integrated_path, index=False)
-            
+
             artifacts['integrated_files'].append(integrated_file)
             artifacts['sources_integrated'] = sources_integrated
             artifacts['integration_stats'] = {
@@ -1368,36 +1368,36 @@ class DataCollectionSubPipeline:
                 'output_columns': len(integrated_df.columns),
                 'columns_added': len(integrated_df.columns) - len(standardized_parquet_handler.read_parquet_standardized(base_file).columns)
             }
-            
+
             self.logger.info(f"✅ Data integration completed: {len(sources_integrated)} sources, {len(integrated_df)} rows, {len(integrated_df.columns)} columns")
-        
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data integration pipeline: {e}")
             artifacts['integration_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     @log_important_calls
     async def _data_storage_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data storage sub-pipeline."""
         self.logger.info("💾 Executing data storage pipeline")
-        
+
         artifacts = {
             'stored_files': [],
             'storage_stats': {},
             'storage_info': {}
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual storage")
             artifacts['stored_files'] = ['stored_data.parquet']
             return artifacts
-        
+
         try:
             # Create storage directory structure
             storage_dir = os.path.join(config.data_dir, 'storage', config.exchange, config.symbol, config.timeframe)
             os.makedirs(storage_dir, exist_ok=True)
-            
+
             # Copy all processed files to storage
             processed_files = [
                 f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
@@ -1406,21 +1406,21 @@ class DataCollectionSubPipeline:
                 f"gap_filled_{config.exchange}_{config.symbol}_{config.timeframe}.parquet",
                 f"integrated_{config.exchange}_{config.symbol}_{config.timeframe}.parquet"
             ]
-            
+
             stored_count = 0
             total_size = 0
-            
+
             for file_name in processed_files:
                 source_path = os.path.join(config.data_dir, file_name)
                 if os.path.exists(source_path):
                     dest_path = os.path.join(storage_dir, file_name)
-                    
+
                     # Copy file
                     import shutil
                     shutil.copy2(source_path, dest_path)
                     stored_count += 1
                     total_size += os.path.getsize(dest_path)
-            
+
             # Update artifacts
             artifacts['stored_files'] = [f for f in processed_files if os.path.exists(os.path.join(storage_dir, f))]
             artifacts['storage_stats'] = {
@@ -1428,29 +1428,29 @@ class DataCollectionSubPipeline:
                 'total_size_mb': total_size / (1024 * 1024),
                 'storage_path': storage_dir
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Data storage failed: {e}")
             raise
-        
+
         return artifacts
-    
+
     @log_important_calls
     async def _data_monitoring_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data monitoring sub-pipeline."""
         self.logger.info("📊 Executing data monitoring pipeline")
-        
+
         artifacts = {
             'monitoring_reports': [],
             'monitoring_metrics': {},
             'alerts': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual monitoring")
             artifacts['monitoring_metrics'] = {'status': 'healthy', 'uptime': '99.9%'}
             return artifacts
-        
+
         try:
             # Basic monitoring metrics
             monitoring_metrics = {
@@ -1460,99 +1460,99 @@ class DataCollectionSubPipeline:
                 'file_count': 0,
                 'total_size_mb': 0
             }
-            
+
             # Count files and calculate total size
             data_dir = Path(config.data_dir)
             if data_dir.exists():
                 parquet_files = list(data_dir.glob('**/*.parquet'))
                 monitoring_metrics['file_count'] = len(parquet_files)
-                
+
                 total_size = sum(f.stat().st_size for f in parquet_files)
                 monitoring_metrics['total_size_mb'] = total_size / 1024 / 1024
-            
+
             artifacts['monitoring_metrics'] = monitoring_metrics
-            
+
             # Check for alerts
             if monitoring_metrics['file_count'] == 0:
                 artifacts['alerts'].append("No data files found")
             elif monitoring_metrics['total_size_mb'] > 1000:  # 1GB threshold
                 artifacts['alerts'].append(f"Large data size: {monitoring_metrics['total_size_mb']:.2f} MB")
-            
+
             self.logger.info(f"✅ Monitoring completed: {monitoring_metrics['file_count']} files, {monitoring_metrics['total_size_mb']:.2f} MB")
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data monitoring pipeline: {e}")
             artifacts['monitoring_metrics'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     @log_important_calls
     async def _data_export_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Data export sub-pipeline."""
         self.logger.info("📤 Executing data export pipeline")
-        
+
         artifacts = {
             'exported_files': [],
             'export_stats': {},
             'export_formats': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual export")
             artifacts['exported_files'] = ['exported_data.csv']
             return artifacts
-        
+
         try:
             # Export unified data to different formats
             unified_file = os.path.join(config.data_dir, f"unified_{config.exchange}_{config.symbol}_{config.timeframe}.parquet")
             if os.path.exists(unified_file):
                 df = standardized_parquet_handler.read_parquet_standardized(unified_file)
-                
+
                 # Export to CSV
                 csv_file = f"exported_{config.exchange}_{config.symbol}_{config.timeframe}.csv"
                 csv_path = os.path.join(config.data_dir, csv_file)
                 df.to_csv(csv_path, index=False)
                 artifacts['exported_files'].append(csv_file)
                 artifacts['export_formats'].append('csv')
-                
+
                 # Export to JSON
                 json_file = f"exported_{config.exchange}_{config.symbol}_{config.timeframe}.json"
                 json_path = os.path.join(config.data_dir, json_file)
                 df.to_json(json_path, orient='records', date_format='iso')
                 artifacts['exported_files'].append(json_file)
                 artifacts['export_formats'].append('json')
-                
+
                 self.logger.info(f"✅ Export completed: {len(artifacts['exported_files'])} files in {len(artifacts['export_formats'])} formats")
-            
+
             artifacts['export_stats'] = {
                 'files_exported': len(artifacts['exported_files']),
                 'formats_used': artifacts['export_formats']
             }
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Error in data export pipeline: {e}")
             artifacts['export_stats'] = {'error': str(e)}
-        
+
         return artifacts
-    
+
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
         return list(self.sub_pipelines.keys())
-    
+
     def get_sub_pipeline_status(self, sub_pipeline_name: str) -> Optional[SubPipelineStatus]:
         """Get status of a specific sub-pipeline."""
         for result in self.results:
             if result.sub_pipeline_name == sub_pipeline_name:
                 return result.status
         return None
-    
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get summary of all sub-pipeline executions."""
         total_executions = len(self.results)
         completed = sum(1 for r in self.results if r.status == SubPipelineStatus.COMPLETED)
         failed = sum(1 for r in self.results if r.status == SubPipelineStatus.FAILED)
         total_duration = sum(r.duration_seconds or 0 for r in self.results)
-        
+
         return {
             'total_executions': total_executions,
             'completed': completed,
@@ -1638,13 +1638,13 @@ async def execute_full_data_collection_pipeline(
         end_date=end_date,
         custom_params=kwargs
     )
-    
+
     pipeline = DataCollectionSubPipeline(config)
-    
+
     # Execute all sub-pipelines in sequence
     sub_pipelines = [
         'data_download',
-        'data_conversion', 
+        'data_conversion',
         'data_validation',
         'data_preparation',
         'feature_engineering',
@@ -1656,9 +1656,9 @@ async def execute_full_data_collection_pipeline(
         'data_monitoring',
         'data_export'
     ]
-    
+
     results = await pipeline.execute_multiple_sub_pipelines(sub_pipelines, config, sequential=True)
-    
+
     return {
         'pipeline_summary': pipeline.get_execution_summary(),
         'sub_pipeline_results': results,
@@ -1671,7 +1671,7 @@ if __name__ == "__main__":
         # Execute full pipeline
         result = await execute_full_data_collection_pipeline(
             symbol="ETHUSDT",
-            exchange="BINANCE", 
+            exchange="BINANCE",
             timeframe="1m",
             data_dir="historical_data",
             mode=ExecutionMode.FULL,
@@ -1679,25 +1679,25 @@ if __name__ == "__main__":
             target_timeframes=['5m', '15m', '30m', '1h'],
             add_technical_indicators=True
         )
-        
+
         tprint("Pipeline execution completed!")
         tprint(f"Success rate: {result['pipeline_summary']['success_rate']:.1%}")
         tprint(f"Total duration: {result['pipeline_summary']['total_duration_seconds']:.2f}s")
-    
+
     asyncio.run(main())
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1716,8 +1716,8 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1734,13 +1734,13 @@ if __name__ == "__main__":
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

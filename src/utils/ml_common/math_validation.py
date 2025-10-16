@@ -25,12 +25,10 @@ from src.utils.math_validation import (
     MathValidationError,
 )
 
-
 class ValidationLevel(Enum):
     LAX = "lax"
     STANDARD = "standard"
     STRICT = "strict"
-
 
 @dataclass
 class ValidationResult:
@@ -38,7 +36,6 @@ class ValidationResult:
     errors: List[str]
     warnings: List[str]
     details: Dict[str, Any]
-
 
 class MathValidator:
     """Object-oriented facade delegating to canonical safe math helpers."""
@@ -99,31 +96,24 @@ class MathValidator:
             errors.append(str(e))
         return ValidationResult(is_valid=not errors, errors=errors, warnings=warnings, details=details)
 
-
 # Re-export scalar helpers for compatibility
 def safe_divide(a: float, b: float, default: float = 0.0) -> float:
     return _safe_divide_scalar(a, b, default)
 
-
 def safe_log(x: float, default: float = 0.0) -> float:
     return _safe_log_scalar(x, default)
-
 
 def validate_positive(value: float, name: str = "value") -> float:
     return _validate_positive_scalar(value, name)
 
-
 def validate_range(value: float, min_val: float = None, max_val: float = None, name: str = "value") -> float:
     return _validate_range_scalar(value, min_val, max_val, name)
-
 
 def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray:
     return _validate_numeric_array(array, name)
 
-
 def validate_finite(value: float, name: str = "value") -> float:
     return _validate_finite(value, name)
-
 
 __all__ = [
     'MathValidator',

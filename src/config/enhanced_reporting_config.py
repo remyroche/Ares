@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from src.utils.tprint import tprint
 
-
 """
 Enhanced Reporting Configuration
 
@@ -11,7 +10,6 @@ consistent detailed metrics across all trading modes.
 """
 
 from typing import Any
-
 
 def get_enhanced_reporting_config() -> dict[str, Any]:
     """
@@ -299,7 +297,6 @@ def get_enhanced_reporting_config() -> dict[str, Any]:
         },
     }
 
-
 def get_paper_trading_config() -> dict[str, Any]:
     """
     Get configuration specifically for paper trading with enhanced reporting.
@@ -324,7 +321,6 @@ def get_paper_trading_config() -> dict[str, Any]:
             "report_interval": 1800,  # 30 minutes for paper trading
         },
     }
-
 
 def get_backtesting_config() -> dict[str, Any]:
     """
@@ -351,7 +347,6 @@ def get_backtesting_config() -> dict[str, Any]:
         },
     }
 
-
 def get_live_trading_config() -> dict[str, Any]:
     """
     Get configuration specifically for live trading with enhanced reporting.
@@ -376,7 +371,6 @@ def get_live_trading_config() -> dict[str, Any]:
             "report_interval": 900,  # 15 minutes for live trading
         },
     }
-
 
 def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
     """
@@ -420,7 +414,6 @@ def validate_enhanced_reporting_config(config: dict[str, Any]) -> bool:
     except Exception as e:
         tprint(f"Error validating configuration: {e}")
         return False
-
 
 def get_minimal_config() -> dict[str, Any]:
     """

@@ -17,15 +17,15 @@ def calculate_correct_kelly_position_size(price_target_confidences: dict[str, fl
         # Simple Kelly calculation based on confidence scores
         avg_confidence = sum(price_target_confidences.values()) / len(price_target_confidences) if price_target_confidences else 0.5
         avg_risk = sum(adversarial_confidences.values()) / len(adversarial_confidences) if adversarial_confidences else 0.3
-        
+
         # Kelly formula: f = (bp - q) / b where b = odds, p = win probability, q = loss probability
         win_prob = avg_confidence
         loss_prob = 1 - win_prob
         odds = 1.0 / max(avg_risk, 0.1)  # Avoid division by zero
-        
+
         kelly_fraction = (odds * win_prob - loss_prob) / odds
         kelly_fraction = max(0, min(1, kelly_fraction))  # Clamp between 0 and 1
-        
+
         position_size = kelly_fraction * kelly_multiplier
         return max(min_position_size, min(max_position_size, position_size))
     except Exception:
@@ -50,7 +50,7 @@ from src.utils.model_manager import ModelManager
 from src.utils.trading_decorators import validate_trading_inputs
 from src.utils.error_handler import handle_trading_errors
 from src.utils.validation.unified_framework import (
-    safe_divide as unified_safe_divide, safe_log as unified_safe_log, safe_kelly_calculation as unified_safe_kelly_calculation, 
+    safe_divide as unified_safe_divide, safe_log as unified_safe_log, safe_kelly_calculation as unified_safe_kelly_calculation,
     validate_positive as unified_validate_positive, validate_range as unified_validate_range, MathValidationError as unified_MathValidationError
 )
 
@@ -89,12 +89,12 @@ class PositionSizer:
         self.linear_scaler = LinearConfidenceScaler(config)
         self.is_initialized: bool = False
         self.position_sizing_history: list[dict[str, Any]] = []
-        
+
         # Live trading utilities
         self.model_manager: ModelManager | None = None
         self.selected_model: str | None = None
         self.model_cache: dict[str, Any] = {}
-        
+
         # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
@@ -106,13 +106,13 @@ class PositionSizer:
         self.logger.info('Initializing position sizer...')
         if not self._validate_configuration():
             return False
-        
+
         # Initialize live trading utilities
         await self._initialize_live_trading_utilities()
-        
+
         # Initialize performance monitoring
         await self._initialize_performance_monitoring()
-        
+
         self.is_initialized = True
         self.logger.info('✅ Position sizer initialized successfully')
         return True
@@ -127,7 +127,7 @@ class PositionSizer:
         try:
             self.logger.info("Validating position sizer configuration...")
             tprint("Validating position sizer configuration...")
-            
+
             required_keys = ['kelly_multiplier', 'max_position_size', 'min_position_size']
             for key in required_keys:
                 if key not in self.sizing_config:
@@ -136,7 +136,7 @@ class PositionSizer:
                     tprint(f"❌ {error_msg}")
                     tprint(f"❌ {error_msg}")
                     return False
-            
+
             if self.max_position_size <= self.min_position_size:
                 error_msg = 'max_position_size must be greater than min_position_size'
                 self.logger.error(error_msg)
@@ -148,7 +148,7 @@ class PositionSizer:
                 tprint(f"❌ {error_msg}")
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
             self.logger.info("✅ Position sizer configuration validated successfully")
             tprint("✅ Position sizer configuration validated successfully")
             return True
@@ -203,11 +203,11 @@ class PositionSizer:
             tprint(f"❌ {error_msg}")
             tprint(f"❌ {error_msg}")
             return None
-        
+
         # Start performance monitoring
         if self.performance_monitor:
             self.performance_monitor.start_timer("position_size_calculation")
-        
+
         self.logger.info('Calculating position size using ML intelligence...')
         tprint('Calculating position size using ML intelligence...')
         try:
@@ -252,13 +252,13 @@ class PositionSizer:
             self.position_sizing_history.append(sizing_analysis)
             if len(self.position_sizing_history) > 100:
                 self.position_sizing_history = self.position_sizing_history[-100:]
-            
+
             # End performance monitoring
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("position_size_calculation")
                 self.logger.info(f"Position size calculation completed in {execution_time:.3f}s")
                 tprint(f"Position size calculation completed in {execution_time:.3f}s")
-            
+
             self.logger.info(f'✅ Position size calculated: {final_position_size:.4f}')
             tprint(f'✅ Position size calculated: {final_position_size:.4f}')
             return sizing_analysis
@@ -267,11 +267,11 @@ class PositionSizer:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             tprint(f"❌ {error_msg}")
-            
+
             # End performance monitoring even on error
             if self.performance_monitor:
                 self.performance_monitor.end_timer("position_size_calculation")
-            
+
             return None
 
     def _calculate_kelly_position_size(self, price_target_confidences: dict[str, float], adversarial_confidences: dict[str, float]) -> float:
@@ -302,14 +302,14 @@ class PositionSizer:
                 risk = adversarial_confidences.get(closest_level, 0.3)
                 adverse_risks.append(risk)
             avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-            
+
             # Use safe division to prevent division by zero
             confidence_factor = safe_divide(avg_confidence, self.confidence_threshold, 1.0)
             risk_factor = 1.0 - avg_adverse_risk
-            
+
             # Validate risk factor is positive
             risk_factor = max(0.0, min(1.0, risk_factor))
-            
+
             base_position_size = self.min_position_size + (self.max_position_size - self.min_position_size) * confidence_factor * risk_factor
             return max(self.min_position_size, min(self.max_position_size, base_position_size))
         except (ValueError, TypeError, KeyError) as e:
@@ -325,18 +325,18 @@ class PositionSizer:
             # Use safe logarithm to prevent log of zero or negative numbers
             log_kelly = safe_log(kelly_position_size, default=0.0)
             log_ml = safe_log(ml_position_size, default=0.0)
-            
+
             # Validate weights are in valid range
             ml_weight = validate_range(self.ml_weight, 0.0, 1.0, "ml_weight")
-            
+
             weighted_log = (1 - ml_weight) * log_kelly + ml_weight * log_ml
             weighted_size = math.exp(weighted_log)
-            
+
             # Ensure result is finite
             if not math.isfinite(weighted_size):
                 self.logger.warning(f"Non-finite result in weighted position size calculation")
                 return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
-            
+
             return max(self.min_position_size, min(self.max_position_size, weighted_size))
         except MathValidationError as e:
             self.logger.warning(f'Mathematical validation error in weighted position size: {e}')
@@ -485,24 +485,24 @@ class PositionSizer:
         try:
             self.logger.info("Initializing live trading utilities...")
             tprint("Initializing live trading utilities...")
-            
+
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
             tprint("✅ Model Manager initialized")
-            
+
             # Load the single position sizing model
             success = await self.load_position_sizing_model()
             if not success:
                 self.logger.warning("⚠️ Failed to load position sizing model during initialization")
                 tprint("⚠️ Failed to load position sizing model during initialization")
-            
+
             # Initialize caches
             self.model_cache = {}
             self.position_cache = {}
             self.logger.info("✅ Model and position caches initialized")
             tprint("✅ Model and position caches initialized")
-            
+
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing live trading utilities: {e}")
@@ -514,15 +514,15 @@ class PositionSizer:
         """Initialize performance monitoring."""
         try:
             self.logger.info("Initializing performance monitoring...")
-            
+
             # Initialize Performance Monitor
             self.performance_monitor = PerformanceMonitor()
             self.logger.info("✅ Performance Monitor initialized")
-            
+
             # Enable global monitoring
             self.global_monitor.enable()
             self.logger.info("✅ Global monitoring enabled")
-            
+
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing performance monitoring: {e}")
@@ -537,51 +537,51 @@ class PositionSizer:
     async def validate_position_sizing_inputs(self, sizing_inputs: dict[str, Any]) -> dict[str, Any]:
         """
         Validate position sizing inputs for live trading.
-        
+
         Args:
             sizing_inputs: Position sizing inputs to validate
-            
+
         Returns:
             dict: Validation results
         """
         try:
             self.logger.info("Validating position sizing inputs for live trading...")
             tprint("Validating position sizing inputs for live trading...")
-            
+
             validation_results = {
                 "is_valid": True,
                 "errors": [],
                 "warnings": []
             }
-            
+
             # Validate ML confidence
             ml_confidence = sizing_inputs.get("ml_confidence", 0.0)
             if not isinstance(ml_confidence, (int, float)) or ml_confidence < 0.0 or ml_confidence > 1.0:
                 validation_results["is_valid"] = False
                 validation_results["errors"].append(f"Invalid ML confidence: {ml_confidence}")
-            
+
             # Validate current price
             current_price = sizing_inputs.get("current_price", 0.0)
             if not isinstance(current_price, (int, float)) or current_price <= 0:
                 validation_results["is_valid"] = False
                 validation_results["errors"].append(f"Invalid current price: {current_price}")
-            
+
             # Validate account balance
             account_balance = sizing_inputs.get("account_balance", 0.0)
             if not isinstance(account_balance, (int, float)) or account_balance <= 0:
                 validation_results["is_valid"] = False
                 validation_results["errors"].append(f"Invalid account balance: {account_balance}")
-            
+
             # Check for reasonable position size bounds
             if validation_results["is_valid"]:
                 estimated_position_size = (ml_confidence * account_balance) / current_price
                 if estimated_position_size > self.max_position_size * 2:
                     validation_results["warnings"].append(f"Estimated position size ({estimated_position_size:.4f}) is very large")
-            
+
             self.logger.info(f"✅ Position sizing inputs validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             tprint(f"✅ Position sizing inputs validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             return validation_results
-            
+
         except Exception as e:
             error_msg = f"Error validating position sizing inputs: {e}"
             self.logger.error(error_msg)
@@ -596,7 +596,7 @@ class PositionSizer:
     async def load_position_sizing_model(self) -> bool:
         """
         Load the single position sizing model trained on various market conditions.
-        
+
         Returns:
             bool: True if model loading successful
         """
@@ -605,14 +605,14 @@ class PositionSizer:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return False
-        
+
         try:
             # Use the single position sizing model trained on various market conditions
             model_name = "tactician_position_sizing_model"
-            
+
             self.logger.info(f"Loading position sizing model for live trading: {model_name}")
             tprint(f"Loading position sizing model for live trading: {model_name}")
-            
+
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
@@ -620,7 +620,7 @@ class PositionSizer:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
             # Load and cache the model
             model = await self.model_manager.load_model(model_name)
             if model:
@@ -634,7 +634,7 @@ class PositionSizer:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
         except Exception as e:
             error_msg = f"Error loading position sizing model: {e}"
             self.logger.error(error_msg)

@@ -156,7 +156,7 @@ class RiskMetricsCalculator(PnLLossFunctionsBase):
         exceptions=(ValueError, KeyError, TypeError),
         default_return={},
     )
-    def calculate_risk_budget(self, portfolio_weights: np.ndarray, 
+    def calculate_risk_budget(self, portfolio_weights: np.ndarray,
                             asset_covariances: np.ndarray) -> Dict[str, Any]:
         """
         Calculate risk budget allocation.
@@ -173,7 +173,7 @@ class RiskMetricsCalculator(PnLLossFunctionsBase):
                 return {"risk_contributions": [], "total_risk": 0.0}
 
             # Calculate portfolio variance
-            portfolio_variance = np.dot(portfolio_weights.T, 
+            portfolio_variance = np.dot(portfolio_weights.T,
                                     np.dot(asset_covariances, portfolio_weights))
             portfolio_risk = np.sqrt(portfolio_variance)
 

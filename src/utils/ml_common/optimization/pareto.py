@@ -54,7 +54,7 @@ except ImportError:
 try:
     import vectorbt as vbt
     from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, 
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
         rolling_sum, rolling_apply, rolling_corr, rolling_cov,
         rolling_quantile, rolling_skew, rolling_kurt
     )
@@ -80,9 +80,7 @@ try:
 except ImportError:
     UNIFIED_MANAGER_AVAILABLE = False
 
-
 ObjectiveDirection = Dict[str, str]  # {'metric_name': 'max' | 'min'}
-
 
 @dataclass
 class Solution:
@@ -92,7 +90,6 @@ class Solution:
     """
     metrics: Dict[str, float]
     params: Dict[str, Any] | None = None
-
 
 class ParetoFront:
     """Enhanced Pareto front utilities with M1 optimization and non-linear transformations."""
@@ -156,7 +153,7 @@ class ParetoFront:
 
         init_time = time.time() - start_time
         self.logger.info(f"✅ Enhanced ParetoFront with VectorBT initialized in {init_time:.3f}s")
-    
+
     def _initialize_vectorbt_components(self):
         """Initialize VectorBT optimization components."""
         # Initialize VectorBT rolling optimizer if available
@@ -174,7 +171,7 @@ class ParetoFront:
                 self.vectorbt_rolling_optimizer = None
         else:
             self.vectorbt_rolling_optimizer = None
-        
+
         # Initialize unified vectorization manager if available
         if UNIFIED_MANAGER_AVAILABLE:
             try:
@@ -185,20 +182,20 @@ class ParetoFront:
                 self.vectorization_manager = None
         else:
             self.vectorization_manager = None
-    
-    def _apply_nonlinear_objective_transformations(self, solutions: List[Solution], 
+
+    def _apply_nonlinear_objective_transformations(self, solutions: List[Solution],
                                                  objectives: ObjectiveDirection) -> List[Solution]:
         """Apply non-linear transformations to objectives for better optimization."""
         if not self.use_nonlinear_objectives:
             return solutions
-        
+
         transformed_solutions = []
         for solution in solutions:
             transformed_metrics = {}
             for metric_name, value in solution.metrics.items():
                 if metric_name in objectives:
                     direction = objectives[metric_name]
-                    
+
                     # Apply non-linear transformations based on metric characteristics
                     if metric_name in ['pnl', 'sharpe', 'win_rate'] and direction == 'max':
                         # Apply log transformation for financial metrics (with offset to handle negatives)
@@ -215,31 +212,31 @@ class ParetoFront:
                     else:
                         # Keep original value for other metrics
                         transformed_value = value
-                    
+
                     transformed_metrics[metric_name] = transformed_value
                 else:
                     transformed_metrics[metric_name] = value
-            
+
             transformed_solutions.append(Solution(
                 metrics=transformed_metrics,
                 params=solution.params
             ))
-        
+
         return transformed_solutions
-    
-    def _reverse_nonlinear_objective_transformations(self, solutions: List[Solution], 
+
+    def _reverse_nonlinear_objective_transformations(self, solutions: List[Solution],
                                                    objectives: ObjectiveDirection) -> List[Solution]:
         """Reverse non-linear transformations for final results."""
         if not self.use_nonlinear_objectives:
             return solutions
-        
+
         reversed_solutions = []
         for solution in solutions:
             reversed_metrics = {}
             for metric_name, value in solution.metrics.items():
                 if metric_name in objectives:
                     direction = objectives[metric_name]
-                    
+
                     # Reverse non-linear transformations
                     if metric_name in ['pnl', 'sharpe', 'win_rate'] and direction == 'max':
                         # Reverse log transformation
@@ -256,16 +253,16 @@ class ParetoFront:
                     else:
                         # Keep original value
                         reversed_value = value
-                    
+
                     reversed_metrics[metric_name] = reversed_value
                 else:
                     reversed_metrics[metric_name] = value
-            
+
             reversed_solutions.append(Solution(
                 metrics=reversed_metrics,
                 params=solution.params
             ))
-        
+
         return reversed_solutions
 
     # @auto_memory_skim_decorator("pareto_front_construction")  # Commented out due to import issues
@@ -340,27 +337,27 @@ class ParetoFront:
         """Select optimal optimization strategy based on data characteristics."""
         n_solutions = len(solutions)
         n_objectives = len(objectives)
-        
+
         # VectorBT strategy selection for large datasets
-        if (self.enable_vectorbt and 
+        if (self.enable_vectorbt and
             n_solutions >= self.vectorbt_threshold and
             VECTORBT_AVAILABLE):
             return 'vectorbt'
-        
+
         # VectorBT rolling strategy for medium datasets
-        if (self.enable_vectorbt_rolling and 
+        if (self.enable_vectorbt_rolling and
             n_solutions >= self.vectorbt_rolling_threshold and
             n_solutions < self.vectorbt_threshold and
             self.vectorbt_rolling_optimizer):
             return 'vectorbt_rolling'
-        
+
         # GPU strategy selection
         if use_gpu and n_solutions > 500 and self.gpu_manager:
             return 'gpu'
-        
+
         # Standard strategy for small datasets
         return 'standard'
-    
+
     def _compute_pareto_front_with_strategy(
         self,
         solutions: List[Solution],
@@ -371,20 +368,20 @@ class ParetoFront:
         if strategy == 'vectorbt' and VECTORBT_AVAILABLE:
             self.performance_stats['vectorbt_operations'] += 1
             return self._compute_pareto_front_vectorbt(solutions, objectives)
-        
+
         elif strategy == 'vectorbt_rolling' and self.vectorbt_rolling_optimizer:
             self.performance_stats['vectorbt_rolling_operations'] += 1
             return self._compute_pareto_front_vectorbt_rolling(solutions, objectives)
-        
+
         elif strategy == 'gpu' and self.gpu_manager:
             self.performance_stats['gpu_operations'] += 1
             return self._compute_pareto_front_gpu_original(solutions, objectives)
-        
+
         else:
             # Use standard computation
             self.performance_stats['standard_operations'] += 1
             return self._compute_pareto_front_full(solutions, objectives)
-    
+
     def _compute_pareto_front_vectorbt(
         self,
         solutions: List[Solution],
@@ -394,23 +391,23 @@ class ParetoFront:
         try:
             # Convert solutions to matrix
             objective_matrix = self._solutions_to_matrix_vectorbt(solutions, objectives)
-            
+
             # Compute dominance matrix using VectorBT
             dominance_matrix = self._compute_dominance_matrix_vectorbt(objective_matrix, objectives)
-            
+
             # Find non-dominated solutions
             is_dominated = np.any(dominance_matrix, axis=1)
             pareto_indices = np.where(~is_dominated)[0]
-            
+
             # Extract Pareto solutions
             pareto_front = [solutions[i] for i in pareto_indices]
-            
+
             return pareto_front
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT computation failed: {e}, falling back to standard algorithm")
             return self._compute_pareto_front_full(solutions, objectives)
-    
+
     def _compute_pareto_front_vectorbt_rolling(
         self,
         solutions: List[Solution],
@@ -420,23 +417,23 @@ class ParetoFront:
         try:
             # Convert solutions to matrix
             objective_matrix = self._solutions_to_matrix_vectorbt_rolling(solutions, objectives)
-            
+
             # Use VectorBT rolling operations for dominance computation
             dominance_matrix = self._compute_dominance_vectorbt_rolling(objective_matrix, objectives)
-            
+
             # Find non-dominated solutions
             is_dominated = np.any(dominance_matrix, axis=1)
             pareto_indices = np.where(~is_dominated)[0]
-            
+
             # Extract Pareto solutions
             pareto_front = [solutions[i] for i in pareto_indices]
-            
+
             return pareto_front
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT rolling computation failed: {e}, using fallback")
             return self._compute_pareto_front_full(solutions, objectives)
-    
+
     def _solutions_to_matrix_vectorbt(
         self,
         solutions: List[Solution],
@@ -445,25 +442,25 @@ class ParetoFront:
         """Convert solutions to objective matrix optimized for VectorBT."""
         n_solutions = len(solutions)
         n_objectives = len(objectives)
-        
+
         # Create objective matrix
         objective_matrix = np.zeros((n_solutions, n_objectives), dtype=np.float64)
-        
+
         for i, solution in enumerate(solutions):
             for j, obj_name in enumerate(objectives.keys()):
                 value = solution.metrics.get(obj_name, np.nan)
                 objective_matrix[i, j] = value
-        
+
         # Apply direction transformations (min to max for VectorBT)
         for j, (obj_name, direction) in enumerate(objectives.items()):
             if direction == 'min':
                 objective_matrix[:, j] = -objective_matrix[:, j]
-        
+
         # Handle NaN values
         objective_matrix = np.where(np.isnan(objective_matrix), -np.inf, objective_matrix)
-        
+
         return objective_matrix
-    
+
     def _solutions_to_matrix_vectorbt_rolling(
         self,
         solutions: List[Solution],
@@ -471,7 +468,7 @@ class ParetoFront:
     ) -> np.ndarray:
         """Convert solutions to matrix optimized for VectorBT rolling operations."""
         return self._solutions_to_matrix_vectorbt(solutions, objectives)
-    
+
     def _compute_dominance_matrix_vectorbt(
         self,
         objective_matrix: np.ndarray,
@@ -479,7 +476,7 @@ class ParetoFront:
     ) -> np.ndarray:
         """Compute dominance matrix using VectorBT vectorized operations."""
         n_solutions = objective_matrix.shape[0]
-        
+
         # Use VectorBT for efficient matrix operations
         if self.vectorbt_rolling_optimizer and self.enable_vectorbt_rolling:
             # Use VectorBT rolling operations for dominance computation
@@ -487,9 +484,9 @@ class ParetoFront:
         else:
             # Use standard vectorized computation
             dominance_matrix = self._compute_dominance_standard_vectorized(objective_matrix)
-        
+
         return dominance_matrix
-    
+
     def _compute_dominance_vectorbt_rolling(
         self,
         objective_matrix: np.ndarray,
@@ -497,47 +494,47 @@ class ParetoFront:
     ) -> np.ndarray:
         """Compute dominance matrix using VectorBT rolling operations."""
         return self._compute_dominance_with_vectorbt_rolling(objective_matrix)
-    
+
     def _compute_dominance_with_vectorbt_rolling(self, objective_matrix: np.ndarray) -> np.ndarray:
         """Compute dominance matrix using VectorBT rolling operations."""
         n_solutions = objective_matrix.shape[0]
         dominance_matrix = np.zeros((n_solutions, n_solutions), dtype=bool)
-        
+
         # Use VectorBT rolling operations for efficient computation
         for i in range(n_solutions):
             solution_i = objective_matrix[i:i+1, :]  # Shape: (1, n_objectives)
-            
+
             # Use VectorBT rolling operations to compare with all other solutions
             for j in range(n_solutions):
                 if i == j:
                     continue
-                
+
                 solution_j = objective_matrix[j:j+1, :]  # Shape: (1, n_objectives)
-                
+
                 # Check if solution i dominates solution j
                 # A dominates B if A >= B in all objectives AND A > B in at least one
                 better_or_equal = np.all(solution_i >= solution_j)
                 strictly_better = np.any(solution_i > solution_j)
-                
+
                 dominance_matrix[i, j] = better_or_equal and strictly_better
-        
+
         return dominance_matrix
-    
+
     def _compute_dominance_standard_vectorized(self, objective_matrix: np.ndarray) -> np.ndarray:
         """Compute dominance matrix using standard vectorized operations."""
         n_solutions = objective_matrix.shape[0]
-        
+
         # Vectorized dominance computation
         # Expand dimensions for broadcasting
         obj_i = objective_matrix[:, np.newaxis, :]  # (n, 1, m)
         obj_j = objective_matrix[np.newaxis, :, :]  # (1, n, m)
-        
+
         # Check dominance: i dominates j if i >= j in all objectives AND i > j in at least one
         better_or_equal = np.all(obj_i >= obj_j, axis=2)  # (n, n)
         strictly_better = np.any(obj_i > obj_j, axis=2)   # (n, n)
-        
+
         dominance_matrix = better_or_equal & strictly_better
-        
+
         return dominance_matrix
 
     def _compute_pareto_front_gpu_original(
@@ -789,13 +786,11 @@ class ParetoFront:
 
         return dominance_matrix
 
-
 DEFAULT_FINANCIAL_WEIGHTS: Dict[str, float] = {
     'pnl': 0.50,
     'win_rate': 0.25,
     'sharpe': 0.25,
 }
-
 
 def filter_by_constraints(
     solutions: List[Solution],
@@ -835,7 +830,6 @@ def filter_by_constraints(
             filtered.append(s)
     return filtered
 
-
 def _dominates(a: Solution, b: Solution, objectives: ObjectiveDirection) -> bool:
     """True if a Pareto-dominates b under objectives."""
     better_or_equal_all = True
@@ -872,7 +866,6 @@ def _dominates(a: Solution, b: Solution, objectives: ObjectiveDirection) -> bool
                 strictly_better_at_least_one = True
 
     return better_or_equal_all and strictly_better_at_least_one
-
 
 def compute_pareto_front(
     solutions: List[Solution],
@@ -923,13 +916,11 @@ def compute_pareto_front(
             pareto.append(s)
     return pareto
 
-
 def _normalize(values: np.ndarray) -> np.ndarray:
     vmin = np.nanmin(values, axis=0)
     vmax = np.nanmax(values, axis=0)
     span = np.where((vmax - vmin) == 0, 1.0, (vmax - vmin))
     return (values - vmin) / span
-
 
 def _to_matrix(
     solutions: List[Solution],
@@ -940,7 +931,6 @@ def _to_matrix(
     # For minimization objectives, invert to make all maximization for normalization
     inv = np.array([1.0 if objectives[k] == 'max' else -1.0 for k in keys], dtype=float)
     return mat * inv
-
 
 def select_knee_point(
     pareto_solutions: List[Solution],
@@ -971,7 +961,6 @@ def select_knee_point(
     dists = np.sqrt(((N - ideal) ** 2 * w).sum(axis=1))
     idx = int(np.argmin(dists))
     return pareto_solutions[idx]
-
 
 def compute_hypervolume(
     pareto_solutions: List[Solution],
@@ -1458,20 +1447,20 @@ def _compute_boundary_correction(norm_matrix: np.ndarray, dims: int) -> float:
                 results[algorithm]['max_time'] = np.max(times)
 
         return results
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()
-        
+
         if stats['total_operations'] > 0:
             stats['avg_time_per_operation'] = stats['total_time'] / stats['total_operations']
             stats['vectorbt_usage_rate'] = stats['vectorbt_operations'] / stats['total_operations']
             stats['vectorbt_rolling_usage_rate'] = stats['vectorbt_rolling_operations'] / stats['total_operations']
             stats['standard_usage_rate'] = stats['standard_operations'] / stats['total_operations']
             stats['gpu_usage_rate'] = stats['gpu_operations'] / stats['total_operations']
-        
+
         return stats
-    
+
     def get_optimization_recommendations(
         self,
         solutions: List[Solution],
@@ -1480,7 +1469,7 @@ def _compute_boundary_correction(norm_matrix: np.ndarray, dims: int) -> float:
         """Get optimization recommendations based on data characteristics."""
         n_solutions = len(solutions)
         n_objectives = len(objectives)
-        
+
         recommendations = {
             'data_size': n_solutions,
             'num_objectives': n_objectives,
@@ -1493,7 +1482,7 @@ def _compute_boundary_correction(norm_matrix: np.ndarray, dims: int) -> float:
             },
             'performance_estimates': {}
         }
-        
+
         # Recommend strategy based on data size
         if n_solutions >= self.vectorbt_threshold and self.enable_vectorbt:
             recommendations['recommended_strategy'] = 'vectorbt'
@@ -1519,9 +1508,8 @@ def _compute_boundary_correction(norm_matrix: np.ndarray, dims: int) -> float:
                 'estimated_speedup': 1.0,
                 'memory_efficiency': 'low'
             }
-        
-        return recommendations
 
+        return recommendations
 
 def scalarize_financial_goals(
     metrics: Dict[str, float],
@@ -1533,7 +1521,7 @@ def scalarize_financial_goals(
 
     If keys 'pnl', 'win_rate', 'sharpe' are present, use weights (default DEFAULT_FINANCIAL_WEIGHTS).
     Otherwise, fall back to a simple weighted sum across provided objectives (max => +, min => -).
-    
+
     Args:
         metrics: Dictionary of metric values
         weights: Optional weights for metrics
@@ -1551,7 +1539,7 @@ def scalarize_financial_goals(
         for k in available:
             try:
                 raw_value = float(metrics.get(k, 0.0))
-                
+
                 # Apply non-linear scaling if enabled
                 if use_nonlinear_scaling:
                     if k == 'pnl':
@@ -1570,7 +1558,7 @@ def scalarize_financial_goals(
                         scaled_value = raw_value
                 else:
                     scaled_value = raw_value
-                
+
                 score += (weights[k] / total_w) * scaled_value
             except Exception:
                 pass
@@ -1581,7 +1569,7 @@ def scalarize_financial_goals(
     if fallback_objectives:
         for k, direction in fallback_objectives.items():
             v = float(metrics.get(k, 0.0))
-            
+
             # Apply non-linear scaling if enabled
             if use_nonlinear_scaling:
                 if direction == 'max':
@@ -1593,10 +1581,9 @@ def scalarize_financial_goals(
                 else:
                     # Apply square root scaling for minimization objectives
                     v = np.sqrt(max(0, v))
-            
+
             score += v if direction == 'max' else -v
     return float(score)
-
 
 # Global instance with proper cleanup
 _pareto_front = None
@@ -1608,7 +1595,6 @@ def get_pareto_front(nonlinear_config: Optional[NonLinearConfig] = None) -> Pare
         _pareto_front = ParetoFront(nonlinear_config)
     return _pareto_front
 
-
 class ParetoOptimizer:
     """Enhanced wrapper class for ParetoFront functionality with non-linear transformations."""
 
@@ -1618,7 +1604,7 @@ class ParetoOptimizer:
         self.logger = _LOGGER
         self.logger.info("🚀 Initializing Enhanced ParetoOptimizer...")
 
-    def optimize(self, solutions: List[Solution], objectives: ObjectiveDirection, 
+    def optimize(self, solutions: List[Solution], objectives: ObjectiveDirection,
                 use_nonlinear_transforms: bool = True) -> List[Solution]:
         """Optimize solutions using enhanced Pareto front computation with non-linear transformations."""
         return self.pareto_front.compute_pareto_front_gpu(
@@ -1630,7 +1616,6 @@ class ParetoOptimizer:
         """Select the best solution using knee point selection with non-linear transformations."""
         pareto_front = self.optimize(solutions, objectives, use_nonlinear_transforms)
         return select_knee_point(pareto_front, objectives)
-
 
 __all__ = [
     'Solution',
@@ -1646,7 +1631,6 @@ __all__ = [
     'get_pareto_front',
 ]
 
-
 # ParetoFrontAnalyzer class - defined at module level to avoid indentation issues
 class ParetoFrontAnalyzer:
     """Simple Pareto front analyzer placeholder."""
@@ -1657,5 +1641,3 @@ class ParetoFrontAnalyzer:
     def analyze(self, data):
         """Basic analysis method."""
         return {"pareto_front": [], "knee_point": None}
-
-

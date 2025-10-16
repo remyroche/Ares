@@ -40,7 +40,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -48,23 +48,23 @@ logger = logging.getLogger(__name__)
 class MatrixFeatureProcessor:
     """
     Processor for matrix-optimized feature generation.
-    
+
     This class integrates with the matrix operations framework to provide
-    optimized feature computation using vectorized operations and 
+    optimized feature computation using vectorized operations and
     """
-    
+
     def __init__(self, enable_gpu: bool = True, enable_parallel: bool = True):
         """
         Initialize the matrix feature processor.
-        
+
         Args:
-            enable_gpu: Whether to enable 
+            enable_gpu: Whether to enable
             enable_parallel: Whether to enable parallel processing
         """
         self.logger = logger.getChild('MatrixFeatureProcessor')
         self.enable_gpu = enable_gpu
         self.enable_parallel = enable_parallel
-        
+
         # Initialize matrix operations
         try:
             from ...utils.matrix_operations import get_unified_matrix_operations
@@ -78,33 +78,33 @@ class MatrixFeatureProcessor:
             self.matrix_ops = None
             self.matrix_available = False
             self.logger.warning("⚠️ Matrix operations not available")
-    
-    def process_features(self, 
+
+    def process_features(self,
                         generators: List[FeatureGenerator],
                         data: pd.DataFrame,
                         **kwargs) -> List[FeatureResult]:
         """
         Process features using matrix operations optimization.
-        
+
         Args:
             generators: List of feature generators
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             List of feature results
         """
         if not self.matrix_available:
             self.logger.warning("Matrix operations not available, using fallback")
             return self._fallback_processing(generators, data, **kwargs)
-        
+
         self.logger.info(f"Processing {len(generators)} features with matrix optimization")
-        
+
         results = []
-        
+
         # Group generators by type for batch processing
         grouped_generators = self._group_generators_by_type(generators)
-        
+
         for group_type, group_generators in grouped_generators.items():
             try:
                 group_results = self._process_generator_group(
@@ -120,9 +120,9 @@ class MatrixFeatureProcessor:
                         results.append(result)
                     except Exception as e2:
                         self.logger.error(f"Error processing {generator.config.name}: {e2}")
-        
+
         return results
-    
+
     def _group_generators_by_type(self, generators: List[FeatureGenerator]) -> Dict[str, List[FeatureGenerator]]:
         """Group generators by type for batch processing."""
         groups = {
@@ -130,7 +130,7 @@ class MatrixFeatureProcessor:
             'rolling': [],
             'other': []
         }
-        
+
         for generator in generators:
             if hasattr(generator, 'enable_matrix_ops') and generator.enable_matrix_ops:
                 groups['vectorized'].append(generator)
@@ -138,10 +138,10 @@ class MatrixFeatureProcessor:
                 groups['rolling'].append(generator)
             else:
                 groups['other'].append(generator)
-        
+
         return {k: v for k, v in groups.items() if v}
-    
-    def _process_generator_group(self, 
+
+    def _process_generator_group(self,
                                group_type: str,
                                generators: List[FeatureGenerator],
                                data: pd.DataFrame,
@@ -153,17 +153,17 @@ class MatrixFeatureProcessor:
             return self._process_rolling_generators(generators, data, **kwargs)
         else:
             return self._process_other_generators(generators, data, **kwargs)
-    
-    def _process_vectorized_generators(self, 
+
+    def _process_vectorized_generators(self,
                                      generators: List[FeatureGenerator],
                                      data: pd.DataFrame,
                                      **kwargs) -> List[FeatureResult]:
         """Process vectorized generators with matrix operations."""
         results = []
-        
+
         # Extract common data arrays
         data_arrays = self._extract_data_arrays(data, generators)
-        
+
         for generator in generators:
             try:
                 # Use matrix operations for computation
@@ -176,7 +176,7 @@ class MatrixFeatureProcessor:
                     result = generator.generate(data, **kwargs)
                     results.append(result)
                     continue
-                
+
                 # Create result
                 result = FeatureResult(
                     name=generator.config.name,
@@ -186,22 +186,22 @@ class MatrixFeatureProcessor:
                     success=True
                 )
                 results.append(result)
-                
+
             except Exception as e:
                 self.logger.error(f"Error in vectorized processing for {generator.config.name}: {e}")
                 # Fallback to regular generation
                 result = generator.generate(data, **kwargs)
                 results.append(result)
-        
+
         return results
-    
-    def _process_rolling_generators(self, 
+
+    def _process_rolling_generators(self,
                                   generators: List[FeatureGenerator],
                                   data: pd.DataFrame,
                                   **kwargs) -> List[FeatureResult]:
         """Process rolling generators with batch operations."""
         results = []
-        
+
         # Group by window size for batch processing
         window_groups = {}
         for generator in generators:
@@ -209,7 +209,7 @@ class MatrixFeatureProcessor:
             if window not in window_groups:
                 window_groups[window] = []
             window_groups[window].append(generator)
-        
+
         for window, window_generators in window_groups.items():
             try:
                 # Batch process rolling operations
@@ -223,52 +223,52 @@ class MatrixFeatureProcessor:
                 for generator in window_generators:
                     result = generator.generate(data, **kwargs)
                     results.append(result)
-        
+
         return results
-    
-    def _process_other_generators(self, 
+
+    def _process_other_generators(self,
                                 generators: List[FeatureGenerator],
                                 data: pd.DataFrame,
                                 **kwargs) -> List[FeatureResult]:
         """Process other generators individually."""
         results = []
-        
+
         for generator in generators:
             try:
                 result = generator.generate(data, **kwargs)
                 results.append(result)
             except Exception as e:
                 self.logger.error(f"Error processing {generator.config.name}: {e}")
-        
+
         return results
-    
+
     def _extract_data_arrays(self, data: pd.DataFrame, generators: List[FeatureGenerator]) -> Dict[str, np.ndarray]:
         """Extract data arrays needed by generators."""
         arrays = {}
-        
+
         # Determine required columns
         required_columns = set()
         for generator in generators:
             required_columns.update(generator.config.required_columns)
-        
+
         # Extract arrays
         for column in required_columns:
             if column in data.columns:
                 arrays[column] = data[column].values
-        
+
         return arrays
-    
-    def _batch_rolling_operations(self, 
+
+    def _batch_rolling_operations(self,
                                 generators: List[FeatureGenerator],
                                 data: pd.DataFrame,
                                 window: int,
                                 **kwargs) -> List[FeatureResult]:
         """Batch process rolling operations."""
         results = []
-        
+
         # Extract common data
         close_prices = data['close'].values
-        
+
         # Use matrix operations for batch rolling
         if self.matrix_ops:
             try:
@@ -276,7 +276,7 @@ class MatrixFeatureProcessor:
                 rolling_mean = self.matrix_ops.batch_process(
                     close_prices.reshape(-1, 1), 'rolling_mean', window=window
                 )
-                
+
                 # Create results for each generator
                 for generator in generators:
                     if 'ma' in generator.config.name.lower() or 'mean' in generator.config.name.lower():
@@ -286,7 +286,7 @@ class MatrixFeatureProcessor:
                         result = generator.generate(data, **kwargs)
                         results.append(result)
                         continue
-                    
+
                     result = FeatureResult(
                         name=generator.config.name,
                         data=pd.Series(feature_data, index=data.index),
@@ -295,7 +295,7 @@ class MatrixFeatureProcessor:
                         success=True
                     )
                     results.append(result)
-                
+
             except Exception as e:
                 self.logger.error(f"Error in batch rolling operations: {e}")
                 # Fallback to individual processing
@@ -307,43 +307,43 @@ class MatrixFeatureProcessor:
             for generator in generators:
                 result = generator.generate(data, **kwargs)
                 results.append(result)
-        
+
         return results
-    
-    def _fallback_processing(self, 
+
+    def _fallback_processing(self,
                            generators: List[FeatureGenerator],
                            data: pd.DataFrame,
                            **kwargs) -> List[FeatureResult]:
         """Fallback processing without matrix operations."""
         results = []
-        
+
         for generator in generators:
             try:
                 result = generator.generate(data, **kwargs)
                 results.append(result)
             except Exception as e:
                 self.logger.error(f"Error in fallback processing for {generator.config.name}: {e}")
-        
+
         return results
 
 class VectorizedFeatureGenerator:
     """
     Base class for vectorized feature generators.
-    
+
     This class provides optimized vectorized computation capabilities
     using the matrix operations framework.
     """
-    
+
     def __init__(self, enable_matrix_ops: bool = True):
         """
         Initialize vectorized feature generator.
-        
+
         Args:
             enable_matrix_ops: Whether to enable matrix operations
         """
         self.enable_matrix_ops = enable_matrix_ops
         self.logger = logger.getChild('VectorizedFeatureGenerator')
-        
+
         # Initialize matrix operations if enabled
         if enable_matrix_ops:
             try:
@@ -355,29 +355,29 @@ class VectorizedFeatureGenerator:
                 self.logger.warning("Matrix operations not available")
         else:
             self.matrix_ops = None
-    
+
     def vectorized_operation(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """
         Perform vectorized operation using matrix operations framework.
-        
+
         Args:
             operation: Operation to perform
             data: Input data array
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the operation
         """
         if not self.enable_matrix_ops or self.matrix_ops is None:
             # Fallback to numpy operations
             return self._numpy_fallback(operation, data, **kwargs)
-        
+
         try:
             return self.matrix_ops.batch_process(data, operation, **kwargs)
         except Exception as e:
             self.logger.warning(f"Matrix operation failed, using numpy fallback: {e}")
             return self._numpy_fallback(operation, data, **kwargs)
-    
+
     def _numpy_fallback(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """Fallback to numpy operations when matrix operations are not available."""
         if operation == 'rolling_mean':
@@ -398,11 +398,11 @@ _global_matrix_processor: Optional[MatrixFeatureProcessor] = None
 def get_matrix_processor(enable_gpu: bool = True, enable_parallel: bool = True) -> MatrixFeatureProcessor:
     """
     Get the global matrix processor instance.
-    
+
     Args:
-        enable_gpu: Whether to enable 
+        enable_gpu: Whether to enable
         enable_parallel: Whether to enable parallel processing
-        
+
     Returns:
         Matrix processor instance
     """
@@ -414,7 +414,7 @@ def get_matrix_processor(enable_gpu: bool = True, enable_parallel: bool = True) 
 def enable_matrix_acceleration(enable: bool = True) -> None:
     """
     Enable or disable matrix acceleration globally.
-    
+
     Args:
         enable: Whether to enable matrix acceleration
     """
@@ -425,16 +425,16 @@ def enable_matrix_acceleration(enable: bool = True) -> None:
         _global_matrix_processor = MatrixFeatureProcessor(enable_gpu=False, enable_parallel=False)
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -453,8 +453,8 @@ def enable_matrix_acceleration(enable: bool = True) -> None:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

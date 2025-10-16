@@ -142,7 +142,6 @@ except ImportError as e:
 # NAS-TAS functionality removed - directory deleted
 NAS_TAS_AVAILABLE = False
 
-
 class AnalystModelType(Enum):
     """Analyst model types."""
     LGBM = "LGBM"
@@ -151,7 +150,6 @@ class AnalystModelType(Enum):
     STACKER_LGBM_CALIBRATED = "STACKER_LGBM_CALIBRATED"
     NAS = "NAS"  # Neural Architecture Search
     TAS = "TAS"  # Tree-based Architecture Search
-
 
 @dataclass
 class AnalystModelsTrainingConfig:
@@ -195,7 +193,6 @@ class AnalystModelsTrainingConfig:
                 AnalystModelType.TAS
             ]
 
-
 @dataclass
 class AnalystModelsTrainingResult:
     """Result of Analyst models training."""
@@ -213,7 +210,6 @@ class AnalystModelsTrainingResult:
     # Status
     training_completed: bool = False
     error: Optional[str] = None
-
 
 class AnalystModelsTrainingStep:
     """
@@ -509,29 +505,29 @@ class AnalystModelsTrainingStep:
     ) -> Dict[str, Any]:
         """
         Generate Out-of-Fold predictions for Tactician integration using VectorBT optimization.
-        
+
         Args:
             training_data: Training DataFrame
             feature_columns: Feature columns
             target_columns: Target columns
             sample_weight: Sample weights
             **kwargs: Additional parameters
-            
+
         Returns:
             Dict with OOF predictions: p_trade, u_trade, q_trade
         """
         try:
             import lightgbm as lgb
-            
+
             tprint_info("🔧 Generating VectorBT-optimized OOF predictions for Tactician integration...")
-            
+
             X = training_data[feature_columns].values
             y = training_data[target_columns].values.ravel()
-            
+
             # Use VectorBT-optimized parallel cross-validation if available
             if self.vectorbt_rolling_optimizer is not None:
                 tprint_info("🚀 Using VectorBT parallel cross-validation")
-                
+
                 # Use the new parallel cross-validation method
                 cv_result = self.vectorbt_rolling_optimizer.parallel_cross_validation(
                     X, y, lgb.LGBMRegressor, cv_folds=5,
@@ -541,7 +537,7 @@ class AnalystModelsTrainingStep:
                     random_state=42,
                     verbosity=-1
                 )
-                
+
                 # Extract OOF predictions
                 oof_predictions = {
                     'p_trade': np.where(cv_result['oof_predictions'] > 0, 1.0, 0.0).tolist(),
@@ -551,12 +547,12 @@ class AnalystModelsTrainingStep:
                     'cv_folds': cv_result['cv_folds'],
                     'generation_method': cv_result['method']
                 }
-                
+
                 tprint_success(f"✅ VectorBT parallel OOF predictions generated using {cv_result['method']}")
                 return oof_predictions
             elif UNIFIED_VECTORIZATION_AVAILABLE and self.vectorization_manager is not None:
                 tprint_info("🚀 Using Unified Vectorization Manager cross-validation")
-                
+
                 # Create operation configuration for cross-validation
                 config = OperationConfig(
                     operation_type=OperationType.CROSS_VALIDATION,
@@ -564,7 +560,7 @@ class AnalystModelsTrainingStep:
                     data_dimensions=X.shape,
                     memory_budget_mb=self.config.memory_limit_gb * 1024
                 )
-                
+
                 # Prepare data for VectorBT optimization
                 data = {
                     'X': X,
@@ -581,7 +577,7 @@ class AnalystModelsTrainingStep:
                     'scoring': 'neg_mean_squared_error',
                     'sample_weight': sample_weight
                 }
-                
+
                 # Use VectorBT-optimized cross-validation
                 cv_result = self.vectorization_manager.optimize_operation(
                     OperationType.CROSS_VALIDATION,
@@ -589,7 +585,7 @@ class AnalystModelsTrainingStep:
                     config,
                     prefer_vectorbt=True
                 )
-                
+
                 # Extract OOF predictions from VectorBT result
                 if hasattr(cv_result.result, 'oof_predictions'):
                     oof_predictions = cv_result.result.oof_predictions
@@ -598,17 +594,17 @@ class AnalystModelsTrainingStep:
                     oof_predictions = await self._generate_oof_predictions_fallback(
                         X, y, sample_weight, training_data
                     )
-                
+
                 tprint_success(f"✅ VectorBT-optimized OOF predictions generated (performance gain: {cv_result.performance_gain:.2f}x)")
                 return oof_predictions
-                
+
             else:
                 # Fallback to standard cross-validation
                 tprint_warning("⚠️ VectorBT optimization not available, using standard cross-validation")
                 return await self._generate_oof_predictions_fallback(
                     X, y, sample_weight, training_data
                 )
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate OOF predictions: {e}")
             # Return default OOF predictions
@@ -633,24 +629,24 @@ class AnalystModelsTrainingStep:
         try:
             from sklearn.model_selection import KFold
             import lightgbm as lgb
-            
+
             # Use 5-fold CV for OOF predictions
             kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            
+
             # Initialize OOF prediction arrays
             n_samples = len(training_data)
             p_trade_oof = np.zeros(n_samples)  # Probability of trade
             u_trade_oof = np.zeros(n_samples)  # Expected net edge
             q_trade_oof = np.zeros(n_samples)  # Confidence/quality
-            
+
             # Generate OOF predictions using LightGBM
             for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
                 tprint_debug(f"🔧 Generating OOF predictions for fold {fold + 1}/5")
-                
+
                 X_train, X_val = X[train_idx], X[val_idx]
                 y_train, y_val = y[train_idx], y[val_idx]
                 w_train = sample_weight[train_idx]
-                
+
                 # Train LightGBM model for this fold
                 lgb_model = lgb.LGBMRegressor(
                     n_estimators=100,
@@ -659,31 +655,31 @@ class AnalystModelsTrainingStep:
                     random_state=42,
                     verbosity=-1
                 )
-                
+
                 lgb_model.fit(X_train, y_train, sample_weight=w_train)
-                
+
                 # Get predictions for validation set
                 y_pred = lgb_model.predict(X_val)
-                
+
                 # Calculate p_trade (probability of positive return)
                 p_trade_fold = np.where(y_pred > 0, 1.0, 0.0)
-                
+
                 # Calculate u_trade (expected net edge)
                 u_trade_fold = y_pred
-                
+
                 # Calculate q_trade (confidence based on prediction magnitude)
                 q_trade_fold = np.abs(y_pred) / (np.abs(y_pred).max() + 1e-8)
-                
+
                 # Store OOF predictions
                 p_trade_oof[val_idx] = p_trade_fold
                 u_trade_oof[val_idx] = u_trade_fold
                 q_trade_oof[val_idx] = q_trade_fold
-            
+
             # Ensure values are in valid ranges
             p_trade_oof = np.clip(p_trade_oof, 0.0, 1.0)
             u_trade_oof = np.clip(u_trade_oof, -1.0, 1.0)
             q_trade_oof = np.clip(q_trade_oof, 0.0, 1.0)
-            
+
             oof_predictions = {
                 'p_trade': p_trade_oof.tolist(),
                 'u_trade': u_trade_oof.tolist(),
@@ -692,12 +688,12 @@ class AnalystModelsTrainingStep:
                 'cv_folds': 5,
                 'generation_method': 'lightgbm_oof_fallback'
             }
-            
+
             tprint_success(f"✅ Generated fallback OOF predictions: p_trade mean={p_trade_oof.mean():.3f}, "
                           f"u_trade mean={u_trade_oof.mean():.3f}, q_trade mean={q_trade_oof.mean():.3f}")
-            
+
             return oof_predictions
-            
+
         except Exception as e:
             tprint_error(f"❌ Fallback OOF predictions generation failed: {e}")
             # Return default OOF predictions
@@ -878,7 +874,7 @@ class AnalystModelsTrainingStep:
                 n_jobs=lgb_config.n_jobs,
                 verbose=lgb_config.verbose
             )
-            
+
             lgbm_model.fit(X_combined, y.ravel(), sample_weight=sample_weight)
 
             return {
@@ -1098,7 +1094,7 @@ class AnalystModelsTrainingStep:
         regime_probabilities_info = _lookup('regime_probabilities_info')
         if regime_probabilities_info and regime_probabilities_info.get('has_probabilistic_outputs'):
             tprint_info("📊 Using regime probabilities for Analyst models")
-            
+
             # Add regime probability features
             regime_probabilities = regime_probabilities_info.get('regime_probabilities')
             if regime_probabilities is not None and len(regime_probabilities) == n_samples:
@@ -1425,24 +1421,24 @@ class AnalystModelsTrainingStep:
 
         return metrics
 
-    def _optimized_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
+    def _optimized_rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                                    operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
         Perform optimized rolling operation using VectorBT Rolling Optimizer.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             operation: Operation to perform ('mean', 'std', 'var', 'min', 'max', 'sum', etc.)
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the rolling operation
         """
         if self.vectorbt_rolling_optimizer is not None:
             try:
                 tprint_debug(f"🔄 Using VectorBT Rolling Optimizer for {operation} (window={window})")
-                
+
                 if operation == 'mean':
                     return self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
@@ -1466,7 +1462,7 @@ class AnalystModelsTrainingStep:
                     return self.vectorbt_rolling_optimizer.rolling_cov(data, other, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported VectorBT rolling operation: {operation}")
-                    
+
             except Exception as e:
                 tprint_warning(f"⚠️ VectorBT Rolling Optimizer failed for {operation}: {e}, using fallback")
                 return self._fallback_rolling_operation(data, operation, window, **kwargs)
@@ -1474,23 +1470,23 @@ class AnalystModelsTrainingStep:
             tprint_warning(f"⚠️ VectorBT Rolling Optimizer not available, using fallback for {operation}")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
 
-    def _fallback_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], 
+    def _fallback_rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                                   operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """
         Fallback rolling operation using pandas.
-        
+
         Args:
             data: Input data (Series or DataFrame)
             operation: Operation to perform
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of the rolling operation
         """
         try:
             rolling_obj = data.rolling(window=window, **kwargs)
-            
+
             if operation == 'mean':
                 return rolling_obj.mean()
             elif operation == 'std':
@@ -1514,7 +1510,7 @@ class AnalystModelsTrainingStep:
                 return rolling_obj.cov(other)
             else:
                 raise ValueError(f"Unsupported fallback rolling operation: {operation}")
-                
+
         except Exception as e:
             tprint_error(f"❌ Fallback rolling operation failed for {operation}: {e}")
             raise
@@ -1522,19 +1518,19 @@ class AnalystModelsTrainingStep:
     def _optimize_matrix_operations(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Optimize matrix operations using Unified Vectorization Manager.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Optimized operation result
         """
         if self.vectorization_manager is not None:
             try:
                 tprint_debug(f"🔄 Using Unified Vectorization Manager for {operation_type}")
-                
+
                 # Create operation configuration
                 config = OperationConfig(
                     operation_type=OperationType.MATRIX_MULTIPLICATION if operation_type == 'matrix_mult' else OperationType.STATISTICAL_COMPUTATION,
@@ -1542,20 +1538,20 @@ class AnalystModelsTrainingStep:
                     data_dimensions=X.shape,
                     memory_budget_mb=self.config.memory_limit_gb * 1024
                 )
-                
+
                 # Prepare data for optimization
                 data = {'matrix': X, **kwargs}
-                
+
                 # Use VectorBT optimization
                 result = self.vectorization_manager.optimize_operation(
                     config.operation_type,
                     data,
                     config
                 )
-                
+
                 tprint_success(f"✅ Matrix operation {operation_type} optimized (performance gain: {result.performance_gain:.2f}x)")
                 return result.result
-                
+
             except Exception as e:
                 tprint_warning(f"⚠️ Unified Vectorization Manager failed for {operation_type}: {e}, using fallback")
                 return self._fallback_matrix_operation(X, operation_type, **kwargs)
@@ -1566,12 +1562,12 @@ class AnalystModelsTrainingStep:
     def _fallback_matrix_operation(self, X: np.ndarray, operation_type: str, **kwargs) -> Any:
         """
         Fallback matrix operation using standard numpy/pandas.
-        
+
         Args:
             X: Input matrix
             operation_type: Type of matrix operation
             **kwargs: Additional parameters
-            
+
         Returns:
             Operation result
         """
@@ -1588,7 +1584,7 @@ class AnalystModelsTrainingStep:
                 }
             else:
                 raise ValueError(f"Unsupported matrix operation: {operation_type}")
-                
+
         except Exception as e:
             tprint_error(f"❌ Fallback matrix operation failed for {operation_type}: {e}")
             raise
@@ -1771,7 +1767,6 @@ class AnalystModelsTrainingStep:
             }
         }
 
-
 # Convenience function for external usage
 async def execute_analyst_models_training(
     training_data: pd.DataFrame,
@@ -1799,7 +1794,6 @@ async def execute_analyst_models_training(
     return await trainer.train_analyst_models(
         training_data, feature_columns, target_columns, sample_weight, **kwargs
     )
-
 
 # Apply negative learning patches
 if NEGATIVE_LEARNING_AVAILABLE:

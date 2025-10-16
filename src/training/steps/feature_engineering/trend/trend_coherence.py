@@ -52,18 +52,18 @@ except ImportError:
 @dataclass
 class TrendCoherenceConfig:
     """Configuration for Trend Coherence feature."""
-    
+
     # Direction consistency settings
     direction_window: int = 8   # Window for direction consistency check
     min_periods: int = 1        # Minimum periods for rolling calculation
-    
+
     # EMA settings
     ema_period: int = 12        # EMA period for slope calculation
-    
+
     # Thresholds for interpretation
     min_direction_consistency: float = 0.6  # 60% of bars in same direction
     min_slope_threshold: float = 0.001      # Minimum slope for trend continuity
-    
+
     # Output settings
     include_direction_consistency: bool = True  # Include direction consistency
     include_ema_slope: bool = True             # Include EMA slope
@@ -73,12 +73,12 @@ class TrendCoherenceConfig:
 class TrendCoherenceFeature:
     """
     Trend Coherence Feature Engineering
-    
+
     Ensures trend continuity and direction consistency by combining:
     1. Direction consistency: % of bars closing in same direction within last N bars
     2. EMA slope: Rolling slope of EMA for trend continuity
     """
-    
+
     def __init__(self, config: Optional[TrendCoherenceConfig] = None):
         """Initialize Trend Coherence feature."""
         self.config = config or TrendCoherenceConfig()
@@ -87,33 +87,33 @@ class TrendCoherenceFeature:
         tprint_info(f"   → EMA period: {self.config.ema_period}")
         tprint_info(f"   → Min direction consistency: {self.config.min_direction_consistency}")
         tprint_info(f"   → Min slope threshold: {self.config.min_slope_threshold}")
-    
+
     def calculate_features(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
         """
         Calculate Trend Coherence features.
-        
+
         Args:
             data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
-            
+
         Returns:
             Dictionary of feature Series
         """
         tprint_info("📊 Calculating Trend Coherence features")
-        
+
         # Validate input data
         required_columns = ['open', 'high', 'low', 'close']
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
-        
+
         features = {}
-        
+
         try:
             # Calculate direction consistency
             if self.config.include_direction_consistency:
                 close_direction = np.sign(data['close'].diff())
                 close_direction_series = pd.Series(close_direction, index=data.index)
-                
+
                 # Calculate direction consistency as the absolute value of the mean direction
                 # (higher values = more consistent directional movement)
                 direction_consistency = close_direction_series.rolling(
@@ -122,14 +122,14 @@ class TrendCoherenceFeature:
                 ).apply(lambda x: np.abs(x.mean()), raw=True)
                 features['trend_direction_consistency'] = direction_consistency
                 tprint_info(f"   → Direction consistency: mean={direction_consistency.mean():.3f}, std={direction_consistency.std():.3f}")
-            
+
             # Calculate EMA slope
             if self.config.include_ema_slope:
                 ema = data['close'].ewm(span=self.config.ema_period, min_periods=1).mean()
                 ema_slope = ema.diff()
                 features['trend_ema_slope'] = ema_slope
                 tprint_info(f"   → EMA slope: mean={ema_slope.mean():.3f}, std={ema_slope.std():.3f}")
-            
+
             # Calculate trend coherence grade (0.0-1.0)
             if self.config.include_trend_coherence_grade:
                 # Convert to grade based on direction consistency and slope strength
@@ -138,34 +138,34 @@ class TrendCoherenceFeature:
                 trend_coherence_grade = (direction_grade * slope_grade).clip(0.0, 1.0)
                 features['trend_coherence_grade'] = trend_coherence_grade
                 tprint_info(f"   → Trend coherence grade: mean={trend_coherence_grade.mean():.3f}, std={trend_coherence_grade.std():.3f}")
-            
+
             # Calculate trend classification
             if self.config.include_trend_class:
                 trend_class = pd.Series('incoherent', index=data.index)
-                
+
                 # Check direction consistency
                 direction_consistent = direction_consistency >= self.config.min_direction_consistency
                 slope_positive = ema_slope >= self.config.min_slope_threshold
-                
+
                 # Classify based on both criteria
                 trend_class[direction_consistent & slope_positive] = 'coherent_uptrend'
                 trend_class[direction_consistent & (ema_slope <= -self.config.min_slope_threshold)] = 'coherent_downtrend'
                 trend_class[direction_consistent & (np.abs(ema_slope) < self.config.min_slope_threshold)] = 'coherent_sideways'
                 trend_class[~direction_consistent] = 'incoherent'
-                
+
                 features['trend_class'] = trend_class
-                
+
                 # Count classifications
                 class_counts = trend_class.value_counts()
                 tprint_info(f"   → Trend classification: {dict(class_counts)}")
-            
+
             tprint_info("✅ Trend Coherence features calculated successfully")
             return features
-            
+
         except Exception as e:
             tprint_error(f"❌ Error calculating Trend Coherence features: {e}")
             raise
-    
+
     def get_feature_names(self) -> list:
         """Get list of feature names this class produces."""
         features = []
@@ -178,7 +178,7 @@ class TrendCoherenceFeature:
         if self.config.include_trend_class:
             features.append('trend_class')
         return features
-    
+
     def get_feature_info(self) -> Dict[str, Dict[str, any]]:
         """Get detailed information about the features."""
         return {
@@ -207,15 +207,15 @@ class TrendCoherenceFeature:
 class TrendCoherenceGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible Trend Coherence feature generator.
-    
+
     Implements the FeatureGenerator interface for integration with the feature bank
     and period lookback optimization system.
     """
-    
+
     def __init__(self, lookback: int = 8, **kwargs):
         """
         Initialize the Trend Coherence feature generator.
-        
+
         Args:
             lookback: Number of periods for direction consistency check
             **kwargs: Additional configuration parameters
@@ -243,9 +243,9 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
             gpu_accelerated=False,
             enable_feature_selection=True
         )
-        
+
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize the feature engine
         feature_config = TrendCoherenceConfig(
             direction_window=lookback,
@@ -258,31 +258,31 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
             include_trend_class=kwargs.get('include_trend_class', True)
         )
         self.feature_engine = TrendCoherenceFeature(feature_config)
-    
+
     def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
         """
         Generate Trend Coherence features.
-        
+
         Args:
             data: OHLCV data with required columns
             lookback: Override default lookback period
-            
+
         Returns:
             FeatureResult with generated features
         """
         start_time = time.time()
-        
+
         try:
             # Use provided lookback or default
             effective_lookback = lookback or self.config.default_lookback
-            
+
             # Update feature engine configuration if lookback changed
             if effective_lookback != self.config.default_lookback:
                 self.feature_engine.config.direction_window = effective_lookback
-            
+
             # Generate features
             features = self.feature_engine.calculate_features(data)
-            
+
             # Select the primary feature (trend coherence grade)
             if 'trend_coherence_grade' in features:
                 primary_feature = features['trend_coherence_grade']
@@ -290,9 +290,9 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
                 primary_feature = features['trend_direction_consistency']
             else:
                 raise ValueError("No primary trend coherence feature generated")
-            
+
             computation_time = time.time() - start_time
-            
+
             return FeatureResult(
                 name=self.config.name,
                 data=primary_feature,
@@ -310,7 +310,7 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
                     }
                 }
             )
-            
+
         except Exception as e:
             computation_time = time.time() - start_time
             return FeatureResult(
@@ -321,25 +321,25 @@ class TrendCoherenceGenerator(VectorizedFeatureGenerator):
                 success=False,
                 error_message=str(e)
             )
-    
+
     def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
         """
         Generate all Trend Coherence features.
-        
+
         Args:
             data: OHLCV data with required columns
             lookback: Override default lookback period
-            
+
         Returns:
             Dictionary of all generated features
         """
         # Use provided lookback or default
         effective_lookback = lookback or self.config.default_lookback
-        
+
         # Update feature engine configuration if lookback changed
         if effective_lookback != self.config.default_lookback:
             self.feature_engine.config.direction_window = effective_lookback
-        
+
         # Generate all features
         return self.feature_engine.calculate_features(data)
 
@@ -350,11 +350,11 @@ def calculate_trend_coherence_features(
 ) -> Dict[str, pd.Series]:
     """
     Calculate Trend Coherence features.
-    
+
     Args:
         data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
         config: Optional configuration
-        
+
     Returns:
         Dictionary of feature Series
     """
@@ -363,16 +363,16 @@ def calculate_trend_coherence_features(
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -391,8 +391,8 @@ def calculate_trend_coherence_features(
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -409,13 +409,13 @@ def calculate_trend_coherence_features(
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

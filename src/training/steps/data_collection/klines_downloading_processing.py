@@ -45,11 +45,10 @@ from .enhanced_klines_processing_pipeline import (
     process_klines_data_enhanced
 )
 
-
 class KlinesDataProcessingPipeline:
     """
     Enhanced pipeline for downloading, processing, and quality-checking klines data.
-    
+
     This class provides a wrapper around the enhanced processing pipeline with
     backward compatibility and additional convenience methods.
     """
@@ -67,7 +66,7 @@ class KlinesDataProcessingPipeline:
 
         # Initialize enhanced pipeline
         self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
-        
+
         # Initialize legacy components for backward compatibility
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
         self.data_standardizer = UnifiedExchangeStandardizer()
@@ -268,13 +267,13 @@ class KlinesDataProcessingPipeline:
                 from src.config.pipeline_modes import get_full_mode_config
                 mode_config = get_full_mode_config()
                 years = mode_config.lookback_years
-            
+
             tprint_info(f"🚀 Starting enhanced klines processing pipeline for {symbol}")
 
             # Validate parameters
             if not symbol or not interval or years <= 0:
                 raise ValueError("Invalid parameters: symbol, interval, and years must be valid")
-            
+
             if not api_key or not api_secret:
                 raise ValueError("API credentials are required for data processing")
 
@@ -326,7 +325,7 @@ class KlinesDataProcessingPipeline:
         except Exception as e:
             error_msg = f"Enhanced pipeline failed: {str(e)}"
             tprint_error(f"❌ {error_msg}")
-            
+
             # Return error result in legacy format
             return {
                 "symbol": symbol,
@@ -653,7 +652,6 @@ class KlinesDataProcessingPipeline:
                 "success": False,
                 "error": str(e)
             }
-
 
 class KlinesDataQualityChecker:
     """Comprehensive data quality checker for klines data processing pipeline."""
@@ -1167,7 +1165,6 @@ class KlinesDataQualityChecker:
 
         print("="*60)
 
-
 # Enhanced convenience functions
 async def run_enhanced_klines_pipeline(
     symbol: str = "ETHUSDT",
@@ -1208,7 +1205,7 @@ async def run_enhanced_klines_pipeline(
         RuntimeError: If processing fails at any step
     """
     pipeline = KlinesDataProcessingPipeline(data_dir, exchange)
-    
+
     return await pipeline.run_complete_pipeline(
         symbol=symbol,
         years=years,
@@ -1219,7 +1216,6 @@ async def run_enhanced_klines_pipeline(
         create_consolidated=create_consolidated,
         resampling_intervals=resampling_intervals
     )
-
 
 def create_consolidated_features_file(
     symbol: str = "ETHUSDT",
@@ -1244,7 +1240,6 @@ def create_consolidated_features_file(
     pipeline = KlinesDataProcessingPipeline(data_dir, exchange)
     return pipeline.create_consolidated_features_file(symbol, interval, exchange)
 
-
 def add_required_columns_to_files(
     symbol: str = "ETHUSDT",
     interval: str = "1m",
@@ -1267,7 +1262,6 @@ def add_required_columns_to_files(
     pipeline = KlinesDataProcessingPipeline(data_dir)
     return pipeline.add_required_columns_to_processed_files(symbol, interval, exchange)
 
-
 def run_data_quality_check(symbol: str = "ETHUSDT",
                           intervals: Optional[List[str]] = None,
                           data_dir: str = "historical_data") -> Dict[str, Any]:
@@ -1285,7 +1279,6 @@ def run_data_quality_check(symbol: str = "ETHUSDT",
     results = checker.check_processed_data_quality(symbol, intervals)
     checker.print_quality_report(results)
     return results
-
 
 def run_duplicate_analysis(symbol: str = "ETHUSDT",
                           interval: str = "1m",
@@ -1351,7 +1344,6 @@ def run_duplicate_analysis(symbol: str = "ETHUSDT",
 
     print("="*80)
     return duplicate_results
-
 
 def resolve_duplicates_in_files(input_files: List[str],
                                output_files: List[str],
@@ -1436,7 +1428,6 @@ def resolve_duplicates_in_files(input_files: List[str],
 
     return results
 
-
 # Convenience functions for the complete pipeline
 async def run_ethusdt_3year_pipeline(
     symbol: str = "ETHUSDT",
@@ -1476,7 +1467,7 @@ async def run_ethusdt_3year_pipeline(
         from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
-    
+
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
     print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
@@ -1531,7 +1522,6 @@ async def run_ethusdt_3year_pipeline(
 
     return results
 
-
 async def run_custom_symbol_pipeline(
     symbol: str,
     years: Optional[int] = None,
@@ -1562,7 +1552,7 @@ async def run_custom_symbol_pipeline(
         from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
-    
+
     pipeline = KlinesDataProcessingPipeline(data_dir)
 
     print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
@@ -1578,7 +1568,6 @@ async def run_custom_symbol_pipeline(
     )
 
     return results
-
 
 def test_consolidated_features_file() -> Dict[str, Any]:
     """Test function to create consolidated features file."""
@@ -1608,7 +1597,6 @@ def test_consolidated_features_file() -> Dict[str, Any]:
 
     return result
 
-
 def test_add_required_columns() -> Dict[str, Any]:
     """Test function to add required columns to processed files."""
     print("Testing addition of required columns to processed files...")
@@ -1630,7 +1618,6 @@ def test_add_required_columns() -> Dict[str, Any]:
         print(f"  ❌ Error: {result.get('error', 'Unknown error')}")
 
     return result
-
 
 if __name__ == "__main__":
 
@@ -1658,21 +1645,21 @@ if __name__ == "__main__":
             # Parse command line arguments for symbol and years
             symbol = "ETHUSDT"  # default
             years = None  # Will use centralized config
-            
+
             # Check for additional command line arguments
             if len(sys.argv) > 1:
                 # Try to parse symbol from command line
                 potential_symbol = sys.argv[1].upper()
                 if potential_symbol not in ["TEST_CONSOLIDATED", "TEST_COLUMNS"]:
                     symbol = potential_symbol
-                    
+
                 # Try to parse years from command line
                 if len(sys.argv) > 2:
                     try:
                         years = int(sys.argv[2])
                     except ValueError:
                         print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
-            
+
             print(f"Starting {symbol} {years}-year 1m klines data download pipeline...")
 
             # Run the complete pipeline

@@ -16,13 +16,12 @@ from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.trading.execution.exchange_interface import ExchangeInterface
 
-
 class GapDetector:
     """Detect and fill gaps in historical klines data."""
 
     def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the gap detector.
-        
+
         Args:
             data_dir: Base directory for historical data
             exchange: Exchange name for data organization
@@ -32,7 +31,7 @@ class GapDetector:
         self.raw_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("GapDetector")
         self.parquet_utils = ParquetUtils()
-        
+
     def detect_gaps(
         self,
         symbol: str,
@@ -40,32 +39,32 @@ class GapDetector:
         max_gap_minutes: int = 1
     ) -> List[Dict[str, Any]]:
         """Detect gaps in historical data.
-        
+
         Args:
             symbol: Trading symbol
             interval: Kline interval
             max_gap_minutes: Maximum allowed gap in minutes
-            
+
         Returns:
             List of gap information dictionaries
         """
         try:
             self.logger.info(f"🔍 Detecting gaps in {symbol} {interval} data")
-            
+
             # Load all data for the symbol
             all_data = self._load_all_data(symbol, interval)
-            
+
             if all_data is None or all_data.empty:
                 self.logger.warning(f"No data found for {symbol}")
                 return []
-            
+
             # Sort by timestamp
             all_data = all_data.sort_index()
-            
+
             # Calculate expected interval
             expected_interval = self._get_expected_interval(interval)
             max_gap = timedelta(minutes=max_gap_minutes)
-            
+
             # Find gaps with intelligent filtering for klines data
             gaps = []
             time_diffs = all_data.index.to_series().diff().dropna()
@@ -125,21 +124,21 @@ class GapDetector:
                             f"ℹ️ Small gap detected: {gap_start} to {gap_end} "
                             f"({gap_duration.total_seconds():.1f} seconds)"
                         )
-            
+
             self.logger.info(f"🔍 Gap detection completed: {len(gaps)} gaps found")
             return gaps
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Gap detection failed: {e}")
             return []
-    
+
     def _load_all_data(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         """Load all historical data for a symbol.
-        
+
         Args:
             symbol: Trading symbol
             interval: Kline interval
-            
+
         Returns:
             Combined DataFrame or None if no data
         """
@@ -147,14 +146,14 @@ class GapDetector:
             symbol_dir = self.raw_data_dir / symbol.lower() / "raw"
             if not symbol_dir.exists():
                 return None
-            
+
             # Find all parquet files for this symbol and interval
             pattern = f"{symbol.lower()}_{interval}_*.parquet"
             files = list(symbol_dir.glob(pattern))
-            
+
             if not files:
                 return None
-            
+
             # Load and combine all files
             dataframes = []
             for file_path in sorted(files):
@@ -164,30 +163,30 @@ class GapDetector:
                         dataframes.append(df)
                 except Exception as e:
                     self.logger.warning(f"Could not read {file_path}: {e}")
-            
+
             if not dataframes:
                 return None
-            
+
             # Combine all dataframes
             combined_df = pd.concat(dataframes, ignore_index=False)
             combined_df = combined_df.sort_index()
-            
+
             # Remove duplicates
             combined_df = combined_df[~combined_df.index.duplicated(keep='last')]
-            
+
             self.logger.info(f"📊 Loaded {len(combined_df)} records from {len(files)} files")
             return combined_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to load data for {symbol}: {e}")
             return None
-    
+
     def _get_expected_interval(self, interval: str) -> timedelta:
         """Get expected time interval from interval string.
-        
+
         Args:
             interval: Interval string (e.g., '1m', '5m', '1h')
-            
+
         Returns:
             Timedelta object
         """
@@ -208,9 +207,9 @@ class GapDetector:
             '1w': timedelta(weeks=1),
             '1M': timedelta(days=30)  # Approximate month
         }
-        
+
         return interval_map.get(interval, timedelta(minutes=1))
-    
+
     async def _get_historical_klines_unified(
         self,
         exchange,
@@ -221,7 +220,7 @@ class GapDetector:
         limit: int
     ) -> List[Dict[str, Any]]:
         """Get historical klines data using unified interface for both exchange types.
-        
+
         Args:
             exchange: Exchange instance (ExchangeInterface)
             symbol: Trading symbol
@@ -229,7 +228,7 @@ class GapDetector:
             start_time_ms: Start time in milliseconds
             end_time_ms: End time in milliseconds
             limit: Maximum number of records
-            
+
         Returns:
             List of kline data dictionaries
         """
@@ -240,7 +239,7 @@ class GapDetector:
                 from datetime import datetime
                 start_time = datetime.fromtimestamp(start_time_ms / 1000)
                 end_time = datetime.fromtimestamp(end_time_ms / 1000)
-                
+
                 klines_data = await exchange.get_klines(
                     symbol=symbol,
                     interval=interval,
@@ -248,7 +247,7 @@ class GapDetector:
                     end_time=end_time,
                     limit=limit
                 )
-                
+
                 # Convert KlineData objects to dict format
                 result = []
                 for kline in klines_data:
@@ -275,7 +274,7 @@ class GapDetector:
         except Exception as e:
             self.logger.error(f"Error getting historical klines: {e}")
             return []
-    
+
     async def fill_gaps(
         self,
         gaps: List[Dict[str, Any]],
@@ -284,22 +283,22 @@ class GapDetector:
         api_secret: str = ""
     ) -> Dict[str, Any]:
         """Fill detected gaps by downloading missing data.
-        
+
         Args:
             gaps: List of gap information from detect_gaps
             exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
             api_key: Exchange API key (fallback if exchange_interface not provided)
             api_secret: Exchange API secret (fallback if exchange_interface not provided)
-            
+
         Returns:
             Dictionary with filling results
         """
         if not gaps:
             return {"filled_gaps": 0, "total_records_added": 0, "errors": []}
-        
+
         try:
             self.logger.info(f"🔧 Filling {len(gaps)} gaps")
-            
+
             # Initialize exchange (prefer ExchangeInterface if provided)
             if exchange_interface is not None:
                 exchange = exchange_interface
@@ -315,60 +314,60 @@ class GapDetector:
                 }
                 exchange = create_exchange_interface(config)
                 await exchange.connect()
-            
+
             filled_gaps = 0
             total_records_added = 0
             errors = []
-            
+
             for i, gap in enumerate(gaps):
                 try:
                     self.logger.info(f"🔧 Filling gap {i+1}/{len(gaps)}: {gap['gap_start']} to {gap['gap_end']}")
-                    
+
                     # Download data for the gap period
                     success, records_added = await self._fill_single_gap(exchange, gap)
-                    
+
                     if success:
                         filled_gaps += 1
                         total_records_added += records_added
                         self.logger.info(f"✅ Gap {i+1} filled: {records_added} records added")
                     else:
                         errors.append(f"Failed to fill gap {i+1}: {gap['gap_start']} to {gap['gap_end']}")
-                        
+
                 except Exception as e:
                     error_msg = f"Error filling gap {i+1}: {e}"
                     errors.append(error_msg)
                     self.logger.error(error_msg)
-            
+
             # Close exchange connection
             if hasattr(exchange, 'close'):
                 await exchange.close()
             elif hasattr(exchange, 'disconnect'):
                 await exchange.disconnect()
-            
+
             result = {
                 "filled_gaps": filled_gaps,
                 "total_records_added": total_records_added,
                 "errors": errors
             }
-            
+
             self.logger.info(f"🎉 Gap filling completed: {filled_gaps}/{len(gaps)} gaps filled, {total_records_added} records added")
             return result
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Gap filling failed: {e}")
             return {"filled_gaps": 0, "total_records_added": 0, "errors": [str(e)]}
-    
+
     async def _fill_single_gap(
         self,
         exchange,
         gap: Dict[str, Any]
     ) -> Tuple[bool, int]:
         """Fill a single gap by downloading missing data.
-        
+
         Args:
             exchange: Exchange instance
             gap: Gap information dictionary
-            
+
         Returns:
             Tuple of (success, records_added)
         """
@@ -377,19 +376,19 @@ class GapDetector:
             interval = gap["interval"]
             gap_start = gap["gap_start"]
             gap_end = gap["gap_end"]
-            
+
             # Convert to milliseconds
             start_time_ms = int(gap_start.timestamp() * 1000)
             end_time_ms = int(gap_end.timestamp() * 1000)
-            
+
             # Download data for the gap period
             raw_data = await self._get_historical_klines_unified(
                 exchange, symbol, interval, start_time_ms, end_time_ms, 1000
             )
-            
+
             if not raw_data:
                 return False, 0
-            
+
             # Convert to DataFrame
             df = pd.DataFrame(raw_data)
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
@@ -407,16 +406,16 @@ class GapDetector:
             df['year'] = df.index.year
             df['month'] = df.index.month
             df['day'] = df.index.day
-            
+
             # Save the gap data to appropriate monthly file
             success = await self._save_gap_data(df, symbol, interval)
-            
+
             return success, len(df)
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to fill single gap: {e}")
             return False, 0
-    
+
     async def _save_gap_data(
         self,
         df: pd.DataFrame,
@@ -424,18 +423,18 @@ class GapDetector:
         interval: str
     ) -> bool:
         """Save gap data to the appropriate monthly file.
-        
+
         Args:
             df: DataFrame with gap data
             symbol: Trading symbol
             interval: Kline interval
-            
+
         Returns:
             True if successful, False otherwise
         """
         try:
             symbol_dir = self.raw_data_dir / symbol.lower() / "raw"
-            
+
             # Group by month and save each month's data
             for (year, month), month_data in df.groupby([df.index.year, df.index.month]):
                 filename = f"{symbol.lower()}_{interval}_{year}_{month:02d}.parquet"
@@ -472,31 +471,30 @@ class GapDetector:
                 # Save the combined data
                 combined_df.to_parquet(filepath, index=True, compression='snappy')
                 self.logger.info(f"💾 Updated {filename} with {len(month_data)} gap records")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to save gap data: {e}")
             return False
-    
+
     def log_gaps(self, gaps: List[Dict[str, Any]]) -> None:
         """Log detailed information about detected gaps.
-        
+
         Args:
             gaps: List of gap information from detect_gaps
         """
         if not gaps:
             self.logger.info("✅ No gaps detected in the data")
             return
-        
+
         self.logger.warning(f"⚠️ {len(gaps)} gaps detected:")
-        
+
         for i, gap in enumerate(gaps, 1):
             self.logger.warning(
                 f"  Gap {i}: {gap['gap_start']} to {gap['gap_end']} "
                 f"({gap['gap_minutes']:.1f} minutes, {gap['expected_records']} expected records)"
             )
-
 
 # Convenience functions
 async def detect_and_fill_gaps(
@@ -508,7 +506,7 @@ async def detect_and_fill_gaps(
     api_secret: str = ""
 ) -> Dict[str, Any]:
     """Detect and fill gaps in historical data.
-    
+
     Args:
         symbol: Trading symbol
         interval: Kline interval
@@ -516,40 +514,39 @@ async def detect_and_fill_gaps(
         data_dir: Base directory for data storage
         api_key: Exchange API key
         api_secret: Exchange API secret
-        
+
     Returns:
         Dictionary with gap detection and filling results
     """
     detector = GapDetector(data_dir)
-    
+
     # Detect gaps
     gaps = detector.detect_gaps(symbol, interval, max_gap_minutes)
     detector.log_gaps(gaps)
-    
+
     if not gaps:
         return {"gaps_detected": 0, "filled_gaps": 0, "total_records_added": 0, "errors": []}
-    
+
     # Fill gaps
     fill_results = await detector.fill_gaps(gaps, api_key, api_secret)
-    
+
     return {
         "gaps_detected": len(gaps),
         **fill_results
     }
 
-
 if __name__ == "__main__":
     # Example usage
     async def main():
         detector = GapDetector()
-        
+
         # Detect gaps
         gaps = detector.detect_gaps("ETHUSDT", "1m", max_gap_minutes=1)
         detector.log_gaps(gaps)
-        
+
         # Fill gaps
         if gaps:
             results = await detector.fill_gaps(gaps)
             print(f"Gap filling results: {results}")
-    
+
     asyncio.run(main())

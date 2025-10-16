@@ -4,25 +4,25 @@
 __all__ = [
     # Core hardware optimizers
     'M1CPUOptimizer', 'M1GPUManager', 'M1MemoryOptimizer',
-    
+
     # Advanced hardware optimizers
     'AdvancedM1CPUOptimizer', 'EnhancedM1GPUManager', 'AdvancedM1MemoryOptimizer',
-    
+
     # Unified hardware management
     'UnifiedHardwareManager', 'HardwareConfig', 'WorkloadType', 'OptimizationLevel',
-    
+
     # Adaptive optimization
     'AdaptiveOptimizationEngine', 'OptimizationTarget', 'LearningAlgorithm',
-    
+
     # Convenience functions
-    'get_unified_hardware_manager', 'get_advanced_cpu_optimizer', 
+    'get_unified_hardware_manager', 'get_advanced_cpu_optimizer',
     'get_enhanced_gpu_manager', 'get_advanced_memory_optimizer',
     'get_adaptive_optimization_engine',
-    
+
     # Optimization functions
     'optimize_for_workload', 'optimize_for_workload_adaptive',
     'optimize_dataframe_advanced', 'record_performance_adaptive',
-    
+
     # Legacy compatibility
     'get_m1_cpu_optimizer', 'm1_gpu_manager', 'm1_memory_optimizer'
 ]
@@ -50,14 +50,14 @@ try:
         record_performance_adaptive
     )
     from .advanced_memory_optimizer import optimize_dataframe_advanced
-    
+
     # Set availability flags
     ADVANCED_CPU_AVAILABLE = True
     ENHANCED_GPU_AVAILABLE = True
     ADVANCED_MEMORY_AVAILABLE = True
     UNIFIED_MANAGER_AVAILABLE = True
     ADAPTIVE_ENGINE_AVAILABLE = True
-    
+
 except ImportError as e:
     # Set availability flags to False if imports fail
     ADVANCED_CPU_AVAILABLE = False
@@ -65,32 +65,32 @@ except ImportError as e:
     ADVANCED_MEMORY_AVAILABLE = False
     UNIFIED_MANAGER_AVAILABLE = False
     ADAPTIVE_ENGINE_AVAILABLE = False
-    
+
     # Create placeholder functions
     def get_advanced_cpu_optimizer():
         raise ImportError("Advanced CPU Optimizer not available")
-    
+
     def get_enhanced_gpu_manager():
         raise ImportError("Enhanced GPU Manager not available")
-    
+
     def get_advanced_memory_optimizer():
         raise ImportError("Advanced Memory Optimizer not available")
-    
+
     def get_unified_hardware_manager():
         raise ImportError("Unified Hardware Manager not available")
-    
+
     def get_adaptive_optimization_engine():
         raise ImportError("Adaptive Optimization Engine not available")
-    
+
     def optimize_for_workload(*args, **kwargs):
         raise ImportError("Unified Hardware Manager not available")
-    
+
     def optimize_for_workload_adaptive(*args, **kwargs):
         raise ImportError("Adaptive Optimization Engine not available")
-    
+
     def optimize_dataframe_advanced(*args, **kwargs):
         raise ImportError("Advanced Memory Optimizer not available")
-    
+
     def record_performance_adaptive(*args, **kwargs):
         raise ImportError("Adaptive Optimization Engine not available")
 

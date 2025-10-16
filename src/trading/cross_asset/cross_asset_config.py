@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 from src.config.leverage_constants import MAX_LEVERAGE, validate_leverage
-
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class SymbolConfig:
@@ -13,12 +12,10 @@ class SymbolConfig:
     enabled: bool = True
     extra: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class AllocationConfig:
     strategy: str = "equal_weight"  # equal_weight | market_cap_weighted | custom
     custom_weights: Dict[str, float] = field(default_factory=dict)
-
 
 @dataclass
 class CrossAssetConfig:
@@ -40,4 +37,3 @@ class CrossAssetConfig:
             "account_balance": self.account_balance,
         })
         return cfg
-

@@ -58,7 +58,7 @@ except ImportError:
 # Hardware optimization imports
 try:
     from .hardware_integration import (
-        get_hardware_optimized_processor, 
+        get_hardware_optimized_processor,
         hardware_optimized,
         optimize_matrix_operation,
         HardwareConfig
@@ -336,7 +336,7 @@ class VectorizedProcessingCore:
         """Initialize vectorized processing core."""
         # Initialize logger first
         self.logger = logger.getChild('VectorizedProcessingCore')
-        
+
         self.chunk_size = chunk_size
         self.max_memory_gb = max_memory_gb
         self.enable_gpu = enable_gpu
@@ -376,7 +376,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 # M1 optimizations
@@ -390,7 +390,7 @@ except ImportError:
 
 class VectorizedCore:
     """Core vectorized operations with M1 optimizations."""
-    
+
     def __init__(self, hardware_config: Optional[HardwareConfig] = None):
         self.m1_available = False
         if M1_OPTIMIZATIONS_AVAILABLE:
@@ -409,7 +409,7 @@ class VectorizedCore:
         self._initialize_hardware_integration(hardware_config)
 
         self.logger.info("🔧 Vectorized Processing Core initialized")
-    
+
     def _initialize_hardware_integration(self, hardware_config: Optional[HardwareConfig] = None):
         """Initialize hardware integration for optimized computations."""
         if HARDWARE_INTEGRATION_AVAILABLE and get_hardware_optimized_processor:
@@ -421,7 +421,7 @@ class VectorizedCore:
                         enable_gpu=self.enable_gpu,
                         chunk_size_threshold=self.chunk_size
                     )
-                
+
                 self.hardware_processor = get_hardware_optimized_processor(hardware_config)
                 self.hardware_optimization_enabled = True
                 self.logger.info("✅ Hardware optimization integration enabled")
@@ -513,7 +513,7 @@ class VectorizedCore:
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
-        
+
         # Enhanced fallback implementation with better performance
         if features is None:
             features = data.select_dtypes(include=[np.number]).columns.tolist()
@@ -521,15 +521,15 @@ class VectorizedCore:
         with self.memory_checkpoint("rolling_features"):
             # Optimize data types for better performance
             data_optimized = self.optimize_dataframe_for_processing(data)
-            
+
             result_dfs = []
-            
+
             # Process windows in batches for better memory efficiency
             batch_size = min(5, len(windows))  # Process up to 5 windows at a time
             for i in range(0, len(windows), batch_size):
                 batch_windows = windows[i:i + batch_size]
                 batch_features = {}
-                
+
                 for window in batch_windows:
                     for col in features:
                         if col in data_optimized.columns:
@@ -537,7 +537,7 @@ class VectorizedCore:
 
                             # Enhanced vectorized rolling calculations with better performance
                             rolling = series.rolling(window=window, min_periods=1)
-                            
+
                             batch_features.update({
                                 f'{col}_rolling_mean_{window}': rolling.mean(),
                                 f'{col}_rolling_std_{window}': rolling.std(),
@@ -549,15 +549,15 @@ class VectorizedCore:
                                 f'{col}_rolling_quantile_25_{window}': rolling.quantile(0.25),
                                 f'{col}_rolling_quantile_75_{window}': rolling.quantile(0.75),
                             })
-                            
+
                             # Additional enhanced features
                             batch_features[f'{col}_rolling_range_{window}'] = (
-                                batch_features[f'{col}_rolling_max_{window}'] - 
+                                batch_features[f'{col}_rolling_max_{window}'] -
                                 batch_features[f'{col}_rolling_min_{window}']
                             )
-                            
+
                             batch_features[f'{col}_rolling_cv_{window}'] = (
-                                batch_features[f'{col}_rolling_std_{window}'] / 
+                                batch_features[f'{col}_rolling_std_{window}'] /
                                 batch_features[f'{col}_rolling_mean_{window}']
                             ).fillna(0)
 
@@ -596,21 +596,21 @@ class VectorizedCore:
 
             return corr_matrix, feature_importance
 
-    def compute_trading_indicators(self, data: 'pd.DataFrame', 
+    def compute_trading_indicators(self, data: 'pd.DataFrame',
                                  config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
         """
         Compute comprehensive trading indicators in vectorized fashion with VectorBT and hardware optimization.
-        
+
         Args:
             data: DataFrame with OHLCV data (columns: open, high, low, close, volume)
             config: Configuration dictionary for indicator parameters
-            
+
         Returns:
             DataFrame with all computed indicators
         """
         if config is None:
             config = self._get_default_indicator_config()
-        
+
         # Try VectorBT optimization first if available
         if VECTORBT_OPTIMIZATIONS_AVAILABLE:
             try:
@@ -620,36 +620,36 @@ class VectorizedCore:
                 return result
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBT trading indicators failed: {e}, falling back to standard method")
-        
+
         # Use hardware optimization if available
         if self.hardware_optimization_enabled and self.hardware_processor:
             return self._compute_trading_indicators_hardware_optimized(data, config)
         else:
             return self._compute_trading_indicators_standard(data, config)
-    
-    def _compute_trading_indicators_hardware_optimized(self, data: 'pd.DataFrame', 
+
+    def _compute_trading_indicators_hardware_optimized(self, data: 'pd.DataFrame',
                                                      config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute trading indicators with hardware optimization."""
         def compute_indicators_func(df, config):
             return self._compute_trading_indicators_standard(df, config)
-        
+
         return self.hardware_processor.process_with_hardware_optimization(
             data, compute_indicators_func, config
         )
-    
-    def _compute_trading_indicators_standard(self, data: 'pd.DataFrame', 
+
+    def _compute_trading_indicators_standard(self, data: 'pd.DataFrame',
                                            config: Dict[str, Any]) -> 'pd.DataFrame':
         """Standard trading indicators computation."""
         with self.memory_checkpoint("trading_indicators"):
             result_df = data.copy()
-            
+
             # Ensure we have required columns
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [col for col in required_cols if col not in data.columns]
             if missing_cols:
                 self.logger.warning(f"⚠️ Missing required columns: {missing_cols}")
                 return result_df
-            
+
             # Compute all indicators
             result_df = self._compute_moving_averages(result_df, config)
             result_df = self._compute_momentum_indicators(result_df, config)
@@ -658,7 +658,7 @@ class VectorizedCore:
             result_df = self._compute_trend_indicators(result_df, config)
             result_df = self._compute_oscillator_indicators(result_df, config)
             result_df = self._compute_pattern_indicators(result_df, config)
-            
+
             self.logger.info(f"✅ Computed {len(result_df.columns) - len(data.columns)} trading indicators")
             return result_df
 
@@ -668,41 +668,41 @@ class VectorizedCore:
             # Moving averages
             'sma_periods': [9, 21, 50, 200],
             'ema_periods': [12, 26, 50],
-            
+
             # RSI
             'rsi_period': 14,
             'rsi_overbought': 70,
             'rsi_oversold': 30,
-            
+
             # MACD
             'macd_fast': 12,
             'macd_slow': 26,
             'macd_signal': 9,
-            
+
             # Bollinger Bands
             'bb_period': 20,
             'bb_std': 2.0,
-            
+
             # Stochastic
             'stoch_k': 14,
             'stoch_d': 3,
             'stoch_smooth': 3,
-            
+
             # Williams %R
             'williams_period': 14,
-            
+
             # ADX
             'adx_period': 14,
-            
+
             # ATR
             'atr_period': 14,
-            
+
             # CCI
             'cci_period': 20,
-            
+
             # ROC
             'roc_period': 10,
-            
+
             # Volume indicators
             'volume_sma_period': 20,
             'obv_smooth': 10,
@@ -711,27 +711,27 @@ class VectorizedCore:
     def _compute_moving_averages(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute Simple and Exponential Moving Averages."""
         result = data.copy()
-        
+
         # Simple Moving Averages
         for period in config.get('sma_periods', [9, 21, 50, 200]):
             result[f'sma_{period}'] = data['close'].rolling(window=period, min_periods=1).mean()
-        
+
         # Exponential Moving Averages
         for period in config.get('ema_periods', [12, 26, 50]):
             result[f'ema_{period}'] = data['close'].ewm(span=period, adjust=False).mean()
-        
+
         # Moving Average Crossovers
         if 'sma_9' in result.columns and 'sma_21' in result.columns:
             result['sma_cross_9_21'] = (result['sma_9'] > result['sma_21']).astype(int)
         if 'ema_12' in result.columns and 'ema_26' in result.columns:
             result['ema_cross_12_26'] = (result['ema_12'] > result['ema_26']).astype(int)
-        
+
         return result
 
     def _compute_momentum_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute momentum indicators (RSI, MACD, ROC, etc.)."""
         result = data.copy()
-        
+
         # RSI (Relative Strength Index)
         rsi_period = config.get('rsi_period', 14)
         delta = data['close'].diff()
@@ -739,57 +739,57 @@ class VectorizedCore:
         loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period, min_periods=1).mean()
         rs = gain / loss
         result['rsi'] = 100 - (100 / (1 + rs))
-        
+
         # RSI signals
         result['rsi_overbought'] = (result['rsi'] > config.get('rsi_overbought', 70)).astype(int)
         result['rsi_oversold'] = (result['rsi'] < config.get('rsi_oversold', 30)).astype(int)
-        
+
         # MACD (Moving Average Convergence Divergence)
         macd_fast = config.get('macd_fast', 12)
         macd_slow = config.get('macd_slow', 26)
         macd_signal = config.get('macd_signal', 9)
-        
+
         ema_fast = data['close'].ewm(span=macd_fast, adjust=False).mean()
         ema_slow = data['close'].ewm(span=macd_slow, adjust=False).mean()
         result['macd'] = ema_fast - ema_slow
         result['macd_signal'] = result['macd'].ewm(span=macd_signal, adjust=False).mean()
         result['macd_histogram'] = result['macd'] - result['macd_signal']
-        
+
         # MACD signals
         result['macd_bullish'] = (result['macd'] > result['macd_signal']).astype(int)
         result['macd_cross'] = (result['macd'] > result['macd_signal']).astype(int).diff().fillna(0)
-        
+
         # ROC (Rate of Change)
         roc_period = config.get('roc_period', 10)
         result['roc'] = ((data['close'] - data['close'].shift(roc_period)) / data['close'].shift(roc_period)) * 100
-        
+
         # Momentum
         result['momentum'] = data['close'] - data['close'].shift(10)
-        
+
         return result
 
     def _compute_volatility_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute volatility indicators (Bollinger Bands, ATR, etc.)."""
         result = data.copy()
-        
+
         # Bollinger Bands
         bb_period = config.get('bb_period', 20)
         bb_std = config.get('bb_std', 2.0)
-        
+
         sma = data['close'].rolling(window=bb_period, min_periods=1).mean()
         std = data['close'].rolling(window=bb_period, min_periods=1).std()
-        
+
         result['bb_upper'] = sma + (std * bb_std)
         result['bb_lower'] = sma - (std * bb_std)
         result['bb_middle'] = sma
         result['bb_width'] = (result['bb_upper'] - result['bb_lower']) / result['bb_middle']
         result['bb_position'] = (data['close'] - result['bb_lower']) / (result['bb_upper'] - result['bb_lower'])
-        
+
         # Bollinger Band signals
         result['bb_squeeze'] = (result['bb_width'] < result['bb_width'].rolling(20).quantile(0.2)).astype(int)
         result['bb_breakout_upper'] = (data['close'] > result['bb_upper']).astype(int)
         result['bb_breakout_lower'] = (data['close'] < result['bb_lower']).astype(int)
-        
+
         # ATR (Average True Range)
         atr_period = config.get('atr_period', 14)
         high_low = data['high'] - data['low']
@@ -798,151 +798,151 @@ class VectorizedCore:
         true_range = np.maximum(high_low, np.maximum(high_close, low_close))
         result['atr'] = true_range.rolling(window=atr_period, min_periods=1).mean()
         result['atr_percent'] = (result['atr'] / data['close']) * 100
-        
+
         # Volatility
         result['volatility'] = data['close'].rolling(window=20, min_periods=1).std()
         result['volatility_percent'] = (result['volatility'] / data['close']) * 100
-        
+
         return result
 
     def _compute_volume_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute volume-based indicators."""
         result = data.copy()
-        
+
         # Volume SMA
         volume_sma_period = config.get('volume_sma_period', 20)
         result['volume_sma'] = data['volume'].rolling(window=volume_sma_period, min_periods=1).mean()
-        
+
         # Volume ratio
         result['volume_ratio'] = data['volume'] / result['volume_sma']
-        
+
         # OBV (On-Balance Volume)
         price_change = data['close'].diff()
-        obv = np.where(price_change > 0, data['volume'], 
+        obv = np.where(price_change > 0, data['volume'],
                       np.where(price_change < 0, -data['volume'], 0))
         result['obv'] = np.cumsum(obv)
-        
+
         # OBV smoothed
         obv_smooth = config.get('obv_smooth', 10)
         result['obv_sma'] = result['obv'].rolling(window=obv_smooth, min_periods=1).mean()
-        
+
         # Volume-Price Trend
         result['vpt'] = (data['volume'] * data['close'].pct_change()).cumsum()
-        
+
         # Money Flow Index (simplified)
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         money_flow = typical_price * data['volume']
         positive_flow = money_flow.where(typical_price > typical_price.shift(), 0).rolling(14).sum()
         negative_flow = money_flow.where(typical_price < typical_price.shift(), 0).rolling(14).sum()
         result['mfi'] = 100 - (100 / (1 + positive_flow / negative_flow))
-        
+
         return result
 
     def _compute_trend_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute trend indicators (ADX, Parabolic SAR, etc.)."""
         result = data.copy()
-        
+
         # ADX (Average Directional Index)
         adx_period = config.get('adx_period', 14)
-        
+
         # True Range
         high_low = data['high'] - data['low']
         high_close = np.abs(data['high'] - data['close'].shift())
         low_close = np.abs(data['low'] - data['close'].shift())
         tr = np.maximum(high_low, np.maximum(high_close, low_close))
-        
+
         # Directional Movement
-        plus_dm = np.where((data['high'].diff() > data['low'].diff().abs()) & 
+        plus_dm = np.where((data['high'].diff() > data['low'].diff().abs()) &
                           (data['high'].diff() > 0), data['high'].diff(), 0)
-        minus_dm = np.where((data['low'].diff().abs() > data['high'].diff()) & 
+        minus_dm = np.where((data['low'].diff().abs() > data['high'].diff()) &
                            (data['low'].diff() < 0), data['low'].diff().abs(), 0)
-        
+
         # Smoothed values
         plus_di = 100 * (plus_dm.rolling(adx_period).sum() / tr.rolling(adx_period).sum())
         minus_di = 100 * (minus_dm.rolling(adx_period).sum() / tr.rolling(adx_period).sum())
-        
+
         # ADX calculation
         dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
         result['adx'] = dx.rolling(adx_period).mean()
         result['plus_di'] = plus_di
         result['minus_di'] = minus_di
-        
+
         # ADX signals
         result['adx_trending'] = (result['adx'] > 25).astype(int)
         result['adx_strong_trend'] = (result['adx'] > 50).astype(int)
-        
+
         return result
 
     def _compute_oscillator_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute oscillator indicators (Stochastic, Williams %R, CCI)."""
         result = data.copy()
-        
+
         # Stochastic Oscillator
         stoch_k = config.get('stoch_k', 14)
         stoch_d = config.get('stoch_d', 3)
         stoch_smooth = config.get('stoch_smooth', 3)
-        
+
         lowest_low = data['low'].rolling(window=stoch_k, min_periods=1).min()
         highest_high = data['high'].rolling(window=stoch_k, min_periods=1).max()
         result['stoch_k'] = 100 * ((data['close'] - lowest_low) / (highest_high - lowest_low))
         result['stoch_d'] = result['stoch_k'].rolling(window=stoch_d, min_periods=1).mean()
         result['stoch_k_smooth'] = result['stoch_k'].rolling(window=stoch_smooth, min_periods=1).mean()
-        
+
         # Stochastic signals
         result['stoch_overbought'] = (result['stoch_k'] > 80).astype(int)
         result['stoch_oversold'] = (result['stoch_k'] < 20).astype(int)
-        
+
         # Williams %R
         williams_period = config.get('williams_period', 14)
         result['williams_r'] = -100 * ((highest_high - data['close']) / (highest_high - lowest_low))
-        
+
         # CCI (Commodity Channel Index)
         cci_period = config.get('cci_period', 20)
         typical_price = (data['high'] + data['low'] + data['close']) / 3
         sma_tp = typical_price.rolling(window=cci_period, min_periods=1).mean()
         mad = typical_price.rolling(window=cci_period, min_periods=1).apply(lambda x: np.mean(np.abs(x - x.mean())))
         result['cci'] = (typical_price - sma_tp) / (0.015 * mad)
-        
+
         # CCI signals
         result['cci_overbought'] = (result['cci'] > 100).astype(int)
         result['cci_oversold'] = (result['cci'] < -100).astype(int)
-        
+
         return result
 
     def _compute_pattern_indicators(self, data: 'pd.DataFrame', config: Dict[str, Any]) -> 'pd.DataFrame':
         """Compute pattern recognition indicators."""
         result = data.copy()
-        
+
         # Price patterns
         result['higher_high'] = (data['high'] > data['high'].shift(1)).astype(int)
         result['lower_low'] = (data['low'] < data['low'].shift(1)).astype(int)
         result['higher_low'] = (data['low'] > data['low'].shift(1)).astype(int)
         result['lower_high'] = (data['high'] < data['high'].shift(1)).astype(int)
-        
+
         # Gap detection
         result['gap_up'] = (data['low'] > data['high'].shift(1)).astype(int)
         result['gap_down'] = (data['high'] < data['low'].shift(1)).astype(int)
-        
+
         # Doji pattern (simplified)
         body_size = np.abs(data['close'] - data['open'])
         total_range = data['high'] - data['low']
         result['doji'] = (body_size / total_range < 0.1).astype(int)
-        
+
         # Hammer pattern (simplified)
         lower_shadow = data['open'].combine(data['close'], min) - data['low']
         upper_shadow = data['high'] - data['open'].combine(data['close'], max)
         result['hammer'] = ((lower_shadow > 2 * body_size) & (upper_shadow < body_size)).astype(int)
-        
+
         # Engulfing patterns
         prev_body = np.abs(data['close'].shift(1) - data['open'].shift(1))
         curr_body = np.abs(data['close'] - data['open'])
-        result['bullish_engulfing'] = ((data['close'] > data['open']) & 
-                                      (data['close'].shift(1) < data['open'].shift(1)) & 
+        result['bullish_engulfing'] = ((data['close'] > data['open']) &
+                                      (data['close'].shift(1) < data['open'].shift(1)) &
                                       (curr_body > prev_body)).astype(int)
-        result['bearish_engulfing'] = ((data['close'] < data['open']) & 
-                                      (data['close'].shift(1) > data['open'].shift(1)) & 
+        result['bearish_engulfing'] = ((data['close'] < data['open']) &
+                                      (data['close'].shift(1) > data['open'].shift(1)) &
                                       (curr_body > prev_body)).astype(int)
-        
+
         return result
 
     def get_processing_stats(self) -> Dict[str, Any]:
@@ -966,19 +966,19 @@ class VectorizedCore:
         if self.m1_memory_optimizer:
             memory_report = self.m1_memory_optimizer.get_memory_report()
             stats['memory_efficiency'] = memory_report.get('memory_efficiency', 0.0)
-        
+
         # Add hardware performance report if available
         if self.hardware_optimization_enabled and self.hardware_processor:
             stats['hardware_performance_report'] = self.hardware_processor.get_performance_report()
 
         return stats
-    
+
     def get_hardware_performance_report(self) -> Optional[Dict[str, Any]]:
         """Get comprehensive hardware performance report."""
         if self.hardware_optimization_enabled and self.hardware_processor:
             return self.hardware_processor.get_performance_report()
         return None
-    
+
     def cleanup_hardware_resources(self):
         """Cleanup hardware resources."""
         if self.hardware_optimization_enabled and self.hardware_processor:
@@ -1018,16 +1018,16 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1046,8 +1046,8 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
         except Exception as e:
             self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1064,13 +1064,13 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

@@ -58,7 +58,6 @@ try:
 except ImportError:
     HARDWARE_AVAILABLE = False
 
-
 @dataclass
 class FeaturePreprocessorConfig:
     """Configuration for feature preprocessing."""
@@ -84,7 +83,6 @@ class FeaturePreprocessorConfig:
     remove_duplicates: bool = True
     handle_infinity: bool = True
     validate_features: bool = True
-
 
 class FeaturePreprocessor:
     """

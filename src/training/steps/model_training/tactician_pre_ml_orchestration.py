@@ -30,10 +30,10 @@ class TacticianPreMLResult:
 
 class TacticianPreMLOrchestrator:
     """Tactician Pre-ML Orchestrator - Stub Implementation."""
-    
+
     def __init__(self, config: TacticianPreMLConfig):
         self.config = config
-    
+
     async def execute(self) -> TacticianPreMLResult:
         """Execute the Tactician Pre-ML orchestration."""
         # This is a stub implementation

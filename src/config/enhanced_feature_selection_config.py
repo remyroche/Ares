@@ -1,13 +1,11 @@
 from src.utils.tprint import tprint
 
-
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import Field
 
 # src/config/enhanced_feature_selection_config.py
-
 
 @dataclass
 class EnhancedFeatureSelectionConfig:
@@ -180,7 +178,6 @@ class EnhancedFeatureSelectionConfig:
         default = True, description="Save intermediate results for debugging"
     )
 
-
 def get_default_enhanced_feature_selection_config() -> dict[str, Any]:
     """Get default configuration for enhanced feature selection."""
     config = EnhancedFeatureSelectionConfig()
@@ -235,7 +232,6 @@ def get_default_enhanced_feature_selection_config() -> dict[str, Any]:
         },
     }
 
-
 def get_optimized_feature_selection_config() -> dict[str, Any]:
     """Get optimized configuration for high-performance feature selection."""
     base_config = get_default_enhanced_feature_selection_config()
@@ -252,7 +248,6 @@ def get_optimized_feature_selection_config() -> dict[str, Any]:
     )
 
     return base_config
-
 
 def get_comprehensive_feature_selection_config() -> dict[str, Any]:
     """Get comprehensive configuration for thorough feature selection."""
@@ -271,7 +266,6 @@ def get_comprehensive_feature_selection_config() -> dict[str, Any]:
     )
 
     return base_config
-
 
 def get_regime_specific_feature_selection_config(regime_type: str) -> dict[str, Any]:
     """Get regime-specific feature selection configuration."""
@@ -338,7 +332,6 @@ def get_regime_specific_feature_selection_config(regime_type: str) -> dict[str, 
         )
 
     return base_config
-
 
 def get_model_specific_feature_selection_config(model_type: str) -> dict[str, Any]:
     """Get model-specific feature selection configuration."""
@@ -465,7 +458,6 @@ def get_model_specific_feature_selection_config(model_type: str) -> dict[str, An
         )
 
     return base_config
-
 
 # Example usage and validation
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ class CircuitBreaker:
     def __init__(self, failure_threshold: int = 5, timeout: int = 60) -> None:
         """
         Initialize circuit breaker.
-        
+
         Args:
             failure_threshold: Number of failures before opening circuit
             timeout: Seconds to wait before attempting to close circuit
@@ -33,15 +33,15 @@ class CircuitBreaker:
     async def call(self, func: Callable, *args, **kwargs) -> Any:
         """
         Execute function with circuit breaker protection.
-        
+
         Args:
             func: Async function to execute
             *args: Positional arguments for func
             **kwargs: Keyword arguments for func
-            
+
         Returns:
             Result of function execution
-            
+
         Raises:
             Exception: If circuit is open or function fails
         """

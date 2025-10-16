@@ -25,16 +25,13 @@ from src.utils.ml_common.config.universal_timeframe_config import (
     UniversalTimeframeManager,
 )
 
-
 def save_training_config(config: BaseTrainingConfig, filepath: Union[str, Path]) -> None:
     _save_to_file(config, filepath)
-
 
 def load_training_config(
     filepath: Union[str, Path], target_cls: Type[BaseTrainingConfig] = BaseTrainingConfig
 ) -> BaseTrainingConfig:
     return _load_from_file(filepath, target_cls)  # type: ignore[return-value]
-
 
 __all__ = [
     "BaseTrainingConfig",
@@ -47,4 +44,3 @@ __all__ = [
     "save_training_config",
     "load_training_config",
 ]
-

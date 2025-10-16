@@ -29,7 +29,7 @@ from ..reporting.trade_analyzer import analyze_trade_performance
 async def main():
     """
     Main demonstration of comprehensive trading monitoring.
-    
+
     This example shows:
     1. Setting up comprehensive monitoring
     2. Recording detailed trade metrics
@@ -38,14 +38,14 @@ async def main():
     5. Building live dashboards
     6. Analyzing individual trades
     """
-    
+
     tprint_info("🚀 Starting Full Trading Monitoring Demonstration")
     print("=" * 80)
-    
+
     try:
         # Step 1: Initialize Comprehensive Monitoring
         tprint_info("📊 Step 1: Initializing Comprehensive Monitoring System")
-        
+
         monitoring_config = {
             'enable_explanations': True,
             'enable_real_time_export': True,
@@ -54,17 +54,17 @@ async def main():
             'enable_shap': True,
             'enable_lime': True
         }
-        
+
         success = await initialize_comprehensive_monitoring(monitoring_config)
         if success:
             tprint_success("✅ Comprehensive monitoring system initialized")
         else:
             tprint_error("❌ Failed to initialize monitoring system")
             return
-        
+
         # Step 2: Create Trading Orchestrator
         tprint_info("🎯 Step 2: Setting up Trading Orchestrator")
-        
+
         orchestrator_config = {
             'symbol': 'ETHUSDT',
             'exchange': 'binance',
@@ -84,22 +84,22 @@ async def main():
                 'confidence_threshold': 0.6
             }
         }
-        
+
         orchestrator = create_trading_orchestrator(orchestrator_config)
         success = await orchestrator.initialize()
-        
+
         if success:
             tprint_success("✅ Trading orchestrator initialized")
         else:
             tprint_error("❌ Failed to initialize trading orchestrator")
             return
-        
+
         # Step 3: Simulate Detailed Trading Operations
         tprint_info("💹 Step 3: Simulating Trading Operations with Full Monitoring")
-        
+
         # Create realistic market data
         market_data = create_realistic_market_data()
-        
+
         # Simulate various trading scenarios
         trade_scenarios = [
             {
@@ -162,37 +162,37 @@ async def main():
                 'expected_pnl': 0.0
             }
         ]
-        
+
         executed_trade_ids = []
-        
+
         for i, scenario in enumerate(trade_scenarios, 1):
             tprint_info(f"🎯 Executing Scenario {i}: {scenario['name']}")
-            
+
             # Record detailed trade
             trade_id = await record_comprehensive_trade(scenario, market_data)
             executed_trade_ids.append(trade_id)
-            
+
             # Simulate trade execution and outcome
             await simulate_trade_outcome(trade_id, scenario)
-            
+
             # Brief pause between trades
             await asyncio.sleep(2)
-        
+
         tprint_success(f"✅ Executed {len(trade_scenarios)} trading scenarios")
-        
+
         # Step 4: Generate Comprehensive Reports
         tprint_info("📊 Step 4: Generating Comprehensive Reports")
-        
+
         # Session performance report
         session_report = await comprehensive_trade_monitor.generate_performance_report("session", "json")
         if session_report:
             tprint_success("✅ Generated session performance report")
-            
+
             # Display key metrics
             if 'executive_summary' in session_report:
                 tprint_info("📈 Session Performance Summary:")
                 exec_summary = session_report['executive_summary']
-                
+
                 if 'performance_overview' in exec_summary:
                     perf = exec_summary['performance_overview']
                     tprint_structured({
@@ -203,31 +203,31 @@ async def main():
                         'Sharpe Ratio': f"{perf.get('sharpe_ratio', 0):.3f}",
                         'Max Drawdown': f"{perf.get('max_drawdown', 0):.1%}"
                     }, LogLevel.INFO)
-        
+
         # Model performance analysis
         if 'model_performance' in session_report:
             tprint_info("🤖 Model Performance Analysis:")
             model_perf = session_report['model_performance']['individual_model_performance']
-            
+
             for model_id, metrics in model_perf.items():
                 tprint_info(f"  {model_id}:")
                 tprint_info(f"    Usage: {metrics['usage_count']} trades")
                 tprint_info(f"    PnL: ${metrics['total_pnl']:.2f}")
                 tprint_info(f"    Accuracy: {metrics['accuracy']:.1%}")
                 tprint_info(f"    Avg Confidence: {metrics['avg_confidence']:.1%}")
-        
+
         # Step 5: Generate Live Dashboard
         tprint_info("📱 Step 5: Generating Live Dashboard")
-        
+
         dashboard = await orchestrator.generate_live_dashboard()
         if dashboard:
             tprint_success("✅ Generated live trading dashboard")
-            
+
             # Show live metrics
             if 'live_metrics' in dashboard:
                 live_metrics = dashboard['live_metrics']
                 tprint_info("📊 Live Trading Metrics:")
-                
+
                 if 'current_performance' in live_metrics:
                     current_perf = live_metrics['current_performance']
                     tprint_structured({
@@ -237,19 +237,19 @@ async def main():
                         'Current Drawdown': f"{current_perf.get('current_drawdown', 0):.1%}",
                         'Trades/Hour': f"{current_perf.get('trades_per_hour', 0):.1f}"
                     }, LogLevel.INFO)
-        
+
         # Step 6: Individual Trade Analysis
         tprint_info("🔍 Step 6: Detailed Individual Trade Analysis")
-        
+
         if comprehensive_trade_monitor.completed_trades:
             # Analyze the first completed trade
             trade = comprehensive_trade_monitor.completed_trades[0]
-            
+
             analysis = await analyze_trade_performance(trade, include_explanations=True)
-            
+
             if analysis:
                 tprint_success("✅ Completed detailed trade analysis")
-                
+
                 # Show trade quality
                 if 'trade_quality_score' in analysis:
                     quality = analysis['trade_quality_score']
@@ -264,7 +264,7 @@ async def main():
                         'Timing Score': f"{quality['component_scores']['timing']:.3f}",
                         'Execution Score': f"{quality['component_scores']['execution']:.3f}"
                     }, LogLevel.INFO)
-                
+
                 # Show feature importance
                 if 'explainability_analysis' in analysis:
                     exp_analysis = analysis['explainability_analysis']
@@ -273,36 +273,36 @@ async def main():
                         tprint_info("🎯 Top Important Features:")
                         for feature, importance in top_features[:5]:
                             tprint_info(f"  {feature}: {importance:.4f}")
-        
+
         # Step 7: Show Monitoring Statistics
         tprint_info("📈 Step 7: Final Monitoring Statistics")
-        
+
         monitor_stats = comprehensive_trade_monitor.get_monitor_stats()
         tprint_structured(monitor_stats, LogLevel.INFO)
-        
+
         tprint_success("🎉 Full Trading Monitoring Demonstration Completed!")
         print("=" * 80)
-        
+
         # Show file exports
         tprint_info("📁 Generated Files:")
         tprint_info("  📊 Session reports: demo_trading_reports/")
         tprint_info("  📱 Live dashboards: trading_dashboards/")
         tprint_info("  📈 Performance reports: trading_reports/")
         tprint_info("  🔍 Individual trade analysis: Available via API")
-        
+
     except Exception as e:
         tprint_error(f"❌ Demonstration failed: {e}")
         raise
-    
+
     finally:
         # Cleanup
         try:
             if comprehensive_trade_monitor.is_initialized:
                 await comprehensive_trade_monitor.stop()
-            
+
             if 'orchestrator' in locals():
                 await orchestrator.stop_trading_session()
-                
+
         except Exception as e:
             tprint_warning(f"⚠️ Cleanup warning: {e}")
 
@@ -372,7 +372,7 @@ async def record_comprehensive_trade(scenario: Dict[str, Any], market_data: pd.D
                 'kelly_fraction': 0.15
             }
         }
-        
+
         # Prepare models used with mock models for SHAP/LIME
         models_used = {}
         for model_name, model_info in scenario['models'].items():
@@ -386,19 +386,19 @@ async def record_comprehensive_trade(scenario: Dict[str, Any], market_data: pd.D
                 'features_count': np.random.randint(20, 50),
                 'training_date': '2024-01-15'
             }
-        
+
         # Record the comprehensive trade
         trade_id = await record_detailed_trade(trade_data, models_used, market_data)
-        
+
         tprint_success(f"✅ Recorded comprehensive trade: {trade_id}")
         tprint_info(f"   Symbol: {scenario['symbol']}")
         tprint_info(f"   Action: {scenario['action']}")
         tprint_info(f"   Confidence: {scenario['confidence']:.1%}")
         tprint_info(f"   Regime: {scenario['regime_type']}")
         tprint_info(f"   Models Used: {len(models_used)}")
-        
+
         return trade_id
-        
+
     except Exception as e:
         tprint_error(f"❌ Failed to record comprehensive trade: {e}")
         return ""
@@ -409,30 +409,30 @@ async def simulate_trade_outcome(trade_id: str, scenario: Dict[str, Any]):
         # Simulate execution time
         execution_time = np.random.uniform(100, 500)  # 100-500ms
         await asyncio.sleep(execution_time / 1000)
-        
+
         # Calculate realistic outcome based on scenario
         base_pnl = scenario['expected_pnl']
-        
+
         # Add some randomness
         actual_pnl = base_pnl + np.random.normal(0, abs(base_pnl) * 0.2)
-        
+
         # Calculate percentage PnL
         position_value = scenario['quantity'] * scenario['price']
         pnl_percentage = actual_pnl / position_value if position_value > 0 else 0.0
-        
+
         # Simulate exit price
         exit_price = scenario['price'] * (1 + pnl_percentage)
-        
+
         # Calculate execution quality based on confidence
         base_execution_quality = scenario['confidence']
         execution_quality = base_execution_quality + np.random.uniform(-0.1, 0.1)
         execution_quality = max(0.0, min(1.0, execution_quality))
-        
+
         # Simulate other metrics
         slippage = np.random.uniform(0.0005, 0.002)  # 0.05% to 0.2%
         commission = position_value * 0.001  # 0.1%
         duration_minutes = np.random.uniform(5, 45)
-        
+
         # Maximum excursions
         if actual_pnl > 0:
             max_favorable_excursion = actual_pnl * np.random.uniform(1.1, 1.5)
@@ -440,7 +440,7 @@ async def simulate_trade_outcome(trade_id: str, scenario: Dict[str, Any]):
         else:
             max_favorable_excursion = abs(actual_pnl) * np.random.uniform(0.1, 0.4)
             max_adverse_excursion = abs(actual_pnl) * np.random.uniform(1.0, 1.3)
-        
+
         # Prepare outcome data
         outcome_data = {
             'exit_price': exit_price,
@@ -454,16 +454,16 @@ async def simulate_trade_outcome(trade_id: str, scenario: Dict[str, Any]):
             'max_favorable_excursion': max_favorable_excursion,
             'max_adverse_excursion': max_adverse_excursion
         }
-        
+
         # Update trade outcome
         success = await update_trade_outcome(trade_id, outcome_data)
-        
+
         if success:
             outcome_emoji = "📈" if actual_pnl > 0 else "📉" if actual_pnl < 0 else "➡️"
             tprint_success(f"✅ {outcome_emoji} Trade completed: {actual_pnl:+.2f} PnL ({pnl_percentage:+.2%})")
         else:
             tprint_warning("⚠️ Failed to update trade outcome")
-        
+
     except Exception as e:
         tprint_error(f"❌ Failed to simulate trade outcome: {e}")
 
@@ -472,53 +472,53 @@ def create_realistic_market_data() -> pd.DataFrame:
     try:
         # Generate 200 candles of realistic market data
         np.random.seed(42)
-        
+
         timestamps = pd.date_range(start=datetime.now() - timedelta(hours=4), periods=200, freq='1T')
-        
+
         # Generate realistic price movement with trends and volatility
         base_price = 3000.0
         trend = 0.0001  # Slight upward trend
         volatility = 0.002  # 0.2% volatility
-        
+
         # Generate correlated price movements
         price_changes = []
         for i in range(200):
             # Add trend component
             trend_component = trend
-            
+
             # Add volatility component
             vol_component = np.random.normal(0, volatility)
-            
+
             # Add momentum component (correlation with previous moves)
             momentum_component = 0.0
             if i > 0:
                 momentum_component = price_changes[-1] * 0.1  # 10% momentum
-            
+
             total_change = trend_component + vol_component + momentum_component
             price_changes.append(total_change)
-        
+
         # Calculate prices
         prices = base_price * np.cumprod(1 + np.array(price_changes))
-        
+
         # Generate OHLCV data
         data = []
         for i, (timestamp, close) in enumerate(zip(timestamps, prices)):
             # Generate realistic OHLC
             volatility_factor = abs(price_changes[i]) * 2
-            
+
             high = close * (1 + volatility_factor)
             low = close * (1 - volatility_factor)
             open_price = prices[i-1] if i > 0 else close
-            
+
             # Ensure OHLC consistency
             high = max(open_price, close, high)
             low = min(open_price, close, low)
-            
+
             # Generate volume with correlation to price movement
             base_volume = 500
             volume_factor = 1 + abs(price_changes[i]) * 10  # Higher volume on big moves
             volume = base_volume * volume_factor * np.random.uniform(0.8, 1.2)
-            
+
             data.append({
                 'timestamp': timestamp,
                 'open': open_price,
@@ -527,31 +527,31 @@ def create_realistic_market_data() -> pd.DataFrame:
                 'close': close,
                 'volume': volume
             })
-        
+
         df = pd.DataFrame(data)
-        
+
         # Add technical indicators
         df['sma_20'] = df['close'].rolling(20).mean()
         df['sma_50'] = df['close'].rolling(50).mean()
         df['returns'] = df['close'].pct_change()
         df['volatility_20'] = df['returns'].rolling(20).std()
-        
+
         # RSI
         delta = df['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss
         df['rsi'] = 100 - (100 / (1 + rs))
-        
+
         # Bollinger Bands
         bb_sma = df['close'].rolling(20).mean()
         bb_std = df['close'].rolling(20).std()
         df['bb_upper'] = bb_sma + (bb_std * 2)
         df['bb_lower'] = bb_sma - (bb_std * 2)
         df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
-        
+
         return df
-        
+
     except Exception as e:
         tprint_error(f"❌ Failed to create market data: {e}")
         return pd.DataFrame()
@@ -562,7 +562,7 @@ def create_advanced_mock_model(model_name: str):
         def __init__(self, model_name: str):
             self.model_name = model_name
             self.model_type = model_name.split('_')[0]  # analyst/tactician/hmm
-            
+
             # Define realistic feature names based on model type
             if 'analyst' in model_name:
                 self.feature_names = [
@@ -581,14 +581,14 @@ def create_advanced_mock_model(model_name: str):
                     'returns_1', 'returns_5', 'volatility_5', 'volatility_20',
                     'volume_ratio', 'regime_features'
                 ]
-        
+
         def predict(self, X):
             """Mock prediction method."""
             if hasattr(X, '__len__'):
                 return np.random.uniform(0.4, 0.9, len(X))
             else:
                 return np.random.uniform(0.4, 0.9)
-        
+
         def predict_proba(self, X):
             """Mock probability prediction."""
             pred = self.predict(X)
@@ -596,13 +596,13 @@ def create_advanced_mock_model(model_name: str):
                 return [[1-p, p] for p in pred]
             else:
                 return [[1-pred, pred]]
-        
+
         def get_feature_importance(self):
             """Mock feature importance for SHAP."""
             importance = np.random.exponential(0.1, len(self.feature_names))
             importance = importance / importance.sum()  # Normalize
             return dict(zip(self.feature_names, importance))
-    
+
     return AdvancedMockModel(model_name)
 
 # Run the demonstration
@@ -642,22 +642,22 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
         traceback.print_exc()
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -676,8 +676,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -694,13 +694,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

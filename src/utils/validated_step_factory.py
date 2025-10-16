@@ -23,12 +23,12 @@ class ValidatedStepFactory:
     def create_validated_step(self, step_class: Type, step_name: str, step_type: str = None) -> Type:
         """
         Create a validated step class with pipeline standards validation.
-        
+
         Args:
             step_class: The original step class
             step_name: Name of the step
             step_type: Type of step for schema selection
-            
+
         Returns:
             Validated step class
         """

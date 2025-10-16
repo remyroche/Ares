@@ -11,7 +11,7 @@ Orchestrates the complete feature engineering pipeline:
 
 VectorBT Optimizations:
 - Vectorized feature assembly operations
-- 
+-
 - Parallel processing for feature selection
 - Memory-efficient operations
 """
@@ -68,13 +68,13 @@ class AssemblyConfig:
     patch_model_type: ModelType = ModelType.GRU
     patch_sequence_length: int = 24  # 2h at 5min bars
     patch_horizons: List[int] = None
-    
+
     # VectorBT optimization settings
     use_vectorbt: bool = True
     use_gpu: bool = False
     enable_parallel: bool = True
     performance_threshold: int = 1000  # Minimum samples for VectorBT optimization
-    
+
     def __post_init__(self):
         if self.patch_horizons is None:
             self.patch_horizons = [1, 3]
@@ -92,11 +92,11 @@ class AssemblyResult:
 
 class CalendarSessionizer:
     """Exchange-aware session management."""
-    
+
     def __init__(self, exchange: str = "NYSE"):
         self.exchange = exchange
         self.sessions = {}
-    
+
     def sessionize(self, bars: pd.DataFrame) -> pd.DataFrame:
         """Add session information to bars."""
         result = bars.copy()
@@ -123,7 +123,7 @@ class CalendarSessionizer:
 
 class ParentFeatureBuilder:
     """Builds parent features from market data."""
-    
+
     def __init__(self, registry: FeatureRegistry):
         self.registry = registry
         self.feature_builders = {
@@ -134,11 +134,11 @@ class ParentFeatureBuilder:
             'anchors_tod': AnchorsTODFeatures,
             'context': ContextFeatures
         }
-    
+
     def build_all_features(self, bars: pd.DataFrame) -> pd.DataFrame:
         """Build all parent features."""
         features = {}
-        
+
         # Price/Returns features
         features['p/r1'] = PriceReturnsFeatures.r1(bars)
         features['p/r3'] = PriceReturnsFeatures.r3(bars)
@@ -150,7 +150,7 @@ class ParentFeatureBuilder:
         features['p/price_ema10_pct'] = PriceReturnsFeatures.price_ema10_pct(bars)
         features['p/price_ema20_pct'] = PriceReturnsFeatures.price_ema20_pct(bars)
         features['p/bollz20'] = PriceReturnsFeatures.bollz20(bars)
-        
+
         # Volatility features
         features['p/sigma_ew'] = VolatilityFeatures.sigma_ew(bars, halflife=12)
         features['p/gk_w'] = VolatilityFeatures.gk_w(bars, window=12)
@@ -158,13 +158,13 @@ class ParentFeatureBuilder:
         features['p/rv_short_3'] = VolatilityFeatures.rv_short_3(bars)
         features['p/sigma_slope_6'] = VolatilityFeatures.sigma_slope_6(bars)
         features['p/range_pct'] = VolatilityFeatures.range_pct(bars)
-        
+
         # Mean reversion features
         features['p/rsi7'] = MeanReversionFeatures.rsi7(bars)
         features['p/rsi14'] = MeanReversionFeatures.rsi14(bars)
         features['p/stochk14'] = MeanReversionFeatures.stochk14(bars)
         features['p/autocorr_r1_w'] = MeanReversionFeatures.autocorr_r1_w(bars, window=12)
-        
+
         # Liquidity/Micro features (book-optional)
         features['p/volume_z18'] = LiquidityMicroFeatures.volume_z18(bars)
         features['p/tradecount_z18'] = LiquidityMicroFeatures.tradecount_z18(bars)
@@ -172,21 +172,21 @@ class ParentFeatureBuilder:
         features['p/dollarvol_z18'] = LiquidityMicroFeatures.dollarvol_z18(bars)
         features['p/ofi_proxy'] = LiquidityMicroFeatures.ofi_proxy(bars)
         features['p/microprice_dev'] = LiquidityMicroFeatures.microprice_dev(bars)
-        
+
         # Anchors & TOD features
         features['p/vwap_session_dist'] = AnchorsTODFeatures.vwap_session_dist(bars)
         features['p/vwap_roll12_dist'] = AnchorsTODFeatures.vwap_roll12_dist(bars)
         features['p/open30'] = AnchorsTODFeatures.open30(bars)
         features['p/last30'] = AnchorsTODFeatures.last30(bars)
-        
+
         # Context features (optional)
         features['p/beta30'] = ContextFeatures.beta30(bars)
         features['p/mkt_dispersion'] = ContextFeatures.mkt_dispersion(bars)
-        
+
         # Remove features with all NaN values
         features_df = pd.DataFrame(features, index=bars.index)
         features_df = features_df.dropna(axis=1, how='all')
-        
+
         return features_df
 
 class AssemblyError(RuntimeError):
@@ -194,7 +194,7 @@ class AssemblyError(RuntimeError):
 
 class AssemblyDAG:
     """Main assembly DAG orchestrator with VectorBT optimization."""
-    
+
     def __init__(self, config: AssemblyConfig):
         self.config = config
         self.registry = FeatureRegistry()
@@ -203,45 +203,45 @@ class AssemblyDAG:
         self.status = AssemblyStatus.PENDING
         self.artifacts = None
         self.logger = logging.getLogger(__name__)
-        
+
         # VectorBT optimization settings
         self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
         self.use_gpu = False  # GPU support removed
         self.enable_parallel = config.enable_parallel and VECTORBT_AVAILABLE
-    
-    def assemble(self, 
+
+    def assemble(self,
                  bars: pd.DataFrame,
                  targets: Optional[Dict[int, pd.Series]] = None) -> AssemblyResult:
         """Assemble complete feature pipeline."""
-        
+
         self.status = AssemblyStatus.IN_PROGRESS
         rotation_metadata: Dict[str, Any] = {}
 
         try:
             # Step 1: Sessionize bars
             bars_sessionized = self.sessionizer.sessionize(bars)
-            
+
             # Step 2: Build parent features
             parent_features = self.feature_builder.build_all_features(bars_sessionized)
-            
+
             # Step 3: Lookback selection
             lookback_selector = LookbackSelector()
             feature_families = create_feature_families(parent_features.columns.tolist())
             lookback_choices = lookback_selector.select_lookbacks(
-                parent_features, 
+                parent_features,
                 targets.get(1, pd.Series(0, index=parent_features.index)) if targets else pd.Series(0, index=parent_features.index),
                 feature_families
             )
-            
+
             # Step 4: Transform features
             transform_config = create_default_transform_config(parent_features.columns.tolist())
             transform_router = TransformRouter(transform_config)
-            
+
             # Split data for transform fitting
             split_idx = int(len(parent_features) * 0.8)
             train_features = parent_features.iloc[:split_idx]
             val_features = parent_features.iloc[split_idx:]
-            
+
             transformed_results = transform_router.fit_transform(train_features, val_features)
 
             # Combine transformed features and restore original order
@@ -257,7 +257,7 @@ class AssemblyDAG:
                 transformed_features = transformed_features.reindex(parent_features.index)
             else:
                 transformed_features = pd.DataFrame(index=parent_features.index)
-            
+
             # Apply winsorization
             transformed_features = apply_winsorization(transformed_features)
 
@@ -265,7 +265,7 @@ class AssemblyDAG:
                 transformed_features, rotation_metadata = self._orthogonalize_correlated_features(
                     transformed_features
                 )
-            
+
             # Step 5: Patch/GRU model
             patch_features = {}
             if targets:
@@ -275,42 +275,42 @@ class AssemblyDAG:
                     horizons=self.config.patch_horizons
                 )
                 patch_orchestrator = PatchOrchestrator(patch_config)
-                
+
                 # Get OOF predictions
                 oof_predictions = patch_orchestrator.get_oof_predictions(
                     bars_sessionized, targets, n_folds=3
                 )
-                
+
                 patch_features = {
                     'y_hat_h1': oof_predictions.y_hat_h1,
                     'y_hat_h3': oof_predictions.y_hat_h3,
                     'y_hat_conf': oof_predictions.y_hat_conf
                 }
-            
+
             # Step 6: Create interactions
             interaction_config = create_default_interaction_config()
             interaction_engine = InteractionEngine(interaction_config)
-            
+
             interactions = interaction_engine.build_interactions(
                 transformed_features, patch_features
             )
-            
+
             # Step 7: Assemble final feature matrix
             final_features = pd.concat([transformed_features, interactions], axis=1)
-            
+
             # Step 8: Feature selection (pre-filter to budget)
             selected_features = self._select_features(
-                final_features, 
+                final_features,
                 targets.get(1, pd.Series(0, index=final_features.index)) if targets else None
             )
-            
+
             # Step 9: Create artifacts
             self.artifacts = self._create_artifacts(
                 transform_router, lookback_choices, interaction_config, patch_features, rotation_metadata
             )
-            
+
             self.status = AssemblyStatus.COMPLETED
-            
+
             return AssemblyResult(
                 features=final_features[selected_features] if selected_features else final_features,
                 feature_names=selected_features if selected_features else final_features.columns.tolist(),
@@ -328,7 +328,7 @@ class AssemblyDAG:
                     'orthogonalized_groups': len(rotation_metadata)
                 }
             )
-            
+
         except Exception as exc:
             self.status = AssemblyStatus.FAILED
             self.logger.exception("Assembly failed")
@@ -338,10 +338,10 @@ class AssemblyDAG:
                         features: pd.DataFrame,
                         targets: Optional[pd.Series]) -> List[str]:
         """Select features within budget constraints."""
-        
+
         if targets is None or len(features.columns) <= self.config.feature_budget_pre:
             return features.columns.tolist()[:self.config.feature_budget_pre]
-        
+
         # Simple correlation-based selection
         correlations = []
         for col in features.columns:
@@ -349,13 +349,13 @@ class AssemblyDAG:
                 corr = features[col].corr(targets)
                 if not pd.isna(corr):
                     correlations.append((col, abs(corr)))
-        
+
         # Sort by correlation strength
         correlations.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Select top features within budget
         selected = [col for col, _ in correlations[:self.config.feature_budget_pre]]
-        
+
         return selected
 
     def _orthogonalize_correlated_features(self,
@@ -363,7 +363,7 @@ class AssemblyDAG:
                                            threshold: float = 0.9
                                            ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Replace highly correlated feature groups with orthogonal rotations using VectorBT optimization."""
-        
+
         if features.shape[1] < 2:
             return features, {}
 
@@ -371,7 +371,7 @@ class AssemblyDAG:
             return self._orthogonalize_correlated_features_vectorized(features, threshold)
         else:
             return self._orthogonalize_correlated_features_sequential(features, threshold)
-    
+
     def _orthogonalize_correlated_features_sequential(self,
                                                     features: pd.DataFrame,
                                                     threshold: float = 0.9
@@ -435,7 +435,7 @@ class AssemblyDAG:
             }
 
         return features, rotation_metadata
-    
+
     def _orthogonalize_correlated_features_vectorized(self,
                                                     features: pd.DataFrame,
                                                     threshold: float = 0.9
@@ -445,7 +445,7 @@ class AssemblyDAG:
             return self._orthogonalize_correlated_features_gpu(features, threshold)
         else:
             return self._orthogonalize_correlated_features_cpu_vectorized(features, threshold)
-    
+
     def _orthogonalize_correlated_features_cpu_vectorized(self,
                                                         features: pd.DataFrame,
                                                         threshold: float = 0.9
@@ -514,7 +514,7 @@ class AssemblyDAG:
             }
 
         return features, rotation_metadata
-    
+
     def _orthogonalize_correlated_features_gpu(self,
                                              features: pd.DataFrame,
                                              threshold: float = 0.9
@@ -538,7 +538,7 @@ class AssemblyDAG:
                 'params': params,
                 'spec_hash': f"transform_{feature_name}_{hash(str(params))}"
             }
-        
+
         # Lookback choices
         lookback_artifacts = {}
         for family, choice in lookback_choices.items():
@@ -549,7 +549,7 @@ class AssemblyDAG:
                 'confidence_score': 0.8,
                 'spec_hash': f"lookback_{family}_{choice.selected_lookback}"
             }
-        
+
         # Interaction configs
         interaction_artifacts = {}
         for interaction_id, config in interaction_config.items():
@@ -560,7 +560,7 @@ class AssemblyDAG:
                 'regime_dependent': config.regime_dependent,
                 'spec_hash': f"interaction_{interaction_id}"
             }
-        
+
         # Model artifacts
         model_artifacts = {}
         if patch_features:
@@ -587,13 +587,13 @@ def create_assembly_pipeline(config: AssemblyConfig) -> AssemblyDAG:
     """Create assembly pipeline with configuration."""
     return AssemblyDAG(config)
 
-def run_assembly(bars: pd.DataFrame, 
+def run_assembly(bars: pd.DataFrame,
                 targets: Optional[Dict[int, pd.Series]] = None,
                 config: Optional[AssemblyConfig] = None) -> AssemblyResult:
     """Run complete assembly pipeline."""
-    
+
     if config is None:
         config = AssemblyConfig()
-    
+
     pipeline = create_assembly_pipeline(config)
     return pipeline.assemble(bars, targets)

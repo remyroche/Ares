@@ -10,7 +10,7 @@ def handles_errors(*args, **kwargs) -> Callable:
     """Enhanced decorator for handling errors in functions."""
     tprint("DEBUG: handles_errors decorator function defined")
     import inspect
-    
+
     def decorator(func: Callable) -> Callable:
         if inspect.iscoroutinefunction(func):
             @functools.wraps(func)
@@ -22,7 +22,7 @@ def handles_errors(*args, **kwargs) -> Callable:
                     try:
                         from .errors.base import AppError, ValidationError
                         from .error_classes import initialization_error, execution_error
-                        
+
                         # Safe logger import with fallback
                         def get_safe_logger():
                             try:
@@ -32,7 +32,7 @@ def handles_errors(*args, **kwargs) -> Callable:
                                 # Fallback to basic logging
                                 import logging
                                 return logging.getLogger('AresFallback')
-                        
+
                         system_logger = get_safe_logger()
 
                         # If it's already an AppError, re-raise it
@@ -64,7 +64,7 @@ def handles_errors(*args, **kwargs) -> Callable:
                 except Exception as e:
                     # Try to import error classes for better handling
                     try:
-                        
+
                         # Safe logger import with fallback
                         def get_safe_logger():
                             try:
@@ -72,7 +72,7 @@ def handles_errors(*args, **kwargs) -> Callable:
                             except (ImportError, AttributeError, Exception):
                                 # Fallback to basic logging
                                 return logging.getLogger('AresFallback')
-                        
+
                         system_logger = get_safe_logger()
 
                         # If it's already an AppError, re-raise it
@@ -118,7 +118,7 @@ def validates(*args, **kwargs) -> Callable:
             except Exception as e:
                 # Try to import validation error for better handling
                 try:
-                    
+
                     # Safe logger import with fallback
                     def get_safe_logger():
                         try:
@@ -126,7 +126,7 @@ def validates(*args, **kwargs) -> Callable:
                         except (ImportError, AttributeError, Exception):
                             # Fallback to basic logging
                             return logging.getLogger('AresFallback')
-                    
+
                     system_logger = get_safe_logger()
 
                     # Convert to ValidationError if not already

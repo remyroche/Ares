@@ -93,7 +93,6 @@ except ImportError:
     logger.warning("⚠️ Existing lookahead detector not available - using fallback implementation")
     EXISTING_DETECTOR_AVAILABLE = False
 
-
 class LookaheadProtection:
     """Advanced lookahead bias protection and detection system."""
 
@@ -102,7 +101,7 @@ class LookaheadProtection:
         self.logger = logger.getChild('LookaheadProtection')
         self.logger.info("🚀 Initializing LookaheadProtection...")
         start_time = time.time()
-        
+
         self.config = config or {}
         self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
@@ -112,7 +111,7 @@ class LookaheadProtection:
         self.enable_automatic_filtering = self.config.get('enable_automatic_filtering', True)
         self.detection_log = []
         self.current_timestamp = None
-        
+
         self.logger.info(f"📊 Strict mode: {self.strict_mode}")
         self.logger.info(f"📊 Tolerance seconds: {self.tolerance_seconds}")
         self.logger.info(f"📊 Automatic filtering: {self.enable_automatic_filtering}")
@@ -123,7 +122,7 @@ class LookaheadProtection:
         self.rolling_window_size = self.config.get('rolling_window_size', 1000)
         self.information_barrier_rules = self.config.get('information_barrier_rules', {})
         self.feature_alignment_threshold = self.config.get('feature_alignment_threshold', timedelta(minutes=1))
-        
+
         self.logger.info(f"📊 GPU enabled: {self.enable_gpu}")
         self.logger.info(f"📊 Memory optimization: {self.enable_memory_optimization}")
         self.logger.info(f"📊 Rolling window size: {self.rolling_window_size}")
@@ -135,7 +134,7 @@ class LookaheadProtection:
             self.logger.debug("✅ GPU manager initialized")
         else:
             self.logger.debug("ℹ️ GPU manager not initialized")
-            
+
         self.logger.debug("🔧 Initializing memory optimizer...")
         self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
         if self.memory_optimizer:
@@ -151,7 +150,7 @@ class LookaheadProtection:
         else:
             self.base_detector = None
             self.logger.warning("⚠️ Base detector not available")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ LookaheadProtection initialized in {init_time:.3f}s")
 
@@ -1669,17 +1668,17 @@ class LookaheadProtection:
     def check_lookahead_bias(self, data: pd.DataFrame, labels: Optional[pd.Series] = None) -> Dict[str, Any]:
         """
         Check for lookahead bias in the data.
-        
+
         Args:
             data: DataFrame containing features
             labels: Optional labels/targets to check against
-            
+
         Returns:
             Dictionary with bias detection results
         """
         try:
             self.logger.info("🔍 Checking for lookahead bias...")
-            
+
             # Use the existing detect_and_prevent_leakage method
             if labels is not None and 'target' not in data.columns:
                 # Add labels as target column if not present
@@ -1687,7 +1686,7 @@ class LookaheadProtection:
                 data_with_target['target'] = labels
             else:
                 data_with_target = data
-            
+
             # Perform bias detection
             bias_results = self.detect_data_leakage(
                 features_df=data_with_target,
@@ -1695,7 +1694,7 @@ class LookaheadProtection:
                 timestamp_col='timestamp' if 'timestamp' in data_with_target.columns else None,
                 feature_cols=[col for col in data_with_target.columns if col not in ['timestamp', 'target', 'label']]
             )
-            
+
             # Convert to expected format - ensure bias_results is a dictionary
             if not isinstance(bias_results, dict):
                 self.logger.warning(f"⚠️ bias_results is not a dictionary: {type(bias_results)}")
@@ -1715,10 +1714,10 @@ class LookaheadProtection:
                     'warnings': bias_results.get('warnings', []),
                     'recommendations': bias_results.get('recommendations', [])
                 }
-            
+
             self.logger.info(f"✅ Lookahead bias check completed - {'Bias detected' if result['bias_detected'] else 'No bias detected'}")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Lookahead bias check failed: {e}")
             return {
@@ -1730,47 +1729,47 @@ class LookaheadProtection:
                 'error': str(e)
             }
 
-    async def detect_and_prevent_leakage(self, data: pd.DataFrame, 
+    async def detect_and_prevent_leakage(self, data: pd.DataFrame,
                                        symbol: Optional[str] = None,
                                        exchange: Optional[str] = None,
                                        context: Optional[str] = None) -> Dict[str, Any]:
         """
         Detect and prevent data leakage - wrapper method for compatibility.
-        
+
         Args:
             data: DataFrame containing features and targets
             symbol: Trading symbol (optional)
-            exchange: Trading exchange (optional) 
+            exchange: Trading exchange (optional)
             context: Context for the analysis (optional)
-            
+
         Returns:
             Dictionary with leakage detection results
         """
         try:
             self.logger.info(f"🔍 Starting detect_and_prevent_leakage for {symbol or 'unknown'} on {exchange or 'unknown'}")
-            
+
             # Set current timestamp if not already set
             if self.current_timestamp is None:
                 if 'timestamp' in data.columns:
                     self.current_timestamp = data['timestamp'].max()
                 else:
                     self.current_timestamp = datetime.now()
-            
+
             # Prepare data for leakage detection
             # Assume the data contains both features and targets
-            feature_cols = [col for col in data.columns 
+            feature_cols = [col for col in data.columns
                           if col not in ['timestamp', 'target', 'label', 'outcome']]
-            
+
             # Create separate DataFrames for features and targets
             features_df = data[['timestamp'] + feature_cols].copy() if 'timestamp' in data.columns else data[feature_cols].copy()
             target_df = data[['timestamp', 'target']].copy() if 'target' in data.columns else None
-            
+
             # If no target column, create a dummy target DataFrame
             if target_df is None:
                 target_df = features_df.copy()
                 if 'target' not in target_df.columns:
                     target_df['target'] = 0  # Dummy target
-            
+
             # Perform data leakage detection
             leakage_results = self.detect_data_leakage(
                 features_df=features_df,
@@ -1778,7 +1777,7 @@ class LookaheadProtection:
                 timestamp_col='timestamp' if 'timestamp' in data.columns else None,
                 feature_cols=feature_cols
             )
-            
+
             # Convert to expected format - ensure leakage_results is a dictionary
             if not isinstance(leakage_results, dict):
                 self.logger.warning(f"⚠️ leakage_results is not a dictionary: {type(leakage_results)}")
@@ -1808,7 +1807,7 @@ class LookaheadProtection:
                     'context': context,
                     'timestamp': self.current_timestamp
                 }
-            
+
             # Log results
             if result['has_leakage']:
                 self.logger.warning(f"🚨 Data leakage detected: {len(result['leakage_details'])} issues found")
@@ -1816,9 +1815,9 @@ class LookaheadProtection:
                     self.logger.warning(f"  - {issue}")
             else:
                 self.logger.info("✅ No data leakage detected")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ detect_and_prevent_leakage failed: {e}")
             return {

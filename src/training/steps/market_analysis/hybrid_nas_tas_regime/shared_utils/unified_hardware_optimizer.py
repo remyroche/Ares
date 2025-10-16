@@ -14,7 +14,7 @@ import time
 import psutil
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -46,30 +46,30 @@ class PerformanceMetrics:
 
 class UnifiedHardwareOptimizer:
     """Unified hardware optimizer for regime detection."""
-    
+
     def __init__(self, config: HardwareConfig):
         """Initialize the unified hardware optimizer."""
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.performance_history = []
-    
+
     def optimize_processing(
-        self, 
+        self,
         data: Union[np.ndarray, pd.DataFrame],
         operation_type: str = "regime_detection"
     ) -> PerformanceMetrics:
         """Optimize processing for the given data and operation."""
         tprint(f"[HARDWARE_OPTIMIZER] Starting hardware optimization for {operation_type}")
-        
+
         try:
             start_time = time.time()
-            
+
             # Get initial system metrics
             initial_cpu = psutil.cpu_percent()
             initial_memory = psutil.virtual_memory().percent
-            
+
             tprint_debug(f"[HARDWARE_OPTIMIZER] Initial system metrics - CPU: {initial_cpu:.1f}%, Memory: {initial_memory:.1f}%")
-            
+
             # Perform optimization based on operation type
             tprint(f"[HARDWARE_OPTIMIZER] Executing {operation_type} optimization")
             if operation_type == "regime_detection":
@@ -80,25 +80,25 @@ class UnifiedHardwareOptimizer:
                 result = self._optimize_model_training(data)
             else:
                 result = self._optimize_generic_processing(data)
-            
+
             # Calculate performance metrics
             end_time = time.time()
             processing_time = end_time - start_time
-            
+
             final_cpu = psutil.cpu_percent()
             final_memory = psutil.virtual_memory().percent
-            
+
             # Calculate throughput
             if isinstance(data, np.ndarray):
                 data_size = data.size
             else:
                 data_size = len(data)
-            
+
             throughput = data_size / processing_time if processing_time > 0 else 0
-            
+
             tprint_performance(f"[HARDWARE_OPTIMIZER] Processing completed - Time: {processing_time:.3f}s, Throughput: {throughput:.0f} items/s")
             tprint_debug(f"[HARDWARE_OPTIMIZER] Final system metrics - CPU: {final_cpu:.1f}%, Memory: {final_memory:.1f}%")
-            
+
             metrics = PerformanceMetrics(
                 cpu_usage=max(initial_cpu, final_cpu),
                 memory_usage=max(initial_memory, final_memory),
@@ -106,22 +106,22 @@ class UnifiedHardwareOptimizer:
                 processing_time=processing_time,
                 throughput=throughput
             )
-            
+
             # Store performance history
             self.performance_history.append(metrics)
-            
+
             tprint_success(f"[HARDWARE_OPTIMIZER] Hardware optimization completed successfully")
             return metrics
-            
+
         except Exception as e:
             tprint_error(f"[HARDWARE_OPTIMIZER] Error in hardware optimization: {e}")
             tprint_debug(f"[HARDWARE_OPTIMIZER] Operation type: {operation_type}, Data type: {type(data)}")
             return PerformanceMetrics(0, 0, None, 0, 0)
-    
+
     def _optimize_regime_detection(self, data: Union[np.ndarray, pd.DataFrame]) -> Any:
         """Optimize regime detection processing."""
         tprint_debug(f"[HARDWARE_OPTIMIZER] Optimizing regime detection - Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
-        
+
         # Simple optimization: chunk processing for large datasets
         if isinstance(data, pd.DataFrame) and len(data) > 10000:
             tprint(f"[HARDWARE_OPTIMIZER] Using chunked processing for large dataset ({len(data)} rows)")
@@ -138,11 +138,11 @@ class UnifiedHardwareOptimizer:
             tprint_debug(f"[HARDWARE_OPTIMIZER] Using normal processing for dataset")
             # Process normally
             return len(data) if hasattr(data, '__len__') else 1
-    
+
     def _optimize_feature_extraction(self, data: Union[np.ndarray, pd.DataFrame]) -> Any:
         """Optimize feature extraction processing."""
         tprint_debug(f"[HARDWARE_OPTIMIZER] Optimizing feature extraction - Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
-        
+
         # Simple optimization: vectorized operations
         if isinstance(data, pd.DataFrame):
             tprint(f"[HARDWARE_OPTIMIZER] Using vectorized operations for DataFrame")
@@ -157,11 +157,11 @@ class UnifiedHardwareOptimizer:
         else:
             tprint_debug(f"[HARDWARE_OPTIMIZER] Using numpy operations for array")
             return np.mean(data) if data.size > 0 else 0
-    
+
     def _optimize_model_training(self, data: Union[np.ndarray, pd.DataFrame]) -> Any:
         """Optimize model training processing."""
         tprint_debug(f"[HARDWARE_OPTIMIZER] Optimizing model training - Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
-        
+
         # Simple optimization: memory-efficient processing
         if isinstance(data, pd.DataFrame):
             tprint(f"[HARDWARE_OPTIMIZER] Using memory-efficient operations for DataFrame")
@@ -174,11 +174,11 @@ class UnifiedHardwareOptimizer:
             nbytes = data.nbytes if hasattr(data, 'nbytes') else 0
             tprint_success(f"[HARDWARE_OPTIMIZER] Array processing completed - Memory usage: {nbytes / 1024 / 1024:.2f} MB")
             return nbytes
-    
+
     def _optimize_generic_processing(self, data: Union[np.ndarray, pd.DataFrame]) -> Any:
         """Optimize generic processing."""
         tprint_debug(f"[HARDWARE_OPTIMIZER] Optimizing generic processing - Data shape: {data.shape if hasattr(data, 'shape') else 'N/A'}")
-        
+
         # Basic processing
         if isinstance(data, pd.DataFrame):
             tprint_success(f"[HARDWARE_OPTIMIZER] Generic DataFrame processing completed - {len(data)} rows")
@@ -187,17 +187,17 @@ class UnifiedHardwareOptimizer:
             size = data.size if hasattr(data, 'size') else 1
             tprint_success(f"[HARDWARE_OPTIMIZER] Generic array processing completed - {size} elements")
             return size
-    
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary from optimization history."""
         if not self.performance_history:
             return {}
-        
+
         cpu_usage = [m.cpu_usage for m in self.performance_history]
         memory_usage = [m.memory_usage for m in self.performance_history]
         processing_times = [m.processing_time for m in self.performance_history]
         throughputs = [m.throughput for m in self.performance_history]
-        
+
         return {
             'avg_cpu_usage': np.mean(cpu_usage),
             'max_cpu_usage': np.max(cpu_usage),
@@ -209,7 +209,7 @@ class UnifiedHardwareOptimizer:
             'max_throughput': np.max(throughputs),
             'optimization_count': len(self.performance_history)
         }
-    
+
     def reset_performance_history(self):
         """Reset performance history."""
         self.performance_history = []

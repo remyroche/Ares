@@ -121,7 +121,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class EntryTimingConfig:
     """Configuration for entry timing optimization."""
-    
+
     # Parameter bounds
     entry_threshold_min: float = 0.001  # 0.1%
     entry_threshold_max: float = 0.01   # 1.0%
@@ -135,29 +135,29 @@ class EntryTimingConfig:
     timing_window_max: int = 10         # 10 minutes
     confidence_threshold_min: float = 0.5  # 50%
     confidence_threshold_max: float = 0.9   # 90%
-    
+
     # Optimization settings
     n_trials: int = 100
     timeout_minutes: int = 60
     n_calls: int = 100  # For skopt
     random_state: int = 42
-    
+
     # Multi-objective settings
     enable_multi_objective: bool = True
     objectives: List[str] = None  # ['profit', 'sharpe', 'win_rate', 'max_drawdown']
     objective_weights: List[float] = None  # [0.4, 0.3, 0.2, 0.1]
-    
+
     # Constraints
     max_drawdown_threshold: float = 0.1  # 10%
     min_win_rate_threshold: float = 0.4  # 40%
     max_trade_duration: int = 60  # 60 minutes
-    
+
     # Reporting
     save_reports: bool = True
     report_directory: str = "reports/bayesian_entry_timing"
     enable_visualization: bool = True
     detailed_logging: bool = True
-    
+
     def __post_init__(self):
         """Initialize default values."""
         if self.objectives is None:
@@ -168,35 +168,35 @@ class EntryTimingConfig:
 @dataclass
 class EntryTimingResult:
     """Result of entry timing optimization."""
-    
+
     # Best parameters
     best_params: Dict[str, Any]
     best_score: float
-    
+
     # Optimization details
     n_trials: int
     optimization_time: float
     convergence_achieved: bool
-    
+
     # Performance metrics
     profit: float
     sharpe_ratio: float
     win_rate: float
     max_drawdown: float
     total_trades: int
-    
+
     # Optimization history
     trial_history: List[Dict[str, Any]]
     convergence_history: List[float]
-    
+
     # Recommendations
     recommendations: List[str]
     risk_assessment: str
-    
+
     # Metadata
     model_name: str
     optimization_timestamp: str
-    
+
     def __post_init__(self):
         """Initialize timestamp if not provided."""
         if self.optimization_timestamp is None:
@@ -204,7 +204,7 @@ class EntryTimingResult:
 
 class BayesianEntryTimingOptimizer:
     """Bayesian optimization for entry timing parameters."""
-    
+
     def __init__(self, config: Optional[EntryTimingConfig] = None):
         """
         Initialize Bayesian entry timing optimizer.
@@ -226,7 +226,7 @@ class BayesianEntryTimingOptimizer:
         self._evaluation_count = 0
 
         logger.info("✅ Bayesian Entry Timing Optimizer initialized")
-    
+
     def optimize_entry_timing(self,
                             model: Any,
                             X: np.ndarray,
@@ -238,7 +238,7 @@ class BayesianEntryTimingOptimizer:
                             optimization_method: str = "optuna") -> EntryTimingResult:
         """
         Optimize entry timing parameters using Bayesian optimization.
-        
+
         Args:
             model: Trained model for predictions
             X: Feature matrix
@@ -248,7 +248,7 @@ class BayesianEntryTimingOptimizer:
             timestamps: Timestamps for temporal analysis (optional)
             model_name: Name of the model
             optimization_method: 'optuna' or 'skopt'
-            
+
         Returns:
             EntryTimingResult with optimization results
         """
@@ -263,7 +263,7 @@ class BayesianEntryTimingOptimizer:
                 )
             else:
                 raise ValueError(f"Optimization method {optimization_method} not available")
-                
+
         except Exception as e:
             logger.error(f"❌ Entry timing optimization failed: {e}")
             return EntryTimingResult(
@@ -283,7 +283,7 @@ class BayesianEntryTimingOptimizer:
                 risk_assessment="unknown",
                 model_name=model_name
             )
-    
+
     def _optimize_with_optuna(self, model: Any, X: np.ndarray, y: np.ndarray,
                             analyst_signals: Optional[np.ndarray] = None,
                             hmm_regime_probs: Optional[np.ndarray] = None,
@@ -291,7 +291,7 @@ class BayesianEntryTimingOptimizer:
                             model_name: str = "model") -> EntryTimingResult:
         """Optimize using Optuna."""
         start_time = datetime.now()
-        
+
         # Create study with optimized TPE sampler and early stopping
         sampler = TPESampler(
             seed=self.config.random_state,
@@ -312,7 +312,7 @@ class BayesianEntryTimingOptimizer:
             sampler=sampler,
             pruner=pruner
         )
-        
+
         # Define objective function
         def objective(trial):
             # Sample parameters
@@ -348,28 +348,28 @@ class BayesianEntryTimingOptimizer:
                     self.config.confidence_threshold_max
                 )
             }
-            
+
             # Simulate trading with these parameters
             try:
                 results = self._simulate_trading_with_params(
                     model, X, y, analyst_signals, hmm_regime_probs, timestamps, params
                 )
-                
+
                 # Calculate composite score
                 score = self._calculate_composite_score(results)
-                
+
                 # Add constraints
                 if results['max_drawdown'] > self.config.max_drawdown_threshold:
                     return -np.inf
                 if results['win_rate'] < self.config.min_win_rate_threshold:
                     return -np.inf
-                
+
                 return score
-                
+
             except Exception as e:
                 logger.warning(f"Trial failed: {e}")
                 return -np.inf
-        
+
         # Run optimization with early stopping based on convergence
         patience = 15  # Stop if no improvement for 15 trials
         best_score = -np.inf
@@ -399,16 +399,16 @@ class BayesianEntryTimingOptimizer:
             n_trials=self.config.n_trials,
             timeout=self.config.timeout_minutes * 60
         )
-        
+
         # Get best parameters
         best_params = study.best_params
         best_score = study.best_value
-        
+
         # Simulate with best parameters
         best_results = self._simulate_trading_with_params(
             model, X, y, analyst_signals, hmm_regime_probs, timestamps, best_params
         )
-        
+
         # Create trial history
         trial_history = []
         for trial in study.trials:
@@ -418,17 +418,17 @@ class BayesianEntryTimingOptimizer:
                     'value': trial.value,
                     'state': trial.state.name
                 })
-        
+
         # Calculate convergence
         convergence_history = [trial.value for trial in study.trials if trial.value is not None]
         convergence_achieved = len(convergence_history) > 10 and abs(convergence_history[-1] - convergence_history[-10]) < 0.01
-        
+
         # Generate recommendations
         recommendations = self._generate_recommendations(best_results, best_params)
         risk_assessment = self._assess_risk(best_results)
-        
+
         optimization_time = (datetime.now() - start_time).total_seconds()
-        
+
         return EntryTimingResult(
             best_params=best_params,
             best_score=best_score,
@@ -446,7 +446,7 @@ class BayesianEntryTimingOptimizer:
             risk_assessment=risk_assessment,
             model_name=model_name
         )
-    
+
     def _optimize_with_skopt(self, model: Any, X: np.ndarray, y: np.ndarray,
                             analyst_signals: Optional[np.ndarray] = None,
                             hmm_regime_probs: Optional[np.ndarray] = None,
@@ -454,7 +454,7 @@ class BayesianEntryTimingOptimizer:
                             model_name: str = "model") -> EntryTimingResult:
         """Optimize using scikit-optimize."""
         start_time = datetime.now()
-        
+
         # Define parameter space
         space = [
             Real(self.config.entry_threshold_min, self.config.entry_threshold_max, name='entry_threshold'),
@@ -464,7 +464,7 @@ class BayesianEntryTimingOptimizer:
             Integer(self.config.timing_window_min, self.config.timing_window_max, name='timing_window'),
             Real(self.config.confidence_threshold_min, self.config.confidence_threshold_max, name='confidence_threshold')
         ]
-        
+
         # Define objective function
         @use_named_args(space)
         def objective(**params):
@@ -472,22 +472,22 @@ class BayesianEntryTimingOptimizer:
                 results = self._simulate_trading_with_params(
                     model, X, y, analyst_signals, hmm_regime_probs, timestamps, params
                 )
-                
+
                 # Calculate composite score
                 score = self._calculate_composite_score(results)
-                
+
                 # Add constraints
                 if results['max_drawdown'] > self.config.max_drawdown_threshold:
                     return -np.inf
                 if results['win_rate'] < self.config.min_win_rate_threshold:
                     return -np.inf
-                
+
                 return score
-                
+
             except Exception as e:
                 logger.warning(f"Trial failed: {e}")
                 return -np.inf
-        
+
         # Run optimization
         result = gp_minimize(
             objective,
@@ -495,29 +495,29 @@ class BayesianEntryTimingOptimizer:
             n_calls=self.config.n_calls,
             random_state=self.config.random_state
         )
-        
+
         # Get best parameters
         best_params = dict(zip([dim.name for dim in space], result.x))
         best_score = -result.fun  # Negative because gp_minimize minimizes
-        
+
         # Simulate with best parameters
         best_results = self._simulate_trading_with_params(
             model, X, y, analyst_signals, hmm_regime_probs, timestamps, best_params
         )
-        
+
         # Create trial history (simplified for skopt)
         trial_history = [{'params': best_params, 'value': best_score, 'state': 'COMPLETE'}]
-        
+
         # Calculate convergence
         convergence_history = [best_score]
         convergence_achieved = True
-        
+
         # Generate recommendations
         recommendations = self._generate_recommendations(best_results, best_params)
         risk_assessment = self._assess_risk(best_results)
-        
+
         optimization_time = (datetime.now() - start_time).total_seconds()
-        
+
         return EntryTimingResult(
             best_params=best_params,
             best_score=best_score,
@@ -535,7 +535,7 @@ class BayesianEntryTimingOptimizer:
             risk_assessment=risk_assessment,
             model_name=model_name
         )
-    
+
     def _simulate_trading_with_params(self, model: Any, X: np.ndarray, y: np.ndarray,
                                      analyst_signals: Optional[np.ndarray] = None,
                                      hmm_regime_probs: Optional[np.ndarray] = None,
@@ -564,60 +564,60 @@ class BayesianEntryTimingOptimizer:
 
             # Performance tracking
             self._evaluation_count += 1
-            
+
             # Initialize trading simulation
             trades = []
             current_position = None
             entry_price = 0.0
             entry_time = 0
-            
+
             # Simulate trading
             for i in range(len(X)):
                 current_price = y[i] if i < len(y) else y[-1]
                 current_time = timestamps[i] if timestamps is not None else i
-                
+
                 # Check for entry signal
                 if current_position is None:
                     # Check analyst signal
                     if analyst_signals is not None and analyst_signals[i] < confidence_threshold:
                         continue
-                    
+
                     # Check model prediction
                     if predictions[i] > entry_threshold:
                         current_position = 'long'
                         entry_price = current_price
                         entry_time = current_time
-                
+
                 # Check for exit signal
                 elif current_position == 'long':
                     exit_triggered = False
                     exit_reason = ""
-                    
+
                     # Check stop loss
                     if current_price <= entry_price * (1 - stop_loss):
                         exit_triggered = True
                         exit_reason = "stop_loss"
-                    
+
                     # Check take profit
                     elif current_price >= entry_price * (1 + take_profit):
                         exit_triggered = True
                         exit_reason = "take_profit"
-                    
+
                     # Check timing window
                     elif current_time - entry_time >= timing_window:
                         exit_triggered = True
                         exit_reason = "timing_window"
-                    
+
                     # Check exit threshold
                     elif predictions[i] < exit_threshold:
                         exit_triggered = True
                         exit_reason = "exit_threshold"
-                    
+
                     if exit_triggered:
                         # Calculate trade result
                         trade_return = (current_price - entry_price) / entry_price
                         trade_duration = current_time - entry_time
-                        
+
                         trades.append({
                             'entry_price': entry_price,
                             'exit_price': current_price,
@@ -625,9 +625,9 @@ class BayesianEntryTimingOptimizer:
                             'duration': trade_duration,
                             'exit_reason': exit_reason
                         })
-                        
+
                         current_position = None
-            
+
             # Calculate performance metrics
             if not trades:
                 return {
@@ -637,11 +637,11 @@ class BayesianEntryTimingOptimizer:
                     'max_drawdown': 0.0,
                     'total_trades': 0
                 }
-            
+
             returns = [trade['return'] for trade in trades]
             total_return = sum(returns)
             win_rate = sum(1 for r in returns if r > 0) / len(returns)
-            
+
             # Calculate Sharpe ratio using optimized vectorized operations
             if len(returns) > 1:
                 mean_return = np.mean(returns)
@@ -662,7 +662,7 @@ class BayesianEntryTimingOptimizer:
                 max_drawdown = abs(max_drawdown)  # Ensure positive
             else:
                 max_drawdown = 0.0
-            
+
             result = {
                 'profit': float(total_return),
                 'sharpe_ratio': float(sharpe_ratio),
@@ -691,18 +691,18 @@ class BayesianEntryTimingOptimizer:
                 'max_drawdown': 0.0,
                 'total_trades': 0
             }
-    
+
     def _calculate_composite_score(self, results: Dict[str, Any]) -> float:
         """Calculate composite score from multiple objectives."""
         if not self.config.enable_multi_objective:
             return results['profit']
-        
+
         # Normalize metrics
         profit_score = min(results['profit'] / 0.1, 1.0)  # Cap at 10% profit
         sharpe_score = min(results['sharpe_ratio'] / 2.0, 1.0)  # Cap at 2.0 Sharpe
         win_rate_score = results['win_rate']
         drawdown_score = 1.0 - min(results['max_drawdown'] / 0.2, 1.0)  # Penalize >20% drawdown
-        
+
         # Weighted combination
         weights = self.config.objective_weights
         composite_score = (
@@ -711,61 +711,61 @@ class BayesianEntryTimingOptimizer:
             weights[2] * win_rate_score +
             weights[3] * drawdown_score
         )
-        
+
         return composite_score
-    
+
     def _generate_recommendations(self, results: Dict[str, Any], params: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on optimization results."""
         recommendations = []
-        
+
         # Profit recommendations
         if results['profit'] < 0.05:  # Less than 5% profit
             recommendations.append("Consider increasing entry threshold for higher quality signals")
             recommendations.append("Try different take profit levels")
-        
+
         # Sharpe ratio recommendations
         if results['sharpe_ratio'] < 1.0:
             recommendations.append("Improve risk-adjusted returns by adjusting stop loss")
             recommendations.append("Consider position sizing optimization")
-        
+
         # Win rate recommendations
         if results['win_rate'] < 0.5:  # Less than 50% win rate
             recommendations.append("Increase confidence threshold for better signal quality")
             recommendations.append("Consider different exit strategies")
-        
+
         # Drawdown recommendations
         if results['max_drawdown'] > 0.1:  # More than 10% drawdown
             recommendations.append("Implement stricter risk management")
             recommendations.append("Consider reducing position size")
-        
+
         # Parameter-specific recommendations
         if params['entry_threshold'] > 0.008:
             recommendations.append("Entry threshold is high - consider lowering for more opportunities")
-        
+
         if params['stop_loss'] < 0.005:
             recommendations.append("Stop loss is tight - consider widening for better risk management")
-        
+
         if params['timing_window'] > 8:
             recommendations.append("Timing window is long - consider shortening for faster execution")
-        
+
         return recommendations
-    
+
     def _assess_risk(self, results: Dict[str, Any]) -> str:
         """Assess risk level based on results."""
         risk_factors = []
-        
+
         if results['max_drawdown'] > 0.15:
             risk_factors.append("High drawdown")
-        
+
         if results['sharpe_ratio'] < 0.5:
             risk_factors.append("Low Sharpe ratio")
-        
+
         if results['win_rate'] < 0.4:
             risk_factors.append("Low win rate")
-        
+
         if results['total_trades'] < 10:
             risk_factors.append("Low trade frequency")
-        
+
         if len(risk_factors) >= 3:
             return "High risk - Multiple risk factors present"
         elif len(risk_factors) >= 2:

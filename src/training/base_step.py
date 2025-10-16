@@ -12,7 +12,7 @@ class BaseStep(ABC):
     """
     Abstract Base Class for a training step.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
 

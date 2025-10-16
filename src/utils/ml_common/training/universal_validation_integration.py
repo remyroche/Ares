@@ -214,7 +214,7 @@ class ValidationIntegrationConfig:
 
 class UniversalValidationIntegrator:
     """Integrates universal validation into ML training pipelines."""
-    
+
     def __init__(self, config: Optional[ValidationIntegrationConfig] = None):
         """
         Initialize validation integrator.
@@ -268,8 +268,8 @@ class UniversalValidationIntegrator:
         self.monitoring_sessions = {}
 
         logger.info("✅ Universal Validation Integrator initialized with new utilities")
-    
-    def validate_training_data(self, 
+
+    def validate_training_data(self,
                               X_train: np.ndarray,
                               X_val: np.ndarray,
                               y_train: np.ndarray,
@@ -279,7 +279,7 @@ class UniversalValidationIntegrator:
                               model_type: str = "unknown") -> Dict[str, Any]:
         """
         Validate training data before model training.
-        
+
         Args:
             X_train: Training features
             X_val: Validation features
@@ -288,20 +288,20 @@ class UniversalValidationIntegrator:
             timestamps: Optional timestamps for temporal validation
             feature_names: Optional feature names
             model_type: Type of model
-            
+
         Returns:
             Dict: Validation results
         """
         if not self.config.enable_validation:
             return {'valid': True, 'message': 'Validation disabled'}
-        
+
         validation_results = {
             'valid': True,
             'warnings': [],
             'critical_issues': [],
             'recommendations': []
         }
-        
+
         try:
             # 1. Timeframe validation
             if self.config.enable_timeframe_validation:
@@ -311,32 +311,32 @@ class UniversalValidationIntegrator:
                     if self.config.fail_on_validation_error:
                         validation_results['valid'] = False
                         validation_results['critical_issues'].append("Timeframe validation failed")
-            
+
             # 2. Temporal validation
             if self.config.enable_temporal_validation and timestamps is not None:
                 temporal_report = self.temporal_validator.validate_temporal_split(
-                    X_train, X_val, y_train, y_val, timestamps, 
+                    X_train, X_val, y_train, y_val, timestamps,
                     f"TrainingData_{model_type}", model_type
                 )
-                
+
                 if not temporal_report.temporal_order_valid:
                     validation_results['warnings'].append("Temporal order violation detected")
                     if self.config.fail_on_validation_error:
                         validation_results['valid'] = False
                         validation_results['critical_issues'].append("Temporal order violation")
-                
+
                 if temporal_report.leakage_detected:
                     validation_results['warnings'].append("Data leakage detected")
                     validation_results['critical_issues'].append("Data leakage detected")
                     validation_results['valid'] = False
-            
+
             # 3. Data quality validation
             data_quality_issues = self._validate_data_quality(X_train, X_val, y_train, y_val)
             validation_results['warnings'].extend(data_quality_issues)
-            
+
             if len(data_quality_issues) > 0:
                 validation_results['recommendations'].append("Review data quality issues")
-            
+
             # 4. Generate recommendations
             if not validation_results['valid']:
                 validation_results['recommendations'].extend([
@@ -344,13 +344,13 @@ class UniversalValidationIntegrator:
                     "Review data preprocessing pipeline",
                     "Check for data leakage and temporal order"
                 ])
-            
+
             # Log validation results
             if self.config.enable_validation_logging:
                 self._log_validation_results("TrainingData", validation_results)
-            
+
             return validation_results
-            
+
         except Exception as e:
             logger.error(f"Training data validation failed: {e}")
             return {
@@ -359,8 +359,8 @@ class UniversalValidationIntegrator:
                 'critical_issues': [f"Validation failed: {str(e)}"],
                 'recommendations': ["Fix validation error and retry"]
             }
-    
-    def validate_trained_model(self, 
+
+    def validate_trained_model(self,
                               model: Any,
                               X_train: np.ndarray,
                               X_val: np.ndarray,
@@ -373,7 +373,7 @@ class UniversalValidationIntegrator:
                               fold_number: Optional[int] = None) -> Dict[str, Any]:
         """
         Validate trained model with comprehensive analysis.
-        
+
         Args:
             model: Trained ML model
             X_train: Training features
@@ -385,17 +385,17 @@ class UniversalValidationIntegrator:
             model_name: Name of the model
             model_type: Type of model
             fold_number: Fold number for cross-validation
-            
+
         Returns:
             Dict: Comprehensive validation results
         """
         if not self.config.enable_validation:
             return {'valid': True, 'message': 'Validation disabled'}
-        
+
         try:
             # Get model-specific validation overrides
             model_config = self.config.model_validation_overrides.get(model_type, {})
-            
+
             # Create validation configuration
             validation_config = UniversalMLValidationConfig(
                 enable_overfitting_detection=self.config.enable_overfitting_detection,
@@ -406,15 +406,15 @@ class UniversalValidationIntegrator:
                 enable_visualization=True,
                 detailed_logging=self.config.enable_validation_logging
             )
-            
+
             # Override with model-specific settings
             for key, value in model_config.items():
                 if hasattr(validation_config, key):
                     setattr(validation_config, key, value)
-            
+
             # Get validator with configuration
             validator = get_ml_validator(validation_config)
-            
+
             # Perform comprehensive validation
             validation_report = validator.validate_model(
                 model=model,
@@ -428,7 +428,7 @@ class UniversalValidationIntegrator:
                 model_type=model_type,
                 fold_number=fold_number
             )
-            
+
             # Evaluate validation results
             validation_results = {
                 'valid': validation_report.overall_validation_passed,
@@ -440,17 +440,17 @@ class UniversalValidationIntegrator:
                 'temporal_validation': validation_report.temporal_validation,
                 'timeframe_validation': validation_report.timeframe_validation
             }
-            
+
             # Check validation thresholds
             if validation_report.validation_score < self.config.validation_failure_threshold:
                 validation_results['valid'] = False
                 validation_results['critical_issues'].append(
                     f"Validation score {validation_report.validation_score:.3f} below threshold {self.config.validation_failure_threshold}"
                 )
-            
+
             if len(validation_report.critical_issues) >= self.config.critical_issue_threshold:
                 validation_results['valid'] = False
-            
+
             # Track validation history
             self.validation_history.append({
                 'timestamp': datetime.now().isoformat(),
@@ -461,7 +461,7 @@ class UniversalValidationIntegrator:
                 'valid': validation_results['valid'],
                 'critical_issues': len(validation_report.critical_issues)
             })
-            
+
             # Process with reporting system
             if self.config.save_validation_reports:
                 self.reporting_integrator.process_validation_report(
@@ -472,13 +472,13 @@ class UniversalValidationIntegrator:
                     validation_duration=None,  # Could be calculated if needed
                     model_metadata={'config': self.config.__dict__}
                 )
-            
+
             # Log validation results
             if self.config.enable_validation_logging:
                 self._log_validation_results(model_name, validation_results)
-            
+
             return validation_results
-            
+
         except Exception as e:
             logger.error(f"Model validation failed for {model_name}: {e}")
             return {
@@ -488,8 +488,8 @@ class UniversalValidationIntegrator:
                 'critical_issues': [f"Model validation failed: {str(e)}"],
                 'recommendations': ["Fix validation error and retry"]
             }
-    
-    def validate_hpo_trial(self, 
+
+    def validate_hpo_trial(self,
                           model: Any,
                           X_train: np.ndarray,
                           X_val: np.ndarray,
@@ -501,7 +501,7 @@ class UniversalValidationIntegrator:
                           trial_number: int = 0) -> Dict[str, Any]:
         """
         Validate HPO trial with comprehensive analysis.
-        
+
         Args:
             model: Trained model from HPO trial
             X_train: Training features
@@ -512,13 +512,13 @@ class UniversalValidationIntegrator:
             model_name: Name of the model
             model_type: Type of model
             trial_number: HPO trial number
-            
+
         Returns:
             Dict: HPO trial validation results
         """
         if not self.config.enable_validation:
             return {'valid': True, 'message': 'Validation disabled'}
-        
+
         try:
             # Validate the model
             validation_results = self.validate_trained_model(
@@ -531,7 +531,7 @@ class UniversalValidationIntegrator:
                 model_type=model_type,
                 fold_number=trial_number
             )
-            
+
             # Add HPO-specific analysis
             hpo_validation = {
                 'trial_number': trial_number,
@@ -542,7 +542,7 @@ class UniversalValidationIntegrator:
                 'critical_issues': validation_results['critical_issues'],
                 'recommendations': validation_results['recommendations']
             }
-            
+
             # Check if trial should be pruned based on validation
             if not validation_results['valid']:
                 hpo_validation['should_prune'] = True
@@ -552,9 +552,9 @@ class UniversalValidationIntegrator:
                 hpo_validation['prune_reason'] = f"Low validation score: {validation_results['validation_score']:.3f}"
             else:
                 hpo_validation['should_prune'] = False
-            
+
             return hpo_validation
-            
+
         except Exception as e:
             logger.error(f"HPO trial validation failed for {model_name} trial {trial_number}: {e}")
             return {
@@ -568,7 +568,7 @@ class UniversalValidationIntegrator:
                 'critical_issues': [f"HPO trial validation failed: {str(e)}"],
                 'recommendations': ["Fix validation error and retry"]
             }
-    
+
     def _validate_timeframe(self, model_type: str) -> bool:
         """Validate timeframe for model type."""
         try:
@@ -579,37 +579,37 @@ class UniversalValidationIntegrator:
         except Exception as e:
             logger.error(f"Timeframe validation failed: {e}")
             return False
-    
-    def _validate_data_quality(self, 
+
+    def _validate_data_quality(self,
                               X_train: np.ndarray,
                               X_val: np.ndarray,
                               y_train: np.ndarray,
                               y_val: np.ndarray) -> List[str]:
         """Validate data quality."""
         warnings = []
-        
+
         try:
             # Check for empty data
             if len(X_train) == 0 or len(X_val) == 0:
                 warnings.append("Empty training or validation data")
-            
+
             # Check for NaN values
             if np.isnan(X_train).any():
                 warnings.append("NaN values found in training data")
             if np.isnan(X_val).any():
                 warnings.append("NaN values found in validation data")
-            
+
             # Check for infinite values
             if np.isinf(X_train).any():
                 warnings.append("Infinite values found in training data")
             if np.isinf(X_val).any():
                 warnings.append("Infinite values found in validation data")
-            
+
             # Check for constant features
             constant_features = np.var(X_train, axis=0) == 0
             if constant_features.any():
                 warnings.append(f"Constant features found: {np.sum(constant_features)}")
-            
+
             # Check for high correlation between train and val
             if X_train.shape[1] > 1 and X_val.shape[1] > 1:
                 train_mean = np.mean(X_train, axis=0)
@@ -617,13 +617,13 @@ class UniversalValidationIntegrator:
                 correlation = np.corrcoef(train_mean, val_mean)[0, 1]
                 if correlation > 0.95:
                     warnings.append(f"High correlation between train and val means: {correlation:.3f}")
-            
+
         except Exception as e:
             logger.error(f"Data quality validation failed: {e}")
             warnings.append(f"Data quality validation error: {str(e)}")
-        
+
         return warnings
-    
+
     def _log_validation_results(self, model_name: str, validation_results: Dict[str, Any]):
         """Log validation results."""
         logger.info(f"Validation results for {model_name}:")
@@ -632,15 +632,15 @@ class UniversalValidationIntegrator:
         logger.info(f"  Warnings: {len(validation_results.get('warnings', []))}")
         logger.info(f"  Critical Issues: {len(validation_results.get('critical_issues', []))}")
         logger.info(f"  Recommendations: {len(validation_results.get('recommendations', []))}")
-        
+
         if validation_results.get('critical_issues'):
             for issue in validation_results['critical_issues']:
                 logger.error(f"  Critical: {issue}")
-        
+
         if validation_results.get('warnings'):
             for warning in validation_results['warnings'][:3]:  # Show first 3 warnings
                 logger.warning(f"  Warning: {warning}")
-    
+
     def intelligently_select_utilities(self,
                                      X: np.ndarray,
                                      y: np.ndarray,

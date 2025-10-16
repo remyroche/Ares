@@ -99,7 +99,7 @@ class LiveTrader:
         # Core components
         self.order_manager: Optional[OrderManager] = None
         self.exchange_interface: Optional[ExchangeInterface] = None
-        
+
         # Enhanced signal generators
         self.analyst_signal_generator: Optional[AnalystSignalGenerator] = None
         self.tactician_signal_generator: Optional[TacticianSignalGenerator] = None
@@ -122,7 +122,7 @@ class LiveTrader:
         self.failed_trades = 0
         self.total_pnl = 0.0
         self.total_fees = 0.0
-        
+
         # NAS/TAS enhancement tracking
         self.nas_enhanced_trades = 0
         self.tas_enhanced_trades = 0
@@ -153,7 +153,7 @@ class LiveTrader:
 
             # Initialize enhanced signal generators
             await self._initialize_signal_generators()
-            
+
             # Start trading session
             self.session = TradingSession(
                 session_id=str(datetime.now().timestamp()),
@@ -169,7 +169,7 @@ class LiveTrader:
             self.status = LiveTraderStatus.ERROR
             tprint_error(f"❌ Failed to initialize Live Trader: {str(e)}")
             raise
-    
+
     async def _initialize_signal_generators(self):
         """Initialize enhanced signal generators with NAS/TAS models."""
         try:
@@ -182,9 +182,9 @@ class LiveTrader:
                 'regime_timeframe': '15m',
                 'max_history': 1000
             }
-            
+
             self.analyst_signal_generator = create_analyst_signal_generator(analyst_config)
-            
+
             # Initialize Tactician signal generator with TAS enhancement
             tactician_config = {
                 'confidence_threshold': 0.6,
@@ -196,16 +196,16 @@ class LiveTrader:
                 'kelly_fraction': 0.25,
                 'max_history': 1000
             }
-            
+
             self.tactician_signal_generator = create_tactician_signal_generator(tactician_config)
-            
+
             # Note: In a real implementation, you would load pre-trained NAS/TAS models here
             # For now, we'll initialize without models (fallback mode)
             await self.analyst_signal_generator.initialize(None)  # No analyst component yet
             await self.tactician_signal_generator.initialize(None)  # No tactician component yet
-            
+
             tprint_success("✅ Enhanced signal generators initialized")
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Failed to initialize signal generators: {e}")
             # Continue without enhancement
@@ -546,7 +546,7 @@ class LiveTrader:
         """Generate enhanced signals using NAS/TAS models."""
         try:
             signals = {}
-            
+
             # Generate Analyst signal with NAS enhancement
             if self.analyst_signal_generator:
                 analyst_signal = await self.analyst_signal_generator.generate_signal(
@@ -554,15 +554,15 @@ class LiveTrader:
                     market_data=market_data,
                     regime_data=regime_data
                 )
-                
+
                 if analyst_signal:
                     signals['analyst_signal'] = analyst_signal
-                    
+
                     # Track NAS enhancement
                     if analyst_signal.nas_confidence > 0:
                         self.nas_enhanced_trades += 1
                         self.enhanced_signal_performance['nas_enhanced'] = self.enhanced_signal_performance.get('nas_enhanced', 0) + 1
-            
+
             # Generate Tactician signal with TAS enhancement
             if self.tactician_signal_generator and 'analyst_signal' in signals:
                 tactician_signal = await self.tactician_signal_generator.generate_timing_signal(
@@ -572,17 +572,17 @@ class LiveTrader:
                     current_position=self.positions.get(symbol),
                     account_balance=await self._get_portfolio_value()
                 )
-                
+
                 if tactician_signal:
                     signals['tactician_signal'] = tactician_signal
-                    
+
                     # Track TAS enhancement
                     if tactician_signal.tas_confidence > 0:
                         self.tas_enhanced_trades += 1
                         self.enhanced_signal_performance['tas_enhanced'] = self.enhanced_signal_performance.get('tas_enhanced', 0) + 1
-            
+
             return signals
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced signal generation failed: {e}")
             return {}
@@ -600,7 +600,7 @@ class LiveTrader:
             'active_orders': len(self.active_orders),
             'session_duration': (datetime.now() - self.session.start_time).total_seconds() if self.session else 0
         }
-        
+
         # Add NAS/TAS enhancement metrics
         enhancement_metrics = {
             'nas_enhanced_trades': self.nas_enhanced_trades,
@@ -609,7 +609,7 @@ class LiveTrader:
             'nas_enhancement_rate': self.nas_enhanced_trades / max(self.total_trades, 1),
             'tas_enhancement_rate': self.tas_enhanced_trades / max(self.total_trades, 1)
         }
-        
+
         return {**base_metrics, **enhancement_metrics}
 
     async def cleanup(self) -> None:

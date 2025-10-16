@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 @dataclass(frozen=True)
 class Step03_5Defaults:
 	# Reproducibility
@@ -23,4 +22,3 @@ class Step03_5Defaults:
 	rf_n_estimators_cv: int = 50
 	rf_n_estimators: int = 100
 	hgb_max_iter: int = 100
-

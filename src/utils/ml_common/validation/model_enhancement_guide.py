@@ -43,12 +43,12 @@ class ModelEnhancementPlan:
 
 class ModelEnhancementGuide:
     """Comprehensive guide for model enhancement based on overfitting/underfitting detection."""
-    
+
     def __init__(self):
         """Initialize the enhancement guide."""
         self.enhancement_actions = self._initialize_enhancement_actions()
         logger.info("✅ Model Enhancement Guide initialized")
-    
+
     def create_enhancement_plan(self,
                                model_name: str,
                                model_type: str,
@@ -56,19 +56,19 @@ class ModelEnhancementGuide:
                                underfitting_report: Optional[Dict[str, Any]] = None) -> ModelEnhancementPlan:
         """
         Create a comprehensive enhancement plan based on detection reports.
-        
+
         Args:
             model_name: Name of the model
             model_type: Type of model
             overfitting_report: Overfitting detection report
             underfitting_report: Underfitting detection report
-            
+
         Returns:
             ModelEnhancementPlan with specific actions
         """
         current_issues = []
         enhancement_actions = []
-        
+
         # Analyze overfitting issues
         if overfitting_report and overfitting_report.get('is_overfitting', False):
             overfitting_actions = self._get_overfitting_actions(
@@ -76,7 +76,7 @@ class ModelEnhancementGuide:
             )
             enhancement_actions.extend(overfitting_actions)
             current_issues.append("Overfitting detected")
-        
+
         # Analyze underfitting issues
         if underfitting_report and underfitting_report.get('is_underfitting', False):
             underfitting_actions = self._get_underfitting_actions(
@@ -84,27 +84,27 @@ class ModelEnhancementGuide:
             )
             enhancement_actions.extend(underfitting_actions)
             current_issues.append("Underfitting detected")
-        
+
         # If no specific issues detected, suggest general improvements
         if not enhancement_actions:
             enhancement_actions = self._get_general_improvements(model_type)
             current_issues.append("General model improvement")
-        
+
         # Sort actions by priority
         enhancement_actions.sort(key=lambda x: x.priority)
-        
+
         # Create implementation order
         implementation_order = [action.action_name for action in enhancement_actions]
-        
+
         # Generate expected outcomes
         expected_outcomes = self._generate_expected_outcomes(enhancement_actions)
-        
+
         # Assess risks
         risk_assessment = self._assess_implementation_risks(enhancement_actions)
-        
+
         # Estimate timeline
         timeline_estimate = self._estimate_implementation_timeline(enhancement_actions)
-        
+
         return ModelEnhancementPlan(
             model_name=model_name,
             model_type=model_type,
@@ -115,12 +115,12 @@ class ModelEnhancementGuide:
             risk_assessment=risk_assessment,
             timeline_estimate=timeline_estimate
         )
-    
+
     def _get_overfitting_actions(self, overfitting_report: Dict[str, Any], model_type: str) -> List[EnhancementAction]:
         """Get enhancement actions for overfitting issues."""
         actions = []
         severity = overfitting_report.get('severity', 'none')
-        
+
         if severity in ['moderate', 'high', 'severe']:
             # High priority: Regularization
             actions.append(EnhancementAction(
@@ -133,7 +133,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="easy",
                 code_example=self._get_regularization_code(model_type)
             ))
-            
+
             # High priority: Early Stopping
             actions.append(EnhancementAction(
                 action_type="regularization",
@@ -145,7 +145,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="easy",
                 code_example=self._get_early_stopping_code(model_type)
             ))
-        
+
         if severity in ['high', 'severe']:
             # Medium priority: Cross-validation
             actions.append(EnhancementAction(
@@ -158,7 +158,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="medium",
                 code_example=self._get_cv_improvement_code()
             ))
-            
+
             # Medium priority: Feature Selection
             actions.append(EnhancementAction(
                 action_type="feature",
@@ -170,7 +170,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="medium",
                 code_example=self._get_feature_selection_code()
             ))
-        
+
         # Low priority: Ensemble methods
         actions.append(EnhancementAction(
             action_type="ensemble",
@@ -182,14 +182,14 @@ class ModelEnhancementGuide:
             implementation_difficulty="medium",
             code_example=self._get_ensemble_code(model_type)
         ))
-        
+
         return actions
-    
+
     def _get_underfitting_actions(self, underfitting_report: Dict[str, Any], model_type: str) -> List[EnhancementAction]:
         """Get enhancement actions for underfitting issues."""
         actions = []
         severity = underfitting_report.get('severity', 'none')
-        
+
         if severity in ['mild', 'moderate', 'severe']:
             # High priority: Increase Complexity
             actions.append(EnhancementAction(
@@ -202,7 +202,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="easy",
                 code_example=self._get_complexity_increase_code(model_type)
             ))
-            
+
             # High priority: Feature Engineering
             actions.append(EnhancementAction(
                 action_type="feature",
@@ -214,7 +214,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="medium",
                 code_example=self._get_feature_engineering_code()
             ))
-        
+
         if severity in ['moderate', 'severe']:
             # Medium priority: Hyperparameter Tuning
             actions.append(EnhancementAction(
@@ -227,7 +227,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="medium",
                 code_example=self._get_hpo_improvement_code()
             ))
-            
+
             # Medium priority: Algorithm Change
             actions.append(EnhancementAction(
                 action_type="complexity",
@@ -239,7 +239,7 @@ class ModelEnhancementGuide:
                 implementation_difficulty="medium",
                 code_example=self._get_algorithm_change_code(model_type)
             ))
-        
+
         # Low priority: Data Augmentation
         actions.append(EnhancementAction(
             action_type="feature",
@@ -251,9 +251,9 @@ class ModelEnhancementGuide:
             implementation_difficulty="hard",
             code_example=self._get_data_augmentation_code()
         ))
-        
+
         return actions
-    
+
     def _get_general_improvements(self, model_type: str) -> List[EnhancementAction]:
         """Get general improvement actions when no specific issues are detected."""
         actions = [
@@ -288,9 +288,9 @@ class ModelEnhancementGuide:
                 code_example=self._get_feature_engineering_code()
             )
         ]
-        
+
         return actions
-    
+
     def _get_regularization_code(self, model_type: str) -> str:
         """Get regularization code example for model type."""
         if 'tree' in model_type or 'forest' in model_type:
@@ -327,7 +327,7 @@ model = Lasso(alpha=0.1)  # L1 regularization
 # or
 model = ElasticNet(alpha=0.1, l1_ratio=0.5)  # Combined L1+L2
 """
-    
+
     def _get_early_stopping_code(self, model_type: str) -> str:
         """Get early stopping code example for model type."""
         if 'tree' in model_type or 'forest' in model_type:
@@ -341,7 +341,7 @@ model = XGBRegressor(
 )
 
 # Train with early stopping
-model.fit(X_train, y_train, 
+model.fit(X_train, y_train,
           eval_set=[(X_val, y_val)],
           verbose=False)
 """
@@ -368,7 +368,7 @@ model = SGDRegressor(
     random_state=42
 )
 """
-    
+
     def _get_cv_improvement_code(self) -> str:
         """Get cross-validation improvement code example."""
         return """
@@ -379,10 +379,10 @@ tscv = TimeSeriesSplit(n_splits=5)
 for train_idx, val_idx in tscv.split(X):
     X_train, X_val = X[train_idx], X[val_idx]
     y_train, y_val = y[train_idx], y[val_idx]
-    
+
     # Train model
     model.fit(X_train, y_train)
-    
+
     # Evaluate
     score = model.score(X_val, y_val)
     print(f"CV Score: {score}")
@@ -395,7 +395,7 @@ for train_idx, val_idx in pkf.split(X):
     # Similar to above
     pass
 """
-    
+
     def _get_feature_selection_code(self) -> str:
         """Get feature selection code example."""
         return """
@@ -416,7 +416,7 @@ correlation_matrix = X_train.corr()
 high_corr_pairs = np.where(np.triu(correlation_matrix, 1) > 0.95)
 # Remove highly correlated features
 """
-    
+
     def _get_ensemble_code(self, model_type: str) -> str:
         """Get ensemble code example for model type."""
         if 'classification' in model_type:
@@ -451,7 +451,7 @@ ensemble = VotingRegressor([
 
 ensemble.fit(X_train, y_train)
 """
-    
+
     def _get_complexity_increase_code(self, model_type: str) -> str:
         """Get complexity increase code example for model type."""
         if 'tree' in model_type or 'forest' in model_type:
@@ -490,7 +490,7 @@ X_poly = poly.fit_transform(X_train)
 model = Ridge(alpha=0.1)
 model.fit(X_poly, y_train)
 """
-    
+
     def _get_feature_engineering_code(self) -> str:
         """Get feature engineering code example."""
         return """
@@ -514,20 +514,20 @@ def create_financial_features(df):
     df['rsi'] = calculate_rsi(df['close'])
     df['bollinger_upper'] = df['sma_20'] + 2 * df['close'].rolling(20).std()
     df['bollinger_lower'] = df['sma_20'] - 2 * df['close'].rolling(20).std()
-    
+
     # Lag features
     for lag in [1, 2, 3, 5, 10]:
         df[f'close_lag_{lag}'] = df['close'].shift(lag)
         df[f'volume_lag_{lag}'] = df['volume'].shift(lag)
-    
+
     # Statistical features
     df['close_std_20'] = df['close'].rolling(20).std()
     df['close_skew_20'] = df['close'].rolling(20).skew()
     df['close_kurt_20'] = df['close'].rolling(20).kurt()
-    
+
     return df
 """
-    
+
     def _get_hpo_improvement_code(self) -> str:
         """Get HPO improvement code example."""
         return """
@@ -542,7 +542,7 @@ def objective(trial):
         'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 5),
         'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2'])
     }
-    
+
     model = RandomForestRegressor(**params, random_state=42)
     scores = cross_val_score(model, X_train, y_train, cv=5, scoring='r2')
     return scores.mean()
@@ -554,7 +554,7 @@ study.optimize(objective, n_trials=100)
 best_params = study.best_params
 model = RandomForestRegressor(**best_params, random_state=42)
 """
-    
+
     def _get_algorithm_change_code(self, model_type: str) -> str:
         """Get algorithm change code example for model type."""
         if 'linear' in model_type:
@@ -604,7 +604,7 @@ model = BaggingRegressor(
     random_state=42
 )
 """
-    
+
     def _get_data_augmentation_code(self) -> str:
         """Get data augmentation code example."""
         return """
@@ -651,7 +651,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 X_synthetic, y_synthetic = make_regression(
@@ -661,11 +661,11 @@ X_synthetic, y_synthetic = make_regression(
     random_state=42
 )
 """
-    
+
     def _generate_expected_outcomes(self, actions: List[EnhancementAction]) -> Dict[str, str]:
         """Generate expected outcomes for enhancement actions."""
         outcomes = {}
-        
+
         for action in actions:
             if action.expected_improvement == "high":
                 outcomes[action.action_name] = "Significant improvement expected (10-30%)"
@@ -673,30 +673,30 @@ X_synthetic, y_synthetic = make_regression(
                 outcomes[action.action_name] = "Moderate improvement expected (5-15%)"
             else:
                 outcomes[action.action_name] = "Small improvement expected (1-5%)"
-        
+
         return outcomes
-    
+
     def _assess_implementation_risks(self, actions: List[EnhancementAction]) -> str:
         """Assess implementation risks for enhancement actions."""
         risk_factors = []
-        
+
         for action in actions:
             if action.implementation_difficulty == "hard":
                 risk_factors.append("High complexity implementation")
             elif action.implementation_difficulty == "medium":
                 risk_factors.append("Medium complexity implementation")
-        
+
         if len(risk_factors) > 3:
             return "High risk - Multiple complex implementations required"
         elif len(risk_factors) > 1:
             return "Medium risk - Some complex implementations required"
         else:
             return "Low risk - Mostly straightforward implementations"
-    
+
     def _estimate_implementation_timeline(self, actions: List[EnhancementAction]) -> str:
         """Estimate implementation timeline for enhancement actions."""
         total_days = 0
-        
+
         for action in actions:
             if action.implementation_difficulty == "easy":
                 total_days += 1
@@ -704,18 +704,18 @@ X_synthetic, y_synthetic = make_regression(
                 total_days += 3
             else:  # hard
                 total_days += 7
-        
+
         if total_days <= 3:
             return f"{total_days} days - Quick implementation"
         elif total_days <= 10:
             return f"{total_days} days - Moderate implementation time"
         else:
             return f"{total_days} days - Extended implementation time"
-    
+
     def _initialize_enhancement_actions(self) -> Dict[str, EnhancementAction]:
         """Initialize all available enhancement actions."""
         actions = {}
-        
+
         # Regularization actions
         actions["l1_regularization"] = EnhancementAction(
             action_type="regularization",
@@ -726,7 +726,7 @@ X_synthetic, y_synthetic = make_regression(
             expected_improvement="high",
             implementation_difficulty="easy"
         )
-        
+
         actions["l2_regularization"] = EnhancementAction(
             action_type="regularization",
             action_name="L2 Regularization",
@@ -736,7 +736,7 @@ X_synthetic, y_synthetic = make_regression(
             expected_improvement="high",
             implementation_difficulty="easy"
         )
-        
+
         # Complexity actions
         actions["increase_complexity"] = EnhancementAction(
             action_type="complexity",
@@ -747,7 +747,7 @@ X_synthetic, y_synthetic = make_regression(
             expected_improvement="high",
             implementation_difficulty="easy"
         )
-        
+
         # Feature actions
         actions["feature_engineering"] = EnhancementAction(
             action_type="feature",
@@ -758,7 +758,7 @@ X_synthetic, y_synthetic = make_regression(
             expected_improvement="high",
             implementation_difficulty="medium"
         )
-        
+
         return actions
 
 # Global instance
@@ -778,16 +778,16 @@ def create_enhancement_plan(model_name: str,
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -806,8 +806,8 @@ def create_enhancement_plan(model_name: str,
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -824,13 +824,13 @@ def create_enhancement_plan(model_name: str,
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

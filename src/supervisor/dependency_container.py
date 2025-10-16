@@ -17,7 +17,7 @@ import logging
 class DependencyContainer:
     """
     Dependency injection container for managing component dependencies.
-    
+
     This container:
     - Centralizes dependency management
     - Provides lazy initialization of components
@@ -35,7 +35,7 @@ class DependencyContainer:
     def register(self, name: str, factory: callable) -> None:
         """
         Register a component factory.
-        
+
         Args:
             name: Component name
             factory: Callable that creates the component instance
@@ -46,13 +46,13 @@ class DependencyContainer:
     def get(self, name: str) -> Any:
         """
         Get a component instance (lazy initialization).
-        
+
         Args:
             name: Component name
-            
+
         Returns:
             Component instance
-            
+
         Raises:
             KeyError: If component is not registered
         """
@@ -70,7 +70,7 @@ class DependencyContainer:
     def inject_dependencies(self, component: Any, dependencies: Dict[str, str]) -> None:
         """
         Inject dependencies into a component.
-        
+
         Args:
             component: Component to inject dependencies into
             dependencies: Mapping of attribute names to dependency names
@@ -94,11 +94,11 @@ class ComponentBuilder:
     def build_analyst(self, exchange_client: Any, state_manager: StateManager) -> Any:
         """
         Build Analyst component with dependencies.
-        
+
         Args:
             exchange_client: Exchange client instance
             state_manager: State manager instance
-            
+
         Returns:
             Configured Analyst instance
         """
@@ -115,11 +115,11 @@ class ComponentBuilder:
     def build_strategist(self, exchange_client: Any, state_manager: StateManager) -> Any:
         """
         Build Strategist component with dependencies.
-        
+
         Args:
             exchange_client: Exchange client instance
             state_manager: State manager instance
-            
+
         Returns:
             Configured Strategist instance
         """
@@ -136,12 +136,12 @@ class ComponentBuilder:
     def build_tactician(self, exchange_client: Any, state_manager: StateManager, performance_reporter: Any) -> Any:
         """
         Build Tactician component with dependencies.
-        
+
         Args:
             exchange_client: Exchange client instance
             state_manager: State manager instance
             performance_reporter: Performance reporter instance
-            
+
         Returns:
             Configured Tactician instance
         """
@@ -160,11 +160,11 @@ class ComponentBuilder:
     def build_sentinel(self, exchange_client: Any, state_manager: StateManager) -> Any:
         """
         Build Sentinel component with dependencies.
-        
+
         Args:
             exchange_client: Exchange client instance
             state_manager: State manager instance
-            
+
         Returns:
             Configured Sentinel instance
         """

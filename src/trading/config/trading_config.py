@@ -26,40 +26,40 @@ class RiskLevel(Enum):
 @dataclass
 class TradingConfig:
     """Main trading configuration."""
-    
+
     # Trading mode
     mode: TradingMode = TradingMode.PAPER
-    
+
     # Risk management
     risk_level: RiskLevel = RiskLevel.MODERATE
     max_portfolio_risk: float = 0.02  # 2% max portfolio risk per trade
     max_drawdown: float = 0.15  # 15% max drawdown
     max_leverage: float = MAX_LEVERAGE  # Maximum leverage allowed (centralized)
-    
+
     # Position sizing
     base_position_size: float = 0.1  # 10% base position size
     max_position_size: float = 0.25  # 25% max position size
     min_position_size: float = 0.01  # 1% min position size
-    
+
     # Trading parameters
     symbols: List[str] = field(default_factory=lambda: ["ETHUSDT", "BTCUSDT"])
     primary_symbol: str = "ETHUSDT"
     trading_hours: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Regime-based parameters
     regime_confidence_threshold: float = 0.7  # Minimum confidence for regime-based decisions
     regime_transition_threshold: float = 0.3  # Threshold for regime change detection
-    
+
     # Execution parameters
     slippage_tolerance: float = 0.001  # 0.1% slippage tolerance
     commission_rate: float = 0.001  # 0.1% commission rate
     order_timeout: int = 30  # Order timeout in seconds
-    
+
     # Monitoring parameters
     performance_report_interval: int = 3600  # 1 hour
     trade_log_level: str = "INFO"
     enable_real_time_monitoring: bool = True
-    
+
     # Advanced settings
     enable_regime_switching: bool = True
     enable_dynamic_sizing: bool = True
@@ -80,7 +80,7 @@ class TradingConfig:
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         result = {}
@@ -94,7 +94,7 @@ class TradingConfig:
             else:
                 result[key] = value
         return result
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "TradingConfig":
         """Create configuration from dictionary."""
@@ -103,9 +103,9 @@ class TradingConfig:
             config_dict["mode"] = TradingMode(config_dict["mode"])
         if "risk_level" in config_dict and isinstance(config_dict["risk_level"], str):
             config_dict["risk_level"] = RiskLevel(config_dict["risk_level"])
-        
+
         return cls(**config_dict)
-    
+
     def validate(self) -> bool:
         """Validate configuration parameters."""
         if self.max_portfolio_risk <= 0 or self.max_portfolio_risk > 1:

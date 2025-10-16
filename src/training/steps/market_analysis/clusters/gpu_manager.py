@@ -569,7 +569,6 @@ class GPUManager:
         except Exception as e:
             self.logger.error(f"Error during GPU manager shutdown: {e}")
 
-
 # Global instance for easy access
 _gpu_manager_instance = None
 
@@ -586,13 +585,11 @@ def get_gpu_manager(enable_enhanced_features: bool = True,
 
     return _gpu_manager_instance
 
-
 # Convenience functions
 def is_gpu_acceleration_available(acceleration_type: GPUAccelerationType) -> bool:
     """Check if GPU acceleration is available."""
     manager = get_gpu_manager()
     return manager.is_acceleration_available(acceleration_type)
-
 
 def create_accelerated_operation(operation_type: GPUAccelerationType,
                                data: Any, parameters: Dict[str, Any],
@@ -601,12 +598,10 @@ def create_accelerated_operation(operation_type: GPUAccelerationType,
     manager = get_gpu_manager()
     return manager.create_accelerated_operation(operation_type, data, parameters, priority)
 
-
 def optimize_for_gpu(data: Any, operation_type: GPUAccelerationType) -> Any:
     """Optimize data for GPU acceleration."""
     manager = get_gpu_manager()
     return manager.optimize_for_acceleration(data, operation_type)
-
 
 def get_acceleration_report() -> Dict[str, Any]:
     """Get comprehensive acceleration report."""

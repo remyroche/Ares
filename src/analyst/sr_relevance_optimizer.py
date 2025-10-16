@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 from ...utils.logger import system_logger
+from typing import Dict, List, Optional, Union, Any, Tuple
 """
 S/R Relevance Weight Optimizer
 
@@ -36,12 +36,12 @@ class SRRelevanceOptimizer:
     def optimize_weights(self, historical_data: pd.DataFrame, detected_sr_levels: List[Dict[str, Any]], actual_outcomes: pd.DataFrame) -> Dict[str, float]:
         """
         Optimize relevance weights using historical data.
-        
+
         Args:
             historical_data: Market data with prices and returns
             detected_sr_levels: List of detected S/R levels with their features
             actual_outcomes: Actual price movements after S/R tests
-            
+
         Returns:
             Optimized weights dictionary
         """
@@ -248,11 +248,11 @@ class SRRelevanceOptimizer:
     def dynamic_weight_adjustment(self, market_regime: str, volatility_percentile: float) -> Dict[str, float]:
         """
         Dynamically adjust weights based on market conditions.
-        
+
         Args:
             market_regime: Current market regime (trending, ranging, volatile)
             volatility_percentile: Current volatility percentile (0-1)
-            
+
         Returns:
             Adjusted weights
         """

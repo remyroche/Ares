@@ -2,7 +2,6 @@
 
 from typing import Any, Dict
 
-
 class NASIntegrationComponent:
     """Lightweight stub for NAS integration used in tests."""
 

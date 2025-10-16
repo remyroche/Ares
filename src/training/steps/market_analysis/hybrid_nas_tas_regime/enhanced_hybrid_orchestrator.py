@@ -19,7 +19,7 @@ from enum import Enum
 # Import tprint for enhanced logging
 try:
     from src.utils.tprint import (
-        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
         tprint_success, tprint_progress, tprint_performance, tprint_timer
     )
     TPRINT_AVAILABLE = True
@@ -84,13 +84,11 @@ from .config.hybrid_regime_config import HybridRegimeConfig, RegimeCombinationSt
 # Setup logging
 logger = logging.getLogger(__name__)
 
-
 class TimeframeType(Enum):
     """Supported timeframe types."""
     MINUTE_1 = "1m"
     MINUTE_5 = "5m"
     MINUTE_15 = "15m"
-
 
 @dataclass
 class RegimeAnalysisResult:
@@ -108,7 +106,6 @@ class RegimeAnalysisResult:
     execution_time: float
     metadata: Dict[str, Any]
 
-
 @dataclass
 class MultiTimeframeResult:
     """Result from multi-timeframe analysis."""
@@ -118,11 +115,10 @@ class MultiTimeframeResult:
     timeframe_correlation: Dict[str, float] = field(default_factory=dict)
     cross_timeframe_insights: Dict[str, Any] = field(default_factory=dict)
 
-
 class EnhancedHybridOrchestrator:
     """
     Enhanced Hybrid Orchestrator that coordinates TAS and NAS systems.
-    
+
     This orchestrator:
     1. Initializes both TAS and NAS systems
     2. Feeds them market data
@@ -130,7 +126,7 @@ class EnhancedHybridOrchestrator:
     4. Creates its own regime clusters using unified algorithms
     5. Supports multi-timeframe trading (1m, 5m) while maintaining 15m regime detection
     """
-    
+
     def __init__(self, config: HybridRegimeConfig):
         """Initialize the enhanced hybrid orchestrator with comprehensive utility integrations."""
         tprint("🎯 Initializing EnhancedHybridOrchestrator", color="blue")
@@ -195,7 +191,7 @@ class EnhancedHybridOrchestrator:
         if self.use_signal_generation:
             tprint("📡 Initializing signal generation system", color="yellow")
             self._initialize_signal_generator()
-        
+
         tprint("✅ EnhancedHybridOrchestrator initialization complete", color="green")
 
     def _initialize_enhanced_utilities(self):
@@ -277,7 +273,7 @@ class EnhancedHybridOrchestrator:
             self.logger.info(f"   Utility Integration: {len(self.utility_integration.get_available_utilities())} utilities available")
             self.logger.info(f"   Data Integration: {len(self.data_integration.get_available_data_utilities())} utilities available")
             self.logger.info(f"   ML Integration: {len(self.ml_integration.get_available_ml_utilities())} utilities available")
-            
+
             tprint("✅ Enhanced utility integrations initialized successfully", color="green")
             tprint(f"📊 Utility: {len(self.utility_integration.get_available_utilities())} available, Data: {len(self.data_integration.get_available_data_utilities())} available, ML: {len(self.ml_integration.get_available_ml_utilities())} available", color="cyan")
 
@@ -562,7 +558,7 @@ class EnhancedHybridOrchestrator:
             execution_time=0.0,
             metadata={'enhanced_analysis': True, 'engines_version': '2.0'}
         )
-    
+
     def analyze_market_regimes(self,
                              market_data: Union[pd.DataFrame, np.ndarray],
                              timestamps: Optional[np.ndarray] = None,
@@ -700,7 +696,7 @@ class EnhancedHybridOrchestrator:
             )
 
             return error_result
-    
+
     def _preprocess_market_data(self, market_data: Union[pd.DataFrame, np.ndarray], timestamps: Optional[np.ndarray] = None) -> pd.DataFrame:
         """Preprocess market data for analysis."""
         try:
@@ -710,10 +706,10 @@ class EnhancedHybridOrchestrator:
                     market_data = pd.DataFrame(market_data[:, :5], columns=columns[:market_data.shape[1]])
                 else:
                     market_data = pd.DataFrame(market_data, columns=columns[:market_data.shape[1]])
-            
+
             if not isinstance(market_data, pd.DataFrame):
                 raise ValueError("Market data must be pandas DataFrame or numpy array")
-            
+
             # Ensure required columns exist
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             for col in required_columns:
@@ -722,7 +718,7 @@ class EnhancedHybridOrchestrator:
                         market_data[col] = 1.0  # Default volume
                     else:
                         raise ValueError(f"Required column '{col}' not found in market data")
-            
+
             # Add timestamps if provided
             if timestamps is not None:
                 market_data['timestamp'] = timestamps
@@ -732,35 +728,35 @@ class EnhancedHybridOrchestrator:
                     periods=len(market_data),
                     freq='15min'  # Default to 15m for regime detection
                 )
-            
+
             # Basic data cleaning
             market_data = market_data.dropna()
             market_data = market_data.replace([np.inf, -np.inf], np.nan).dropna()
-            
+
             return market_data
-            
+
         except Exception as e:
             self.logger.error(f"Data preprocessing failed: {e}")
             raise
-    
+
     def _run_tas_analysis(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run TAS regime detection analysis."""
         try:
             tas_features, tas_results = self.tas_integration.extract_features(market_data)
-            
+
             self.tas_history.append({
                 'timestamp': datetime.now().isoformat(),
                 'features_shape': tas_features.shape,
                 'results': tas_results
             })
-            
+
             return {
                 'features': tas_features,
                 'results': tas_results,
                 'method': 'tas_integration',
                 'success': True
             }
-            
+
         except Exception as e:
             self.logger.warning(f"TAS analysis failed: {e}")
             return {
@@ -769,25 +765,25 @@ class EnhancedHybridOrchestrator:
                 'method': 'fallback',
                 'success': False
             }
-    
+
     def _run_nas_analysis(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run NAS regime detection analysis."""
         try:
             nas_features, nas_results = self.nas_integration.extract_features(market_data)
-            
+
             self.nas_history.append({
                 'timestamp': datetime.now().isoformat(),
                 'features_shape': nas_features.shape,
                 'results': nas_results
             })
-            
+
             return {
                 'features': nas_features,
                 'results': nas_results,
                 'method': 'nas_integration',
                 'success': True
             }
-            
+
         except Exception as e:
             self.logger.warning(f"NAS analysis failed: {e}")
             return {
@@ -796,7 +792,7 @@ class EnhancedHybridOrchestrator:
                 'method': 'fallback',
                 'success': False
             }
-    
+
     def _analyze_tas_nas_outputs(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze TAS and NAS outputs to create hybrid insights."""
         try:
@@ -809,45 +805,45 @@ class EnhancedHybridOrchestrator:
                 'feature_correlation': 0.0,
                 'regime_consistency': 0.0
             }
-            
+
             if tas_result['success'] and nas_result['success']:
                 tas_features = tas_result['features']
                 nas_features = nas_result['features']
-                
+
                 # Calculate feature correlation
                 if tas_features.size > 0 and nas_features.size > 0:
                     min_len = min(len(tas_features), len(nas_features))
                     tas_subset = tas_features[:min_len]
                     nas_subset = nas_features[:min_len]
-                    
+
                     if tas_subset.ndim > 1 and nas_subset.ndim > 1:
                         tas_flat = tas_subset.flatten()
                         nas_flat = nas_subset.flatten()
-                        
+
                         if len(tas_flat) == len(nas_flat):
                             correlation = np.corrcoef(tas_flat, nas_flat)[0, 1]
                             analysis['feature_correlation'] = abs(correlation) if not np.isnan(correlation) else 0.0
-                
+
                 # Calculate agreement and confidence scores
                 tas_confidence = tas_result['results'].get('confidence', 0.5)
                 nas_confidence = nas_result['results'].get('confidence', 0.5)
                 analysis['agreement_score'] = min(tas_confidence, nas_confidence)
                 analysis['hybrid_confidence'] = (tas_confidence + nas_confidence) / 2.0
                 analysis['complementarity_score'] = 1.0 - analysis['feature_correlation']
-                
+
                 # Calculate contribution scores
                 total_confidence = tas_confidence + nas_confidence
                 if total_confidence > 0:
                     analysis['tas_contribution'] = tas_confidence / total_confidence
                     analysis['nas_contribution'] = nas_confidence / total_confidence
-            
+
             self.hybrid_history.append({
                 'timestamp': datetime.now().isoformat(),
                 'analysis': analysis
             })
-            
+
             return analysis
-            
+
         except Exception as e:
             self.logger.warning(f"TAS-NAS output analysis failed: {e}")
             return {
@@ -860,32 +856,32 @@ class EnhancedHybridOrchestrator:
                 'regime_consistency': 0.0,
                 'error': str(e)
             }
-    
+
     def _create_hybrid_regime_clusters(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], hybrid_analysis: Dict[str, Any], market_data: pd.DataFrame) -> Dict[str, Any]:
         """Create hybrid regime clusters using unified algorithms."""
         try:
             # Combine TAS and NAS features
             combined_features = self._combine_tas_nas_features(tas_result, nas_result, hybrid_analysis)
-            
+
             # Use unified clustering algorithm
             clustering_result = self.clustering_algorithm.cluster_features(
                 features=combined_features,
                 market_data=market_data,
                 economic_weights=None
             )
-            
+
             if not clustering_result.success:
                 raise ValueError("Clustering failed")
-            
+
             # Calculate economic significance and trading viability (simplified)
             n_regimes = len(set(clustering_result.labels))
             economic_scores = np.random.uniform(0.3, 0.9, n_regimes)  # Placeholder
             trading_scores = np.random.uniform(0.2, 0.8, n_regimes)  # Placeholder
             stability_scores = np.random.uniform(0.4, 0.9, n_regimes)  # Placeholder
-            
+
             # Calculate transition probabilities
             transition_probs = self._calculate_transition_probabilities(clustering_result.labels, clustering_result.probabilities)
-            
+
             hybrid_regimes = {
                 'regime_predictions': clustering_result.labels,
                 'regime_probabilities': clustering_result.probabilities,
@@ -896,26 +892,26 @@ class EnhancedHybridOrchestrator:
                 'clustering_metrics': clustering_result.quality_metrics,
                 'algorithm_used': clustering_result.algorithm_used
             }
-            
+
             return hybrid_regimes
-            
+
         except Exception as e:
             self.logger.error(f"Hybrid regime cluster creation failed: {e}")
             raise
-    
+
     def _combine_tas_nas_features(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], hybrid_analysis: Dict[str, Any]) -> np.ndarray:
         """Combine TAS and NAS features based on analysis."""
         try:
             tas_features = tas_result.get('features', np.array([]))
             nas_features = nas_result.get('features', np.array([]))
-            
+
             if tas_features.size == 0 and nas_features.size == 0:
                 raise ValueError("No features available from TAS or NAS")
-            
+
             # Get contribution weights
             tas_weight = hybrid_analysis.get('tas_contribution', 0.5)
             nas_weight = hybrid_analysis.get('nas_contribution', 0.5)
-            
+
             # Normalize weights
             total_weight = tas_weight + nas_weight
             if total_weight > 0:
@@ -923,7 +919,7 @@ class EnhancedHybridOrchestrator:
                 nas_weight = nas_weight / total_weight
             else:
                 tas_weight = nas_weight = 0.5
-            
+
             # Combine features based on strategy
             if self.config.combination_strategy == RegimeCombinationStrategy.WEIGHTED_AVERAGE:
                 if tas_features.size > 0 and nas_features.size > 0:
@@ -945,9 +941,9 @@ class EnhancedHybridOrchestrator:
                     combined_features = tas_features
                 else:
                     combined_features = nas_features
-            
+
             return combined_features
-            
+
         except Exception as e:
             self.logger.warning(f"Feature combination failed: {e}")
             if tas_result.get('features', np.array([])).size > 0:
@@ -956,30 +952,30 @@ class EnhancedHybridOrchestrator:
                 return nas_result['features']
             else:
                 raise ValueError("No features available for combination")
-    
+
     def _calculate_transition_probabilities(self, labels: np.ndarray, probabilities: np.ndarray) -> np.ndarray:
         """Calculate transition probabilities between regimes."""
         try:
             n_regimes = len(set(labels))
             transition_matrix = np.zeros((n_regimes, n_regimes))
-            
+
             for i in range(len(labels) - 1):
                 current_regime = labels[i]
                 next_regime = labels[i + 1]
                 transition_matrix[current_regime, next_regime] += 1
-            
+
             # Normalize to probabilities
             row_sums = transition_matrix.sum(axis=1, keepdims=True)
             row_sums = np.where(row_sums == 0, 1, row_sums)
             transition_matrix = transition_matrix / row_sums
-            
+
             return transition_matrix
-            
+
         except Exception as e:
             self.logger.warning(f"Transition probability calculation failed: {e}")
             n_regimes = len(set(labels))
             return np.full((n_regimes, n_regimes), 1.0 / n_regimes)
-    
+
     def _perform_multi_timeframe_analysis(self, market_data: pd.DataFrame, hybrid_regimes: Dict[str, Any]) -> Dict[str, Any]:
         """Perform multi-timeframe analysis for trading."""
         try:
@@ -989,21 +985,21 @@ class EnhancedHybridOrchestrator:
                 'correlations': {},
                 'insights': {}
             }
-            
+
             # Analyze 1m trading timeframe
             if TimeframeType.MINUTE_1 in self.trading_timeframes:
                 timeframe_analysis['1m_trading'] = self._analyze_trading_timeframe(market_data, hybrid_regimes, TimeframeType.MINUTE_1)
-            
+
             # Analyze 5m trading timeframe
             if TimeframeType.MINUTE_5 in self.trading_timeframes:
                 timeframe_analysis['5m_trading'] = self._analyze_trading_timeframe(market_data, hybrid_regimes, TimeframeType.MINUTE_5)
-            
+
             # Calculate correlations and insights
             timeframe_analysis['correlations'] = self._calculate_timeframe_correlations(timeframe_analysis)
             timeframe_analysis['insights'] = self._generate_cross_timeframe_insights(hybrid_regimes, timeframe_analysis)
-            
+
             return timeframe_analysis
-            
+
         except Exception as e:
             self.logger.warning(f"Multi-timeframe analysis failed: {e}")
             return {
@@ -1012,7 +1008,7 @@ class EnhancedHybridOrchestrator:
                 'correlations': {},
                 'insights': {'error': str(e)}
             }
-    
+
     def _analyze_trading_timeframe(self, market_data: pd.DataFrame, hybrid_regimes: Dict[str, Any], timeframe: TimeframeType) -> Dict[str, Any]:
         """Analyze a specific trading timeframe."""
         try:
@@ -1036,9 +1032,9 @@ class EnhancedHybridOrchestrator:
                 },
                 'opportunity_score': 0.75
             }
-            
+
             return trading_analysis
-            
+
         except Exception as e:
             self.logger.warning(f"Trading timeframe analysis failed for {timeframe.value}: {e}")
             return {
@@ -1046,35 +1042,35 @@ class EnhancedHybridOrchestrator:
                 'error': str(e),
                 'opportunity_score': 0.0
             }
-    
+
     def _calculate_timeframe_correlations(self, timeframe_analysis: Dict[str, Any]) -> Dict[str, float]:
         """Calculate correlations between different timeframes."""
         try:
             correlations = {}
-            
+
             trading_1m = timeframe_analysis.get('1m_trading', {})
             trading_5m = timeframe_analysis.get('5m_trading', {})
-            
+
             if trading_1m and trading_5m:
                 score_1m = trading_1m.get('opportunity_score', 0.0)
                 score_5m = trading_5m.get('opportunity_score', 0.0)
-                
+
                 correlations['opportunity_score_correlation'] = min(abs(score_1m - score_5m), 1.0)
-                
+
                 signals_1m = trading_1m.get('trading_signals', {})
                 signals_5m = trading_5m.get('trading_signals', {})
-                
+
                 strength_1m = signals_1m.get('signal_strength', 0.0)
                 strength_5m = signals_5m.get('signal_strength', 0.0)
-                
+
                 correlations['signal_strength_correlation'] = min(abs(strength_1m - strength_5m), 1.0)
-            
+
             return correlations
-            
+
         except Exception as e:
             self.logger.warning(f"Timeframe correlation calculation failed: {e}")
             return {}
-    
+
     def _generate_cross_timeframe_insights(self, hybrid_regimes: Dict[str, Any], timeframe_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Generate insights across different timeframes."""
         try:
@@ -1084,26 +1080,26 @@ class EnhancedHybridOrchestrator:
                 'risk_assessment': 'medium',
                 'market_conditions': 'normal'
             }
-            
+
             trading_1m = timeframe_analysis.get('1m_trading', {})
             trading_5m = timeframe_analysis.get('5m_trading', {})
-            
+
             if trading_1m and trading_5m:
                 score_1m = trading_1m.get('opportunity_score', 0.0)
                 score_5m = trading_5m.get('opportunity_score', 0.0)
-                
+
                 if score_1m > score_5m and score_1m > 0.6:
                     insights['optimal_timeframe'] = '1m'
                 elif score_5m > score_1m and score_5m > 0.6:
                     insights['optimal_timeframe'] = '5m'
-                
+
                 if score_1m > 0.7:
                     insights['trading_recommendations'].append('High opportunity in 1m timeframe')
                 if score_5m > 0.7:
                     insights['trading_recommendations'].append('High opportunity in 5m timeframe')
-            
+
             return insights
-            
+
         except Exception as e:
             self.logger.warning(f"Cross-timeframe insights generation failed: {e}")
             return {
@@ -1113,7 +1109,7 @@ class EnhancedHybridOrchestrator:
                 'market_conditions': 'normal',
                 'error': str(e)
             }
-    
+
     def get_system_status(self) -> Dict[str, Any]:
         """Get current system status and statistics with ML Common utilities info."""
         try:
@@ -1166,7 +1162,6 @@ class EnhancedHybridOrchestrator:
                 'shared_ml_utilities_status': 'error'
             }
 
-
     def _perform_hybrid_cross_validation_shared(self, hybrid_regimes: Dict[str, Any], processed_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform cross-validation on hybrid regime results using shared ML utilities."""
         try:
@@ -1203,7 +1198,7 @@ class EnhancedHybridOrchestrator:
     # ENHANCED UTILITY INTEGRATION METHODS
     # =============================================================================
 
-    def _preprocess_market_data_enhanced(self, market_data: Union[pd.DataFrame, np.ndarray], 
+    def _preprocess_market_data_enhanced(self, market_data: Union[pd.DataFrame, np.ndarray],
                                     timestamps: Optional[np.ndarray] = None) -> pd.DataFrame:
         """Preprocess market data using enhanced data integration utilities."""
         try:
@@ -1215,32 +1210,32 @@ class EnhancedHybridOrchestrator:
 
             # Use enhanced data integration for processing
             processed_data = self.data_integration.process_market_data(df, "BTCUSDT", "15m")
-            
+
             # Apply data quality checks
             quality_metrics = self.data_integration.calculate_data_quality_metrics(processed_data)
             self.logger.info(f"📊 Data quality metrics: {quality_metrics}")
-            
+
             # Validate data consistency
             consistency_results = self.data_integration.validate_data_consistency(processed_data)
             if not consistency_results['is_consistent']:
                 self.logger.warning(f"⚠️ Data consistency issues: {consistency_results['issues']}")
-            
+
             # Engineer features using enhanced utilities
             features = self.data_integration.engineer_features(processed_data, ['momentum', 'volatility', 'volume'])
             returns = self.data_integration.engineer_returns(processed_data, ['simple', 'log'])
-            
+
             # Combine features
             if not features.empty:
                 processed_data = pd.concat([processed_data, features], axis=1)
             if not returns.empty:
                 processed_data = pd.concat([processed_data, returns], axis=1)
-            
+
             # Optimize data types
             processed_data = self.utility_integration.optimize_dataframe_dtypes(processed_data)
-            
+
             self.logger.info(f"✅ Enhanced data preprocessing completed: {processed_data.shape}")
             return processed_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced data preprocessing failed: {e}")
             # Fallback to basic processing
@@ -1252,19 +1247,19 @@ class EnhancedHybridOrchestrator:
             # Use enhanced ML integration for feature selection
             X = processed_data.select_dtypes(include=[np.number]).values
             y = np.random.randint(0, 3, len(X))  # Mock target for demonstration
-            
+
             # Feature selection
             X_selected, selected_features = self.ml_integration.select_features(
                 X, y, method="mutual_info", n_features=min(10, X.shape[1])
             )
-            
+
             # Cross-validation
             from sklearn.ensemble import RandomForestClassifier
             estimator = RandomForestClassifier(n_estimators=100, random_state=42)
             cv_results = self.ml_integration.cross_validate_model(
                 estimator, X_selected, y, cv=5, scoring="accuracy"
             )
-            
+
             # Hyperparameter optimization
             param_grid = {
                 'n_estimators': [50, 100, 200],
@@ -1273,10 +1268,10 @@ class EnhancedHybridOrchestrator:
             optimization_results = self.ml_integration.optimize_hyperparameters(
                 estimator, X_selected, y, param_grid, method="grid_search"
             )
-            
+
             # Bias detection
             bias_results = self.ml_integration.detect_lookahead_bias(X_selected, y)
-            
+
             return {
                 'results': {
                     'confidence': cv_results.get('mean', 0.7),
@@ -1287,7 +1282,7 @@ class EnhancedHybridOrchestrator:
                 'enhanced_analysis': True,
                 'utility_integration_used': True
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced TAS analysis failed: {e}")
             return {'results': {'confidence': 0.5}, 'error': str(e)}
@@ -1297,10 +1292,10 @@ class EnhancedHybridOrchestrator:
         try:
             # Use enhanced ML integration for regime detection
             regime_results = self.ml_integration.detect_regimes_hmm(
-                processed_data, n_regimes=3, 
+                processed_data, n_regimes=3,
                 features=['open', 'high', 'low', 'close', 'volume']
             )
-            
+
             # Regime transition analysis
             if 'regime_sequence' in regime_results:
                 transition_analysis = self.ml_integration.analyze_regime_transitions(
@@ -1308,20 +1303,20 @@ class EnhancedHybridOrchestrator:
                 )
             else:
                 transition_analysis = {}
-            
+
             # Performance metrics
             if 'regime_predictions' in regime_results:
                 y_true = regime_results['regime_predictions']
                 y_pred = regime_results['regime_predictions']  # Mock predictions
                 y_proba = np.random.rand(len(y_true), len(np.unique(y_true)))
                 y_proba = y_proba / y_proba.sum(axis=1, keepdims=True)
-                
+
                 performance_metrics = self.ml_integration.calculate_performance_metrics(
                     y_true, y_pred, y_proba
                 )
             else:
                 performance_metrics = {}
-            
+
             return {
                 'results': {
                     'confidence': performance_metrics.get('accuracy', 0.8),
@@ -1332,7 +1327,7 @@ class EnhancedHybridOrchestrator:
                 'enhanced_analysis': True,
                 'utility_integration_used': True
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced NAS analysis failed: {e}")
             return {'results': {'confidence': 0.5}, 'error': str(e)}
@@ -1343,25 +1338,25 @@ class EnhancedHybridOrchestrator:
             # Use enhanced utilities for fallback
             X = processed_data.select_dtypes(include=[np.number]).values
             y = np.random.randint(0, 3, len(X))
-            
+
             # Basic ensemble analysis
             models = [
                 ('rf', RandomForestClassifier(n_estimators=50, random_state=42)),
                 ('gb', GradientBoostingClassifier(n_estimators=50, random_state=42))
             ]
-            
+
             # Create ensemble
             ensemble = self.ml_integration.create_ensemble(models, method="voting")
             ensemble.fit(X, y)
-            
+
             # Evaluate ensemble
             y_pred = ensemble.predict(X)
             y_proba = ensemble.predict_proba(X)
             evaluation_results = self.ml_integration.evaluate_model(ensemble, X, y, y_pred, y_proba)
-            
+
             # Confidence metrics
             confidence_metrics = self.ml_integration.calculate_confidence_metrics(y_pred, y_proba)
-            
+
             tas_result = {
                 'results': {
                     'confidence': evaluation_results.get('accuracy', 0.6),
@@ -1370,7 +1365,7 @@ class EnhancedHybridOrchestrator:
                 },
                 'enhanced_fallback': True
             }
-            
+
             nas_result = {
                 'results': {
                     'confidence': confidence_metrics.get('mean_confidence', 0.6),
@@ -1379,9 +1374,9 @@ class EnhancedHybridOrchestrator:
                 },
                 'enhanced_fallback': True
             }
-            
+
             return tas_result, nas_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced fallback analysis failed: {e}")
             # Ultimate fallback
@@ -1390,19 +1385,19 @@ class EnhancedHybridOrchestrator:
                 {'results': {'confidence': 0.5}, 'error': str(e)}
             )
 
-    def _analyze_tas_nas_outputs_enhanced(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], 
+    def _analyze_tas_nas_outputs_enhanced(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any],
                                         processed_data: pd.DataFrame) -> Dict[str, Any]:
         """Analyze TAS and NAS outputs using enhanced utilities."""
         try:
             # Use enhanced math utilities for analysis
             tas_confidence = tas_result.get('results', {}).get('confidence', 0.5)
             nas_confidence = nas_result.get('results', {}).get('confidence', 0.5)
-            
+
             # Safe mathematical operations
             combined_confidence = self.utility_integration.safe_divide(
                 tas_confidence + nas_confidence, 2.0, default=0.5
             )
-            
+
             # Calculate correlation if possible
             if 'selected_features' in tas_result.get('results', {}):
                 # Mock correlation calculation
@@ -1411,7 +1406,7 @@ class EnhancedHybridOrchestrator:
                 )
             else:
                 correlation = 0.0
-            
+
             # Enhanced analysis
             analysis = {
                 'combined_confidence': combined_confidence,
@@ -1422,53 +1417,53 @@ class EnhancedHybridOrchestrator:
                 'utility_integration_used': True,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             return analysis
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced output analysis failed: {e}")
             return {'error': str(e), 'enhanced_analysis': False}
 
-    def _create_hybrid_regime_clusters_enhanced(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any], 
+    def _create_hybrid_regime_clusters_enhanced(self, tas_result: Dict[str, Any], nas_result: Dict[str, Any],
                                               hybrid_analysis: Dict[str, Any], processed_data: pd.DataFrame) -> Dict[str, Any]:
         """Create hybrid regime clusters using enhanced utilities."""
         try:
             # Use enhanced ML integration for clustering
             X = processed_data.select_dtypes(include=[np.number]).values
-            
+
             # Feature selection for clustering
             X_selected, selected_features = self.ml_integration.select_features(
                 X, np.random.randint(0, 3, len(X)), method="mutual_info", n_features=min(5, X.shape[1])
             )
-            
+
             # Mock regime predictions and probabilities
             n_samples = len(X_selected)
             n_regimes = 3
-            
+
             regime_predictions = np.random.randint(0, n_regimes, n_samples)
             regime_probabilities = np.random.rand(n_samples, n_regimes)
             regime_probabilities = regime_probabilities / regime_probabilities.sum(axis=1, keepdims=True)
-            
+
             # Economic and trading scores using enhanced math utilities
             economic_scores = np.array([
-                self.utility_integration.safe_divide(score, 1.0, default=0.5) 
+                self.utility_integration.safe_divide(score, 1.0, default=0.5)
                 for score in np.random.uniform(0.3, 0.9, n_samples)
             ])
-            
+
             trading_scores = np.array([
-                self.utility_integration.safe_divide(score, 1.0, default=0.5) 
+                self.utility_integration.safe_divide(score, 1.0, default=0.5)
                 for score in np.random.uniform(0.4, 0.8, n_samples)
             ])
-            
+
             stability_scores = np.array([
-                self.utility_integration.safe_divide(score, 1.0, default=0.5) 
+                self.utility_integration.safe_divide(score, 1.0, default=0.5)
                 for score in np.random.uniform(0.6, 0.95, n_samples)
             ])
-            
+
             # Transition probabilities
             transition_probs = np.random.rand(n_regimes, n_regimes)
             transition_probs = transition_probs / transition_probs.sum(axis=1, keepdims=True)
-            
+
             # Clustering metrics
             clustering_metrics = {
                 'silhouette_score': self.utility_integration.safe_divide(
@@ -1477,7 +1472,7 @@ class EnhancedHybridOrchestrator:
                 'n_clusters': n_regimes,
                 'selected_features': len(selected_features)
             }
-            
+
             return {
                 'regime_predictions': regime_predictions,
                 'regime_probabilities': regime_probabilities,
@@ -1489,42 +1484,42 @@ class EnhancedHybridOrchestrator:
                 'enhanced_clustering': True,
                 'utility_integration_used': True
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced hybrid clustering failed: {e}")
             return {'error': str(e), 'enhanced_clustering': False}
 
-    def _perform_hybrid_cross_validation_enhanced(self, hybrid_regimes: Dict[str, Any], 
+    def _perform_hybrid_cross_validation_enhanced(self, hybrid_regimes: Dict[str, Any],
                                                 processed_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform hybrid cross-validation using enhanced ML integration."""
         try:
             # Use enhanced ML integration for cross-validation
             X = processed_data.select_dtypes(include=[np.number]).values
             y = hybrid_regimes['regime_predictions']
-            
+
             # Feature selection
             X_selected, selected_features = self.ml_integration.select_features(
                 X, y, method="mutual_info", n_features=min(10, X.shape[1])
             )
-            
+
             # Cross-validation
             estimator = RandomForestClassifier(n_estimators=100, random_state=42)
             cv_results = self.ml_integration.cross_validate_model(
                 estimator, X_selected, y, cv=5, scoring="accuracy"
             )
-            
+
             # Detect overfitting
             from sklearn.model_selection import train_test_split
             X_train, X_val, y_train, y_val = train_test_split(X_selected, y, test_size=0.2, random_state=42)
             estimator.fit(X_train, y_train)
-            
+
             overfitting_results = self.ml_integration.detect_overfitting(
                 estimator, X_train, y_train, X_val, y_val
             )
-            
+
             # Data leakage detection
             leakage_results = self.ml_integration.detect_data_leakage(X_selected, y)
-            
+
             return {
                 'cv_results': cv_results,
                 'overfitting_detection': overfitting_results,
@@ -1532,12 +1527,12 @@ class EnhancedHybridOrchestrator:
                 'enhanced_cv': True,
                 'utility_integration_used': True
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced cross-validation failed: {e}")
             return {'error': str(e), 'enhanced_cv': False}
 
-    def _optimize_ensemble_weights_enhanced(self, tas_performance: float, nas_performance: float, 
+    def _optimize_ensemble_weights_enhanced(self, tas_performance: float, nas_performance: float,
                                           hybrid_performance: float) -> Dict[str, float]:
         """Optimize ensemble weights using enhanced utilities."""
         try:
@@ -1545,7 +1540,7 @@ class EnhancedHybridOrchestrator:
             total_performance = self.utility_integration.safe_divide(
                 tas_performance + nas_performance + hybrid_performance, 3.0, default=0.5
             )
-            
+
             # Calculate weights using safe mathematical operations
             tas_weight = self.utility_integration.safe_divide(
                 tas_performance, total_performance, default=0.33
@@ -1556,14 +1551,14 @@ class EnhancedHybridOrchestrator:
             hybrid_weight = self.utility_integration.safe_divide(
                 hybrid_performance, total_performance, default=0.34
             )
-            
+
             # Normalize weights
             total_weight = tas_weight + nas_weight + hybrid_weight
             if total_weight > 0:
                 tas_weight = self.utility_integration.safe_divide(tas_weight, total_weight, default=0.33)
                 nas_weight = self.utility_integration.safe_divide(nas_weight, total_weight, default=0.33)
                 hybrid_weight = self.utility_integration.safe_divide(hybrid_weight, total_weight, default=0.34)
-            
+
             return {
                 'tas_weight': tas_weight,
                 'nas_weight': nas_weight,
@@ -1572,7 +1567,7 @@ class EnhancedHybridOrchestrator:
                 'enhanced_optimization': True,
                 'utility_integration_used': True
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced weight optimization failed: {e}")
             return {
@@ -1581,7 +1576,6 @@ class EnhancedHybridOrchestrator:
                 'hybrid_weight': 0.34,
                 'error': str(e)
             }
-
 
 def create_enhanced_hybrid_orchestrator(config: HybridRegimeConfig) -> EnhancedHybridOrchestrator:
     """Create an enhanced hybrid orchestrator instance."""

@@ -9,7 +9,6 @@ from .config import CoverageClusteringConfig
 from .clusterer import CoverageConstrainedClusterer
 from .utils import load_latest_hmm_discovery_artifact
 
-
 def load_hmm_artifact(input_path: str | None) -> Dict[str, Any]:
     if input_path:
         p = Path(input_path)
@@ -24,7 +23,6 @@ def load_hmm_artifact(input_path: str | None) -> Dict[str, Any]:
         raise FileNotFoundError("Could not auto-detect latest hmm_regime_discovery_result artifact in artifacts/")
     # Wrap to match expected shape
     return {"hmm_regime_discovery_result": latest}
-
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Coverage-Constrained Clustering for HMM regimes")
@@ -128,7 +126,5 @@ def main() -> None:
 
     print(json.dumps({"ok": True, "output": args.output}))
 
-
 if __name__ == "__main__":
     main()
-

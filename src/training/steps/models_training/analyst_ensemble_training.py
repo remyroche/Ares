@@ -99,7 +99,6 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     COMMON_OPS_AVAILABLE = False
 
-
 @dataclass
 class AnalystEnsembleTrainingConfig:
     """Configuration for Analyst ensemble training."""
@@ -137,7 +136,6 @@ class AnalystEnsembleTrainingConfig:
                 "TAS"
             ]
 
-
 @dataclass
 class AnalystEnsembleTrainingResult:
     """Result of Analyst ensemble training."""
@@ -155,7 +153,6 @@ class AnalystEnsembleTrainingResult:
     # Status
     training_completed: bool = False
     error: Optional[str] = None
-
 
 class AnalystEnsembleTrainingStep:
     """
@@ -210,7 +207,7 @@ class AnalystEnsembleTrainingStep:
             tprint_error(f"❌ Failed to initialize AnalystEnsembleTrainingStep: {e}")
             raise
 
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
         if self.vectorbt_optimizer is not None:
@@ -240,8 +237,8 @@ class AnalystEnsembleTrainingStep:
                 return self._fallback_rolling_operation(data, operation, window, **kwargs)
         else:
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -264,13 +261,13 @@ class AnalystEnsembleTrainingStep:
             return data.rolling(window=window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _optimize_feature_vectorization(self, features: pd.DataFrame) -> pd.DataFrame:
         """Optimize feature vectorization using Unified Vectorization Manager."""
         if self.vectorization_manager is not None:
             try:
                 tprint_debug("🔧 Applying unified vectorization optimization to Analyst features")
-                
+
                 # Use UnifiedVectorizationManager for feature engineering optimization
                 config = OperationConfig(
                     operation_type=OperationType.FEATURE_ENGINEERING,
@@ -279,14 +276,14 @@ class AnalystEnsembleTrainingStep:
                     memory_budget_mb=self.config.memory_limit_gb * 1024,
                     time_budget_seconds=300.0
                 )
-                
+
                 # Optimize feature engineering using VectorBT
                 result = self.vectorization_manager.optimize_operation(
                     OperationType.FEATURE_ENGINEERING,
                     features,
                     config
                 )
-                
+
                 if result.result is not None:
                     tprint_success(f"✅ Analyst feature vectorization optimized using {result.strategy_used.value}")
                     tprint_performance(f"Analyst feature optimization", result.computation_time)
@@ -294,7 +291,7 @@ class AnalystEnsembleTrainingStep:
                 else:
                     tprint_warning("⚠️ Vectorization optimization returned no result, using original features")
                     return features
-                
+
             except Exception as e:
                 tprint_warning(f"⚠️ Unified vectorization failed: {e}, using original features")
                 return features
@@ -466,7 +463,7 @@ class AnalystEnsembleTrainingStep:
                         preds = model.predict(X_base)
                         if len(preds.shape) == 1:
                             preds = preds.reshape(-1, 1)
-                        
+
                         # Apply VectorBT rolling optimizations to predictions
                         if self.vectorbt_optimizer is not None and preds.shape[1] == 1:
                             pred_series = pd.Series(preds.flatten())
@@ -495,7 +492,7 @@ class AnalystEnsembleTrainingStep:
                             prediction_features.append(enhanced_preds)
                         else:
                             prediction_features.append(preds)
-                        
+
                         tprint_debug(f"📊 Collected base predictions from {model_name} with VectorBT enhancements")
                     else:
                         tprint_debug(f"📊 Model {model_name} does not support prediction")
@@ -530,7 +527,7 @@ class AnalystEnsembleTrainingStep:
 
             if hmm_columns:
                 hmm_data = training_data[hmm_columns].copy()
-                
+
                 # Apply VectorBT rolling optimizations to HMM features
                 if self.vectorbt_optimizer is not None:
                     tprint_debug("🔧 Applying VectorBT optimizations to Analyst HMM features")
@@ -550,7 +547,7 @@ class AnalystEnsembleTrainingStep:
                             hmm_data[f'{col}_rolling_kurt'] = self._optimized_rolling_operation(
                                 hmm_data[col], 'kurt', window=20
                             )
-                
+
                 hmm_features = hmm_data.values
                 tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features with VectorBT optimizations")
                 return hmm_features
@@ -574,7 +571,7 @@ class AnalystEnsembleTrainingStep:
 
             if nas_columns:
                 nas_data = training_data[nas_columns].copy()
-                
+
                 # Apply VectorBT rolling optimizations to NAS features
                 if self.vectorbt_optimizer is not None:
                     tprint_debug("🔧 Applying VectorBT optimizations to NAS features")
@@ -594,7 +591,7 @@ class AnalystEnsembleTrainingStep:
                             nas_data[f'{col}_rolling_q90'] = self._optimized_rolling_operation(
                                 nas_data[col], 'quantile', window=25, q=0.9
                             )
-                
+
                 nas_features = nas_data.values
                 tprint_debug(f"📊 Extracted {len(nas_columns)} NAS features with VectorBT optimizations")
                 return nas_features
@@ -729,7 +726,6 @@ class AnalystEnsembleTrainingStep:
                 tprint_warning(f"⚠️ Failed to get vectorization stats: {e}")
 
         return metrics
-
 
 # Convenience function for external usage
 async def execute_analyst_ensemble_training(

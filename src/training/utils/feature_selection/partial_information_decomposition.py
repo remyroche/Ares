@@ -70,7 +70,7 @@ class DiscretizationMethod(Enum):
 @dataclass
 class PIDConfig:
     """Enhanced configuration for Partial Information Decomposition."""
-    
+
     # Core parameters
     method: str = "bivariate"  # "bivariate", "trivariate", "multivariate"
     pid_measures: List[PIDMeasure] = field(default_factory=lambda: [PIDMeasure.I_MIN, PIDMeasure.I_CCS])
@@ -78,35 +78,35 @@ class PIDConfig:
     n_bins: int = 10
     min_samples_per_bin: int = 5
     max_bins: int = 50
-    
+
     # Mathematical parameters
     entropy_estimator: str = "plugin"  # "plugin", "miller_madow", "jackknife"
     mutual_info_estimator: str = "plugin"  # "plugin", "knn", "gaussian"
     convergence_threshold: float = 1e-8
     max_iterations: int = 1000
-    
+
     # Performance parameters
     enable_parallel: bool = True
     n_jobs: int = -1
     chunk_size: int = 1000
     enable_caching: bool = True
     cache_size: int = 1000
-    
+
     # Financial domain parameters
     enable_financial_features: bool = True
     volatility_threshold: float = 0.01
     correlation_threshold: float = 0.1
     regime_aware: bool = True
-    
+
     # Streaming parameters
     enable_incremental: bool = False
     window_size: int = 1000
     adaptation_rate: float = 0.1
-    
+
     # Output parameters
     save_intermediate_results: bool = True
     verbose: bool = True
-    
+
     def __post_init__(self):
         if self.n_jobs == -1:
             self.n_jobs = mp.cpu_count()
@@ -126,11 +126,11 @@ class PIDResult:
 
 class EntropyCalculator:
     """Enhanced entropy calculation with multiple estimators."""
-    
+
     def __init__(self, estimator: str = "plugin"):
         self.estimator = estimator
         self.logger = logger.getChild('EntropyCalculator')
-    
+
     def calculate_entropy(self, data: np.ndarray, bins: Optional[int] = None) -> float:
         """Calculate entropy using specified estimator."""
         if self.estimator == "plugin":
@@ -141,70 +141,70 @@ class EntropyCalculator:
             return self._jackknife_entropy(data, bins)
         else:
             raise ValueError(f"Unknown entropy estimator: {self.estimator}")
-    
+
     def _plugin_entropy(self, data: np.ndarray, bins: Optional[int] = None) -> float:
         """Plugin entropy estimator."""
         if bins is None:
             bins = min(50, len(np.unique(data)))
-        
+
         # Discretize data
         if data.dtype.kind in ['f']:  # Float data
             discretizer = KBinsDiscretizer(n_bins=bins, encode='ordinal', strategy='uniform')
             discrete_data = discretizer.fit_transform(data.reshape(-1, 1)).flatten()
         else:
             discrete_data = data
-        
+
         # Calculate probabilities
         unique, counts = np.unique(discrete_data, return_counts=True)
         probabilities = counts / len(discrete_data)
-        
+
         # Calculate entropy
         entropy = -np.sum(probabilities * np.log2(probabilities + 1e-10))
         return entropy
-    
+
     def _miller_madow_entropy(self, data: np.ndarray, bins: Optional[int] = None) -> float:
         """Miller-Madow entropy estimator with bias correction."""
         plugin_entropy = self._plugin_entropy(data, bins)
-        
+
         # Count unique values
         unique_count = len(np.unique(data))
         n = len(data)
-        
+
         # Bias correction
         bias_correction = (unique_count - 1) / (2 * n)
         corrected_entropy = plugin_entropy + bias_correction
-        
+
         return max(0, corrected_entropy)
-    
+
     def _jackknife_entropy(self, data: np.ndarray, bins: Optional[int] = None) -> float:
         """Jackknife entropy estimator."""
         n = len(data)
         if n < 2:
             return 0.0
-        
+
         # Calculate full sample entropy
         full_entropy = self._plugin_entropy(data, bins)
-        
+
         # Calculate leave-one-out entropies
         leave_one_out_entropies = []
         for i in range(n):
             leave_one_out_data = np.concatenate([data[:i], data[i+1:]])
             loo_entropy = self._plugin_entropy(leave_one_out_data, bins)
             leave_one_out_entropies.append(loo_entropy)
-        
+
         # Jackknife estimate
         jackknife_entropy = n * full_entropy - (n - 1) * np.mean(leave_one_out_entropies)
-        
+
         return max(0, jackknife_entropy)
 
 class MutualInformationCalculator:
     """Enhanced mutual information calculation."""
-    
+
     def __init__(self, estimator: str = "plugin"):
         self.estimator = estimator
         self.entropy_calc = EntropyCalculator(estimator)
         self.logger = logger.getChild('MutualInformationCalculator')
-    
+
     def calculate_mutual_information(self, x: np.ndarray, y: np.ndarray, bins: Optional[int] = None) -> float:
         """Calculate mutual information between x and y."""
         if self.estimator == "plugin":
@@ -215,37 +215,37 @@ class MutualInformationCalculator:
             return self._gaussian_mi(x, y)
         else:
             raise ValueError(f"Unknown MI estimator: {self.estimator}")
-    
+
     def _plugin_mi(self, x: np.ndarray, y: np.ndarray, bins: Optional[int] = None) -> float:
         """Plugin mutual information estimator."""
         if bins is None:
             bins = min(20, int(np.sqrt(len(x))))
-        
+
         # Calculate individual entropies
         h_x = self.entropy_calc.calculate_entropy(x, bins)
         h_y = self.entropy_calc.calculate_entropy(y, bins)
-        
+
         # Calculate joint entropy
         h_xy = self._joint_entropy(x, y, bins)
-        
+
         # Mutual information: I(X;Y) = H(X) + H(Y) - H(X,Y)
         mi = h_x + h_y - h_xy
-        
+
         return max(0, mi)
-    
+
     def _joint_entropy(self, x: np.ndarray, y: np.ndarray, bins: int) -> float:
         """Calculate joint entropy H(X,Y)."""
         # Create 2D histogram
         hist_2d, _, _ = np.histogram2d(x, y, bins=bins)
-        
+
         # Normalize to probabilities
         joint_prob = hist_2d / np.sum(hist_2d)
-        
+
         # Calculate joint entropy
         joint_entropy = -np.sum(joint_prob * np.log2(joint_prob + 1e-10))
-        
+
         return joint_entropy
-    
+
     def _knn_mi(self, x: np.ndarray, y: np.ndarray, k: int = 3) -> float:
         """k-nearest neighbors mutual information estimator."""
         try:
@@ -256,37 +256,37 @@ class MutualInformationCalculator:
         except ImportError:
             self.logger.warning("sklearn not available for knn MI, falling back to plugin")
             return self._plugin_mi(x, y)
-    
+
     def _gaussian_mi(self, x: np.ndarray, y: np.ndarray) -> float:
         """Gaussian mutual information estimator."""
         # Calculate correlation coefficient
         correlation = np.corrcoef(x, y)[0, 1]
-        
+
         # Handle NaN correlation
         if np.isnan(correlation):
             return 0.0
-        
+
         # Gaussian MI: I(X;Y) = -0.5 * log(1 - rho^2)
         mi = -0.5 * np.log(1 - correlation**2 + 1e-10)
-        
+
         return max(0, mi)
 
 class PIDCalculator:
     """Core PID calculation with multiple measures."""
-    
+
     def __init__(self, config: PIDConfig):
         self.config = config
         self.entropy_calc = EntropyCalculator(config.entropy_estimator)
         self.mi_calc = MutualInformationCalculator(config.mutual_info_estimator)
         self.logger = logger.getChild('PIDCalculator')
-    
+
     def compute_pid(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[PIDMeasure, PIDResult]:
         """Compute PID for all specified measures."""
         results = {}
-        
+
         for measure in self.config.pid_measures:
             start_time = time.time()
-            
+
             try:
                 if measure == PIDMeasure.I_MIN:
                     result = self._compute_i_min(x1, x2, y)
@@ -298,20 +298,20 @@ class PIDCalculator:
                     result = self._compute_i_mmi(x1, x2, y)
                 else:
                     raise ValueError(f"Unknown PID measure: {measure}")
-                
+
                 result.computation_time = time.time() - start_time
                 results[measure] = result
-                
+
             except Exception as e:
                 self.logger.error(f"Failed to compute {measure.value}: {e}")
                 # Create empty result
                 results[measure] = PIDResult(
-                    unique_x1=0.0, unique_x2=0.0, redundant=0.0, 
+                    unique_x1=0.0, unique_x2=0.0, redundant=0.0,
                     synergistic=0.0, total_mi=0.0, measure=measure
                 )
-        
+
         return results
-    
+
     def _compute_i_min(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> PIDResult:
         """Compute I_min PID measure."""
         # Calculate mutual informations
@@ -319,13 +319,13 @@ class PIDCalculator:
         mi_x2y = self.mi_calc.calculate_mutual_information(x2, y)
         mi_x1x2 = self.mi_calc.calculate_mutual_information(x1, x2)
         mi_x1x2y = self.mi_calc.calculate_mutual_information(np.column_stack([x1, x2]), y)
-        
+
         # I_min decomposition
         redundant = min(mi_x1y, mi_x2y, mi_x1x2)
         unique_x1 = mi_x1y - redundant
         unique_x2 = mi_x2y - redundant
         synergistic = mi_x1x2y - mi_x1y - mi_x2y + redundant
-        
+
         return PIDResult(
             unique_x1=max(0, unique_x1),
             unique_x2=max(0, unique_x2),
@@ -334,27 +334,27 @@ class PIDCalculator:
             total_mi=mi_x1x2y,
             measure=PIDMeasure.I_MIN
         )
-    
+
     def _compute_i_ccs(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> PIDResult:
         """Compute I_ccs PID measure (Common Change in Surprisal)."""
         # This is a more sophisticated measure that considers the change in surprisal
         # For now, we'll use an approximation based on conditional mutual information
-        
+
         # Calculate conditional mutual informations
         mi_x1y_given_x2 = self._conditional_mi(x1, y, x2)
         mi_x2y_given_x1 = self._conditional_mi(x2, y, x1)
-        
+
         # Calculate mutual informations
         mi_x1y = self.mi_calc.calculate_mutual_information(x1, y)
         mi_x2y = self.mi_calc.calculate_mutual_information(x2, y)
         mi_x1x2y = self.mi_calc.calculate_mutual_information(np.column_stack([x1, x2]), y)
-        
+
         # I_ccs decomposition (simplified)
         redundant = min(mi_x1y, mi_x2y) - max(mi_x1y_given_x2, mi_x2y_given_x1)
         unique_x1 = mi_x1y - redundant
         unique_x2 = mi_x2y - redundant
         synergistic = mi_x1x2y - mi_x1y - mi_x2y + redundant
-        
+
         return PIDResult(
             unique_x1=max(0, unique_x1),
             unique_x2=max(0, unique_x2),
@@ -363,24 +363,24 @@ class PIDCalculator:
             total_mi=mi_x1x2y,
             measure=PIDMeasure.I_CCS
         )
-    
+
     def _compute_i_dep(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> PIDResult:
         """Compute I_dep PID measure (Departed Information)."""
         # I_dep is based on the idea of departed information
         # This is a more complex measure that requires iterative computation
-        
+
         # For now, we'll use a simplified version
         mi_x1y = self.mi_calc.calculate_mutual_information(x1, y)
         mi_x2y = self.mi_calc.calculate_mutual_information(x2, y)
         mi_x1x2 = self.mi_calc.calculate_mutual_information(x1, x2)
         mi_x1x2y = self.mi_calc.calculate_mutual_information(np.column_stack([x1, x2]), y)
-        
+
         # I_dep decomposition (simplified)
         redundant = min(mi_x1y, mi_x2y) * (1 - mi_x1x2 / max(mi_x1y, mi_x2y, 1e-10))
         unique_x1 = mi_x1y - redundant
         unique_x2 = mi_x2y - redundant
         synergistic = mi_x1x2y - mi_x1y - mi_x2y + redundant
-        
+
         return PIDResult(
             unique_x1=max(0, unique_x1),
             unique_x2=max(0, unique_x2),
@@ -389,7 +389,7 @@ class PIDCalculator:
             total_mi=mi_x1x2y,
             measure=PIDMeasure.I_DEP
         )
-    
+
     def _compute_i_mmi(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> PIDResult:
         """Compute I_mmi PID measure (Maximum Mutual Information)."""
         # I_mmi maximizes the mutual information
@@ -397,13 +397,13 @@ class PIDCalculator:
         mi_x2y = self.mi_calc.calculate_mutual_information(x2, y)
         mi_x1x2 = self.mi_calc.calculate_mutual_information(x1, x2)
         mi_x1x2y = self.mi_calc.calculate_mutual_information(np.column_stack([x1, x2]), y)
-        
+
         # I_mmi decomposition
         redundant = max(0, mi_x1y + mi_x2y - mi_x1x2y)
         unique_x1 = mi_x1y - redundant
         unique_x2 = mi_x2y - redundant
         synergistic = mi_x1x2y - mi_x1y - mi_x2y + redundant
-        
+
         return PIDResult(
             unique_x1=max(0, unique_x1),
             unique_x2=max(0, unique_x2),
@@ -412,7 +412,7 @@ class PIDCalculator:
             total_mi=mi_x1x2y,
             measure=PIDMeasure.I_MMI
         )
-    
+
     def _conditional_mi(self, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> float:
         """Calculate conditional mutual information I(X;Y|Z)."""
         # I(X;Y|Z) = H(X|Z) + H(Y|Z) - H(X,Y|Z)
@@ -420,7 +420,7 @@ class PIDCalculator:
         mi_xy = self.mi_calc.calculate_mutual_information(x, y)
         mi_xz = self.mi_calc.calculate_mutual_information(x, z)
         mi_yz = self.mi_calc.calculate_mutual_information(y, z)
-        
+
         # Simplified conditional MI
         conditional_mi = mi_xy - min(mi_xz, mi_yz)
         return max(0, conditional_mi)
@@ -428,17 +428,17 @@ class PIDCalculator:
 class PartialInformationDecomposition:
     """
     Main class for Partial Information Decomposition analysis.
-    
+
     This class provides a comprehensive interface for computing PID measures
     and analyzing information decomposition in multivariate systems.
     """
-    
+
     def __init__(self, config: Optional[PIDConfig] = None):
         """Initialize PID analyzer."""
         self.config = config or PIDConfig()
         self.calculator = PIDCalculator(self.config)
         self.logger = logger.getChild('PID')
-        
+
         # Initialize utility components if available
         if UTILITIES_AVAILABLE:
             try:
@@ -454,28 +454,28 @@ class PartialInformationDecomposition:
             self.cache_manager = None
             self.matrix_ops = None
             self.hardware_manager = None
-    
+
     def compute(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """
         Compute PID decomposition for given variables.
-        
+
         Args:
             x1: First predictor variable
-            x2: Second predictor variable  
+            x2: Second predictor variable
             y: Target variable
-            
+
         Returns:
             Dictionary containing PID results for all measures
         """
         start_time = time.time()
-        
+
         try:
             # Validate inputs
             self._validate_inputs(x1, x2, y)
-            
+
             # Compute PID for all measures
             pid_results = self.calculator.compute_pid(x1, x2, y)
-            
+
             # Prepare output
             results = {
                 'pid_measures': {},
@@ -483,7 +483,7 @@ class PartialInformationDecomposition:
                 'computation_time': time.time() - start_time,
                 'config': self.config.__dict__
             }
-            
+
             # Process each measure result
             for measure, result in pid_results.items():
                 results['pid_measures'][measure.value] = {
@@ -494,34 +494,34 @@ class PartialInformationDecomposition:
                     'total_mi': result.total_mi,
                     'computation_time': result.computation_time
                 }
-            
+
             # Generate summary statistics
             results['summary'] = self._generate_summary(pid_results)
-            
+
             self.logger.info(f"PID computation completed in {results['computation_time']:.3f}s")
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"PID computation failed: {e}")
             raise
-    
+
     def compute_bivariate(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Compute bivariate PID decomposition."""
         return self.compute(x1, x2, y)
-    
+
     def compute_batch(self, data_batches: List[Tuple[np.ndarray, np.ndarray, np.ndarray]]) -> List[Dict[str, Any]]:
         """
         Compute PID for multiple data batches.
-        
+
         Args:
             data_batches: List of (x1, x2, y) tuples
-            
+
         Returns:
             List of PID results for each batch
         """
         results = []
-        
+
         for i, (x1, x2, y) in enumerate(data_batches):
             try:
                 self.logger.info(f"Processing batch {i+1}/{len(data_batches)}")
@@ -531,32 +531,32 @@ class PartialInformationDecomposition:
             except Exception as e:
                 self.logger.error(f"Batch {i} failed: {e}")
                 results.append({'batch_id': i, 'error': str(e)})
-        
+
         return results
-    
+
     def _validate_inputs(self, x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> None:
         """Validate input arrays."""
         # Check for None values
         if x1 is None or x2 is None or y is None:
             raise ValueError("Input arrays cannot be None")
-        
+
         # Convert to numpy arrays if needed
         x1 = np.asarray(x1)
         x2 = np.asarray(x2)
         y = np.asarray(y)
-        
+
         # Check shapes
         if len(x1) != len(x2) or len(x1) != len(y):
             raise ValueError(f"Input arrays must have same length: {len(x1)}, {len(x2)}, {len(y)}")
-        
+
         # Check for minimum samples
         if len(x1) < 10:
             raise ValueError(f"Insufficient samples: {len(x1)} (minimum: 10)")
-        
+
         # Check for constant arrays
         if np.var(x1) == 0 or np.var(x2) == 0 or np.var(y) == 0:
             self.logger.warning("One or more variables have zero variance")
-    
+
     def _generate_summary(self, pid_results: Dict[PIDMeasure, PIDResult]) -> Dict[str, Any]:
         """Generate summary statistics across all measures."""
         summary = {
@@ -567,17 +567,17 @@ class PartialInformationDecomposition:
             'average_unique_x1': 0.0,
             'average_unique_x2': 0.0
         }
-        
+
         if not pid_results:
             return summary
-        
+
         # Calculate averages
         total_mi_sum = sum(r.total_mi for r in pid_results.values())
         redundant_sum = sum(r.redundant for r in pid_results.values())
         synergistic_sum = sum(r.synergistic for r in pid_results.values())
         unique_x1_sum = sum(r.unique_x1 for r in pid_results.values())
         unique_x2_sum = sum(r.unique_x2 for r in pid_results.values())
-        
+
         n_measures = len(pid_results)
         summary.update({
             'average_total_mi': total_mi_sum / n_measures,
@@ -586,55 +586,53 @@ class PartialInformationDecomposition:
             'average_unique_x1': unique_x1_sum / n_measures,
             'average_unique_x2': unique_x2_sum / n_measures
         })
-        
+
         return summary
-    
+
     def get_config(self) -> PIDConfig:
         """Get current configuration."""
         return self.config
-    
+
     def set_config(self, config: PIDConfig) -> None:
         """Update configuration."""
         self.config = config
         self.calculator = PIDCalculator(config)
 
-
 # Convenience functions for easy usage
-def compute_pid_simple(x1: np.ndarray, x2: np.ndarray, y: np.ndarray, 
+def compute_pid_simple(x1: np.ndarray, x2: np.ndarray, y: np.ndarray,
                       measure: str = "i_min") -> Dict[str, float]:
     """
     Simple PID computation with minimal configuration.
-    
+
     Args:
         x1: First predictor variable
         x2: Second predictor variable
         y: Target variable
         measure: PID measure to use ("i_min", "i_ccs", "i_dep", "i_mmi")
-    
+
     Returns:
         Dictionary with PID components
     """
     config = PIDConfig(pid_measures=[PIDMeasure(measure)])
     pid = PartialInformationDecomposition(config)
-    
+
     results = pid.compute(x1, x2, y)
     return results['pid_measures'][measure]
-
 
 def compute_pid_all_measures(x1: np.ndarray, x2: np.ndarray, y: np.ndarray) -> Dict[str, Dict[str, float]]:
     """
     Compute PID using all available measures.
-    
+
     Args:
         x1: First predictor variable
         x2: Second predictor variable
         y: Target variable
-    
+
     Returns:
         Dictionary with results for all measures
     """
     config = PIDConfig(pid_measures=list(PIDMeasure))
     pid = PartialInformationDecomposition(config)
-    
+
     results = pid.compute(x1, x2, y)
     return results['pid_measures']

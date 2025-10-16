@@ -18,13 +18,12 @@ from src.utils.data.processing.data_processing import DataProcessor
 from src.utils.hardware.memory_optimization import MemoryMonitor, optimize_dataframe_dtypes
 from src.utils.hardware.m1_optimizations import get_m1_memory_optimizer
 
-
 class BasicReturnsEngineer:
     """Basic returns feature engineering and resampling for historical klines data."""
 
     def __init__(self, data_dir: str = "historical_data"):
         """Initialize the basic returns engineer.
-        
+
         Args:
             data_dir: Base directory for historical data
         """
@@ -36,10 +35,10 @@ class BasicReturnsEngineer:
         self.data_processor = DataProcessor()
         self.memory_monitor = MemoryMonitor()
         self.m1_optimizer = get_m1_memory_optimizer()
-        
+
         # Create processed data directory
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
-        
+
     def process_symbol_data(
         self,
         symbol: str,
@@ -47,18 +46,18 @@ class BasicReturnsEngineer:
         target_intervals: List[str] = None
     ) -> Dict[str, Any]:
         """Process historical data for a symbol with basic returns and resampling.
-        
+
         Args:
             symbol: Trading symbol
             interval: Source interval (e.g., '1m')
             target_intervals: List of target intervals for resampling
-            
+
         Returns:
             Dictionary with processing results
         """
         if target_intervals is None:
             target_intervals = ["5m", "15m", "30m", "1h"]
-        
+
         try:
             self.logger.info(f"🔧 Processing {symbol} data with basic returns")
             self.logger.info(f"📊 Target intervals: {target_intervals}")
@@ -68,7 +67,7 @@ class BasicReturnsEngineer:
             # Load all raw data
             self.logger.info(f"📖 Loading raw {symbol} {interval} data from disk...")
             raw_data = self._load_all_raw_data(symbol, interval)
-            
+
             if raw_data is None or raw_data.empty:
                 self.logger.warning(f"❌ No raw data found for {symbol}")
                 return {"success": False, "error": "No raw data found"}
@@ -79,7 +78,7 @@ class BasicReturnsEngineer:
             # Add basic returns features
             self.logger.info(f"📈 Adding basic returns and technical features...")
             featured_data = self._add_basic_returns(raw_data)
-            
+
             # Save featured 1m data
             self.logger.info(f"💾 Saving processed {symbol} {interval} data...")
             self._save_processed_data(featured_data, symbol, interval)
@@ -112,7 +111,7 @@ class BasicReturnsEngineer:
                         "error": str(e)
                     }
                     self.logger.error(f"❌ Failed to resample to {target_interval}: {e}")
-            
+
             # Final summary
             total_processed = len(featured_data) + sum(result.get("records", 0) for result in resampling_results.values() if result.get("success"))
             self.logger.info(f"🎉 Processing complete! Total records processed: {total_processed:,}")
@@ -124,18 +123,18 @@ class BasicReturnsEngineer:
                 "featured_records": len(featured_data),
                 "resampling_results": resampling_results
             }
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Basic returns processing failed: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def _load_all_raw_data(self, symbol: str, interval: str) -> Optional[pd.DataFrame]:
         """Load all raw historical data for a symbol.
-        
+
         Args:
             symbol: Trading symbol
             interval: Kline interval
-            
+
         Returns:
             Combined DataFrame or None if no data
         """
@@ -143,14 +142,14 @@ class BasicReturnsEngineer:
             symbol_dir = self.raw_data_dir / symbol.lower() / "raw"
             if not symbol_dir.exists():
                 return None
-            
+
             # Find all parquet files for this symbol and interval
             pattern = f"{symbol.lower()}_{interval}_*.parquet"
             files = list(symbol_dir.glob(pattern))
-            
+
             if not files:
                 return None
-            
+
             # Load and combine all files
             dataframes = []
             for file_path in sorted(files):
@@ -160,10 +159,10 @@ class BasicReturnsEngineer:
                         dataframes.append(df)
                 except Exception as e:
                     self.logger.warning(f"Could not read {file_path}: {e}")
-            
+
             if not dataframes:
                 return None
-            
+
             # Combine all dataframes
             combined_df = pd.concat(dataframes, ignore_index=False)
             combined_df = combined_df.sort_index()
@@ -226,20 +225,20 @@ class BasicReturnsEngineer:
             if columns_to_drop:
                 combined_df = combined_df.drop(columns=columns_to_drop)
                 self.logger.info(f"🧹 Dropped aggregated trade columns: {columns_to_drop}")
-            
+
             self.logger.info(f"📊 Loaded {len(combined_df)} raw records from {len(files)} files")
             return combined_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to load raw data for {symbol}: {e}")
             return None
-    
+
     def _add_basic_returns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add basic return features to the DataFrame.
-        
+
         Args:
             df: Input DataFrame with OHLCV data
-            
+
         Returns:
             DataFrame with added basic return features
         """
@@ -398,14 +397,14 @@ class BasicReturnsEngineer:
             featured_df[string_cols] = featured_df[string_cols].astype('string')
 
         return featured_df
-    
+
     def _resample_data(self, df: pd.DataFrame, target_interval: str) -> Optional[pd.DataFrame]:
         """Resample data to target interval.
-        
+
         Args:
             df: Input DataFrame
             target_interval: Target interval (e.g., '5m', '15m', '1h')
-            
+
         Returns:
             Resampled DataFrame or None if failed
         """
@@ -427,12 +426,12 @@ class BasicReturnsEngineer:
                 '1w': '1W',
                 '1M': '1M'
             }
-            
+
             freq = freq_map.get(target_interval)
             if not freq:
                 self.logger.error(f"Unknown interval: {target_interval}")
                 return None
-            
+
             # Resample OHLCV data (exclude aggregated trade columns that shouldn't be in klines)
             ohlc_dict = {
                 'open': 'first',
@@ -445,13 +444,13 @@ class BasicReturnsEngineer:
                 # Note: taker_buy_base and taker_buy_quote are aggregated trade columns
                 # that shouldn't be in klines data - they're being excluded
             }
-            
+
             # Resample basic OHLCV columns
             resampled_df = df[list(ohlc_dict.keys())].resample(freq).agg(ohlc_dict)
-            
+
             # Resample feature columns (use appropriate aggregation)
             feature_columns = [col for col in df.columns if col not in ohlc_dict.keys()]
-            
+
             for col in feature_columns:
                 if col in df.columns:
                     if 'return' in col or 'log_return' in col:
@@ -467,34 +466,34 @@ class BasicReturnsEngineer:
                     else:
                         # Default to last value
                         resampled_df[col] = df[col].resample(freq).last()
-            
+
             # Add metadata
             resampled_df['symbol'] = df['symbol'].iloc[0] if 'symbol' in df.columns else 'unknown'
             resampled_df['interval'] = target_interval
             resampled_df['year'] = resampled_df.index.year
             resampled_df['month'] = resampled_df.index.month
             resampled_df['day'] = resampled_df.index.day
-            
+
             # Remove rows with all NaN values
             resampled_df = resampled_df.dropna(how='all')
-            
+
             # Optimize data types
             resampled_df = optimize_dataframe_dtypes(resampled_df)
-            
+
             return resampled_df
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Resampling failed for {target_interval}: {e}")
             return None
-    
+
     def _save_processed_data(self, df: pd.DataFrame, symbol: str, interval: str) -> bool:
         """Save processed data with optimized parquet partitioning.
-        
+
         Args:
             df: DataFrame to save
             symbol: Trading symbol
             interval: Data interval
-            
+
         Returns:
             True if successful, False otherwise
         """
@@ -502,15 +501,15 @@ class BasicReturnsEngineer:
             # Create processed data directory structure
             processed_dir = self.processed_data_dir / symbol.lower() / "processed"
             processed_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Group by year and month for partitioning
             df_with_partitions = df.copy()
             df_with_partitions['year'] = df_with_partitions.index.year
             df_with_partitions['month'] = df_with_partitions.index.month
-            
+
             # Save as partitioned parquet using M1 optimizer
             output_path = processed_dir / f"{symbol.lower()}_{interval}"
-            
+
             # Use memory-efficient saving
             with self.m1_optimizer.memory_checkpoint(f"save_{symbol}_{interval}"):
                 df_with_partitions.to_parquet(
@@ -520,14 +519,13 @@ class BasicReturnsEngineer:
                     compression='snappy',
                     engine='pyarrow'
                 )
-            
+
             self.logger.info(f"💾 Saved processed data: {symbol} {interval} ({len(df)} records)")
             return True
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to save processed data: {e}")
             return False
-
 
 # Convenience functions
 def process_ethusdt_basic_returns(
@@ -535,20 +533,19 @@ def process_ethusdt_basic_returns(
     target_intervals: List[str] = None
 ) -> Dict[str, Any]:
     """Process ETHUSDT data with basic returns and resampling.
-    
+
     Args:
         data_dir: Base directory for data storage
         target_intervals: List of target intervals for resampling
-        
+
     Returns:
         Dictionary with processing results
     """
     if target_intervals is None:
         target_intervals = ["5m", "15m", "30m", "1h"]
-    
+
     engineer = BasicReturnsEngineer(data_dir)
     return engineer.process_symbol_data("ETHUSDT", "1m", target_intervals)
-
 
 if __name__ == "__main__":
     # Example usage

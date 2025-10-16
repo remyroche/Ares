@@ -109,31 +109,31 @@ class NewNASTASClusteringWrapper(BaseMarketAnalysisComponent):
 
 class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
-    
+
     def __init__(self, adapter_class, config: Optional[ComponentConfig] = None):
         super().__init__(config)
         self.adapter_class = adapter_class
         self.adapter_instance = None
-    
+
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
         return ['multi_horizon_labeling_result']
-    
+
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute multi-horizon labeling as a component."""
         try:
             # Create adapter instance if not exists
             if self.adapter_instance is None:
                 self.adapter_instance = self.adapter_class()
-            
+
             # Extract configuration from component config
             labeling_config = {}
             if self.config and hasattr(self.config, 'custom_params'):
                 labeling_config = self.config.custom_params.get('multi_horizon_labeling', {})
-            
+
             # Execute multi-horizon labeling with proper execution mode detection
             execution_mode = 'full'  # Default
-            
+
             # Try multiple sources for execution mode
             if pipeline_state.get('execution_mode'):
                 execution_mode = pipeline_state.get('execution_mode')
@@ -141,21 +141,21 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 execution_mode = self.config.mode.value if hasattr(self.config.mode, 'value') else str(self.config.mode)
             elif pipeline_state.get('mode'):
                 execution_mode = pipeline_state.get('mode')
-            
+
             # Force data filtering before calling the adapter
             original_data_size = len(data)
             if execution_mode.lower() == 'light' and original_data_size > 20000:
                 data = data.tail(14400).copy()  # 10 days for 1m data
                 print(f"🔥 COMPONENT FACTORY LIGHT FILTERING: {original_data_size:,} → {len(data):,} rows")
             elif execution_mode.lower() == 'blank' and original_data_size > 300000:
-                data = data.tail(259200).copy()  # 180 days for 1m data  
+                data = data.tail(259200).copy()  # 180 days for 1m data
                 print(f"🔥 COMPONENT FACTORY BLANK FILTERING: {original_data_size:,} → {len(data):,} rows")
-            
+
             # Extract regime labels from pipeline state artifacts
             artifacts = pipeline_state.get('artifacts', {})
             nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
             regime_labels = nas_tas_clustering_result.get('regime_assignments')
-            
+
             result = self.adapter_instance.execute_multi_horizon_labeling_step(
                 data=data,
                 regime_labels=regime_labels,
@@ -166,9 +166,9 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                 mode=execution_mode,
                 features=pipeline_state.get('pid_based_features')  # Pass optimized features for enhanced labeling
             )
-            
+
             # Convert to ComponentResult
-            
+
             # Handle case where result is None
             if result is None:
                 return ComponentResult(
@@ -177,7 +177,7 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                     metadata={},
                     error_message="Multi-horizon labeling returned None result"
                 )
-            
+
             if result.get('status') == 'completed':
                 # Save artifacts persistently using the artifact manager
                 try:
@@ -187,7 +187,7 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                     )
                 except Exception as e:
                     print(f"⚠️ [MULTI_HORIZON] Failed to save artifacts persistently: {e}")
-                
+
                 return ComponentResult(
                     success=True,
                     artifacts=result.get('artifacts', {}),
@@ -204,7 +204,7 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
                     metadata=result.get('metadata', {}),
                     error_message=result.get('error', 'Unknown error in multi-horizon labeling')
                 )
-                
+
         except Exception as e:
             return ComponentResult(
                 success=False,
@@ -215,16 +215,16 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
 
 class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for HMM Models Training Enhanced to work as a component."""
-    
+
     def __init__(self, training_class, config: Optional[ComponentConfig] = None):
         super().__init__(config)
         self.training_class = training_class
         self.training_instance = None
-    
+
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
         return ['hmm_models_training_result']
-    
+
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute HMM models training as a component."""
         try:
@@ -262,7 +262,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 cluster_assignments = hmm_clusters.get('cluster_assignments')
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
-            
+
             # Load cluster assignments directly from HMM training input file
             if cluster_assignments is None:
                 try:
@@ -295,14 +295,14 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 except Exception as e:
                     print(f"❌ Error loading cluster assignments from HMM training input file: {e}")
                     raise ValueError(f"Failed to load cluster assignments: {e}")
-            
+
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
                 if dataframe is not None:
                     import pandas as pd
                     import numpy as np
-                    
+
                     # Create basic features and targets from OHLCV data
                     if 'close' in dataframe.columns:
                         # Create lagged features to avoid data leakage
@@ -388,7 +388,7 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
 
                         # Create targets from future returns (not current returns) to avoid data leakage
                         future_returns = raw_returns.shift(-1).fillna(0)  # Next period returns
-                        
+
                         # Convert continuous future returns to discrete classes for predictive modeling
                         # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%),
                         # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
@@ -399,15 +399,15 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                         y[(y_continuous >= -0.005) & (y_continuous <= 0.005)] = 2  # Sideways
                         y[(y_continuous > 0.005) & (y_continuous <= 0.02)] = 3  # Up
                         y[y_continuous > 0.02] = 4  # Strong Up
-                        
+
                         # Remove first row where returns is NaN (due to pct_change)
                         X = X[1:]
                         y = y[1:]
-                        
+
                         # Adjust cluster_assignments length if necessary
                         if cluster_assignments is not None and len(cluster_assignments) > len(X):
                             cluster_assignments = cluster_assignments[:len(X)]
-            
+
             if X is None or y is None or cluster_assignments is None:
               # Detailed error reporting for missing data
               missing_data = []
@@ -425,13 +425,13 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                       f"Available pipeline state keys: {available_keys}"
                   )
                   raise ValueError(error_msg)
-            
+
             # Use HMM state recognition as the training objective
             y = cluster_assignments
 
             # Execute training with comprehensive features
             results = self.training_instance.execute(X, y, cluster_assignments, feature_names, market_data=market_data)
-            
+
             # Create comprehensive artifact
             artifact = {
                 'hmm_models_training_result': {
@@ -442,13 +442,13 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     'success': 'error' not in results
                 }
             }
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifact,
                 metadata={'component_type': 'hmm_models_training', 'execution_time': results.get('training_time', 0)}
             )
-            
+
         except Exception as e:
             return ComponentResult(
                 success=False,
@@ -459,23 +459,23 @@ class HMMModelsTrainingComponentWrapper(BaseMarketAnalysisComponent):
 
 class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for HMM Ensemble Training Component to work as a component."""
-    
+
     def __init__(self, training_class, config: Optional[ComponentConfig] = None):
         super().__init__(config)
         self.training_class = training_class
         self.training_instance = None
-    
+
     def _convert_to_numpy_array(self, data):
         """Convert list data to numpy array if needed."""
         if data is not None:
             if isinstance(data, list):
                 return np.array(data)
         return data
-    
+
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
         return ['hmm_ensemble_training_result']
-    
+
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute HMM ensemble training as a component."""
         try:
@@ -490,7 +490,7 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                             print("⚠️ HMM Ensemble: Non-15m timeframe supplied; overriding to 15m for consistency")
                 except Exception:
                     pass
-            
+
             # Extract required data from pipeline state
             X = pipeline_state.get('features')
             y = pipeline_state.get('targets')
@@ -499,14 +499,14 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
             hmm_states = pipeline_state.get('hmm_states')
             base_hmm_models = pipeline_state.get('hmm_models', {}).get('hmm_models', {})
             hmm_training_metrics = pipeline_state.get('hmm_models', {}).get('hmm_training_metrics', {})
-            
+
             # If cluster_assignments is missing, try to get from hmm_clusters
             if cluster_assignments is None:
                 hmm_clusters = pipeline_state.get('hmm_clusters', {})
                 cluster_assignments = hmm_clusters.get('cluster_assignments')
                 if cluster_assignments is not None:
                     print(f"✅ Found cluster_assignments in hmm_clusters: {len(cluster_assignments)} samples")
-            
+
             # Load cluster assignments directly from HMM training input file
             if cluster_assignments is None:
                 try:
@@ -537,12 +537,12 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                 except Exception as e:
                     print(f"❌ Error loading cluster assignments from HMM training input file: {e}")
                     raise ValueError(f"Failed to load cluster assignments: {e}")
-            
+
             # If we don't have features/targets, try to extract from dataframe
             if X is None or y is None:
                 dataframe = pipeline_state.get('dataframe')
                 if dataframe is not None:
-                    
+
                     # Create basic features and targets from OHLCV data
                     if 'close' in dataframe.columns:
                         # Create lagged features to avoid data leakage
@@ -628,7 +628,7 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
 
                         # Create targets from future returns (not current returns) to avoid data leakage
                         future_returns = raw_returns.shift(-1).fillna(0)  # Next period returns
-                        
+
                         # Convert continuous future returns to discrete classes for predictive modeling
                         # Class 0: Strong Down (< -2%), Class 1: Down (-2% to -0.5%),
                         # Class 2: Sideways (-0.5% to 0.5%), Class 3: Up (0.5% to 2%), Class 4: Strong Up (> 2%)
@@ -639,34 +639,34 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                         y[(y_continuous >= -0.005) & (y_continuous <= 0.005)] = 2  # Sideways
                         y[(y_continuous > 0.005) & (y_continuous <= 0.02)] = 3  # Up
                         y[y_continuous > 0.02] = 4  # Strong Up
-                        
+
                         # Remove first row where returns is NaN (due to pct_change)
                         X = X[1:]
                         y = y[1:]
-                        
+
                         # Adjust cluster_assignments length if necessary
                         if cluster_assignments is not None and len(cluster_assignments) > len(X):
                             cluster_assignments = cluster_assignments[:len(X)]
-            
+
             if X is None or y is None or cluster_assignments is None:
                 missing_items = []
                 if X is None: missing_items.append("features")
                 if y is None: missing_items.append("targets")
                 if cluster_assignments is None: missing_items.append("cluster_assignments")
                 raise ValueError(f"Missing required data: {', '.join(missing_items)}")
-            
+
             # Ensure all data is in proper numpy format before training
             cluster_assignments = self._convert_to_numpy_array(cluster_assignments)
-            
+
             # Use HMM state recognition as the training objective
             y = cluster_assignments
 
             # Execute training
             results = self.training_instance.execute(
-                X, y, cluster_assignments, feature_names, hmm_states, 
+                X, y, cluster_assignments, feature_names, hmm_states,
                 base_hmm_models, hmm_training_metrics
             )
-            
+
             # Create comprehensive artifact
             artifact = {
                 'hmm_ensemble_training_result': {
@@ -679,13 +679,13 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
                     'success': 'error' not in results
                 }
             }
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifact,
                 metadata={'component_type': 'hmm_ensemble_training', 'execution_time': results.get('training_time', 0)}
             )
-            
+
         except Exception as e:
             return ComponentResult(
                 success=False,
@@ -697,10 +697,10 @@ class HMMEnsembleTrainingComponentWrapper(BaseMarketAnalysisComponent):
 class ComponentFactory:
     """
     Factory for creating market analysis pipeline components.
-    
+
     Provides centralized component creation and management.
     """
-    
+
     _components: Dict[str, Type[BaseMarketAnalysisComponent]] = {
         'sr_parameter_optimization': SRParameterOptimizationComponent,
         'sr_detection': SRDetectionComponent,
@@ -722,23 +722,23 @@ class ComponentFactory:
         # Feature engineering components moved to pre_training stage:
         # 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
     }
-    
+
     @classmethod
     def create_component(
-        self, 
-        component_name: str, 
+        self,
+        component_name: str,
         config: Optional[ComponentConfig] = None
     ) -> BaseMarketAnalysisComponent:
         """
         Create a component instance.
-        
+
         Args:
             component_name: Name of the component to create
             config: Component configuration
-            
+
         Returns:
             Component instance
-            
+
         Raises:
             ValueError: If component name is not registered
         """
@@ -759,11 +759,11 @@ class ComponentFactory:
         if component_name == 'hmm_models_training':
             tprint("⚠️ [COMPONENT_FACTORY] HMM models training is deprecated", color="yellow")
             raise ValueError("HMM models training is deprecated and no longer available")
-        
+
         if component_name == 'hmm_ensemble_training':
             tprint("⚠️ [COMPONENT_FACTORY] HMM ensemble training is deprecated", color="yellow")
             raise ValueError("HMM ensemble training is deprecated and no longer available")
-        
+
         if component_name not in self._components:
             available_components = list(self._components.keys()) + ['regime_data_splitting']
             tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
@@ -817,18 +817,18 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-    
+
     @classmethod
     def register_component(
-        self, 
-        name: str, 
+        self,
+        name: str,
         component_class: Type[BaseMarketAnalysisComponent]
     ) -> None:
         """
         Register a new component.
-        
+
         Args:
             name: Component name
             component_class: Component class
@@ -837,29 +837,29 @@ except ImportError:
             raise ValueError(
                 f"Component class must inherit from BaseMarketAnalysisComponent"
             )
-        
+
         self._components[name] = component_class
-    
+
     @classmethod
     def get_available_components(self) -> list[str]:
         """
         Get list of available component names.
-        
+
         Returns:
             List of component names
         """
         # Include both registered components and lazy-loaded components
         lazy_components = ['regime_data_splitting']
         return list(self._components.keys()) + lazy_components
-    
+
     @classmethod
     def is_component_available(self, component_name: str) -> bool:
         """
         Check if a component is available.
-        
+
         Args:
             component_name: Name of the component
-            
+
         Returns:
             True if component is available
         """
@@ -869,16 +869,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -897,8 +897,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -915,13 +915,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

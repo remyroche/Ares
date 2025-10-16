@@ -14,7 +14,7 @@ from datetime import datetime
 
 class TrainingManager:
     """Enhanced main training manager for the ML pipeline with comprehensive monitoring.
-    
+
     This is a facade that provides a simple interface to the training pipeline
     while delegating to specialized components and providing enhanced error detection,
     monitoring, and reporting capabilities.
@@ -22,36 +22,36 @@ class TrainingManager:
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize enhanced training manager.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = system_logger.getChild('TrainingManager')
         self.pipeline_manager = SimplifiedTrainingManager(config)
-        
+
         # Enhanced monitoring and error detection
         self.safeguards = MLTrainingSafeguards(config.get('safeguards', {}))
         self.training_history = []
-        
+
         # Execution tracking
         self.is_initialized = False
         self.current_execution = None
         self.execution_start_time = None
-        
+
         self.logger.info("🔍 Enhanced Training Manager initialized with monitoring capabilities")
 
     @handles_errors(Exception, fallback = False)
     async def initialize(self) -> bool:
         """Initialize the enhanced training manager with monitoring.
-        
+
         Returns:
             True if initialization successful
         """
         try:
             self.logger.info('🔧 Initializing Enhanced Training Manager...')
             self.execution_start_time = datetime.now()
-            
+
             # Initialize pipeline manager
             if not await self.pipeline_manager.initialize():
                 error_context = {
@@ -60,16 +60,16 @@ class TrainingManager:
                     'error_type': 'initialization_failure'
                 }
                 self.safeguards.detect_and_classify_error(
-                    Exception("Pipeline manager initialization failed"), 
+                    Exception("Pipeline manager initialization failed"),
                     error_context
                 )
                 self.logger.error('❌ Failed to initialize pipeline manager')
                 return False
-            
+
             self.is_initialized = True
             self.logger.info('✅ Enhanced Training Manager initialized successfully')
             return True
-            
+
         except Exception as e:
             error_context = {
                 'component': 'training_manager',
@@ -80,7 +80,7 @@ class TrainingManager:
             self.logger.exception(f'❌ Initialization failed: {e}')
             return False
 
-    def track_training_execution(self, execution_id: str, status: str, 
+    def track_training_execution(self, execution_id: str, status: str,
                                metrics: Optional[Dict[str, Any]] = None):
         """Track training execution with enhanced monitoring."""
         try:
@@ -91,20 +91,20 @@ class TrainingManager:
                 'metrics': metrics or {},
                 'duration': None
             }
-            
+
             if self.execution_start_time:
                 execution_record['duration'] = (
                     datetime.now() - self.execution_start_time
                 ).total_seconds()
-            
+
             self.training_history.append(execution_record)
-            
+
             # Keep only recent history (last 50 executions)
             if len(self.training_history) > 50:
                 self.training_history = self.training_history[-50:]
-            
+
             self.logger.debug(f"📊 Training execution tracked: {execution_id} - {status}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to track training execution: {e}")
 
@@ -115,14 +115,14 @@ class TrainingManager:
             total_executions = len(self.training_history)
             successful_executions = sum(1 for e in self.training_history if e['status'] == 'completed')
             failed_executions = sum(1 for e in self.training_history if e['status'] == 'failed')
-            
+
             # Calculate average duration
             durations = [e['duration'] for e in self.training_history if e['duration'] is not None]
             avg_duration = sum(durations) / len(durations) if durations else 0
-            
+
             # Get error summary from safeguards
             error_summary = self.safeguards.get_error_summary()
-            
+
             return {
                 'training_summary': {
                     'total_executions': total_executions,
@@ -136,7 +136,7 @@ class TrainingManager:
                 'error_summary': error_summary,
                 'recent_executions': self.training_history[-10:] if self.training_history else []
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get training summary: {e}")
             return {'error': str(e)}
@@ -150,14 +150,14 @@ class TrainingManager:
                 'recommendations': [],
                 'risk_level': 'low'
             }
-            
+
             # Check error rates
             error_summary = self.safeguards.get_error_summary()
             if error_summary['recent_errors_1h'] > 10:
                 health_status['issues'].append(f"High error rate: {error_summary['recent_errors_1h']} errors in last hour")
                 health_status['recommendations'].append("Investigate recent errors and check system resources")
                 health_status['risk_level'] = 'high'
-            
+
             # Check execution success rate
             if self.training_history:
                 recent_executions = self.training_history[-10:]
@@ -167,13 +167,13 @@ class TrainingManager:
                     health_status['recommendations'].append("Review training pipeline and error logs")
                     if health_status['risk_level'] == 'low':
                         health_status['risk_level'] = 'medium'
-            
+
             # Check for critical errors
             if error_summary['severity_distribution'].get('critical', 0) > 0:
                 health_status['issues'].append("Critical errors detected")
                 health_status['recommendations'].append("Immediate attention required for critical errors")
                 health_status['risk_level'] = 'critical'
-            
+
             # Determine overall health
             if health_status['risk_level'] == 'critical':
                 health_status['overall_health'] = 'critical'
@@ -181,9 +181,9 @@ class TrainingManager:
                 health_status['overall_health'] = 'poor'
             elif health_status['risk_level'] == 'medium':
                 health_status['overall_health'] = 'fair'
-            
+
             return health_status
-            
+
         except Exception as e:
             self.logger.error(f"❌ Health check failed: {e}")
             return {
@@ -195,14 +195,14 @@ class TrainingManager:
 
     async def train(self, symbol: str, exchange: str, start_step: Optional[str]=None, end_step: Optional[str]=None, force_rerun: bool = False) -> Dict[str, Any]:
         """Execute the training pipeline.
-        
+
         Args:
             symbol: Trading symbol (e.g., "BTCUSDT")
             exchange: Exchange name (e.g., "binance")
             start_step: Optional starting step
             end_step: Optional ending step
             force_rerun: Force re-execution of completed steps
-            
+
         Returns:
             Training results
         """
@@ -220,7 +220,7 @@ class TrainingManager:
 
     async def get_status(self) -> Dict[str, Any]:
         """Get current training status.
-        
+
         Returns:
             Status dictionary
         """
@@ -233,10 +233,10 @@ class TrainingManager:
 
 async def create_training_manager(config: Dict[str, Any]) -> TrainingManager:
     """Create and initialize a training manager.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         Initialized TrainingManager
     """

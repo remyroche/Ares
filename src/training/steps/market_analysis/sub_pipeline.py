@@ -103,11 +103,11 @@ class SubPipelineConfig:
     single_stage_only: bool = False  # New parameter to control single vs sequential execution
     custom_params: Dict[str, Any] = field(default_factory=dict)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    
+
     # Direction control (optional, not used by market analysis but accepted for compatibility)
     enable_long_positions: bool = True
     enable_short_positions: bool = True
-    
+
     # Unified pipeline configuration
     use_unified_pipeline: bool = True  # Default to unified pipeline
     unified_pipeline_mode: str = "hybrid"  # "nas", "tas", or "hybrid"
@@ -189,27 +189,27 @@ class SubPipelineResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
     artifacts: Dict[str, Any] = field(default_factory=dict)
-    
+
     @property
     def success(self) -> bool:
         """Check if sub-pipeline completed successfully."""
         return self.status == SubPipelineStatus.COMPLETED and self.error_message is None
-    
+
     @property
     def is_complete(self) -> bool:
         """Check if sub-pipeline produced a complete report with all required artifacts."""
         if not self.success:
             return False
-        
+
         # Define required artifacts for each sub-pipeline
         required_artifacts = self._get_required_artifacts()
-        
+
         # Check if all required artifacts are present and non-empty
         for artifact_name in required_artifacts:
             if artifact_name not in self.artifacts:
                 return False
             artifact_value = self.artifacts[artifact_name]
-            
+
             # Check for empty values
             if artifact_value is None:
                 return False
@@ -217,9 +217,9 @@ class SubPipelineResult:
                 return False
             if isinstance(artifact_value, str) and artifact_value.strip() == "":
                 return False
-        
+
         return True
-    
+
     def _get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts for this sub-pipeline."""
         artifact_requirements = {
@@ -235,7 +235,7 @@ class SubPipelineResult:
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
         }
         return artifact_requirements.get(self.sub_pipeline_name, [])
-    
+
     @property
     def execution_time(self) -> float:
         """Get execution time in seconds."""
@@ -244,11 +244,11 @@ class SubPipelineResult:
 class MarketAnalysisSubPipeline:
     """
     Market Analysis Sub-Pipeline Manager.
-    
+
     Provides granular control over market analysis processes with different
     execution modes and comprehensive monitoring.
     """
-    
+
     def __init__(self, config: Optional[SubPipelineConfig] = None):
         """Initialize the market analysis sub-pipeline with backward compatibility."""
         # Handle both old dict config and new SubPipelineConfig
@@ -260,7 +260,7 @@ class MarketAnalysisSubPipeline:
             # Use provided SubPipelineConfig or create default
             self.config = config or SubPipelineConfig()
             self.original_config = {}
-        
+
         # Use standardized logging
         self.logger = get_logger('MarketAnalysisSubPipeline')
         self.results: List[SubPipelineResult] = []
@@ -276,7 +276,7 @@ class MarketAnalysisSubPipeline:
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
-        
+
         # Initialize component factory
         self.component_factory = ComponentFactory()
 
@@ -324,11 +324,11 @@ class MarketAnalysisSubPipeline:
                     self.logger.addHandler(fh)
         except Exception as e:
             log_warning(f"Failed to apply logging configuration: {e}. Continuing with default logging settings.")
-    
+
     def _validate_sub_pipeline_result(self, result: SubPipelineResult, stage_name: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
         Validate sub-pipeline result and return success status and error info.
-        
+
         Returns:
             Tuple of (is_success, error_dict_or_none)
         """
@@ -350,7 +350,7 @@ class MarketAnalysisSubPipeline:
                 'error': f"{stage_name} failed: {result.error_message}",
                 'stage': result.sub_pipeline_name
             }
-    
+
     def _convert_to_component_config(self, sub_config: SubPipelineConfig) -> ComponentConfig:
         """Convert SubPipelineConfig to ComponentConfig."""
         return ComponentConfig(
@@ -408,13 +408,13 @@ class MarketAnalysisSubPipeline:
         if not self._configuration_logged:
             self._emit_effective_configuration(config)
         return locator
-    
+
     def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
         """Convert old config format to SubPipelineConfig."""
         # Extract relevant configuration
         sr_config = config.get('sr_optimization', {})
         training_mode = config.get('training_mode', 'full')
-        
+
         # Determine execution mode
         if training_mode == 'light':
             mode = ExecutionMode.LIGHT
@@ -422,7 +422,7 @@ class MarketAnalysisSubPipeline:
             mode = ExecutionMode.BLANK
         else:
             mode = ExecutionMode.FULL
-        
+
         # Create SubPipelineConfig
         sub_config = SubPipelineConfig(
             mode=mode,
@@ -441,15 +441,15 @@ class MarketAnalysisSubPipeline:
             skip_next_pipeline=config.get('skip_next_pipeline', False),
             custom_params=config.get('custom_params', {})
         )
-        
+
         return sub_config
-    
+
     async def _execute_unified_nas_tas_regime_discovery(self) -> SubPipelineResult:
         """Execute NAS-TAS regime discovery using unified pipeline."""
         try:
             self.logger.info("🚀 Using unified NAS-TAS pipeline for regime discovery")
             tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for regime discovery", color="cyan", bold=True)
-            
+
             # Create unified pipeline based on mode
             if self.config.unified_pipeline_mode == "nas":
                 pipeline = create_nas_pipeline()
@@ -457,14 +457,14 @@ class MarketAnalysisSubPipeline:
                 pipeline = create_tas_pipeline()
             else:  # hybrid
                 pipeline = create_hybrid_pipeline()
-            
+
             # Execute unified pipeline
             result = await pipeline.execute_regime_discovery(
                 symbol=self.config.symbol,
                 timeframe=self.config.timeframe,
                 data_dir=self.config.data_dir
             )
-            
+
             # Convert unified pipeline result to SubPipelineResult format
             return SubPipelineResult(
                 sub_pipeline_name='nas_tas_regime_discovery',
@@ -475,7 +475,7 @@ class MarketAnalysisSubPipeline:
                 artifacts={'nas_tas_regime_discovery_result': result},
                 metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Unified NAS-TAS regime discovery failed: {e}")
             if self.config.unified_pipeline_fallback:
@@ -483,13 +483,13 @@ class MarketAnalysisSubPipeline:
                 return await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
             else:
                 raise
-    
+
     async def _execute_unified_nas_tas_clustering(self) -> SubPipelineResult:
         """Execute NAS-TAS clustering using unified pipeline."""
         try:
             self.logger.info("🚀 Using unified NAS-TAS pipeline for clustering")
             tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for clustering", color="cyan", bold=True)
-            
+
             # Create unified pipeline based on mode
             if self.config.unified_pipeline_mode == "nas":
                 pipeline = create_nas_pipeline()
@@ -497,14 +497,14 @@ class MarketAnalysisSubPipeline:
                 pipeline = create_tas_pipeline()
             else:  # hybrid
                 pipeline = create_hybrid_pipeline()
-            
+
             # Execute unified pipeline
             result = await pipeline.execute_clustering(
                 symbol=self.config.symbol,
                 timeframe=self.config.timeframe,
                 data_dir=self.config.data_dir
             )
-            
+
             # Convert unified pipeline result to SubPipelineResult format
             return SubPipelineResult(
                 sub_pipeline_name='nas_tas_clustering',
@@ -515,7 +515,7 @@ class MarketAnalysisSubPipeline:
                 artifacts={'optimal_regime_clustering_result': result},
                 metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Unified NAS-TAS clustering failed: {e}")
             if self.config.unified_pipeline_fallback:
@@ -523,13 +523,13 @@ class MarketAnalysisSubPipeline:
                 return await self.execute_sub_pipeline('nas_tas_clustering', self.config)
             else:
                 raise
-    
+
     async def _execute_unified_nas_tas_models_training(self) -> SubPipelineResult:
         """Execute NAS-TAS models training using unified pipeline."""
         try:
             self.logger.info("🚀 Using unified NAS-TAS pipeline for models training")
             tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for models training", color="cyan", bold=True)
-            
+
             # Create unified pipeline based on mode
             if self.config.unified_pipeline_mode == "nas":
                 pipeline = create_nas_pipeline()
@@ -537,14 +537,14 @@ class MarketAnalysisSubPipeline:
                 pipeline = create_tas_pipeline()
             else:  # hybrid
                 pipeline = create_hybrid_pipeline()
-            
+
             # Execute unified pipeline
             result = await pipeline.execute_models_training(
                 symbol=self.config.symbol,
                 timeframe=self.config.timeframe,
                 data_dir=self.config.data_dir
             )
-            
+
             # Convert unified pipeline result to SubPipelineResult format
             return SubPipelineResult(
                 sub_pipeline_name='nas_tas_models_training',
@@ -555,7 +555,7 @@ class MarketAnalysisSubPipeline:
                 artifacts={'nas_tas_models_training_result': result},
                 metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Unified NAS-TAS models training failed: {e}")
             if self.config.unified_pipeline_fallback:
@@ -563,13 +563,13 @@ class MarketAnalysisSubPipeline:
                 return await self.execute_sub_pipeline('nas_tas_models_training', self.config)
             else:
                 raise
-    
+
     async def _execute_unified_nas_tas_ensemble_training(self) -> SubPipelineResult:
         """Execute NAS-TAS ensemble training using unified pipeline."""
         try:
             self.logger.info("🚀 Using unified NAS-TAS pipeline for ensemble training")
             tprint("🚀 [UNIFIED_PIPELINE] Using unified NAS-TAS pipeline for ensemble training", color="cyan", bold=True)
-            
+
             # Create unified pipeline based on mode
             if self.config.unified_pipeline_mode == "nas":
                 pipeline = create_nas_pipeline()
@@ -577,14 +577,14 @@ class MarketAnalysisSubPipeline:
                 pipeline = create_tas_pipeline()
             else:  # hybrid
                 pipeline = create_hybrid_pipeline()
-            
+
             # Execute unified pipeline
             result = await pipeline.execute_ensemble_training(
                 symbol=self.config.symbol,
                 timeframe=self.config.timeframe,
                 data_dir=self.config.data_dir
             )
-            
+
             # Convert unified pipeline result to SubPipelineResult format
             return SubPipelineResult(
                 sub_pipeline_name='nas_tas_ensemble_training',
@@ -595,7 +595,7 @@ class MarketAnalysisSubPipeline:
                 artifacts={'nas_tas_ensemble_training_result': result},
                 metadata={'pipeline_type': 'unified', 'mode': self.config.unified_pipeline_mode}
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Unified NAS-TAS ensemble training failed: {e}")
             if self.config.unified_pipeline_fallback:
@@ -603,43 +603,43 @@ class MarketAnalysisSubPipeline:
                 return await self.execute_sub_pipeline('nas_tas_ensemble_training', self.config)
             else:
                 raise
-    
+
     async def _execute_nas_tas_clustering_with_new_structure(self) -> SubPipelineResult:
         """Execute NAS-TAS clustering using the new clustering directory structure."""
         start_time = datetime.now()
-        
+
         try:
             self.logger.info("🚀 Using new clustering directory structure for NAS-TAS clustering")
             tprint("🚀 [CLUSTERING] Using new clustering directory structure for NAS-TAS clustering", color="cyan", bold=True)
-            
+
             # Import the new clustering component
             from src.training.steps.market_analysis.clustering import NASTASClusteringComponent
             from src.training.steps.market_analysis.clustering.config.clustering_config import NASTASClusteringConfig
-            
+
             # Create configuration for the clustering component
             clustering_config = NASTASClusteringConfig()
-            
+
             # Initialize the clustering component
             clustering_component = NASTASClusteringComponent(config=clustering_config)
-            
+
             # Prepare data for clustering
             # Use the current data and pipeline state
             data = self._current_data
             pipeline_state = self._current_pipeline_state.copy()
-            
+
             # Add regime discovery results to pipeline state if available
             if 'regime_models' in self._current_pipeline_state:
                 pipeline_state['regime_models'] = self._current_pipeline_state['regime_models']
             if 'regime_assignments' in self._current_pipeline_state:
                 pipeline_state['regime_assignments'] = self._current_pipeline_state['regime_assignments']
-            
+
             self.logger.info(f"📊 Data prepared for clustering: {data.shape if data is not None else 'None'}")
             self.logger.info(f"📊 Pipeline state keys: {list(pipeline_state.keys())}")
-            
+
             # Execute clustering using the component's fit method
             if data is not None:
                 clustering_result = await clustering_component.fit(data, None, pipeline_state)
-                
+
                 # Extract the actual clustering data from the component
                 clustering_data = {}
                 if hasattr(clustering_result, 'current_results') and clustering_result.current_results:
@@ -662,7 +662,7 @@ class MarketAnalysisSubPipeline:
                             clustering_data['n_clusters'] = context.final_k  # Update n_clusters with final value
                         if hasattr(context, 'optimized_results') and context.optimized_results:
                             clustering_data.update(context.optimized_results)
-                
+
                 # Create artifacts in the expected format with actual clustering data
                 artifacts = {
                     'optimal_regime_clustering_result': {
@@ -675,10 +675,10 @@ class MarketAnalysisSubPipeline:
                         }
                     }
                 }
-                
+
                 end_time = datetime.now()
                 duration = (end_time - start_time).total_seconds()
-                
+
                 result = SubPipelineResult(
                     sub_pipeline_name='nas_tas_clustering',
                     status=SubPipelineStatus.COMPLETED,
@@ -688,28 +688,28 @@ class MarketAnalysisSubPipeline:
                     artifacts=artifacts,
                     metadata={'component_type': 'NASTASClusteringComponent', 'execution_mode': 'new_structure'}
                 )
-                
+
                 self.logger.info("✅ NAS-TAS clustering completed successfully with new structure")
                 tprint("✅ [CLUSTERING] NAS-TAS clustering completed successfully with new structure", color="green", bold=True)
-                
+
                 return result
             else:
                 raise ValueError("No data available for clustering")
-                
+
         except Exception as e:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             self.logger.error(f"❌ NAS-TAS clustering with new structure failed: {e}")
             tprint(f"❌ [CLUSTERING] NAS-TAS clustering with new structure failed: {e}", color="red", bold=True)
-            
+
             # Fallback to legacy clustering if available
             self.logger.info("🔄 Falling back to legacy clustering")
             try:
                 return await self.execute_sub_pipeline('nas_tas_clustering', self.config)
             except Exception as fallback_error:
                 self.logger.error(f"❌ Legacy clustering fallback also failed: {fallback_error}")
-                
+
                 return SubPipelineResult(
                     sub_pipeline_name='nas_tas_clustering',
                     status=SubPipelineStatus.FAILED,
@@ -720,18 +720,18 @@ class MarketAnalysisSubPipeline:
                 )
 
     async def execute_all_steps_from_start(
-        self, 
+        self,
         config: Optional[SubPipelineConfig] = None
     ) -> Dict[str, Any]:
         """
         Execute all 13 market analysis steps automatically from the beginning.
-        
+
         This is a convenience method that starts from step 1 (sr_parameter_optimization)
         and automatically triggers all subsequent steps when each completes.
-        
+
         Args:
             config: Configuration for the sub-pipeline (optional)
-            
+
         Returns:
             Dict with execution results and summary
         """
@@ -755,13 +755,13 @@ class MarketAnalysisSubPipeline:
         log_info('   7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)')
         log_info('   8. regime_data_splitting - Tag data by regimes')
         log_info('=' * 80)
-        
+
         # Execute from the first step - this will automatically trigger all subsequent steps
         result = await self.execute_sub_pipeline_with_next('sr_parameter_optimization', config)
-        
+
         # Get execution summary
         summary = self.get_execution_summary()
-        
+
         return {
             'success': result.success,
             'first_step_result': result,
@@ -771,7 +771,7 @@ class MarketAnalysisSubPipeline:
             'failed_steps': summary['failed_sub_pipelines'],
             'total_execution_time': summary['total_execution_time']
         }
-    
+
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute the complete market analysis sub-pipeline with backward compatible interface.
@@ -810,18 +810,18 @@ class MarketAnalysisSubPipeline:
                 tprint("❌ [MARKET_ANALYSIS] No dataframe found in pipeline state", color="red", bold=True)
                 raise ValueError("No dataframe found in pipeline state")
             tprint(f"📊 [MARKET_ANALYSIS] Data loaded: {data.shape[0]} rows, {data.shape[1]} columns", color="green")
-            
+
             # Store data and pipeline state for component communication
             self._current_data = data
             self._current_pipeline_state = pipeline_state.copy()
-            
+
             # Initialize results dictionary
             results = {}
-            
+
             # ===== SR STEPS GROUP =====
             log_info('🎯 ===== STARTING SR STEPS GROUP =====')
             tprint("🎯 [MARKET_ANALYSIS] ===== STARTING SR STEPS GROUP =====", color="blue", bold=True)
-            
+
             # Stage 1: SR Parameter Optimization (BEFORE detection and clustering)
             log_info('🎯 Executing Stage 1: SR Parameter Optimization')
             tprint("🎯 [MARKET_ANALYSIS] Executing Stage 1: SR Parameter Optimization", color="yellow")
@@ -829,69 +829,69 @@ class MarketAnalysisSubPipeline:
             is_success, error_info = self._validate_sub_pipeline_result(param_optimization_result, "SR Parameter Optimization")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             sr_optimization_result = param_optimization_result.artifacts.get('sr_parameter_optimization_result', {})
             results['optimized_parameters'] = sr_optimization_result.get('optimized_parameters', {})
             results['quality_thresholds'] = sr_optimization_result.get('quality_thresholds', {})
             results['parameter_optimization_metrics'] = sr_optimization_result.get('parameter_optimization_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'optimized_parameters': results['optimized_parameters'],
                 'quality_thresholds': results['quality_thresholds']
             })
-            
+
             # Stage 2: SR Detection (using optimized parameters)
             self.logger.info('📊 Executing Stage 2: SR Detection')
             sr_detection_result = await self.execute_sub_pipeline('sr_detection', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(sr_detection_result, "SR Detection")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             sr_detection_data = sr_detection_result.artifacts.get('sr_detection_result', {})
             results['sr_levels'] = sr_detection_data.get('sr_levels', {})
             results['detection_metrics'] = sr_detection_data.get('detection_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'sr_levels': results['sr_levels']
             })
-            
+
             # Stage 3: SR Clustering (using detected levels)
             self.logger.info('🔗 Executing Stage 3: SR Clustering')
             sr_clustering_result = await self.execute_sub_pipeline('sr_clustering', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(sr_clustering_result, "SR Clustering")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             sr_clustering_data = sr_clustering_result.artifacts.get('sr_clustering_result', {})
             results['sr_clusters'] = sr_clustering_data.get('sr_clusters', {})
             results['clustering_metrics'] = sr_clustering_data.get('clustering_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'sr_clusters': results['sr_clusters']
             })
-            
+
             # ===== HMM STEPS GROUP =====
             self.logger.info('🔍 ===== STARTING HMM STEPS GROUP =====')
             tprint("🔍 [MARKET_ANALYSIS] ===== STARTING HMM STEPS GROUP =====", color="blue", bold=True)
-            
+
             # Stage 4: NAS-TAS Regime Discovery
             self.logger.info('🔍 Executing Stage 4: NAS-TAS Regime Discovery')
             tprint("🔍 [MARKET_ANALYSIS] Executing Stage 4: NAS-TAS Regime Discovery", color="yellow")
-            
+
             # Use unified pipeline if available and enabled
-            if (UNIFIED_PIPELINE_AVAILABLE and 
-                self.config.use_unified_pipeline and 
+            if (UNIFIED_PIPELINE_AVAILABLE and
+                self.config.use_unified_pipeline and
                 self.config.unified_pipeline_mode in ["nas", "hybrid"]):
                 nas_tas_regime_discovery_result = await self._execute_unified_nas_tas_regime_discovery()
             else:
                 nas_tas_regime_discovery_result = await self.execute_sub_pipeline('nas_tas_regime_discovery', self.config)
-            
+
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_regime_discovery_result, "NAS-TAS Regime Discovery")
             if not is_success:
                 return error_info
@@ -901,30 +901,30 @@ class MarketAnalysisSubPipeline:
             results['regime_models'] = nas_regime_data.get('regime_models', {})
             results['regime_assignments'] = nas_regime_data.get('regime_assignments', {})
             results['regime_metrics'] = nas_regime_data.get('regime_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_models': results['regime_models'],
                 'regime_assignments': results['regime_assignments'],
                 'nas_tas_regime_discovery_result': nas_regime_data  # Pass the full regime discovery result
             })
-            
+
             # Stage 5: NAS-TAS Clustering
             self.logger.info('🎯 Executing Stage 5: NAS-TAS Clustering')
             tprint("🎯 [MARKET_ANALYSIS] Executing Stage 5: NAS-TAS Clustering", color="yellow")
-            
+
             # Use the new clustering directory structure
             nas_tas_clustering_result = await self._execute_nas_tas_clustering_with_new_structure()
-            
+
             is_success, error_info = self._validate_sub_pipeline_result(nas_tas_clustering_result, "NAS-TAS Clustering")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             nas_tas_clustering_data = nas_tas_clustering_result.artifacts.get('nas_tas_clustering_result', {})
             results['nas_tas_clusters'] = nas_tas_clustering_data.get('nas_tas_clusters', {})
             results['nas_tas_clustering_metrics'] = nas_tas_clustering_data.get('nas_tas_clustering_metrics', {})
-            
+
             # Update pipeline state for next components
             cluster_assignments = nas_tas_clustering_data.get('cluster_assignments', [])
             self._current_pipeline_state.update({
@@ -932,21 +932,21 @@ class MarketAnalysisSubPipeline:
                 'cluster_assignments': cluster_assignments,  # Make cluster_assignments directly accessible
                 'optimal_regime_clustering_result': nas_tas_clustering_data  # Add the key that regime_data_splitting expects
             })
-            
+
             # Prepare data for HMM Models Training
             self.logger.info('📊 Preparing data for HMM Models Training...')
             try:
                 # FORCE ORIGINAL MARKET DATA for feature bank integration
                 self.logger.info('🔧 FORCING original market data for regime models training feature bank integration')
                 tprint("🔧 [SUB_PIPELINE] FORCING original market data for regime models training", color="cyan", bold=True)
-                
+
                 # Don't use processed features - let the component generate comprehensive features from original data
                 features = None  # Force None to trigger feature bank generation
                 feature_names = []
-                
+
                 # Targets are not required: HMM training uses cluster_assignments as labels
                 targets = None
-                
+
                 # Extract regime labels from regime assignments
                 regime_labels = None
                 if 'regime_assignments' in results and results['regime_assignments']:
@@ -957,7 +957,7 @@ class MarketAnalysisSubPipeline:
                     elif isinstance(regime_data, dict) and 'regime_labels' in regime_data:
                         # Legacy format - regime_assignments is a dict with regime_labels
                         regime_labels = regime_data['regime_labels']
-                
+
                 # Store original market data for feature bank generation
                 self._current_pipeline_state.update({
                     'features': features,  # None to force feature bank generation
@@ -967,62 +967,62 @@ class MarketAnalysisSubPipeline:
                     'original_data': data,  # Store original market data for feature bank
                     'force_feature_bank': True  # Flag to force feature bank usage
                 })
-                
+
                 # Log data availability for debugging
                 self.logger.info(f"📊 Data prepared for HMM Models Training:")
                 self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
                 self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'} (HMM uses cluster_assignments)")
                 self.logger.info(f"   - Regime Labels: {'✅' if regime_labels is not None else '❌'}")
                 self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Failed to prepare data for HMM Models Training: {e}")
                 return self._create_error_result("Data preparation failed for HMM Models Training", str(e))
-            
+
             # Stage 6: Regime Detection Models Training
             self.logger.info('🏋️ Executing Stage 6: Regime Detection Models Training')
-            
+
             # Use the new regime detection models training component
             regime_models_training_result = await self.execute_sub_pipeline('regime_models_training', self.config)
-            
+
             is_success, error_info = self._validate_sub_pipeline_result(regime_models_training_result, "Regime Detection Models Training")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             regime_models_data = regime_models_training_result.artifacts.get('regime_models_training_result', {})
             results['regime_models'] = regime_models_data.get('regime_models', {})
             results['regime_training_metrics'] = regime_models_data.get('metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_models': results['regime_models']
             })
-            
+
             # Ensure features and targets are available for regime ensemble training
             # Extract features from optimized_features or interactive_features if available
             features = None
             feature_names = []
             targets = None
-            
+
             if 'optimized_features' in results and results['optimized_features']:
                 features_data = results['optimized_features']
                 if isinstance(features_data, dict) and 'features' in features_data:
                     features = features_data['features']
                     feature_names = features_data.get('feature_names', [])
-            
+
             if features is None and 'interactive_features' in results:
                 interactive_features = results['interactive_features']
                 if isinstance(interactive_features, dict) and 'combined_features' in interactive_features:
                     features = interactive_features['combined_features']
                     feature_names = interactive_features.get('combined_feature_names', [])
-            
+
             # If no features available yet, use basic features from regime models training
             if features is None:
                 # Extract basic features from the regime models training data
                 # The regime models training component generates features internally
                 self.logger.warning("⚠️ No optimized features available for regime ensemble training, using basic features from regime models training")
-                
+
                 # Get the features that were used in regime models training
                 # These are generated internally by the regime models training component
                 # We need to regenerate them or extract them from the training process
@@ -1035,7 +1035,7 @@ class MarketAnalysisSubPipeline:
                             regime_labels = regime_data
                         elif isinstance(regime_data, dict) and 'regime_labels' in regime_data:
                             regime_labels = regime_data['regime_labels']
-                    
+
                     # Generate basic features similar to what regime models training does
                     if regime_labels is not None:
                         features, feature_names = self._generate_basic_features(data, regime_labels)
@@ -1049,55 +1049,55 @@ class MarketAnalysisSubPipeline:
                     self.logger.error(f"❌ Failed to generate basic features: {e}")
                     features = None
                     targets = None
-            
+
             # Update pipeline state with features and targets for regime ensemble training
             self._current_pipeline_state.update({
                 'features': features,
                 'targets': targets,
                 'feature_names': feature_names
             })
-            
+
             # Log data availability for debugging
             self.logger.info(f"📊 Data prepared for Regime Ensemble Training:")
             self.logger.info(f"   - Features: {'✅' if features is not None else '❌'}")
             self.logger.info(f"   - Targets: {'✅' if targets is not None else '❌'}")
             self.logger.info(f"   - Feature Names: {len(feature_names) if feature_names else 0}")
-            
+
             # Stage 7: Regime Detection Ensemble Training
             self.logger.info('🎭 Executing Stage 7: Regime Detection Ensemble Training')
-            
+
             # Use the new regime detection ensemble training component
             regime_ensemble_training_result = await self.execute_sub_pipeline('regime_ensemble_training', self.config)
-            
+
             is_success, error_info = self._validate_sub_pipeline_result(regime_ensemble_training_result, "Regime Detection Ensemble Training")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             regime_ensemble_data = regime_ensemble_training_result.artifacts.get('regime_ensemble_training_result', {})
             results['regime_ensemble'] = regime_ensemble_data.get('stacker_lgbm_calibrated', {})
             results['regime_ensemble_metrics'] = regime_ensemble_data.get('ensemble_metrics', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_ensemble': results['regime_ensemble']
             })
-            
+
             # ===== DATA PROCESSING STEPS GROUP =====
             self.logger.info('✂️ ===== STARTING DATA PROCESSING STEPS GROUP =====')
-            
+
             # Stage 8: Regime Data Splitting
             self.logger.info('✂️ Executing Stage 8: Regime Data Splitting')
             regime_data_splitting_result = await self.execute_sub_pipeline('regime_data_splitting', self.config)
             is_success, error_info = self._validate_sub_pipeline_result(regime_data_splitting_result, "Regime Data Splitting")
             if not is_success:
                 return error_info
-            
+
             # Extract data from consolidated artifact
             regime_splitting_data = regime_data_splitting_result.artifacts.get('regime_data_splitting_result', {})
             results['regime_data'] = regime_splitting_data.get('regime_data', {})
             results['regime_stats'] = regime_splitting_data.get('regime_stats', {})
-            
+
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_data': results['regime_data']
@@ -1112,7 +1112,7 @@ class MarketAnalysisSubPipeline:
                 'total_stages': 8,
                 'completed_stages': len(self.results)
             }
-            
+
         except Exception as e:
             self.logger.error(f'❌ Market Analysis Sub-Pipeline failed: {e}')
             import traceback
@@ -1200,7 +1200,7 @@ class MarketAnalysisSubPipeline:
                 'execution_time': sum(result.execution_time for result in self.results),
                 'completed_stages': len(self.results)
             }
-    
+
     def validate_config(self):
         """Validate the sub-pipeline configuration."""
         if not self.config.symbol:
@@ -1209,7 +1209,7 @@ class MarketAnalysisSubPipeline:
             raise ValueError("Exchange is required")
         if not self.config.timeframe:
             raise ValueError("Timeframe is required")
-    
+
     def get_status(self):
         """Get the current status of the sub-pipeline."""
         return {
@@ -1217,19 +1217,19 @@ class MarketAnalysisSubPipeline:
             'results_count': len(self.results),
             'completed_stages': [r.sub_pipeline_name for r in self.results if r.success]
         }
-    
+
     def _log_sub_pipeline_completion(self, sub_pipeline_name: str, config: SubPipelineConfig, artifacts: Dict[str, Any]):
         """Log sub-pipeline completion with artifacts summary."""
         artifact_count = len(artifacts)
         artifact_keys = list(artifacts.keys())
-        
+
         self.logger.info(f"✅ {sub_pipeline_name} completed successfully")
         # Ensure logs reflect single artifact expectation for nas_tas_clustering
         if sub_pipeline_name == 'nas_tas_clustering' and artifact_count > 1:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys} (note: consolidated into single artifact group)")
         else:
             self.logger.info(f"📊 Generated {artifact_count} artifacts: {artifact_keys}")
-        
+
         # Log artifact sizes for monitoring
         for key, value in artifacts.items():
             if isinstance(value, (list, dict)):
@@ -1240,32 +1240,32 @@ class MarketAnalysisSubPipeline:
                 self.logger.info(f"  📄 {key}: {size} characters")
             else:
                 self.logger.info(f"  📦 {key}: {type(value).__name__}")
-    
+
     async def execute_sub_pipeline(
-        self, 
-        sub_pipeline_name: str, 
+        self,
+        sub_pipeline_name: str,
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
         Execute a specific sub-pipeline using the component system.
-        
+
         Args:
             sub_pipeline_name: Name of the sub-pipeline to execute
             config: Configuration for the sub-pipeline
-            
+
         Returns:
             SubPipelineResult with execution details
         """
         self._prepare_filesystem(config)
         start_time = datetime.now()
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
-        
+
         try:
             # Load market data if not already available
             if self._current_data is None:
                 self.logger.info('📊 Loading market data for single-stage sub-pipeline execution...')
                 await self._load_market_data(config)
-            
+
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
             # Enforce 4h timeframe for Regime components only (log warning if overriding)
@@ -1279,13 +1279,13 @@ class MarketAnalysisSubPipeline:
                 if component_config.timeframe != '1m':
                     self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 1m")
                 component_config.timeframe = '1m'
-            
+
             # Create component using factory
             component = self.component_factory.create_component(sub_pipeline_name, component_config)
-            
+
             if component is None:
                 raise ValueError(f"Component '{sub_pipeline_name}' not found in factory")
-            
+
             # Prepare pipeline state with accumulated artifacts
             pipeline_state_with_artifacts = self._current_pipeline_state.copy()
             pipeline_state_with_artifacts['artifacts'] = self._accumulated_artifacts.copy()
@@ -1313,25 +1313,25 @@ class MarketAnalysisSubPipeline:
             missing_params = [param for param in essential_params if param not in pipeline_state_with_artifacts]
             if missing_params:
                 self.logger.warning(f"⚠️ Some essential parameters were missing and added: {missing_params}")
-            
+
             # Execute component
             component_result = await component.execute(self._current_data, pipeline_state_with_artifacts)
-            
+
             # Accumulate artifacts from this execution
             if component_result.success and component_result.artifacts:
                 self._accumulated_artifacts.update(component_result.artifacts)
                 self.logger.info(f'📦 Accumulated {len(component_result.artifacts)} artifacts from {sub_pipeline_name}')
-                
+
                 # Log artifact persistence status
                 if component_result.metadata.get('artifacts_saved_persistently', False):
                     self.logger.info(f'💾 Artifacts from {sub_pipeline_name} saved persistently for cross-stage access')
                 else:
                     self.logger.warning(f'⚠️ Artifacts from {sub_pipeline_name} may not be persistently saved')
-            
+
             # Convert component result to sub-pipeline result
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             result = SubPipelineResult(
                 sub_pipeline_name=sub_pipeline_name,
                 status=SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED,
@@ -1342,22 +1342,22 @@ class MarketAnalysisSubPipeline:
                 metadata=component_result.metadata,
                 error_message=component_result.error_message
             )
-            
+
             # Store result
             self.results.append(result)
-            
+
             # Log completion
             if result.success:
                 self._log_sub_pipeline_completion(sub_pipeline_name, config, result.artifacts)
             else:
                 self.logger.error(f"❌ {sub_pipeline_name} failed: {result.error_message}")
-            
+
             return result
-            
+
         except Exception as e:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            
+
             result = SubPipelineResult(
                 sub_pipeline_name=sub_pipeline_name,
                 status=SubPipelineStatus.FAILED,
@@ -1366,13 +1366,13 @@ class MarketAnalysisSubPipeline:
                 duration_seconds=duration,
                 error_message=str(e)
             )
-            
+
             # Store result
             self.results.append(result)
-            
+
             self.logger.error(f"❌ {sub_pipeline_name} sub-pipeline failed: {e}")
             return result
-    
+
     def get_available_sub_pipelines(self, stage: Optional[Any] = None) -> List[str]:
         """Get list of available sub-pipelines for a given stage."""
         # Import here to avoid circular imports
@@ -1408,22 +1408,22 @@ class MarketAnalysisSubPipeline:
 
         # For other stages, return empty list (they have their own sub-pipelines)
         return []
-    
+
     def get_sub_pipeline_status(self, sub_pipeline_name: str) -> Optional[SubPipelineStatus]:
         """Get status of a specific sub-pipeline."""
         for result in self.results:
             if result.sub_pipeline_name == sub_pipeline_name:
                 return result.status
         return None
-    
+
     async def execute_sub_pipeline_with_next(
-        self, 
-        sub_pipeline_name: str, 
+        self,
+        sub_pipeline_name: str,
         config: SubPipelineConfig
     ) -> SubPipelineResult:
         """
         Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
-        
+
         This method provides automatic sequential execution of all market analysis steps:
         1. sr_parameter_optimization - Optimize SR detection levels
         2. sr_detection - Detect Support/Resistance levels
@@ -1435,47 +1435,47 @@ class MarketAnalysisSubPipeline:
         8. regime_data_splitting - Tag data by regimes
 
         When one step completes successfully, it automatically triggers the next step.
-        
+
         Args:
             sub_pipeline_name: Name of the sub-pipeline to execute (will trigger all subsequent steps)
             config: Configuration for the sub-pipeline
-            
+
         Returns:
             SubPipelineResult with execution details
         """
         self._prepare_filesystem(config)
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
-        
+
         # Check if we should execute only a single stage
         if config.single_stage_only:
             self.logger.info('🎯 Single stage execution mode - executing only the requested sub-pipeline')
             return await self.execute_sub_pipeline(sub_pipeline_name, config)
-        
+
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with sequential execution')
-        
+
         # Reset accumulated artifacts for new sequence
         self._accumulated_artifacts = {}
         self.logger.info('🔄 Reset accumulated artifacts for new execution sequence')
-        
+
         # Load market data if not already available
         if self._current_data is None:
             self.logger.info('📊 Loading market data for sub-pipeline execution...')
             await self._load_market_data(config)
-        
+
         # Define logical execution groups - ALL sub-pipelines in market_analysis stage
         sr_steps = [
             'sr_parameter_optimization',
-            'sr_detection', 
+            'sr_detection',
             'sr_clustering'
         ]
-        
+
         regime_steps = [
             'nas_tas_regime_discovery',
             'nas_tas_clustering',
             'regime_models_training',
             'regime_ensemble_training'
         ]
-        
+
         data_processing_steps = [
             'hybrid_nas_tas_regime_discovery',
             'nas_tas_clustering',
@@ -1483,22 +1483,22 @@ class MarketAnalysisSubPipeline:
             'regime_ensemble_training',
             'regime_data_splitting',
         ]
-        
+
         # Additional sub-pipelines that were missing
         additional_steps = [
             # cross_timeframe_analysis removed - replaced by interactive_feature_generation
         ]
-        
+
         # Complete execution sequence - ALL sub-pipelines in market_analysis stage
         execution_sequence = sr_steps + regime_steps + data_processing_steps + additional_steps
-        
+
         # Find the starting index
         try:
             start_index = execution_sequence.index(sub_pipeline_name)
         except ValueError:
             self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-        
+
         # Determine which group we're starting from
         current_group = None
         if sub_pipeline_name in sr_steps:
@@ -1513,15 +1513,15 @@ class MarketAnalysisSubPipeline:
         elif sub_pipeline_name in additional_steps:
             current_group = "Additional Steps"
             self.logger.info('🎯 Starting from additional steps group')
-        
+
         self.logger.info(f'📋 Execution sequence: {execution_sequence}')
         self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
-        
+
         # Execute sub-pipelines starting from the specified one
         results = []
         for i in range(start_index, len(execution_sequence)):
             pipeline_name = execution_sequence[i]
-            
+
             # Log group transitions
             if pipeline_name in sr_steps and current_group != "SR Steps":
                 self.logger.info('🔄 Transitioning to SR steps group')
@@ -1535,7 +1535,7 @@ class MarketAnalysisSubPipeline:
             elif pipeline_name in additional_steps and current_group != "Additional Steps":
                 self.logger.info('🔄 Transitioning to additional steps group')
                 current_group = "Additional Steps"
-            
+
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
@@ -1550,12 +1550,12 @@ class MarketAnalysisSubPipeline:
                 else:
                     result = await self.execute_sub_pipeline(pipeline_name, config)
                 results.append(result)
-                
+
                 # If this sub-pipeline failed, stop the sequence
                 if not result.success:
                     self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
                     break
-                    
+
             except Exception as e:
                 self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
                 # Create a failed result
@@ -1569,7 +1569,7 @@ class MarketAnalysisSubPipeline:
                 )
                 results.append(failed_result)
                 break
-        
+
         # Return the first result (the one that was requested)
         if results:
             return results[0]
@@ -1587,16 +1587,16 @@ class MarketAnalysisSubPipeline:
     async def _load_market_data(self, config: SubPipelineConfig) -> None:
         """
         Load market data for sub-pipeline execution.
-        
+
         Args:
             config: Sub-pipeline configuration containing symbol, exchange, timeframe, etc.
         """
         try:
             # Import the klines data loader
             from src.utils.data.klines_parquet import load_klines_from_parquet
-            
+
             self.logger.info(f'📊 Loading market data for {config.symbol} on {config.exchange} ({config.timeframe})')
-            
+
             # Get date filtering from config if available
             start_date = None
             end_date = None
@@ -1659,7 +1659,7 @@ class MarketAnalysisSubPipeline:
                     self.logger.info(f'📅 Light mode: Using fallback date range: {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
 
                 self.logger.info(f'📅 Light mode: Exactly 20 days of data for regime diversity')
-            
+
             # Load the klines data directly
             market_data = load_klines_from_parquet(
                 symbol=config.symbol.lower(),  # Convert to lowercase to match directory structure
@@ -1669,20 +1669,20 @@ class MarketAnalysisSubPipeline:
                 data_type="raw",  # Load raw klines data
                 data_dir=config.data_dir
             )
-            
+
             if market_data is None or market_data.empty:
                 raise ValueError(f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})")
-            
+
             self.logger.info(f'📊 Loaded full market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
-            
+
             # Skip additional date filtering since it's already handled at the pipeline configuration level
             # The KlinesParquetManager already applies the correct date filtering based on available data
             self.logger.info(f'📅 Date filtering already applied at pipeline level, using loaded data as-is')
-            
+
             self.logger.info(f'✅ Final market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')
             self.logger.info(f'📊 Data columns: {list(market_data.columns)}')
             self.logger.info(f'📅 Date range: {market_data.index.min()} to {market_data.index.max()}')
-            
+
             # Store the data for component communication
             self._current_data = market_data
             self._current_pipeline_state = {
@@ -1693,7 +1693,7 @@ class MarketAnalysisSubPipeline:
                 'timeframe': config.timeframe,
                 'data_dir': config.data_dir
             }
-            
+
         except Exception as e:
             self.logger.error(f'❌ Failed to load market data: {e}')
             raise
@@ -1701,24 +1701,24 @@ class MarketAnalysisSubPipeline:
     def _generate_basic_features(self, data: pd.DataFrame, regime_labels: List[int]) -> Tuple[np.ndarray, List[str]]:
         """
         Generate basic features similar to what regime models training does.
-        
+
         Args:
             data: Market data DataFrame
             regime_labels: List of regime labels
-            
+
         Returns:
             Tuple of (features_array, feature_names)
         """
         try:
             import numpy as np
-            
+
             # Basic feature generation logic would go here
             # For now, return empty arrays as placeholder
             features_array = np.array([])
             feature_names = []
-            
+
             return features_array, feature_names
-            
+
         except Exception as e:
             self.logger.error(f"Error generating basic features: {e}")
             raise
@@ -1750,7 +1750,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
     def get_execution_summary(self) -> Dict[str, Any]:
@@ -1776,16 +1776,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1804,8 +1804,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1822,13 +1822,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

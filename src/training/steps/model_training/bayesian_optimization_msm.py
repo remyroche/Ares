@@ -36,7 +36,6 @@ from src.training.steps.market_analysis.hmm_clustering.core.msm_clustering impor
 
 logger = logging.getLogger(__name__)
 
-
 class MSMOptimizationObjective(Enum):
     """Objectives for MSM optimization."""
     MSM_SCORE = "msm_score"
@@ -44,7 +43,6 @@ class MSMOptimizationObjective(Enum):
     CONNECTIVITY = "connectivity"
     STATIONARITY = "stationarity"
     IMPLIED_TIMESCALE = "implied_timescale"
-
 
 @dataclass
 class MSMOptimizationConfig:
@@ -71,7 +69,6 @@ class MSMOptimizationConfig:
     connectivity_threshold_max: float = 0.3  # Narrower range for efficiency
     ergodic_cutoff_min: float = 1e-6
     ergodic_cutoff_max: float = 1e-4  # Narrower range for efficiency
-
 
 class MSMBayesianOptimizer:
     """Bayesian optimization for MSM parameters - computationally efficient implementation."""
@@ -495,7 +492,6 @@ class MSMBayesianOptimizer:
             self.logger.warning(f"⚠️ MSM score calculation failed: {e}")
             return 0.0
 
-
 class AttentionNetworkOptimizer:
     """Bayesian optimization for attention network parameters."""
 
@@ -639,7 +635,6 @@ class AttentionNetworkOptimizer:
         except Exception as e:
             self.logger.warning(f"⚠️ Attention parameter evaluation failed: {e}")
             return -1.0
-
 
 class MetaLearnerOptimizer:
     """Bayesian optimization for meta-learner hyperparameters."""
@@ -857,7 +852,6 @@ class MetaLearnerOptimizer:
             self.logger.warning(f"⚠️ FinancialResNet creation failed: {e}")
             raise
 
-
 # Convenience functions
 def optimize_msm_parameters(X: np.ndarray, config: Optional[MSMOptimizationConfig] = None) -> Dict[str, Any]:
     """Optimize MSM parameters using Bayesian optimization.
@@ -874,7 +868,6 @@ def optimize_msm_parameters(X: np.ndarray, config: Optional[MSMOptimizationConfi
 
     optimizer = MSMBayesianOptimizer(config)
     return optimizer.optimize(X)
-
 
 def optimize_attention_network(X: np.ndarray, y: np.ndarray, base_model: Any,
                               config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -894,7 +887,6 @@ def optimize_attention_network(X: np.ndarray, y: np.ndarray, base_model: Any,
 
     optimizer = AttentionNetworkOptimizer(config)
     return optimizer.optimize(X, y, base_model)
-
 
 def optimize_meta_learner(base_models: List[Any], X: np.ndarray, y: np.ndarray,
                          config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -915,7 +907,6 @@ def optimize_meta_learner(base_models: List[Any], X: np.ndarray, y: np.ndarray,
     optimizer = MetaLearnerOptimizer(config)
     return optimizer.optimize(base_models, X, y)
 
-
 def optimize_deepscaler_parameters(X: np.ndarray, y: np.ndarray,
                                   config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Optimize DeepScaler parameters using Bayesian optimization.
@@ -933,7 +924,6 @@ def optimize_deepscaler_parameters(X: np.ndarray, y: np.ndarray,
 
     optimizer = DeepScalerOptimizer(config)
     return optimizer.optimize(X, y)
-
 
 def optimize_attention_network(X: np.ndarray, y: np.ndarray, base_model: Any,
                               config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -953,7 +943,6 @@ def optimize_attention_network(X: np.ndarray, y: np.ndarray, base_model: Any,
 
     optimizer = AttentionNetworkOptimizer(config)
     return optimizer.optimize(X, y, base_model)
-
 
 class DeepScalerOptimizer:
     """Bayesian optimization for DeepScaler hyperparameters."""

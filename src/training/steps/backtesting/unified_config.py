@@ -170,7 +170,6 @@ class LoggingConfig:
     enable_debug: bool = False
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-
 @dataclass
 class TrailingTPConfig:
     """Configuration for trailing take-profit simulations."""
@@ -180,7 +179,6 @@ class TrailingTPConfig:
     volatility_sensitivity: float = 1.0
     max_latency_seconds: int = 120
     noise_levels: List[float] = field(default_factory=lambda: [0.0005, 0.001])
-
 
 @dataclass
 class ScenarioSweepConfig:
@@ -219,7 +217,7 @@ class ScenarioSweepConfig:
 class UnifiedBacktestingConfig:
     """
     Unified configuration for all backtesting components.
-    
+
     This configuration eliminates duplication by centralizing all common
     parameters and providing component-specific configurations.
     """
@@ -227,7 +225,7 @@ class UnifiedBacktestingConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     force_rerun: bool = False
     single_stage_only: bool = False
-    
+
     # Component configurations
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
     data: DataConfig = field(default_factory=DataConfig)
@@ -243,7 +241,7 @@ class UnifiedBacktestingConfig:
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Metadata
     created_at: datetime = field(default_factory=datetime.now)
     version: str = "1.0.0"
@@ -252,11 +250,11 @@ class UnifiedBacktestingConfig:
 class ConfigurationBuilder:
     """
     Builder pattern for creating unified backtesting configurations.
-    
+
     This builder provides a fluent interface for creating configurations
     with sensible defaults and easy customization.
     """
-    
+
     def __init__(self):
         """Initialize the configuration builder."""
         self._config = UnifiedBacktestingConfig()
@@ -295,87 +293,87 @@ class ConfigurationBuilder:
                     merged_scenarios[name] = custom_cfg
 
         self._config.custom_params['volatility_scenarios'] = merged_scenarios
-    
+
     def set_mode(self, mode: ExecutionMode) -> 'ConfigurationBuilder':
         """Set the execution mode."""
         self._config.mode = mode
         return self
-    
+
     def set_symbol(self, symbol: str) -> 'ConfigurationBuilder':
         """Set the trading symbol."""
         self._config.data.symbol = symbol
         return self
-    
+
     def set_exchange(self, exchange: str) -> 'ConfigurationBuilder':
         """Set the exchange."""
         self._config.data.exchange = exchange
         return self
-    
+
     def set_timeframe(self, timeframe: str) -> 'ConfigurationBuilder':
         """Set the timeframe."""
         self._config.data.timeframe = timeframe
         return self
-    
+
     def set_data_dir(self, data_dir: str) -> 'ConfigurationBuilder':
         """Set the data directory."""
         self._config.data.data_dir = data_dir
         return self
-    
+
     def set_date_range(self, start_date: str, end_date: str) -> 'ConfigurationBuilder':
         """Set the date range."""
         self._config.data.start_date = start_date
         self._config.data.end_date = end_date
         return self
-    
+
     def set_hardware_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set hardware configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.hardware, key):
                 setattr(self._config.hardware, key, value)
         return self
-    
+
     def set_validation_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set validation configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.validation, key):
                 setattr(self._config.validation, key, value)
         return self
-    
+
     def set_backtesting_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set backtesting configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.backtesting, key):
                 setattr(self._config.backtesting, key, value)
         return self
-    
+
     def set_monte_carlo_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set Monte Carlo configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.monte_carlo, key):
                 setattr(self._config.monte_carlo, key, value)
         return self
-    
+
     def set_ab_testing_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set A/B testing configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.ab_testing, key):
                 setattr(self._config.ab_testing, key, value)
         return self
-    
+
     def set_optimization_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set optimization configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.optimization, key):
                 setattr(self._config.optimization, key, value)
         return self
-    
+
     def set_reporting_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set reporting configuration."""
         for key, value in kwargs.items():
             if hasattr(self._config.reporting, key):
                 setattr(self._config.reporting, key, value)
         return self
-    
+
     def set_logging_config(self, **kwargs) -> 'ConfigurationBuilder':
         """Set logging configuration."""
         for key, value in kwargs.items():
@@ -407,73 +405,73 @@ class ConfigurationBuilder:
         self._config.scenario_sweep.scenarios = scenarios
         self._ensure_custom_defaults()
         return self
-    
+
     def enable_gpu_acceleration(self, enabled: bool = True) -> 'ConfigurationBuilder':
         """Enable/disable GPU acceleration."""
         self._config.hardware.enable_gpu_acceleration = enabled
         return self
-    
+
     def enable_parallel_processing(self, enabled: bool = True, max_workers: int = 4) -> 'ConfigurationBuilder':
         """Enable/disable parallel processing."""
         self._config.hardware.enable_parallel_processing = enabled
         self._config.hardware.max_workers = max_workers
         return self
-    
+
     def enable_validation(self, enabled: bool = True) -> 'ConfigurationBuilder':
         """Enable/disable validation."""
         self._config.validation.validation_enabled = enabled
         return self
-    
+
     def enable_monitoring(self, enabled: bool = True) -> 'ConfigurationBuilder':
         """Enable/disable monitoring."""
         self._config.validation.monitoring_enabled = enabled
         return self
-    
+
     def set_initial_capital(self, capital: float) -> 'ConfigurationBuilder':
         """Set initial capital."""
         self._config.backtesting.initial_capital = capital
         return self
-    
+
     def set_commission_rate(self, rate: float) -> 'ConfigurationBuilder':
         """Set commission rate."""
         self._config.backtesting.commission_rate = rate
         return self
-    
+
     def set_slippage_rate(self, rate: float) -> 'ConfigurationBuilder':
         """Set slippage rate."""
         self._config.backtesting.slippage_rate = rate
         return self
-    
+
     def set_n_simulations(self, n: int) -> 'ConfigurationBuilder':
         """Set number of Monte Carlo simulations."""
         self._config.monte_carlo.n_simulations = n
         return self
-    
+
     def set_confidence_level(self, level: float) -> 'ConfigurationBuilder':
         """Set confidence level."""
         self._config.monte_carlo.confidence_level = level
         return self
-    
+
     def set_significance_level(self, level: float) -> 'ConfigurationBuilder':
         """Set significance level for A/B testing."""
         self._config.ab_testing.significance_level = level
         return self
-    
+
     def set_n_trials(self, n: int) -> 'ConfigurationBuilder':
         """Set number of optimization trials."""
         self._config.optimization.n_trials = n
         return self
-    
+
     def set_output_dir(self, directory: str) -> 'ConfigurationBuilder':
         """Set output directory."""
         self._config.reporting.output_dir = directory
         return self
-    
+
     def set_output_format(self, format: str) -> 'ConfigurationBuilder':
         """Set output format."""
         self._config.reporting.output_format = format
         return self
-    
+
     def for_testing(self) -> 'ConfigurationBuilder':
         """Configure for testing (BLANK mode with minimal resources)."""
         self._config.mode = ExecutionMode.BLANK
@@ -484,7 +482,7 @@ class ConfigurationBuilder:
         self._config.monte_carlo.n_simulations = 100
         self._config.optimization.n_trials = 10
         return self
-    
+
     def for_development(self) -> 'ConfigurationBuilder':
         """Configure for development (LIGHT mode with moderate resources)."""
         self._config.mode = ExecutionMode.LIGHT
@@ -495,7 +493,7 @@ class ConfigurationBuilder:
         self._config.monte_carlo.n_simulations = 500
         self._config.optimization.n_trials = 50
         return self
-    
+
     def for_production(self) -> 'ConfigurationBuilder':
         """Configure for production (FULL mode with all resources)."""
         self._config.mode = ExecutionMode.FULL
@@ -507,18 +505,18 @@ class ConfigurationBuilder:
         self._config.monte_carlo.n_simulations = 1000
         self._config.optimization.n_trials = 100
         return self
-    
+
     def build(self) -> UnifiedBacktestingConfig:
         """Build the final configuration."""
         # Validate configuration
         self._validate_config()
-        
+
         # Set description if not provided
         if not self._config.description:
             self._config.description = f"Backtesting configuration for {self._config.data.symbol} on {self._config.data.exchange}"
-        
+
         return self._config
-    
+
     def _validate_config(self) -> None:
         """Validate the configuration."""
         try:
@@ -529,11 +527,11 @@ class ConfigurationBuilder:
                 raise ValueError("Exchange is required")
             if not self._config.data.timeframe:
                 raise ValueError("Timeframe is required")
-            
+
             # Validate hardware configuration
             if self._config.hardware.max_workers < 1:
                 raise ValueError("max_workers must be at least 1")
-            
+
             # Validate backtesting configuration
             if self._config.backtesting.initial_capital <= 0:
                 raise ValueError("initial_capital must be positive")
@@ -541,25 +539,25 @@ class ConfigurationBuilder:
                 raise ValueError("commission_rate must be between 0 and 1")
             if not 0 <= self._config.backtesting.slippage_rate <= 1:
                 raise ValueError("slippage_rate must be between 0 and 1")
-            
+
             # Validate Monte Carlo configuration
             if self._config.monte_carlo.n_simulations < 1:
                 raise ValueError("n_simulations must be at least 1")
             if not 0 < self._config.monte_carlo.confidence_level < 1:
                 raise ValueError("confidence_level must be between 0 and 1")
-            
+
             # Validate A/B testing configuration
             if not 0 < self._config.ab_testing.significance_level < 1:
                 raise ValueError("significance_level must be between 0 and 1")
             if not 0 < self._config.ab_testing.power < 1:
                 raise ValueError("power must be between 0 and 1")
-            
+
             # Validate optimization configuration
             if self._config.optimization.n_trials < 1:
                 raise ValueError("n_trials must be at least 1")
-            
+
             logger.info("✅ Configuration validation passed")
-            
+
         except Exception as e:
             logger.error(f"❌ Configuration validation failed: {e}")
             raise
@@ -584,20 +582,20 @@ def create_production_config() -> UnifiedBacktestingConfig:
 def create_custom_config(**kwargs) -> UnifiedBacktestingConfig:
     """Create a custom configuration."""
     builder = ConfigurationBuilder()
-    
+
     # Apply custom parameters
     for key, value in kwargs.items():
         if hasattr(builder, f"set_{key}"):
             getattr(builder, f"set_{key}")(value)
         else:
             builder.set_custom_params(**{key: value})
-    
+
     return builder.build()
 
 # Configuration presets
 class ConfigurationPresets:
     """Predefined configuration presets for common use cases."""
-    
+
     @staticmethod
     def crypto_day_trading() -> UnifiedBacktestingConfig:
         """Configuration for crypto day trading."""
@@ -610,7 +608,7 @@ class ConfigurationPresets:
                 .set_slippage_rate(0.0005)
                 .for_production()
                 .build())
-    
+
     @staticmethod
     def crypto_swing_trading() -> UnifiedBacktestingConfig:
         """Configuration for crypto swing trading."""
@@ -623,7 +621,7 @@ class ConfigurationPresets:
                 .set_slippage_rate(0.0005)
                 .for_production()
                 .build())
-    
+
     @staticmethod
     def forex_scalping() -> UnifiedBacktestingConfig:
         """Configuration for forex scalping."""
@@ -636,7 +634,7 @@ class ConfigurationPresets:
                 .set_slippage_rate(0.0001)
                 .for_production()
                 .build())
-    
+
     @staticmethod
     def stock_swing_trading() -> UnifiedBacktestingConfig:
         """Configuration for stock swing trading."""

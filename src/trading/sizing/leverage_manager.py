@@ -31,45 +31,45 @@ class LeverageResult:
 class LeverageManager:
     """
     Simplified leverage manager using ML confidence scores.
-    
+
     Based on existing tactician approach:
     - Uses ML confidence scores for leverage calculation
     - Simple confidence-based leverage with configurable limits
     - Leverage capped between min and max values
     """
-    
+
     def __init__(self, config: TradingConfig):
         self.config = config
         self.logger = logger.getChild('LeverageManager')
-        
+
         # Leverage configuration - using centralized constants
         self.min_leverage: float = MIN_LEVERAGE  # Minimum leverage (5x)
         self.max_leverage: float = MAX_LEVERAGE  # Maximum leverage (100x)
         self.leverage_multiplier: float = 1.0  # Leverage multiplier
         self.leverage_combined_threshold: float = 0.75  # Minimum confidence threshold
-        
+
         # State management
         self.is_initialized: bool = False
         self.leverage_history: list[dict[str, Any]] = []
-    
+
     @handles_errors
     async def initialize(self) -> bool:
         """Initialize leverage manager."""
         try:
             self.logger.info("Initializing Leverage Manager...")
-            
+
             # Validate configuration
             if not self._validate_configuration():
                 return False
-            
+
             self.is_initialized = True
             self.logger.info("✅ Leverage Manager initialized successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Leverage Manager: {e}")
             return False
-    
+
     def _validate_configuration(self) -> bool:
         """Validate leverage manager configuration."""
         try:
@@ -86,7 +86,7 @@ class LeverageManager:
         except Exception as e:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
-    
+
     @handles_errors
     @log_execution_time()
     @traced(span_name="calculate_leverage")
@@ -101,7 +101,7 @@ class LeverageManager:
     ) -> LeverageResult:
         """
         Calculate leverage using ML confidence scores with simplified approach.
-        
+
         Args:
             symbol: Trading symbol
             ml_predictions: ML model predictions
@@ -109,36 +109,36 @@ class LeverageManager:
             account_balance: Account balance
             analyst_confidence: Analyst confidence score
             tactician_confidence: Tactician confidence score
-            
+
         Returns:
             LeverageResult: Leverage recommendation
         """
         try:
             if not self.is_initialized:
                 raise RuntimeError("Leverage Manager not initialized")
-            
+
             # Extract ML predictions
             combined_confidence = ml_predictions.get('combined_confidence', 0.5)
             intensity = ml_predictions.get('intensity', 1.0)
             reliability = ml_predictions.get('reliability', 1.0)
             risk_score = ml_predictions.get('risk_score', 0.0)
-            
+
             # Simplified leverage calculation: ML confidence * multiplier, capped between min/max
             base_leverage = combined_confidence * self.leverage_multiplier
-            
+
             # Apply intensity and reliability adjustments
             intensity_factor = 0.8 + (intensity * 0.4)  # 0.8 to 1.2
             reliability_factor = 0.8 + (reliability * 0.4)  # 0.8 to 1.2
-            
+
             # Apply risk adjustment (higher risk = lower leverage)
             risk_factor = 1.0 - (risk_score * 0.3)  # 0.7 to 1.0
-            
+
             # Calculate final leverage
             adjusted_leverage = base_leverage * intensity_factor * reliability_factor * risk_factor
             # Validate and clamp leverage to centralized limits
             final_leverage = validate_leverage(adjusted_leverage)
             final_leverage = max(self.min_leverage, min(self.max_leverage, final_leverage))
-            
+
             # Create result
             result = LeverageResult(
                 symbol=symbol,
@@ -161,7 +161,7 @@ class LeverageManager:
                     'risk_score': risk_score
                 }
             )
-            
+
             # Store in history
             self.leverage_history.append({
                 'timestamp': datetime.now(),
@@ -172,19 +172,19 @@ class LeverageManager:
                 'current_price': current_price,
                 'account_balance': account_balance
             })
-            
+
             # Maintain history size
             if len(self.leverage_history) > 100:
                 self.leverage_history = self.leverage_history[-100:]
-            
+
             self.logger.debug(f"Leverage calculated for {symbol}: {final_leverage:.1f}x (confidence: {combined_confidence:.3f})")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Leverage calculation failed for {symbol}: {e}")
             raise
-    
+
     def _generate_leverage_reason(self, final_leverage: float, combined_confidence: float, base_leverage: float) -> str:
         """Generate reason for leverage sizing decision."""
         try:
@@ -199,13 +199,13 @@ class LeverageManager:
         except Exception as e:
             self.logger.error(f"❌ Error generating leverage reason: {e}")
             return f'Leverage: {final_leverage:.1f}x (Error generating reason)'
-    
+
     def get_leverage_history(self, limit: Optional[int] = None) -> list[dict[str, Any]]:
         """Get leverage calculation history."""
         if limit:
             return self.leverage_history[-limit:]
         return self.leverage_history.copy()
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for leverage management."""
         try:
@@ -217,12 +217,12 @@ class LeverageManager:
                     'min_leverage': self.min_leverage,
                     'max_leverage': self.max_leverage
                 }
-            
+
             recent_history = self.leverage_history[-50:]  # Last 50 calculations
-            
+
             avg_leverage = sum(h['final_leverage'] for h in recent_history) / len(recent_history)
             avg_confidence = sum(h['combined_confidence'] for h in recent_history) / len(recent_history)
-            
+
             return {
                 'total_calculations': len(self.leverage_history),
                 'avg_leverage': avg_leverage,
@@ -232,11 +232,11 @@ class LeverageManager:
                 'leverage_multiplier': self.leverage_multiplier,
                 'leverage_combined_threshold': self.leverage_combined_threshold
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
-    
+
     def update_configuration(self, new_config: Dict[str, Any]):
         """Update leverage configuration."""
         try:
@@ -248,19 +248,19 @@ class LeverageManager:
                 self.leverage_multiplier = new_config['leverage_multiplier']
             if 'leverage_combined_threshold' in new_config:
                 self.leverage_combined_threshold = new_config['leverage_combined_threshold']
-            
+
             self.logger.info("✅ Leverage configuration updated")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to update leverage configuration: {e}")
-    
+
     async def stop(self):
         """Stop leverage manager."""
         try:
             self.logger.info("🛑 Stopping Leverage Manager...")
             self.is_initialized = False
             self.logger.info("✅ Leverage Manager stopped successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error stopping Leverage Manager: {e}")
 

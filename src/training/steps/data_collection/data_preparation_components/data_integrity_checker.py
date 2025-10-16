@@ -30,25 +30,25 @@ class DataIntegrityChecker:
 
     async def check_integrity(self, data: pd.DataFrame, reference_data: Optional[pd.DataFrame]=None, metadata: Optional[dict[str, Any]]=None) -> dict[str, Any]:
         """Perform comprehensive integrity checks.
-        
+
         Args:
             data: Primary DataFrame to check
             reference_data: Optional reference data for comparison
             metadata: Optional metadata about the data
-            
+
         Returns:
             dict: Integrity check results
         """
         self.logger.info('🔍 Starting comprehensive data integrity check...')
         self.logger.info(f'📊 Data shape: {data.shape if data is not None else "None"}')
-        
+
         if data is not None:
             self.logger.info(f'📋 Data columns: {list(data.columns)}')
             if hasattr(data.index, 'min') and hasattr(data.index, 'max'):
                 self.logger.info(f'📅 Data time range: {data.index.min()} to {data.index.max()}')
-        
+
         results = {'is_valid': True, 'integrity_score': 100.0, 'checks_performed': [], 'violations': [], 'warnings': [], 'summary': {}}
-        
+
         try:
             # Structure integrity check (always performed)
             self.logger.info('🔍 Performing structure integrity check...')
@@ -56,7 +56,7 @@ class DataIntegrityChecker:
             results['checks_performed'].append('structure_integrity')
             results['summary']['structure'] = structure_results
             self.logger.info(f'✅ Structure check complete: {"PASSED" if structure_results.get("is_valid", True) else "FAILED"}')
-            
+
             # Temporal integrity check
             if self.config['check_temporal_integrity']:
                 self.logger.info('🔍 Performing temporal integrity check...')
@@ -66,7 +66,7 @@ class DataIntegrityChecker:
                 self.logger.info(f'✅ Temporal check complete: {"PASSED" if temporal_results.get("is_valid", True) else "FAILED"}')
             else:
                 self.logger.info('⏭️ Temporal integrity check disabled')
-                
+
             # Cross-field integrity check
             if self.config['check_cross_field_integrity']:
                 self.logger.info('🔍 Performing cross-field integrity check...')
@@ -76,7 +76,7 @@ class DataIntegrityChecker:
                 self.logger.info(f'✅ Cross-field check complete: {"PASSED" if cross_field_results.get("is_valid", True) else "FAILED"}')
             else:
                 self.logger.info('⏭️ Cross-field integrity check disabled')
-                
+
             # Business rules check
             if self.config['check_business_rules']:
                 self.logger.info('🔍 Performing business rules check...')
@@ -86,7 +86,7 @@ class DataIntegrityChecker:
                 self.logger.info(f'✅ Business rules check complete: {"PASSED" if business_rules_results.get("is_valid", True) else "FAILED"}')
             else:
                 self.logger.info('⏭️ Business rules check disabled')
-                
+
             # Referential integrity check
             if reference_data is not None and self.config['check_referential_integrity']:
                 self.logger.info('🔍 Performing referential integrity check...')
@@ -100,7 +100,7 @@ class DataIntegrityChecker:
                     self.logger.info('⏭️ Referential integrity check skipped (no reference data)')
                 else:
                     self.logger.info('⏭️ Referential integrity check disabled')
-            
+
             # Aggregate results
             self.logger.info('📊 Aggregating integrity check results...')
             for check_name, check_results in results['summary'].items():
@@ -110,27 +110,27 @@ class DataIntegrityChecker:
                         self.logger.warning(f'⚠️ {check_name} check failed')
                     results['violations'].extend(check_results.get('violations', []))
                     results['warnings'].extend(check_results.get('warnings', []))
-                    
+
             # Calculate integrity score
             results['integrity_score'] = self._calculate_integrity_score(results)
             self.logger.info(f'📊 Integrity score: {results["integrity_score"]:.2f}%')
-            
+
             # Calculate data fingerprint
             self.logger.info('🔍 Calculating data fingerprint...')
             results['data_fingerprint'] = self._calculate_data_fingerprint(data)
             self.logger.info(f'🔑 Data fingerprint: {results["data_fingerprint"]}')
-            
+
             # Summary logging
             total_violations = len(results['violations'])
             total_warnings = len(results['warnings'])
             checks_performed = len(results['checks_performed'])
-            
+
             self.logger.info(f'📋 Integrity check summary:')
             self.logger.info(f'   - Checks performed: {checks_performed}')
             self.logger.info(f'   - Violations found: {total_violations}')
             self.logger.info(f'   - Warnings found: {total_warnings}')
             self.logger.info(f'   - Overall result: {"PASSED" if results["is_valid"] else "FAILED"}')
-            
+
             if total_violations > 0:
                 self.logger.error(f'❌ Integrity check FAILED with {total_violations} violations')
                 for i, violation in enumerate(results['violations'][:5]):  # Show first 5 violations
@@ -139,20 +139,20 @@ class DataIntegrityChecker:
                     self.logger.error(f'   ... and {total_violations - 5} more violations')
             else:
                 self.logger.info('✅ Integrity check PASSED - no violations found')
-                
+
             if total_warnings > 0:
                 self.logger.warning(f'⚠️ {total_warnings} warnings found during integrity check')
                 for i, warning in enumerate(results['warnings'][:3]):  # Show first 3 warnings
                     self.logger.warning(f'   {i+1}. {warning}')
                 if total_warnings > 3:
                     self.logger.warning(f'   ... and {total_warnings - 3} more warnings')
-                    
+
         except Exception as e:
             self.logger.error(f'❌ Integrity check failed with exception: {e}')
             self.logger.exception('Full error details:')
             results['is_valid'] = False
             results['error'] = str(e)
-            
+
         return results
 
     async def _check_structure_integrity(self, data: pd.DataFrame) -> dict[str, Any]:
@@ -395,12 +395,12 @@ class DataIntegrityChecker:
 
     async def verify_data_consistency(self, data1: pd.DataFrame, data2: pd.DataFrame, check_type: str='exact') -> dict[str, Any]:
         """Verify consistency between two datasets.
-        
+
         Args:
             data1: First dataset
             data2: Second dataset
             check_type: Type of check ('exact', 'statistical', 'structural')
-            
+
         Returns:
             dict: Consistency verification results
         """

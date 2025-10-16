@@ -15,16 +15,13 @@ from code_quality.core.config import (
     ReportingConfig,
 )
 
-
 def save_code_quality_config(config: CodeQualityConfig, filepath: Union[str, Path]) -> None:
     _save_to_file(config, filepath)
-
 
 def load_code_quality_config(
     filepath: Union[str, Path], target_cls: Type[CodeQualityConfig] = CodeQualityConfig
 ) -> CodeQualityConfig:
     return _load_from_file(filepath, target_cls)  # type: ignore[return-value]
-
 
 __all__ = [
     "CodeQualityConfig",
@@ -33,4 +30,3 @@ __all__ = [
     "save_code_quality_config",
     "load_code_quality_config",
 ]
-

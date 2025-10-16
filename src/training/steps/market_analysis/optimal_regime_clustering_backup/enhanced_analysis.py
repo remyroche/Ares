@@ -23,7 +23,7 @@ class DimensionCVMetrics:
     volatility_cv: float
     trend_cv: float
     momentum_cv: float
-    
+
     def to_dict(self) -> Dict[str, float]:
         return {
             "volume_cv": self.volume_cv,
@@ -42,7 +42,7 @@ class DataQualityCriteria:
     outlier_detection_success: bool
     cluster_separation_quality: bool
     statistical_significance: bool
-    
+
     def get_completeness_score(self) -> float:
         """Calculate completeness score as percentage of criteria met."""
         criteria = [
@@ -55,7 +55,7 @@ class DataQualityCriteria:
             self.statistical_significance
         ]
         return sum(criteria) / len(criteria)
-    
+
     def get_failed_criteria(self) -> List[str]:
         """Get list of failed criteria."""
         failed = []
@@ -68,11 +68,11 @@ class DataQualityCriteria:
             "cluster_separation_quality": self.cluster_separation_quality,
             "statistical_significance": self.statistical_significance
         }
-        
+
         for criterion, passed in criteria_map.items():
             if not passed:
                 failed.append(criterion)
-        
+
         return failed
 
 def calculate_dimension_cv_metrics(
@@ -81,11 +81,11 @@ def calculate_dimension_cv_metrics(
 ) -> DimensionCVMetrics:
     """
     Calculate coefficient of variation for each of the 4 dimensions.
-    
+
     Args:
         features: Feature matrix with shape (n_samples, n_features)
         feature_names: Names of the feature dimensions
-        
+
     Returns:
         DimensionCVMetrics object with CV values for each dimension
     """
@@ -96,36 +96,36 @@ def calculate_dimension_cv_metrics(
             padded_features = np.zeros((features.shape[0], 4))
             padded_features[:, :features.shape[1]] = features
             features = padded_features
-        
+
         # Calculate CV for each dimension
         cv_metrics = []
         for i in range(4):
             feature_values = features[:, i]
-            
+
             # Remove any NaN or infinite values
             feature_values = feature_values[np.isfinite(feature_values)]
-            
+
             if len(feature_values) == 0:
                 logger.warning(f"No valid values for dimension {i}")
                 cv_metrics.append(0.0)
                 continue
-            
+
             mean_val = np.mean(feature_values)
             std_val = np.std(feature_values)
-            
+
             if mean_val == 0:
                 cv_metrics.append(0.0)
             else:
                 cv = std_val / abs(mean_val)
                 cv_metrics.append(cv)
-        
+
         return DimensionCVMetrics(
             volume_cv=cv_metrics[0],
             volatility_cv=cv_metrics[1],
             trend_cv=cv_metrics[2],
             momentum_cv=cv_metrics[3]
         )
-        
+
     except Exception as e:
         logger.error(f"Error calculating dimension CV metrics: {e}")
         return DimensionCVMetrics(0.0, 0.0, 0.0, 0.0)
@@ -138,13 +138,13 @@ def assess_data_quality_criteria(
 ) -> DataQualityCriteria:
     """
     Assess data quality against 7 specific criteria.
-    
+
     Args:
         market_data: Original market data DataFrame
         features: Feature matrix used for clustering
         labels: Cluster labels
         config: Configuration dictionary
-        
+
     Returns:
         DataQualityCriteria object with assessment results
     """
@@ -157,7 +157,7 @@ def assess_data_quality_criteria(
             not market_data['close'].isna().all() and
             market_data['close'].count() > 0
         )
-        
+
         # 2. Volume data completeness
         volume_data_completeness = (
             'volume' in market_data.columns and
@@ -165,7 +165,7 @@ def assess_data_quality_criteria(
             market_data['volume'].count() > 0 and
             (market_data['volume'] > 0).any()
         )
-        
+
         # 3. Temporal continuity (check for gaps in time series)
         temporal_continuity = True
         if 'timestamp' in market_data.columns:
@@ -173,18 +173,18 @@ def assess_data_quality_criteria(
                 # Convert to datetime if not already
                 timestamps = pd.to_datetime(market_data['timestamp'])
                 time_diffs = timestamps.diff().dropna()
-                
+
                 # Check if there are reasonable time gaps (not too large)
                 expected_interval = pd.Timedelta(minutes=15)  # 15m timeframe
                 max_reasonable_gap = expected_interval * 10  # Allow up to 10x normal gap
-                
+
                 large_gaps = time_diffs > max_reasonable_gap
                 gap_percentage = large_gaps.sum() / len(time_diffs)
                 temporal_continuity = gap_percentage < 0.05  # Less than 5% large gaps
-                
+
             except Exception:
                 temporal_continuity = False
-        
+
         # 4. Feature calculation success
         feature_calculation_success = (
             features is not None and
@@ -193,7 +193,7 @@ def assess_data_quality_criteria(
             not np.isnan(features).all() and
             np.isfinite(features).all()
         )
-        
+
         # 5. Outlier detection success
         outlier_detection_success = True
         if features is not None and len(features) > 0:
@@ -202,22 +202,22 @@ def assess_data_quality_criteria(
                 for i in range(min(4, features.shape[1])):
                     feature_values = features[:, i]
                     finite_values = feature_values[np.isfinite(feature_values)]
-                    
+
                     if len(finite_values) > 0:
                         # Check for extreme outliers (beyond 5 standard deviations)
                         mean_val = np.mean(finite_values)
                         std_val = np.std(finite_values)
-                        
+
                         if std_val > 0:
                             extreme_outliers = np.abs(finite_values - mean_val) > (5 * std_val)
                             outlier_percentage = extreme_outliers.sum() / len(finite_values)
-                            
+
                             if outlier_percentage > 0.1:  # More than 10% extreme outliers
                                 outlier_detection_success = False
                                 break
             except Exception:
                 outlier_detection_success = False
-        
+
         # 6. Cluster separation quality
         cluster_separation_quality = True
         if labels is not None and len(labels) > 0 and len(np.unique(labels)) > 1:
@@ -228,13 +228,13 @@ def assess_data_quality_criteria(
                     if finite_mask.sum() > 1:
                         finite_features = features[finite_mask]
                         finite_labels = labels[finite_mask]
-                        
+
                         if len(np.unique(finite_labels)) > 1:
                             silhouette = silhouette_score(finite_features, finite_labels)
                             cluster_separation_quality = silhouette > -0.5  # Reasonable separation
             except Exception:
                 cluster_separation_quality = False
-        
+
         # 7. Statistical significance
         statistical_significance = (
             features is not None and
@@ -243,7 +243,7 @@ def assess_data_quality_criteria(
             labels is not None and
             len(labels) > 0
         )
-        
+
         return DataQualityCriteria(
             price_data_completeness=price_data_completeness,
             volume_data_completeness=volume_data_completeness,
@@ -253,7 +253,7 @@ def assess_data_quality_criteria(
             cluster_separation_quality=cluster_separation_quality,
             statistical_significance=statistical_significance
         )
-        
+
     except Exception as e:
         logger.error(f"Error assessing data quality criteria: {e}")
         return DataQualityCriteria(False, False, False, False, False, False, False)
@@ -268,7 +268,7 @@ def create_enhanced_statistical_summary(
 ) -> Dict[str, Any]:
     """
     Create enhanced statistical summary with CV metrics and detailed data quality assessment.
-    
+
     Args:
         market_data: Original market data DataFrame
         features: Feature matrix used for clustering
@@ -276,17 +276,17 @@ def create_enhanced_statistical_summary(
         cluster_statistics: Cluster statistics object
         quality_metrics: Quality metrics dictionary
         config: Configuration dictionary
-        
+
     Returns:
         Enhanced statistical summary dictionary
     """
     try:
         # Calculate dimension CV metrics
         cv_metrics = calculate_dimension_cv_metrics(features)
-        
+
         # Assess data quality criteria
         quality_criteria = assess_data_quality_criteria(market_data, features, labels, config)
-        
+
         # Calculate cluster-level CV metrics for each dimension
         cluster_dimension_cv = {}
         if labels is not None and len(labels) > 0:
@@ -295,11 +295,11 @@ def create_enhanced_statistical_summary(
                 if cluster_id >= 0:  # Skip noise points
                     cluster_mask = labels == cluster_id
                     cluster_features = features[cluster_mask]
-                    
+
                     if len(cluster_features) > 0:
                         cluster_cv = calculate_dimension_cv_metrics(cluster_features)
                         cluster_dimension_cv[f"cluster_{cluster_id}"] = cluster_cv.to_dict()
-        
+
         # Create enhanced statistical summary
         enhanced_summary = {
             "data_quality_assessment": {
@@ -317,7 +317,7 @@ def create_enhanced_statistical_summary(
                     "statistical_significance": quality_criteria.statistical_significance
                 }
             },
-            
+
             "dimension_cv_metrics": {
                 "overall_cv": cv_metrics.to_dict(),
                 "cluster_level_cv": cluster_dimension_cv,
@@ -328,22 +328,22 @@ def create_enhanced_statistical_summary(
                     "momentum_cv": _interpret_cv_value(cv_metrics.momentum_cv, "momentum")
                 }
             },
-            
+
             "statistical_significance": {
                 "sample_size_adequacy": "adequate" if len(features) >= 1000 else "minimal" if len(features) >= 100 else "insufficient",
                 "statistical_power": min(1.0, len(features) / 1000.0),  # Normalize to 1000 samples
                 "confidence_level": "high" if len(features) >= 5000 else "moderate" if len(features) >= 1000 else "low"
             },
-            
+
             "analytical_recommendations": {
                 "suggested_analysis_depth": "comprehensive" if quality_criteria.get_completeness_score() >= 0.8 else "limited",
                 "recommended_confidence_level": quality_criteria.get_completeness_score(),
                 "analysis_complexity_rating": "high" if len(np.unique(labels)) > 10 else "medium" if len(np.unique(labels)) > 5 else "low"
             }
         }
-        
+
         return enhanced_summary
-        
+
     except Exception as e:
         logger.error(f"Error creating enhanced statistical summary: {e}")
         return {
@@ -389,24 +389,24 @@ def calculate_cluster_dimension_analysis(
 ) -> Dict[str, Any]:
     """
     Calculate detailed dimension analysis for each cluster.
-    
+
     Args:
         features: Feature matrix
         labels: Cluster labels
         feature_names: Names of feature dimensions
-        
+
     Returns:
         Dictionary with cluster-level dimension analysis
     """
     try:
         unique_labels = np.unique(labels)
         cluster_analysis = {}
-        
+
         for cluster_id in unique_labels:
             if cluster_id >= 0:  # Skip noise points
                 cluster_mask = labels == cluster_id
                 cluster_features = features[cluster_mask]
-                
+
                 if len(cluster_features) > 0:
                     cluster_analysis[f"cluster_{cluster_id}"] = {
                         "sample_count": len(cluster_features),
@@ -414,34 +414,34 @@ def calculate_cluster_dimension_analysis(
                         "dimension_cv": {},
                         "dominant_dimensions": []
                     }
-                    
+
                     # Calculate statistics for each dimension
                     dimension_means = []
                     dimension_stds = []
                     dimension_cvs = []
-                    
+
                     for i, dim_name in enumerate(feature_names[:4]):  # Limit to 4 dimensions
                         if i < cluster_features.shape[1]:
                             dim_values = cluster_features[:, i]
                             finite_values = dim_values[np.isfinite(dim_values)]
-                            
+
                             if len(finite_values) > 0:
                                 mean_val = np.mean(finite_values)
                                 std_val = np.std(finite_values)
                                 cv_val = std_val / abs(mean_val) if mean_val != 0 else 0.0
-                                
+
                                 dimension_means.append(mean_val)
                                 dimension_stds.append(std_val)
                                 dimension_cvs.append(cv_val)
-                                
+
                                 cluster_analysis[f"cluster_{cluster_id}"]["dimension_statistics"][dim_name] = {
                                     "mean": float(mean_val),
                                     "std": float(std_val),
                                     "cv": float(cv_val)
                                 }
-                                
+
                                 cluster_analysis[f"cluster_{cluster_id}"]["dimension_cv"][dim_name] = float(cv_val)
-                    
+
                     # Identify dominant dimensions (highest absolute mean values)
                     if dimension_means:
                         abs_means = [abs(m) for m in dimension_means]
@@ -451,9 +451,9 @@ def calculate_cluster_dimension_analysis(
                                 cluster_analysis[f"cluster_{cluster_id}"]["dominant_dimensions"].append(
                                     feature_names[max_idx]
                                 )
-        
+
         return cluster_analysis
-        
+
     except Exception as e:
         logger.error(f"Error calculating cluster dimension analysis: {e}")
         return {}

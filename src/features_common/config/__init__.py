@@ -12,7 +12,7 @@ from .unified_config import UnifiedConfig, get_unified_config
 __all__ = [
     'OptimizationConfig',
     'get_optimization_config',
-    'VectorBTConfig', 
+    'VectorBTConfig',
     'get_vectorbt_config',
     'UnifiedConfig',
     'get_unified_config'

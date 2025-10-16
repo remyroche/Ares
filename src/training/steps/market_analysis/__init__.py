@@ -88,7 +88,7 @@ __email__ = "market-analysis@example.com"
 MODULE_NAME = "MARKET_ANALYSIS"
 COMPONENTS = [
     "triple_barrier_labeling",
-    "regime_aware_triple_barrier_optimizer", 
+    "regime_aware_triple_barrier_optimizer",
     "triple_barrier_validator",
     "enhanced_market_analysis_with_triple_barrier",
     "interactive_feature_generation"
@@ -126,33 +126,33 @@ def quick_start_example():
     """Provide a quick start example for the MARKET_ANALYSIS module."""
     import pandas as pd
     import numpy as np
-    
+
     print("🚀 MARKET_ANALYSIS Quick Start Example")
     print("=" * 50)
-    
+
     # Create sample data with valid OHLC relationships
     dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
-    
+
     # Generate realistic OHLC data
     base_price = 100
     prices = []
     current_price = base_price
-    
+
     for i in range(1000):
         # Random walk with some trend
         change = np.random.normal(0, 0.001)  # 0.1% volatility
         current_price *= (1 + change)
-        
+
         # Generate OHLC with proper relationships
         open_price = current_price
         close_price = open_price * (1 + np.random.normal(0, 0.0005))
-        
+
         # High is always >= max(open, close)
         high_price = max(open_price, close_price) * (1 + abs(np.random.uniform(0, 0.002)))
-        
+
         # Low is always <= min(open, close)
         low_price = min(open_price, close_price) * (1 - abs(np.random.uniform(0, 0.002)))
-        
+
         prices.append({
             'open': open_price,
             'high': high_price,
@@ -161,24 +161,24 @@ def quick_start_example():
             'volume': np.random.uniform(1000, 10000),
             'hmm_regime': np.random.choice([0, 1, 2], p=[0.4, 0.4, 0.2])
         })
-    
+
     data = pd.DataFrame(prices, index=dates)
-    
+
     print(f"📊 Created sample data with {len(data)} samples")
     print(f"   → Time range: {data.index[0]} to {data.index[-1]}")
     print(f"   → Regimes: {data['hmm_regime'].value_counts().to_dict()}")
-    
+
     # Apply multi-horizon labeling
     print("\n🎯 Applying multi-horizon profit labeling...")
     result = apply_multi_horizon_labeling(data)
-    
+
     if isinstance(result, pd.DataFrame) and len(result) > 0:
         labeled_data = result
         print(f"✅ Labeling completed:")
         print(f"   → Labeled samples: {len(labeled_data)}")
         print(f"   → Total features: {labeled_data.shape[1]}")
         print(f"   → New probability targets: {len([c for c in labeled_data.columns if c.endswith('_prob')])}")
-        
+
         # Show sample opportunities
         if 'overall_opportunity' in labeled_data.columns:
             overall_opp = labeled_data['overall_opportunity'].dropna()
@@ -187,28 +187,28 @@ def quick_start_example():
     else:
         print(f"❌ Labeling failed or returned empty result")
         return None
-    
+
     # Calculate multi-horizon metrics
     probability_columns = [col for col in labeled_data.columns if col.endswith('_prob')]
     if probability_columns:
         print(f"💰 Multi-horizon metrics:")
-        
+
         # Average probabilities by target type
         for target_type in ['micro', 'small', 'medium', 'good']:
             target_cols = [col for col in probability_columns if col.startswith(f'{target_type}_')]
             if target_cols:
                 avg_prob = labeled_data[target_cols].mean().mean()
                 print(f"   → {target_type.capitalize()} target avg probability: {avg_prob:.3f}")
-        
+
         # Composite scores
         if 'leverage_adjusted_score' in labeled_data.columns:
             leverage_score = labeled_data['leverage_adjusted_score'].mean()
             print(f"   → Leverage-adjusted score: {leverage_score:.3f}")
-        
+
         if 'reversal_capture_score' in labeled_data.columns:
             reversal_score = labeled_data['reversal_capture_score'].mean()
             print(f"   → Reversal capture score: {reversal_score:.3f}")
-    
+
     # Validate results
     print("\n🔍 Validating results...")
     has_probabilities = len(probability_columns) > 0
@@ -218,58 +218,58 @@ def quick_start_example():
         print(f"   → Probability targets: {len(probability_columns)}")
     if has_opportunities:
         print(f"   → Opportunity scoring: Available")
-    
+
     print("\n🎉 Quick start example completed successfully!")
     print("\nFor more advanced usage, see:")
     print("   → multi_horizon_profit_labeler.py")
     print("   → gradient_flow_analysis.py")
     print("   → multi_horizon_sub_pipeline_adapter.py")
-    
+
     return labeled_data
 
 # Export all public components
 __all__ = [
     # Core multi-horizon components (NEW SYSTEM)
     "MultiHorizonProfitLabeler",
-    "MultiHorizonConfig", 
-    
+    "MultiHorizonConfig",
+
     # Sub-pipeline integration
     "MultiHorizonSubPipelineAdapter",
     "execute_multi_horizon_labeling_step",
-    
+
     # Analysis components
     "GradientFlowAnalyzer",
-    "GradientFlowAnalysis", 
+    "GradientFlowAnalysis",
     "analyze_gradient_flow_benefits",
-    
+
     # Legacy triple barrier components (DEPRECATED - for backward compatibility only)
     "MultiHorizonProfitLabeler",
     "MultiHorizonConfig",
     "MarketAnalysisTripleBarrierLabeling",
-    
+
     # Regime-aware optimizer
     "RegimeAwareTripleBarrierOptimizer",
     "RegimeBarrierParams",
     "RegimePerformanceMetrics",
     "optimize_regime_barriers",
     "apply_optimized_regime_labeling",
-    
+
     # Validation framework
     "TripleBarrierValidator",
     "ValidationResult",
-    "ValidationReport", 
+    "ValidationReport",
     "validate_triple_barrier_implementation",
     "quick_validate_triple_barrier",
-    
+
     # Enhanced pipeline
     "EnhancedMarketAnalysisWithTripleBarrier",
     "MarketAnalysisTripleBarrierConfig",
     "run_enhanced_market_analysis_with_triple_barrier",
     "quick_triple_barrier_analysis",
-    
+
     # Interactive feature generation (replaces legacy PID system)
     "InteractiveFeatureGenerationComponent",
-    
+
     # Utility functions
     "get_module_info",
     "quick_start_example"

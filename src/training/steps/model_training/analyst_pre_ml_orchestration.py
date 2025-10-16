@@ -32,10 +32,10 @@ class AnalystPreMLResult:
 
 class AnalystPreMLOrchestrator:
     """Analyst Pre-ML Orchestrator - Stub Implementation."""
-    
+
     def __init__(self, config: AnalystPreMLConfig):
         self.config = config
-    
+
     async def execute(self) -> AnalystPreMLResult:
         """Execute the Analyst Pre-ML orchestration."""
         # This is a stub implementation

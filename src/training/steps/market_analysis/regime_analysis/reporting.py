@@ -5,7 +5,6 @@ from typing import Any, Dict
 
 from src.utils.tprint import tprint
 
-
 def print_detailed_metrics(distribution: Dict[str, Any], metrics: Dict[str, Any], regime_type: str) -> None:
     """Print detailed statistics for a single regime type."""
     tprint(f"\n🔍 {regime_type} REGIME DETAILED ANALYSIS", "INFO")
@@ -44,7 +43,6 @@ def print_detailed_metrics(distribution: Dict[str, Any], metrics: Dict[str, Any]
         "INFO",
     )
     tprint("-" * 60, "INFO")
-
 
 def print_analysis_summary(analysis: Dict[str, Any]) -> None:
     """Print a formatted summary of the analysis."""

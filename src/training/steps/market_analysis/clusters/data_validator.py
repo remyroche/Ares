@@ -78,7 +78,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 def calculate_data_quality_score(df: pd.DataFrame, data_quality: Dict[str, Any]) -> float:
     """Calculate an overall data quality score from 0-100."""
     try:
@@ -104,7 +103,6 @@ def calculate_data_quality_score(df: pd.DataFrame, data_quality: Dict[str, Any])
     except Exception as e:
         logger.warning(f"Failed to calculate data quality score: {e}")
         return 50.0  # Default moderate score
-
 
 class DataValidator:
     """Comprehensive data validation system for clustering operations."""
@@ -679,7 +677,6 @@ class DataValidator:
 
         except Exception as e:
             self.logger.error(f"Failed to log validation report: {e}")
-
 
 def validate_data_comprehensive(data: Union[pd.DataFrame, np.ndarray],
                               validator: Optional[DataValidator] = None,

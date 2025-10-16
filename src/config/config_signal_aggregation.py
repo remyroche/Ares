@@ -45,11 +45,11 @@ def create_default_config() -> SignalAggregationConfig:
 def update_from_step17(config: SignalAggregationConfig, step17_results: Dict[str, Any]) -> SignalAggregationConfig:
     """
     Update configuration with step17 optimization results.
-    
+
     Args:
         config: Current configuration
         step17_results: Optimization results from step17
-        
+
     Returns:
         Updated configuration
     """

@@ -17,7 +17,7 @@ from .purged_embargoed_cv import (
 
 __all__ = [
     'PurgedEmbargoedWalkForwardCV',
-    'PurgedEmbargoedConfig', 
+    'PurgedEmbargoedConfig',
     'TimeSeriesSplit',
     'TimeSeriesSplitIterator',
     'LeakagePreventionUtils',

@@ -1,11 +1,11 @@
-import logging
-import warnings
-import os
 from typing import Any, Dict
-import pywt
+import logging
 import numpy as np
+import os
 import pandas as pd
 import pandas_ta as ta
+import pywt
+import warnings
         # Use existing feature engineering from src.feature_generation.utils
         from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
         from .autoencoder_feature_generator import AutoencoderFeatureGenerator
@@ -49,7 +49,7 @@ class FeatureEngineeringOrchestrator:
         os.makedirs(self.model_storage_path, exist_ok = True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
         self.autoencoder_scaler_path = os.path.join(self.model_storage_path, 'der_scaler.joblib')
-        
+
         self.orchestrator_config = config.get('feature_engineering_orchestrator', {})
         self.enable_advanced_features = get_parameter_value('feature_engineering_parameters.enable_advanced_features', True)
         self.enable_autoencoder_features = get_parameter_value('feature_engineering_parameters.enable_autoencoder_features', True)
@@ -120,7 +120,7 @@ class FeatureEngineeringOrchestrator:
                 if not cross_timeframe_features.empty:
                     features_df = pd.concat([features_df, cross_timeframe_features], axis = 1)
                     self.logger.info(f'✅ Cross-timeframe features generated. Shape: {features_df.shape}')
-                
+
                 # Also generate legacy multi-timeframe features for compatibility
                 self.logger.info('⏰ Generating legacy multi-timeframe features...')
                 multi_timeframe_features = await self._calculate_multi_timeframe_features(klines_df, agg_trades_df, None)
@@ -150,7 +150,7 @@ class FeatureEngineeringOrchestrator:
         """Generate microstructure features from available market data."""
         try:
             microstructure_features_df = pd.DataFrame(index = features_df.index)
-            
+
             # Extract available market data for microstructure analysis
             for idx, row in features_df.iterrows():
                 # Create market data dictionary from available features
@@ -162,10 +162,10 @@ class FeatureEngineeringOrchestrator:
                     'high': row.get('high', 0),
                     'low': row.get('low', 0)
                 }
-                
+
                 # Extract microstructure features
                 features = await self.microstructure_features.extract_features(market_data, features_df.head(idx))
-                
+
                 if features:
                     # Add features to DataFrame
                     for feature_name, feature_value in features.items():
@@ -173,9 +173,9 @@ class FeatureEngineeringOrchestrator:
                             if feature_name not in microstructure_features_df.columns:
                                 microstructure_features_df[feature_name] = 0.0
                             microstructure_features_df.loc[idx, feature_name] = feature_value
-            
+
             return microstructure_features_df
-            
+
         except Exception as e:
             self.logger.error(f"Error generating microstructure features: {e}")
             return pd.DataFrame()
@@ -207,7 +207,7 @@ class FeatureEngineeringOrchestrator:
                 # Create mock volume data if not available
                 mock_volume = pd.DataFrame({'volume': price_data.get('volume', 1000.0)})
                 cross_features = self.cross_timeframe_generator.generate_cross_timeframe_features(price_data, mock_volume)
-            
+
             # Convert dictionary to DataFrame
             if isinstance(cross_features, dict) and cross_features:
                 cross_features_df = pd.DataFrame(cross_features, index=price_data.index)
@@ -215,11 +215,11 @@ class FeatureEngineeringOrchestrator:
             else:
                 self.logger.warning("No cross-timeframe features generated")
                 return pd.DataFrame()
-                
+
         except Exception as e:
             self.logger.error(f"Error generating cross-timeframe features: {e}")
             return pd.DataFrame()
-    
+
     async def _calculate_multi_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None) -> pd.DataFrame:
         """Calculate multi-timeframe features."""
         try:
@@ -280,7 +280,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
             meta_labeling = MetaLabelingSystem(self.config)
@@ -297,7 +297,7 @@ except ImportError:
     def _calculate_standard_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate standard technical indicators using price differences."""
         try:
-            
+
             close_diff = df['close'].diff().fillna(0)
             high_diff = df['high'].diff().fillna(0)
             low_diff = df['low'].diff().fillna(0)
@@ -512,16 +512,16 @@ class FeatureEngineeringEngine:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -540,8 +540,8 @@ class FeatureEngineeringEngine:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -558,13 +558,13 @@ class FeatureEngineeringEngine:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

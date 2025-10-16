@@ -30,21 +30,21 @@ class InputBar:
     low: float
     close: float
     volume: float
-    
+
     # Optional book data
     bid: Optional[float] = None
     ask: Optional[float] = None
     bid_size: Optional[float] = None
     ask_size: Optional[float] = None
     trade_count: Optional[int] = None
-    
+
     # Optional context data
     index_close: Optional[float] = None  # for beta calculation
     sector_id: Optional[str] = None
-    
+
     # Session information
     session_id: Optional[Union[str, datetime]] = None  # date or explicit calendar session key
-    
+
     def __post_init__(self):
         """Validate bar data after initialization."""
         if self.high < max(self.open, self.close):
@@ -63,17 +63,17 @@ class FeatureStore:
     features: pd.DataFrame  # Columns named with registry paths
     spec_hash: str  # For bit-for-bit reproduction
     metadata: Dict[str, Any]
-    
+
     def __post_init__(self):
         """Validate feature store data."""
         if len(self.timestamp) != len(self.features):
             raise ValueError("Timestamp and features must have same length")
-        
+
         # Check for forward-filled engineered features (not allowed)
         if self.features.isnull().any().any():
             # NaN is allowed, but we should log a warning
             pass
-        
+
         # Validate spec_hash is present
         if not self.spec_hash:
             raise ValueError("spec_hash is required for reproducibility")
@@ -84,7 +84,7 @@ class TransformParams:
     transform_type: str  # 'ewz', 'tod_rank', 'signed_log', 'winsor'
     params: Dict[str, Any]
     spec_hash: str
-    
+
     def __post_init__(self):
         """Validate transform parameters."""
         valid_types = ['ewz', 'tod_rank', 'signed_log', 'winsor']
@@ -117,7 +117,7 @@ class ModelArtifact:
     training_metadata: Dict[str, Any]
     feature_importance: Dict[str, float]
     spec_hash: str
-    
+
     def __post_init__(self):
         """Validate model artifact."""
         valid_types = ['lightgbm', 'patch', 'gru']
@@ -135,7 +135,7 @@ class ArtifactsRegistry:
     patch_weights: Optional[Dict[str, Any]] = None
     residual_std: Optional[float] = None
     spec_hash: str = ""
-    
+
     def __post_init__(self):
         """Validate artifacts registry."""
         if not self.spec_hash:
@@ -146,56 +146,56 @@ class ArtifactsRegistry:
 
 class DataContractValidator:
     """Validator for data contracts."""
-    
+
     @staticmethod
     def validate_input_bars(bars: List[InputBar]) -> bool:
         """Validate list of input bars."""
         if not bars:
             raise ValueError("No bars provided")
-        
+
         # Check chronological order
         timestamps = [bar.timestamp for bar in bars]
         if timestamps != sorted(timestamps):
             raise ValueError("Bars must be in chronological order")
-        
+
         # Check for duplicates
         if len(set(timestamps)) != len(timestamps):
             raise ValueError("Duplicate timestamps found")
-        
+
         return True
-    
+
     @staticmethod
     def validate_feature_store(store: FeatureStore) -> bool:
         """Validate feature store."""
         if store.features.empty:
             raise ValueError("Feature store cannot be empty")
-        
+
         # Check column naming convention (registry paths)
         for col in store.features.columns:
             if not (col.startswith('p/') or col.startswith('t/') or col.startswith('i/')):
                 raise ValueError(f"Feature column '{col}' must follow registry path convention")
-        
+
         return True
-    
+
     @staticmethod
     def validate_artifacts_registry(registry: ArtifactsRegistry) -> bool:
         """Validate artifacts registry."""
         if not registry.spec_hash:
             raise ValueError("Artifacts registry must have spec_hash")
-        
+
         # Validate all transform params have spec_hash
         for name, params in registry.transform_params.items():
             if not params.spec_hash:
                 raise ValueError(f"Transform params '{name}' missing spec_hash")
-        
+
         return True
 
-def create_input_bars_from_dataframe(df: pd.DataFrame, 
+def create_input_bars_from_dataframe(df: pd.DataFrame,
                                    symbol: str,
                                    exchange: str) -> List[InputBar]:
     """Create InputBar objects from DataFrame."""
     bars = []
-    
+
     for idx, row in df.iterrows():
         bar = InputBar(
             timestamp=row['timestamp'] if 'timestamp' in row else idx,
@@ -214,7 +214,7 @@ def create_input_bars_from_dataframe(df: pd.DataFrame,
             session_id=row.get('session_id')
         )
         bars.append(bar)
-    
+
     return bars
 
 def create_feature_store(timestamp: pd.DatetimeIndex,
@@ -250,13 +250,13 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-    
+
     # Generate spec_hash
     content = f"{timestamp.tolist()}{features.to_dict()}{metadata}"
     spec_hash = hashlib.md5(content.encode()).hexdigest()
-    
+
     return FeatureStore(
         timestamp=timestamp,
         features=features,
@@ -265,16 +265,16 @@ except ImportError:
     )
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -293,8 +293,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

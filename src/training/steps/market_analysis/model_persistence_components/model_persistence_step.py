@@ -27,14 +27,14 @@ class ModelPersistenceStep(BaseStep):
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the Model Persistence step.
-        
+
         Args:
             config: Configuration dictionary
         """
         # 🖨️ THOROUGH PRINTING: Model Persistence Step Initialization
         tprint("🔧 INITIALIZING MODEL PERSISTENCE STEP")
         tprint(f"   📋 Configuration: {config}")
-        
+
         super().__init__(config, '21', 'model_persistence')
         tprint("   ✅ Base step initialized")
     @log_step_functions
@@ -42,22 +42,22 @@ class ModelPersistenceStep(BaseStep):
     def _initialize_step(self) -> None:
         """Initialize step-specific components."""
         tprint("   🔧 Initializing step-specific components...")
-        
+
         self.model_serializer = ModelSerializer(self.config)
         tprint("   ✅ Model serializer initialized")
-        
+
         self.version_manager = VersionManager(self.config)
         tprint("   ✅ Version manager initialized")
-        
+
         self.metadata_tracker = MetadataTracker(self.config)
         tprint("   ✅ Metadata tracker initialized")
-        
+
         self.model_registry = ModelRegistry(self.config)
         tprint("   ✅ Model registry initialized")
-        
+
         self.persistence_config = self._initialize_persistence_config()
         tprint("   ✅ Persistence configuration initialized")
-        
+
         self.saved_artifacts: Dict[str, str] = {}
         self.artifact_metadata: Dict[str, Any] = {}
         tprint("   ✅ Artifact tracking initialized")
@@ -67,7 +67,7 @@ class ModelPersistenceStep(BaseStep):
     def _initialize_persistence_config(self) -> Dict[str, Any]:
         """Initialize persistence configuration."""
         tprint("   📋 Initializing persistence configuration...")
-        
+
         config = {
             'base_dir': self.config.get('model_storage_dir', 'models'),
             'enable_versioning': self.config.get('enable_versioning', True),
@@ -84,7 +84,7 @@ class ModelPersistenceStep(BaseStep):
             'backup_location': self.config.get('backup_location', 'model_backups'),
             'max_backups': self.config.get('max_backups', 5)
         }
-        
+
         tprint(f"   📁 Base directory: {config['base_dir']}")
         tprint(f"   🔢 Versioning enabled: {config['enable_versioning']}")
         tprint(f"   📦 Compression enabled: {config['compression']}")
@@ -92,17 +92,17 @@ class ModelPersistenceStep(BaseStep):
         tprint(f"   📊 Track lineage: {config['track_lineage']}")
         tprint(f"   🏪 Use model registry: {config['use_model_registry']}")
         tprint(f"   🔄 MLflow enabled: {config['enable_mlflow']}")
-        
+
         return config
     @log_step_functions
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate step inputs.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """
@@ -120,11 +120,11 @@ class ModelPersistenceStep(BaseStep):
     @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='model persistence logic')
     async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the model persistence logic.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Updated pipeline state with persistence results
         """
@@ -155,10 +155,10 @@ class ModelPersistenceStep(BaseStep):
 
     def _collect_models(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Collect all models from pipeline state.
-        
+
         Args:
             pipeline_state: Pipeline state
-            
+
         Returns:
             Dictionary of models by category
         """
@@ -175,13 +175,13 @@ class ModelPersistenceStep(BaseStep):
 
     async def _save_model_category(self, category: str, models: Any, version_info: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, str]:
         """Save a category of models.
-        
+
         Args:
             category: Model category name
             models: Models to save
             version_info: Version information
             pipeline_state: Pipeline state for additional context
-            
+
         Returns:
             Dictionary of saved file paths
         """
@@ -210,11 +210,11 @@ class ModelPersistenceStep(BaseStep):
 
     def _flatten_models(self, models: Any, prefix: str='') -> Dict[str, Any]:
         """Flatten nested model structures.
-        
+
         Args:
             models: Models to flatten
             prefix: Prefix for model names
-            
+
         Returns:
             Flattened dictionary of models
         """
@@ -232,13 +232,13 @@ class ModelPersistenceStep(BaseStep):
 
     async def _extract_model_metadata(self, model: Any, model_name: str, category: str, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metadata for a model.
-        
+
         Args:
             model: Model object
             model_name: Model name
             category: Model category
             pipeline_state: Pipeline state
-            
+
         Returns:
             Model metadata dictionary
         """
@@ -281,12 +281,12 @@ class ModelPersistenceStep(BaseStep):
 
     async def _save_feature_importance(self, model: Any, model_id: str, version_info: Dict[str, Any]) -> Optional[str]:
         """Save feature importance for a model.
-        
+
         Args:
             model: Model object
             model_id: Model identifier
             version_info: Version information
-            
+
         Returns:
             Path to saved importance file
         """
@@ -307,11 +307,11 @@ class ModelPersistenceStep(BaseStep):
 
     async def _save_metadata(self, metadata: Dict[str, Any], version_info: Dict[str, Any]) -> str:
         """Save comprehensive metadata.
-        
+
         Args:
             metadata: Metadata dictionary
             version_info: Version information
-            
+
         Returns:
             Path to saved metadata file
         """
@@ -325,12 +325,12 @@ class ModelPersistenceStep(BaseStep):
 
     async def _create_training_summary(self, pipeline_state: Dict[str, Any], saved_artifacts: Dict[str, str], metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Create comprehensive training summary.
-        
+
         Args:
             pipeline_state: Pipeline state
             saved_artifacts: Saved artifact paths
             metadata: Training metadata
-            
+
         Returns:
             Training summary dictionary
         """
@@ -351,11 +351,11 @@ class ModelPersistenceStep(BaseStep):
 
     async def _save_training_report(self, training_summary: Dict[str, Any], version_info: Dict[str, Any]) -> str:
         """Save training report.
-        
+
         Args:
             training_summary: Training summary
             version_info: Version information
-            
+
         Returns:
             Path to saved report
         """
@@ -405,10 +405,10 @@ class ModelPersistenceStep(BaseStep):
 
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate step outputs.
-        
+
         Args:
             pipeline_state: Updated pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """

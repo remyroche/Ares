@@ -72,16 +72,16 @@ except ImportError:
 @dataclass
 class CLVConfig:
     """Configuration for Close-Location Value feature."""
-    
+
     # Feature settings
     window: int = 8  # Rolling window for CLV smoothing
     min_periods: int = 1  # Minimum periods for rolling calculation
-    
+
     # Thresholds for interpretation
     positive_threshold: float = 0.2   # Sustained positive CLV = bullish
     negative_threshold: float = -0.2  # Sustained negative CLV = bearish
     volatility_threshold: float = 0.5  # Avoid when CLV fluctuates rapidly
-    
+
     # Output settings
     include_raw_clv: bool = True  # Include raw CLV values
     include_rolling_clv: bool = True  # Include rolling mean CLV
@@ -92,11 +92,11 @@ class CLVConfig:
 class CloseLocationValueFeature:
     """
     Close-Location Value (CLV) Feature Engineering
-    
+
     Tracks buying/selling pressure and control within each bar.
     Positive CLV indicates buying pressure, negative CLV indicates selling pressure.
     """
-    
+
     def __init__(self, config: Optional[CLVConfig] = None):
         """Initialize Close-Location Value feature."""
         self.config = config or CLVConfig()
@@ -105,41 +105,41 @@ class CloseLocationValueFeature:
         tprint_info(f"   → Positive threshold: {self.config.positive_threshold}")
         tprint_info(f"   → Negative threshold: {self.config.negative_threshold}")
         tprint_info(f"   → Volatility threshold: {self.config.volatility_threshold}")
-    
+
     def calculate_features(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
         """
         Calculate Close-Location Value features.
-        
+
         Args:
             data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
-            
+
         Returns:
             Dictionary of feature Series
         """
         tprint_info("📊 Calculating Close-Location Value features")
-        
+
         # Validate input data
         required_columns = ['open', 'high', 'low', 'close']
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
-        
+
         features = {}
-        
+
         try:
             # Calculate raw CLV
             price_range = data['high'] - data['low']
             price_range = price_range.replace(0, np.nan)  # Avoid division by zero
-            
+
             clv_numerator = 2 * data['close'] - data['high'] - data['low']
             raw_clv = clv_numerator / price_range
             raw_clv = raw_clv.fillna(0)  # Set to 0 for zero-range bars
             raw_clv = raw_clv.replace([np.inf, -np.inf], 0)  # Replace infinite values
-            
+
             if self.config.include_raw_clv:
                 features['clv_raw'] = raw_clv
                 tprint_info(f"   → Raw CLV: mean={raw_clv.mean():.3f}, std={raw_clv.std():.3f}")
-            
+
             # Calculate rolling mean CLV
             if self.config.include_rolling_clv:
                 rolling_clv = raw_clv.rolling(
@@ -148,7 +148,7 @@ class CloseLocationValueFeature:
                 ).mean()
                 features['clv_rolling'] = rolling_clv
                 tprint_info(f"   → Rolling CLV: mean={rolling_clv.mean():.3f}, std={rolling_clv.std():.3f}")
-            
+
             # Calculate CLV volatility
             if self.config.include_clv_volatility:
                 clv_volatility = raw_clv.rolling(
@@ -157,7 +157,7 @@ class CloseLocationValueFeature:
                 ).std()
                 features['clv_volatility'] = clv_volatility
                 tprint_info(f"   → CLV volatility: mean={clv_volatility.mean():.3f}, std={clv_volatility.std():.3f}")
-            
+
             # Calculate CLV grade (0.0-1.0)
             if self.config.include_clv_grade:
                 # Grade based on directional strength and stability
@@ -166,30 +166,30 @@ class CloseLocationValueFeature:
                 clv_grade = (clv_strength * clv_stability).clip(0.0, 1.0)
                 features['clv_grade'] = clv_grade
                 tprint_info(f"   → CLV grade: mean={clv_grade.mean():.3f}, std={clv_grade.std():.3f}")
-            
+
             # Calculate CLV classification
             if self.config.include_clv_class and self.config.include_rolling_clv:
                 clv_class = pd.Series('neutral', index=data.index)
                 clv_class[rolling_clv >= self.config.positive_threshold] = 'bullish'
                 clv_class[rolling_clv <= self.config.negative_threshold] = 'bearish'
-                
+
                 # Mark as unstable if volatility is too high
                 if self.config.include_clv_volatility:
                     clv_class[clv_volatility > self.config.volatility_threshold] = 'unstable'
-                
+
                 features['clv_class'] = clv_class
-                
+
                 # Count classifications
                 class_counts = clv_class.value_counts()
                 tprint_info(f"   → CLV classification: {dict(class_counts)}")
-            
+
             tprint_info("✅ Close-Location Value features calculated successfully")
             return features
-            
+
         except Exception as e:
             tprint_error(f"❌ Error calculating Close-Location Value features: {e}")
             raise
-    
+
     def get_feature_names(self) -> list:
         """Get list of feature names this class produces."""
         features = []
@@ -204,7 +204,7 @@ class CloseLocationValueFeature:
         if self.config.include_clv_class:
             features.append('clv_class')
         return features
-    
+
     def get_feature_info(self) -> Dict[str, Dict[str, any]]:
         """Get detailed information about the features."""
         return {
@@ -238,15 +238,15 @@ class CloseLocationValueFeature:
 class CloseLocationValueGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible Close-Location Value feature generator.
-    
+
     Implements the FeatureGenerator interface for integration with the feature bank
     and period lookback optimization system.
     """
-    
+
     def __init__(self, lookback: int = 8, **kwargs):
         """
         Initialize the Close-Location Value feature generator.
-        
+
         Args:
             lookback: Number of periods for rolling calculation
             **kwargs: Additional configuration parameters
@@ -275,9 +275,9 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
             gpu_accelerated=False,
             enable_feature_selection=True
         )
-        
+
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize the feature engine
         feature_config = CLVConfig(
             window=lookback,
@@ -291,31 +291,31 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
             include_clv_class=kwargs.get('include_clv_class', True)
         )
         self.feature_engine = CloseLocationValueFeature(feature_config)
-    
+
     def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
         """
         Generate Close-Location Value features.
-        
+
         Args:
             data: OHLCV data with required columns
             lookback: Override default lookback period
-            
+
         Returns:
             FeatureResult with generated features
         """
         start_time = time.time()
-        
+
         try:
             # Use provided lookback or default
             effective_lookback = lookback or self.config.default_lookback
-            
+
             # Update feature engine configuration if lookback changed
             if effective_lookback != self.config.default_lookback:
                 self.feature_engine.config.window = effective_lookback
-            
+
             # Generate features
             features = self.feature_engine.calculate_features(data)
-            
+
             # Select the primary feature (rolling CLV)
             if 'clv_rolling' in features:
                 primary_feature = features['clv_rolling']
@@ -323,9 +323,9 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
                 primary_feature = features['clv_raw']
             else:
                 raise ValueError("No primary CLV feature generated")
-            
+
             computation_time = time.time() - start_time
-            
+
             return FeatureResult(
                 name=self.config.name,
                 data=primary_feature,
@@ -343,7 +343,7 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
                     }
                 }
             )
-            
+
         except Exception as e:
             computation_time = time.time() - start_time
             return FeatureResult(
@@ -354,25 +354,25 @@ class CloseLocationValueGenerator(VectorizedFeatureGenerator):
                 success=False,
                 error_message=str(e)
             )
-    
+
     def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
         """
         Generate all Close-Location Value features.
-        
+
         Args:
             data: OHLCV data with required columns
             lookback: Override default lookback period
-            
+
         Returns:
             Dictionary of all generated features
         """
         # Use provided lookback or default
         effective_lookback = lookback or self.config.default_lookback
-        
+
         # Update feature engine configuration if lookback changed
         if effective_lookback != self.config.default_lookback:
             self.feature_engine.config.window = effective_lookback
-        
+
         # Generate all features
         return self.feature_engine.calculate_features(data)
 
@@ -383,11 +383,11 @@ def calculate_clv_features(
 ) -> Dict[str, pd.Series]:
     """
     Calculate Close-Location Value features.
-    
+
     Args:
         data: OHLCV data with columns ['open', 'high', 'low', 'close', 'volume']
         config: Optional configuration
-        
+
     Returns:
         Dictionary of feature Series
     """
@@ -396,16 +396,16 @@ def calculate_clv_features(
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -424,8 +424,8 @@ def calculate_clv_features(
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -442,13 +442,13 @@ def calculate_clv_features(
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

@@ -36,7 +36,7 @@ class ExchangeConfig:
 @dataclass
 class NASConfig:
     """Neural Architecture Search configuration settings."""
-    
+
     enable_nas_enhancement: bool = True
     nas_confidence_threshold: float = 0.7
     nas_timeframe: str = "5m"
@@ -51,7 +51,7 @@ class NASConfig:
 @dataclass
 class TASConfig:
     """Tree Architecture Search configuration settings."""
-    
+
     enable_tas_enhancement: bool = True
     tas_confidence_threshold: float = 0.7
     tas_timeframe: str = "1m"
@@ -76,7 +76,7 @@ class SystemConfig:
     log_file: str = "ares.log"
     max_log_size: int = 100 * 1024 * 1024  # 100MB
     backup_count: int = 5
-    
+
     # NAS/TAS Enhancement
     nas_tas_enabled: bool = True
     nas_config: NASConfig = None

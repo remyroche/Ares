@@ -1,7 +1,5 @@
 # src/analyst/meta_label_relevance.py
 
-
-
 from typing import Any
 
 import json
@@ -13,7 +11,6 @@ import numpy as np
 import pandas as pd
 from .core.decorators import handles_errors
 from ..utils.ml_common.evaluation.unified_evaluator import compute_sharpe_ratio
-
 
 @handles_errors(
     exceptions=(Exception,), default_return={}, context="compute_mutual_information"
@@ -50,7 +47,6 @@ def compute_mutual_information(
         mi = mutual_info_regression(Xn.fillna(0.0), y, random_state=random_state)
     return {c: float(v) for c, v in zip(Xn.columns, mi)}
 
-
 @handles_errors(
     exceptions=(Exception,),
     default_return=0.0,
@@ -73,7 +69,7 @@ def compute_shap_importance(
     """
     import shap  # type: ignore
     from lightgbm import LGBMClassifier, LGBMRegressor  # type: ignore
-    
+
     Xn = X.select_dtypes(include=[np.number]).fillna(0.0)
     if len(Xn) == 0:
         return {}
@@ -102,7 +98,6 @@ def compute_shap_importance(
         magnitudes = magnitudes.reshape(-1, 1)
     mean_abs = np.mean(magnitudes, axis=0)
     return {c: float(v) for c, v in zip(Xn.columns, mean_abs)}
-
 
 @handles_errors(
     exceptions=(Exception,),
@@ -143,7 +138,6 @@ def evaluate_sharpe_lift(
         "delta_sharpe": float(sr_gated - sr_base),
         "coverage": float(g.mean()),
     }
-
 
 class MetaLabelRelevanceEvaluator:
     """Evaluate meta-label relevance with complementarity checks and persist active labels."

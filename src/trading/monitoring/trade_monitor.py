@@ -91,28 +91,28 @@ class TradeMonitor:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the trade monitor.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = logger.getChild('TradeMonitor')
-        
+
         # Trade tracking
         self.active_trades: Dict[str, Trade] = {}
         self.trade_history: List[Trade] = []
         self.max_history = config.get('max_history', 10000)
-        
+
         # Performance tracking
         self.performance_metrics = PerformanceMetrics()
         self.daily_pnl: List[float] = []
         self.balance_history: List[Dict[str, Any]] = []
-        
+
         # Alert system
         self.alerts: List[Alert] = []
         self.alert_callbacks: List[Callable[[Alert], None]] = []
         self.max_alerts = config.get('max_alerts', 1000)
-        
+
         # Monitoring parameters
         self.alert_thresholds = {
             'max_drawdown': config.get('max_drawdown_alert', 0.05),  # 5%
@@ -120,7 +120,7 @@ class TradeMonitor:
             'max_loss_per_trade': config.get('max_loss_per_trade_alert', 0.02),  # 2%
             'max_daily_loss': config.get('max_daily_loss_alert', 0.05)  # 5%
         }
-        
+
         # State
         self.is_monitoring = False
         self.monitoring_start_time: Optional[datetime] = None
@@ -128,7 +128,7 @@ class TradeMonitor:
     async def initialize(self) -> bool:
         """
         Initialize the trade monitor.
-        
+
         Returns:
             bool: True if initialization successful
         """
@@ -142,7 +142,7 @@ class TradeMonitor:
     async def start_monitoring(self) -> bool:
         """
         Start trade monitoring.
-        
+
         Returns:
             bool: True if monitoring started successfully
         """
@@ -150,16 +150,16 @@ class TradeMonitor:
             if self.is_monitoring:
                 tprint_warning("⚠️ Trade monitoring already running")
                 return False
-            
+
             self.is_monitoring = True
             self.monitoring_start_time = datetime.now()
-            
+
             # Start monitoring loop
             asyncio.create_task(self._monitoring_loop())
-            
+
             tprint_success("✅ Trade monitoring started")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to start trade monitoring: {e}")
             self.is_monitoring = False
@@ -168,18 +168,18 @@ class TradeMonitor:
     async def stop_monitoring(self) -> bool:
         """
         Stop trade monitoring.
-        
+
         Returns:
             bool: True if monitoring stopped successfully
         """
         try:
             if not self.is_monitoring:
                 return True
-            
+
             self.is_monitoring = False
             tprint_success("✅ Trade monitoring stopped")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to stop trade monitoring: {e}")
             return False
@@ -189,10 +189,10 @@ class TradeMonitor:
     async def record_trade(self, trade: Trade) -> bool:
         """
         Record a new trade.
-        
+
         Args:
             trade: Trade to record
-            
+
         Returns:
             bool: True if trade recorded successfully
         """
@@ -200,23 +200,23 @@ class TradeMonitor:
             # Add to active trades if not completed
             if trade.status in [TradeStatus.PENDING, TradeStatus.PARTIALLY_FILLED]:
                 self.active_trades[trade.trade_id] = trade
-            
+
             # Add to history
             self.trade_history.append(trade)
-            
+
             # Maintain history size
             if len(self.trade_history) > self.max_history:
                 self.trade_history.pop(0)
-            
+
             # Update performance metrics
             await self._update_performance_metrics(trade)
-            
+
             # Check for alerts
             await self._check_trade_alerts(trade)
-            
+
             tprint_info(f"📊 Trade recorded: {trade.symbol} {trade.side} {trade.quantity} @ {trade.price}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to record trade: {e}")
             return False
@@ -224,12 +224,12 @@ class TradeMonitor:
     async def update_trade_status(self, trade_id: str, status: TradeStatus, **kwargs) -> bool:
         """
         Update trade status.
-        
+
         Args:
             trade_id: Trade ID to update
             status: New status
             **kwargs: Additional trade information
-            
+
         Returns:
             bool: True if update successful
         """
@@ -237,28 +237,28 @@ class TradeMonitor:
             if trade_id in self.active_trades:
                 trade = self.active_trades[trade_id]
                 trade.status = status
-                
+
                 # Update additional fields
                 for key, value in kwargs.items():
                     if hasattr(trade, key):
                         setattr(trade, key, value)
-                
+
                 # Remove from active trades if completed
                 if status in [TradeStatus.FILLED, TradeStatus.CANCELLED, TradeStatus.REJECTED, TradeStatus.EXPIRED]:
                     del self.active_trades[trade_id]
-                
+
                 # Update performance metrics
                 await self._update_performance_metrics(trade)
-                
+
                 # Check for alerts
                 await self._check_trade_alerts(trade)
-                
+
                 tprint_info(f"📊 Trade status updated: {trade_id} -> {status.value}")
                 return True
             else:
                 tprint_warning(f"⚠️ Trade not found: {trade_id}")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to update trade status: {e}")
             return False
@@ -269,16 +269,16 @@ class TradeMonitor:
             try:
                 # Check for stale trades
                 await self._check_stale_trades()
-                
+
                 # Update performance metrics
                 await self._update_daily_metrics()
-                
+
                 # Check system alerts
                 await self._check_system_alerts()
-                
+
                 # Brief pause
                 await asyncio.sleep(30)  # Check every 30 seconds
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Monitoring loop error: {e}")
                 await asyncio.sleep(5)
@@ -290,50 +290,50 @@ class TradeMonitor:
             self.performance_metrics.total_trades += 1
             self.performance_metrics.total_pnl += trade.pnl
             self.performance_metrics.total_fees += trade.fees
-            
+
             # Update win/loss counts
             if trade.pnl > 0:
                 self.performance_metrics.winning_trades += 1
             elif trade.pnl < 0:
                 self.performance_metrics.losing_trades += 1
-            
+
             # Calculate derived metrics
             if self.performance_metrics.total_trades > 0:
                 self.performance_metrics.win_rate = (
                     self.performance_metrics.winning_trades / self.performance_metrics.total_trades
                 )
-            
+
             # Calculate average win/loss
             if self.performance_metrics.winning_trades > 0:
                 winning_trades = [t for t in self.trade_history if t.pnl > 0]
                 self.performance_metrics.avg_win = np.mean([t.pnl for t in winning_trades])
-            
+
             if self.performance_metrics.losing_trades > 0:
                 losing_trades = [t for t in self.trade_history if t.pnl < 0]
                 self.performance_metrics.avg_loss = abs(np.mean([t.pnl for t in losing_trades]))
-            
+
             # Calculate profit factor
             if self.performance_metrics.avg_loss > 0:
                 self.performance_metrics.profit_factor = (
                     self.performance_metrics.avg_win / self.performance_metrics.avg_loss
                 )
-            
+
             # Update balance
             self.performance_metrics.current_balance += trade.pnl - trade.fees
-            
+
             # Update peak balance and drawdown
             if self.performance_metrics.current_balance > self.performance_metrics.peak_balance:
                 self.performance_metrics.peak_balance = self.performance_metrics.current_balance
                 self.performance_metrics.current_drawdown = 0.0
             else:
                 self.performance_metrics.current_drawdown = (
-                    (self.performance_metrics.peak_balance - self.performance_metrics.current_balance) 
+                    (self.performance_metrics.peak_balance - self.performance_metrics.current_balance)
                     / self.performance_metrics.peak_balance
                 )
-                
+
                 if self.performance_metrics.current_drawdown > self.performance_metrics.max_drawdown:
                     self.performance_metrics.max_drawdown = self.performance_metrics.current_drawdown
-            
+
         except Exception as e:
             self.logger.error(f"❌ Performance metrics update failed: {e}")
 
@@ -348,7 +348,7 @@ class TradeMonitor:
                     trade_id=trade.trade_id,
                     symbol=trade.symbol
                 )
-            
+
             # Check for unusual trade size
             if trade.quantity > 1000:  # Example threshold
                 await self._create_alert(
@@ -357,7 +357,7 @@ class TradeMonitor:
                     trade_id=trade.trade_id,
                     symbol=trade.symbol
                 )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trade alert check failed: {e}")
 
@@ -370,15 +370,15 @@ class TradeMonitor:
                     level=AlertLevel.CRITICAL,
                     message=f"High drawdown: {self.performance_metrics.current_drawdown:.2%}"
                 )
-            
+
             # Check win rate
-            if (self.performance_metrics.total_trades > 10 and 
+            if (self.performance_metrics.total_trades > 10 and
                 self.performance_metrics.win_rate < self.alert_thresholds['min_win_rate']):
                 await self._create_alert(
                     level=AlertLevel.WARNING,
                     message=f"Low win rate: {self.performance_metrics.win_rate:.2%}"
                 )
-            
+
             # Check daily loss
             if self.daily_pnl:
                 daily_loss = sum(self.daily_pnl[-24:])  # Last 24 hours
@@ -387,7 +387,7 @@ class TradeMonitor:
                         level=AlertLevel.ERROR,
                         message=f"High daily loss: {daily_loss:.4f}"
                     )
-            
+
         except Exception as e:
             self.logger.error(f"❌ System alert check failed: {e}")
 
@@ -396,7 +396,7 @@ class TradeMonitor:
         try:
             current_time = datetime.now()
             stale_threshold = timedelta(minutes=30)  # 30 minutes
-            
+
             for trade_id, trade in list(self.active_trades.items()):
                 if current_time - trade.timestamp > stale_threshold:
                     await self._create_alert(
@@ -405,7 +405,7 @@ class TradeMonitor:
                         trade_id=trade_id,
                         symbol=trade.symbol
                     )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Stale trade check failed: {e}")
 
@@ -413,26 +413,26 @@ class TradeMonitor:
         """Update daily performance metrics."""
         try:
             current_time = datetime.now()
-            
+
             # Add current PnL to daily tracking
             if self.performance_metrics.current_balance > 0:
                 self.daily_pnl.append(self.performance_metrics.current_balance)
-                
+
                 # Keep only last 7 days of data
                 if len(self.daily_pnl) > 168:  # 7 days * 24 hours
                     self.daily_pnl.pop(0)
-            
+
             # Update balance history
             self.balance_history.append({
                 'timestamp': current_time,
                 'balance': self.performance_metrics.current_balance,
                 'drawdown': self.performance_metrics.current_drawdown
             })
-            
+
             # Keep only last 24 hours of balance history
             if len(self.balance_history) > 1440:  # 24 hours * 60 minutes
                 self.balance_history.pop(0)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Daily metrics update failed: {e}")
 
@@ -455,14 +455,14 @@ class TradeMonitor:
                 symbol=symbol,
                 metadata=metadata or {}
             )
-            
+
             # Add to alerts list
             self.alerts.append(alert)
-            
+
             # Maintain alerts size
             if len(self.alerts) > self.max_alerts:
                 self.alerts.pop(0)
-            
+
             # Trigger callbacks
             for callback in self.alert_callbacks:
                 try:
@@ -472,7 +472,7 @@ class TradeMonitor:
                         callback(alert)
                 except Exception as e:
                     self.logger.error(f"❌ Alert callback failed: {e}")
-            
+
             # Log alert
             log_level = {
                 AlertLevel.INFO: self.logger.info,
@@ -480,9 +480,9 @@ class TradeMonitor:
                 AlertLevel.ERROR: self.logger.error,
                 AlertLevel.CRITICAL: self.logger.critical
             }
-            
+
             log_level[level](f"🚨 {level.value.upper()}: {message}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Alert creation failed: {e}")
 
@@ -516,7 +516,7 @@ class TradeMonitor:
             'total_alerts': len(self.alerts),
             'performance_metrics': self.performance_metrics.__dict__,
             'uptime_seconds': (
-                (datetime.now() - self.monitoring_start_time).total_seconds() 
+                (datetime.now() - self.monitoring_start_time).total_seconds()
                 if self.monitoring_start_time else 0
             )
         }
@@ -534,5 +534,5 @@ async def start_trade_monitoring(
     """Start trade monitoring with optional alert callback."""
     if alert_callback:
         trade_monitor.add_alert_callback(alert_callback)
-    
+
     return await trade_monitor.start_monitoring()

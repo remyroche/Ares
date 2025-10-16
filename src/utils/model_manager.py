@@ -82,7 +82,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
     if _NUMPY_RNG_UNPICKLE_PATCHED:
         return
     try:
-        
+
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:
             # Fallback implementation for original_ctor

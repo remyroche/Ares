@@ -100,7 +100,6 @@ except (ImportError, SyntaxError):
         FilterResult = None
         apply_advanced_filters_15m = None
 
-
 @dataclass
 class AnalystProfitLabelerConfig:
     """Configuration for Analyst profit labeling."""
@@ -130,7 +129,7 @@ class AnalystProfitLabelerConfig:
 
     # Per-regime optimization
     enable_regime_adaptation: bool = True
-    
+
     # Trading direction settings
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
@@ -147,11 +146,11 @@ class AnalystProfitLabelerConfig:
     entry_threshold: float = 0.5  # Minimum price variation to consider an opportunity (0.5%)
     find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
     entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
-    
+
     # Multi-size opportunity detection (compatible with model_training/)
     multi_size_thresholds: Dict[str, float] = field(default_factory=lambda: {
         'micro': 0.5,    # 0.5% minimum for micro opportunities
-        'small': 0.7,    # 0.7% minimum for small opportunities  
+        'small': 0.7,    # 0.7% minimum for small opportunities
         'medium': 1.0,   # 1.0% minimum for medium opportunities
         'good': 1.5      # 1.5% minimum for good opportunities
     })
@@ -173,7 +172,7 @@ class AnalystProfitLabelerConfig:
     def _validate_horizon_timeframe_compatibility(self) -> None:
         """Validate that horizons are compatible with the timeframe."""
         tprint_info(f"🔍 Validating horizon-timeframe compatibility for timeframe: {self.timeframe}")
-        
+
         if not self.horizons:
             tprint_error("❌ Horizons list cannot be empty")
             raise ValueError("Horizons list cannot be empty")
@@ -201,13 +200,13 @@ class AnalystProfitLabelerConfig:
             )
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
-        
+
         tprint_success(f"✅ All {len(self.horizons)} horizons are compatible with timeframe {self.timeframe}")
 
     def _parse_timeframe_to_minutes(self, timeframe: str) -> int:
         """Parse timeframe string to minutes."""
         tprint_info(f"🔍 Parsing timeframe: {timeframe}")
-        
+
         try:
             if timeframe.endswith('m'):
                 minutes = safe_int(timeframe[:-1])
@@ -235,7 +234,7 @@ class AnalystProfitLabelerConfig:
     def get_optimization_search_space(self) -> Dict[str, Any]:
         """Get search space for hyperparameter optimization."""
         tprint_info("🔍 Generating optimization search space for grid search")
-        
+
         search_space = {
             'target_profits': {
                 'type': 'float',
@@ -261,14 +260,14 @@ class AnalystProfitLabelerConfig:
                 'log': False
             }
         }
-        
+
         tprint_success(f"✅ Generated search space with {len(search_space)} parameters")
         return search_space
 
     def optimize_config_grid_search(self, data: pd.DataFrame, max_trials: int = 50) -> 'AnalystProfitLabelerConfig':
         """Optimize configuration using grid search."""
         tprint_info(f"🔍 Starting grid search optimization with {max_trials} trials")
-        
+
         try:
             search_space = self.get_optimization_search_space()
 
@@ -303,7 +302,7 @@ class AnalystProfitLabelerConfig:
                         best_score = score
                         best_config = config
                         tprint_info(f"📈 New best score: {best_score:.3f} (trial {i+1})")
-                    
+
                     successful_trials += 1
 
                 except Exception as e:
@@ -316,21 +315,20 @@ class AnalystProfitLabelerConfig:
             else:
                 tprint_warning("⚠️ No valid configurations found, returning original config")
                 return self
-                
+
         except Exception as e:
             tprint_error(f"❌ Grid search optimization failed: {e}")
             tprint_warning("⚠️ Returning original configuration due to optimization failure")
             return self
 
-
 class AnalystProfitLabeler:
     """
     Analyst Profit Labeler - Specialized labeling for Analyst models.
-    
+
     This class wraps the VolatilityAwareMultiHorizonLabeler with Analyst-specific
     configurations and provides a simplified interface for Analyst model training.
     """
-    
+
     def __init__(self, config: Optional[AnalystProfitLabelerConfig] = None):
         """Initialize the Analyst profit labeler."""
         self.config = config or AnalystProfitLabelerConfig()
@@ -360,7 +358,7 @@ class AnalystProfitLabeler:
                 "VolatilityAwareMultiHorizonLabeler is not available. "
                 "Please ensure the profit_labeling module is properly installed."
             )
-        
+
         # Initialize advanced filters if available and enabled
         self.advanced_filters = None
         if self.config.enable_advanced_filters and ADVANCED_FILTERS_AVAILABLE:
@@ -399,17 +397,17 @@ class AnalystProfitLabeler:
     def _create_labeler(self) -> Any:
         """Create and configure the VolatilityAwareMultiHorizonLabeler for Analyst."""
         tprint_info("🔧 Creating VolatilityAwareMultiHorizonLabeler for Analyst...")
-        
+
         try:
             # Create Analyst-specific configuration
             tprint_info("📋 Initializing labeler configuration...")
             labeler_config = VolatilityAwareConfig()
-            
+
             # Set label definition type to Analyst
             labeler_config.label_definition_type = LabelDefinitionType.ANALYST
             labeler_config.enable_enhanced_labels = True
             tprint_info("✅ Set label definition type to ANALYST with enhanced labels")
-            
+
             # Configure bar construction to use TIME bars (we're working with OHLCV data)
             # TIME bars with bar_size = timeframe period will pass through the data as-is
             tprint_info("📊 Configuring bar construction for OHLCV data...")
@@ -418,12 +416,12 @@ class AnalystProfitLabeler:
             labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
             labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data
             tprint_info(f"✅ Bar construction: TIME bars, {self.config.base_period_minutes}min period, min 10 bars")
-            
+
             # Configure noise gating to be less aggressive for OHLCV data
             # OHLCV data is already aggregated, so noise is less of an issue
             labeler_config.noise_gating.enabled = False  # Disable noise gating for OHLCV data
             tprint_info("✅ Disabled noise gating for OHLCV data")
-            
+
             # Configure timeframe and horizons
             tprint_info(f"⏰ Configuring timeframe and horizons: {self.config.timeframe}, {self.config.horizons}")
             labeler_config.timeframe = self.config.timeframe
@@ -432,12 +430,12 @@ class AnalystProfitLabeler:
             # Configure multi-target to use very lenient quality thresholds
             labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
             tprint_info(f"✅ Multi-target: {len(self.config.horizons)} horizons, {len(self.config.target_profits)} targets, LQS=0.01")
-            
+
             # Configure volatility settings
             tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
             labeler_config.volatility.enabled = self.config.use_volatility_normalization
             labeler_config.volatility.window = self.config.volatility_window
-            
+
             # Configure quality scoring - disable for initial labeling to ensure labels are generated
             # Quality filtering can be applied during feature selection/training
             tprint_info("🎯 Configuring quality scoring (lenient thresholds)...")
@@ -445,11 +443,11 @@ class AnalystProfitLabeler:
             labeler_config.quality_scoring.min_quality_threshold = 0.1  # Very lenient threshold
             labeler_config.quality_scoring.min_predictability = 0.1  # Very lenient threshold
             tprint_info("✅ Quality scoring: disabled strict filtering, thresholds=0.1")
-            
+
             # Configure regime adaptation
             tprint_info(f"🔄 Configuring regime adaptation: enabled={self.config.enable_regime_adaptation}")
             labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
-            
+
             # Configure optimal entry point detection
             if hasattr(labeler_config, 'optimal_entry_detection'):
                 tprint_info("🎯 Configuring optimal entry point detection...")
@@ -464,7 +462,7 @@ class AnalystProfitLabeler:
                 tprint_info(f"✅ Entry detection: enabled={self.config.enable_optimal_entry_detection}, threshold={self.config.entry_threshold}")
             else:
                 tprint_warning("⚠️ Optimal entry detection not available in labeler config")
-            
+
             # Apply custom parameters
             if self.config.custom_params:
                 tprint_info(f"🔧 Applying {len(self.config.custom_params)} custom parameters...")
@@ -474,17 +472,17 @@ class AnalystProfitLabeler:
                         setattr(labeler_config, key, value)
                         applied_count += 1
                 tprint_success(f"✅ Applied {applied_count} custom parameters")
-            
+
             # Create the VolatilityAwareMultiHorizonLabeler with our configuration
             tprint_info("🏗️ Creating VolatilityAwareMultiHorizonLabeler instance...")
             labeler = VolatilityAwareMultiHorizonLabeler(labeler_config)
             tprint_success("✅ VolatilityAwareMultiHorizonLabeler created successfully")
             return labeler
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to create labeler: {e}")
             raise
-    
+
     def generate_labels(
         self,
         data: pd.DataFrame,
@@ -553,10 +551,10 @@ class AnalystProfitLabeler:
             if self.advanced_filters is not None:
                 tprint_info("🔍 Applying advanced 15m filters before labeling")
                 filter_result = self.advanced_filters.apply_filters(data)
-                
+
                 # Log filter results
                 tprint_info(f"   → Filter eligibility: {filter_result.eligibility_ratio:.1%} ({filter_result.n_eligible_samples}/{filter_result.n_total_samples})")
-                
+
                 # Apply filter mask to data (optional - can be used to pre-filter data)
                 if filter_result.eligibility_ratio < 0.5:
                     tprint_warning(f"⚠️ Low filter eligibility: {filter_result.eligibility_ratio:.1%}")
@@ -568,26 +566,26 @@ class AnalystProfitLabeler:
                 # Generate labels using the underlying labeler
                 # Note: VolatilityAwareMultiHorizonLabeler.generate_labels only takes market_data
                 result = self.labeler.generate_labels(data)
-                
+
                 # Apply filter mask to results if filters were used
                 if filter_result is not None and hasattr(result, 'labels') and result.labels is not None:
                     # Apply eligibility mask to labels
                     if isinstance(result.labels, pd.DataFrame):
                         result.labels = result.labels[filter_result.eligibility_mask]
-                    
+
                     # Apply eligibility mask to confidence scores if available
                     if hasattr(result, 'confidence_scores') and result.confidence_scores is not None:
                         if isinstance(result.confidence_scores, pd.DataFrame):
                             result.confidence_scores = result.confidence_scores[filter_result.eligibility_mask]
-                    
+
                     # Apply eligibility mask to eligibility masks if available
                     if hasattr(result, 'eligibility_masks') and result.eligibility_masks is not None:
                         if isinstance(result.eligibility_masks, pd.DataFrame):
                             result.eligibility_masks = result.eligibility_masks[filter_result.eligibility_mask]
-                    
+
                     # Update sample counts
                     result.n_samples = len(result.labels) if hasattr(result.labels, '__len__') else result.n_samples
-                    
+
                     tprint_info(f"🔍 Applied filter mask: {result.n_samples} samples after filtering")
 
             # Validate minimum sample count for training
@@ -610,15 +608,15 @@ class AnalystProfitLabeler:
             )
 
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate Analyst labels: {e}")
             raise
-    
+
     def _validate_labeling_result(self, result: LabelingResult) -> None:
         """Validate that labeling produced sufficient samples for training."""
         tprint_info(f"🔍 Validating labeling result: {result.n_samples} samples, {result.n_targets} targets")
-        
+
         MIN_SAMPLES_PER_TARGET = 50  # Minimum samples needed per target for reliable training
         MIN_TOTAL_SAMPLES = 200     # Absolute minimum total samples
 
@@ -629,13 +627,13 @@ class AnalystProfitLabeler:
             )
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
-        
+
         tprint_success(f"✅ Sample count validation passed: {result.n_samples} >= {MIN_TOTAL_SAMPLES}")
 
         if result.n_targets > 0:
             samples_per_target = result.n_samples / result.n_targets
             tprint_info(f"📊 Samples per target: {samples_per_target:.1f} (minimum recommended: {MIN_SAMPLES_PER_TARGET})")
-            
+
             if samples_per_target < MIN_SAMPLES_PER_TARGET:
                 warning_msg = (
                     f"Low samples per target: {samples_per_target:.1f} per target, "
@@ -650,13 +648,13 @@ class AnalystProfitLabeler:
                 )
             else:
                 tprint_success(f"✅ Samples per target validation passed: {samples_per_target:.1f} >= {MIN_SAMPLES_PER_TARGET}")
-        
+
         tprint_success("✅ Labeling result validation completed successfully")
 
     def get_label_summary(self, result: LabelingResult) -> Dict[str, Any]:
         """Get a summary of the labeling results."""
         tprint_info("📊 Generating label summary...")
-        
+
         try:
             summary = {
                 'n_samples': result.n_samples,
@@ -665,7 +663,7 @@ class AnalystProfitLabeler:
                 'processing_time': result.processing_time,
                 'quality_scores': {}
             }
-            
+
             # Add quality scores
             if result.quality_scores:
                 tprint_info(f"📈 Processing {len(result.quality_scores)} quality scores...")
@@ -679,10 +677,10 @@ class AnalystProfitLabeler:
                 tprint_success(f"✅ Processed quality scores for {len(result.quality_scores)} targets")
             else:
                 tprint_warning("⚠️ No quality scores available in result")
-            
+
             tprint_success(f"✅ Label summary generated: {summary['n_samples']} samples, {summary['n_targets']} targets, {summary['n_horizons']} horizons")
             return summary
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate label summary: {e}")
             # Return a basic summary even if quality scores fail
@@ -695,28 +693,27 @@ class AnalystProfitLabeler:
                 'error': str(e)
             }
 
-
 @register_component('analyst_profit_labeler')
 class AnalystProfitLabelerComponent(BasePreTrainingComponent):
     """
     Component wrapper for Analyst Profit Labeler.
-    
+
     This component integrates the AnalystProfitLabeler with the pre-training pipeline
     and handles proper error handling, reporting, and pipeline state management.
     """
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the Analyst profit labeler component."""
         super().__init__(config)
         self.logger = system_logger.getChild('AnalystProfitLabelerComponent')
-        
+
         # Create Analyst-specific configuration
         analyst_config = AnalystProfitLabelerConfig()
-        
+
         # Override with custom parameters if provided
         if self.config and self.config.custom_params:
             custom_params = self.config.custom_params
-            
+
             # Update timeframe if provided
             if 'timeframe' in custom_params:
                 analyst_config.timeframe = custom_params['timeframe']
@@ -725,12 +722,12 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     analyst_config.base_period_minutes = int(analyst_config.timeframe[:-1])
                 elif analyst_config.timeframe.endswith('h'):
                     analyst_config.base_period_minutes = int(analyst_config.timeframe[:-1]) * 60
-            
+
             # Update other parameters
             for key in ['horizons', 'target_profits', 'min_label_quality', 'min_predictability', 'enable_advanced_filters']:
                 if key in custom_params:
                     setattr(analyst_config, key, custom_params[key])
-            
+
             # Update advanced filters configuration if provided
             if 'advanced_filters_config' in custom_params and ADVANCED_FILTERS_AVAILABLE:
                 filters_config_dict = custom_params['advanced_filters_config']
@@ -738,10 +735,10 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     analyst_config.advanced_filters_config = AdvancedFiltersConfig(**filters_config_dict)
                 elif isinstance(filters_config_dict, AdvancedFiltersConfig):
                     analyst_config.advanced_filters_config = filters_config_dict
-            
+
             # Store all custom params for the underlying labeler
             analyst_config.custom_params = custom_params
-        
+
         # Create the labeler
         try:
             self.labeler = AnalystProfitLabeler(analyst_config)
@@ -749,28 +746,28 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
         except Exception as e:
             tprint_error(f"❌ Failed to initialize AnalystProfitLabelerComponent: {e}")
             raise
-    
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         tprint_info("📋 Getting required artifacts list")
         artifacts = ['multi_horizon_labeling_result', 'labeling_report']
         tprint_success(f"✅ Required artifacts: {artifacts}")
         return artifacts
-    
+
     async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute Analyst profit labeling as a component.
-        
+
         Args:
             data: Input data (typically market data DataFrame)
             pipeline_state: Current pipeline state
-            
+
         Returns:
             ComponentResult with labeling results and artifacts
         """
         try:
             tprint_info("🚀 Starting Analyst Profit Labeling execution...")
-            
+
             # Extract data from pipeline state if not provided
             if data is None:
                 data = pipeline_state.get('prepared_data')
@@ -789,32 +786,32 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
             regime_assignments = pipeline_state.get('regime_assignments')
             if regime_assignments is not None:
                 tprint_info(f"📊 Using regime assignments: {len(regime_assignments)} regimes")
-            
+
             # Generate labels
             labeling_result = self.labeler.generate_labels(
                 data=data,
                 regime_assignments=regime_assignments
             )
-            
+
             # Create artifacts bundle
             from src.training.steps.pre_training.components.contracts import GenericArtifacts
-            
+
             # Save labeled data to parquet file for persistence
             symbol = pipeline_state.get('symbol', 'UNKNOWN')
             exchange = pipeline_state.get('exchange', 'UNKNOWN')
             timeframe = pipeline_state.get('timeframe', 'UNKNOWN')
             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
+
             artifacts_dir = Path('artifacts')
             artifacts_dir.mkdir(parents=True, exist_ok=True)
-            
+
             labeled_data_file = artifacts_dir / f'labeled_data_{symbol}_{exchange}_{timeframe}_{timestamp_str}.parquet'
-            
+
             # Save labeled DataFrame to parquet
             if isinstance(labeling_result.labels, pd.DataFrame) and not labeling_result.labels.empty:
                 labeling_result.labels.to_parquet(labeled_data_file)
                 tprint_success(f"✅ Saved labeled data to {labeled_data_file}")
-            
+
             # GenericArtifacts just needs to be instantiated, then we add attributes
             artifacts = GenericArtifacts()
             artifacts.multi_horizon_labeling_result = {
@@ -840,10 +837,10 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 'horizons': self.labeler.config.horizons,
                 'target_profits': self.labeler.config.target_profits,
             }
-            
+
             # Calculate additional metrics
             opportunities_per_day = None
-            
+
             if labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame):
                 # Calculate opportunities per day (post-filtering)
                 if hasattr(labeling_result.labels.index, 'to_pydatetime'):
@@ -853,7 +850,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                         # Count positive labels (actual opportunities)
                         positive_labels = (labeling_result.labels.iloc[:, 0] == 1).sum() if len(labeling_result.labels.columns) > 0 else 0
                         opportunities_per_day = round(float(positive_labels / date_range_days), 2)
-            
+
             # Create result
             result = ComponentResult(
                 success=True,
@@ -871,18 +868,18 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     'opportunities_per_day': opportunities_per_day
                 }
             )
-            
+
             # Generate outcome file with datetime stamp
             try:
                 outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 outcomes_dir = Path('outcomes')
                 ensure_directory(outcomes_dir)
-                
+
                 outcome_filename = f"analyst_labeler_outcome_{outcome_timestamp}.json"
                 outcome_path = outcomes_dir / outcome_filename
-                
+
                 # Create comprehensive outcome report with detailed statistics
-                
+
                 # Calculate label distribution statistics
                 label_distribution = {}
                 if labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame):
@@ -898,7 +895,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                                 'min': float(label_vals.min()) if pd.api.types.is_numeric_dtype(label_vals) else None,
                                 'max': float(label_vals.max()) if pd.api.types.is_numeric_dtype(label_vals) else None,
                             }
-                
+
                 # Calculate per-horizon and per-target breakdowns
                 horizon_breakdown = {}
                 for i, horizon in enumerate(self.labeler.config.horizons):
@@ -907,14 +904,14 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                         'horizon_bars': horizon // self.labeler.config.base_period_minutes,
                         'expected_labels': labeling_result.n_targets // len(self.labeler.config.horizons) if labeling_result.n_targets > 0 else 0,
                     }
-                
+
                 target_breakdown = {}
                 for i, target in enumerate(self.labeler.config.target_profits):
                     target_breakdown[f"{target}%"] = {
                         'target_profit_pct': target,
                         'expected_labels': labeling_result.n_targets // len(self.labeler.config.target_profits) if labeling_result.n_targets > 0 else 0,
                     }
-                
+
                 # Data quality assessment
                 data_quality = {
                     'input_data': {
@@ -934,7 +931,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                         'targets_per_sample': float(labeling_result.n_targets / labeling_result.n_samples) if labeling_result.n_samples > 0 else 0.0,
                     }
                 }
-                
+
                 outcome_data = {
                     'component': 'analyst_profit_labeler',
                     'timestamp': datetime.now().isoformat(),
@@ -988,27 +985,26 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     'normalization_factors': labeling_result.normalization_factors if labeling_result.normalization_factors else {},
                     'status': 'success'
                 }
-                
+
                 safe_json_dump(outcome_data, str(outcome_path))
                 tprint_success(f"📄 Outcome file saved: {outcome_filename}")
-                
+
             except Exception as outcome_error:
                 tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
                 # Don't fail the component if outcome file generation fails
-            
+
             tprint_success("✅ Analyst Profit Labeling completed successfully")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Analyst Profit Labeling failed: {e}")
-            
+
             result = ComponentResult(
                 success=False,
                 error_message=str(e),
                 metadata={'component': 'analyst_profit_labeler'}
             )
             return result
-
 
 # Convenience function for external usage
 async def execute_analyst_profit_labeling(
@@ -1019,39 +1015,38 @@ async def execute_analyst_profit_labeling(
 ) -> LabelingResult:
     """
     Execute Analyst profit labeling.
-    
+
     Args:
         data: Input market data (OHLCV format)
         regime_assignments: Optional regime assignments
         config: Optional configuration
         **kwargs: Additional parameters
-        
+
     Returns:
         LabelingResult with labels and quality metrics
     """
     tprint_info("🚀 Starting execute_analyst_profit_labeling...")
-    
+
     try:
         tprint_info(f"📊 Input data: {len(data)} rows, {len(data.columns)} columns")
         if regime_assignments is not None:
             tprint_info(f"📈 Regime assignments: {len(regime_assignments)} regimes")
         else:
             tprint_info("📈 No regime assignments provided")
-        
+
         tprint_info("🔧 Creating AnalystProfitLabeler...")
         labeler = AnalystProfitLabeler(config)
         tprint_success("✅ AnalystProfitLabeler created successfully")
-        
+
         tprint_info("📈 Generating labels...")
         result = labeler.generate_labels(data, regime_assignments, **kwargs)
         tprint_success(f"✅ Labels generated successfully: {result.n_samples} samples, {result.n_targets} targets")
-        
+
         return result
 
     except Exception as e:
         tprint_error(f"❌ execute_analyst_profit_labeling failed: {e}")
         raise
-
 
 # Register component with factory
 def _register_analyst_profit_labeler():
@@ -1065,7 +1060,6 @@ def _register_analyst_profit_labeler():
     except ImportError:
         # Component factory not available, skip registration
         pass
-
 
 # Register the component when module is imported
 _register_analyst_profit_labeler()

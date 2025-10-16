@@ -55,7 +55,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 # Hardware optimization imports
@@ -79,7 +79,7 @@ class ParameterOptimizationConfig:
     """Configuration for parameter optimization."""
     # Optimization method
     optimization_method: str = 'adaptive_grid_search'  # 'grid_search', 'adaptive_grid_search', 'genetic', 'scipy'
-    
+
     # Parameter ranges to optimize - Wide ranges for comprehensive exploration
     touch_tolerance_range: Tuple[float, float] = (0.001, 0.01)  # 0.1% to 1% - wide range for flexibility
     min_bounce_strength_range: Tuple[float, float] = (0.0005, 0.005)  # 0.05% to 0.5% - wide range for sensitivity
@@ -93,16 +93,16 @@ class ParameterOptimizationConfig:
     volume_confirmation_multiplier_range: Tuple[float, float] = (0.5, 2.0)
     time_persistence_multiplier_range: Tuple[float, float] = (0.5, 2.0)
     touch_frequency_multiplier_range: Tuple[float, float] = (0.5, 2.0)
-    
+
     # Optimization settings
     n_trials: int = 100  # Number of parameter combinations to try
     cv_folds: int = 3  # Cross-validation folds
     objective_metric: str = 'quality_score_correlation'  # 'quality_score_correlation', 'success_rate', 'composite'
-    
+
     # Small sample handling
     min_samples_for_optimization: int = 10
     adaptive_optimization: bool = True  # Adapt optimization based on sample size
-    
+
     # Hardware optimization settings
     enable_hardware_optimization: bool = True
     enable_parallel_processing: bool = True
@@ -110,10 +110,10 @@ class ParameterOptimizationConfig:
     enable_gpu_acceleration: bool = True
     memory_limit_gb: float = 8.0
     chunk_size: int = 1000
-    
+
     # Grid search settings
     grid_search_steps: int = 5  # Steps per parameter for grid search
-    
+
     # Genetic algorithm settings
     population_size: int = 20
     generations: int = 10
@@ -133,19 +133,19 @@ class ParameterOptimizationResult:
 
 class ParameterOptimizationEngine:
     """Engine for optimizing SR level detection parameters with hardware acceleration."""
-    
+
     def __init__(self, config: Optional[ParameterOptimizationConfig] = None):
         self.config = config or ParameterOptimizationConfig()
         self.logger = logger.getChild('ParameterOptimizationEngine')
-        
+
         # Initialize hardware optimizers
         self.m1_memory_optimizer = None
         self.m1_cpu_optimizer = None
         self.m1_gpu_manager = None
-        
+
         if self.config.enable_hardware_optimization and HARDWARE_OPTIMIZATION_AVAILABLE:
             self._initialize_hardware_optimizers()
-        
+
         self.logger.info("Initializing ParameterOptimizationEngine")
         self.logger.info(f"Optimization method: {self.config.optimization_method}")
 
@@ -209,7 +209,7 @@ class ParameterOptimizationEngine:
         self.logger.info(f"   📊 Volume confirmation: {self.config.volume_confirmation_multiplier_range[0]}x - {self.config.volume_confirmation_multiplier_range[1]}x")
         self.logger.info(f"   ⏰ Time persistence: {self.config.time_persistence_multiplier_range[0]}x - {self.config.time_persistence_multiplier_range[1]}x")
         self.logger.info(f"   👆 Touch frequency: {self.config.touch_frequency_multiplier_range[0]}x - {self.config.touch_frequency_multiplier_range[1]}x")
-    
+
     def _initialize_hardware_optimizers(self):
         """Initialize hardware optimization components."""
         try:
@@ -219,12 +219,12 @@ class ParameterOptimizationEngine:
                     memory_limit_gb=self.config.memory_limit_gb
                 )
                 self.logger.info("✅ M1 Memory Optimizer initialized")
-            
+
             # Initialize M1 CPU optimizer
             if M1CPUOptimizer:
                 self.m1_cpu_optimizer = M1CPUOptimizer()
                 self.logger.info("✅ M1 CPU Optimizer initialized")
-            
+
             # Initialize M1 GPU manager
             if M1GPUManager and self.config.enable_gpu_acceleration:
                 self.m1_gpu_manager = M1GPUManager()
@@ -232,39 +232,39 @@ class ParameterOptimizationEngine:
                     self.logger.info("✅ M1 GPU Manager initialized with MPS support")
                 else:
                     self.logger.info("⚠️ M1 GPU Manager initialized without MPS support")
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to initialize hardware optimizers: {e}")
             self.m1_memory_optimizer = None
             self.m1_cpu_optimizer = None
             self.m1_gpu_manager = None
-    
-    def optimize_parameters(self, backtest_results: List[Any], 
+
+    def optimize_parameters(self, backtest_results: List[Any],
                           market_data: pd.DataFrame) -> ParameterOptimizationResult:
         """
         Optimize SR level detection parameters based on backtesting results.
-        
+
         Args:
             backtest_results: List of BacktestResult objects
             market_data: Market data used for backtesting
-            
+
         Returns:
             ParameterOptimizationResult with optimized parameters
         """
         try:
             self.logger.info(f"Starting parameter optimization with {len(backtest_results)} results")
-            
+
             if len(backtest_results) < self.config.min_samples_for_optimization:
                 self.logger.warning(f"Insufficient samples: {len(backtest_results)} < {self.config.min_samples_for_optimization}")
                 return self._create_fallback_result(backtest_results)
-            
+
             # Determine optimization strategy based on sample size
             if self.config.adaptive_optimization:
                 strategy = self._determine_optimization_strategy(len(backtest_results))
                 self.logger.info(f"Using {strategy} optimization strategy")
             else:
                 strategy = 'standard'
-            
+
             # Run optimization based on method
             if self.config.optimization_method == 'grid_search':
                 return self._grid_search_optimization(backtest_results, market_data, strategy)
@@ -277,11 +277,11 @@ class ParameterOptimizationEngine:
             else:
                 self.logger.error(f"Unknown optimization method: {self.config.optimization_method}")
                 raise ValueError(f"Unknown optimization method: {self.config.optimization_method}")
-                
+
         except Exception as e:
             self.logger.error(f"Parameter optimization failed: {e}")
             raise RuntimeError(f"Parameter optimization failed: {e}")
-    
+
     def _determine_optimization_strategy(self, n_samples: int) -> str:
         """Determine optimization strategy based on sample size."""
         if n_samples < 20:
@@ -290,13 +290,13 @@ class ParameterOptimizationEngine:
             return 'conservative'
         else:
             return 'standard'
-    
-    def _grid_search_optimization(self, backtest_results: List[Any], 
-                                 market_data: pd.DataFrame, 
+
+    def _grid_search_optimization(self, backtest_results: List[Any],
+                                 market_data: pd.DataFrame,
                                  strategy: str) -> ParameterOptimizationResult:
         """Grid search optimization for parameters."""
         self.logger.info("Starting grid search optimization")
-        
+
         # Define parameter grid based on strategy
         if strategy == 'minimal':
             param_grid = self._create_minimal_parameter_grid()
@@ -304,24 +304,24 @@ class ParameterOptimizationEngine:
             param_grid = self._create_conservative_parameter_grid()
         else:
             param_grid = self._create_standard_parameter_grid()
-        
+
         self.logger.info(f"Parameter grid size: {len(param_grid)} combinations")
-        
+
         # Evaluate parameter combinations with parallel processing
         if self.config.enable_parallel_processing and len(param_grid) > 10:
             parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
         else:
             parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
-        
+
         # Find best parameters
         best_score = -np.inf
         best_parameters = {}
-        
+
         for params, score in parameter_scores:
             if score > best_score:
                 best_score = score
                 best_parameters = params
-        
+
         return ParameterOptimizationResult(
             best_parameters=best_parameters,
             best_score=best_score,
@@ -331,13 +331,13 @@ class ParameterOptimizationEngine:
             parameter_scores=parameter_scores,
             optimization_details={'strategy': strategy}
         )
-    
-    def _evaluate_parameters_parallel(self, param_grid: List[Dict[str, Any]], 
-                                    backtest_results: List[Any], 
+
+    def _evaluate_parameters_parallel(self, param_grid: List[Dict[str, Any]],
+                                    backtest_results: List[Any],
                                     market_data: pd.DataFrame) -> List[Tuple[Dict[str, Any], float]]:
         """Evaluate parameters in parallel using hardware optimization."""
         self.logger.info(f"Evaluating {len(param_grid)} parameter combinations in parallel")
-        
+
         # Determine optimal number of workers
         if self.config.max_parallel_workers is None:
             if self.m1_cpu_optimizer:
@@ -346,24 +346,24 @@ class ParameterOptimizationEngine:
                 max_workers = min(multiprocessing.cpu_count(), len(param_grid))
         else:
             max_workers = min(self.config.max_parallel_workers, len(param_grid))
-        
+
         self.logger.info(f"Using {max_workers} parallel workers")
-        
+
         # Create evaluation function with hardware optimization
-        evaluate_func = partial(self._evaluate_single_parameter_set, 
-                               backtest_results=backtest_results, 
+        evaluate_func = partial(self._evaluate_single_parameter_set,
+                               backtest_results=backtest_results,
                                market_data=market_data)
-        
+
         parameter_scores = []
-        
+
         # Use ThreadPoolExecutor for I/O bound operations or ProcessPoolExecutor for CPU bound
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all parameter combinations
             future_to_params = {
-                executor.submit(evaluate_func, params): params 
+                executor.submit(evaluate_func, params): params
                 for params in param_grid
             }
-            
+
             # Collect results
             for i, future in enumerate(concurrent.futures.as_completed(future_to_params)):
                 params = future_to_params[future]
@@ -371,25 +371,25 @@ class ParameterOptimizationEngine:
                     score = future.result()
                     if score is not None:
                         parameter_scores.append((params, score))
-                    
+
                     if i % 10 == 0:
                         self.logger.info(f"Completed {i+1}/{len(param_grid)} parameter evaluations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
                     continue
-        
+
         self.logger.info(f"Parallel evaluation completed: {len(parameter_scores)} successful evaluations")
         return parameter_scores
-    
-    def _evaluate_parameters_sequential(self, param_grid: List[Dict[str, Any]], 
-                                      backtest_results: List[Any], 
+
+    def _evaluate_parameters_sequential(self, param_grid: List[Dict[str, Any]],
+                                      backtest_results: List[Any],
                                       market_data: pd.DataFrame) -> List[Tuple[Dict[str, Any], float]]:
         """Evaluate parameters sequentially with memory optimization."""
         self.logger.info(f"Evaluating {len(param_grid)} parameter combinations sequentially")
-        
+
         parameter_scores = []
-        
+
         for i, params in enumerate(param_grid):
             try:
                 # Use memory checkpoint for each evaluation
@@ -398,75 +398,75 @@ class ParameterOptimizationEngine:
                         score = self._evaluate_single_parameter_set(params, backtest_results, market_data)
                 else:
                     score = self._evaluate_single_parameter_set(params, backtest_results, market_data)
-                
+
                 if score is not None:
                     parameter_scores.append((params, score))
-                
+
                 if i % 10 == 0:
                     self.logger.info(f"Evaluated {i+1}/{len(param_grid)} parameter combinations")
-                    
+
             except Exception as e:
                 self.logger.warning(f"Failed to evaluate parameters {params}: {e}")
                 continue
-        
+
         return parameter_scores
-    
-    def _evaluate_single_parameter_set(self, params: Dict[str, Any], 
-                                     backtest_results: List[Any], 
+
+    def _evaluate_single_parameter_set(self, params: Dict[str, Any],
+                                     backtest_results: List[Any],
                                      market_data: pd.DataFrame) -> Optional[float]:
         """Evaluate a single parameter set with hardware optimization."""
         try:
-            # Use 
+            # Use
             if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
                 return self._evaluate_parameters_gpu_accelerated(params, backtest_results, market_data)
             else:
                 return self._evaluate_parameters_cpu(params, backtest_results, market_data)
-                
+
         except Exception as e:
             self.logger.warning(f"Parameter evaluation failed: {e}")
             return None
-    
+
     def _evaluate_parameters_gpu_accelerated(self, params: Dict[str, Any],
                                             backtest_results: List[Any],
                                             market_data: pd.DataFrame) -> float:
         """Evaluate parameters using GPU acceleration."""
         try:
             import torch
-            
+
             # Convert data to tensors for GPU processing
             if self.m1_gpu_manager.mps_available:
                 device = torch.device("mps")
-                
+
                 # Convert backtest results to tensors (use float32 for MPS compatibility)
                 success_rates = torch.tensor([r.success_rate for r in backtest_results], dtype=torch.float32, device=device)
                 bounce_strengths = torch.tensor([r.avg_bounce_strength for r in backtest_results], dtype=torch.float32, device=device)
                 volumes = torch.tensor([r.total_volume_at_level for r in backtest_results], dtype=torch.float32, device=device)
                 time_persistences = torch.tensor([r.time_persistence for r in backtest_results], dtype=torch.float32, device=device)
                 touch_counts = torch.tensor([r.total_touches for r in backtest_results], dtype=torch.float32, device=device)
-                
+
                 # Convert parameters to tensors (use float32 for MPS compatibility)
                 success_mult = torch.tensor(params['success_rate_multiplier'], dtype=torch.float32, device=device)
                 bounce_mult = torch.tensor(params['bounce_strength_multiplier'], dtype=torch.float32, device=device)
                 volume_mult = torch.tensor(params['volume_confirmation_multiplier'], dtype=torch.float32, device=device)
                 time_mult = torch.tensor(params['time_persistence_multiplier'], dtype=torch.float32, device=device)
                 touch_mult = torch.tensor(params['touch_frequency_multiplier'], dtype=torch.float32, device=device)
-                
+
                 # Apply volume threshold filter
                 volume_threshold = params['volume_threshold_multiplier'] * 1000  # Assume 1000 is avg volume
                 volume_mask = volumes >= volume_threshold
-                
+
                 # Apply touch count filter
                 min_touches = params['min_touches_required']
                 touch_mask = touch_counts >= min_touches
-                
+
                 # Calculate quality scores on GPU
-                volume_confirmation = torch.where(volume_mask, 
-                                                torch.clamp(volumes / 10000, 0, 1), 
+                volume_confirmation = torch.where(volume_mask,
+                                                torch.clamp(volumes / 10000, 0, 1),
                                                 torch.zeros_like(volumes))
                 touch_frequency = torch.where(touch_mask,
                                             torch.clamp(touch_counts / 10, 0, 1),
                                             torch.zeros_like(touch_counts))
-                
+
                 quality_scores = (
                     success_rates * success_mult +
                     bounce_strengths * 100 * bounce_mult +
@@ -474,59 +474,59 @@ class ParameterOptimizationEngine:
                     time_persistences * time_mult +
                     touch_frequency * touch_mult
                 )
-                
+
                 # Normalize by total multiplier sum
                 total_multiplier = success_mult + bounce_mult + volume_mult + time_mult + touch_mult
                 quality_scores = quality_scores / total_multiplier
                 quality_scores = torch.clamp(quality_scores, 0, 1)
-                
+
                 # Calculate correlation with original scores (use float32 for MPS compatibility)
                 original_scores = torch.tensor([r.quality_score for r in backtest_results], dtype=torch.float32, device=device)
                 correlation = torch.corrcoef(torch.stack([original_scores, quality_scores]))[0, 1]
-                
+
                 return correlation.item() if not torch.isnan(correlation) else 0.0
-                
+
         except Exception as e:
             self.logger.warning(f"GPU evaluation failed, falling back to CPU: {e}")
             return self._evaluate_parameters_cpu(params, backtest_results, market_data)
-    
-    def _evaluate_parameters_cpu(self, params: Dict[str, Any], 
-                               backtest_results: List[Any], 
+
+    def _evaluate_parameters_cpu(self, params: Dict[str, Any],
+                               backtest_results: List[Any],
                                market_data: pd.DataFrame) -> float:
         """Evaluate parameters using CPU (original implementation)."""
         return self._evaluate_parameters(params, backtest_results, market_data)
-    
-    def _adaptive_grid_search_optimization(self, backtest_results: List[Any], 
-                                         market_data: pd.DataFrame, 
+
+    def _adaptive_grid_search_optimization(self, backtest_results: List[Any],
+                                         market_data: pd.DataFrame,
                                          strategy: str) -> ParameterOptimizationResult:
         """Adaptive grid search optimization with coarse-to-fine approach."""
         self.logger.info("Starting adaptive grid search optimization")
-        
+
         # Stage 1: Coarse grid search
         self.logger.info("Stage 1: Coarse grid search")
         coarse_result = self._coarse_grid_search(backtest_results, market_data, strategy)
-        
+
         if not coarse_result.optimization_success or coarse_result.best_score <= 0.0:
             self.logger.warning("Coarse grid search failed or returned invalid score (<= 0.0), using data-driven parameters")
             return self._create_data_driven_result(backtest_results, market_data)
-        
+
         # Stage 2: Fine grid search around best parameters
         self.logger.info("Stage 2: Fine grid search around best parameters")
         fine_result = self._fine_grid_search(backtest_results, market_data, coarse_result.best_parameters)
-        
+
         if fine_result.optimization_success and fine_result.best_score > coarse_result.best_score and fine_result.best_score > 0.0:
             self.logger.info(f"Fine grid search improved score: {coarse_result.best_score:.4f} -> {fine_result.best_score:.4f}")
             return fine_result
         else:
             self.logger.info("Fine grid search did not improve results or returned invalid score, using data-driven parameters")
             return self._create_data_driven_result(backtest_results, market_data)
-    
-    def _coarse_grid_search(self, backtest_results: List[Any], 
-                           market_data: pd.DataFrame, 
+
+    def _coarse_grid_search(self, backtest_results: List[Any],
+                           market_data: pd.DataFrame,
                            strategy: str) -> ParameterOptimizationResult:
         """Coarse grid search with fewer parameter combinations."""
         self.logger.info("Running coarse grid search")
-        
+
         # Use fewer parameter combinations for coarse search
         if strategy == 'minimal':
             param_grid = self._create_minimal_parameter_grid()
@@ -535,24 +535,24 @@ class ParameterOptimizationEngine:
         else:
             # Create coarse grid for standard strategy
             param_grid = self._create_coarse_parameter_grid()
-        
+
         self.logger.info(f"Coarse parameter grid size: {len(param_grid)} combinations")
-        
+
         # Evaluate parameter combinations with parallel processing
         if self.config.enable_parallel_processing and len(param_grid) > 5:
             parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
         else:
             parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
-        
+
         # Find best parameters
         best_score = -np.inf
         best_parameters = {}
-        
+
         for params, score in parameter_scores:
             if score > best_score:
                 best_score = score
                 best_parameters = params
-        
+
         return ParameterOptimizationResult(
             best_parameters=best_parameters,
             best_score=best_score,
@@ -562,33 +562,33 @@ class ParameterOptimizationEngine:
             parameter_scores=parameter_scores,
             optimization_details={'strategy': strategy, 'stage': 'coarse'}
         )
-    
-    def _fine_grid_search(self, backtest_results: List[Any], 
-                         market_data: pd.DataFrame, 
+
+    def _fine_grid_search(self, backtest_results: List[Any],
+                         market_data: pd.DataFrame,
                          best_parameters: Dict[str, Any]) -> ParameterOptimizationResult:
         """Fine grid search around the best parameters from coarse search."""
         self.logger.info("Running fine grid search around best parameters")
-        
+
         # Create fine grid around best parameters
         param_grid = self._create_fine_parameter_grid(best_parameters)
-        
+
         self.logger.info(f"Fine parameter grid size: {len(param_grid)} combinations")
-        
+
         # Evaluate parameter combinations with parallel processing
         if self.config.enable_parallel_processing and len(param_grid) > 10:
             parameter_scores = self._evaluate_parameters_parallel(param_grid, backtest_results, market_data)
         else:
             parameter_scores = self._evaluate_parameters_sequential(param_grid, backtest_results, market_data)
-        
+
         # Find best parameters
         best_score = -np.inf
         best_parameters_fine = {}
-        
+
         for params, score in parameter_scores:
             if score > best_score:
                 best_score = score
                 best_parameters_fine = params
-        
+
         return ParameterOptimizationResult(
             best_parameters=best_parameters_fine,
             best_score=best_score,
@@ -598,7 +598,7 @@ class ParameterOptimizationEngine:
             parameter_scores=parameter_scores,
             optimization_details={'stage': 'fine', 'coarse_best_score': best_score}
         )
-    
+
     def _create_coarse_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create refined coarse parameter grid with higher resolution."""
         # Higher resolution grid for better initial exploration
@@ -615,7 +615,7 @@ class ParameterOptimizationEngine:
             [0.2, 0.3, 0.2, 0.15, 0.15],    # Bounce-focused
             [0.25, 0.2, 0.25, 0.15, 0.15],  # Volume-focused
         ]
-        
+
         param_grid = []
         for tt, mbs, vt, mt, mht, weights in product(touch_tolerance_values, min_bounce_strength_values,
                                            volume_threshold_values, min_touches_values, max_hold_time_values,
@@ -633,9 +633,9 @@ class ParameterOptimizationEngine:
                 'touch_frequency_multiplier': weights[4]
             }
             param_grid.append(params)
-        
+
         return param_grid
-    
+
     def _create_fine_parameter_grid(self, best_parameters: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Create ultra-refined parameter grid using multi-dimensional optimization.
@@ -771,30 +771,30 @@ class ParameterOptimizationEngine:
     def _create_parameter_interaction_combinations(self, best_parameters: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create parameter combinations to test interaction effects."""
         interaction_grid = []
-        
+
         # Test key parameter interactions
         interaction_pairs = [
             ('touch_tolerance', 'min_bounce_strength'),
             ('volume_threshold_multiplier', 'min_touches_required'),
             ('success_rate_multiplier', 'bounce_strength_multiplier'),
         ]
-        
+
         for param1, param2 in interaction_pairs:
             if param1 in best_parameters and param2 in best_parameters:
                 val1 = best_parameters[param1]
                 val2 = best_parameters[param2]
-                
+
                 # Create 2x2 grid around the best values
                 if param1 in ['min_touches_required', 'max_hold_time']:
                     vals1 = [max(1, val1 - 1), val1, val1 + 1]
                 else:
                     vals1 = [val1 * 0.9, val1, val1 * 1.1]
-                
+
                 if param2 in ['min_touches_required', 'max_hold_time']:
                     vals2 = [max(1, val2 - 1), val2, val2 + 1]
                 else:
                     vals2 = [val2 * 0.9, val2, val2 * 1.1]
-                
+
                 # Create combinations
                 for v1 in vals1:
                     for v2 in vals2:
@@ -802,17 +802,17 @@ class ParameterOptimizationEngine:
                         params[param1] = v1
                         params[param2] = v2
                         interaction_grid.append(params)
-        
+
         return interaction_grid
-    
-    def _create_data_driven_result(self, backtest_results: List[Any], 
+
+    def _create_data_driven_result(self, backtest_results: List[Any],
                                  market_data: pd.DataFrame) -> ParameterOptimizationResult:
         """Create data-driven parameters without optimization."""
         self.logger.info("Creating data-driven parameters")
-        
+
         # Calculate data-driven parameters
         data_driven_params = self._calculate_data_driven_parameters(backtest_results, market_data)
-        
+
         return ParameterOptimizationResult(
             best_parameters=data_driven_params,
             best_score=0.0,
@@ -822,8 +822,8 @@ class ParameterOptimizationEngine:
             parameter_scores=[],
             optimization_details={'method': 'data_driven_calculation'}
         )
-    
-    def _calculate_data_driven_parameters(self, backtest_results: List[Any], 
+
+    def _calculate_data_driven_parameters(self, backtest_results: List[Any],
                                         market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate data-driven parameters from market data and backtest results."""
         try:
@@ -831,11 +831,11 @@ class ParameterOptimizationEngine:
             returns = market_data['close'].pct_change().dropna()
             price_volatility = returns.rolling(20).std().mean()
             touch_tolerance = max(0.001, min(0.01, price_volatility * 2))
-            
+
             # Calculate min bounce strength from historical bounces
             high_low_returns = (market_data['high'] - market_data['low']) / market_data['close']
             min_bounce_strength = max(0.0005, high_low_returns.quantile(0.25))
-            
+
             # Calculate volume threshold from volume distribution
             if 'volume' in market_data.columns:
                 avg_volume = market_data['volume'].rolling(20).mean().mean()
@@ -843,24 +843,24 @@ class ParameterOptimizationEngine:
                 volume_threshold_multiplier = 1.5 + volume_volatility
             else:
                 volume_threshold_multiplier = 1.5
-            
+
             # Calculate optimal min touches from backtest results
             if backtest_results:
                 touch_counts = [r.total_touches for r in backtest_results]
                 success_rates = [r.success_rate for r in backtest_results]
-                
+
                 # Find touch count that maximizes success rate
                 touch_success_data = {}
                 for touches, success_rate in zip(touch_counts, success_rates):
                     if touches not in touch_success_data:
                         touch_success_data[touches] = []
                     touch_success_data[touches].append(success_rate)
-                
+
                 avg_success_by_touches = {}
                 for touches, success_rates in touch_success_data.items():
                     if len(success_rates) >= 2:
                         avg_success_by_touches[touches] = np.mean(success_rates)
-                
+
                 if avg_success_by_touches:
                     best_touches = max(avg_success_by_touches.items(), key=lambda x: x[1])[0]
                     min_touches_required = max(1, min(best_touches, 6))
@@ -868,7 +868,7 @@ class ParameterOptimizationEngine:
                     min_touches_required = 3
             else:
                 min_touches_required = 3
-            
+
             # Calculate max hold time from market characteristics
             if 'timestamp' in market_data.columns:
                 time_diffs = market_data['timestamp'].diff().dt.total_seconds() / 3600
@@ -876,7 +876,7 @@ class ParameterOptimizationEngine:
                 max_hold_time = max(1, min(48, int(avg_time_diff * 10)))
             else:
                 max_hold_time = 24
-            
+
             # Generate more realistic parameters using market data characteristics
             import random
             random.seed(42)  # For reproducibility
@@ -926,7 +926,7 @@ class ParameterOptimizationEngine:
                 'time_persistence_multiplier': round(time_persistence_multiplier, 3),
                 'touch_frequency_multiplier': round(touch_frequency_multiplier, 3)
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate data-driven parameters: {e}")
             # Return conservative defaults with realistic market-based variation
@@ -945,16 +945,16 @@ class ParameterOptimizationEngine:
                 'time_persistence_multiplier': round(0.91 + random.uniform(-0.13, 0.13), 3),
                 'touch_frequency_multiplier': round(0.85 + random.uniform(-0.10, 0.10), 3)
             }
-    
-    def _genetic_algorithm_optimization(self, backtest_results: List[Any], 
-                                      market_data: pd.DataFrame, 
+
+    def _genetic_algorithm_optimization(self, backtest_results: List[Any],
+                                      market_data: pd.DataFrame,
                                       strategy: str) -> ParameterOptimizationResult:
         """Genetic algorithm optimization for parameters."""
         self.logger.info("Starting genetic algorithm optimization")
-        
+
         # Define parameter bounds
         bounds = self._get_parameter_bounds(strategy)
-        
+
         def objective_function(params):
             """Objective function for genetic algorithm."""
             try:
@@ -964,7 +964,7 @@ class ParameterOptimizationEngine:
             except Exception as e:
                 self.logger.warning(f"Objective function failed: {e}")
                 return 1.0  # Return high penalty for failed evaluation
-        
+
         # Run genetic algorithm
         result = differential_evolution(
             objective_function,
@@ -975,11 +975,11 @@ class ParameterOptimizationEngine:
             recombination=self.config.crossover_rate,
             seed=42
         )
-        
+
         if result.success:
             best_params = self._params_array_to_dict(result.x, bounds)
             best_score = -result.fun
-            
+
             return ParameterOptimizationResult(
                 best_parameters=best_params,
                 best_score=best_score,
@@ -995,16 +995,16 @@ class ParameterOptimizationEngine:
         else:
             self.logger.warning("Genetic algorithm optimization failed")
             return self._create_fallback_result(backtest_results)
-    
-    def _scipy_optimization(self, backtest_results: List[Any], 
-                           market_data: pd.DataFrame, 
+
+    def _scipy_optimization(self, backtest_results: List[Any],
+                           market_data: pd.DataFrame,
                            strategy: str) -> ParameterOptimizationResult:
         """Scipy optimization for parameters."""
         self.logger.info("Starting scipy optimization")
-        
+
         # Define parameter bounds
         bounds = self._get_parameter_bounds(strategy)
-        
+
         def objective_function(params):
             """Objective function for scipy optimization."""
             try:
@@ -1014,10 +1014,10 @@ class ParameterOptimizationEngine:
             except Exception as e:
                 self.logger.warning(f"Objective function failed: {e}")
                 return 1.0
-        
+
         # Initial guess (middle of bounds)
         x0 = [(bounds[i][0] + bounds[i][1]) / 2 for i in range(len(bounds))]
-        
+
         # Run optimization
         result = minimize(
             objective_function,
@@ -1026,11 +1026,11 @@ class ParameterOptimizationEngine:
             bounds=bounds,
             options={'maxiter': 100}
         )
-        
+
         if result.success:
             best_params = self._params_array_to_dict(result.x, bounds)
             best_score = -result.fun
-            
+
             return ParameterOptimizationResult(
                 best_parameters=best_params,
                 best_score=best_score,
@@ -1046,7 +1046,7 @@ class ParameterOptimizationEngine:
         else:
             self.logger.warning("Scipy optimization failed")
             return self._create_fallback_result(backtest_results)
-    
+
     def _create_minimal_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create minimal parameter grid for small samples."""
         # Use fewer parameter combinations for small samples with added randomness
@@ -1091,7 +1091,7 @@ class ParameterOptimizationEngine:
             param_grid.append(params)
 
         return param_grid
-    
+
     def _create_conservative_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create conservative parameter grid for medium samples."""
         # Use moderate number of parameter combinations with added realism
@@ -1135,9 +1135,9 @@ class ParameterOptimizationEngine:
                 'touch_frequency_multiplier': round(0.89 + random.uniform(-0.11, 0.11), 3)
             }
             param_grid.append(params)
-        
+
         return param_grid
-    
+
     def _create_standard_parameter_grid(self) -> List[Dict[str, Any]]:
         """Create standard parameter grid for large samples."""
         # Use full parameter grid
@@ -1146,7 +1146,7 @@ class ParameterOptimizationEngine:
         volume_threshold_values = np.linspace(*self.config.volume_threshold_range, self.config.grid_search_steps)
         min_touches_values = list(range(self.config.min_touches_range[0], self.config.min_touches_range[1] + 1))
         max_hold_time_values = [6, 12, 24, 36, 48]
-        
+
         # Multiplier combinations (more intuitive than weights)
         multiplier_combinations = [
             [1.0, 1.0, 1.0, 1.0, 1.0],   # Default (equal emphasis)
@@ -1155,10 +1155,10 @@ class ParameterOptimizationEngine:
             [0.8, 0.8, 1.5, 0.8, 0.8],   # Focus on volume
             [0.8, 0.8, 0.8, 1.5, 0.8],   # Focus on time persistence
         ]
-        
+
         param_grid = []
-        for tt, mbs, vt, mt, mht, multipliers in product(touch_tolerance_values, min_bounce_strength_values, 
-                                                        volume_threshold_values, min_touches_values, 
+        for tt, mbs, vt, mt, mht, multipliers in product(touch_tolerance_values, min_bounce_strength_values,
+                                                        volume_threshold_values, min_touches_values,
                                                         max_hold_time_values, multiplier_combinations):
             params = {
                 'touch_tolerance': tt,
@@ -1173,9 +1173,9 @@ class ParameterOptimizationEngine:
                 'touch_frequency_multiplier': multipliers[4]
             }
             param_grid.append(params)
-        
+
         return param_grid
-    
+
     def _get_parameter_bounds(self, strategy: str) -> List[Tuple[float, float]]:
         """Get parameter bounds for optimization."""
         bounds = [
@@ -1190,9 +1190,9 @@ class ParameterOptimizationEngine:
             self.config.time_persistence_multiplier_range,
             self.config.touch_frequency_multiplier_range
         ]
-        
+
         return bounds
-    
+
     def _params_array_to_dict(self, params: np.ndarray, bounds: List[Tuple[float, float]]) -> Dict[str, Any]:
         """Convert parameter array to dictionary."""
         param_names = [
@@ -1201,33 +1201,33 @@ class ParameterOptimizationEngine:
             'bounce_strength_multiplier', 'volume_confirmation_multiplier',
             'time_persistence_multiplier', 'touch_frequency_multiplier'
         ]
-        
+
         param_dict = {}
         for i, name in enumerate(param_names):
             if name in ['min_touches_required', 'max_hold_time']:
                 param_dict[name] = int(round(params[i]))
             else:
                 param_dict[name] = params[i]
-        
+
         return param_dict
-    
-    def _evaluate_parameters(self, params: Dict[str, Any], 
-                           backtest_results: List[Any], 
+
+    def _evaluate_parameters(self, params: Dict[str, Any],
+                           backtest_results: List[Any],
                            market_data: pd.DataFrame) -> float:
         """Evaluate parameter set by recalculating quality scores."""
         try:
             # Recalculate quality scores with new parameters
             recalculated_scores = []
             original_scores = []
-            
+
             for result in backtest_results:
                 # Store original score
                 original_scores.append(result.quality_score)
-                
+
                 # Recalculate with new parameters
                 new_score = self._calculate_quality_score_with_params(result, params)
                 recalculated_scores.append(new_score)
-            
+
             # Calculate objective metric
             if self.config.objective_metric == 'quality_score_correlation':
                 # Maximize correlation between original and recalculated scores
@@ -1244,33 +1244,33 @@ class ParameterOptimizationEngine:
                     score_mean = np.mean(recalculated_scores)
                     consistency_score = 1.0 / (1.0 + score_std)  # Higher consistency = higher score
                     return consistency_score
-            
+
             elif self.config.objective_metric == 'success_rate':
                 # Maximize average success rate
                 success_rates = [r.success_rate for r in backtest_results]
                 return np.mean(success_rates)
-            
+
             elif self.config.objective_metric == 'composite':
                 # Composite metric combining multiple factors
                 correlation, _ = pearsonr(original_scores, recalculated_scores)
                 correlation = correlation if not np.isnan(correlation) else 0.0
-                
+
                 success_rates = [r.success_rate for r in backtest_results]
                 avg_success_rate = np.mean(success_rates)
-                
+
                 # Combine correlation and success rate
                 composite_score = 0.6 * correlation + 0.4 * avg_success_rate
                 return composite_score
-            
+
             else:
                 # Default to correlation
                 correlation, _ = pearsonr(original_scores, recalculated_scores)
                 return correlation if not np.isnan(correlation) else 0.0
-                
+
         except Exception as e:
             self.logger.warning(f"Parameter evaluation failed: {e}")
             return 0.0
-    
+
     def _calculate_quality_score_with_params(self, result: Any, params: Dict[str, Any]) -> float:
         """Calculate quality score with given parameters."""
         try:
@@ -1280,15 +1280,15 @@ class ParameterOptimizationEngine:
             volume_confirmation = min(result.total_volume_at_level / 10000, 1.0)  # Normalize volume
             time_persistence = result.time_persistence
             touch_frequency = min(result.total_touches / 10, 1.0)  # Normalize touches
-            
+
             # Apply volume threshold filter
             if result.total_volume_at_level < params['volume_threshold_multiplier'] * 1000:  # Assume 1000 is avg volume
                 volume_confirmation = 0.0
-            
+
             # Apply touch count filter
             if result.total_touches < params['min_touches_required']:
                 touch_frequency = 0.0
-            
+
             # Calculate quality score using multipliers
             quality_score = (
                 success_rate * params['success_rate_multiplier'] +
@@ -1297,7 +1297,7 @@ class ParameterOptimizationEngine:
                 time_persistence * params['time_persistence_multiplier'] +
                 touch_frequency * params['touch_frequency_multiplier']
             )
-            
+
             # Normalize by total multiplier sum to keep score in [0, 1] range
             total_multiplier = (
                 params['success_rate_multiplier'] +
@@ -1306,12 +1306,12 @@ class ParameterOptimizationEngine:
                 params['time_persistence_multiplier'] +
                 params['touch_frequency_multiplier']
             )
-            
+
             if total_multiplier > 0:
                 quality_score = quality_score / total_multiplier
-            
+
             return min(max(quality_score, 0.0), 1.0)  # Clamp to [0, 1]
-            
+
         except Exception as e:
             self.logger.warning(f"Quality score calculation failed: {e}")
             return 0.0
@@ -1322,16 +1322,16 @@ def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConf
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1350,8 +1350,8 @@ def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConf
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1368,7 +1368,7 @@ def get_parameter_optimization_engine(config: Optional[ParameterOptimizationConf
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""

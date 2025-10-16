@@ -27,7 +27,6 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-
 class FeatureCreationMethod(Enum):
     """Enumeration of feature creation methods."""
     ADD = "add"
@@ -53,7 +52,6 @@ class FeatureCreationMethod(Enum):
     COS_MULTIPLY = "cos_multiply"
     TAN_DIVIDE = "tan_divide"
 
-
 class FeatureType(Enum):
     """Enumeration of feature types."""
     CROSS_TIMEFRAME = "cross_timeframe"
@@ -61,32 +59,31 @@ class FeatureType(Enum):
     NO_FEATURE = "no_feature"
     COMPARISON = "comparison"
 
-
 @dataclass
 class FeatureGenerationConfig:
     """Configuration for common feature generation."""
-    
+
     # Lookback optimization settings
     min_lookback: int = 5
     max_lookback: int = 100
     lookback_step: int = 5
     num_informative_periods: int = 3  # Number of informative periods to generate
-    
+
     # Feature creation methods
     creation_methods: List[FeatureCreationMethod] = None
-    
+
     # Cross timeframe settings
     cross_timeframe_periods: List[int] = None
-    
+
     # Interaction settings
     interaction_orders: List[int] = None
     max_interactions_per_pair: int = 5
-    
+
     # Optimization settings
     utility_threshold: float = 0.1
     correlation_threshold: float = 0.95
     stability_threshold: float = 0.7
-    
+
     def __post_init__(self):
         if self.creation_methods is None:
             self.creation_methods = [
@@ -113,24 +110,23 @@ class FeatureGenerationConfig:
                 FeatureCreationMethod.COS_MULTIPLY,
                 FeatureCreationMethod.TAN_DIVIDE
             ]
-        
+
         if self.cross_timeframe_periods is None:
             self.cross_timeframe_periods = [5, 10, 20, 30, 50, 100, 200]
-        
+
         if self.interaction_orders is None:
             self.interaction_orders = [2, 3]
 
-
 class CommonFeatureGenerator:
     """Common feature generation logic for all feature types."""
-    
+
     def __init__(self, config: FeatureGenerationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-    
+
     def generate_features_with_creation_methods(
-        self, 
-        series1: pd.Series, 
+        self,
+        series1: pd.Series,
         series2: Optional[pd.Series] = None,
         series3: Optional[pd.Series] = None,
         feature_type: FeatureType = FeatureType.INTERACTION,
@@ -139,7 +135,7 @@ class CommonFeatureGenerator:
     ) -> List[Dict[str, Any]]:
         """
         Generate features using various creation methods.
-        
+
         Args:
             series1: Primary series
             series2: Secondary series (for 2-way interactions)
@@ -147,12 +143,12 @@ class CommonFeatureGenerator:
             feature_type: Type of feature being generated
             base_name: Base name for the features
             lookback_period: Lookback period for the features
-            
+
         Returns:
             List of feature dictionaries with series, formula, and metadata
         """
         features = []
-        
+
         try:
             if series2 is None:
                 # Single series features
@@ -169,23 +165,23 @@ class CommonFeatureGenerator:
                 features.extend(self._generate_three_series_features(
                     series1, series2, series3, feature_type, base_name, lookback_period
                 ))
-            
+
             return features
-            
+
         except Exception as e:
             tprint_debug(f"Error generating features with creation methods: {e}")
             return []
-    
+
     def _generate_single_series_features(
-        self, 
-        series: pd.Series, 
+        self,
+        series: pd.Series,
         feature_type: FeatureType,
         base_name: str,
         lookback_period: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Generate features from a single series."""
         features = []
-        
+
         try:
             # Basic transformations
             transformations = {
@@ -201,12 +197,12 @@ class CommonFeatureGenerator:
                 'cos': lambda x: np.cos(x),
                 'tan': lambda x: np.tan(x)
             }
-            
+
             for method_name, transform_func in transformations.items():
                 try:
                     transformed_series = transform_func(series)
                     formula = f"{method_name}({base_name})"
-                    
+
                     features.append({
                         'series': transformed_series,
                         'formula': formula,
@@ -218,16 +214,16 @@ class CommonFeatureGenerator:
                 except Exception as e:
                     tprint_debug(f"Error applying {method_name} transformation: {e}")
                     continue
-            
+
             return features
-            
+
         except Exception as e:
             tprint_debug(f"Error generating single series features: {e}")
             return []
-    
+
     def _generate_two_series_features(
-        self, 
-        series1: pd.Series, 
+        self,
+        series1: pd.Series,
         series2: pd.Series,
         feature_type: FeatureType,
         base_name: str,
@@ -235,7 +231,7 @@ class CommonFeatureGenerator:
     ) -> List[Dict[str, Any]]:
         """Generate features from two series using various creation methods."""
         features = []
-        
+
         try:
             for method in self.config.creation_methods:
                 try:
@@ -307,7 +303,7 @@ class CommonFeatureGenerator:
                         formula = f"tan({base_name}_1) / tan({base_name}_2)"
                     else:
                         continue
-                    
+
                     features.append({
                         'series': result_series,
                         'formula': formula,
@@ -316,20 +312,20 @@ class CommonFeatureGenerator:
                         'lookback_period': lookback_period,
                         'parent_features': [f"{base_name}_1", f"{base_name}_2"]
                     })
-                    
+
                 except Exception as e:
                     tprint_debug(f"Error applying {method.value} to two series: {e}")
                     continue
-            
+
             return features
-            
+
         except Exception as e:
             tprint_debug(f"Error generating two series features: {e}")
             return []
-    
+
     def _generate_three_series_features(
-        self, 
-        series1: pd.Series, 
+        self,
+        series1: pd.Series,
         series2: pd.Series,
         series3: pd.Series,
         feature_type: FeatureType,
@@ -338,23 +334,23 @@ class CommonFeatureGenerator:
     ) -> List[Dict[str, Any]]:
         """Generate features from three series using various creation methods."""
         features = []
-        
+
         try:
             # Three-way interaction methods
             three_way_methods = [
                 ('multiply', lambda x, y, z: x * y * z, f"{base_name}_1 * {base_name}_2 * {base_name}_3"),
                 ('add', lambda x, y, z: x + y + z, f"{base_name}_1 + {base_name}_2 + {base_name}_3"),
                 ('ratio', lambda x, y, z: (x * y) / (z + 1e-8), f"({base_name}_1 * {base_name}_2) / ({base_name}_3 + 1e-8)"),
-                ('log_multiply', lambda x, y, z: np.log(np.abs(x) + 1e-8) * np.log(np.abs(y) + 1e-8) * np.log(np.abs(z) + 1e-8), 
+                ('log_multiply', lambda x, y, z: np.log(np.abs(x) + 1e-8) * np.log(np.abs(y) + 1e-8) * np.log(np.abs(z) + 1e-8),
                  f"log(|{base_name}_1|) * log(|{base_name}_2|) * log(|{base_name}_3|)"),
                 ('exp_add', lambda x, y, z: np.exp(x) + np.exp(y) + np.exp(z), f"exp({base_name}_1) + exp({base_name}_2) + exp({base_name}_3)"),
                 ('abs_multiply', lambda x, y, z: np.abs(x) * np.abs(y) * np.abs(z), f"abs({base_name}_1) * abs({base_name}_2) * abs({base_name}_3)")
             ]
-            
+
             for method_name, transform_func, formula in three_way_methods:
                 try:
                     result_series = transform_func(series1, series2, series3)
-                    
+
                     features.append({
                         'series': result_series,
                         'formula': formula,
@@ -363,22 +359,19 @@ class CommonFeatureGenerator:
                         'lookback_period': lookback_period,
                         'parent_features': [f"{base_name}_1", f"{base_name}_2", f"{base_name}_3"]
                     })
-                    
+
                 except Exception as e:
                     tprint_debug(f"Error applying {method_name} to three series: {e}")
                     continue
-            
+
             return features
-            
+
         except Exception as e:
             tprint_debug(f"Error generating three series features: {e}")
             return []
-
-
 
 def create_common_feature_generator(config: Optional[FeatureGenerationConfig] = None) -> CommonFeatureGenerator:
     """Create a common feature generator instance."""
     if config is None:
         config = FeatureGenerationConfig()
     return CommonFeatureGenerator(config)
-

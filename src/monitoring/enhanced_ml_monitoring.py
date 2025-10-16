@@ -105,21 +105,21 @@ class TradeDecision:
     context: TradeContext
     trading_mode: TradingMode
     timestamp: datetime
-    
+
     # Trading indicators
     trading_indicators: List[TradingIndicator]
     overall_confidence: float
     overall_risk_score: float
-    
+
     # Ensemble decision
     ensemble_decision: EnsembleDecision
-    
+
     # Final decision
     action: str  # "buy", "sell", "hold"
     position_size: float
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
-    
+
     # Performance tracking
     execution_time_ms: float = 0.0
     success_metrics: Optional[Dict[str, float]] = None
@@ -130,20 +130,20 @@ class ModelPerformanceMetrics:
     model_id: str
     model_type: ModelType
     timestamp: datetime
-    
+
     # Accuracy metrics
     accuracy: float
     precision: float
     recall: float
     f1_score: float
     auc_score: Optional[float] = None
-    
+
     # Trading performance
     win_rate: float
     profit_factor: float
     sharpe_ratio: float
     max_drawdown: float
-    
+
     # Model stability
     prediction_confidence_std: float
     feature_importance_stability: float
@@ -155,19 +155,19 @@ class EnsemblePerformanceMetrics:
     """Performance metrics for ensembles."""
     ensemble_id: str
     timestamp: datetime
-    
+
     # Overall performance
     accuracy: float
     win_rate: float
     profit_factor: float
     sharpe_ratio: float
-    
+
     # Ensemble-specific metrics
     model_diversity_score: float
     consensus_quality: float
     disagreement_impact: float
     weight_stability: float
-    
+
     # Individual model contributions
     model_contributions: Dict[str, float]
 
@@ -175,52 +175,52 @@ class EnhancedMLMonitor:
     """
     Enhanced ML monitoring system with comprehensive tracking and explanations.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """Initialize the enhanced ML monitor."""
         self.config = config
         self.logger = system_logger.getChild("EnhancedMLMonitor")
-        
+
         # Configuration
         self.monitor_config = config.get("enhanced_ml_monitoring", {})
         self.enable_shap = self.monitor_config.get("enable_shap", True)
         self.enable_lime = self.monitor_config.get("enable_lime", True)
         self.csv_export_interval = self.monitor_config.get("csv_export_interval_days", 30)
         self.max_decisions_in_memory = self.monitor_config.get("max_decisions_in_memory", 10000)
-        
+
         # Storage
         self.trade_decisions: List[TradeDecision] = []
         self.model_performances: List[ModelPerformanceMetrics] = []
         self.ensemble_performances: List[EnsemblePerformanceMetrics] = []
-        
+
         # Export paths
         self.export_dir = Path(self.monitor_config.get("export_directory", "monitoring_exports"))
         self.export_dir.mkdir(exist_ok = True)
-        
+
         # Initialize explainability tools
         self._initialize_explainability_tools()
-        
+
         # Performance tracking
         self.start_time = datetime.now()
         self.decision_count = 0
-        
+
         self.logger.info("Enhanced ML Monitor initialized")
-    
+
     def _initialize_explainability_tools(self):
         """Initialize SHAP and LIME analyzers."""
         try:
             # Import SHAP and LIME analyzers
             from .shap_lime_integration import SHAPAnalyzer, LIMEAnalyzer
-            
+
             self.shap_analyzer = SHAPAnalyzer(self.config) if self.enable_shap else None
             self.lime_analyzer = LIMEAnalyzer(self.config) if self.enable_lime else None
-            
+
             self.logger.info("Explainability tools initialized")
         except ImportError as e:
             self.logger.warning(f"Could not initialize explainability tools: {e}")
             self.shap_analyzer = None
             self.lime_analyzer = None
-    
+
     @handles_errors(default_return = None, context="enhanced_ml_monitor.record_trade_decision")
     async def record_trade_decision(self, decision: TradeDecision) -> None:
         """Record a complete trade decision with all context and explanations."""
@@ -228,113 +228,113 @@ class EnhancedMLMonitor:
             # Add to memory storage
             self.trade_decisions.append(decision)
             self.decision_count += 1
-            
+
             # Maintain memory limit
             if len(self.trade_decisions) > self.max_decisions_in_memory:
                 self.trade_decisions = self.trade_decisions[-self.max_decisions_in_memory:]
-            
+
             # Log decision summary
             self.logger.info(
                 f"Recorded trade decision {decision.decision_id}: "
                 f"{decision.action} {decision.context.token} at {decision.context.price} "
                 f"(confidence: {decision.overall_confidence:.3f}, risk: {decision.overall_risk_score:.3f})"
             )
-            
+
             # Check if we need to export
             await self._check_and_export_if_needed()
-            
+
         except Exception as e:
             self.logger.error(f"Error recording trade decision: {e}")
-    
+
     @handles_errors(default_return = None, context="enhanced_ml_monitor.record_model_performance")
     async def record_model_performance(self, performance: ModelPerformanceMetrics) -> None:
         """Record model performance metrics."""
         try:
             self.model_performances.append(performance)
-            
+
             # Maintain memory limit
             if len(self.model_performances) > self.max_decisions_in_memory:
                 self.model_performances = self.model_performances[-self.max_decisions_in_memory:]
-            
+
             self.logger.info(
                 f"Recorded performance for model {performance.model_id}: "
                 f"accuracy={performance.accuracy:.3f}, win_rate={performance.win_rate:.3f}"
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error recording model performance: {e}")
-    
+
     @handles_errors(default_return = None, context="enhanced_ml_monitor.record_ensemble_performance")
     async def record_ensemble_performance(self, performance: EnsemblePerformanceMetrics) -> None:
         """Record ensemble performance metrics."""
         try:
             self.ensemble_performances.append(performance)
-            
+
             # Maintain memory limit
             if len(self.ensemble_performances) > self.max_decisions_in_memory:
                 self.ensemble_performances = self.ensemble_performances[-self.max_decisions_in_memory:]
-            
+
             self.logger.info(
                 f"Recorded performance for ensemble {performance.ensemble_id}: "
                 f"accuracy={performance.accuracy:.3f}, diversity={performance.model_diversity_score:.3f}"
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error recording ensemble performance: {e}")
-    
+
     async def _check_and_export_if_needed(self) -> None:
         """Check if it's time to export data to CSV."""
         try:
             # Check if we have enough data and it's been long enough
-            if (len(self.trade_decisions) > 0 and 
+            if (len(self.trade_decisions) > 0 and
                 (datetime.now() - self.start_time).days >= self.csv_export_interval):
-                
+
                 await self.export_monthly_report()
                 self.start_time = datetime.now()  # Reset timer
-                
+
         except Exception as e:
             self.logger.error(f"Error checking export timing: {e}")
-    
+
     @handles_errors(default_return = False, context="enhanced_ml_monitor.export_monthly_report")
     async def export_monthly_report(self) -> bool:
         """Export comprehensive monthly monitoring report to CSV."""
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             # Export trade decisions
             if self.trade_decisions:
                 decisions_df = self._create_decisions_dataframe()
                 decisions_path = self.export_dir / f"trade_decisions_{timestamp}.csv"
                 decisions_df.to_csv(decisions_path, index = False)
                 self.logger.info(f"Exported {len(decisions_df)} trade decisions to {decisions_path}")
-            
+
             # Export model performances
             if self.model_performances:
                 models_df = self._create_model_performance_dataframe()
                 models_path = self.export_dir / f"model_performances_{timestamp}.csv"
                 models_df.to_csv(models_path, index = False)
                 self.logger.info(f"Exported {len(models_df)} model performances to {models_path}")
-            
+
             # Export ensemble performances
             if self.ensemble_performances:
                 ensembles_df = self._create_ensemble_performance_dataframe()
                 ensembles_path = self.export_dir / f"ensemble_performances_{timestamp}.csv"
                 ensembles_df.to_csv(ensembles_path, index = False)
                 self.logger.info(f"Exported {len(ensembles_df)} ensemble performances to {ensembles_path}")
-            
+
             # Create summary report
             await self._create_summary_report(timestamp)
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting monthly report: {e}")
             return False
-    
+
     def _create_decisions_dataframe(self) -> pd.DataFrame:
         """Create DataFrame from trade decisions."""
         data = []
-        
+
         for decision in self.trade_decisions:
             # Base decision data
             row = {
@@ -355,7 +355,7 @@ class EnhancedMLMonitor:
                 'overall_risk_score': decision.overall_risk_score,
                 'execution_time_ms': decision.execution_time_ms,
             }
-            
+
             # Ensemble decision data
             ensemble = decision.ensemble_decision
             row.update({
@@ -367,11 +367,11 @@ class EnhancedMLMonitor:
                 'consensus_score': ensemble.consensus_score,
                 'disagreement_level': ensemble.disagreement_level,
             })
-            
+
             # Model weights
             for model_id, weight in ensemble.model_weights.items():
                 row[f'model_weight_{model_id}'] = weight
-            
+
             # Trading indicators
             for i, indicator in enumerate(decision.trading_indicators):
                 row[f'indicator_{i}_name'] = indicator.name
@@ -379,7 +379,7 @@ class EnhancedMLMonitor:
                 row[f'indicator_{i}_weight'] = indicator.weight
                 row[f'indicator_{i}_confidence'] = indicator.confidence
                 row[f'indicator_{i}_risk'] = indicator.risk_score
-            
+
             # Model decisions
             for i, model_decision in enumerate(ensemble.model_decisions):
                 row[f'model_{i}_id'] = model_decision.model_id
@@ -389,15 +389,15 @@ class EnhancedMLMonitor:
                 row[f'model_{i}_risk'] = model_decision.risk_score
                 row[f'model_{i}_processing_time_ms'] = model_decision.processing_time_ms
                 row[f'model_{i}_version'] = model_decision.model_version
-            
+
             data.append(row)
-        
+
         return pd.DataFrame(data)
-    
+
     def _create_model_performance_dataframe(self) -> pd.DataFrame:
         """Create DataFrame from model performance metrics."""
         data = []
-        
+
         for perf in self.model_performances:
             row = {
                 'model_id': perf.model_id,
@@ -418,13 +418,13 @@ class EnhancedMLMonitor:
                 'data_drift_score': perf.data_drift_score,
             }
             data.append(row)
-        
+
         return pd.DataFrame(data)
-    
+
     def _create_ensemble_performance_dataframe(self) -> pd.DataFrame:
         """Create DataFrame from ensemble performance metrics."""
         data = []
-        
+
         for perf in self.ensemble_performances:
             row = {
                 'ensemble_id': perf.ensemble_id,
@@ -438,15 +438,15 @@ class EnhancedMLMonitor:
                 'disagreement_impact': perf.disagreement_impact,
                 'weight_stability': perf.weight_stability,
             }
-            
+
             # Model contributions
             for model_id, contribution in perf.model_contributions.items():
                 row[f'contribution_{model_id}'] = contribution
-            
+
             data.append(row)
-        
+
         return pd.DataFrame(data)
-    
+
     async def _create_summary_report(self, timestamp: str) -> None:
         """Create a summary report with key metrics."""
         try:
@@ -457,7 +457,7 @@ class EnhancedMLMonitor:
                 'total_ensembles_tracked': len(set(p.ensemble_id for p in self.ensemble_performances)),
                 'monitoring_duration_hours': (datetime.now() - self.start_time).total_seconds() / 3600,
             }
-            
+
             # Trading mode distribution
             if self.trade_decisions:
                 mode_counts = {}
@@ -465,30 +465,30 @@ class EnhancedMLMonitor:
                     mode = decision.trading_mode.value
                     mode_counts[mode] = mode_counts.get(mode, 0) + 1
                 summary['trading_mode_distribution'] = mode_counts
-            
+
             # Average performance metrics
             if self.model_performances:
                 avg_accuracy = np.mean([p.accuracy for p in self.model_performances])
                 avg_win_rate = np.mean([p.win_rate for p in self.model_performances])
                 summary['average_model_accuracy'] = avg_accuracy
                 summary['average_model_win_rate'] = avg_win_rate
-            
+
             # Save summary
             summary_path = self.export_dir / f"monitoring_summary_{timestamp}.json"
             with open(summary_path, 'w') as f:
                 json.dump(summary, f, indent = 2, default = str)
-            
+
             self.logger.info(f"Created monitoring summary report: {summary_path}")
-            
+
         except Exception as e:
             self.logger.error(f"Error creating summary report: {e}")
-    
+
     @handles_errors(default_return = None, context="enhanced_ml_monitor.get_model_explanations")
-    async def get_model_explanations(self, model_id: str, features: np.ndarray, 
+    async def get_model_explanations(self, model_id: str, features: np.ndarray,
                                 model: Any) -> Dict[str, Any]:
         """Get SHAP and LIME explanations for a model prediction."""
         explanations = {}
-        
+
         try:
             # SHAP explanations
             if self.shap_analyzer and self.shap_analyzer.shap_available:
@@ -496,19 +496,19 @@ class EnhancedMLMonitor:
                     model, features, model_id
                 )
                 explanations['shap'] = shap_explanations
-            
+
             # LIME explanations
             if self.lime_analyzer and self.lime_analyzer.lime_available:
                 lime_explanations = await self.lime_analyzer.explain_prediction(
                     model, features, model_id
                 )
                 explanations['lime'] = lime_explanations
-            
+
         except Exception as e:
             self.logger.error(f"Error getting model explanations for {model_id}: {e}")
-        
+
         return explanations
-    
+
     def get_monitoring_stats(self) -> Dict[str, Any]:
         """Get current monitoring statistics."""
         return {
@@ -519,7 +519,7 @@ class EnhancedMLMonitor:
             'decisions_per_hour': self.decision_count / max(1, (datetime.now() - self.start_time).total_seconds() / 3600),
             'memory_usage_mb': len(str(self.trade_decisions)) / 1024 / 1024,  # Rough estimate
         }
-    
+
     @handles_errors(default_return = False, context="enhanced_ml_monitor.force_export")
     async def force_export(self) -> bool:
         """Force immediate export of all monitoring data."""

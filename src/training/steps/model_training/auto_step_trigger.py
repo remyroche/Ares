@@ -7,7 +7,7 @@ when one step completes. It uses the existing sub_pipeline.py infrastructure.
 Usage:
     # Execute all steps automatically from the beginning
     result = await auto_execute_all_model_training_steps(symbol, exchange, timeframe)
-    
+
     # Execute from a specific step (will trigger all subsequent steps)
     result = await auto_execute_from_step('tactician_models_training', symbol, exchange, timeframe)
 """
@@ -31,9 +31,9 @@ async def auto_execute_all_model_training_steps(
 ) -> Dict[str, Any]:
     """
     Automatically execute all 5 model training steps from the beginning.
-    
+
     When each step completes successfully, it automatically triggers the next step.
-    
+
     Args:
         symbol: Trading symbol (e.g., 'ETHUSDT', 'BTCUSDT')
         exchange: Exchange name (e.g., 'BINANCE', 'BYBIT')
@@ -41,17 +41,17 @@ async def auto_execute_all_model_training_steps(
         data_dir: Data directory path (default: historical_data)
         force_rerun: Whether to force rerun existing artifacts (default: False)
         config: Optional configuration dictionary
-        
+
     Returns:
         Dict with execution results and summary
     """
     logger.info('🚀 Starting automatic execution of all model training steps')
     logger.info(f'📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}')
-    
+
     # Create sub-pipeline configuration
     if config is None:
         config = {}
-    
+
     sub_config = SubPipelineConfig(
         mode=ExecutionMode.FULL,
         symbol=symbol,
@@ -62,18 +62,18 @@ async def auto_execute_all_model_training_steps(
         single_stage_only=False,  # Enable automatic triggering
         **config
     )
-    
+
     # Create and execute sub-pipeline
     sub_pipeline = ModelTrainingSubPipeline(sub_config)
     result = await sub_pipeline.execute_sub_pipeline_with_next('analyst_model_training', sub_config)
-    
+
     # Get execution summary
     summary = sub_pipeline.get_execution_summary()
-    
+
     logger.info('🎉 Automatic execution completed')
     logger.info(f'✅ Successful steps: {summary["successful_sub_pipelines"]}/{summary["total_sub_pipelines"]}')
     logger.info(f'⏱️ Total execution time: {summary["total_execution_time"]:.2f} seconds')
-    
+
     return {
         'success': result.success,
         'execution_summary': summary,
@@ -94,9 +94,9 @@ async def auto_execute_from_step(
 ) -> Dict[str, Any]:
     """
     Automatically execute model training steps starting from a specific step.
-    
+
     When the specified step completes successfully, it automatically triggers all subsequent steps.
-    
+
     Args:
         step_name: Name of the step to start from (e.g., 'tactician_models_training')
         symbol: Trading symbol (e.g., 'ETHUSDT', 'BTCUSDT')
@@ -105,17 +105,17 @@ async def auto_execute_from_step(
         data_dir: Data directory path (default: historical_data)
         force_rerun: Whether to force rerun existing artifacts (default: False)
         config: Optional configuration dictionary
-        
+
     Returns:
         Dict with execution results and summary
     """
     logger.info(f'🚀 Starting automatic execution from step: {step_name}')
     logger.info(f'📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}')
-    
+
     # Create sub-pipeline configuration
     if config is None:
         config = {}
-    
+
     sub_config = SubPipelineConfig(
         mode=ExecutionMode.FULL,
         symbol=symbol,
@@ -126,18 +126,18 @@ async def auto_execute_from_step(
         single_stage_only=False,  # Enable automatic triggering
         **config
     )
-    
+
     # Create and execute sub-pipeline from specified step
     sub_pipeline = ModelTrainingSubPipeline(sub_config)
     result = await sub_pipeline.execute_sub_pipeline_with_next(step_name, sub_config)
-    
+
     # Get execution summary
     summary = sub_pipeline.get_execution_summary()
-    
+
     logger.info('🎉 Automatic execution completed')
     logger.info(f'✅ Successful steps: {summary["successful_sub_pipelines"]}/{summary["total_sub_pipelines"]}')
     logger.info(f'⏱️ Total execution time: {summary["total_execution_time"]:.2f} seconds')
-    
+
     return {
         'success': result.success,
         'starting_step': step_name,
@@ -151,7 +151,7 @@ async def auto_execute_from_step(
 def get_available_steps() -> list:
     """
     Get list of all available model training steps.
-    
+
     Returns:
         List of step names in execution order
     """
@@ -173,22 +173,22 @@ async def main():
         timeframe="1m",
         force_rerun=True
     )
-    
+
     if result['success']:
         logger.info('✅ All model training steps completed successfully!')
     else:
         logger.info('❌ Some model training steps failed')
-    
+
     # Example 2: Execute from a specific step
     logger.info('Example 2: Executing from tactician_models_training step')
     result = await auto_execute_from_step(
         step_name='tactician_models_training',
-        symbol="ETHUSDT", 
+        symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m",
         force_rerun=True
     )
-    
+
     if result['success']:
         logger.info('✅ Model training steps from tactician_models_training completed successfully!')
     else:

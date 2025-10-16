@@ -16,6 +16,6 @@ from .model_persistence import ModelPersistence, PersistenceConfig, PersistenceR
 
 __all__ = [
     'ModelEvaluator', 'EvaluationConfig', 'EvaluationResult',
-    'ModelValidator', 'ValidationConfig', 'ValidationResult', 
+    'ModelValidator', 'ValidationConfig', 'ValidationResult',
     'ModelPersistence', 'PersistenceConfig', 'PersistenceResult'
 ]

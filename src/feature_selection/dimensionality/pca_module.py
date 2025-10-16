@@ -15,12 +15,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class PCAModule:
     """
@@ -31,7 +30,7 @@ class PCAModule:
         """Initialize PCA module."""
         tprint_info("🚀 Initializing PCA Module")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -55,7 +54,7 @@ class PCAModule:
         tprint_success("✅ PCA Module initialized")
         self.logger.info("✅ PCA Module initialized")
 
-    def apply_pca_feature_selection(self, 
+    def apply_pca_feature_selection(self,
                                   X: Union[np.ndarray, pd.DataFrame],
                                   y: Optional[Union[np.ndarray, pd.Series]] = None,
                                   feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -132,7 +131,7 @@ class PCAModule:
 
             tprint_success(f"🎉 [PCA_FEATURE_SELECTION] PCA feature selection completed successfully")
             tprint_performance(f"⚡ [PCA_FEATURE_SELECTION] Final result: {len(selected_features)} features selected from {X.shape[1]} original features")
-            
+
             return {
                 'selected_features': selected_features,
                 'selected_indices': [filtered_names.index(f) for f in selected_features if f in filtered_names],
@@ -158,8 +157,8 @@ class PCAModule:
                 'error': str(e)
             }
 
-    def _pre_filter_features(self, 
-                           X: np.ndarray, 
+    def _pre_filter_features(self,
+                           X: np.ndarray,
                            feature_names: List[str]) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """Pre-filter features based on correlation and variance."""
         try:
@@ -203,10 +202,10 @@ class PCAModule:
         try:
             variances = np.var(X, axis=0)
             variance_mask = variances >= self.variance_threshold_feature
-            
+
             X_filtered = X[:, variance_mask]
             filtered_names = [name for i, name in enumerate(feature_names) if variance_mask[i]]
-            
+
             return {
                 'X': X_filtered,
                 'names': filtered_names,
@@ -222,11 +221,11 @@ class PCAModule:
         try:
             if X.shape[1] <= 1:
                 return {'X': X, 'names': feature_names}
-            
+
             # Calculate correlation matrix
             corr_matrix = np.corrcoef(X.T)
             np.fill_diagonal(corr_matrix, 0)  # Set diagonal to 0
-            
+
             # Find highly correlated pairs
             to_remove = set()
             for i in range(len(feature_names)):
@@ -237,13 +236,13 @@ class PCAModule:
                             to_remove.add(i)
                         else:
                             to_remove.add(j)
-            
+
             # Create mask for features to keep
             keep_mask = np.array([i not in to_remove for i in range(len(feature_names))])
-            
+
             X_filtered = X[:, keep_mask]
             filtered_names = [name for i, name in enumerate(feature_names) if keep_mask[i]]
-            
+
             return {
                 'X': X_filtered,
                 'names': filtered_names,
@@ -259,15 +258,15 @@ class PCAModule:
         try:
             if self.n_components is not None:
                 return min(self.n_components, X.shape[1])
-            
+
             # Find number of components that explain variance_threshold of variance
             pca_full = PCA()
             pca_full.fit(X)
             cumulative_variance = np.cumsum(pca_full.explained_variance_ratio_)
-            
+
             n_components = np.argmax(cumulative_variance >= self.variance_threshold) + 1
             n_components = max(1, min(n_components, X.shape[1]))
-            
+
             return n_components
         except Exception as e:
             self.logger.warning(f"Optimal components determination failed: {e}")
@@ -287,42 +286,42 @@ class PCAModule:
             self.logger.error(f"PCA application failed: {e}")
             raise
 
-    def _extract_feature_importance(self, 
-                                  pca: PCA, 
-                                  X: np.ndarray, 
+    def _extract_feature_importance(self,
+                                  pca: PCA,
+                                  X: np.ndarray,
                                   feature_names: List[str]) -> Dict[str, float]:
         """Extract feature importance from PCA loadings."""
         try:
             # Get component loadings
             components = pca.components_  # Shape: (n_components, n_features)
-            
+
             # Calculate feature importance as sum of absolute loadings across components
             feature_importance = {}
             for i, feature_name in enumerate(feature_names):
                 importance = np.sum(np.abs(components[:, i]))
                 feature_importance[feature_name] = importance
-            
+
             return feature_importance
         except Exception as e:
             self.logger.warning(f"Feature importance extraction failed: {e}")
             return {name: 0.0 for name in feature_names}
 
-    def _select_features_from_pca(self, 
-                                feature_importance: Dict[str, float], 
+    def _select_features_from_pca(self,
+                                feature_importance: Dict[str, float],
                                 max_features: int) -> List[str]:
         """Select top features based on PCA importance."""
         try:
             # Sort features by importance
             sorted_features = sorted(
-                feature_importance.items(), 
-                key=lambda x: x[1], 
+                feature_importance.items(),
+                key=lambda x: x[1],
                 reverse=True
             )
-            
+
             # Select top features
             n_features = min(len(sorted_features), max_features)
             selected_features = [feature for feature, _ in sorted_features[:n_features]]
-            
+
             return selected_features
         except Exception as e:
             self.logger.warning(f"Feature selection from PCA failed: {e}")
@@ -333,10 +332,10 @@ class PCAModule:
         try:
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            
+
             pca = PCA(n_components=self.n_components, random_state=self.random_state)
             X_pca = pca.fit_transform(X_scaled)
-            
+
             return X_pca
         except Exception as e:
             self.logger.error(f"PCA components extraction failed: {e}")
@@ -347,15 +346,14 @@ class PCAModule:
         try:
             scaler = StandardScaler()
             X_scaled = scaler.fit_transform(X)
-            
+
             pca = PCA(random_state=self.random_state)
             pca.fit(X_scaled)
-            
+
             return pca.explained_variance_ratio_
         except Exception as e:
             self.logger.error(f"Explained variance ratio calculation failed: {e}")
             return np.array([])
-
 
 def create_pca_module(config: Dict[str, Any]) -> PCAModule:
     """Create PCA module."""

@@ -219,7 +219,7 @@ class CryptoPriceAnalyzer:
         hourly_volume = symbol_data.groupby("hour")["volume"].mean()
         hourly_volatility = symbol_data.groupby("hour")["close"].pct_change().std()
         hourly_price_changes = symbol_data.groupby("hour")["close"].pct_change().abs().mean()
-        
+
         # Remove any NaN values
         hourly_volume = hourly_volume.dropna() if hasattr(hourly_volume, 'dropna') else hourly_volume
         hourly_volatility = hourly_volatility.dropna() if hasattr(hourly_volatility, 'dropna') else hourly_volatility
@@ -232,7 +232,7 @@ class CryptoPriceAnalyzer:
         daily_volume = symbol_data.groupby("day_of_week")["volume"].mean()
         daily_volatility = symbol_data.groupby("day_of_week")["close"].pct_change().std()
         daily_price_changes = symbol_data.groupby("day_of_week")["close"].pct_change().abs().mean()
-        
+
         # Remove any NaN values
         daily_volume = daily_volume.dropna() if hasattr(daily_volume, 'dropna') else daily_volume
         daily_volatility = daily_volatility.dropna() if hasattr(daily_volatility, 'dropna') else daily_volatility
@@ -341,7 +341,7 @@ class CryptoPriceAnalyzer:
         volume_std_usd = volume_usd.std()
         volume_std = symbol_data["volume"].std()
         volume_cv = volume_std_usd / avg_volume_usd  # Coefficient of variation (value-weighted)
-        
+
         # 30-day average volume (30 days * 96 15-min periods per day = 2880 periods)
         # Use min_periods to handle cases with insufficient data - extrapolate from available data
         min_periods_30d = min(len(symbol_data), 96)  # Use at least 1 day of data, or all available
@@ -349,14 +349,14 @@ class CryptoPriceAnalyzer:
         avg_volume_30d_usd = volume_30d_avg_usd.mean()
         volume_30d_avg = symbol_data["volume"].rolling(window=2880, min_periods=min_periods_30d).mean()
         avg_volume_30d = volume_30d_avg.mean()
-        
+
         # Current volume / 30-day average volume ratio (value-weighted)
         # Handle division by zero or very small values
         volume_ratio_30d_usd = volume_usd / volume_30d_avg_usd.replace(0, volume_usd.mean())
         avg_volume_ratio_30d_usd = volume_ratio_30d_usd.mean()
         volume_ratio_30d_std_usd = volume_ratio_30d_usd.std()
         volume_ratio_30d_median_usd = volume_ratio_30d_usd.median()
-        
+
         # Keep raw volume ratios for comparison
         volume_ratio_30d = symbol_data["volume"] / volume_30d_avg.replace(0, symbol_data["volume"].mean())
         avg_volume_ratio_30d = volume_ratio_30d.mean()
@@ -373,7 +373,7 @@ class CryptoPriceAnalyzer:
             "p95": symbol_data["volume"].quantile(0.95),
             "p99": symbol_data["volume"].quantile(0.99),
         }
-        
+
         volume_percentiles_usd = {
             "p10": volume_usd.quantile(0.1),
             "p25": volume_usd.quantile(0.25),
@@ -397,7 +397,7 @@ class CryptoPriceAnalyzer:
         low_volume_threshold_usd = volume_usd.quantile(0.1)
         low_volume_periods_usd = symbol_data[volume_usd <= low_volume_threshold_usd]
         low_volume_frequency_usd = len(low_volume_periods_usd) / len(symbol_data)
-        
+
         # Keep raw volume metrics for comparison
         high_volume_threshold = symbol_data["volume"].quantile(0.9)
         high_volume_periods = symbol_data[symbol_data["volume"] >= high_volume_threshold]
@@ -454,7 +454,7 @@ class CryptoPriceAnalyzer:
             "max_volume_usd": volume_usd.max(),
             "min_volume_usd": volume_usd.min(),
             "volume_range_usd": volume_usd.max() - volume_usd.min(),
-            
+
             # Raw volume metrics (for comparison)
             "total_volume": total_volume,
             "avg_volume": avg_volume,
@@ -490,7 +490,6 @@ class CryptoPriceAnalyzer:
             logger.error("No analysis results. Call analyze_all_assets() first.")
             return {}
 
-
         # Collect volume metrics from all assets
         volume_metrics = []
         for symbol, result in self.results.items():
@@ -515,7 +514,7 @@ class CryptoPriceAnalyzer:
                                      (volume_df["total_volume_usd"] < volume_df["total_volume_usd"].quantile(0.75))]["symbol"].tolist(),
             "low_volume": volume_df[volume_df["total_volume_usd"] < volume_df["total_volume_usd"].quantile(0.25)]["symbol"].tolist(),
         }
-        
+
         # Keep raw volume categories for comparison
         volume_categories = {
             "high_volume": volume_df[volume_df["total_volume"] >= volume_df["total_volume"].quantile(0.75)]["symbol"].tolist(),
@@ -554,7 +553,7 @@ class CryptoPriceAnalyzer:
             "volume_consistency_usd_mean": volume_df["volume_consistency_usd"].mean(),
             "volume_volatility_usd_mean": volume_df["volume_volatility_usd"].mean(),
             "volume_spike_frequency_usd_mean": volume_df["volume_spike_frequency_usd"].mean(),
-            
+
             # Raw volume statistics (for comparison)
             "total_volume_mean": volume_df["total_volume"].mean(),
             "total_volume_median": volume_df["total_volume"].median(),
@@ -575,7 +574,7 @@ class CryptoPriceAnalyzer:
             "volatility_ranking_usd": volatility_ranking_usd,
             "trend_ranking_usd": trend_ranking_usd,
             "spike_ranking_usd": spike_ranking_usd,
-            
+
             # Raw volume rankings (for comparison)
             "volume_ranking": volume_ranking,
             "volume_categories": volume_categories,
@@ -607,7 +606,7 @@ class CryptoPriceAnalyzer:
         # Hourly volume patterns
         hourly_volume = symbol_data.groupby("hour")["volume"].agg(["mean", "std", "min", "max"])
         hourly_volume = hourly_volume.dropna() if hasattr(hourly_volume, 'dropna') else hourly_volume
-        
+
         # Check if hourly_volume has data and "mean" column
         if len(hourly_volume) > 0 and "mean" in hourly_volume.columns:
             peak_hours = hourly_volume["mean"].nlargest(min(3, len(hourly_volume))).index.tolist()
@@ -619,7 +618,7 @@ class CryptoPriceAnalyzer:
         # Daily volume patterns
         daily_volume = symbol_data.groupby("day_of_week")["volume"].agg(["mean", "std", "min", "max"])
         daily_volume = daily_volume.dropna() if hasattr(daily_volume, 'dropna') else daily_volume
-        
+
         # Check if daily_volume has data and "mean" column
         if len(daily_volume) > 0 and "mean" in daily_volume.columns:
             peak_days = daily_volume["mean"].nlargest(min(3, len(daily_volume))).index.tolist()
@@ -700,12 +699,12 @@ class CryptoPriceAnalyzer:
         """Calculate composite trading opportunity scores for all assets"""
         if not self.results:
             return {}
-        
+
         composite_scores = {}
-        
+
         for symbol, data in self.results.items():
             barrier_results = data.get("triple_barrier_profits", {})
-            
+
             if not barrier_results:
                 composite_scores[symbol] = {
                     "profit_score": 0,
@@ -714,18 +713,18 @@ class CryptoPriceAnalyzer:
                     "composite_score": 0
                 }
                 continue
-            
+
             # Calculate average profit across all barrier levels
             all_profits = []
             all_frequencies = []
             total_trades = 0
-            
+
             for barrier_key, barrier_data in barrier_results.items():
                 if isinstance(barrier_data, dict) and "avg_profit" in barrier_data:
                     all_profits.append(barrier_data["avg_profit"])
                     all_frequencies.append(barrier_data.get("profit_frequency", 0))
                     total_trades += barrier_data.get("total_trades", 0)
-            
+
             if not all_profits:
                 composite_scores[symbol] = {
                     "profit_score": 0,
@@ -734,30 +733,30 @@ class CryptoPriceAnalyzer:
                     "composite_score": 0
                 }
                 continue
-            
+
             # Calculate component scores
             avg_profit = np.mean(all_profits)
             avg_frequency = np.mean(all_frequencies)
-            
+
             # Profit Score (40% weight): avg_profit / 0.02 (normalized to max expected ~2%)
             profit_score = min(avg_profit / 0.02, 1.0)
-            
+
             # Frequency Score (40% weight): avg_frequency / 0.30 (normalized to max expected ~30%)
             frequency_score = min(avg_frequency / 0.30, 1.0)
-            
+
             # Consistency Score (20% weight): min(1.0, total_trades / 20,000)
             consistency_score = min(total_trades / 20000, 1.0)
-            
+
             # Composite Score: weighted combination
             composite_score = (profit_score * 0.4) + (frequency_score * 0.4) + (consistency_score * 0.2)
-            
+
             composite_scores[symbol] = {
                 "profit_score": profit_score,
                 "frequency_score": frequency_score,
                 "consistency_score": consistency_score,
                 "composite_score": composite_score
             }
-        
+
         return composite_scores
 
     def generate_summary_report(self, save_to_file=True, output_dir="results"):
@@ -911,7 +910,7 @@ class CryptoPriceAnalyzer:
         add_line("=" * 50)
         add_line("Ranking assets by overall trading opportunity quality")
         add_line()
-        
+
         # Calculate composite scores for all assets
         composite_scores = {}
         for symbol, result in self.results.items():
@@ -919,15 +918,15 @@ class CryptoPriceAnalyzer:
             avg_profit = barrier_df[barrier_df["Symbol"] == symbol]["Avg_Profit"].mean()
             avg_frequency = barrier_df[barrier_df["Symbol"] == symbol]["Profit_Frequency"].mean()
             total_trades_sum = barrier_df[barrier_df["Symbol"] == symbol]["Total_Trades"].sum()
-            
+
             # Calculate component scores
             profit_score = avg_profit / 0.02  # Normalized to max ~2%
             frequency_score = avg_frequency / 0.30  # Normalized to max ~30%
             consistency_score = min(1.0, total_trades_sum / 20000)  # Capped at 1.0
-            
+
             # Weighted composite score
             composite_score = (profit_score * 0.4) + (frequency_score * 0.4) + (consistency_score * 0.2)
-            
+
             composite_scores[symbol] = {
                 'composite_score': composite_score,
                 'profit_score': profit_score,
@@ -937,13 +936,13 @@ class CryptoPriceAnalyzer:
                 'avg_frequency': avg_frequency,
                 'total_trades': total_trades_sum
             }
-        
+
         # Sort by composite score
         sorted_composite = sorted(composite_scores.items(), key=lambda x: x[1]['composite_score'], reverse=True)
-        
+
         add_line("RANK | SYMBOL   | COMPOSITE | PROFIT | FREQUENCY | CONSISTENCY | DAILY ROI | INTERPRETATION")
         add_line("-" * 85)
-        
+
         for i, (symbol, scores) in enumerate(sorted_composite, 1):
             # Calculate daily profit potential
             # Formula: average profit per trade (%) * number of daily opportunities = potential daily ROI
@@ -952,7 +951,7 @@ class CryptoPriceAnalyzer:
             estimated_days = scores['total_trades'] / (scores['avg_frequency'] * 96) if scores['avg_frequency'] > 0 else 1
             opportunities_per_day = scores['total_trades'] / estimated_days if estimated_days > 0 else scores['total_trades']
             daily_profit_potential = scores['avg_profit'] * opportunities_per_day * 100
-            
+
             # Determine interpretation
             if scores['composite_score'] >= 0.8:
                 interpretation = "Excellent"
@@ -962,9 +961,9 @@ class CryptoPriceAnalyzer:
                 interpretation = "Moderate"
             else:
                 interpretation = "Limited"
-            
+
             add_line(f"{i:4d} | {symbol:8s} | {scores['composite_score']:9.3f} | {scores['profit_score']:6.3f} | {scores['frequency_score']:9.3f} | {scores['consistency_score']:11.3f} | {daily_profit_potential:7.2f}% | {interpretation}")
-        
+
         add_line()
         add_line("DETAILED BREAKDOWN:")
         add_line("-" * 30)
@@ -974,7 +973,7 @@ class CryptoPriceAnalyzer:
             estimated_days = scores['total_trades'] / (scores['avg_frequency'] * 96) if scores['avg_frequency'] > 0 else 1
             opportunities_per_day = scores['total_trades'] / estimated_days if estimated_days > 0 else scores['total_trades']
             daily_profit_potential = scores['avg_profit'] * opportunities_per_day * 100
-            
+
             add_line(f"{i}. {symbol}:")
             add_line(f"   Composite Score: {scores['composite_score']:.3f}")
             add_line(f"   Average Profit per Trade: {scores['avg_profit']*100:.2f}%")
@@ -1053,30 +1052,30 @@ class CryptoPriceAnalyzer:
         if save_to_file:
             csv_dir = Path(output_dir) / "csv"
             csv_dir.mkdir(exist_ok=True)
-            
+
             # Save basic summary
             basic_df.to_csv(csv_dir / "price_movement_metrics.csv", index=False)
             logger.info("Basic metrics saved to price_movement_metrics.csv")
-            
+
             # Save barrier summary
             barrier_df.to_csv(csv_dir / "triple_barrier_profits.csv", index=False)
             logger.info("Triple barrier results saved to triple_barrier_profits.csv")
-            
+
             # Save volume analysis results
             volume_df = volume_comparison_summary.get("volume_dataframe", pd.DataFrame()) if volume_comparison_summary else pd.DataFrame()
             if not volume_df.empty:
                 volume_df.to_csv(csv_dir / "volume_analysis.csv", index=False)
                 logger.info("Volume analysis results saved to volume_analysis.csv")
-            
+
             # Create comprehensive consolidated CSV with all requested metrics
             consolidated_data = []
-            
+
             # Get unique assets
             assets = basic_df['Symbol'].unique() if 'Symbol' in basic_df.columns else basic_df.index.unique()
-            
+
             # Calculate composite scores for all assets
             composite_scores = self._calculate_composite_scores()
-            
+
             for asset in assets:
                 # Get basic metrics for this asset
                 asset_basic = basic_df[basic_df['Symbol'] == asset] if 'Symbol' in basic_df.columns else basic_df.loc[asset]
@@ -1084,24 +1083,24 @@ class CryptoPriceAnalyzer:
                 avg_intraday_movement = asset_basic['Avg_Intraday_Movement'].iloc[0] if 'Avg_Intraday_Movement' in asset_basic.columns else 0
                 avg_price_change = asset_basic['Avg_Price_Change'].iloc[0] if 'Avg_Price_Change' in asset_basic.columns else 0
                 avg_daily_range = asset_basic['Avg_Daily_Range'].iloc[0] if 'Avg_Daily_Range' in asset_basic.columns else 0
-                
+
                 # Get triple barrier profits for this asset
                 asset_barriers = barrier_df[barrier_df['Symbol'] == asset] if 'Symbol' in barrier_df.columns else pd.DataFrame()
-                
+
                 # Calculate daily ROI potential for each barrier level (main outcome)
                 daily_roi_potentials = {}
                 avg_daily_roi = 0
                 best_barrier_roi = 0
                 best_barrier_level = "N/A"
-                
+
                 if not asset_barriers.empty:
                     # Estimate days in dataset (assuming 15-min intervals, 96 per day)
                     total_periods = asset_barriers['Total_Trades'].sum() / asset_barriers['Profit_Frequency'].mean() if asset_barriers['Profit_Frequency'].mean() > 0 else 1
                     estimated_days = total_periods / 96
-                    
+
                     daily_rois = []
                     barrier_roi_pairs = []
-                    
+
                     for _, row in asset_barriers.iterrows():
                         barrier_level = row['Barrier_Level']
                         avg_profit = row['Avg_Profit']
@@ -1110,17 +1109,17 @@ class CryptoPriceAnalyzer:
                         daily_roi_potentials[f"Daily_ROI_{barrier_level}"] = daily_roi
                         daily_rois.append(daily_roi)
                         barrier_roi_pairs.append((barrier_level, daily_roi))
-                    
+
                     # Calculate average daily ROI across all barrier levels
                     avg_daily_roi = np.mean(daily_rois) if daily_rois else 0
-                    
+
                     # Find the best barrier level and its ROI
                     if barrier_roi_pairs:
                         best_barrier_level, best_barrier_roi = max(barrier_roi_pairs, key=lambda x: x[1])
-                
+
                 # Get composite scores for this asset
                 asset_scores = composite_scores.get(asset, {})
-                
+
                 # Create row data with Daily ROI as main outcome
                 row_data = {
                     'Symbol': asset,
@@ -1136,29 +1135,29 @@ class CryptoPriceAnalyzer:
                     'Consistency_Score': asset_scores.get('consistency_score', 0),
                     'Composite_Score': asset_scores.get('composite_score', 0),
                 }
-                
+
                 # Add barrier-specific daily ROI potentials
                 row_data.update(daily_roi_potentials)
-                
+
                 consolidated_data.append(row_data)
-            
+
             # Create consolidated DataFrame
             consolidated_df = pd.DataFrame(consolidated_data)
-            
+
             # Sort columns with Best Daily ROI as the main outcome (second column) and barrier info
-            basic_cols = ['Symbol', 'Best_Daily_ROI', 'Best_Barrier_Level', 'Average_Daily_ROI', 'Average_Volume', 
-                         'Avg_Intraday_Movement', 'Avg_Price_Change', 'Avg_Daily_Range', 'Profit_Score', 
+            basic_cols = ['Symbol', 'Best_Daily_ROI', 'Best_Barrier_Level', 'Average_Daily_ROI', 'Average_Volume',
+                         'Avg_Intraday_Movement', 'Avg_Price_Change', 'Avg_Daily_Range', 'Profit_Score',
                          'Frequency_Score', 'Consistency_Score', 'Composite_Score']
             barrier_cols = [col for col in consolidated_df.columns if col.startswith('Daily_ROI_')]
             barrier_cols.sort(key=lambda x: float(x.split('_')[-1].rstrip('%')))
             final_cols = basic_cols + barrier_cols
-            
+
             # Reorder DataFrame
             consolidated_df = consolidated_df[final_cols]
-            
+
             consolidated_df.to_csv(csv_dir / "comprehensive_asset_summary.csv", index=False)
             logger.info("Comprehensive asset summary saved to comprehensive_asset_summary.csv")
-            
+
             logger.info(f"CSV files saved to {csv_dir}/")
 
         return {
@@ -1256,8 +1255,6 @@ class CryptoPriceAnalyzer:
         axes[1, 1].set_xticklabels(avg_performance.index, rotation=45)
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)
-
-
 
         plt.tight_layout()
         plt.savefig(f"{output_dir}/triple_barrier_analysis.png", dpi=300, bbox_inches="tight")
@@ -1521,7 +1518,7 @@ def main():
     # Save detailed results as JSON
     import json
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    
+
     # Create a comprehensive results dictionary
     comprehensive_results = {
         "timestamp": timestamp,
@@ -1535,11 +1532,11 @@ def main():
         },
         "detailed_results": analyzer.results
     }
-    
+
     json_file = output_dir / f"comprehensive_results_{timestamp}.json"
     with open(json_file, 'w') as f:
         json.dump(comprehensive_results, f, indent=2, default=str)
-    
+
     logger.info(f"Results saved to {output_dir}/")
     logger.info(f"CSV files saved to {csv_dir}/")
     logger.info(f"Comprehensive JSON results saved to {json_file}")

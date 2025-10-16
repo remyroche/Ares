@@ -414,7 +414,7 @@ class SRLevel:
     pivot_level: bool = False
     psychological_level: bool = False
     metadata: Dict[str, Any] = None
-    
+
     # NEW: ML-optimized features from proposed approach
     dist_to_level_atr: float = 0.0  # Normalized distance by ATR
     break_success_rate: float = 0.0  # Fraction of touches that led to breakouts
@@ -480,7 +480,7 @@ class EnhancedSRDetector:
         self.dbscan_eps_multiplier = config.get('dbscan_eps_multiplier', 0.5)  # Much less aggressive: 0.5 instead of 0.7
         self.dbscan_min_samples_multiplier = config.get('dbscan_min_samples_multiplier', 1.0)  # Less conservative: 1.0 instead of 1.5
         self.disable_dbscan_clustering = config.get('disable_dbscan_clustering', False)  # Option to disable clustering
-        
+
         # DBSCAN parameter adjustment settings - AGGRESSIVE
         self.min_levels_threshold = config.get('min_levels_threshold', 90)  # Minimum levels to maintain after clustering
         self.min_levels_ratio = config.get('min_levels_ratio', 0.2)  # Minimum ratio of original levels to maintain (20%)
@@ -493,16 +493,16 @@ class EnhancedSRDetector:
         self.atr_multiplier = config.get('atr_multiplier', 1.0)  # ATR multiplier for normalization
         self.breakout_lookforward = config.get('breakout_lookforward', 5)  # Bars to look forward for breakout validation
         self.breakout_tolerance = config.get('breakout_tolerance', 0.5)  # ATR multiplier for breakout tolerance
-        
+
         # NEW: Prominence filtering parameters
         self.prominence_threshold = config.get('prominence_threshold', 0.5)  # Minimum prominence (ATR multiplier)
         self.width_threshold = config.get('width_threshold', 1)  # Minimum width in bars
         self.use_prominence_filtering = config.get('use_prominence_filtering', True)
-        
+
         # NEW: Multi-timeframe support
         self.multi_tf_enabled = config.get('multi_tf_enabled', True)
         self.multi_tf_timeframes = config.get('multi_tf_timeframes', ['5m', '15m', '1h', '4h'])
-        
+
         # NEW: Persistence scoring
         self.persistence_lookback = config.get('persistence_lookback', 100)  # Bars to look back for persistence
         self.min_persistence_bars = config.get('min_persistence_bars', 10)  # Minimum bars for persistence score
@@ -513,17 +513,17 @@ class EnhancedSRDetector:
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Calculate True Range
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
-            
+
             true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
+
             # Calculate ATR as rolling mean of True Range
             atr = true_range.rolling(window=self.atr_period).mean()
-            
+
             return atr
         except Exception as e:
             self.logger.warning(f'ATR calculation failed: {e}')
@@ -536,27 +536,27 @@ class EnhancedSRDetector:
             return 0.0
         return distance / (atr * self.atr_multiplier)
 
-    def _calculate_break_success_rate(self, level_price: float, data: pd.DataFrame, 
+    def _calculate_break_success_rate(self, level_price: float, data: pd.DataFrame,
                                     atr: pd.Series, tolerance_atr: float = 0.5) -> float:
         """Calculate the success rate of breakouts from this level."""
         try:
             if len(data) < self.breakout_lookforward:
                 return 0.0
-            
+
             touches = []
             breakouts = 0
             total_touches = 0
-            
+
             for i in range(len(data) - self.breakout_lookforward):
                 current_atr = atr.iloc[i] if not pd.isna(atr.iloc[i]) else atr.mean()
                 tolerance = current_atr * tolerance_atr
-                
+
                 # Check if price touched the level
-                if (abs(data['low'].iloc[i] - level_price) <= tolerance or 
+                if (abs(data['low'].iloc[i] - level_price) <= tolerance or
                     abs(data['high'].iloc[i] - level_price) <= tolerance):
                     total_touches += 1
                     touches.append(i)
-                    
+
                     # Check for breakout in next N bars
                     future_data = data.iloc[i+1:i+1+self.breakout_lookforward]
                     if len(future_data) > 0:
@@ -570,7 +570,7 @@ class EnhancedSRDetector:
                             max_future_high = float(future_highs.max())
                             if max_future_high > (level_price + tolerance):
                                 breakouts += 1
-            
+
             return breakouts / max(total_touches, 1)
         except Exception as e:
             # Reduce logging verbosity for expected calculation failures
@@ -580,21 +580,21 @@ class EnhancedSRDetector:
                 self.logger.warning(f'Break success rate calculation failed: {e}')
             return 0.0
 
-    def _calculate_persistence_score(self, level_price: float, data: pd.DataFrame, 
+    def _calculate_persistence_score(self, level_price: float, data: pd.DataFrame,
                                    atr: pd.Series, tolerance_atr: float = 0.5) -> float:
         """Calculate how long the level has survived without being breached."""
         try:
             if len(data) < self.min_persistence_bars:
                 return 0.0
-            
+
             # Look back from the end to find when level was last breached
             lookback_data = data.tail(self.persistence_lookback)
             lookback_atr = atr.tail(self.persistence_lookback)
-            
+
             for i in range(len(lookback_data) - 1, -1, -1):
                 current_atr = lookback_atr.iloc[i] if not pd.isna(lookback_atr.iloc[i]) else lookback_atr.mean()
                 tolerance = current_atr * tolerance_atr
-                
+
                 # Check if level was breached
                 if level_price > data['close'].iloc[0]:  # Support level
                     if lookback_data['low'].iloc[i] < (level_price - tolerance):
@@ -602,7 +602,7 @@ class EnhancedSRDetector:
                 else:  # Resistance level
                     if lookback_data['high'].iloc[i] > (level_price + tolerance):
                         return (len(lookback_data) - i) / self.persistence_lookback
-            
+
             # Level was never breached in lookback period
             return 1.0
         except Exception as e:
@@ -613,26 +613,26 @@ class EnhancedSRDetector:
         """Apply prominence and width filtering using scipy.signal.find_peaks."""
         if not self.use_prominence_filtering or not levels:
             return levels
-        
+
         try:
             filtered_levels = []
             # Use price-based metrics instead of ATR
             price_range = data['high'].max() - data['low'].min()
             avg_price = (data['high'].mean() + data['low'].mean()) / 2
-            
+
             # Separate support and resistance levels for independent filtering
             support_levels = [level for level in levels if level.type == 'support']
             resistance_levels = [level for level in levels if level.type == 'resistance']
-            
+
             # Filter support levels using prominence
             filtered_support = self._filter_levels_with_prominence_simple(support_levels, data, 'support', price_range, avg_price)
-            
+
             # Filter resistance levels using prominence
             filtered_resistance = self._filter_levels_with_prominence_simple(resistance_levels, data, 'resistance', price_range, avg_price)
-            
+
             # Combine filtered levels
             filtered_levels = filtered_support + filtered_resistance
-            
+
             self.logger.info(f'Prominence filtering: {len(levels)} -> {len(filtered_levels)} levels ({len(filtered_support)} support, {len(filtered_resistance)} resistance)')
             return filtered_levels
         except Exception as e:
@@ -644,19 +644,19 @@ class EnhancedSRDetector:
         try:
             if not levels:
                 return levels
-            
+
             # Extract price data for prominence calculation
             if level_type == 'support':
                 price_data = data['low'].values
             else:  # resistance
                 price_data = data['high'].values
-            
+
             # Calculate prominence and width thresholds
             prominence_threshold = atr * self.prominence_threshold
             width_threshold = self.width_threshold
-            
+
             # Use scipy.signal.find_peaks to find significant peaks/valleys
-            
+
             if level_type == 'support':
                 # For support levels, find valleys (invert the signal)
                 peaks, properties = find_peaks(
@@ -673,7 +673,7 @@ class EnhancedSRDetector:
                     width=width_threshold,
                     distance=5  # Minimum distance between peaks
                 )
-            
+
             # Create a mapping of significant price levels
             significant_levels = set()
             if len(peaks) > 0:
@@ -682,7 +682,7 @@ class EnhancedSRDetector:
                         significant_levels.add(price_data[peak_idx])
                     else:
                         significant_levels.add(price_data[peak_idx])
-            
+
             # Filter levels based on prominence
             filtered_levels = []
             for level in levels:
@@ -692,7 +692,7 @@ class EnhancedSRDetector:
                     if abs(level.price - sig_level) <= atr * 0.1:  # Within 0.1 ATR
                         is_significant = True
                         break
-                
+
                 if is_significant:
                     # Calculate actual prominence and width scores
                     level.prominence_score = self._calculate_level_prominence(level, data, level_type, atr)
@@ -704,9 +704,9 @@ class EnhancedSRDetector:
                         level.prominence_score = level.strength
                         level.width_score = 1.0
                         filtered_levels.append(level)
-            
+
             return filtered_levels
-            
+
         except Exception as e:
             self.logger.warning(f'Prominence filtering for {level_type} failed: {e}')
             # Fallback to strength-based filtering
@@ -717,19 +717,19 @@ class EnhancedSRDetector:
         try:
             if not levels:
                 return levels
-            
+
             # Get price data based on level type
             if level_type == 'support':
                 price_data = data['low'].values
             else:
                 price_data = data['high'].values
-            
+
             # Calculate prominence and width thresholds based on price range
             prominence_threshold = price_range * 0.02  # 2% of price range
             width_threshold = self.width_threshold
-            
+
             # Use scipy.signal.find_peaks to find significant peaks/valleys
-            
+
             if level_type == 'support':
                 # For support, find valleys (invert the data)
                 peaks, properties = find_peaks(
@@ -748,11 +748,11 @@ class EnhancedSRDetector:
                     distance=5  # Minimum distance between peaks
                 )
                 significant_levels = set(price_data[peaks])
-            
+
             # Filter levels based on proximity to significant peaks/valleys
             filtered_levels = []
             proximity_threshold = price_range * 0.01  # 1% of price range for proximity
-            
+
             for level in levels:
                 # Check if this level is close to a significant peak/valley
                 is_significant = False
@@ -760,7 +760,7 @@ class EnhancedSRDetector:
                     if abs(level.price - sig_level) <= proximity_threshold:
                         is_significant = True
                         break
-                
+
                 if is_significant:
                     # Calculate actual prominence and width scores
                     level.prominence_score = self._calculate_level_prominence_simple(level, data, level_type, price_range, avg_price)
@@ -772,9 +772,9 @@ class EnhancedSRDetector:
                         level.prominence_score = level.strength * (price_range * 0.1)
                         level.width_score = 1.0
                         filtered_levels.append(level)
-            
+
             return filtered_levels
-            
+
         except Exception as e:
             self.logger.warning(f'Simple prominence filtering for {level_type} failed: {e}')
             # Fallback to strength-based filtering
@@ -788,13 +788,13 @@ class EnhancedSRDetector:
                 price_data = data['low'].values
             else:
                 price_data = data['high'].values
-            
+
             # Find the closest index to this level
             closest_idx = np.argmin(np.abs(price_data - level.price))
-            
+
             # Calculate prominence using scipy.signal.peak_prominences
             from scipy.signal import peak_prominences
-            
+
             if level_type == 'support':
                 # For support, calculate prominence based on how much the valley stands out
                 # Use a combination of strength and price-based metrics
@@ -808,10 +808,10 @@ class EnhancedSRDetector:
                     prominence = prominences[0] if len(prominences) > 0 else level.strength * (price_range * 0.1)
                 except:
                     prominence = level.strength * (price_range * 0.1)
-            
+
             # Normalize by price range instead of ATR
             return prominence / price_range if price_range > 0 else level.strength
-            
+
         except Exception as e:
             self.logger.warning(f'Simple prominence calculation failed: {e}')
             return level.strength
@@ -824,12 +824,12 @@ class EnhancedSRDetector:
                 price_data = data['low'].values
             else:
                 price_data = data['high'].values
-            
+
             # Find the closest index to this level
             closest_idx = np.argmin(np.abs(price_data - level.price))
-            
+
             # Calculate prominence using scipy.signal.peak_prominences
-            
+
             if level_type == 'support':
                 # For support, we need to find the prominence of the valley
                 # This is a simplified calculation
@@ -843,9 +843,9 @@ class EnhancedSRDetector:
                     prominence = prominences[0] if len(prominences) > 0 else level.strength * atr
                 except:
                     prominence = level.strength * atr
-            
+
             return prominence / atr  # Normalize by ATR
-            
+
         except Exception as e:
             self.logger.warning(f'Prominence calculation failed: {e}')
             return level.strength
@@ -858,13 +858,13 @@ class EnhancedSRDetector:
                 price_data = data['low'].values
             else:
                 price_data = data['high'].values
-            
+
             # Find the closest index to this level
             closest_idx = np.argmin(np.abs(price_data - level.price))
-            
+
             # Calculate width using scipy.signal.peak_widths
             from scipy.signal import peak_widths
-            
+
             try:
                 widths, width_heights, left_ips, right_ips = peak_widths(
                     price_data, [closest_idx], rel_height=0.5
@@ -872,9 +872,9 @@ class EnhancedSRDetector:
                 width = widths[0] if len(widths) > 0 else 1.0
             except:
                 width = 1.0
-            
+
             return width
-            
+
         except Exception as e:
             self.logger.warning(f'Width calculation failed: {e}')
             return 1.0
@@ -884,38 +884,38 @@ class EnhancedSRDetector:
         try:
             if not self.multi_tf_enabled:
                 return 1
-            
+
             # For now, simulate multi-timeframe support based on level strength and age
             # In a full implementation, you would analyze multiple timeframes
             support_score = 0
-            
+
             # Base support from current timeframe
             if level.strength > 0.7:
                 support_score += 1
             elif level.strength > 0.5:
                 support_score += 0.5
-            
+
             # Age-based support (older levels are more significant)
             if level.age_bars > 100:
                 support_score += 1
             elif level.age_bars > 50:
                 support_score += 0.5
-            
+
             # Touch count support
             if level.touch_count > 3:
                 support_score += 1
             elif level.touch_count > 1:
                 support_score += 0.5
-            
+
             # Volume confirmation support
             if level.volume_confirmation_score > 0.7:
                 support_score += 1
             elif level.volume_confirmation_score > 0.5:
                 support_score += 0.5
-            
+
             # Convert to integer (1-4 timeframes)
             return min(4, max(1, int(support_score)))
-            
+
         except Exception as e:
             self.logger.warning(f'Multi-timeframe support calculation failed: {e}')
             return 1
@@ -979,15 +979,15 @@ class EnhancedSRDetector:
             tolerance = atr * 0.5
             respect_count = 0
             total_opportunities = 0
-            
+
             # Sample every 10th bar to avoid over-counting
             for i in range(0, len(data), 10):
                 if i >= len(data):
                     break
-                    
+
                 current_price = data['close'].iloc[i]
                 distance_to_level = abs(current_price - level.price)
-                
+
                 if distance_to_level <= tolerance:
                     total_opportunities += 1
                     # Check if price bounced off the level
@@ -1009,7 +1009,7 @@ class EnhancedSRDetector:
                             # For resistance, check if price went down after touching
                             if min_future_price < current_price - tolerance:
                                 respect_count += 1
-            
+
             # Ensure total_opportunities is a scalar value
             if isinstance(total_opportunities, pd.Series):
                 total_opportunities = total_opportunities.iloc[0] if len(total_opportunities) > 0 else 0
@@ -1021,7 +1021,7 @@ class EnhancedSRDetector:
 
             respect_ratio = respect_count / total_opportunities
             return respect_ratio
-            
+
         except Exception as e:
             # Reduce logging verbosity for expected calculation failures
             if 'Series' in str(e) or 'truth value' in str(e):
@@ -1038,7 +1038,7 @@ class EnhancedSRDetector:
                 return level.volume_confirmation_score
             else:
                 return 0.5  # Default moderate persistence
-            
+
         except Exception as e:
             self.logger.warning(f'Volume persistence calculation failed: {e}')
             return 0.0
@@ -1049,13 +1049,13 @@ class EnhancedSRDetector:
             atr = self._calculate_atr(data)
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
             current_price = data['close'].iloc[-1]
-            
+
             enhanced_levels = []
             for level in levels:
                 # Calculate ATR-normalized distance
                 distance = abs(level.price - current_price)
                 level.dist_to_level_atr = self._normalize_distance_by_atr(distance, current_atr)
-                
+
                 # Calculate break success rate
                 level.break_success_rate = self._calculate_break_success_rate(
                     level.price, data, atr, self.breakout_tolerance
@@ -1065,7 +1065,7 @@ class EnhancedSRDetector:
                 level.persistence_score = self._calculate_persistence_score(
                     level.price, data, atr, self.breakout_tolerance
                 )
-                
+
                 # Calculate time since last touch
                 if hasattr(level, 'last_touch_time') and level.last_touch_time:
                     # Ensure data.index[-1] is a proper timestamp
@@ -1079,26 +1079,26 @@ class EnhancedSRDetector:
                         level.time_since_last_touch = 0
                     else:
                         level.time_since_last_touch = int(total_seconds / 60)  # Convert to minutes
-                
+
                 # Set formation time if not set
                 if not level.formation_time:
                     level.formation_time = level.first_touch_time
-                
+
                 # Calculate average reaction normalized by ATR
                 if level.avg_bounce_ratio > 0:
                     level.avg_reaction_atr = level.avg_bounce_ratio / current_atr
-                
+
                 # Multi-timeframe support
                 level.multi_tf_support = self._calculate_multi_tf_support(level, data)
-                
+
                 # Volume at level (placeholder - would need volume data)
                 level.volume_at_level = level.volume_confirmation_score
-                
+
                 # Enhanced persistence scoring
                 level.persistence_score = self._calculate_enhanced_persistence_score(level, data, atr)
-                
+
                 enhanced_levels.append(level)
-            
+
             return enhanced_levels
         except Exception as e:
             self.logger.warning(f'ML feature enhancement failed: {e}')
@@ -1108,30 +1108,30 @@ class EnhancedSRDetector:
         """Validate input data quality for SR detection."""
         try:
             self.logger.info('🔍 Validating input data quality for SR detection...')
-            
+
             # Basic validation
             if market_data is None or market_data.empty:
                 raise ValueError("Input data is None or empty")
-            
+
             if len(market_data) < 100:
                 raise ValueError(f"Insufficient data: {len(market_data)} rows, minimum 100 required")
-            
+
             # Check required columns
             required_cols = ['open', 'high', 'low', 'close', 'volume']
             missing_cols = [col for col in required_cols if col not in market_data.columns]
             if missing_cols:
                 raise ValueError(f"Missing required columns: {missing_cols}")
-            
+
             # Check for data quality issues
             price_cols = ['open', 'high', 'low', 'close']
             issues_found = []
-            
+
             for col in price_cols:
                 # Check for negative or zero prices
                 invalid_prices = (market_data[col] <= 0).sum()
                 if invalid_prices > 0:
                     issues_found.append(f"{invalid_prices} invalid prices in {col}")
-                
+
                 # Check for extreme outliers
                 if len(market_data) > 10:
                     Q1 = market_data[col].quantile(0.25)
@@ -1143,7 +1143,7 @@ class EnhancedSRDetector:
                         outliers = ((market_data[col] < lower_bound) | (market_data[col] > upper_bound)).sum()
                         if outliers > 0:
                             issues_found.append(f"{outliers} extreme outliers in {col}")
-            
+
             # Check OHLC relationships
             invalid_ohlc = 0
             if len(market_data) > 0:
@@ -1152,13 +1152,13 @@ class EnhancedSRDetector:
                 invalid_ohlc = (invalid_high | invalid_low).sum()
                 if invalid_ohlc > 0:
                     issues_found.append(f"{invalid_ohlc} rows with invalid OHLC relationships")
-            
+
             # Check volume
             if 'volume' in market_data.columns:
                 negative_volume = (market_data['volume'] < 0).sum()
                 if negative_volume > 0:
                     issues_found.append(f"{negative_volume} negative volume values")
-            
+
             # Log data quality summary
             if issues_found:
                 self.logger.warning(f'🚨 Data quality issues found: {"; ".join(issues_found)}')
@@ -1168,7 +1168,7 @@ class EnhancedSRDetector:
                 self.logger.warning(f'📊 Data quality score: {quality_score:.1f}% ({total_issues} issues in {len(market_data)} rows)')
             else:
                 self.logger.info('✅ Data quality validation passed - no issues found')
-            
+
             # Log price range statistics
             if len(market_data) > 0:
                 price_stats = {}
@@ -1178,11 +1178,11 @@ class EnhancedSRDetector:
                         'max': market_data[col].max(),
                         'mean': market_data[col].mean()
                     }
-                
+
                 self.logger.info(f'📊 Input data price ranges:')
                 for col, stats in price_stats.items():
                     self.logger.info(f'   {col}: {stats["min"]:.4f} to {stats["max"]:.4f} (mean: {stats["mean"]:.4f})')
-            
+
         except Exception as e:
             self.logger.error(f'Data quality validation failed: {e}')
             raise
@@ -1202,7 +1202,7 @@ class EnhancedSRDetector:
         try:
             start_time = time.time()
             self.logger.info('🔍 Starting enhanced S/R level detection...')
-            
+
             # Enhanced data quality validation
             self._validate_input_data_quality(market_data)
 
@@ -1369,13 +1369,13 @@ class EnhancedSRDetector:
             for level in all_levels:
                 method = level.metadata.get('method', 'unknown') if hasattr(level, 'metadata') and level.metadata else 'unknown'
                 method_counts[method] = method_counts.get(method, 0) + 1
-                
+
                 # Track details for each method
                 if method not in method_details:
                     method_details[method] = {'support': 0, 'resistance': 0, 'prices': []}
                 method_details[method][level.type] += 1
                 method_details[method]['prices'].append(level.price)
-            
+
             for method, count in method_counts.items():
                 details = method_details[method]
                 support_count = details['support']
@@ -1384,7 +1384,7 @@ class EnhancedSRDetector:
                 price_range = f"${min(prices):.2f}-${max(prices):.2f}" if prices else "N/A"
                 tprint(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
                 self.logger.info(f"   🔍 {method.title()}: {count} levels ({support_count} support, {resistance_count} resistance) - Range: {price_range}")
-                
+
                 # Show sample levels from each method
                 method_levels = [level for level in all_levels if level.metadata.get('method', 'unknown') == method]
                 if method_levels:
@@ -1394,7 +1394,7 @@ class EnhancedSRDetector:
                     for i, level in enumerate(sample_levels, 1):
                         tprint(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
                         self.logger.info(f"         {i}. {level.type.title()}: ${level.price:.2f} (strength: {level.strength:.3f})")
-            
+
             tprint(f"📊 Level sources summary: {method_counts}")
             self.logger.info(f'📊 Level sources summary: {method_counts}')
 
@@ -1437,14 +1437,14 @@ class EnhancedSRDetector:
             elapsed_time = time.time() - start_time
             support_count = len([level for level in enhanced_levels if level.type == 'support'])
             resistance_count = len([level for level in enhanced_levels if level.type == 'resistance'])
-            
+
             tprint(f"✅ Enhanced SR Detection Complete!")
             tprint(f"   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)")
             tprint(f"   ⏱️ Processing time: {elapsed_time:.2f}s")
             self.logger.info(f'✅ Enhanced SR Detection Complete!')
             self.logger.info(f'   📊 Total levels: {len(enhanced_levels)} ({support_count} support, {resistance_count} resistance)')
             self.logger.info(f'   ⏱️ Processing time: {elapsed_time:.2f}s')
-            
+
             # Show sample of strongest levels
             if enhanced_levels:
                 tprint("📊 Sample of Strongest Levels:")
@@ -1527,7 +1527,7 @@ class EnhancedSRDetector:
                                   metadata={'method': 'fractal', 'period': self.fractal_period})
                     levels.append(level)
                     resistance_levels_found += 1
-            
+
             tprint(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
             self.logger.info(f"   🔍 Fractal Detection (period {self.fractal_period}): Found {support_levels_found} support, {resistance_levels_found} resistance levels")
 
@@ -3414,13 +3414,13 @@ class EnhancedSRDetector:
             if level1.price <= 0 or level2.price <= 0:
                 self.logger.debug(f'❌ No merge: Invalid prices (Level1: {level1.price:.4f}, Level2: {level2.price:.4f})')
                 return False
-            
+
             # Check for extreme price ratio (more than 10x difference)
             price_ratio = max(level1.price, level2.price) / min(level1.price, level2.price)
             if price_ratio > 10.0:
                 self.logger.debug(f'❌ No merge: Extreme price ratio {price_ratio:.2f} (Level1: {level1.price:.4f}, Level2: {level2.price:.4f})')
                 return False
-            
+
             # Basic price proximity check
             price_diff = abs(level1.price - level2.price) / level1.price if level1.price != 0 else 1.0
             if price_diff >= self.touch_proximity_threshold:
@@ -3921,13 +3921,13 @@ class EnhancedSRDetector:
         """Count touches of price to S/R level."""
         try:
             threshold = level.price * self.touch_proximity_threshold
-            
+
             # Use vectorized operations for better performance
             if level.type == 'support':
                 touches = (abs(data['low'] - level.price) <= threshold).sum()
             else:  # resistance
                 touches = (abs(data['high'] - level.price) <= threshold).sum()
-                
+
             return int(touches)
         except Exception as e:
             self.logger.warning(f'Touch counting failed: {e}')
@@ -3970,26 +3970,26 @@ class EnhancedSRDetector:
         try:
             if 'volume' not in data.columns:
                 return 0.0
-                
+
             volume_ma = rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean()
             threshold = level.price * self.touch_proximity_threshold
-            
+
             # Use vectorized operations for better performance
             if level.type == 'support':
                 price_touches = abs(data['low'] - level.price) <= threshold
             else:  # resistance
                 price_touches = abs(data['high'] - level.price) <= threshold
-            
+
             # Calculate volume spikes for touching points
             volume_spikes = (data['volume'] > volume_ma * self.volume_spike_threshold) & price_touches
-            
+
             # Return the ratio of volume spikes to total touches
             total_touches = price_touches.sum()
             if total_touches > 0:
                 return float(volume_spikes.sum() / total_touches)
             else:
                 return 0.0
-                
+
         except Exception as e:
             self.logger.warning(f'Volume confirmation calculation failed: {e}')
             return 0.0
@@ -4280,37 +4280,37 @@ class EnhancedSRDetector:
         try:
             if not cluster:
                 return None
-            
+
             if len(cluster) == 1:
                 return cluster[0]
-            
+
             # Calculate weighted average price (weighted by strength and quality)
             total_weight = 0
             weighted_price = 0
-            
+
             for level in cluster:
                 # Weight by both strength and any backtesting quality score
                 quality_score = getattr(level, 'backtest_quality', level.strength)
                 weight = level.strength * quality_score
                 weighted_price += level.price * weight
                 total_weight += weight
-            
+
             if total_weight > 0:
                 final_price = weighted_price / total_weight
             else:
                 final_price = sum(level.price for level in cluster) / len(cluster)
-            
+
             # Calculate combined strength (weighted average)
             combined_strength = sum(level.strength * getattr(level, 'backtest_quality', level.strength) for level in cluster) / len(cluster)
-            
+
             # Calculate combined touches
             combined_touches = sum(getattr(level, 'touches', 1) for level in cluster)
-            
+
             # Determine type (majority vote)
             support_count = sum(1 for level in cluster if level.type == 'support')
             resistance_count = len(cluster) - support_count
             combined_type = 'support' if support_count > resistance_count else 'resistance'
-            
+
             # Create merged level with backtesting metadata
             merged_level = SRLevel(
                 price=final_price,
@@ -4339,12 +4339,12 @@ class EnhancedSRDetector:
                     'algorithm_used': 'backtesting_enhanced'
                 }
             )
-            
+
             self.logger.debug(f'Merged {len(cluster)} levels into backtesting-enhanced cluster {cluster_id}: '
                             f'${final_price:.2f} (strength: {combined_strength:.3f})')
-            
+
             return merged_level
-            
+
         except Exception as e:
             self.logger.warning(f'Failed to merge backtesting-enhanced cluster: {e}')
             # Return the strongest level as fallback
@@ -4355,28 +4355,28 @@ class EnhancedSRDetector:
         try:
             if not cluster:
                 return None
-            
+
             if len(cluster) == 1:
                 return cluster[0]
-            
+
             # Calculate weighted average price (weighted by strength)
             total_strength = sum(level.strength for level in cluster)
             if total_strength > 0:
                 weighted_price = sum(level.price * level.strength for level in cluster) / total_strength
             else:
                 weighted_price = sum(level.price for level in cluster) / len(cluster)
-            
+
             # Calculate combined strength (average of all levels)
             combined_strength = sum(level.strength for level in cluster) / len(cluster)
-            
+
             # Calculate combined touches
             combined_touches = sum(getattr(level, 'touches', 1) for level in cluster)
-            
+
             # Determine type (majority vote)
             support_count = sum(1 for level in cluster if level.type == 'support')
             resistance_count = len(cluster) - support_count
             combined_type = 'support' if support_count > resistance_count else 'resistance'
-            
+
             # Create merged level
             merged_level = SRLevel(
                 price=weighted_price,
@@ -4393,12 +4393,12 @@ class EnhancedSRDetector:
                     'strength_spread': max(level.strength for level in cluster) - min(level.strength for level in cluster)
                 }
             )
-            
+
             self.logger.debug(f'Merged {len(cluster)} levels into cluster {cluster_id}: '
                             f'${weighted_price:.2f} (strength: {combined_strength:.3f})')
-            
+
             return merged_level
-            
+
         except Exception as e:
             self.logger.warning(f'Failed to merge cluster: {e}')
             # Return the strongest level as fallback
@@ -4498,7 +4498,7 @@ class EnhancedSRDetector:
     def _validate_dbscan_parameters(self, eps: float, min_samples: int, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """
         Validate DBSCAN parameters for logical consistency with market conditions.
-        
+
         Ensures parameters are realistic given:
         - Market volatility during SR level formation period
         - Level density and distribution
@@ -4508,51 +4508,51 @@ class EnhancedSRDetector:
             # Calculate volatility from the same time period as SR levels
             price_volatility = self._calculate_level_period_volatility(levels, data)
             avg_price = data['close'].mean()
-            
+
             # Calculate minimum expected cluster spread
             min_cluster_spread = min_samples * price_volatility * avg_price
-            
+
             # Check if eps is too small relative to expected cluster spread
             if eps < min_cluster_spread:
                 self.logger.warning(f'🔧 Epsilon ({eps:.2f}) too small relative to min_samples ({min_samples}) '
                                   f'and volatility ({price_volatility:.4f}). '
                                   f'Minimum expected spread: {min_cluster_spread:.2f}')
-                
+
                 # Suggest correction with 1.5x buffer for realistic clustering
                 suggested_eps = min_cluster_spread * 1.5
                 self.logger.info(f'🔧 Correcting eps: {eps:.2f} -> {suggested_eps:.2f}')
                 eps = suggested_eps
-            
+
             # Check if eps is too large (would create too few clusters)
             max_reasonable_eps = min_samples * price_volatility * avg_price * 3.0
             if eps > max_reasonable_eps:
                 self.logger.warning(f'🔧 Epsilon ({eps:.2f}) too large. '
                                   f'Maximum reasonable: {max_reasonable_eps:.2f}')
-                
+
                 suggested_eps = max_reasonable_eps
                 self.logger.info(f'🔧 Correcting eps: {eps:.2f} -> {suggested_eps:.2f}')
                 eps = suggested_eps
-            
+
             # Validate min_samples is reasonable for level count
             max_reasonable_min_samples = max(2, len(levels) // 3)
             if min_samples > max_reasonable_min_samples:
                 self.logger.warning(f'🔧 min_samples ({min_samples}) too high for {len(levels)} levels. '
                                   f'Maximum reasonable: {max_reasonable_min_samples}')
-                
+
                 suggested_min_samples = max_reasonable_min_samples
                 self.logger.info(f'🔧 Correcting min_samples: {min_samples} -> {suggested_min_samples}')
                 min_samples = suggested_min_samples
-            
+
             # Final validation: ensure eps is within reasonable bounds
             min_eps = avg_price * 0.001  # 0.1% minimum
             max_eps = avg_price * 0.005  # 0.5% maximum
             eps = np.clip(eps, min_eps, max_eps)
-            
+
             self.logger.info(f'✅ Validated DBSCAN params - eps: {eps:.2f}, min_samples: {min_samples}, '
                            f'volatility: {price_volatility:.4f}, expected_spread: {min_cluster_spread:.2f}')
-            
+
             return eps, min_samples
-            
+
         except Exception as e:
             self.logger.warning(f'DBSCAN parameter validation failed: {e}')
             return eps, min_samples
@@ -4560,7 +4560,7 @@ class EnhancedSRDetector:
     def _calculate_level_period_volatility(self, levels: List[SRLevel], data: pd.DataFrame) -> float:
         """
         Calculate volatility from the same time period as SR level formation.
-        
+
         This ensures we use volatility that's relevant to the levels being clustered,
         not just the entire dataset volatility.
         """
@@ -4568,7 +4568,7 @@ class EnhancedSRDetector:
             if not levels:
                 # Fallback to overall dataset volatility
                 return data['close'].pct_change().std()
-            
+
             # Get time range of SR levels
             level_times = []
             for level in levels:
@@ -4576,41 +4576,41 @@ class EnhancedSRDetector:
                     level_times.append(level.first_touch_time)
                 if level.last_touch_time is not None:
                     level_times.append(level.last_touch_time)
-            
+
             if not level_times:
                 # Fallback to overall dataset volatility
                 return data['close'].pct_change().std()
-            
+
             # Find the time range covering all levels
             min_time = min(level_times)
             max_time = max(level_times)
-            
+
             # Add buffer to capture more context around level formation
             time_buffer = pd.Timedelta(hours=24)  # 24-hour buffer
             start_time = min_time - time_buffer
             end_time = max_time + time_buffer
-            
+
             # Filter data to level formation period
             level_period_data = data[(data.index >= start_time) & (data.index <= end_time)]
-            
+
             if len(level_period_data) < 10:
                 # Not enough data in level period, use overall volatility
                 self.logger.info('🔧 Insufficient data in level period, using overall volatility')
                 return data['close'].pct_change().std()
-            
+
             # Calculate volatility for the level formation period
             level_period_volatility = level_period_data['close'].pct_change().std()
-            
+
             # Ensure we have a reasonable volatility value
             if pd.isna(level_period_volatility) or level_period_volatility <= 0:
                 # Fallback to overall dataset volatility
                 level_period_volatility = data['close'].pct_change().std()
-            
+
             self.logger.info(f'🔧 Level period volatility: {level_period_volatility:.4f} '
                            f'(period: {start_time} to {end_time}, {len(level_period_data)} bars)')
-            
+
             return level_period_volatility
-            
+
         except Exception as e:
             self.logger.warning(f'Failed to calculate level period volatility: {e}')
             # Fallback to overall dataset volatility
@@ -4706,7 +4706,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
         level_data = np.array([[level.price, level.strength] for level in levels])
@@ -4779,63 +4779,63 @@ except ImportError:
     def _optimize_dbscan_enhanced(self, levels: List[SRLevel], data: pd.DataFrame) -> Tuple[float, int]:
         """Enhanced DBSCAN parameter optimization with ATR-based constraints."""
         try:
-            
+
             level_data = np.array([[level.price, level.strength] for level in levels])
             avg_price = data['close'].mean()
-            
+
             # Calculate ATR for better parameter optimization
             atr = self._calculate_atr(data)
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
-            
+
             # ATR-based parameter space
             eps_min = current_atr * 0.1  # 0.1 ATR minimum
             eps_max = current_atr * 2.0  # 2.0 ATR maximum
             min_samples_min = max(2, len(levels) // 20)  # Adaptive minimum
             min_samples_max = min(10, len(levels) // 3)  # Adaptive maximum
-            
+
             space = [
                 Real(eps_min, eps_max, name='eps'),
                 Integer(min_samples_min, min_samples_max, name='min_samples')
             ]
-            
+
             @use_named_args(space)
             def objective(**params):
                 eps = params['eps']
                 min_samples = params['min_samples']
-                
+
                 try:
                     clustering = DBSCAN(eps=eps, min_samples=min_samples, metric=self._strength_aware_distance)
                     labels = clustering.fit_predict(level_data)
-                    
+
                     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
                     n_noise = list(labels).count(-1)
-                    
+
                     if n_clusters == 0:
                         return -1.0  # Penalty for no clusters
-                    
+
                     # Enhanced quality metrics
                     silhouette_score = self._calculate_silhouette_score(level_data, labels)
                     cluster_balance = self._calculate_cluster_balance(labels)
                     noise_ratio = n_noise / len(levels)
-                    
+
                     # Combined score (higher is better)
-                    score = (silhouette_score * 0.4 + 
-                            cluster_balance * 0.3 + 
+                    score = (silhouette_score * 0.4 +
+                            cluster_balance * 0.3 +
                             (1 - noise_ratio) * 0.3)
-                    
+
                     return -score  # Minimize negative score
-                    
+
                 except Exception:
                     return -1.0
-            
+
             result = gp_minimize(objective, space, n_calls=50, random_state=42)
             best_eps = result.x[0]
             best_min_samples = int(result.x[1])
-            
+
             self.logger.info(f'🔧 Enhanced DBSCAN optimization - eps: {best_eps:.6f}, min_samples: {best_min_samples}, score: {-result.fun:.3f}')
-            
+
             return best_eps, best_min_samples
-            
+
         except Exception as e:
             self.logger.warning(f'Enhanced DBSCAN optimization failed: {e}')
             return self._get_enhanced_heuristic_dbscan_params(levels, data)
@@ -4855,11 +4855,11 @@ except ImportError:
             unique_labels = [label for label in set(labels) if label != -1]
             if len(unique_labels) <= 1:
                 return 0.0
-            
+
             cluster_sizes = [list(labels).count(label) for label in unique_labels]
             min_size = min(cluster_sizes)
             max_size = max(cluster_sizes)
-            
+
             # Balance score: 1.0 for perfectly balanced, 0.0 for highly imbalanced
             return min_size / max_size if max_size > 0 else 0.0
         except Exception:
@@ -4870,31 +4870,31 @@ except ImportError:
         try:
             avg_price = data['close'].mean()
             price_volatility = data['close'].pct_change().std()
-            
+
             # Calculate ATR for better parameter optimization
             atr = self._calculate_atr(data)
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else atr.mean()
-            
+
             # ATR-based epsilon calculation
             base_eps_atr = 0.5  # 0.5 ATR base
             volatility_factor = min(2.0, max(0.5, price_volatility * 100))  # Scale volatility
             level_density_factor = min(2.0, max(0.5, len(levels) / 50))  # Scale by level count
-            
+
             eps = current_atr * base_eps_atr * volatility_factor / level_density_factor
-            
+
             # Adaptive min_samples based on level count and quality
             base_min_samples = max(2, min(8, len(levels) // 10))
             quality_factor = np.mean([level.strength for level in levels])
             min_samples = int(base_min_samples * (2 - quality_factor))  # Higher quality = fewer samples needed
-            
+
             # Apply multipliers from config
             eps *= self.dbscan_eps_multiplier
             min_samples = int(min_samples * self.dbscan_min_samples_multiplier)
-            
+
             self.logger.info(f'🔧 Enhanced heuristic DBSCAN params - eps: {eps:.6f} ({eps/current_atr:.2f} ATR), min_samples: {min_samples}')
-            
+
             return eps, min_samples
-            
+
         except Exception as e:
             self.logger.warning(f'Enhanced heuristic DBSCAN params failed: {e}')
             return self._get_heuristic_dbscan_params(levels, data)
@@ -4940,16 +4940,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -4968,8 +4968,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -4986,13 +4986,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

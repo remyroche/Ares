@@ -1,7 +1,7 @@
-from typing import Callable
-from typing import Any
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
+from typing import Any
+from typing import Callable
 
 'Decorator for automatic per-regime processing in training steps.\n\nThis module provides a decorator that automatically handles per-regime processing\nfor training steps, ensuring consistent regime-based execution across steps 4-21.\n'
 import functools
@@ -16,19 +16,19 @@ logger = get_logger('RegimeProcessingDecorator')
 
 def per_regime_processing(result_type: str='generic', parallel: bool = True, preserve_context: bool = True, context_window: int = 100) -> None:
     """Decorator to automatically process functions on a per-regime basis.
-    
+
     This decorator wraps a processing function to automatically:
     1. Load unified regime data
     2. Process each regime separately
     3. Save per-regime results
     4. Return aggregated results
-    
+
     Args:
         result_type: Type of results for file naming
         parallel: Whether to process regimes in parallel
         preserve_context: Whether to preserve temporal context
         context_window: Number of rows for context preservation
-        
+
     The decorated function should have the signature:
         async def process_func(data: pd.DataFrame, regime_id: int, **kwargs) -> Any
     """
@@ -62,11 +62,11 @@ def per_regime_processing(result_type: str='generic', parallel: bool = True, pre
 
 def aggregate_regime_results(results: Dict[int, pd.DataFrame], aggregation_method: str='concat') -> pd.DataFrame:
     """Aggregate per-regime results into a single DataFrame.
-    
+
     Args:
         results: Dictionary mapping regime IDs to DataFrames
         aggregation_method: Method to use ('concat', 'merge', 'average')
-        
+
     Returns:
         Aggregated DataFrame
     """
@@ -108,7 +108,7 @@ def aggregate_regime_results(results: Dict[int, pd.DataFrame], aggregation_metho
 
 class RegimeProcessingContext:
     """Context manager for regime-specific processing.
-    
+
     This provides a clean way to handle regime processing with proper
     setup and teardown, useful for steps that need custom regime handling.
     """

@@ -11,7 +11,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Union
 from enum import Enum
 
-
 class RegimeCombinationStrategy(Enum):
     """Strategy for combining TAS and NAS inputs."""
     WEIGHTED_AVERAGE = "weighted_average"
@@ -22,7 +21,6 @@ class RegimeCombinationStrategy(Enum):
     HIERARCHICAL = "hierarchical"
     PERFORMANCE_ADAPTIVE = "performance_adaptive"
     DYNAMIC_WEIGHTING = "dynamic_weighting"
-
 
 class EconomicSignificanceType(Enum):
     """Types of economic significance to evaluate."""
@@ -44,7 +42,6 @@ class EconomicSignificanceType(Enum):
     INTRA_BAR_PATTERNS = "intra_bar_patterns"
     MICROSTRUCTURE_PATTERNS = "microstructure_patterns"
 
-
 class ClusteringAlgorithm(Enum):
     """Available clustering algorithms."""
     KMEANS = "kmeans"
@@ -63,7 +60,6 @@ class ClusteringAlgorithm(Enum):
     ECONOMIC_HIERARCHICAL = "economic_hierarchical"
     ECONOMIC_GMM = "economic_gmm"
     ECONOMIC_ADAPTIVE = "economic_adaptive"
-
 
 @dataclass
 class HybridRegimeConfig:
@@ -276,11 +272,9 @@ class HybridRegimeConfig:
         "max_history_days": 365
     })
 
-
 def create_default_hybrid_config() -> HybridRegimeConfig:
     """Create a default hybrid regime configuration."""
     return HybridRegimeConfig()
-
 
 def create_economic_focused_config() -> HybridRegimeConfig:
     """Create configuration focused on economic significance."""
@@ -292,7 +286,6 @@ def create_economic_focused_config() -> HybridRegimeConfig:
     config.tas_config["weight"] = 0.3
     return config
 
-
 def create_trading_focused_config() -> HybridRegimeConfig:
     """Create configuration focused on trading viability."""
     config = HybridRegimeConfig()
@@ -301,7 +294,6 @@ def create_trading_focused_config() -> HybridRegimeConfig:
     config.validation_config["backtesting_enabled"] = True
     config.output_config["save_financial_analysis"] = True
     return config
-
 
 def create_adaptive_config() -> HybridRegimeConfig:
     """Create configuration with adaptive fusion strategy."""
@@ -312,7 +304,6 @@ def create_adaptive_config() -> HybridRegimeConfig:
     config.tas_config["adaptive_weighting"] = True
     config.nas_config["adaptive_weighting"] = True
     return config
-
 
 def create_hierarchical_config() -> HybridRegimeConfig:
     """Create configuration with hierarchical integration strategy."""
@@ -326,7 +317,6 @@ def create_hierarchical_config() -> HybridRegimeConfig:
     ]
     return config
 
-
 def create_ensemble_config() -> HybridRegimeConfig:
     """Create configuration with ensemble integration strategy."""
     config = HybridRegimeConfig()
@@ -339,7 +329,6 @@ def create_ensemble_config() -> HybridRegimeConfig:
         ClusteringAlgorithm.DBSCAN
     ]
     return config
-
 
 def create_performance_adaptive_config() -> HybridRegimeConfig:
     """Create configuration with performance-adaptive weighting."""

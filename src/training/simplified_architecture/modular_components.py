@@ -79,22 +79,22 @@ class BaseExchangeDataSource(IExchangeDataSource):
                 # Ensure required columns exist
                 required_columns = ['open', 'high', 'low', 'close', 'volume']
                 missing_columns = [col for col in required_columns if col not in raw_data.columns]
-                
+
                 if missing_columns:
                     raise ValueError(f"Missing required columns: {missing_columns}")
-                
+
                 # Standardize column names to lowercase
                 standardized_data = raw_data.copy()
                 standardized_data.columns = standardized_data.columns.str.lower()
-                
+
                 # Ensure numeric types
                 for col in required_columns:
                     if col in standardized_data.columns:
                         standardized_data[col] = pd.to_numeric(standardized_data[col], errors='coerce')
-                
+
                 # Remove any rows with NaN values in required columns
                 standardized_data = standardized_data.dropna(subset=required_columns)
-                
+
                 # Ensure timestamp index if not already
                 if not isinstance(standardized_data.index, pd.DatetimeIndex):
                     if 'timestamp' in standardized_data.columns:
@@ -104,24 +104,24 @@ class BaseExchangeDataSource(IExchangeDataSource):
                     else:
                         # Create a default timestamp index
                         standardized_data.index = pd.date_range(
-                            start='2023-01-01', 
-                            periods=len(standardized_data), 
+                            start='2023-01-01',
+                            periods=len(standardized_data),
                             freq='1H'
                         )
-                
+
                 # Sort by timestamp
                 standardized_data = standardized_data.sort_index()
-                
+
                 return standardized_data[required_columns]
-            
+
             elif isinstance(raw_data, dict):
                 # Convert dictionary to DataFrame
                 df = pd.DataFrame(raw_data)
                 return self._standardize_ohlcv_data(df)
-            
+
             else:
                 raise ValueError(f"Unsupported data type: {type(raw_data)}")
-                
+
         except Exception as e:
             self.logger.error(f"Failed to standardize OHLCV data: {e}")
             raise ValueError(f"Data standardization failed: {e}")
@@ -129,8 +129,8 @@ class BaseExchangeDataSource(IExchangeDataSource):
 class ExchangeDataSource(BaseExchangeDataSource):
     """Generic exchange data source with configurable parameters."""
 
-    def __init__(self, exchange_name: str, symbols: List[str], timeframes: List[str], 
-                 price_range: Tuple[float, float], volume_range: Tuple[int, int], 
+    def __init__(self, exchange_name: str, symbols: List[str], timeframes: List[str],
+                 price_range: Tuple[float, float], volume_range: Tuple[int, int],
                  **kwargs) -> None:
         super().__init__(**kwargs)
         self._exchange_name = exchange_name
@@ -154,7 +154,7 @@ class ExchangeDataSource(BaseExchangeDataSource):
         hours = int((end - start).total_seconds() / 3600)
         base_price = np.random.uniform(*self._price_range)
         price_volatility = base_price * 0.05
-        
+
         data = pd.DataFrame({
             'timestamp': pd.date_range(start, end, freq='1H')[:hours],
             'open': np.random.randn(hours) * price_volatility + base_price,
@@ -170,7 +170,7 @@ class ExchangeDataSource(BaseExchangeDataSource):
 
 class ExchangeDataSourceFactory:
     """Factory for creating exchange data sources."""
-    
+
     # Predefined exchange configurations
     EXCHANGE_CONFIGS = {
         'binance': {
@@ -199,7 +199,7 @@ class ExchangeDataSourceFactory:
         exchange_lower = exchange.lower()
         if exchange_lower not in cls.EXCHANGE_CONFIGS:
             raise ValueError(f'Unknown exchange: {exchange}. Available: {list(cls.EXCHANGE_CONFIGS.keys())}')
-        
+
         config = cls.EXCHANGE_CONFIGS[exchange_lower]
         return ExchangeDataSource(
             exchange_name = exchange_lower,
@@ -267,40 +267,40 @@ class DataValidator(IDataValidator):
         errors = []
         warnings = []
         metrics = {'num_columns': len(data.columns), 'num_rows': len(data)}
-        
+
         # Schema validation
         missing_columns = set(self.required_columns) - set(data.columns)
         if missing_columns:
             errors.append(f'Missing required columns: {missing_columns}')
-        
+
         for col, expected_type in self.column_types.items():
             if col in data.columns:
                 actual_type = data[col].dtype
                 if not np.issubdtype(actual_type, expected_type):
                     warnings.append(f"Column '{col}' has type {actual_type}, expected {expected_type}")
-        
+
         # Data quality validation
         null_percentage = data.isnull().sum().sum() / (len(data) * len(data.columns))
         metrics['null_percentage'] = null_percentage
         if null_percentage > self.max_null_percentage:
             errors.append(f'Too many null values: {null_percentage:.2%} > {self.max_null_percentage:.2%}')
-        
+
         duplicate_count = data.duplicated().sum()
         duplicate_percentage = duplicate_count / len(data)
         metrics['duplicate_percentage'] = duplicate_percentage
         if duplicate_percentage > self.max_duplicate_percentage:
             warnings.append(f'High duplicate rate: {duplicate_percentage:.2%} > {self.max_duplicate_percentage:.2%}')
-        
+
         # Time series validation
         if isinstance(data.index, pd.DatetimeIndex):
             if not data.index.is_monotonic_increasing:
                 errors.append('Time series is not sorted')
-            
+
             if self.expected_frequency:
                 inferred_freq = pd.infer_freq(data.index)
                 if inferred_freq != self.expected_frequency:
                     warnings.append(f'Unexpected frequency: {inferred_freq} != {self.expected_frequency}')
-            
+
             time_diffs = data.index.to_series().diff()
             gaps = time_diffs[time_diffs > time_diffs.mode()[0]]
             metrics['num_gaps'] = len(gaps)
@@ -308,7 +308,7 @@ class DataValidator(IDataValidator):
                 errors.append(f'Too many gaps in time series: {len(gaps)} > {self.max_gaps}')
         else:
             errors.append('Data index is not DatetimeIndex')
-        
+
         return ValidationResult(is_valid = len(errors) == 0, errors = errors, warnings = warnings, metrics = metrics)
 
 class IFeatureCalculator(ABC):
@@ -332,41 +332,41 @@ class FeatureCalculator(IFeatureCalculator):
     def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate comprehensive features."""
         features = pd.DataFrame(index = data.index)
-        
+
         # Price-based features
         if 'close' in data.columns:
             features['returns'] = data['close'].pct_change()
             features['log_returns'] = np.log1p(features['returns'])
-        
+
         if all(col in data.columns for col in ['high', 'low']):
             features['high_low_ratio'] = data['high'] / data['low']
             features['price_position'] = (data['close'] - data['low']) / (data['high'] - data['low'])
-        
+
         if all(col in data.columns for col in ['close', 'open']):
             features['close_open_ratio'] = data['close'] / data['open']
-        
+
         # Volume-based features
         if 'volume' in data.columns:
             features['volume_sma'] = data['volume'].rolling(self.window).mean()
             features['volume_ratio'] = data['volume'] / features['volume_sma']
             features['volume_volatility'] = data['volume'].pct_change().rolling(self.window).std()
-            
+
             if 'close' in data.columns:
                 features['price_volume_corr'] = data['close'].pct_change().rolling(self.window).corr(data['volume'].pct_change())
-        
+
         # Technical indicators
         for indicator in self.indicators:
             name = indicator['name']
             params = indicator.get('params', {})
             period = params.get('period', 14 if name == 'RSI' else 20)
-            
+
             if name == 'RSI' and 'close' in data.columns:
                 features[f"rsi_{period}"] = self._calculate_rsi(data['close'], period)
             elif name == 'SMA' and 'close' in data.columns:
                 features[f'sma_{period}'] = data['close'].rolling(period).mean()
             elif name == 'EMA' and 'close' in data.columns:
                 features[f'ema_{period}'] = data['close'].ewm(span = period).mean()
-        
+
         return features
 
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
@@ -382,14 +382,14 @@ class FeatureCalculator(IFeatureCalculator):
         """Get list of all features this calculator produces."""
         names = ['returns', 'log_returns', 'high_low_ratio', 'close_open_ratio', 'price_position',
                 'volume_sma', 'volume_ratio', 'volume_volatility', 'price_volume_corr']
-        
+
         for indicator in self.indicators:
             name = indicator['name']
             params = indicator.get('params', {})
             period = params.get('period', 14 if name == 'RSI' else 20)
             if name in ['RSI', 'SMA', 'EMA']:
                 names.append(f'{name.lower()}_{period}')
-        
+
         return names
 
 class IModel(ABC):
@@ -474,7 +474,7 @@ class ModelWrapper(IModel):
             X_scaled = self.scaler.transform(X)
         else:
             X_scaled = X.values
-        
+
         if self.model_type == 'neural_network':
             X_tensor = torch.FloatTensor(X_scaled)
             self.model.eval()
@@ -491,7 +491,7 @@ class ModelWrapper(IModel):
             X_scaled = self.scaler.transform(X)
         else:
             X_scaled = X.values
-        
+
         if self.model_type == 'neural_network':
             X_tensor = torch.FloatTensor(X_scaled)
             self.model.eval()
@@ -505,7 +505,7 @@ class ModelWrapper(IModel):
     def save(self, path: Path) -> None:
         """Save model to disk."""
         path.parent.mkdir(parents = True, exist_ok = True)
-        
+
         if self.model_type == 'neural_network':
             torch.save(self.model.state_dict(), path.with_suffix('.pth'))
             if self.scaler:
@@ -529,13 +529,13 @@ class LightGBMTrainer(BaseModelTrainer):
     def _get_default_hyperparameters(self) -> Dict[str, Any]:
         """Get default hyperparameters based on model type."""
         defaults = {
-            'lightgbm': {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 31, 
+            'lightgbm': {'objective': 'binary', 'metric': 'binary_logloss', 'num_leaves': 31,
                         'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': -1},
-            'xgboost': {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 6, 
+            'xgboost': {'objective': 'binary:logistic', 'eval_metric': 'logloss', 'max_depth': 6,
                        'learning_rate': 0.05, 'n_estimators': 100, 'random_state': 42, 'verbosity': 0},
-            'random_forest': {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2, 
+            'random_forest': {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2,
                              'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1},
-            'neural_network': {'hidden_layers': [64, 32], 'activation': 'relu', 'dropout_rate': 0.2, 
+            'neural_network': {'hidden_layers': [64, 32], 'activation': 'relu', 'dropout_rate': 0.2,
                               'learning_rate': 0.001, 'batch_size': 32, 'epochs': 100, 'early_stopping_patience': 10}
         }
         return defaults.get(self._model_type, {})
@@ -597,7 +597,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
         self.model = xgb.XGBClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
@@ -707,7 +707,7 @@ class NeuralNetworkTrainer(BaseModelTrainer):
         X_scaled = scaler.fit_transform(X)
         input_size = X.shape[1]
         hidden_layers = self.hyperparameters['hidden_layers']
-        
+
         layers = []
         prev_size = input_size
         for hidden_size in hidden_layers:
@@ -718,14 +718,14 @@ class NeuralNetworkTrainer(BaseModelTrainer):
             ])
             prev_size = hidden_size
         layers.append(nn.Linear(prev_size, 1))
-        
+
         model = nn.Sequential(*layers)
         criterion = nn.BCEWithLogitsLoss()
         optimizer = optim.Adam(model.parameters(), lr = self.hyperparameters['learning_rate'])
-        
+
         X_tensor = torch.FloatTensor(X_scaled)
         y_tensor = torch.FloatTensor(y.values).unsqueeze(1)
-        
+
         model.train()
         for epoch in range(self.hyperparameters['epochs']):
             optimizer.zero_grad()
@@ -733,13 +733,13 @@ class NeuralNetworkTrainer(BaseModelTrainer):
             loss = criterion(outputs, y_tensor)
             loss.backward()
             optimizer.step()
-        
+
         self.model = model
         return ModelWrapper(model, 'neural_network', scaler)
 
 class ModelTrainerFactory:
     """Factory for creating model trainers."""
-    
+
     SUPPORTED_MODELS = ['lightgbm', 'xgboost', 'random_forest', 'neural_network']
 
     @classmethod
@@ -758,7 +758,7 @@ class ModelTrainerFactory:
 class SimplifiedPipeline:
     """
     Orchestrator that combines single-responsibility components.
-    
+
     This class itself has a single responsibility: orchestration.
     It doesn't implement any business logic, just coordinates components.
     """
@@ -797,7 +797,7 @@ async def example_usage() -> None:
     """Example of using simplified modular components."""
     # Create data source
     data_source = LocalDataSource(Path('data/cache'))
-    
+
     # Create comprehensive validator
     validator = DataValidator(
         required_columns=['open', 'high', 'low', 'close', 'volume'],
@@ -806,7 +806,7 @@ async def example_usage() -> None:
         expected_frequency='H',
         max_gaps = 5
     )
-    
+
     # Create comprehensive feature calculator
     feature_calculator = FeatureCalculator(
         window = 20,
@@ -816,10 +816,10 @@ async def example_usage() -> None:
             {'name': 'EMA', 'params': {'period': 12}}
         ]
     )
-    
+
     # Create model trainer
     model_trainer = ModelTrainerFactory.create('lightgbm', num_leaves = 31, learning_rate = 0.05, n_estimators = 100)
-    
+
     # Create and run pipeline
     pipeline = SimplifiedPipeline(
         data_source = data_source,
@@ -827,7 +827,7 @@ async def example_usage() -> None:
         feature_calculators=[feature_calculator],
         model_trainer = model_trainer
     )
-    
+
     results = await pipeline.run(symbol='BTCUSDT', start = datetime(2023, 1, 1), end = datetime(2023, 12, 31))
     tprint('Pipeline completed successfully!')
     tprint(f"Features calculated: {results['features'].columns.tolist()}")
@@ -837,16 +837,16 @@ if __name__ == '__main__':
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -865,8 +865,8 @@ if __name__ == '__main__':
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -883,13 +883,13 @@ if __name__ == '__main__':
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

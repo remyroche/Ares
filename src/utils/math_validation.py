@@ -69,7 +69,7 @@ def validate_finite(value: Any, name: str = "value") -> Any:
         else:
             # Scalar value
             val = float(value)
-        
+
         if not np.isfinite(val):
             raise ValueError(f"{name} must be finite, got {val}")
         return val
@@ -80,38 +80,38 @@ def validate_array_finite(array: np.ndarray, name: str = "array") -> np.ndarray:
     """Validate that an array contains only finite values."""
     if array is None:
         raise ValueError(f"{name} cannot be None")
-    
+
     if not isinstance(array, np.ndarray):
         raise TypeError(f"{name} must be a numpy array, got {type(array)}")
-    
+
     if array.size == 0:
         raise ValueError(f"{name} cannot be empty")
-    
+
     # Check for non-finite values
     finite_mask = np.isfinite(array)
     if not finite_mask.all():
         non_finite_count = np.sum(~finite_mask)
         raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
-    
+
     return array
 
 def validate_matrix_finite(matrix: np.ndarray, name: str = "matrix") -> np.ndarray:
     """Validate that a matrix contains only finite values."""
     if matrix is None:
         raise ValueError(f"{name} cannot be None")
-    
+
     if not isinstance(matrix, np.ndarray):
         raise TypeError(f"{name} must be a numpy array, got {type(matrix)}")
-    
+
     if matrix.size == 0:
         raise ValueError(f"{name} cannot be empty")
-    
+
     # Check for non-finite values
     finite_mask = np.isfinite(matrix)
     if not finite_mask.all():
         non_finite_count = np.sum(~finite_mask)
         raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
-    
+
     return matrix
 
 def validate_positive(value, name: str = "value") -> Optional[float]:
@@ -134,23 +134,23 @@ def validate_numeric_array(array: np.ndarray, name: str = "array") -> np.ndarray
     """Validate that an array contains only numeric values and is finite."""
     if array is None:
         raise ValueError(f"{name} cannot be None")
-    
+
     if not isinstance(array, np.ndarray):
         raise TypeError(f"{name} must be a numpy array, got {type(array)}")
-    
+
     if array.size == 0:
         raise ValueError(f"{name} cannot be empty")
-    
+
     # Check for non-finite values
     finite_mask = np.isfinite(array)
     if not finite_mask.all():
         non_finite_count = np.sum(~finite_mask)
         raise ValueError(f"{name} contains {non_finite_count} non-finite values (NaN or inf)")
-    
+
     # Check if array contains numeric data
     if not np.issubdtype(array.dtype, np.number):
         raise TypeError(f"{name} must contain numeric data, got dtype {array.dtype}")
-    
+
     return array
 
 def safe_kelly_calculation(win_rate: float, avg_win: float, avg_loss: float) -> float:

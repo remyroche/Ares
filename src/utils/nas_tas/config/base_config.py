@@ -8,7 +8,6 @@ from enum import Enum
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 
-
 class ArchitectureType(Enum):
     """Types of neural architectures for NAS-TAS."""
     HYBRID = "hybrid"
@@ -19,14 +18,12 @@ class ArchitectureType(Enum):
     NEURAL_ONLY = "neural_only"
     TREE_ONLY = "tree_only"
 
-
 class SearchStrategy(Enum):
     """Search strategies for architecture optimization."""
     EVOLUTIONARY = "evolutionary"
     RANDOM_SEARCH = "random_search"
     BAYESIAN_OPTIMIZATION = "bayesian_optimization"
     GRID_SEARCH = "grid_search"
-
 
 class OptimizationMode(Enum):
     """Optimization modes for architecture search."""
@@ -35,7 +32,6 @@ class OptimizationMode(Enum):
     ECONOMIC_FOCUSED = "economic_focused"
     TRADING_OPTIMIZED = "trading_optimized"
     HYBRID = "hybrid"
-
 
 @dataclass
 class OptimizationConfig:
@@ -79,7 +75,6 @@ class OptimizationConfig:
             'early_stopping_patience': self.early_stopping_patience,
             'early_stopping_threshold': self.early_stopping_threshold
         }
-
 
 @dataclass
 class UnifiedArchitectureConfig:

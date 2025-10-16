@@ -23,16 +23,16 @@ from src.utils.common_operations import (
 
 class SHAPAnalyzer:
     """SHAP analyzer for model interpretability."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         """Initialize the SHAP analyzer."""
         self.config = config
         self.logger = system_logger.getChild("SHAPAnalyzer")
         self.shap_available = False
-        
+
         # Check SHAP availability
         self._check_shap_availability()
-    
+
     def _check_shap_availability(self):
         """Check if SHAP is available and initialize if possible."""
         try:
@@ -88,7 +88,7 @@ class SHAPAnalyzer:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to apply NumPy compatibility patch: {e}")
             tprint(f"⚠️ Failed to apply NumPy compatibility patch: {e}")
-    
+
     @handles_errors(Exception, fallback = False)
     @validates(strict = True)
     @log_call
@@ -106,10 +106,10 @@ class SHAPAnalyzer:
         if not self.shap_available:
             self.logger.warning("⚠️ SHAP not available, skipping SHAP analysis")
             return {"error": "SHAP library not available"}
-        
+
         self.logger.info(f"🧠 Starting SHAP analysis for {model_name}")
         tprint(f"🧠 Starting SHAP analysis for {model_name}")
-        
+
         results = {
             "model_name": model_name,
             "analysis_timestamp": format_datetime(get_current_datetime()),
@@ -122,85 +122,85 @@ class SHAPAnalyzer:
             "plots_created": [],
             "performance_metrics": {}
         }
-        
+
         try:
             # Ensure output directory exists
             ensure_directory(output_dir)
-            
+
             # Step 1: Create SHAP explainer
             tprint("🔧 Creating SHAP explainer...")
             self.logger.info("🔧 Creating SHAP explainer...")
-            
+
             explainer = await self._create_shap_explainer(model, X_train)
             if explainer is None:
                 return {"error": "Failed to create SHAP explainer"}
-            
+
             # Step 2: Calculate SHAP values
             tprint("📊 Calculating SHAP values...")
             self.logger.info("📊 Calculating SHAP values...")
-            
+
             shap_values = await self._calculate_shap_values(explainer, X_test)
             if shap_values is None:
                 return {"error": "Failed to calculate SHAP values"}
-            
+
             results["shap_values"] = shap_values.tolist() if hasattr(shap_values, 'tolist') else shap_values
-            
+
             # Step 3: Analyze feature importance
             tprint("📈 Analyzing feature importance...")
             self.logger.info("📈 Analyzing feature importance...")
-            
+
             feature_importance = await self._analyze_feature_importance(shap_values, feature_names)
             results["feature_importance"] = feature_importance
-            
+
             # Step 4: Generate summary statistics
             tprint("📊 Generating summary statistics...")
             self.logger.info("📊 Generating summary statistics...")
-            
+
             summary_stats = await self._generate_summary_stats(shap_values, feature_names)
             results["summary_stats"] = summary_stats
-            
+
             # Step 5: Create visualizations
             tprint("🎨 Creating SHAP visualizations...")
             self.logger.info("🎨 Creating SHAP visualizations...")
-            
+
             plots_created = await self._create_shap_plots(
                 explainer, shap_values, X_test, feature_names, model_name, output_dir
             )
             results["plots_created"] = plots_created
-            
+
             # Step 6: Generate local explanations
             tprint("🔍 Generating local explanations...")
             self.logger.info("🔍 Generating local explanations...")
-            
+
             local_explanations = await self._generate_local_explanations(
                 shap_values, X_test, feature_names, num_samples = 10
             )
             results["local_explanations"] = local_explanations
-            
+
             # Step 7: Generate global explanations
             tprint("🌍 Generating global explanations...")
             self.logger.info("🌍 Generating global explanations...")
-            
+
             global_explanations = await self._generate_global_explanations(
                 shap_values, feature_names
             )
             results["global_explanations"] = global_explanations
-            
+
             # Log metrics
             safe_log_metric("shap_analysis_success", 1.0)
             safe_log_metric("shap_features_analyzed", len(feature_names))
             safe_log_metric("shap_plots_created", len(plots_created))
-            
+
             tprint("✅ SHAP analysis completed successfully!")
             self.logger.info("✅ SHAP analysis completed successfully!")
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ SHAP analysis failed: {e}")
             tprint(f"❌ SHAP analysis failed: {e}")
             return {"error": str(e)}
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -209,7 +209,7 @@ class SHAPAnalyzer:
         try:
             # Determine model type and create appropriate explainer
             model_type = type(model).__name__.lower()
-            
+
             if 'tree' in model_type or 'forest' in model_type or 'gradient' in model_type:
                 # Tree-based models
                 explainer = self.shap.TreeExplainer(model)
@@ -226,14 +226,14 @@ class SHAPAnalyzer:
                 explainer = self.shap.Explainer(model, background)
                 tprint("✅ Created generic Explainer with background data")
                 self.logger.info("✅ Created generic Explainer with background data")
-            
+
             return explainer
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to create SHAP explainer: {e}")
             tprint(f"❌ Failed to create SHAP explainer: {e}")
             return None
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -243,28 +243,28 @@ class SHAPAnalyzer:
             # Limit test data size for performance
             max_samples = min(1000, len(X_test))
             X_test_sample = X_test.sample(max_samples, random_state = 42)
-            
+
             tprint(f"📊 Calculating SHAP values for {len(X_test_sample)} samples...")
             self.logger.info(f"📊 Calculating SHAP values for {len(X_test_sample)} samples...")
-            
+
             # Calculate SHAP values
             shap_values = explainer.shap_values(X_test_sample)
-            
+
             # Handle different SHAP output formats
             if isinstance(shap_values, list):
                 # Multi-class case - take the first class
                 shap_values = shap_values[0]
-            
+
             tprint(f"✅ SHAP values calculated: {shap_values.shape}")
             self.logger.info(f"✅ SHAP values calculated: {shap_values.shape}")
-            
+
             return shap_values
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate SHAP values: {e}")
             tprint(f"❌ Failed to calculate SHAP values: {e}")
             return None
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -273,26 +273,26 @@ class SHAPAnalyzer:
         try:
             # Calculate mean absolute SHAP values as feature importance
             mean_shap_values = np.mean(np.abs(shap_values), axis = 0)
-            
+
             # Create feature importance dictionary
             feature_importance = {}
             for i, feature in enumerate(feature_names):
                 if i < len(mean_shap_values):
                     feature_importance[feature] = float(mean_shap_values[i])
-            
+
             # Sort by importance
             sorted_importance = dict(sorted(feature_importance.items(), key = lambda x: x[1], reverse = True))
-            
+
             tprint(f"✅ Feature importance calculated for {len(feature_importance)} features")
             self.logger.info(f"✅ Feature importance calculated for {len(feature_importance)} features")
-            
+
             return sorted_importance
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to analyze feature importance: {e}")
             tprint(f"❌ Failed to analyze feature importance: {e}")
             return {}
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -311,7 +311,7 @@ class SHAPAnalyzer:
                 },
                 "feature_stats": {}
             }
-            
+
             # Calculate statistics for each feature
             for i, feature in enumerate(feature_names):
                 if i < shap_values.shape[1]:
@@ -323,17 +323,17 @@ class SHAPAnalyzer:
                         "max": float(np.max(feature_shap)),
                         "mean_abs": float(np.mean(np.abs(feature_shap)))
                     }
-            
+
             tprint("✅ Summary statistics generated successfully")
             self.logger.info("✅ Summary statistics generated successfully")
-            
+
             return stats
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to generate summary statistics: {e}")
             tprint(f"❌ Failed to generate summary statistics: {e}")
             return {}
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -348,17 +348,17 @@ class SHAPAnalyzer:
     ) -> List[str]:
         """Create SHAP visualization plots."""
         plots_created = []
-        
+
         try:
             # Limit data for plotting
             max_samples = min(100, len(X_test))
             X_test_sample = X_test.sample(max_samples, random_state = 42)
             shap_values_sample = shap_values[:max_samples]
-            
+
             # 1. Summary plot
             tprint("📊 Creating SHAP summary plot...")
             self.logger.info("📊 Creating SHAP summary plot...")
-            
+
             try:
                 plt.figure(figsize=(10, 8))
                 self.shap.summary_plot(shap_values_sample, X_test_sample, feature_names = feature_names, show = False)
@@ -370,11 +370,11 @@ class SHAPAnalyzer:
                 self.logger.info(f"✅ Summary plot saved: {summary_plot_path}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to create summary plot: {e}")
-            
+
             # 2. Bar plot
             tprint("📊 Creating SHAP bar plot...")
             self.logger.info("📊 Creating SHAP bar plot...")
-            
+
             try:
                 plt.figure(figsize=(10, 6))
                 self.shap.summary_plot(shap_values_sample, X_test_sample, feature_names = feature_names, plot_type="bar", show = False)
@@ -386,11 +386,11 @@ class SHAPAnalyzer:
                 self.logger.info(f"✅ Bar plot saved: {bar_plot_path}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to create bar plot: {e}")
-            
+
             # 3. Waterfall plot for first sample
             tprint("📊 Creating SHAP waterfall plot...")
             self.logger.info("📊 Creating SHAP waterfall plot...")
-            
+
             try:
                 plt.figure(figsize=(10, 6))
                 self.shap.waterfall_plot(
@@ -410,17 +410,17 @@ class SHAPAnalyzer:
                 self.logger.info(f"✅ Waterfall plot saved: {waterfall_plot_path}")
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to create waterfall plot: {e}")
-            
+
             tprint(f"✅ Created {len(plots_created)} SHAP plots")
             self.logger.info(f"✅ Created {len(plots_created)} SHAP plots")
-            
+
             return plots_created
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to create SHAP plots: {e}")
             tprint(f"❌ Failed to create SHAP plots: {e}")
             return plots_created
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -434,10 +434,10 @@ class SHAPAnalyzer:
         """Generate local explanations for individual predictions."""
         try:
             local_explanations = {}
-            
+
             # Limit number of samples
             num_samples = min(num_samples, len(X_test), len(shap_values))
-            
+
             for i in range(num_samples):
                 sample_id = f"sample_{i}"
                 explanation = {
@@ -446,7 +446,7 @@ class SHAPAnalyzer:
                     "shap_values": shap_values[i].tolist(),
                     "feature_contributions": {}
                 }
-                
+
                 # Calculate feature contributions
                 for j, feature in enumerate(feature_names):
                     if j < len(shap_values[i]):
@@ -455,7 +455,7 @@ class SHAPAnalyzer:
                             "shap_value": float(shap_values[i, j]),
                             "contribution": float(shap_values[i, j])
                         }
-                
+
                 # Sort by absolute contribution
                 sorted_contributions = dict(sorted(
                     explanation["feature_contributions"].items(),
@@ -463,19 +463,19 @@ class SHAPAnalyzer:
                     reverse = True
                 ))
                 explanation["top_contributors"] = list(sorted_contributions.keys())[:5]
-                
+
                 local_explanations[sample_id] = explanation
-            
+
             tprint(f"✅ Generated local explanations for {num_samples} samples")
             self.logger.info(f"✅ Generated local explanations for {num_samples} samples")
-            
+
             return local_explanations
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to generate local explanations: {e}")
             tprint(f"❌ Failed to generate local explanations: {e}")
             return {}
-    
+
     @handles_errors(Exception, fallback = False)
     @log_call
     @traced
@@ -493,11 +493,11 @@ class SHAPAnalyzer:
                 "feature_interactions": {},
                 "model_behavior": {}
             }
-            
+
             # Calculate mean SHAP values for each feature
             mean_shap_values = np.mean(shap_values, axis = 0)
             abs_mean_shap_values = np.mean(np.abs(shap_values), axis = 0)
-            
+
             # Feature importance ranking
             feature_importance = []
             for i, feature in enumerate(feature_names):
@@ -507,18 +507,18 @@ class SHAPAnalyzer:
                         "importance": float(abs_mean_shap_values[i]),
                         "mean_contribution": float(mean_shap_values[i])
                     })
-            
+
             # Sort by importance
             feature_importance.sort(key = lambda x: x["importance"], reverse = True)
             global_explanations["feature_importance_ranking"] = feature_importance
-            
+
             # Positive and negative contributors
             positive_contributors = [f for f in feature_importance if f["mean_contribution"] > 0]
             negative_contributors = [f for f in feature_importance if f["mean_contribution"] < 0]
-            
+
             global_explanations["positive_contributors"] = positive_contributors[:5]
             global_explanations["negative_contributors"] = negative_contributors[:5]
-            
+
             # Model behavior insights
             global_explanations["model_behavior"] = {
                 "most_important_feature": feature_importance[0]["feature"] if feature_importance else None,
@@ -527,12 +527,12 @@ class SHAPAnalyzer:
                 "negative_features": len(negative_contributors),
                 "feature_diversity": len(set([f["feature"] for f in feature_importance[:10]]))
             }
-            
+
             tprint("✅ Generated global explanations successfully")
             self.logger.info("✅ Generated global explanations successfully")
-            
+
             return global_explanations
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to generate global explanations: {e}")
             tprint(f"❌ Failed to generate global explanations: {e}")

@@ -36,9 +36,7 @@ except Exception:  # pragma: no cover - numpy might be unavailable in CI
     np = None  # type: ignore
     NUMPY_AVAILABLE = False
 
-
 JsonSerializer = Callable[[Any], Any]
-
 
 @dataclass(frozen=True)
 class SaveReport:
@@ -49,7 +47,6 @@ class SaveReport:
     duration: float
     checksum: Mapping[str, str]
     correlation_id: str
-
 
 def persist_artifacts(
     *,
@@ -146,7 +143,6 @@ def persist_artifacts(
 
     return report
 
-
 def _persist_single_artifact(
     *,
     component_name: str,
@@ -168,7 +164,6 @@ def _persist_single_artifact(
             handle.write(content_bytes)
 
     return file_path, len(content_bytes), checksum, skipped
-
 
 def _persist_metadata(
     *,
@@ -194,7 +189,6 @@ def _persist_metadata(
             handle.write(content_bytes)
 
     return file_path, len(content_bytes), checksum, skipped
-
 
 def _serialize_payload(
     payload: Any,
@@ -226,7 +220,6 @@ def _serialize_payload(
     content = json.dumps(payload, indent=2, default=serializer, ensure_ascii=False)
     return "json", content.encode("utf-8")
 
-
 def _default_json_serializer(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
@@ -238,4 +231,3 @@ def _default_json_serializer(obj: Any) -> Any:
             pass
 
     return str(obj)
-

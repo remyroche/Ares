@@ -42,12 +42,12 @@ logger = system_logger.getChild(__name__)
 
 class OptimizedCryptoProcessor:
     """Enhanced cryptocurrency processor with Ares optimization utilities"""
-    
+
     @handles_errors(default_return=None, context="OptimizedCryptoProcessor initialization")
     def __init__(self, data_dir: str = "data", output_dir: str = "results"):
         """
         Initialize the optimized processor with hardware acceleration
-        
+
         Args:
             data_dir: Directory to store raw data
             output_dir: Directory to store analysis results
@@ -55,31 +55,31 @@ class OptimizedCryptoProcessor:
         self.data_dir = Path(data_dir)
         self.output_dir = Path(output_dir)
         self.assets = ASSETS.copy()
-        
+
         # Initialize Ares utilities
         self.logger = logger
         self.matrix_ops = UnifiedMatrixOperations()
         self.parquet_utils = ParquetUtils()
         self.parallel_coordinator = ParallelProcessor()
-        
+
         # Hardware optimization
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
-        
+
         # File management
         self.async_file_manager = AsyncFileManager({})
-        
+
         # Create directories
         ensure_directory(str(self.data_dir))
         ensure_directory(str(self.output_dir))
         ensure_directory(str(self.output_dir / "reports"))
         ensure_directory(str(self.output_dir / "csv"))
         ensure_directory(str(self.output_dir / "charts"))
-        
+
         # Initialize components
         self.downloader = BinanceDataDownloader()
-        
+
         self.logger.info("✅ Optimized processor initialized with Ares utilities")
         if self.gpu_manager:
             self.logger.info("🚀 M1 GPU acceleration available")
@@ -87,16 +87,16 @@ class OptimizedCryptoProcessor:
             self.logger.info("🧠 M1 memory optimization enabled")
         if self.cpu_optimizer:
             self.logger.info("⚡ M1 CPU optimization enabled")
-    
+
     @handles_errors(default_return=None, context="data download")
     async def download_data_optimized(self, years: int = 2, use_existing: bool = True) -> Optional[Path]:
         """
         Optimized data download with caching and validation
-        
+
         Args:
             years: Number of years of historical data
             use_existing: Whether to use existing data files
-            
+
         Returns:
             Path to the data file
         """
@@ -105,7 +105,7 @@ class OptimizedCryptoProcessor:
             existing_files = list(self.data_dir.glob("crypto_*.parquet"))
             if existing_files:
                 latest_file = max(existing_files, key=lambda x: x.stat().st_mtime)
-                
+
                 # Validate the existing file
                 validation_result = self.parquet_utils.validate_parquet_file(str(latest_file))
                 if validation_result["valid"]:
@@ -115,51 +115,51 @@ class OptimizedCryptoProcessor:
                     return latest_file
                 else:
                     self.logger.warning(f"⚠️ Existing file validation failed: {validation_result['error']}")
-        
+
         # Download new data if needed
         self.logger.info(f"🔄 Downloading fresh data for {len(self.assets)} assets, {years} years")
-        
+
         # Define date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days=years * 365)
-        
+
         # Use memory optimization for large downloads
         if self.memory_optimizer:
             self.memory_optimizer.optimize_for_operation("data_download")
-        
+
         # Download data
         df = self.downloader.download_multiple_assets(
-            self.assets, 
-            start_date, 
-            end_date, 
+            self.assets,
+            start_date,
+            end_date,
             interval=DATA_CONFIG["interval"]
         )
-        
+
         if df.empty:
             self.logger.error("❌ No data downloaded")
             return None
-        
+
         # Clean corrupted periods using Ares utilities
         df_clean = exclude_corrupted_periods(df, datetime_col='open_time' if 'open_time' in df.columns else df.index.name)
         removed_rows = len(df) - len(df_clean)
         if removed_rows > 0:
             self.logger.info(f"🧹 Cleaned {removed_rows:,} corrupted data points")
-        
+
         # Optimize data types for memory efficiency
         df_optimized = self._optimize_dataframe_memory(df_clean)
-        
+
         # Save with optimized Parquet settings
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_file = self.data_dir / f"crypto_optimized_{DATA_CONFIG['interval']}_{timestamp}.parquet"
-        
+
         # Use Ares parquet utilities for optimal saving
         save_result = self.parquet_utils.save_dataframe_to_parquet(
-            df_optimized, 
+            df_optimized,
             str(output_file),
             compression="snappy",
             validate_after_save=True
         )
-        
+
         if save_result["success"]:
             self.logger.info(f"✅ Optimized data saved: {output_file}")
             self.logger.info(f"📊 Records: {len(df_optimized):,}, Compression: {save_result.get('compression_ratio', 'N/A')}")
@@ -167,75 +167,75 @@ class OptimizedCryptoProcessor:
         else:
             self.logger.error(f"❌ Failed to save data: {save_result['error']}")
             return None
-    
+
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage using Ares utilities"""
         if not self.memory_optimizer:
             return df
-        
+
         original_memory = df.memory_usage(deep=True).sum()
-        
+
         # Apply memory optimization
         df_optimized = df.copy()
-        
+
         # Optimize numeric columns
         for col in df_optimized.select_dtypes(include=[np.number]).columns:
             if df_optimized[col].dtype == 'float64':
                 df_optimized[col] = pd.to_numeric(df_optimized[col], downcast='float')
             elif df_optimized[col].dtype == 'int64':
                 df_optimized[col] = pd.to_numeric(df_optimized[col], downcast='integer')
-        
+
         # Optimize categorical columns
         for col in df_optimized.select_dtypes(include=['object']).columns:
             if df_optimized[col].nunique() < len(df_optimized) * 0.5:  # If less than 50% unique
                 df_optimized[col] = df_optimized[col].astype('category')
-        
+
         optimized_memory = df_optimized.memory_usage(deep=True).sum()
         reduction = (original_memory - optimized_memory) / original_memory * 100
-        
+
         self.logger.info(f"🧠 Memory optimized: {reduction:.1f}% reduction ({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
-        
+
         return df_optimized
-    
+
     @handles_errors(default_return={}, context="optimized analysis")
     async def analyze_data_optimized(self, data_file: Path) -> Dict[str, Any]:
         """
         Optimized data analysis using Ares ML utilities
-        
+
         Args:
             data_file: Path to the data file
-            
+
         Returns:
             Dictionary containing analysis results
         """
         self.logger.info(f"🔍 Starting optimized analysis on {data_file}")
-        
+
         # Load data with validation
         validation_result = self.parquet_utils.validate_parquet_file(str(data_file))
         if not validation_result["valid"]:
             self.logger.error(f"❌ Data validation failed: {validation_result['error']}")
             return {"success": False, "error": "Data validation failed"}
-        
+
         # Load with memory optimization
         if self.memory_optimizer:
             self.memory_optimizer.optimize_for_operation("data_analysis")
-        
+
         df = pd.read_parquet(data_file)
         self.logger.info(f"📊 Loaded {len(df):,} records for {df['symbol'].nunique()} assets")
-        
+
         # Use parallel processing for analysis
         symbols = df['symbol'].unique()
         analysis_results = {}
-        
+
         # Process assets in parallel using Ares utilities
         if self.cpu_optimizer and len(symbols) > 1:
             optimal_workers = self.cpu_optimizer.get_optimal_worker_count()
             self.logger.info(f"⚡ Using {optimal_workers} parallel workers for analysis")
-            
+
             # Split work across workers
             chunk_size = max(1, len(symbols) // optimal_workers)
             symbol_chunks = [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
-            
+
             # Process chunks in parallel (simplified for this example)
             for chunk in symbol_chunks:
                 for symbol in chunk:
@@ -246,13 +246,13 @@ class OptimizedCryptoProcessor:
             for symbol in symbols:
                 symbol_data = df[df['symbol'] == symbol].copy()
                 analysis_results[symbol] = self._analyze_single_asset_optimized(symbol_data, symbol)
-        
+
         # Generate optimized summary using matrix operations
         summary_metrics = self._generate_optimized_summary(analysis_results)
-        
+
         # Save results using async file operations
         await self._save_results_async(analysis_results, summary_metrics)
-        
+
         self.logger.info("✅ Optimized analysis completed successfully")
         return {
             "success": True,
@@ -260,30 +260,30 @@ class OptimizedCryptoProcessor:
             "summary": summary_metrics,
             "data_file": str(data_file)
         }
-    
+
     def _analyze_single_asset_optimized(self, symbol_data: pd.DataFrame, symbol: str) -> Dict[str, Any]:
         """Analyze single asset with hardware optimization"""
         start_time = time.time()
-        
+
         # Use safe mathematical operations from Ares utilities
         returns = symbol_data['close'].pct_change().dropna()
-        
+
         # Calculate metrics using safe operations
         total_return = safe_divide(
             symbol_data['close'].iloc[-1] - symbol_data['close'].iloc[0],
             symbol_data['close'].iloc[0],
             default=0.0
         )
-        
+
         volatility = returns.std() * np.sqrt(96) if len(returns) > 1 else 0.0
-        
+
         # Volume analysis with correlation safety
         volume_price_corr = safe_correlation(
             symbol_data['volume'].values,
             symbol_data['close'].values,
             default=0.0
         )
-        
+
         # Use matrix operations for efficient calculations
         if self.matrix_ops and len(symbol_data) > 1000:
             # Use vectorized operations for large datasets
@@ -297,13 +297,13 @@ class OptimizedCryptoProcessor:
                 'std': symbol_data['volume'].std(),
                 'total': symbol_data['volume'].sum()
             }
-        
+
         # Calculate triple barrier metrics (optimized)
         barrier_results = self._calculate_barriers_optimized(symbol_data)
-        
+
         analysis_time = time.time() - start_time
         self.logger.info(f"📈 {symbol} analyzed in {analysis_time:.2f}s")
-        
+
         return {
             "basic_metrics": {
                 "total_return": total_return,
@@ -315,32 +315,32 @@ class OptimizedCryptoProcessor:
             "barrier_analysis": barrier_results,
             "volume_metrics": volume_metrics
         }
-    
+
     def _calculate_barriers_optimized(self, symbol_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate triple barriers using optimized operations"""
         barriers = ANALYSIS_CONFIG["barrier_levels"]
         results = {}
-        
+
         # Vectorized barrier calculation for efficiency
         opens = symbol_data['open'].values
         highs = symbol_data['high'].values
         lows = symbol_data['low'].values
-        
+
         for barrier in barriers:
             # Vectorized profit calculations
             long_profits = (highs - opens) / opens
             short_profits = (opens - lows) / opens
-            
+
             # Count successful trades
             successful_longs = np.sum(long_profits >= barrier)
             successful_shorts = np.sum(short_profits >= barrier)
-            
+
             total_successful = successful_longs + successful_shorts
             avg_profit = np.mean(np.concatenate([
                 long_profits[long_profits >= barrier],
                 short_profits[short_profits >= barrier]
             ])) if total_successful > 0 else 0.0
-            
+
             results[f"barrier_{int(barrier*1000)}bp"] = {
                 "total_trades": int(total_successful),
                 "avg_profit": float(avg_profit),
@@ -349,39 +349,39 @@ class OptimizedCryptoProcessor:
                 "profit_frequency": float(total_successful / len(symbol_data)),
                 "max_profit": float(max(np.max(long_profits), np.max(short_profits))),
             }
-        
+
         return results
-    
+
     def _generate_optimized_summary(self, analysis_results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate summary metrics using matrix operations"""
         if not analysis_results:
             return {}
-        
+
         # Collect metrics using vectorized operations
         symbols = list(analysis_results.keys())
         returns = np.array([analysis_results[s]["basic_metrics"]["total_return"] for s in symbols])
         volatilities = np.array([analysis_results[s]["basic_metrics"]["volatility"] for s in symbols])
         volumes = np.array([analysis_results[s]["basic_metrics"]["avg_volume"] for s in symbols])
-        
+
         # Calculate composite scores efficiently
         composite_scores = {}
         for symbol in symbols:
             # Extract barrier metrics
             barrier_data = analysis_results[symbol]["barrier_analysis"]
-            
+
             # Calculate average metrics across barriers
             avg_profit = np.mean([data["avg_profit"] for data in barrier_data.values()])
             avg_frequency = np.mean([data["profit_frequency"] for data in barrier_data.values()])
             total_trades = sum([data["total_trades"] for data in barrier_data.values()])
-            
+
             # Calculate composite score components
             profit_score = avg_profit / 0.02
             frequency_score = avg_frequency / 0.30
             consistency_score = min(1.0, total_trades / 20000)
-            
+
             # Weighted composite
             composite_score = (profit_score * 0.4) + (frequency_score * 0.4) + (consistency_score * 0.2)
-            
+
             composite_scores[symbol] = {
                 'composite_score': composite_score,
                 'profit_score': profit_score,
@@ -391,7 +391,7 @@ class OptimizedCryptoProcessor:
                 'avg_frequency': avg_frequency,
                 'total_trades': total_trades
             }
-        
+
         # Generate rankings using matrix operations
         performance_rankings = {
             'by_return': dict(zip(symbols, returns)),
@@ -399,13 +399,13 @@ class OptimizedCryptoProcessor:
             'by_volume': dict(zip(symbols, volumes)),
             'by_composite_score': {s: scores['composite_score'] for s, scores in composite_scores.items()}
         }
-        
+
         # Calculate correlation matrix efficiently
         if len(symbols) > 1:
             correlation_matrix = self._calculate_correlation_matrix_optimized(analysis_results)
         else:
             correlation_matrix = {}
-        
+
         return {
             "composite_scores": composite_scores,
             "performance_rankings": performance_rankings,
@@ -420,14 +420,14 @@ class OptimizedCryptoProcessor:
                 "highest_volume": symbols[np.argmax(volumes)]
             }
         }
-    
+
     def _calculate_correlation_matrix_optimized(self, analysis_results: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate correlation matrix using optimized operations"""
         try:
             # Extract return series for correlation analysis
             symbols = list(analysis_results.keys())
             return_correlations = {}
-            
+
             # Use safe correlation from Ares utilities
             for i, symbol1 in enumerate(symbols):
                 for j, symbol2 in enumerate(symbols):
@@ -440,19 +440,19 @@ class OptimizedCryptoProcessor:
                             [analysis_results[symbol2]["basic_metrics"]["total_return"]],
                             default=0.0
                         )
-            
+
             return return_correlations
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Correlation calculation failed: {e}")
             return {}
-    
+
     async def _save_results_async(self, analysis_results: Dict[str, Any], summary_metrics: Dict[str, Any]):
         """Save results asynchronously using Ares utilities"""
         try:
             # Save comprehensive JSON results
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             comprehensive_data = {
                 "timestamp": timestamp,
                 "methodology": {
@@ -462,7 +462,7 @@ class OptimizedCryptoProcessor:
                     "consistency_score": "min(1.0, total_trades / 20,000)",
                     "interpretation": {
                         "0.8+": "Excellent trading opportunities",
-                        "0.6-0.8": "Good trading opportunities", 
+                        "0.6-0.8": "Good trading opportunities",
                         "0.4-0.6": "Moderate trading opportunities",
                         "<0.4": "Limited trading opportunities"
                     }
@@ -476,28 +476,28 @@ class OptimizedCryptoProcessor:
                     "matrix_operations": self.matrix_ops is not None
                 }
             }
-            
+
             # Save JSON with async file manager
             json_file = self.output_dir / f"optimized_crypto_analysis_{timestamp}.json"
             async with self.async_file_manager.open_file(str(json_file), 'w') as f:
                 await f.write(json.dumps(comprehensive_data, indent=2, default=str))
-            
+
             self.logger.info(f"💾 Comprehensive results saved: {json_file}")
-            
+
             # Generate CSV summaries
             await self._generate_csv_summaries_async(summary_metrics, timestamp)
-            
+
             # Generate enhanced report
             await self._generate_enhanced_report_async(analysis_results, summary_metrics, timestamp)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error saving results: {e}")
-    
+
     async def _generate_csv_summaries_async(self, summary_metrics: Dict[str, Any], timestamp: str):
         """Generate CSV summaries asynchronously"""
         try:
             csv_dir = self.output_dir / "csv"
-            
+
             # Composite scores CSV
             if "composite_scores" in summary_metrics:
                 composite_df = pd.DataFrame([
@@ -513,29 +513,29 @@ class OptimizedCryptoProcessor:
                     }
                     for symbol, scores in summary_metrics["composite_scores"].items()
                 ]).sort_values("Composite_Score", ascending=False)
-                
+
                 composite_file = csv_dir / f"composite_scores_{timestamp}.csv"
                 composite_df.to_csv(composite_file, index=False)
                 self.logger.info(f"📊 Composite scores saved: {composite_file}")
-            
+
             # Performance rankings CSV
             if "performance_rankings" in summary_metrics:
                 rankings_df = pd.DataFrame(summary_metrics["performance_rankings"])
                 rankings_file = csv_dir / f"performance_rankings_{timestamp}.csv"
                 rankings_df.to_csv(rankings_file, index=True)
                 self.logger.info(f"📈 Performance rankings saved: {rankings_file}")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error generating CSV summaries: {e}")
-    
-    async def _generate_enhanced_report_async(self, analysis_results: Dict[str, Any], 
+
+    async def _generate_enhanced_report_async(self, analysis_results: Dict[str, Any],
                                             summary_metrics: Dict[str, Any], timestamp: str):
         """Generate enhanced text report with methodology"""
         try:
             report_file = self.output_dir / "reports" / f"optimized_crypto_analysis_{timestamp}.txt"
-            
+
             report_lines = []
-            
+
             # Header with optimization info
             report_lines.extend([
                 "=" * 80,
@@ -558,7 +558,7 @@ class OptimizedCryptoProcessor:
                 "   - Higher profits = better score",
                 "",
                 "2. FREQUENCY SCORE (40% weight):",
-                "   - Measures how often trading opportunities occur", 
+                "   - Measures how often trading opportunities occur",
                 "   - Formula: success_rate / 0.30 (normalized to max expected ~30%)",
                 "   - More frequent opportunities = better score",
                 "",
@@ -572,11 +572,11 @@ class OptimizedCryptoProcessor:
                 "INTERPRETATION GUIDE:",
                 "  Score 0.8+: Excellent trading opportunities",
                 "  Score 0.6-0.8: Good trading opportunities",
-                "  Score 0.4-0.6: Moderate trading opportunities", 
+                "  Score 0.4-0.6: Moderate trading opportunities",
                 "  Score <0.4: Limited trading opportunities",
                 "",
             ])
-            
+
             # Add composite score rankings
             if "composite_scores" in summary_metrics:
                 report_lines.extend([
@@ -584,10 +584,10 @@ class OptimizedCryptoProcessor:
                     "=" * 30,
                     "RANK | SYMBOL   | COMPOSITE | PROFIT | FREQUENCY | CONSISTENCY | INTERPRETATION"
                 ])
-                
-                sorted_scores = sorted(summary_metrics["composite_scores"].items(), 
+
+                sorted_scores = sorted(summary_metrics["composite_scores"].items(),
                                      key=lambda x: x[1]['composite_score'], reverse=True)
-                
+
                 for i, (symbol, scores) in enumerate(sorted_scores, 1):
                     if scores['composite_score'] >= 0.8:
                         interpretation = "Excellent"
@@ -597,15 +597,15 @@ class OptimizedCryptoProcessor:
                         interpretation = "Moderate"
                     else:
                         interpretation = "Limited"
-                    
+
                     report_lines.append(
                         f"{i:4d} | {symbol:8s} | {scores['composite_score']:9.3f} | "
                         f"{scores['profit_score']:6.3f} | {scores['frequency_score']:9.3f} | "
                         f"{scores['consistency_score']:11.3f} | {interpretation}"
                     )
-                
+
                 report_lines.extend(["", "DETAILED BREAKDOWN (Top 5):", "-" * 40])
-                
+
                 for i, (symbol, scores) in enumerate(sorted_scores[:5], 1):
                     report_lines.extend([
                         f"{i}. {symbol}:",
@@ -616,7 +616,7 @@ class OptimizedCryptoProcessor:
                         f"   Component Scores: P={scores['profit_score']:.3f}, F={scores['frequency_score']:.3f}, C={scores['consistency_score']:.3f}",
                         ""
                     ])
-            
+
             # Add summary statistics
             if "summary_stats" in summary_metrics:
                 stats = summary_metrics["summary_stats"]
@@ -631,50 +631,50 @@ class OptimizedCryptoProcessor:
                     f"Highest Volume: {stats['highest_volume']}",
                     ""
                 ])
-            
+
             # Save report asynchronously
             async with self.async_file_manager.open_file(str(report_file), 'w') as f:
                 await f.write('\n'.join(report_lines))
-            
+
             self.logger.info(f"📄 Enhanced report saved: {report_file}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error generating enhanced report: {e}")
-    
+
     @safe_execution(default_return={}, context="complete processing")
     async def process_all_assets_optimized(self, years: int = 2, use_existing: bool = True) -> Dict[str, Any]:
         """
         Complete optimized processing pipeline
-        
+
         Args:
             years: Number of years of historical data
             use_existing: Whether to use existing data files
-            
+
         Returns:
             Dictionary containing processing results
         """
         start_time = time.time()
         self.logger.info("🚀 Starting optimized cryptocurrency analysis pipeline")
-        
+
         # Step 1: Optimized data acquisition
         data_file = await self.download_data_optimized(years, use_existing)
         if not data_file:
             return {"success": False, "error": "Data acquisition failed"}
-        
+
         # Step 2: Optimized analysis
         analysis_result = await self.analyze_data_optimized(data_file)
         if not analysis_result.get("success", False):
             return {"success": False, "error": "Analysis failed"}
-        
+
         total_time = time.time() - start_time
-        
+
         # Generate final summary
         processed_assets = list(analysis_result["results"].keys())
         success_rate = len(processed_assets) / len(self.assets) * 100
-        
+
         self.logger.info(f"✅ Optimized pipeline completed in {total_time:.1f}s")
         self.logger.info(f"📊 Success rate: {success_rate:.1f}% ({len(processed_assets)}/{len(self.assets)} assets)")
-        
+
         return {
             "success": True,
             "optimization_enabled": True,
@@ -698,21 +698,21 @@ class OptimizedCryptoProcessor:
                 "async_file_operations": True
             }
         }
-    
+
     def cleanup(self):
         """Cleanup resources using Ares utilities"""
         try:
             # Cleanup hardware resources
             if self.memory_optimizer:
                 self.memory_optimizer.cleanup()
-            
+
             # Close connections
             if hasattr(self.downloader, 'session'):
                 self.downloader.session.close()
-            
+
             # Force garbage collection
             gc.collect()
-            
+
             self.logger.info("🧹 Optimized cleanup completed")
         except Exception as e:
             self.logger.warning(f"⚠️ Error during cleanup: {e}")

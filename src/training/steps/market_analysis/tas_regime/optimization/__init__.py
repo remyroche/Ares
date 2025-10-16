@@ -24,7 +24,7 @@ class TreeMemoryOptimizer:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeMemoryOptimizer not available - using fallback")
-    
+
     def optimize_memory(self, *args, **kwargs):
         """Fallback memory optimization method."""
         return {}
@@ -34,7 +34,7 @@ class TreeCacheManager:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeCacheManager not available - using fallback")
-    
+
     def manage_cache(self, *args, **kwargs):
         """Fallback cache management method."""
         return {}
@@ -44,7 +44,7 @@ class TreeMemoryPool:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeMemoryPool not available - using fallback")
-    
+
     def manage_pool(self, *args, **kwargs):
         """Fallback memory pool management method."""
         return {}
@@ -54,7 +54,7 @@ class TreeParallelOptimizer:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeParallelOptimizer not available - using fallback")
-    
+
     def optimize_parallel(self, *args, **kwargs):
         """Fallback parallel optimization method."""
         return {}
@@ -64,7 +64,7 @@ class TreeDistributedSearch:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeDistributedSearch not available - using fallback")
-    
+
     def search_distributed(self, *args, **kwargs):
         """Fallback distributed search method."""
         return {}
@@ -74,7 +74,7 @@ class TreeMultiProcessing:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeMultiProcessing not available - using fallback")
-    
+
     def process_multi(self, *args, **kwargs):
         """Fallback multi-processing method."""
         return {}

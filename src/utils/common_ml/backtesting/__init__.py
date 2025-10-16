@@ -56,28 +56,28 @@ from .turnover import (
 __all__ = [
     # Backtesting
     'BacktestingEngine',
-    'WalkForwardValidator', 
+    'WalkForwardValidator',
     'BacktestingConfig',
     'BacktestingResults',
-    
+
     # Monte Carlo
     'MonteCarloEngine',
     'MonteCarloConfig',
     'MonteCarloResults',
     'SimulationParameters',
-    
+
     # A/B Testing
     'ABTestingEngine',
     'ABTestConfig',
     'ABTestResults',
     'StatisticalTest',
-    
+
     # Model Saving
     'ModelSaver',
     'ModelSaveConfig',
     'ModelMetadata',
     'ModelVersion',
-    
+
     # Analytics
     'AnalyticsReporter',
     'AnalyticsConfig',

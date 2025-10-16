@@ -105,18 +105,18 @@ class LearningModel:
 
 class PerformanceDatabase:
     """Database for storing performance metrics and learning data."""
-    
+
     def __init__(self, db_path: str = "optimization_performance.db"):
         self.db_path = db_path
         self.logger = logger.getChild('PerformanceDatabase')
         self._init_database()
-        
+
     def _init_database(self):
         """Initialize the performance database."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 # Create performance metrics table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS performance_metrics (
@@ -137,7 +137,7 @@ class PerformanceDatabase:
                         performance_score REAL
                     )
                 ''')
-                
+
                 # Create optimization settings table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS optimization_settings (
@@ -155,7 +155,7 @@ class PerformanceDatabase:
                         created_at REAL
                     )
                 ''')
-                
+
                 # Create learning models table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS learning_models (
@@ -169,13 +169,13 @@ class PerformanceDatabase:
                         feature_importance TEXT
                     )
                 ''')
-                
+
                 conn.commit()
                 self.logger.info("📊 Performance database initialized")
-                
+
         except Exception as e:
             self.logger.error(f"Failed to initialize database: {e}")
-            
+
     def store_performance_metrics(self, metrics: PerformanceMetrics) -> bool:
         """Store performance metrics in database."""
         try:
@@ -197,16 +197,16 @@ class PerformanceDatabase:
                 ))
                 conn.commit()
                 return True
-                
+
         except Exception as e:
             self.logger.error(f"Failed to store performance metrics: {e}")
             return False
-            
+
     def store_optimization_settings(self, settings: OptimizationSettings) -> str:
         """Store optimization settings and return hash."""
         try:
             settings_hash = self._hash_settings(settings)
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute('''
@@ -226,35 +226,35 @@ class PerformanceDatabase:
                 ))
                 conn.commit()
                 return settings_hash
-                
+
         except Exception as e:
             self.logger.error(f"Failed to store optimization settings: {e}")
             return ""
-            
+
     def get_performance_history(self, workload_type: Optional[str] = None,
                               days: int = 30) -> List[PerformanceMetrics]:
         """Get performance history from database."""
         try:
             cutoff_time = time.time() - (days * 24 * 3600)
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
+
                 if workload_type:
                     cursor.execute('''
-                        SELECT * FROM performance_metrics 
+                        SELECT * FROM performance_metrics
                         WHERE workload_type = ? AND timestamp > ?
                         ORDER BY timestamp DESC
                     ''', (workload_type, cutoff_time))
                 else:
                     cursor.execute('''
-                        SELECT * FROM performance_metrics 
+                        SELECT * FROM performance_metrics
                         WHERE timestamp > ?
                         ORDER BY timestamp DESC
                     ''', (cutoff_time,))
-                    
+
                 rows = cursor.fetchall()
-                
+
                 metrics = []
                 for row in rows:
                     metrics.append(PerformanceMetrics(
@@ -273,13 +273,13 @@ class PerformanceDatabase:
                         settings_hash=row[13],
                         performance_score=row[14]
                     ))
-                    
+
                 return metrics
-                
+
         except Exception as e:
             self.logger.error(f"Failed to get performance history: {e}")
             return []
-            
+
     def _hash_settings(self, settings: OptimizationSettings) -> str:
         """Generate hash for optimization settings."""
         settings_str = json.dumps({
@@ -293,12 +293,12 @@ class PerformanceDatabase:
             'power_limit': settings.power_limit,
             'optimization_level': settings.optimization_level
         }, sort_keys=True)
-        
+
         return str(hash(settings_str))
 
 class OptimizationLearner:
     """Machine learning component for optimization."""
-    
+
     def __init__(self, database: PerformanceDatabase):
         self.database = database
         self.logger = logger.getChild('OptimizationLearner')
@@ -308,19 +308,19 @@ class OptimizationLearner:
             'memory_allocation_strategy', 'gpu_acceleration_enabled', 'gpu_memory_pool_size',
             'thermal_threshold', 'power_limit', 'optimization_level'
         ]
-        
-    def train_model(self, target_metric: OptimizationTarget, 
+
+    def train_model(self, target_metric: OptimizationTarget,
                    algorithm: LearningAlgorithm = LearningAlgorithm.LINEAR_REGRESSION) -> bool:
         """Train a learning model for optimization."""
         try:
             model_id = f"{target_metric.value}_{algorithm.value}"
-            
+
             # Get training data
             training_data = self._prepare_training_data(target_metric)
             if len(training_data) < 10:
                 self.logger.warning(f"Insufficient training data for {model_id}")
                 return False
-                
+
             # Train model based on algorithm
             if algorithm == LearningAlgorithm.LINEAR_REGRESSION:
                 model_data = self._train_linear_regression(training_data, target_metric)
@@ -329,10 +329,10 @@ class OptimizationLearner:
             else:
                 self.logger.warning(f"Algorithm {algorithm.value} not implemented")
                 return False
-                
+
             # Calculate accuracy
             accuracy = self._calculate_model_accuracy(model_data, training_data, target_metric)
-            
+
             # Create learning model
             model = LearningModel(
                 model_id=model_id,
@@ -344,17 +344,17 @@ class OptimizationLearner:
                 model_data=model_data,
                 feature_importance=self._calculate_feature_importance(model_data, target_metric)
             )
-            
+
             self.models[model_id] = model
             self._save_model_to_database(model)
-            
+
             self.logger.info(f"🧠 Trained model {model_id} with accuracy {accuracy:.3f}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Model training failed: {e}")
             return False
-            
+
     def _prepare_training_data(self, target_metric: OptimizationTarget) -> List[Dict[str, Any]]:
         """Prepare training data for model."""
         try:
@@ -362,14 +362,14 @@ class OptimizationLearner:
             metrics = self.database.get_performance_history(days=90)
             if not metrics:
                 return []
-                
+
             training_data = []
             for metric in metrics:
                 # Get corresponding settings
                 settings = self._get_settings_for_hash(metric.settings_hash)
                 if not settings:
                     continue
-                    
+
                 # Prepare feature vector
                 features = {
                     'cpu_cores_performance': settings.cpu_cores_performance,
@@ -382,7 +382,7 @@ class OptimizationLearner:
                     'power_limit': settings.power_limit,
                     'optimization_level': 1 if settings.optimization_level == 'aggressive' else 0
                 }
-                
+
                 # Add target value
                 if target_metric == OptimizationTarget.PERFORMANCE:
                     features['target'] = metric.performance_score
@@ -396,16 +396,16 @@ class OptimizationLearner:
                     features['target'] = metric.memory_usage
                 else:  # BALANCED
                     features['target'] = metric.performance_score * 0.4 + (1 - metric.memory_usage/100) * 0.3 + (1 - metric.temperature/100) * 0.3
-                    
+
                 training_data.append(features)
-                
+
             return training_data
-            
+
         except Exception as e:
             self.logger.error(f"Failed to prepare training data: {e}")
             return []
-            
-    def _train_linear_regression(self, training_data: List[Dict[str, Any]], 
+
+    def _train_linear_regression(self, training_data: List[Dict[str, Any]],
                                target_metric: OptimizationTarget) -> Dict[str, Any]:
         """Train linear regression model."""
         try:
@@ -413,36 +413,36 @@ class OptimizationLearner:
                 # Convert to numpy arrays
                 X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
                 y = np.array([data['target'] for data in training_data])
-                
+
                 # Simple linear regression (normal equation)
                 X_with_bias = np.column_stack([np.ones(X.shape[0]), X])
                 coefficients = np.linalg.lstsq(X_with_bias, y, rcond=None)[0]
             else:
                 # Fallback: simple linear regression without numpy
                 coefficients = [0.0] * (len(self.feature_columns) + 1)  # +1 for bias term
-            
+
             return {
                 'coefficients': coefficients.tolist() if hasattr(coefficients, 'tolist') else coefficients,
                 'feature_columns': self.feature_columns,
                 'algorithm': 'linear_regression'
             }
-            
+
         except Exception as e:
             self.logger.error(f"Linear regression training failed: {e}")
             return {}
-            
-    def _train_decision_tree(self, training_data: List[Dict[str, Any]], 
+
+    def _train_decision_tree(self, training_data: List[Dict[str, Any]],
                            target_metric: OptimizationTarget) -> Dict[str, Any]:
         """Train decision tree model (simplified)."""
         try:
             # Simple decision tree implementation
             # In practice, would use scikit-learn or similar
-            
+
             if NUMPY_AVAILABLE:
                 # Calculate feature importance based on variance
                 X = np.array([[data[col] for col in self.feature_columns] for data in training_data])
                 y = np.array([data['target'] for data in training_data])
-                
+
                 feature_importance = {}
                 for i, col in enumerate(self.feature_columns):
                     feature_values = X[:, i]
@@ -452,76 +452,76 @@ class OptimizationLearner:
                 feature_importance = {}
                 for col in self.feature_columns:
                     feature_importance[col] = 0.1  # Default importance
-                
+
             return {
                 'feature_importance': feature_importance,
                 'feature_columns': self.feature_columns,
                 'algorithm': 'decision_tree',
                 'training_samples': len(training_data)
             }
-            
+
         except Exception as e:
             self.logger.error(f"Decision tree training failed: {e}")
             return {}
-            
-    def _calculate_model_accuracy(self, model_data: Dict[str, Any], 
-                                training_data: List[Dict[str, Any]], 
+
+    def _calculate_model_accuracy(self, model_data: Dict[str, Any],
+                                training_data: List[Dict[str, Any]],
                                 target_metric: OptimizationTarget) -> float:
         """Calculate model accuracy."""
         try:
             if not model_data or not training_data:
                 return 0.0
-                
+
             # Simple accuracy calculation (R² for regression)
             predictions = []
             actuals = []
-            
+
             for data in training_data:
                 if model_data.get('algorithm') == 'linear_regression':
                     pred = self._predict_linear_regression(model_data, data)
                 else:
                     pred = data['target']  # Simplified for decision tree
-                    
+
                 predictions.append(pred)
                 actuals.append(data['target'])
-                
+
             # Calculate R²
             ss_res = sum((actual - pred) ** 2 for actual, pred in zip(actuals, predictions))
-            
+
             if NUMPY_AVAILABLE:
                 ss_tot = sum((actual - np.mean(actuals)) ** 2 for actual in actuals)
             else:
                 mean_actual = sum(actuals) / len(actuals)
                 ss_tot = sum((actual - mean_actual) ** 2 for actual in actuals)
-            
+
             r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
             return max(0, min(1, r_squared))  # Clamp between 0 and 1
-            
+
         except Exception as e:
             self.logger.error(f"Accuracy calculation failed: {e}")
             return 0.0
-            
-    def _predict_linear_regression(self, model_data: Dict[str, Any], 
+
+    def _predict_linear_regression(self, model_data: Dict[str, Any],
                                  features: Dict[str, Any]) -> float:
         """Make prediction using linear regression model."""
         try:
             coefficients = model_data.get('coefficients', [])
             if not coefficients:
                 return 0.0
-                
+
             # Calculate prediction
             prediction = coefficients[0]  # Bias term
             for i, col in enumerate(self.feature_columns):
                 if i + 1 < len(coefficients):
                     prediction += coefficients[i + 1] * features.get(col, 0)
-                    
+
             return prediction
-            
+
         except Exception as e:
             self.logger.error(f"Prediction failed: {e}")
             return 0.0
-            
-    def _calculate_feature_importance(self, model_data: Dict[str, Any], 
+
+    def _calculate_feature_importance(self, model_data: Dict[str, Any],
                                     target_metric: OptimizationTarget) -> Dict[str, float]:
         """Calculate feature importance."""
         if model_data.get('algorithm') == 'linear_regression':
@@ -535,7 +535,7 @@ class OptimizationLearner:
             return model_data.get('feature_importance', {})
         else:
             return {}
-            
+
     def _get_settings_for_hash(self, settings_hash: str) -> Optional[OptimizationSettings]:
         """Get optimization settings for hash."""
         try:
@@ -543,7 +543,7 @@ class OptimizationLearner:
                 cursor = conn.cursor()
                 cursor.execute('SELECT * FROM optimization_settings WHERE settings_hash = ?', (settings_hash,))
                 row = cursor.fetchone()
-                
+
                 if row:
                     return OptimizationSettings(
                         cpu_cores_performance=row[1],
@@ -558,11 +558,11 @@ class OptimizationLearner:
                         workload_specific_settings=json.loads(row[10]) if row[10] else {}
                     )
                 return None
-                
+
         except Exception as e:
             self.logger.error(f"Failed to get settings: {e}")
             return None
-            
+
     def _save_model_to_database(self, model: LearningModel):
         """Save learning model to database."""
         try:
@@ -579,11 +579,11 @@ class OptimizationLearner:
                     pickle.dumps(model.model_data), json.dumps(model.feature_importance)
                 ))
                 conn.commit()
-                
+
         except Exception as e:
             self.logger.error(f"Failed to save model: {e}")
-            
-    def predict_optimal_settings(self, workload_type: str, 
+
+    def predict_optimal_settings(self, workload_type: str,
                                target_metric: OptimizationTarget) -> Optional[OptimizationSettings]:
         """Predict optimal settings for workload and target."""
         try:
@@ -591,23 +591,23 @@ class OptimizationLearner:
             if model_id not in self.models:
                 self.logger.warning(f"Model {model_id} not found")
                 return None
-                
+
             model = self.models[model_id]
             if not model.model_data:
                 return None
-                
+
             # Get baseline settings for workload
             baseline_settings = self._get_baseline_settings(workload_type)
-            
+
             # Optimize settings using model
             optimal_settings = self._optimize_settings_with_model(model, baseline_settings, target_metric)
-            
+
             return optimal_settings
-            
+
         except Exception as e:
             self.logger.error(f"Prediction failed: {e}")
             return None
-            
+
     def _get_baseline_settings(self, workload_type: str) -> OptimizationSettings:
         """Get baseline settings for workload type."""
         # Default baseline settings
@@ -622,7 +622,7 @@ class OptimizationLearner:
             power_limit=100.0,
             optimization_level='balanced'
         )
-        
+
         # Adjust based on workload type
         if workload_type == 'backtesting':
             baseline.cpu_cores_performance = 4
@@ -636,10 +636,10 @@ class OptimizationLearner:
             baseline.cpu_cores_performance = 2
             baseline.cpu_cores_efficiency = 2
             baseline.gpu_acceleration_enabled = False
-            
+
         return baseline
-        
-    def _optimize_settings_with_model(self, model: LearningModel, 
+
+    def _optimize_settings_with_model(self, model: LearningModel,
                                     baseline: OptimizationSettings,
                                     target_metric: OptimizationTarget) -> OptimizationSettings:
         """Optimize settings using trained model."""
@@ -656,11 +656,11 @@ class OptimizationLearner:
                 'power_limit': baseline.power_limit,
                 'optimization_level': 1 if baseline.optimization_level == 'aggressive' else 0
             }
-            
+
             # Simple optimization: try different values and pick best
             best_settings = baseline
             best_score = self._predict_linear_regression(model.model_data, features)
-            
+
             # Try variations
             variations = [
                 {'cpu_cores_performance': 3, 'cpu_cores_efficiency': 1},
@@ -670,13 +670,13 @@ class OptimizationLearner:
                 {'memory_allocation_strategy': 1},
                 {'optimization_level': 1}
             ]
-            
+
             for variation in variations:
                 test_features = features.copy()
                 test_features.update(variation)
-                
+
                 score = self._predict_linear_regression(model.model_data, test_features)
-                
+
                 # For some targets, lower is better
                 if target_metric in [OptimizationTarget.POWER_CONSUMPTION, OptimizationTarget.THERMAL_MANAGEMENT, OptimizationTarget.MEMORY_USAGE]:
                     if score < best_score:
@@ -686,14 +686,14 @@ class OptimizationLearner:
                     if score > best_score:
                         best_score = score
                         best_settings = self._apply_variation(baseline, variation)
-                        
+
             return best_settings
-            
+
         except Exception as e:
             self.logger.error(f"Settings optimization failed: {e}")
             return baseline
-            
-    def _apply_variation(self, baseline: OptimizationSettings, 
+
+    def _apply_variation(self, baseline: OptimizationSettings,
                         variation: Dict[str, Any]) -> OptimizationSettings:
         """Apply variation to baseline settings."""
         new_settings = OptimizationSettings(
@@ -711,37 +711,37 @@ class OptimizationLearner:
 
 class AdaptiveOptimizationEngine:
     """Main adaptive optimization engine."""
-    
+
     def __init__(self, database_path: str = "optimization_performance.db"):
         self.logger = logger.getChild('AdaptiveOptimizationEngine')
-        
+
         # Initialize components
         self.database = PerformanceDatabase(database_path)
         self.learner = OptimizationLearner(self.database)
-        
+
         # Hardware managers
         self.hardware_manager: Optional[UnifiedHardwareManager] = None
         self.cpu_optimizer: Optional[AdvancedM1CPUOptimizer] = None
         self.gpu_manager: Optional[EnhancedM1GPUManager] = None
         self.memory_optimizer: Optional[AdvancedM1MemoryOptimizer] = None
-        
+
         # Learning state
         self.learning_enabled = True
         self.auto_tuning_enabled = True
         self.learning_interval = 3600  # 1 hour
         self.last_learning_time = 0
-        
+
         # Performance tracking
         self.current_workload: Optional[WorkloadType] = None
         self.current_target: Optional[OptimizationTarget] = None
         self.performance_history: deque = deque(maxlen=1000)
-        
+
         # Auto-tuning
         self.auto_tuning_thread: Optional[threading.Thread] = None
         self.auto_tuning_active = False
-        
+
         self.logger.info("🧠 Adaptive Optimization Engine initialized")
-        
+
     def initialize_hardware_managers(self):
         """Initialize hardware managers."""
         try:
@@ -749,24 +749,24 @@ class AdaptiveOptimizationEngine:
             from .advanced_cpu_optimizer import get_advanced_cpu_optimizer
             from .enhanced_gpu_manager import get_enhanced_gpu_manager
             from .advanced_memory_optimizer import get_advanced_memory_optimizer
-            
+
             self.hardware_manager = get_unified_hardware_manager()
             self.cpu_optimizer = get_advanced_cpu_optimizer()
             self.gpu_manager = get_enhanced_gpu_manager()
             self.memory_optimizer = get_advanced_memory_optimizer()
-            
+
             self.logger.info("🔧 Hardware managers initialized")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize hardware managers: {e}")
-            
+
     def start_learning(self):
         """Start the learning process."""
         if not self.learning_enabled:
             return
-            
+
         self.logger.info("🧠 Starting optimization learning")
-        
+
         # Train models for different targets
         targets = [
             OptimizationTarget.PERFORMANCE,
@@ -774,37 +774,37 @@ class AdaptiveOptimizationEngine:
             OptimizationTarget.POWER_CONSUMPTION,
             OptimizationTarget.BALANCED
         ]
-        
+
         for target in targets:
             success = self.learner.train_model(target, LearningAlgorithm.LINEAR_REGRESSION)
             if success:
                 self.logger.info(f"✅ Trained model for {target.value}")
             else:
                 self.logger.warning(f"⚠️ Failed to train model for {target.value}")
-                
+
         self.last_learning_time = time.time()
-        
+
     def start_auto_tuning(self):
         """Start automatic tuning."""
         if not self.auto_tuning_enabled:
             return
-            
+
         self.auto_tuning_active = True
         self.auto_tuning_thread = threading.Thread(
             target=self._auto_tuning_loop,
             daemon=True
         )
         self.auto_tuning_thread.start()
-        
+
         self.logger.info("🎛️ Auto-tuning started")
-        
+
     def stop_auto_tuning(self):
         """Stop automatic tuning."""
         self.auto_tuning_active = False
         if self.auto_tuning_thread:
             self.auto_tuning_thread.join(timeout=2.0)
         self.logger.info("🛑 Auto-tuning stopped")
-        
+
     def _auto_tuning_loop(self):
         """Auto-tuning loop."""
         while self.auto_tuning_active:
@@ -812,47 +812,47 @@ class AdaptiveOptimizationEngine:
                 # Check if learning is needed
                 if time.time() - self.last_learning_time > self.learning_interval:
                     self.start_learning()
-                    
+
                 # Perform auto-tuning if we have enough data
                 if len(self.performance_history) > 10:
                     self._perform_auto_tuning()
-                    
+
                 time.sleep(300)  # Check every 5 minutes
-                
+
             except Exception as e:
                 self.logger.error(f"Auto-tuning error: {e}")
                 time.sleep(600)  # Wait 10 minutes on error
-                
+
     def _perform_auto_tuning(self):
         """Perform automatic tuning."""
         try:
             if not self.current_workload or not self.current_target:
                 return
-                
+
             # Get optimal settings from learner
             optimal_settings = self.learner.predict_optimal_settings(
                 self.current_workload.value, self.current_target
             )
-            
+
             if optimal_settings:
                 self.logger.info(f"🎯 Auto-tuning for {self.current_workload.value} ({self.current_target.value})")
                 self._apply_optimization_settings(optimal_settings)
-                
+
         except Exception as e:
             self.logger.error(f"Auto-tuning failed: {e}")
-            
-    def optimize_for_workload(self, workload_type: WorkloadType, 
+
+    def optimize_for_workload(self, workload_type: WorkloadType,
                             target: OptimizationTarget = OptimizationTarget.BALANCED) -> bool:
         """Optimize for specific workload and target."""
         try:
             self.current_workload = workload_type
             self.current_target = target
-            
+
             self.logger.info(f"🎯 Optimizing for {workload_type.value} (target: {target.value})")
-            
+
             # Get optimal settings from learner
             optimal_settings = self.learner.predict_optimal_settings(workload_type.value, target)
-            
+
             if optimal_settings:
                 success = self._apply_optimization_settings(optimal_settings)
                 if success:
@@ -860,29 +860,29 @@ class AdaptiveOptimizationEngine:
                     settings_hash = self.database.store_optimization_settings(optimal_settings)
                     self.logger.info(f"✅ Applied optimal settings (hash: {settings_hash})")
                     return True
-                    
+
             # Fallback to hardware manager optimization
             if self.hardware_manager:
                 optimization_level = self._target_to_optimization_level(target)
                 return self.hardware_manager.optimize_for_workload(workload_type, optimization_level)
-                
+
             return False
-            
+
         except Exception as e:
             self.logger.error(f"Workload optimization failed: {e}")
             return False
-            
+
     def _apply_optimization_settings(self, settings: OptimizationSettings) -> bool:
         """Apply optimization settings to hardware."""
         try:
             if not self.hardware_manager:
                 return False
-                
+
             # Apply CPU settings
             if self.cpu_optimizer:
                 self.cpu_optimizer.performance_cores = settings.cpu_cores_performance
                 self.cpu_optimizer.efficiency_cores = settings.cpu_cores_efficiency
-                
+
             # Apply memory settings
             if self.memory_optimizer:
                 if settings.memory_allocation_strategy == 'aggressive':
@@ -891,18 +891,18 @@ class AdaptiveOptimizationEngine:
                     self.memory_optimizer.set_memory_strategy(MemoryStrategy.CONSERVATIVE)
                 else:
                     self.memory_optimizer.set_memory_strategy(MemoryStrategy.BALANCED)
-                    
+
             # Apply GPU settings
             if self.gpu_manager and not settings.gpu_acceleration_enabled:
                 # Disable GPU acceleration if needed
                 pass
-                
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to apply settings: {e}")
             return False
-            
+
     def _target_to_optimization_level(self, target: OptimizationTarget) -> OptimizationLevel:
         """Convert optimization target to optimization level."""
         if target == OptimizationTarget.PERFORMANCE:
@@ -911,24 +911,24 @@ class AdaptiveOptimizationEngine:
             return OptimizationLevel.MINIMAL
         else:
             return OptimizationLevel.BALANCED
-            
-    def record_performance(self, execution_time: float, throughput: float = 0.0, 
+
+    def record_performance(self, execution_time: float, throughput: float = 0.0,
                           error_rate: float = 0.0) -> bool:
         """Record performance metrics for learning."""
         try:
             if not self.current_workload or not self.current_target:
                 return False
-                
+
             # Get current hardware metrics
             cpu_info = self.cpu_optimizer.get_advanced_cpu_info() if self.cpu_optimizer else {}
             gpu_info = self.gpu_manager.get_enhanced_gpu_info() if self.gpu_manager else {}
             memory_stats = self.memory_optimizer.get_advanced_memory_stats() if self.memory_optimizer else {}
-            
+
             # Calculate performance score
             performance_score = self._calculate_performance_score(
                 execution_time, throughput, error_rate, memory_stats
             )
-            
+
             # Create performance metrics
             metrics = PerformanceMetrics(
                 timestamp=time.time(),
@@ -946,22 +946,22 @@ class AdaptiveOptimizationEngine:
                 settings_hash='',  # Will be filled by database
                 performance_score=performance_score
             )
-            
+
             # Store in database
             success = self.database.store_performance_metrics(metrics)
-            
+
             # Add to performance history
             self.performance_history.append(metrics)
-            
+
             if success:
                 self.logger.debug(f"📊 Recorded performance: {performance_score:.3f}")
-                
+
             return success
-            
+
         except Exception as e:
             self.logger.error(f"Failed to record performance: {e}")
             return False
-            
+
     def _calculate_performance_score(self, execution_time: float, throughput: float,
                                    error_rate: float, memory_stats: Dict[str, Any]) -> float:
         """Calculate overall performance score."""
@@ -971,7 +971,7 @@ class AdaptiveOptimizationEngine:
             throughput_score = min(1, throughput / 1000)  # Assume 1000 is max throughput
             error_score = max(0, 1 - error_rate)
             memory_score = max(0, 1 - (memory_stats.get('memory_percent', 0) / 100))
-            
+
             # Weighted average
             performance_score = (
                 time_score * 0.3 +
@@ -979,13 +979,13 @@ class AdaptiveOptimizationEngine:
                 error_score * 0.2 +
                 memory_score * 0.2
             )
-            
+
             return max(0, min(1, performance_score))  # Clamp between 0 and 1
-            
+
         except Exception as e:
             self.logger.error(f"Performance score calculation failed: {e}")
             return 0.0
-            
+
     def get_learning_report(self) -> Dict[str, Any]:
         """Get learning and optimization report."""
         try:
@@ -1000,10 +1000,10 @@ class AdaptiveOptimizationEngine:
                     'last_trained': model.last_trained,
                     'feature_importance': model.feature_importance
                 }
-                
+
             # Get performance history
             recent_performance = list(self.performance_history)[-10:] if self.performance_history else []
-            
+
             return {
                 'learning_enabled': self.learning_enabled,
                 'auto_tuning_enabled': self.auto_tuning_enabled,
@@ -1025,19 +1025,19 @@ class AdaptiveOptimizationEngine:
                     'learning_interval': self.learning_interval
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to generate learning report: {e}")
             return {'error': str(e)}
-    
+
     def get_optimal_strategy(self, operation_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get optimal strategy for a given operation type and context.
-        
+
         Args:
             operation_type: Type of operation (e.g., 'feature_selection', 'training', 'inference')
             context: Context information including memory pressure, hardware config, etc.
-            
+
         Returns:
             Dictionary containing optimal strategy configuration
         """
@@ -1045,7 +1045,7 @@ class AdaptiveOptimizationEngine:
             # Extract context information
             memory_pressure = context.get('memory_pressure', 0.0)
             hardware_config = context.get('hardware_config', {})
-            
+
             # Determine workload type based on operation
             workload_map = {
                 'feature_selection': WorkloadType.TRAINING,
@@ -1055,7 +1055,7 @@ class AdaptiveOptimizationEngine:
                 'optimization': WorkloadType.OPTIMIZATION
             }
             workload_type = workload_map.get(operation_type, WorkloadType.TRAINING)
-            
+
             # Determine optimization target based on memory pressure
             if memory_pressure > 0.8:
                 target = OptimizationTarget.EFFICIENCY
@@ -1063,10 +1063,10 @@ class AdaptiveOptimizationEngine:
                 target = OptimizationTarget.PERFORMANCE
             else:
                 target = OptimizationTarget.BALANCED
-            
+
             # Get optimal settings
             optimal_settings = self.learner.predict_optimal_settings(workload_type.value, target)
-            
+
             # Build strategy dictionary
             strategy = {
                 'operation_type': operation_type,
@@ -1078,7 +1078,7 @@ class AdaptiveOptimizationEngine:
                 'num_threads': hardware_config.get('num_threads', 4),
                 'recommended_settings': {}
             }
-            
+
             # Add optimal settings if available
             if optimal_settings:
                 strategy['recommended_settings'] = {
@@ -1114,10 +1114,10 @@ class AdaptiveOptimizationEngine:
                         'gpu_acceleration_enabled': True,
                         'optimization_level': 'balanced'
                     }
-            
+
             self.logger.debug(f"🎯 Optimal strategy for {operation_type}: {strategy['optimization_target']}")
             return strategy
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get optimal strategy: {e}")
             # Return a safe default strategy
@@ -1145,22 +1145,22 @@ _adaptive_optimization_engine: Optional[AdaptiveOptimizationEngine] = None
 def get_adaptive_optimization_engine() -> AdaptiveOptimizationEngine:
     """Get the global adaptive optimization engine instance."""
     global _adaptive_optimization_engine
-    
+
     if _adaptive_optimization_engine is None:
         _adaptive_optimization_engine = AdaptiveOptimizationEngine()
         _adaptive_optimization_engine.initialize_hardware_managers()
         _adaptive_optimization_engine.start_learning()
         _adaptive_optimization_engine.start_auto_tuning()
-        
+
     return _adaptive_optimization_engine
 
-def optimize_for_workload_adaptive(workload_type: WorkloadType, 
+def optimize_for_workload_adaptive(workload_type: WorkloadType,
                                  target: OptimizationTarget = OptimizationTarget.BALANCED) -> bool:
     """Convenience function for adaptive workload optimization."""
     engine = get_adaptive_optimization_engine()
     return engine.optimize_for_workload(workload_type, target)
 
-def record_performance_adaptive(execution_time: float, throughput: float = 0.0, 
+def record_performance_adaptive(execution_time: float, throughput: float = 0.0,
                               error_rate: float = 0.0) -> bool:
     """Convenience function for recording performance."""
     engine = get_adaptive_optimization_engine()

@@ -37,7 +37,7 @@ from .integration import *
 
 # Import new live trading components
 from .execution.live_trading_scheduler import (
-    LiveTradingScheduler, ModelType, ExecutionStatus, 
+    LiveTradingScheduler, ModelType, ExecutionStatus,
     create_live_trading_scheduler, start_live_trading_scheduler
 )
 

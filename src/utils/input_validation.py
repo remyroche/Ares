@@ -17,7 +17,6 @@ import urllib.parse
 
 logger = logging.getLogger(__name__)
 
-
 class ValidationSeverity(Enum):
     """Validation severity levels."""
     DEBUG = "debug"
@@ -25,7 +24,6 @@ class ValidationSeverity(Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
-
 
 class ValidationResult:
     """Result of input validation operation."""
@@ -74,7 +72,6 @@ class ValidationResult:
         """Get the highest severity level."""
         return self.severity
 
-
 @dataclass
 class ValidationRule:
     """Configuration for a validation rule."""
@@ -85,7 +82,6 @@ class ValidationRule:
     warning_message: Optional[str] = None
     severity: ValidationSeverity = ValidationSeverity.ERROR
     enabled: bool = True
-
 
 class InputValidator:
     """Comprehensive input validation and sanitization system."""
@@ -637,7 +633,6 @@ class InputValidator:
 
         return result
 
-
 class InputSanitizer:
     """Comprehensive input sanitization utilities."""
 
@@ -753,11 +748,9 @@ class InputSanitizer:
         except (json.JSONDecodeError, TypeError):
             return default
 
-
 # Global validator and sanitizer instances
 input_validator = InputValidator()
 input_sanitizer = InputSanitizer()
-
 
 def validate_and_sanitize(data_type: str, value: Any, **kwargs) -> ValidationResult:
     """Convenience function to validate and sanitize input in one call.

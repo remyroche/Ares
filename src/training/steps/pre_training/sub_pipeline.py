@@ -84,12 +84,10 @@ DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
     'final_feature_selection': 600.0,
 }
 
-
 def _default_data_locator_config() -> DataLocatorConfig:
     """Build a :class:`DataLocatorConfig` from the global settings."""
 
     return get_pre_training_settings().to_data_locator_config()
-
 
 @dataclass(frozen=True)
 class StepSpec:
@@ -103,7 +101,6 @@ class StepSpec:
     order: int
     enabled: bool = True
     include_in_default_sequence: bool = True
-
 
 STEP_REGISTRY: Dict[str, StepSpec] = {
     'analyst-labeler': StepSpec(
@@ -206,7 +203,6 @@ try:  # pragma: no cover - platform specific import
 except ImportError:  # pragma: no cover
     resource = None
 
-
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
@@ -238,7 +234,6 @@ from src.training.common.component_result import ComponentError
 from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
-
 
 class ValidationCache:
     """Cache system for expensive validation operations."""
@@ -321,7 +316,6 @@ class ValidationCache:
         """Calculate cache hit ratio (simplified)."""
         # This would need more sophisticated tracking in a real implementation
         return 0.0
-
 
 class MemoryAwareValidationManager:
     """Manager for memory-aware validation operations with hardware optimization."""
@@ -446,7 +440,6 @@ class MemoryAwareValidationManager:
 
             return optimized_df
 
-
 class UnexpectedArtifactKeyError(RuntimeError):
     """Raised when a component emits artifacts outside the documented schema."""
 
@@ -458,7 +451,6 @@ class UnexpectedArtifactKeyError(RuntimeError):
         super().__init__(message)
         self.step_name = step_name
         self.keys: Tuple[str, ...] = tuple(keys)
-
 
 class PipelineState(dict):
     """Mutable mapping describing the canonical pre-training pipeline state.
@@ -657,7 +649,7 @@ class SubPipelineConfig:
     data_dir: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    
+
     # Direction control for trading (used by labeling components)
     enable_long_positions: bool = True
     enable_short_positions: bool = True
@@ -896,7 +888,6 @@ class SubPipelineFailure:
             payload['traceback'] = self.traceback
         return payload
 
-
 @dataclass
 class SubPipelineResult:
     """Result of sub-pipeline execution."""
@@ -914,7 +905,6 @@ class SubPipelineResult:
     error_message: Optional[str] = None
     error_code: Optional[str] = None
     failure: Optional[SubPipelineFailure] = None
-
 
 class PipelineResultDict(TypedDict, total=False):
     """Type definition for pipeline execution results."""
@@ -979,14 +969,14 @@ class PreTrainingSubPipeline:
             self._artifact_chain[step_name] = artifacts
             self.logger.info(f"📦 Stored artifacts from {step_name} in chain")
             tprint(f"📦 Artifact chain updated: {step_name}")
-    
+
     def _get_artifacts_from_chain(self, step_name: str) -> Any:
         """Retrieve artifacts from a previous step."""
         artifacts = self._artifact_chain.get(step_name)
         if artifacts:
             self.logger.info(f"📥 Retrieved artifacts from {step_name}")
         return artifacts
-    
+
     def _get_all_previous_artifacts(self) -> Dict[str, Any]:
         """Get all artifacts from previous steps."""
         return dict(self._artifact_chain)
@@ -3048,7 +3038,7 @@ class PreTrainingSubPipeline:
             pipeline_state['python_rng'] = self._seeded_rngs.python
             pipeline_state['numpy_rng'] = self._seeded_rngs.numpy
             pipeline_state['seeded_rngs'] = self._seeded_rngs
-        
+
         # Add artifacts from previous steps for artifact chaining
         if self._artifact_chain:
             pipeline_state['previous_artifacts'] = self._get_all_previous_artifacts()
@@ -3407,11 +3397,11 @@ class PreTrainingSubPipeline:
 
 #             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            
+
 #             # Load market data directly for labeling component
 #             # analyst_profit_labeler creates labels, it doesn't consume them
             from src.utils.data.klines_parquet import KlinesParquetManager
-            
+
             try:
                 klines_manager = KlinesParquetManager()
 #                 # Load all available data (don't filter by date initially)
@@ -3423,7 +3413,7 @@ class PreTrainingSubPipeline:
                 )
                 if market_data is not None and not market_data.empty:
                     self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for analyst labeling")
-                    
+
 #                     # Transform data to match expected OHLCV schema
 #                     # Ensure datetime index
                     if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
@@ -3436,13 +3426,13 @@ class PreTrainingSubPipeline:
                             self.logger.info("📅 Converted index to datetime")
                         except Exception as idx_error:
                             self.logger.warning(f"⚠️ Could not convert index to datetime: {idx_error}")
-                    
+
 #                     # Ensure required columns exist
                     required_cols = ['open', 'high', 'low', 'close', 'volume']
                     missing_cols = [col for col in required_cols if col not in market_data.columns]
                     if missing_cols:
                         raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
-                    
+
 #                     # Check for and handle null values in required columns
                     null_counts = market_data[required_cols].isnull().sum()
                     if null_counts.any():
@@ -3451,26 +3441,26 @@ class PreTrainingSubPipeline:
                         original_len = len(market_data)
                         market_data = market_data.dropna(subset=required_cols)
                         self.logger.info(f"🧹 Cleaned data: {original_len} -> {len(market_data)} rows (removed {original_len - len(market_data)} rows with nulls)")
-                    
+
 #                     # Ensure columns are float type (pandera expects Float)
                     for col in required_cols:
                         if market_data[col].dtype not in ['float32', 'float64']:
                             market_data[col] = market_data[col].astype('float64')
                             self.logger.info(f"🔄 Converted {col} to float64")
-                    
+
 #                     # Select only required columns (and any extras that might be useful)
 #                     # The schema has strict=False so extra columns are allowed
                     self.logger.info(f"📊 Data has columns: {list(market_data.columns)}")
                     self.logger.info(f"📊 Index type: {type(market_data.index)}")
                     self.logger.info(f"📊 Data types: {market_data[required_cols].dtypes.to_dict()}")
-                    
+
             except Exception as e:
                 self.logger.error(f"❌ Failed to load market data: {e}")
                 raise ValueError(f"Could not load market data for analyst_profit_labeler: {e}") from e
-            
+
             if market_data is None or market_data.empty:
                 raise ValueError("Market data is required for analyst_profit_labeler but none was loaded")
-            
+
             component_result = await component.execute(market_data, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
             result.warnings = self._collect_component_warnings(component_result)
@@ -3590,7 +3580,7 @@ class PreTrainingSubPipeline:
         # Store artifacts in chain for next steps (success or failure)
         if result.artifacts:
             self._store_artifacts_in_chain('analyst_profit_labeler', result.artifacts)
-        
+
         return result
 
     async def _execute_tactician_entry_labeler(
@@ -3626,11 +3616,11 @@ class PreTrainingSubPipeline:
 
 #             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            
+
 #             # Load market data directly for labeling component
 #             # tactician_entry_labeler creates labels, it doesn't consume them
             from src.utils.data.klines_parquet import KlinesParquetManager
-            
+
             try:
                 klines_manager = KlinesParquetManager()
                 market_data = klines_manager.read_data(
@@ -3643,10 +3633,10 @@ class PreTrainingSubPipeline:
             except Exception as e:
                 self.logger.error(f"❌ Failed to load market data: {e}")
                 raise ValueError(f"Could not load market data for tactician_entry_labeler: {e}") from e
-            
+
             if market_data is None or market_data.empty:
                 raise ValueError("Market data is required for tactician_entry_labeler but none was loaded")
-            
+
             component_result = await component.execute(market_data, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
             result.warnings = self._collect_component_warnings(component_result)
@@ -3791,7 +3781,7 @@ class PreTrainingSubPipeline:
                 labeling_type = 'tactician'
             elif 'analyst' in run_metadata.get('run_type', '').lower():
                 labeling_type = 'analyst'
-            
+
 #             # Both analyst and tactician use 15m timeframe
             if config.timeframe != '15m':
                 tprint_info(f"🔄 Adjusting timeframe from {config.timeframe} to 15m for unified pipeline")
@@ -3808,10 +3798,10 @@ class PreTrainingSubPipeline:
 
 #             # Prepare pipeline state
             pipeline_state = self._prepare_component_pipeline_state(config)
-            
+
 #             # Load market data
             from src.utils.data.klines_parquet import KlinesParquetManager
-            
+
             try:
                 klines_manager = KlinesParquetManager()
                 market_data = klines_manager.read_data(
@@ -3824,13 +3814,13 @@ class PreTrainingSubPipeline:
             except Exception as e:
                 self.logger.error(f"❌ Failed to load market data: {e}")
                 raise ValueError(f"Could not load market data for unified_data_driven_pipeline: {e}") from e
-            
+
             if market_data is None or market_data.empty:
                 raise ValueError("Market data is required for unified_data_driven_pipeline but none was loaded")
 
 #             # Get labels from previous pipeline steps (analyst_profit_labeler or tactician_entry_labeler)
             labels = None
-            
+
 #             # Look for labels in various possible artifact structures
             if 'multi_horizon_labeling_result' in pipeline_state:
                 labeling_result = pipeline_state['multi_horizon_labeling_result']
@@ -3846,17 +3836,17 @@ class PreTrainingSubPipeline:
 #                         # Use the first column as target if no 'target' column
                         labels = labeling_result['labels'].iloc[:, 0]
                         tprint_info(f"✅ Using {len(labels)} labels from multi_horizon_labeling_result.labels (first column)")
-            
+
             if labels is None:
                 raise ValueError("No labels found from previous pipeline steps. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before unified_data_driven_pipeline.")
-            
+
 #             # Execute pipeline with labels
             pipeline_result = await pipeline.process(market_data, targets=labels, pipeline_state=pipeline_state)
-            
+
 #             # Process results
             if pipeline_result.success:
                 tprint_success(f"✅ Unified data-driven pipeline completed successfully")
-                
+
 #                 # Store results in artifacts
                 result.artifacts = {
                     'unified_pipeline_result': pipeline_result,
@@ -3866,7 +3856,7 @@ class PreTrainingSubPipeline:
                     'feature_quality_score': pipeline_result.feature_quality_score,
                     'performance_metrics': pipeline_result.performance_metrics
                 }
-                
+
                 result.metadata = {
                     'labeling_type': labeling_type,
                     'features_selected': len(pipeline_result.selected_features),
@@ -3874,7 +3864,7 @@ class PreTrainingSubPipeline:
                     'quality_score': pipeline_result.feature_quality_score,
                     'execution_time': pipeline_result.execution_time_seconds
                 }
-                
+
                 result.status = SubPipelineStatus.COMPLETED
             else:
                 tprint_error(f"❌ Unified data-driven pipeline failed: {pipeline_result.error_message}")
@@ -3921,7 +3911,7 @@ class PreTrainingSubPipeline:
         # Store artifacts in chain for next steps (success or failure)
         if result.artifacts:
             self._store_artifacts_in_chain('unified_data_driven_pipeline', result.artifacts)
-        
+
         return result
 
     # Feature Generation Steps Executors
@@ -4499,17 +4489,17 @@ class PreTrainingSubPipeline:
 #             # Load market data for feature lookback optimization using ares launcher integration
 #             from src.training.steps.pre_training.feature_lookback_optimization.ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
             import pandas as pd
-            
+
 #             # Normalize timeframe for data loading (60m -> 1h)
             timeframe_map = {'60m': '1h', '1h': '1h', '4h': '4h', '1d': '1d', '15m': '15m', '5m': '5m', '1m': '1m'}
             normalized_timeframe = timeframe_map.get(config.timeframe, config.timeframe)
-            
+
             try:
 #                 # Use ares launcher integration for data loading
 #                 tprint("🔧 [SUB_PIPELINE] Initializing ares launcher integration for feature lookback optimization...")
 #                 ares_optimizer = AresLauncherFeatureLookbackOptimizer()
 #                 tprint_success("✅ [SUB_PIPELINE] Ares launcher integration initialized")
-#                 
+#
 #                 # Create pipeline state for ares integration
 #                 ares_pipeline_state = {
 #                     'symbol': config.symbol,
@@ -4519,7 +4509,7 @@ class PreTrainingSubPipeline:
 #                     'lookback_days': getattr(config, 'lookback_days', None),
 #                     'intensity_percentage': getattr(config, 'intensity_percentage', None)
 #                 }
-#                 
+#
 #                 tprint("📋 [SUB_PIPELINE] Pipeline state for ares integration:")
 #                 tprint_info(f"   → Symbol: {config.symbol}")
 #                 tprint_info(f"   → Exchange: {config.exchange}")
@@ -4528,7 +4518,7 @@ class PreTrainingSubPipeline:
 #                 tprint_debug(f"   → Lookback days: {ares_pipeline_state['lookback_days']}")
 #                 tprint_debug(f"   → Intensity percentage: {ares_pipeline_state['intensity_percentage']}")
 #                 tprint_debug(f"   → Full pipeline state: {ares_pipeline_state}")
-#                 
+#
 #                 # Load data using ares launcher integration
 #                 tprint("📥 [SUB_PIPELINE] Loading data using ares launcher integration...")
 #                 market_data = ares_optimizer.load_data_for_optimization(
@@ -4536,7 +4526,7 @@ class PreTrainingSubPipeline:
 #                     timeframe=normalized_timeframe,
 #                     pipeline_state=ares_pipeline_state
 #                 )
-#                 
+#
 #                 if market_data is not None and not market_data.empty:
 #                     tprint_success(f"✅ [SUB_PIPELINE] Loaded {len(market_data)} rows of market data via ares launcher integration")
 #                     tprint_info(f"📊 [SUB_PIPELINE] Data summary:")
@@ -4680,7 +4670,7 @@ class PreTrainingSubPipeline:
         # Store artifacts in chain for next steps (success or failure)
         if result.artifacts:
             self._store_artifacts_in_chain('feature_lookback_optimization', result.artifacts)
-        
+
         return result
 
     async def _execute_interactive_feature_generation(
@@ -4880,7 +4870,7 @@ class PreTrainingSubPipeline:
             if not result.success:
                 self.logger.error(f"❌ Step {step_name} failed, stopping execution sequence")
                 break
-        
+
         # Return the first result (the one that was requested)
         return self.results[0] if self.results else None
 

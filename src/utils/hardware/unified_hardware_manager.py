@@ -56,26 +56,26 @@ class HardwareConfig:
     enable_core_affinity: bool = True
     enable_thermal_monitoring: bool = True
     enable_power_management: bool = True
-    
+
     # GPU Configuration
     gpu_optimization_level: OptimizationLevel = OptimizationLevel.BALANCED
     enable_mps_acceleration: bool = True
     enable_gpu_memory_pooling: bool = True
     enable_batch_operations: bool = True
-    
+
     # Memory Configuration
     memory_optimization_level: OptimizationLevel = OptimizationLevel.BALANCED
     memory_limit_gb: float = 8.0
     enable_memory_pooling: bool = True
     enable_predictive_allocation: bool = True
     enable_compression: bool = True
-    
+
     # Adaptive Configuration
     enable_adaptive_optimization: bool = True
     enable_learning: bool = True  # Rename learning_enabled to enable_learning
     auto_tuning_enabled: bool = True
     performance_monitoring_enabled: bool = True
-    
+
     # Monitoring Configuration
     monitoring_interval: float = 5.0
     metrics_retention_hours: int = 24
@@ -109,7 +109,7 @@ class PerformanceMetrics:
 
 class HardwarePerformanceMonitor:
     """Real-time hardware performance monitoring."""
-    
+
     def __init__(self, config: HardwareConfig):
         self.config = config
         self.logger = logger.getChild('HardwarePerformanceMonitor')
@@ -117,12 +117,12 @@ class HardwarePerformanceMonitor:
         self.monitoring_active = False
         self.monitoring_thread: Optional[threading.Thread] = None
         self.alert_callbacks: List[Callable] = []
-        
+
     def start_monitoring(self):
         """Start performance monitoring."""
         if self.monitoring_active:
             return
-            
+
         self.monitoring_active = True
         self.monitoring_thread = threading.Thread(
             target=self._monitoring_loop,
@@ -130,65 +130,65 @@ class HardwarePerformanceMonitor:
         )
         self.monitoring_thread.start()
         self.logger.info("🔍 Hardware performance monitoring started")
-        
+
     def stop_monitoring(self):
         """Stop performance monitoring."""
         self.monitoring_active = False
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=2.0)
         self.logger.info("🔍 Hardware performance monitoring stopped")
-        
+
     def _monitoring_loop(self):
         """Main monitoring loop."""
         while self.monitoring_active:
             try:
                 metrics = self._collect_metrics()
                 self.metrics_history.append(metrics)
-                
+
                 # Keep only recent metrics
                 cutoff_time = time.time() - (self.config.metrics_retention_hours * 3600)
                 self.metrics_history = [
-                    m for m in self.metrics_history 
+                    m for m in self.metrics_history
                     if m.timestamp > cutoff_time
                 ]
-                
+
                 # Check for alerts
                 self._check_alerts(metrics)
-                
+
                 time.sleep(self.config.monitoring_interval)
-                
+
             except Exception as e:
                 self.logger.error(f"Monitoring error: {e}")
                 time.sleep(10)
-                
+
     def _collect_metrics(self) -> PerformanceMetrics:
         """Collect current performance metrics."""
         try:
             if PSUTIL_AVAILABLE:
                 # CPU usage
                 cpu_usage = psutil.cpu_percent(interval=1)
-                
+
                 # Memory usage
                 memory = psutil.virtual_memory()
                 memory_usage = memory.percent
             else:
                 cpu_usage = 0.0
                 memory_usage = 0.0
-            
+
             # GPU usage (simplified - would need more sophisticated detection)
             gpu_usage = self._get_gpu_usage()
-            
+
             # Temperature (simplified - would need hardware-specific implementation)
             temperature = self._get_temperature()
-            
+
             # Power consumption (simplified)
             power_consumption = self._get_power_consumption()
-            
+
             # Calculate performance score
             performance_score = self._calculate_performance_score(
                 cpu_usage, memory_usage, gpu_usage, temperature
             )
-            
+
             return PerformanceMetrics(
                 timestamp=time.time(),
                 cpu_usage=cpu_usage,
@@ -200,7 +200,7 @@ class HardwarePerformanceMonitor:
                 optimization_level="unknown",
                 performance_score=performance_score
             )
-            
+
         except Exception as e:
             self.logger.error(f"Failed to collect metrics: {e}")
             return PerformanceMetrics(
@@ -214,7 +214,7 @@ class HardwarePerformanceMonitor:
                 optimization_level="unknown",
                 performance_score=0.0
             )
-            
+
     def _get_gpu_usage(self) -> float:
         """Get GPU usage percentage."""
         try:
@@ -232,7 +232,7 @@ class HardwarePerformanceMonitor:
             return 0.0
         except Exception:
             return 0.0
-            
+
     def _get_temperature(self) -> float:
         """Get system temperature."""
         try:
@@ -248,7 +248,7 @@ class HardwarePerformanceMonitor:
             return 45.0
         except Exception:
             return 45.0
-            
+
     def _get_power_consumption(self) -> float:
         """Get power consumption in watts."""
         try:
@@ -256,7 +256,7 @@ class HardwarePerformanceMonitor:
             return 15.0  # Placeholder
         except Exception:
             return 15.0
-            
+
     def _calculate_performance_score(self, cpu: float, memory: float, gpu: float, temp: float) -> float:
         """Calculate overall performance score."""
         # Normalize metrics (lower is better for some)
@@ -264,29 +264,29 @@ class HardwarePerformanceMonitor:
         memory_score = max(0, 100 - memory)
         gpu_score = max(0, 100 - gpu)
         temp_score = max(0, 100 - (temp - 30) * 2)  # Optimal around 30-40°C
-        
+
         # Weighted average
         return (cpu_score * 0.3 + memory_score * 0.3 + gpu_score * 0.2 + temp_score * 0.2)
-        
+
     def _check_alerts(self, metrics: PerformanceMetrics):
         """Check for alert conditions."""
         for metric_name, threshold in self.config.alert_thresholds.items():
             value = getattr(metrics, metric_name, 0)
             if value > threshold:
                 self._trigger_alert(metric_name, value, threshold)
-                
+
     def _trigger_alert(self, metric_name: str, value: float, threshold: float):
         """Trigger alert for metric threshold breach."""
         alert_msg = f"🚨 ALERT: {metric_name} ({value:.1f}) exceeds threshold ({threshold:.1f})"
         self.logger.warning(alert_msg)
-        
+
         # Call registered alert callbacks
         for callback in self.alert_callbacks:
             try:
                 callback(metric_name, value, threshold)
             except Exception as e:
                 self.logger.error(f"Alert callback error: {e}")
-                
+
     def add_alert_callback(self, callback: Callable):
         """Add alert callback function."""
 
@@ -304,14 +304,14 @@ class HardwarePerformanceMonitor:
             'temperature': 85.0
         }
         self.logger.info("🔧 Switched back to normal thresholds")
-        
+
     def get_performance_report(self) -> Dict[str, Any]:
         """Generate performance report."""
         if not self.metrics_history:
             return {"error": "No metrics available"}
-            
+
         recent_metrics = self.metrics_history[-10:]  # Last 10 measurements
-        
+
         return {
             "current_metrics": recent_metrics[-1].__dict__ if recent_metrics else {},
             "average_metrics": {
@@ -333,15 +333,15 @@ class HardwarePerformanceMonitor:
 
 class AdaptiveTaskScheduler:
     """Adaptive task scheduling based on hardware conditions."""
-    
+
     def __init__(self, config: HardwareConfig):
         self.config = config
         self.logger = logger.getChild('AdaptiveTaskScheduler')
         self.task_queue: List[Dict[str, Any]] = []
         self.running_tasks: Dict[str, Any] = {}
         self.performance_history: List[Dict[str, Any]] = []
-        
-    def schedule_task(self, task_id: str, task_func: Callable, 
+
+    def schedule_task(self, task_id: str, task_func: Callable,
                      workload_type: WorkloadType, priority: int = 5) -> bool:
         """Schedule a task for execution."""
         task = {
@@ -352,54 +352,54 @@ class AdaptiveTaskScheduler:
             'created_at': time.time(),
             'status': 'queued'
         }
-        
+
         self.task_queue.append(task)
         self.task_queue.sort(key=lambda x: x['priority'], reverse=True)
-        
+
         self.logger.info(f"📋 Task {task_id} scheduled with priority {priority}")
         return True
-        
+
     def execute_next_task(self, current_metrics: PerformanceMetrics) -> Optional[Any]:
         """Execute the next task in queue based on current conditions."""
         if not self.task_queue:
             return None
-            
+
         # Select task based on current hardware conditions
         selected_task = self._select_optimal_task(current_metrics)
         if not selected_task:
             return None
-            
+
         # Remove from queue and add to running
         self.task_queue.remove(selected_task)
         self.running_tasks[selected_task['id']] = selected_task
         selected_task['status'] = 'running'
         selected_task['started_at'] = time.time()
-        
+
         try:
             self.logger.info(f"🚀 Executing task {selected_task['id']}")
             result = selected_task['func']()
-            
+
             # Record performance
             execution_time = time.time() - selected_task['started_at']
             self._record_task_performance(selected_task, execution_time, True)
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Task {selected_task['id']} failed: {e}")
             self._record_task_performance(selected_task, 0, False)
             raise
-            
+
         finally:
             # Remove from running tasks
             if selected_task['id'] in self.running_tasks:
                 del self.running_tasks[selected_task['id']]
-                
+
     def _select_optimal_task(self, metrics: PerformanceMetrics) -> Optional[Dict[str, Any]]:
         """Select optimal task based on current hardware conditions."""
         if not self.task_queue:
             return None
-            
+
         # Simple selection logic - can be enhanced with ML
         if metrics.cpu_usage > 80:
             # High CPU usage - prefer lighter tasks
@@ -414,9 +414,9 @@ class AdaptiveTaskScheduler:
         else:
             # Normal conditions - use priority
             return self.task_queue[0]
-            
+
         return self.task_queue[0] if self.task_queue else None
-        
+
     def _record_task_performance(self, task: Dict[str, Any], execution_time: float, success: bool):
         """Record task performance for learning."""
         performance_record = {
@@ -426,16 +426,16 @@ class AdaptiveTaskScheduler:
             'success': success,
             'timestamp': time.time()
         }
-        
+
         self.performance_history.append(performance_record)
-        
+
         # Keep only recent history
         cutoff_time = time.time() - (24 * 3600)  # 24 hours
         self.performance_history = [
-            r for r in self.performance_history 
+            r for r in self.performance_history
             if r['timestamp'] > cutoff_time
         ]
-        
+
     def get_scheduling_report(self) -> Dict[str, Any]:
         """Get scheduling report."""
         return {
@@ -448,42 +448,42 @@ class AdaptiveTaskScheduler:
 
 class UnifiedHardwareManager:
     """Unified hardware management system."""
-    
+
     def __init__(self, config: Optional[HardwareConfig] = None):
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
-        
+
         # Initialize hardware components
         self.cpu_optimizer = M1CPUOptimizer()
         self.gpu_manager = M1GPUManager()
         self.memory_optimizer = M1MemoryOptimizer(
             memory_limit_gb=self.config.memory_limit_gb
         )
-        
+
         # Initialize management components
         self.performance_monitor = HardwarePerformanceMonitor(self.config)
         self.task_scheduler = AdaptiveTaskScheduler(self.config)
-        
+
         # State tracking
         self.is_initialized = False
         self.current_workload_type: Optional[WorkloadType] = None
         self.optimization_contexts: Dict[str, Any] = {}
-        
+
         self.logger.info("🔧 Unified Hardware Manager initialized")
-        
+
     def initialize(self) -> bool:
         """Initialize all hardware components."""
         try:
             # Start performance monitoring
             if self.config.performance_monitoring_enabled:
                 self.performance_monitor.start_monitoring()
-                
+
             # Initialize memory optimizer
             self.memory_optimizer.start_monitoring()
-            
+
             # Set up alert callbacks
             self.performance_monitor.add_alert_callback(self._handle_performance_alert)
-            
+
             self.is_initialized = True
             self.logger.info("✅ Unified Hardware Manager fully initialized")
             return True
@@ -501,7 +501,7 @@ class UnifiedHardwareManager:
         """Switch back to normal thresholds."""
         self.performance_monitor.set_normal_thresholds()
         self.logger.info("🔧 Switched back to normal thresholds")
-            
+
     def shutdown(self):
         """Shutdown all components."""
         try:
@@ -511,29 +511,29 @@ class UnifiedHardwareManager:
             self.logger.info("🛑 Unified Hardware Manager shutdown complete")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
-            
-    def optimize_for_workload(self, workload_type: WorkloadType, 
+
+    def optimize_for_workload(self, workload_type: WorkloadType,
                             optimization_level: OptimizationLevel = None) -> bool:
         """Optimize hardware for specific workload type."""
         if not self.is_initialized:
             self.logger.warning("Hardware manager not initialized")
             return False
-            
+
         optimization_level = optimization_level or self.config.cpu_optimization_level
         self.current_workload_type = workload_type
-        
+
         try:
             self.logger.info(f"🎯 Optimizing for {workload_type.value} workload ({optimization_level.value})")
-            
+
             # CPU optimization
             self._optimize_cpu_for_workload(workload_type, optimization_level)
-            
+
             # GPU optimization
             self._optimize_gpu_for_workload(workload_type, optimization_level)
-            
+
             # Memory optimization
             self._optimize_memory_for_workload(workload_type, optimization_level)
-            
+
             # Store optimization context
             self.optimization_contexts[workload_type.value] = {
                 'optimization_level': optimization_level.value,
@@ -542,13 +542,13 @@ class UnifiedHardwareManager:
                 'gpu_settings': self._get_gpu_settings(),
                 'memory_settings': self._get_memory_settings()
             }
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to optimize for workload {workload_type.value}: {e}")
             return False
-            
+
     def _optimize_cpu_for_workload(self, workload_type: WorkloadType, level: OptimizationLevel):
         """Optimize CPU for specific workload."""
         if workload_type == WorkloadType.BACKTESTING:
@@ -563,7 +563,7 @@ class UnifiedHardwareManager:
             # Optimize for data processing - use all cores
             self.cpu_optimizer.performance_cores = 2
             self.cpu_optimizer.efficiency_cores = 2
-            
+
     def _optimize_gpu_for_workload(self, workload_type: WorkloadType, level: OptimizationLevel):
         """Optimize GPU for specific workload."""
         if workload_type in [WorkloadType.ML_TRAINING, WorkloadType.MONTE_CARLO]:
@@ -573,7 +573,7 @@ class UnifiedHardwareManager:
         else:
             # Disable GPU for lighter workloads
             self.logger.info("💻 GPU acceleration disabled for lighter workload")
-            
+
     def _optimize_memory_for_workload(self, workload_type: WorkloadType, level: OptimizationLevel):
         """Optimize memory for specific workload."""
         if workload_type == WorkloadType.ML_TRAINING:
@@ -584,7 +584,7 @@ class UnifiedHardwareManager:
             # Moderate memory optimization for backtesting
             self.memory_optimizer.thresholds['high'] = 0.85
             self.memory_optimizer.thresholds['critical'] = 0.95
-            
+
     def _get_cpu_settings(self) -> Dict[str, Any]:
         """Get current CPU settings."""
         return {
@@ -592,25 +592,25 @@ class UnifiedHardwareManager:
             'efficiency_cores': self.cpu_optimizer.efficiency_cores,
             'optimal_workers': self.cpu_optimizer.cpu_count
         }
-        
+
     def _get_gpu_settings(self) -> Dict[str, Any]:
         """Get current GPU settings."""
         return {
             'mps_available': self.gpu_manager.mps_available,
             'gpu_info': self.gpu_manager.get_gpu_info()
         }
-        
+
     def _get_memory_settings(self) -> Dict[str, Any]:
         """Get current memory settings."""
         return {
             'memory_limit_gb': self.memory_optimizer.memory_limit_gb,
             'thresholds': self.memory_optimizer.thresholds
         }
-        
+
     def _handle_performance_alert(self, metric_name: str, value: float, threshold: float):
         """Handle performance alerts."""
         self.logger.warning(f"🚨 Performance alert: {metric_name} = {value:.1f} (threshold: {threshold:.1f})")
-        
+
         # Implement adaptive responses
         if metric_name == 'cpu_usage' and value > 90:
             self._reduce_cpu_intensity()
@@ -618,36 +618,36 @@ class UnifiedHardwareManager:
             self._trigger_aggressive_memory_cleanup()
         elif metric_name == 'temperature' and value > 85:
             self._reduce_thermal_load()
-            
+
     def _reduce_cpu_intensity(self):
         """Reduce CPU intensity in response to high usage."""
         self.logger.info("🔧 Reducing CPU intensity")
         # Reduce thread pool sizes and processing intensity
         if hasattr(self, 'cpu_optimizer'):
             self.cpu_optimizer.set_conservative_mode()
-        
+
         # Add a small delay to prevent busy waiting
         time.sleep(0.1)
-        
+
         # Set reduced intensity flag
         self._cpu_intensity_reduced = True
-        
+
     def _trigger_aggressive_memory_cleanup(self):
         """Trigger aggressive memory cleanup."""
         self.logger.info("🧹 Triggering aggressive memory cleanup")
         self.memory_optimizer._aggressive_memory_cleanup()
-        
+
     def _reduce_thermal_load(self):
         """Reduce thermal load."""
         self.logger.info("🌡️ Reducing thermal load")
         # Implementation would reduce CPU/GPU frequencies, etc.
-    
+
     def optimize_for_inference(self):
         """Optimize hardware for inference workload."""
         try:
             # Optimize for inference workload with aggressive optimization
             success = self.optimize_for_workload(
-                WorkloadType.INFERENCE, 
+                WorkloadType.INFERENCE,
                 OptimizationLevel.AGGRESSIVE
             )
             if success:
@@ -656,29 +656,29 @@ class UnifiedHardwareManager:
                 self.logger.warning("⚠️ Failed to optimize hardware for inference")
         except Exception as e:
             self.logger.warning(f"⚠️ Inference optimization failed: {e}")
-        
+
     @contextmanager
-    def optimization_context(self, workload_type: WorkloadType, 
+    def optimization_context(self, workload_type: WorkloadType,
                            optimization_level: OptimizationLevel = None):
         """Context manager for workload-specific optimization."""
         optimization_level = optimization_level or self.config.cpu_optimization_level
-        
+
         # Apply optimization
         success = self.optimize_for_workload(workload_type, optimization_level)
         if not success:
             self.logger.warning(f"Failed to apply optimization for {workload_type.value}")
-            
+
         try:
             yield self
         finally:
             # Could restore previous settings here if needed
             pass
-            
+
     def get_system_status(self) -> Dict[str, Any]:
         """Get comprehensive system status."""
         if not self.is_initialized:
             return {"error": "System not initialized"}
-            
+
         return {
             "initialized": self.is_initialized,
             "current_workload": self.current_workload_type.value if self.current_workload_type else None,
@@ -695,7 +695,7 @@ class UnifiedHardwareManager:
                 "adaptive_optimization_enabled": self.config.enable_adaptive_optimization
             }
         }
-        
+
     def save_configuration(self, file_path: str):
         """Save current configuration to file."""
         try:
@@ -712,21 +712,21 @@ class UnifiedHardwareManager:
                 "optimization_contexts": self.optimization_contexts,
                 "timestamp": time.time()
             }
-            
+
             with open(file_path, 'w') as f:
                 json.dump(config_data, f, indent=2)
-                
+
             self.logger.info(f"💾 Configuration saved to {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save configuration: {e}")
-            
+
     def load_configuration(self, file_path: str) -> bool:
         """Load configuration from file."""
         try:
             with open(file_path, 'r') as f:
                 config_data = json.load(f)
-                
+
             # Update configuration
             config_dict = config_data.get("config", {})
             for key, value in config_dict.items():
@@ -735,13 +735,13 @@ class UnifiedHardwareManager:
                         setattr(self.config, key, OptimizationLevel(value))
                     else:
                         setattr(self.config, key, value)
-                        
+
             # Restore optimization contexts
             self.optimization_contexts = config_data.get("optimization_contexts", {})
-            
+
             self.logger.info(f"📂 Configuration loaded from {file_path}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
             return False
@@ -752,7 +752,7 @@ _unified_hardware_manager: Optional[UnifiedHardwareManager] = None
 def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conservative_mode: bool = False) -> UnifiedHardwareManager:
     """Get or create the global unified hardware manager instance."""
     global _unified_hardware_manager
-    
+
     if _unified_hardware_manager is None:
         # Use conservative configuration if requested or if no config provided
         if conservative_mode or config is None:
@@ -763,18 +763,18 @@ def get_unified_hardware_manager(config: Optional[HardwareConfig] = None, conser
                 monitoring_interval=30.0,
                 alert_thresholds={
                     'cpu_usage': 70.0,
-                    'memory_usage': 80.0, 
+                    'memory_usage': 80.0,
                     'gpu_usage': 60.0,
                     'temperature': 70.0
                 }
             )
-        
+
         _unified_hardware_manager = UnifiedHardwareManager(config)
         _unified_hardware_manager.initialize()
-        
+
     return _unified_hardware_manager
 
-def optimize_for_workload(workload_type: WorkloadType, 
+def optimize_for_workload(workload_type: WorkloadType,
                          optimization_level: OptimizationLevel = None) -> bool:
     """Convenience function to optimize for a specific workload."""
     manager = get_unified_hardware_manager()

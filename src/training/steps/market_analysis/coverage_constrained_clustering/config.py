@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-
 @dataclass
 class CoverageClusteringConfig:
 	# Targets
@@ -11,7 +10,7 @@ class CoverageClusteringConfig:
 	min_num_clusters: int = 15
 	max_num_clusters: int = 26
 	target_coverage: float = 1.0   # 100% coverage - zero noise
-	min_coverage: float = 1.0      # 100% coverage - zero noise  
+	min_coverage: float = 1.0      # 100% coverage - zero noise
 	max_coverage: float = 1.0      # 100% coverage - zero noise
 
 	# Size constraints as fraction of total
@@ -58,4 +57,3 @@ class CoverageClusteringConfig:
 	# Operational
 	verbose: bool = True
 	max_samples_for_metrics: int = 100_000
-

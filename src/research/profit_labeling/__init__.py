@@ -1,11 +1,11 @@
 """
 Enhanced Multi-Horizon Profit Labeling Research Framework
 
-A comprehensive research framework for analyzing and optimizing the multi-horizon profit 
+A comprehensive research framework for analyzing and optimizing the multi-horizon profit
 labeling system from a fully data-driven perspective. This framework provides tools to:
 
 1. Analyze labeling heuristics and their effectiveness
-2. Validate labeling quality and consistency 
+2. Validate labeling quality and consistency
 3. Optimize labeling parameters systematically
 4. Visualize labeling patterns and performance
 5. Compare different labeling strategies
@@ -38,18 +38,18 @@ Usage:
     from research.profit_labeling import (
         # Original components
         HeuristicAnalyzer,
-        LabelingValidator, 
+        LabelingValidator,
         ParameterOptimizer,
         LabelingVisualizer,
         ResearchRunner,
-        
+
         # Enhanced components
         MLLabelQualityAssessor,
         AdaptiveLabelingStrategy,
         AdvancedStatisticalValidator,
         EnsembleLabelingSystem,
         EnhancedMultiHorizonProfitLabeler,
-        
+
         # Convenience functions
         generate_fully_enhanced_labels,
         create_enhanced_labeler
@@ -69,7 +69,7 @@ from .research_runner import ResearchRunner, ResearchConfig
 
 # Enhanced components
 from .ml_label_quality_assessor import (
-    MLLabelQualityAssessor, 
+    MLLabelQualityAssessor,
     MLQualityAssessmentConfig,
     assess_label_quality_ml,
     enhance_labels_with_ml
@@ -147,7 +147,7 @@ __all__ = [
     # Original components
     'HeuristicAnalyzer',
     'HeuristicAnalysisConfig',
-    'LabelingValidator', 
+    'LabelingValidator',
     'ValidationConfig',
     'ParameterOptimizer',
     'OptimizationConfig',
@@ -155,7 +155,7 @@ __all__ = [
     'VisualizationConfig',
     'ResearchRunner',
     'ResearchConfig',
-    
+
     # Enhanced components
     'MLLabelQualityAssessor',
     'MLQualityAssessmentConfig',
@@ -188,7 +188,7 @@ __all__ = [
     'DataDrivenQualityScorer',
     'ModifiedMultiHorizonLabeler',
     'RegimeSpecificBonusPenaltyOptimizer',
-    
+
     # Convenience functions
     'assess_label_quality_ml',
     'enhance_labels_with_ml',

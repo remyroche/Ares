@@ -22,7 +22,6 @@ from src.utils.data.klines_parquet import KlinesParquetManager
 from src.utils.data.quality.comprehensive_duplicate_analyzer import ComprehensiveDuplicateAnalyzer
 from src.trading.execution.exchange_interface import ExchangeInterface
 
-
 class HistoricalDataPipeline:
     """Complete pipeline for historical data management."""
 
@@ -47,7 +46,7 @@ class HistoricalDataPipeline:
 
         # Columns to remove - keeping taker columns as requested
         self.columns_to_remove = []
-    
+
     async def run_complete_pipeline(
         self,
         symbol: str = "ETHUSDT",
@@ -59,7 +58,7 @@ class HistoricalDataPipeline:
         max_gap_minutes: int = 1
     ) -> Dict[str, Any]:
         """Run the complete historical data pipeline.
-        
+
         Args:
             symbol: Trading symbol
             years: Number of years to download
@@ -68,16 +67,16 @@ class HistoricalDataPipeline:
             api_secret: Exchange API secret (fallback if exchange_interface not provided)
             target_intervals: List of target intervals for resampling
             max_gap_minutes: Maximum allowed gap in minutes
-            
+
         Returns:
             Dictionary with pipeline results
         """
         if target_intervals is None:
             target_intervals = ["5m", "15m", "30m", "1h"]
-        
+
         try:
             self.logger.info(f"🚀 Starting complete pipeline for {symbol}")
-            
+
             results = {
                 "symbol": symbol,
                 "years": years,
@@ -87,7 +86,7 @@ class HistoricalDataPipeline:
                 "warnings": [],
                 "summary": {}
             }
-            
+
             # Step 1: Download historical data
             self.logger.info("📥 Step 1: Downloading historical data")
             download_success = await self.downloader.download_historical_klines(
@@ -98,7 +97,7 @@ class HistoricalDataPipeline:
                 api_key=api_key,
                 api_secret=api_secret
             )
-            
+
             if download_success:
                 results["steps_completed"].append("download")
                 download_summary = self.downloader.get_data_summary(symbol)
@@ -120,12 +119,12 @@ class HistoricalDataPipeline:
                 results["errors"].append("Download failed")
                 self.logger.error("❌ Download failed")
                 return results
-            
+
             # Step 2: Detect and fill gaps
             self.logger.info("🔍 Step 2: Detecting and filling gaps")
             gaps = self.gap_detector.detect_gaps(symbol, "1m", max_gap_minutes)
             self.gap_detector.log_gaps(gaps)
-            
+
             if gaps:
                 gap_results = await self.gap_detector.fill_gaps(gaps, exchange_interface, api_key, api_secret)
                 results["steps_completed"].append("gap_filling")
@@ -152,7 +151,7 @@ class HistoricalDataPipeline:
             processing_results = self.basic_returns_engineer.process_symbol_data(
                 symbol, "1m", target_intervals
             )
-            
+
             if processing_results["success"]:
                 results["steps_completed"].append("feature_engineering")
                 results["summary"]["feature_engineering"] = processing_results
@@ -160,38 +159,38 @@ class HistoricalDataPipeline:
             else:
                 results["errors"].append(f"Basic returns feature engineering failed: {processing_results.get('error', 'Unknown error')}")
                 self.logger.error(f"❌ Basic returns feature engineering failed: {processing_results.get('error', 'Unknown error')}")
-            
+
             # Step 4: Verify data integrity
             self.logger.info("🔍 Step 4: Verifying data integrity")
             verification_results = self._verify_data_integrity(symbol, target_intervals)
             results["steps_completed"].append("verification")
             results["summary"]["verification"] = verification_results
             self.logger.info(f"✅ Verification completed: {verification_results}")
-            
+
             # Final summary
             results["pipeline_success"] = len(results["errors"]) == 0
             results["completion_time"] = datetime.now().isoformat()
-            
+
             self.logger.info(f"🎉 Pipeline completed: {len(results['steps_completed'])} steps, {len(results['errors'])} errors")
             return results
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Pipeline failed: {e}")
             results["errors"].append(str(e))
             results["pipeline_success"] = False
             return results
-    
+
     def _verify_data_integrity(
         self,
         symbol: str,
         target_intervals: List[str]
     ) -> Dict[str, Any]:
         """Verify data integrity across all intervals.
-        
+
         Args:
             symbol: Trading symbol
             target_intervals: List of target intervals
-            
+
         Returns:
             Dictionary with verification results
         """
@@ -201,34 +200,34 @@ class HistoricalDataPipeline:
                 "processed_data": {},
                 "overall_success": True
             }
-            
+
             # Check raw data
             raw_info = self.klines_manager.get_data_info(symbol, "1m", "raw")
             verification_results["raw_data"] = raw_info
-            
+
             if not raw_info["available"]:
                 verification_results["overall_success"] = False
                 self.logger.error("❌ No raw data found")
                 return verification_results
-            
+
             # Check processed data for each interval
             all_intervals = ["1m"] + target_intervals
             for interval in all_intervals:
                 processed_info = self.klines_manager.get_data_info(symbol, interval, "processed")
                 verification_results["processed_data"][interval] = processed_info
-                
+
                 if not processed_info["available"]:
                     verification_results["overall_success"] = False
                     self.logger.error(f"❌ No processed data found for {interval}")
-            
+
             # Check for data consistency
             if verification_results["overall_success"]:
                 self.logger.info("✅ All data integrity checks passed")
             else:
                 self.logger.warning("⚠️ Some data integrity checks failed")
-            
+
             return verification_results
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Data integrity verification failed: {e}")
             return {
@@ -237,13 +236,13 @@ class HistoricalDataPipeline:
                 "overall_success": False,
                 "error": str(e)
             }
-    
+
     def get_pipeline_status(self, symbol: str) -> Dict[str, Any]:
         """Get current pipeline status for a symbol.
-        
+
         Args:
             symbol: Trading symbol
-            
+
         Returns:
             Dictionary with pipeline status
         """
@@ -255,37 +254,37 @@ class HistoricalDataPipeline:
                 "data_summary": {},
                 "recommendations": []
             }
-            
+
             # Check raw data
             raw_info = self.klines_manager.get_data_info(symbol, "1m", "raw")
             status["raw_data_available"] = raw_info["available"]
             status["data_summary"]["raw"] = raw_info
-            
+
             if raw_info["available"]:
                 # Check for gaps
                 gaps = self.gap_detector.detect_gaps(symbol, "1m", max_gap_minutes=1)
                 if gaps:
                     status["recommendations"].append(f"Found {len(gaps)} gaps in raw data - consider running gap filling")
-                
+
                 # Check processed data
                 intervals = ["1m", "5m", "15m", "30m", "1h"]
                 for interval in intervals:
                     processed_info = self.klines_manager.get_data_info(symbol, interval, "processed")
                     status["processed_data_available"][interval] = processed_info["available"]
                     status["data_summary"][f"processed_{interval}"] = processed_info
-                
+
                 # Generate recommendations
                 if not any(status["processed_data_available"].values()):
                     status["recommendations"].append("No processed data found - consider running feature engineering")
-                
+
                 missing_intervals = [interval for interval, available in status["processed_data_available"].items() if not available]
                 if missing_intervals:
                     status["recommendations"].append(f"Missing processed data for intervals: {missing_intervals}")
             else:
                 status["recommendations"].append("No raw data found - consider running data download")
-            
+
             return status
-            
+
         except Exception as e:
             self.logger.exception(f"❌ Failed to get pipeline status: {e}")
             return {
@@ -296,7 +295,7 @@ class HistoricalDataPipeline:
                 "recommendations": [f"Error getting status: {e}"],
                 "error": str(e)
             }
-    
+
     def cleanup_old_data(
         self,
         symbol: str,
@@ -304,36 +303,36 @@ class HistoricalDataPipeline:
         data_type: str = "raw"
     ) -> Dict[str, Any]:
         """Clean up old data to save space.
-        
+
         Args:
             symbol: Trading symbol
             keep_days: Number of days to keep
             data_type: 'raw' or 'processed'
-            
+
         Returns:
             Dictionary with cleanup results
         """
         try:
             cutoff_date = datetime.now() - timedelta(days=keep_days)
-            
+
             self.logger.info(f"🧹 Cleaning up {data_type} data older than {cutoff_date}")
-            
+
             # Get data info
             info = self.klines_manager.get_data_info(symbol, "1m", data_type)
-            
+
             if not info["available"]:
                 return {"cleaned_files": 0, "freed_space_mb": 0, "message": "No data to clean"}
-            
+
             # Delete old data
             success = self.klines_manager.delete_data(
                 symbol, "1m", data_type, end_date=cutoff_date
             )
-            
+
             if success:
                 # Get new data info
                 new_info = self.klines_manager.get_data_info(symbol, "1m", data_type)
                 freed_space = info["file_size_mb"] - new_info["file_size_mb"]
-                
+
                 return {
                     "cleaned_files": info["files_count"] - new_info["files_count"],
                     "freed_space_mb": freed_space,
@@ -341,7 +340,7 @@ class HistoricalDataPipeline:
                 }
             else:
                 return {"cleaned_files": 0, "freed_space_mb": 0, "message": "Cleanup failed"}
-                
+
         except Exception as e:
             self.logger.exception(f"❌ Cleanup failed: {e}")
             return {"cleaned_files": 0, "freed_space_mb": 0, "message": f"Cleanup failed: {e}"}
@@ -646,7 +645,6 @@ class HistoricalDataPipeline:
         """
         return self.check_and_fix_data_format(symbol, data_type, interval, fix_issues=False)
 
-
 # Convenience functions
 async def run_ethusdt_pipeline(
     years: int = 3,
@@ -656,20 +654,20 @@ async def run_ethusdt_pipeline(
     target_intervals: List[str] = None
 ) -> Dict[str, Any]:
     """Run the complete pipeline for ETHUSDT.
-    
+
     Args:
         years: Number of years to download
         data_dir: Base directory for data storage
         api_key: Exchange API key
         api_secret: Exchange API secret
         target_intervals: List of target intervals for resampling
-        
+
     Returns:
         Dictionary with pipeline results
     """
     if target_intervals is None:
         target_intervals = ["5m", "15m", "30m", "1h"]
-    
+
     pipeline = HistoricalDataPipeline(data_dir)
     return await pipeline.run_complete_pipeline(
         symbol="ETHUSDT",
@@ -678,7 +676,6 @@ async def run_ethusdt_pipeline(
         api_secret=api_secret,
         target_intervals=target_intervals
     )
-
 
 # Convenience functions for common use cases
 async def run_ethusdt_3year_pipeline(
@@ -762,7 +759,6 @@ async def run_ethusdt_3year_pipeline(
     print("\n" + "="*80)
 
     return results
-
 
 if __name__ == "__main__":
     # Example usage - download 3 years of ETHUSDT data

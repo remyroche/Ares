@@ -5,7 +5,6 @@ import pandas as pd
 from ..monitoring.comprehensive_trade_monitor import comprehensive_trade_monitor
 from ..reporting.performance_reporter import generate_trading_report
 
-
 async def generate_consolidated_report(report_name: str = "cross_asset_portfolio") -> Dict[str, Any]:
     """
     Build a consolidated cross-asset report from the global trade monitor.
@@ -60,7 +59,6 @@ async def generate_consolidated_report(report_name: str = "cross_asset_portfolio
 
     return {"portfolio": portfolio, "comprehensive_report": full_report}
 
-
 async def generate_live_portfolio_dashboard() -> Dict[str, Any]:
     active = comprehensive_trade_monitor.active_trades
     completed = comprehensive_trade_monitor.completed_trades
@@ -73,7 +71,6 @@ async def generate_live_portfolio_dashboard() -> Dict[str, Any]:
         "per_symbol_completed": _count_by_symbol(completed),
     }
 
-
 def _count_by_symbol(trades: List[Any]) -> Dict[str, int]:
     counts: Dict[str, int] = {}
     for t in trades:
@@ -81,4 +78,3 @@ def _count_by_symbol(trades: List[Any]) -> Dict[str, int]:
         if sym:
             counts[sym] = counts.get(sym, 0) + 1
     return counts
-

@@ -29,7 +29,6 @@ from src.utils.math_validation import (
 
 from ..shared_utils import get_logger
 
-
 @dataclass
 class HardwareCapabilities:
     """Hardware capabilities and configuration."""
@@ -42,7 +41,6 @@ class HardwareCapabilities:
     optimal_batch_size: int = 1000
     recommended_workers: int = 1
 
-
 @dataclass
 class HardwareOptimizationResult:
     """Result from hardware optimization."""
@@ -51,7 +49,6 @@ class HardwareOptimizationResult:
     performance_gains: Dict[str, float]
     memory_usage: Dict[str, float]
     execution_time: float
-
 
 class HardwareService:
     """

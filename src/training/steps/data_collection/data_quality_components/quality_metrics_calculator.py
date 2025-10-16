@@ -13,10 +13,9 @@ import logging
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-
 class QualityMetricsCalculator:
     """Calculates comprehensive quality metrics for market data using proper quality tools.
-    
+
     This class provides functionality for:
     - Calculating overall data quality scores using comprehensive quality assessment
     - Computing detailed metrics for different quality aspects
@@ -28,17 +27,17 @@ class QualityMetricsCalculator:
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('QualityMetricsCalculator')
         self.config = config or self._get_default_config()
-        
+
         # Initialize comprehensive quality tools
         try:
             from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
             from src.utils.data.quality.data_quality import DataQualityFramework
             from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
-            
+
             self.quality_scorer = get_quality_scorer()
             self.quality_framework = DataQualityFramework()
             self.advanced_quality_metrics = AdvancedQualityMetrics()
-            
+
             self.logger.info("✅ QualityMetricsCalculator initialized with comprehensive quality tools")
         except ImportError as e:
             self.logger.warning(f"⚠️ Comprehensive quality tools not available: {e}")
@@ -54,11 +53,11 @@ class QualityMetricsCalculator:
     def calculate_quality_score(self, results: dict[str, Any], df: Optional[pd.DataFrame] = None) -> float:
         """
         Calculate overall data quality score using comprehensive quality assessment.
-        
+
         Args:
             results: Dictionary containing quality check results
             df: Optional DataFrame for comprehensive quality assessment
-            
+
         Returns:
             Quality score between 0.0 and 1.0
         """
@@ -71,13 +70,13 @@ class QualityMetricsCalculator:
                     step_name="quality_metrics_calculation",
                     data_type="klines"
                 )
-                
+
                 # Convert to 0-1 scale
                 return quality_assessment.overall_score / 100.0
-                
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Comprehensive quality assessment failed, using fallback: {e}")
-        
+
         # Fallback to basic calculation
         score = 1.0
         critical_penalty = self.config['thresholds']['critical_issue_penalty']
@@ -96,10 +95,10 @@ class QualityMetricsCalculator:
     def calculate_completeness_metrics(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Calculate data completeness metrics.
-        
+
         Args:
             data: DataFrame to analyze
-            
+
         Returns:
             Dictionary with completeness metrics
         """
@@ -117,10 +116,10 @@ class QualityMetricsCalculator:
     def calculate_consistency_metrics(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Calculate data consistency metrics.
-        
+
         Args:
             data: DataFrame with OHLCV data
-            
+
         Returns:
             Dictionary with consistency metrics
         """
@@ -150,10 +149,10 @@ class QualityMetricsCalculator:
     def calculate_timeliness_metrics(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Calculate data timeliness metrics.
-        
+
         Args:
             data: DataFrame with datetime index
-            
+
         Returns:
             Dictionary with timeliness metrics
         """
@@ -176,10 +175,10 @@ class QualityMetricsCalculator:
     def calculate_validity_metrics(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Calculate data validity metrics.
-        
+
         Args:
             data: DataFrame to analyze
-            
+
         Returns:
             Dictionary with validity metrics
         """
@@ -205,13 +204,13 @@ class QualityMetricsCalculator:
     def generate_quality_report(self, data: pd.DataFrame, symbol: str, exchange: str, include_recommendations: bool = True) -> dict[str, Any]:
         """
         Generate comprehensive data quality report.
-        
+
         Args:
             data: DataFrame to analyze
             symbol: Trading symbol
             exchange: Exchange name
             include_recommendations: Whether to include improvement recommendations
-            
+
         Returns:
             Comprehensive quality report
         """

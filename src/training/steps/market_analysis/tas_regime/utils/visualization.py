@@ -14,7 +14,6 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import logging
 
-
 @dataclass
 class TreeVisualizer:
     """Tree visualization utilities."""
@@ -80,7 +79,6 @@ class TreeVisualizer:
         except Exception as e:
             self.logger.error(f"❌ Failed to plot fitness history: {e}")
 
-
 @dataclass
 class TreeArchitectureVisualizer(TreeVisualizer):
     """Visualization for tree architectures."""
@@ -117,7 +115,6 @@ class TreeArchitectureVisualizer(TreeVisualizer):
 
         except Exception as e:
             self.logger.error(f"❌ Failed to plot architecture comparison: {e}")
-
 
 @dataclass
 class TreeSearchVisualizer(TreeVisualizer):

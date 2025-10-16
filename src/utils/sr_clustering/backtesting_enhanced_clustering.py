@@ -34,7 +34,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class BacktestingEnhancedConfig:
     """Configuration for backtesting-enhanced clustering."""
@@ -76,7 +75,6 @@ class BacktestingEnhancedConfig:
         if self.min_samples < 2:
             raise ValueError("min_samples must be at least 2")
 
-
 @dataclass
 class ClusterResult:
     """Result from clustering operation."""
@@ -88,7 +86,6 @@ class ClusterResult:
     silhouette_score: float
     backtest_score: Optional[float] = None
     confidence: float = 1.0
-
 
 class BacktestingEnhancedClustering:
     """
@@ -463,7 +460,6 @@ class BacktestingEnhancedClustering:
 
         return sr_levels
 
-
 def get_backtesting_enhanced_clustering(
     config: Optional[BacktestingEnhancedConfig] = None
 ) -> BacktestingEnhancedClustering:
@@ -480,7 +476,6 @@ def get_backtesting_enhanced_clustering(
         config = BacktestingEnhancedConfig()
 
     return BacktestingEnhancedClustering(config)
-
 
 # Export main classes and functions
 __all__ = [

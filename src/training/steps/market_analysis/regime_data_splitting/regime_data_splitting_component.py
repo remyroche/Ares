@@ -50,7 +50,7 @@ from src.utils.enhanced_error_handler import (
     EnhancedErrorHandler, ErrorSeverity, ErrorCategory, ErrorContext
 )
 
-# Use existing hardware utilities  
+# Use existing hardware utilities
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
@@ -161,18 +161,18 @@ class RegimeSplittingReport:
 class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     """
     Regime Data Splitting Component.
-    
+
     Tags data by regimes discovered in previous stages using NAS/TAS clustering results.
     Enhanced with comprehensive error handling, validation, and reporting.
     """
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the regime data splitting component."""
         tprint('🔧 Initializing RegimeDataSplittingComponent')
         super().__init__(config)
         self.logger = system_logger.getChild('RegimeDataSplitting')
         tprint('✅ Logger initialized')
-        
+
         # Initialize error handler using existing utilities
         error_context = ErrorContext(
             operation="regime_data_splitting",
@@ -180,82 +180,82 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         )
         self.error_handler = EnhancedErrorHandler(logger=self.logger)
         tprint('✅ Error handler initialized')
-        
+
         # Initialize hardware manager using existing utilities
         self.hardware_manager = UnifiedHardwareManager()
         tprint('✅ Hardware manager initialized')
-        
+
         # Initialize data validation using existing utilities
         self.cross_step_validator = CrossStepValidator()
         self.data_quality_framework = DataQualityFramework()
         tprint('✅ Data validation utilities initialized')
-        
+
         # Validate dependencies and fail fast if missing
         self._validate_dependencies()
         tprint('✅ Dependencies validated')
-        
+
         # Initialize metrics tracking
         self.metrics = RegimeSplittingMetrics()
         self.start_time: Optional[datetime] = None
         tprint('✅ Metrics tracking initialized')
-        
+
         # Initialize hardware optimizations using existing utilities
         self._initialize_hardware_optimizations()
         tprint('✅ Hardware optimizations initialized')
-        
+
         # Initialize memory configuration
         self.max_memory_gb = getattr(self.config, 'max_memory_gb', 8.0)
         self.chunk_size = getattr(self.config, 'chunk_size', 10000)
         self.enable_streaming = getattr(self.config, 'enable_streaming', True)
         tprint(f'📊 Memory config: max_memory_gb={self.max_memory_gb}, chunk_size={self.chunk_size}, streaming={self.enable_streaming}')
-        
+
         # Initialize common utilities
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
-        
+
         # Use hardware manager for all hardware operations
         self.gpu_manager = self.hardware_manager.gpu_manager
-        self.memory_optimizer = self.hardware_manager.memory_optimizer  
+        self.memory_optimizer = self.hardware_manager.memory_optimizer
         self.cpu_optimizer = self.hardware_manager.cpu_optimizer
-        
+
         # Initialize standardized validation and configuration
         self.validator = get_validator(self.logger)
         self.config_manager = get_config_manager()
         self.path_manager = get_path_manager()
-        
+
     def _validate_dependencies(self) -> None:
         """Validate required dependencies and fail fast if missing."""
         tprint('🔍 Validating dependencies')
         try:
             missing_deps = []
-            
+
             if not NUMPY_AVAILABLE:
                 missing_deps.append("numpy")
             if not PANDAS_AVAILABLE:
                 missing_deps.append("pandas")
-                
+
             if missing_deps:
                 error_msg = f"Critical dependencies missing: {', '.join(missing_deps)}"
                 self.logger.error(f"❌ {error_msg}")
                 tprint(f"❌ {error_msg}")
                 raise ImportError(error_msg)
-                
+
             self.logger.info("✅ All required dependencies available")
             tprint("✅ All required dependencies available")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Critical error in dependency validation: {e}")
             raise
-    
+
     def _initialize_hardware_optimizations(self) -> None:
         """Initialize hardware optimizations using existing hardware manager."""
         try:
             # Initialize hardware manager
             init_result = self.hardware_manager.initialize()
-            
+
             if init_result:
                 self.logger.info("🧠 Hardware optimizations initialized successfully")
-                
+
                 # Log hardware info
                 try:
                     hardware_info = self.hardware_manager.get_system_status()
@@ -264,11 +264,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     self.logger.warning(f"⚠️ Could not retrieve hardware info: {e}")
             else:
                 self.logger.info("💻 Using standard optimizations")
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
             # Continue without optimizations
-    
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return [
@@ -276,22 +276,22 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             'regime_splitting_report',
             'regime_validation_results'
         ]
-    
+
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute regime data splitting with comprehensive error handling and reporting.
-        
+
         Args:
             data: Market data for regime tagging
             pipeline_state: Current pipeline state
-            
+
         Returns:
             ComponentResult with regime data splitting results
         """
         self.start_time = datetime.now()
         self.logger.info('✂️ Starting Enhanced Regime Data Splitting')
         tprint('✂️ Starting Enhanced Regime Data Splitting')
-        
+
         # Initialize report
         metrics = RegimeSplittingMetrics()
         report = RegimeSplittingReport(
@@ -299,7 +299,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             metrics=metrics
         )
         tprint(f'📊 Initialized report with status: {report.status.value}')
-        
+
         # Fast fail validation for critical inputs using existing error handler
         if data is None:
             error_msg = "Input data is None. Action required: Provide valid market data for regime splitting."
@@ -313,7 +313,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
             return self._create_failure_result(report, error_msg)
-        
+
         if not isinstance(pipeline_state, dict):
             error_msg = "Pipeline state must be a dictionary. Action required: Ensure pipeline_state is properly initialized as a dict."
             self.error_handler.handle_error(
@@ -326,7 +326,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
             return self._create_failure_result(report, error_msg)
-        
+
         if not self.config.symbol or not self.config.exchange:
             error_msg = "Symbol and exchange must be configured. Action required: Set config.symbol and config.exchange before execution."
             self.error_handler.handle_error(
@@ -339,7 +339,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(error_msg)
             return self._create_failure_result(report, error_msg)
-        
+
         try:
             # Step 1: Validate inputs
             tprint('🔍 Step 1: Validating inputs...')
@@ -350,7 +350,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.extend(validation_result['errors'])
                 return self._create_failure_result(report, "Input validation failed")
             tprint('✅ Input validation passed')
-            
+
             # Step 2: Load and prepare data with memory optimization
             tprint('📊 Step 2: Loading and preparing market data with memory optimization...')
             market_data = self._load_and_prepare_data(data)
@@ -360,7 +360,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.append("Failed to load market data")
                 return self._create_failure_result(report, "Data loading failed")
             tprint(f'✅ Market data loaded: {market_data.shape}')
-            
+
             # Step 2.5: Filter data to match regime assignments (if available)
             # This ensures we use the same limited dataset that was used for clustering
             regime_assignments = self._get_regime_discovery_results(pipeline_state)
@@ -374,7 +374,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         self.logger.info(f"🔍 Filtering market data to match clustering dataset size: {target_size} rows")
                         market_data = market_data.head(target_size)
                         tprint(f'✅ Filtered market data to match clustering size: {market_data.shape}')
-            
+
             # Additional check: If we have regime assignment files, use their size as reference
             try:
                 regime_assignments_from_file = self._load_full_cluster_assignments_from_artifacts()
@@ -385,7 +385,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     tprint(f'✅ Filtered market data to match regime assignments file size: {market_data.shape}')
             except Exception as e:
                 self.logger.debug(f"Could not load regime assignments from file for size reference: {e}")
-            
+
             # Check if we need streaming processing for large datasets
             if len(market_data) > 50000:  # Large dataset threshold
                 tprint('🔄 Large dataset detected, using streaming processing...')
@@ -396,7 +396,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     report.errors.append("Streaming processing failed")
                     return self._create_failure_result(report, "Streaming processing failed")
                 tprint(f'✅ Streaming processing completed: {market_data.shape}')
-            
+
             # Step 3: Get regime discovery results
             tprint('🔍 Step 3: Retrieving regime discovery results...')
             regime_discovery = self._get_regime_discovery_results(pipeline_state)
@@ -406,20 +406,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.append("No regime discovery results available")
                 return self._create_failure_result(report, "Missing regime discovery results")
             tprint('✅ Regime discovery results retrieved')
-            
+
             # Step 4: Perform regime data splitting
             tprint('✂️ Step 4: Performing regime data splitting...')
             splitting_result = await self._perform_regime_splitting(
                 market_data, regime_discovery, report
             )
-            
+
             if splitting_result is None:
                 error_msg = "Regime splitting returned None - check method implementation"
                 tprint(f'❌ {error_msg}')
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.append(error_msg)
                 return self._create_failure_result(report, "Regime splitting failed")
-            
+
             if not splitting_result['success']:
                 error_msg = f"Regime splitting failed: {splitting_result['errors']}"
                 if "5-20 regimes" in str(splitting_result['errors']):
@@ -429,7 +429,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.extend(splitting_result['errors'])
                 return self._create_failure_result(report, error_msg)
             tprint('✅ Regime data splitting completed')
-            
+
             # Step 5: Validate results
             tprint('🔍 Step 5: Validating splitting results...')
             validation_result = self._validate_splitting_results(splitting_result, report)
@@ -439,27 +439,27 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.extend(validation_result['errors'])
                 return self._create_failure_result(report, "Result validation failed")
             tprint('✅ Result validation passed')
-            
+
             # Step 6: Generate comprehensive report
             tprint('📊 Step 6: Generating comprehensive report...')
             report = self._generate_comprehensive_report(
                 splitting_result, market_data, report
             )
             tprint('✅ Comprehensive report generated')
-            
+
             # Step 7: Create artifacts
             tprint('💾 Step 7: Creating artifacts...')
             artifacts = await self._create_artifacts(splitting_result, report)
             tprint('✅ Artifacts created')
-            
+
             # Update metrics
             tprint('📈 Updating metrics...')
             self._update_metrics(report, splitting_result)
-            
+
             report.status = RegimeSplittingStatus.COMPLETED
             self.logger.info(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
             tprint(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
-            
+
             # Save artifacts persistently using the artifact manager
             try:
                 save_report = await self.save_artifacts(artifacts, {
@@ -476,7 +476,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 )
             except Exception as e:
                 tprint(f"⚠️ [REGIME_DATA_SPLITTING] Failed to save artifacts persistently: {e}", color="yellow")
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -490,74 +490,74 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'artifacts_saved_persistently': True
                 }
             )
-            
+
         except Exception as e:
             self.logger.error(f'❌ Enhanced Regime Data Splitting failed: {e}')
             tprint(f'❌ Enhanced Regime Data Splitting failed: {e}')
             import traceback
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
             tprint(f'❌ Error details: {traceback.format_exc()}')
-            
+
             report.status = RegimeSplittingStatus.FAILED
             report.errors.append(f"Unexpected error: {str(e)}")
-            
+
             return self._create_failure_result(report, str(e))
-    
+
     def _validate_inputs(self, data: Any, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Validate input data and pipeline state."""
         self.logger.info("🔍 Validating inputs...")
         tprint("🔍 Validating inputs...")
-        
+
         validation_result = {
             'valid': True,
             'errors': [],
             'warnings': []
         }
-        
+
         # Check data availability with standardized error messages
         if data is None:
             validation_result['valid'] = False
             validation_result['errors'].append("VALIDATION_ERROR: Input data is None. Action required: Provide valid market data.")
-        
+
         # Check pipeline state
         if not isinstance(pipeline_state, dict):
             validation_result['valid'] = False
             validation_result['errors'].append("VALIDATION_ERROR: Pipeline state must be a dictionary. Action required: Initialize pipeline_state as dict.")
-        
+
         # Check for required regime discovery results
         required_keys = ['hmm_regime_discovery_result']
         for key in required_keys:
             if key not in pipeline_state:
                 validation_result['warnings'].append(f"WARNING: Missing pipeline state key '{key}'. Action suggested: Ensure previous steps completed successfully.")
-        
+
         # Check configuration
         if not self.config.symbol:
             validation_result['valid'] = False
             validation_result['errors'].append("CONFIG_ERROR: Symbol not configured. Action required: Set config.symbol.")
-        
+
         if not self.config.exchange:
             validation_result['valid'] = False
             validation_result['errors'].append("CONFIG_ERROR: Exchange not configured. Action required: Set config.exchange.")
-        
+
         if validation_result['valid']:
             self.logger.info("✅ Input validation passed")
             tprint("✅ Input validation passed")
         else:
             self.logger.error(f"❌ Input validation failed: {validation_result['errors']}")
             tprint(f"❌ Input validation failed: {validation_result['errors']}")
-        
+
         return validation_result
-    
+
     def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime splitting using memory-optimized utilities."""
         self.logger.info("📊 Loading and preparing market data with memory optimization...")
         tprint("📊 Loading and preparing market data with memory optimization...")
-        
+
         try:
             if data is None:
                 self.logger.error("❌ No data provided")
                 return None
-            
+
             # Handle different data types with memory optimization
             if isinstance(data, pd.DataFrame):
                 # Use memory-optimized view instead of copy when possible
@@ -568,16 +568,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.error(f"❌ Unsupported data type: {type(data)}")
                 tprint(f"❌ Unsupported data type: {type(data)}")
                 return None
-            
+
             # Validate DataFrame structure using common utilities
             if not isinstance(market_data, pd.DataFrame):
                 self.logger.error("❌ Data is not a DataFrame")
                 return None
-            
+
             if market_data.empty:
                 self.logger.error("❌ Market data is empty")
                 return None
-            
+
             # Check for required columns using common utilities
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             if not validate_dataframe_columns(market_data, required_columns):
@@ -589,39 +589,39 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             market_data[col] = 1000.0  # Default volume
                         else:
                             market_data[col] = market_data.get('close', 100.0)  # Use close price as fallback
-            
+
             # Optimize DataFrame for M1 if available
             if is_m1_available():
                 market_data = optimize_dataframe_for_m1(market_data)
-            
+
             # Apply memory optimization
             market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
-            
+
             # Validate and clean data using common utilities
             market_data = safe_fillna(market_data, method='ffill')
-            
+
             # Optimize data types
             market_data = optimize_dataframe_dtypes(market_data)
-            
+
             # Validate data quality using common utilities
             quality_metrics = calculate_data_quality_metrics(market_data)
             if quality_metrics.get('missing_percentage', 0) > 10:
                 self.logger.warning(f"⚠️ High missing data percentage: {quality_metrics['missing_percentage']:.2f}%")
-            
+
             # Create data quality report
             quality_report = create_data_quality_report(market_data)
             if quality_report.get('issues'):
                 self.logger.warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
-            
+
             self.logger.info(f"✅ Market data loaded: {market_data.shape}")
             tprint(f"✅ Market data loaded: {market_data.shape}")
             return market_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error loading market data: {e}")
             tprint(f"❌ Error loading market data: {e}")
             return None
-    
+
     def _create_memory_optimized_view(self, data: pd.DataFrame) -> pd.DataFrame:
         """Create a memory-optimized view of the DataFrame."""
         try:
@@ -629,55 +629,55 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             with memory_checkpoint("dataframe_view_creation"):
                 # Optimize data types first to reduce memory footprint
                 optimized_data = self.memory_optimizer.optimize_dataframe_memory(data)
-                
+
                 # Use view instead of copy when possible
                 if hasattr(optimized_data, 'view'):
                     return optimized_data.view()
                 else:
                     # Fallback to optimized copy only if view not available
                     return optimized_data.copy(deep=False)
-                    
+
         except Exception as e:
             self.logger.warning(f"⚠️ Memory optimization failed, using standard copy: {e}")
             return data.copy(deep=False)
-    
+
     async def _stream_process_large_dataset(self, data: pd.DataFrame, chunk_size: int = 10000) -> pd.DataFrame:
         """Process large datasets in streaming fashion to reduce memory usage."""
         try:
             total_rows = len(data)
             if total_rows <= chunk_size:
                 return self._process_single_chunk(data)
-            
+
             self.logger.info(f"🔄 Streaming processing for {total_rows} rows in chunks of {chunk_size}")
-            
+
             # Initialize memory monitoring
             self.memory_optimizer.start_monitoring()
-            
+
             processed_chunks = []
             memory_usage_history = []
-            
+
             for i in range(0, total_rows, chunk_size):
                 chunk_end = min(i + chunk_size, total_rows)
                 chunk = data.iloc[i:chunk_end]
-                
+
                 # Process chunk with memory optimization
                 processed_chunk = self._process_single_chunk(chunk)
                 if processed_chunk is not None:
                     processed_chunks.append(processed_chunk)
-                
+
                 # Monitor memory usage
                 current_memory = self.memory_optimizer.get_memory_usage()
                 memory_usage_history.append(current_memory)
-                
+
                 # Perform cleanup if memory usage is high
                 memory_percent = current_memory.get('memory_percent', 0)
                 if memory_percent > 80:  # 80% of max memory
                     self._perform_emergency_cleanup()
-                
+
                 # Periodic cleanup every 5 chunks
                 if (i // chunk_size) % 5 == 0:
                     await self._perform_periodic_cleanup()
-            
+
             # Merge processed chunks efficiently
             if processed_chunks:
                 result = self._merge_chunks_memory_efficient(processed_chunks)
@@ -685,34 +685,34 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 return result
             else:
                 raise ValueError("No chunks were successfully processed")
-                
+
         except Exception as e:
             self.logger.error(f"❌ Streaming processing failed: {e}")
             raise
-    
+
     def _process_single_chunk(self, chunk: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Process a single chunk with memory optimization."""
         try:
             if chunk.empty:
                 return None
-            
+
             # Use memory-optimized operations
             with memory_checkpoint("chunk_processing"):
                 # Apply regime tagging logic here (placeholder)
                 processed_chunk = chunk.copy(deep=False)
-                
+
                 # Add regime information efficiently
                 processed_chunk['regime_state'] = self._assign_regime_states_efficient(chunk)
-                
+
                 # Optimize memory usage of the processed chunk
                 processed_chunk = self.memory_optimizer.optimize_dataframe_memory(processed_chunk)
-                
+
                 return processed_chunk
-                
+
         except Exception as e:
             self.logger.error(f"❌ Chunk processing failed: {e}")
             return None
-    
+
     def _assign_regime_states_efficient(self, chunk: pd.DataFrame) -> np.ndarray:
         """Assign regime states efficiently without creating large intermediate arrays."""
         try:
@@ -721,7 +721,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # Simple regime detection based on price volatility
                 price_changes = chunk['close'].pct_change().fillna(0)
                 volatility = price_changes.rolling(20, min_periods=1).std().fillna(0)
-                
+
                 # Create regime assignments using efficient binning
                 regime_states = pd.cut(
                     volatility,
@@ -729,81 +729,81 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     labels=[0, 1, 2, 3],
                     include_lowest=True
                 ).astype(np.int32)
-                
+
                 return regime_states.values
             else:
                 # Fallback to simple assignment
                 return np.random.randint(0, 4, size=len(chunk), dtype=np.int32)
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Regime assignment failed: {e}")
             return np.zeros(len(chunk), dtype=np.int32)
-    
+
     def _merge_chunks_memory_efficient(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """Merge chunks using memory-efficient operations."""
         try:
             if not chunks:
                 return pd.DataFrame()
-            
+
             if len(chunks) == 1:
                 return chunks[0]
-            
+
             # Use memory-optimized concatenation
             with memory_checkpoint("chunk_merging"):
                 # Sort chunks by index to maintain temporal order
                 sorted_chunks = sorted(chunks, key=lambda x: x.index[0] if not x.empty else 0)
-                
+
                 # Concatenate with memory optimization
                 result = pd.concat(sorted_chunks, ignore_index=True, copy=False)
-                
+
                 # Optimize final result
                 result = self.memory_optimizer.optimize_dataframe_memory(result)
-                
+
                 return result
-                
+
         except Exception as e:
             self.logger.error(f"❌ Chunk merging failed: {e}")
             return pd.DataFrame()
-    
+
     async def _perform_periodic_cleanup(self):
         """Perform periodic memory cleanup during processing."""
         try:
             # Force garbage collection
             import gc
             gc.collect()
-            
+
             # Use memory optimizer cleanup
             if hasattr(self.memory_optimizer, 'cleanup_memory'):
                 self.memory_optimizer.cleanup_memory()
-            
+
             # Log memory status
             current_memory = self.memory_optimizer.get_current_memory_usage()
             self.logger.debug(f"🧹 Periodic cleanup completed, memory usage: {current_memory:.2f} GB")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Periodic cleanup failed: {e}")
-    
+
     def _perform_emergency_cleanup(self):
         """Perform emergency memory cleanup when memory usage is high."""
         try:
             self.logger.warning("🚨 Performing emergency memory cleanup")
-            
+
             # Force garbage collection multiple times
             import gc
             for _ in range(3):
                 gc.collect()
-            
+
             # Use aggressive memory optimization
             if hasattr(self.memory_optimizer, 'aggressive_cleanup'):
                 self.memory_optimizer.aggressive_cleanup()
-            
+
             # Log memory status after cleanup
             current_memory = self.memory_optimizer.get_current_memory_usage()
             self.logger.info(f"🧹 Emergency cleanup completed, memory usage: {current_memory:.2f} GB")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Emergency cleanup failed: {e}")
-    
+
     def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get NAS/TAS clustering results from pipeline state or load from previous outcomes."""
         self.logger.info("🔍 Retrieving NAS/TAS clustering results...")
@@ -836,7 +836,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if regime_discovery is None:
                 self.logger.error("❌ No regime discovery results found in pipeline state or outcomes")
                 return None
-            
+
             # Validate regime discovery results
             if isinstance(regime_discovery, dict):
                 if not regime_discovery:
@@ -846,9 +846,9 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 if not regime_discovery:
                     self.logger.error("❌ Regime discovery results list is empty")
                     return None
-            
+
             return regime_discovery
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error retrieving regime discovery results: {e}")
             return None
@@ -1220,48 +1220,48 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Use the trained ML model from regime ensemble training to predict regime states with probabilistic outputs."""
         try:
             self.logger.info("🤖 Using ML model to predict regime states with probabilistic outputs")
-            
+
             # Check if we have the new probabilistic prediction method available
             if 'stacker_lgbm_calibrated' in ensemble_result:
                 # Use the new probabilistic prediction method
                 from src.training.steps.market_analysis.components.regime_ensemble_training import RegimeEnsembleTrainingComponent
-                
+
                 # Create a temporary component instance to use the prediction method
                 ensemble_component = RegimeEnsembleTrainingComponent()
-                
+
                 # Extract feature names from metadata
                 metadata = ensemble_result.get('metadata', {})
                 feature_names = metadata.get('feature_names', [])
-                
+
                 if not feature_names:
                     self.logger.error("❌ No feature names found in regime ensemble training metadata")
                     return None
-                
+
                 self.logger.info(f"📊 Using {len(feature_names)} features for regime prediction")
-                
+
                 # Prepare features for prediction
                 available_features = []
                 missing_features = []
-                
+
                 for feature_name in feature_names:
                     if feature_name in market_data.columns:
                         available_features.append(feature_name)
                     else:
                         missing_features.append(feature_name)
-                
+
                 if missing_features:
                     self.logger.warning(f"⚠️ Missing {len(missing_features)} features: {missing_features[:5]}...")
                     self.logger.warning("⚠️ Will use available features only")
-                
+
                 if not available_features:
                     self.logger.error("❌ No required features found in market data")
                     return None
-                
+
                 # Prepare feature matrix
                 X = market_data[available_features].fillna(0).values
-                
+
                 self.logger.info(f"📊 Prepared feature matrix: {X.shape}")
-                
+
                 # Use the probabilistic prediction method
                 prediction_result = ensemble_component.predict_regimes_with_probabilities(
                     stacker_result=ensemble_result,
@@ -1269,26 +1269,26 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     feature_names=available_features,
                     scaler=None  # No scaler needed as we're using the raw features
                 )
-                
+
                 if 'error' in prediction_result:
                     self.logger.error(f"❌ Error in probabilistic prediction: {prediction_result['error']}")
                     return None
-                
+
                 # Extract regime labels
                 regime_predictions = prediction_result.get('regime_labels')
                 regime_probabilities = prediction_result.get('regime_probabilities')
-                
+
                 if regime_predictions is None:
                     self.logger.error("❌ No regime predictions returned from probabilistic method")
                     return None
-                
+
                 self.logger.info(f"✅ Generated {len(regime_predictions)} regime predictions with probabilities")
-                
+
                 # Store the probabilistic information for later use
                 self._cached_regime_probabilities = regime_probabilities
                 self._cached_regime_analysis = prediction_result.get('regime_analysis', {})
                 self._cached_ensemble_probabilities = prediction_result.get('ensemble_probabilities', {})
-                
+
                 # Validate regime count
                 unique_regimes = len(np.unique(regime_predictions))
                 if unique_regimes < 5:
@@ -1297,15 +1297,15 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 elif unique_regimes > 20:
                     self.logger.error(f"❌ Too many regimes predicted: {unique_regimes} found, maximum 20 allowed")
                     return None
-                
+
                 self.logger.info(f"✅ ML model regime prediction successful: {len(regime_predictions)} assignments with {unique_regimes} regimes")
                 return regime_predictions.astype(np.int32)
-            
+
             else:
                 # Fallback to old method if new structure not available
                 self.logger.warning("⚠️ Using fallback prediction method - consider updating to probabilistic outputs")
                 return self._predict_regime_states_with_ml_model_fallback(ensemble_result, market_data)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error predicting regime states with ML model: {e}")
             return None
@@ -1314,54 +1314,54 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Fallback method for predicting regime states with ML model (old implementation)."""
         try:
             self.logger.info("🤖 Using fallback ML model to predict regime states")
-            
+
             # Extract the trained model
             if 'stacker_lgbm_calibrated' not in ensemble_result:
                 self.logger.error("❌ No trained ML model found in regime ensemble training result")
                 return None
-            
+
             model = ensemble_result['stacker_lgbm_calibrated']
             self.logger.info(f"✅ Found trained ML model: {type(model)}")
-            
+
             # Extract feature names from metadata
             metadata = ensemble_result.get('metadata', {})
             feature_names = metadata.get('feature_names', [])
-            
+
             if not feature_names:
                 self.logger.error("❌ No feature names found in regime ensemble training metadata")
                 return None
-            
+
             self.logger.info(f"📊 Using {len(feature_names)} features for regime prediction")
-            
+
             # Prepare features for prediction
             available_features = []
             missing_features = []
-            
+
             for feature_name in feature_names:
                 if feature_name in market_data.columns:
                     available_features.append(feature_name)
                 else:
                     missing_features.append(feature_name)
-            
+
             if missing_features:
                 self.logger.warning(f"⚠️ Missing {len(missing_features)} features: {missing_features[:5]}...")
                 self.logger.warning("⚠️ Will use available features only")
-            
+
             if not available_features:
                 self.logger.error("❌ No required features found in market data")
                 return None
-            
+
             # Prepare feature matrix
             X = market_data[available_features].fillna(0).values
-            
+
             self.logger.info(f"📊 Prepared feature matrix: {X.shape}")
-            
+
             # Make predictions
             self.logger.info("🔮 Making regime predictions with ML model...")
             regime_predictions = model.predict(X)
-            
+
             self.logger.info(f"✅ Generated {len(regime_predictions)} regime predictions")
-            
+
             # Validate regime count
             unique_regimes = len(np.unique(regime_predictions))
             if unique_regimes < 5:
@@ -1370,10 +1370,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             elif unique_regimes > 20:
                 self.logger.error(f"❌ Too many regimes predicted: {unique_regimes} found, maximum 20 allowed")
                 return None
-            
+
             self.logger.info(f"✅ ML model regime prediction successful: {len(regime_predictions)} assignments with {unique_regimes} regimes")
             return regime_predictions.astype(np.int32)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error predicting regime states with ML model: {e}")
             return None
@@ -1382,37 +1382,37 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Use the trained ML model to predict regime probabilities with comprehensive probabilistic outputs."""
         try:
             self.logger.info("🤖 Using ML model to predict regime probabilities with comprehensive outputs")
-            
+
             # Check if we have cached probabilities from the state prediction
             if hasattr(self, '_cached_regime_probabilities') and self._cached_regime_probabilities is not None:
                 self.logger.info("✅ Using cached regime probabilities from state prediction")
                 return self._cached_regime_probabilities
-            
+
             # If not cached, use the probabilistic prediction method
             if 'stacker_lgbm_calibrated' in ensemble_result:
                 from src.training.steps.market_analysis.components.regime_ensemble_training import RegimeEnsembleTrainingComponent
-                
+
                 # Create a temporary component instance to use the prediction method
                 ensemble_component = RegimeEnsembleTrainingComponent()
-                
+
                 # Extract feature names from metadata
                 metadata = ensemble_result.get('metadata', {})
                 feature_names = metadata.get('feature_names', [])
-                
+
                 if not feature_names:
                     self.logger.error("❌ No feature names found in regime ensemble training metadata")
                     return None
-                
+
                 # Prepare features for prediction
                 available_features = [f for f in feature_names if f in market_data.columns]
-                
+
                 if not available_features:
                     self.logger.error("❌ No required features found in market data")
                     return None
-                
+
                 # Prepare feature matrix
                 X = market_data[available_features].fillna(0).values
-                
+
                 # Use the probabilistic prediction method
                 prediction_result = ensemble_component.predict_regimes_with_probabilities(
                     stacker_result=ensemble_result,
@@ -1420,26 +1420,26 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     feature_names=available_features,
                     scaler=None  # No scaler needed as we're using the raw features
                 )
-                
+
                 if 'error' in prediction_result:
                     self.logger.error(f"❌ Error in probabilistic prediction: {prediction_result['error']}")
                     return None
-                
+
                 # Extract regime probabilities
                 regime_probabilities = prediction_result.get('regime_probabilities')
-                
+
                 if regime_probabilities is None:
                     self.logger.error("❌ No regime probabilities returned from probabilistic method")
                     return None
-                
+
                 self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
                 return regime_probabilities
-            
+
             else:
                 # Fallback to old method if new structure not available
                 self.logger.warning("⚠️ Using fallback probability prediction method")
                 return self._predict_regime_probabilities_with_ml_model_fallback(ensemble_result, market_data)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error predicting regime probabilities with ML model: {e}")
             return None
@@ -1448,36 +1448,36 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Fallback method for predicting regime probabilities with ML model (old implementation)."""
         try:
             self.logger.info("🤖 Using fallback ML model to predict regime probabilities")
-            
+
             # Extract the trained model
             if 'stacker_lgbm_calibrated' not in ensemble_result:
                 self.logger.error("❌ No trained ML model found in regime ensemble training result")
                 return None
-            
+
             model = ensemble_result['stacker_lgbm_calibrated']
-            
+
             # Extract feature names from metadata
             metadata = ensemble_result.get('metadata', {})
             feature_names = metadata.get('feature_names', [])
-            
+
             if not feature_names:
                 self.logger.error("❌ No feature names found in regime ensemble training metadata")
                 return None
-            
+
             # Prepare features for prediction
             available_features = [f for f in feature_names if f in market_data.columns]
-            
+
             if not available_features:
                 self.logger.error("❌ No required features found in market data")
                 return None
-            
+
             # Prepare feature matrix
             X = market_data[available_features].fillna(0).values
-            
+
             # Make probability predictions
             self.logger.info("🔮 Making regime probability predictions with ML model...")
             regime_probabilities = model.predict_proba(X)
-            
+
             self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
             return regime_probabilities
 
@@ -1485,16 +1485,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Get regime probabilities for downstream models (Analyst & Tactician)."""
         try:
             self.logger.info("📊 Providing regime probabilities for downstream models")
-            
+
             regime_info = {
                 'regime_probabilities': getattr(self, '_cached_regime_probabilities', None),
                 'has_probabilistic_outputs': hasattr(self, '_cached_regime_probabilities') and self._cached_regime_probabilities is not None,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             self.logger.info("✅ Regime probabilities prepared for downstream models")
             return regime_info
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error providing regime probabilities: {e}")
             return {
@@ -1505,22 +1505,22 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             }
 
     async def _perform_regime_splitting(
-        self, 
-        market_data: pd.DataFrame, 
+        self,
+        market_data: pd.DataFrame,
         regime_discovery: Dict[str, Any],
         report: RegimeSplittingReport
     ) -> Dict[str, Any]:
         """Perform the actual regime data splitting process using common utilities and hardware optimizations."""
         self.logger.info("✂️ Performing regime data splitting...")
         tprint("✂️ Performing regime data splitting...")
-        
+
         # Use hardware manager for proper memory management
         from src.utils.hardware.memory_optimization import memory_context
         with memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
                 regime_states = self._extract_regime_states(regime_discovery, market_data)
-                
+
                 # Handle ML model probabilities if using regime ensemble training
                 if isinstance(regime_discovery, dict) and 'regime_ensemble_training_result' in regime_discovery:
                     regime_probabilities = self._predict_regime_probabilities_with_ml_model(
@@ -1539,7 +1539,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # Validate regime states length before alignment
                 original_market_len = len(market_data)
                 original_regime_len = len(regime_states)
-                
+
                 # Check if regime states length is reasonable but be more flexible
                 if original_regime_len < 10:
                     error_msg = f"Regime states length ({original_regime_len}) is too small for any meaningful analysis. Minimum 10 assignments required."
@@ -1550,12 +1550,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'errors': [error_msg],
                         'data': None
                     }
-                
+
                 # Log warnings for limited data but continue processing
                 if original_regime_len < 100:
                     self.logger.warning(f"⚠️ Limited regime states available: {original_regime_len} assignments for {original_market_len} market data points")
                     self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
-                
+
                 # Check if regime states length is significantly different from market data length
                 length_ratio = original_regime_len / original_market_len
                 if length_ratio < 0.01:  # Less than 1% of expected length - this is truly problematic
@@ -1679,7 +1679,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         regime_probabilities_aligned = None
                 else:
                     regime_probabilities_aligned = None
-                
+
                 # Final validation of aligned data
                 if len(market_data_aligned) != len(regime_states_aligned):
                     error = self.error_handler.handle_alignment_error(
@@ -1697,7 +1697,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'errors': [error.to_string()],
                         'data': None
                     }
-                
+
                 # Log alignment success
                 alignment_info = {
                     'original_market_data_length': original_market_len,
@@ -1707,10 +1707,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'temporal_validation_passed': temporal_validation_passed
                 }
                 self.logger.info(f"✅ Data alignment completed successfully: {alignment_info}")
-                
+
                 # Clean up original data references using hardware manager
                 del market_data
-                
+
                 # Optimize memory using hardware manager
                 try:
                     if hasattr(self.hardware_manager, 'optimize_memory'):
@@ -1723,7 +1723,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 except Exception as e:
                     self.logger.warning(f"⚠️ Memory optimization failed: {e}")
                     # Continue without memory optimization
-                
+
                 # Add regime information to market data using safe operations
                 market_data_aligned['regime_state'] = regime_states_aligned
                 if regime_probabilities_aligned is not None:
@@ -1735,13 +1735,13 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         market_data_aligned['regime_confidence'] = 1.0
                 else:
                     market_data_aligned['regime_confidence'] = 1.0
-                
+
                 # Calculate regime statistics using memory-optimized utilities
                 regime_stats = self._calculate_regime_statistics_memory_optimized(market_data_aligned)
-                
+
                 # Get regime probabilities for downstream models
                 regime_probabilities_info = self.get_regime_probabilities()
-                
+
                 # Create regime data dictionary
                 regime_data = {
                     'market_data': market_data_aligned,
@@ -1750,20 +1750,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'regime_statistics': regime_stats,
                     'regime_probabilities_info': regime_probabilities_info
                 }
-                
+
                 # Add regime probability features to market data for downstream models
                 if regime_probabilities_aligned is not None:
                     n_regimes = regime_probabilities_aligned.shape[1] if len(regime_probabilities_aligned.shape) > 1 else 1
                     for i in range(n_regimes):
                         market_data_aligned[f'regime_prob_{i}'] = regime_probabilities_aligned[:, i]
-                
+
                 # Optimize final DataFrame for M1 if available
                 if is_m1_available():
                     regime_data['market_data'] = optimize_dataframe_for_m1(regime_data['market_data'])
-                
+
                 self.logger.info(f"✅ Regime splitting completed: {len(np.unique(regime_states_aligned))} regimes")
                 self.logger.info(f"📊 Added {n_regimes} regime probability features for downstream models")
-                
+
                 return {
                     'success': True,
                     'data': regime_data,
@@ -1779,7 +1779,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'errors': [f"Regime splitting failed: {str(e)}"],
                     'data': None
                 }
-    
+
     def _extract_regime_states(self, regime_discovery: Dict[str, Any], market_data: pd.DataFrame = None) -> Optional[np.ndarray]:
         """Extract regime states from regime discovery results."""
         try:
@@ -1789,23 +1789,23 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"🔍 Regime discovery keys: {list(regime_discovery.keys())}")
             elif isinstance(regime_discovery, list):
                 self.logger.info(f"🔍 Regime discovery list length: {len(regime_discovery)}")
-            
+
             # Handle regime ensemble training result (ML model)
             if isinstance(regime_discovery, dict) and 'regime_ensemble_training_result' in regime_discovery:
                 self.logger.info("🤖 Found regime ensemble training result - using ML model to predict regime states")
                 return self._predict_regime_states_with_ml_model(regime_discovery['regime_ensemble_training_result'], market_data)
-            
+
             # Handle the case where clustering_result is a string representation of the component
             if isinstance(regime_discovery, dict) and 'clustering_result' in regime_discovery:
                 clustering_result = regime_discovery['clustering_result']
                 self.logger.info(f"🔍 Clustering result type: {type(clustering_result)}")
-                
+
                 # If it's a string representation of the component, we need to get the actual data
                 if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
                     self.logger.warning("⚠️ Clustering result is a string representation of component object")
                     self.logger.warning("⚠️ This indicates the clustering component didn't properly serialize its results")
                     self.logger.warning("⚠️ Attempting to load from saved artifacts...")
-                    
+
                     # Try to load from the component's saved results
                     try:
                         # Look for saved clustering results in the artifacts directory
@@ -1817,11 +1817,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                                 # Get the most recent file
                                 latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
                                 self.logger.info(f"📁 Loading clustering results from: {latest_file}")
-                                
+
                                 import pickle
                                 with open(latest_file, 'rb') as f:
                                     saved_results = pickle.load(f)
-                                
+
                                 # Extract the actual clustering data
                                 if 'results' in saved_results:
                                     results = saved_results['results']
@@ -1884,7 +1884,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         self.logger.error("❌ Clustering result doesn't have current_results attribute and is not a dictionary")
                         self.logger.error(f"❌ Clustering result type: {type(clustering_result)}")
                         return None
-            
+
             # Try different possible structures for direct regime discovery
             elif 'cluster_assignments' in regime_discovery:
                 metadata = self._load_cluster_assignment_metadata()
@@ -1920,20 +1920,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                                 states = value
                                 self.logger.info(f"✅ Found numpy array in key '{key}' with shape {value.shape}")
                                 break
-                
+
                 if 'states' not in locals():
                     self.logger.error("❌ Cannot extract regime states from discovery results")
                     self.logger.error(f"❌ Available keys: {list(regime_discovery.keys()) if isinstance(regime_discovery, dict) else 'Not a dict'}")
                     return None
-            
+
             # Convert to numpy array if needed and ensure proper data types
             if not isinstance(states, np.ndarray):
                 states = np.array(states)
-            
+
             # Convert int64 to int32 to avoid JSON serialization issues
             if states.dtype == np.int64:
                 states = states.astype(np.int32)
-            
+
             # Validate regime count - enforce 5-20 regime requirement
             unique_regimes = len(np.unique(states))
             if unique_regimes < 5:
@@ -1942,17 +1942,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             elif unique_regimes > 20:
                 self.logger.error(f"❌ Too many regimes: {unique_regimes} found, maximum 20 allowed")
                 return None
-            
+
             self.logger.info(f"✅ Regime states extracted: {len(states)} assignments with {unique_regimes} regimes")
             return states
-            
+
         except ValueError as e:
             self.logger.error(f"❌ Error extracting regime states: {e}")
             raise
         except Exception as e:
             self.logger.error(f"❌ Unexpected error extracting regime states: {e}")
             return None
-    
+
     def _extract_regime_probabilities(self, regime_discovery: Dict[str, Any]) -> Optional[np.ndarray]:
         """Extract regime probabilities from regime discovery results."""
         try:
@@ -1962,11 +1962,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # For ML models, we can get probabilities using predict_proba
                 # This will be handled in the regime splitting logic
                 return None
-            
+
             # Handle the case where clustering_result is a string representation of the component
             if isinstance(regime_discovery, dict) and 'clustering_result' in regime_discovery:
                 clustering_result = regime_discovery['clustering_result']
-                
+
                 # If it's a string representation of the component, try to load from saved artifacts
                 if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
                     try:
@@ -1976,11 +1976,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             result_files = list(artifacts_dir.glob("nas_tas_clustering_results_*.pkl"))
                             if result_files:
                                 latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
-                                
+
                                 import pickle
                                 with open(latest_file, 'rb') as f:
                                     saved_results = pickle.load(f)
-                                
+
                                 # Extract the actual clustering data
                                 if 'results' in saved_results:
                                     results = saved_results['results']
@@ -2032,25 +2032,25 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     probs = regime_discovery['proba']
                 else:
                     return None  # Probabilities are optional
-            
+
             # Convert to numpy array if needed
             if not isinstance(probs, np.ndarray):
                 probs = np.array(probs)
-            
+
             return probs
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error extracting regime probabilities: {e}")
             return None
-    
+
     def _calculate_regime_statistics(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate comprehensive regime statistics using common utilities."""
         try:
             regime_stats = {}
-            
+
             # Basic regime distribution using safe operations
             regime_counts = safe_dataframe_operation(
-                market_data, 
+                market_data,
                 lambda df: df['regime_state'].value_counts().to_dict()
             )
             # Convert numpy int64/int32 keys to regular Python ints for JSON serialization
@@ -2058,26 +2058,26 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             regime_stats['regime_distribution'] = regime_counts
             regime_stats['total_regimes'] = len(regime_counts)
             regime_stats['total_data_points'] = len(market_data)
-            
+
             # Calculate statistics per regime using safe operations
             regime_details = {}
             unique_regimes = safe_dataframe_operation(
-                market_data, 
+                market_data,
                 lambda df: df['regime_state'].unique()
             )
-            
+
             for regime_id in unique_regimes:
                 # Convert regime_id to regular Python int to avoid JSON serialization issues
                 regime_id_int = int(regime_id)
                 regime_data = safe_filter_dataframe(
-                    market_data, 
+                    market_data,
                     f"regime_state == {regime_id_int}"
                 )
-                
+
                 # Use safe math operations for calculations
                 count = len(regime_data)
                 percentage = safe_divide(count, len(market_data), 0.0) * 100
-                
+
                 # Use the converted regime_id_int for JSON serialization
                 regime_details[regime_id_int] = {
                     'count': count,
@@ -2090,11 +2090,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'max': safe_float(regime_data['close'].max()) if 'close' in regime_data.columns else 0.0
                     }
                 }
-            
+
             regime_stats['regime_details'] = regime_details
-            
+
             return regime_stats
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime statistics: {e}")
             return {
@@ -2103,7 +2103,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'regime_distribution': {},
                 'total_data_points': 0
             }
-    
+
     def _calculate_regime_statistics_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate regime statistics with M1 optimizations."""
         try:
@@ -2112,38 +2112,38 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 return self._calculate_regime_statistics_m1_optimized(market_data)
             else:
                 return self._calculate_regime_statistics(market_data)
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error in optimized regime statistics: {e}")
             return self._calculate_regime_statistics(market_data)
-    
+
     def _calculate_regime_statistics_m1_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate regime statistics optimized for M1 hardware."""
         try:
             regime_stats = {}
-            
+
             # Use M1-optimized array operations
             regime_states = create_m1_optimized_array(market_data['regime_state'].values)
-            
+
             # Basic regime distribution using M1 optimizations
             unique_regimes, counts = np.unique(regime_states, return_counts=True)
             # Convert numpy int64/int32 keys to regular Python ints for JSON serialization
             regime_counts = {int(k): int(v) for k, v in zip(unique_regimes, counts)}
-            
+
             regime_stats['regime_distribution'] = regime_counts
             regime_stats['total_regimes'] = len(unique_regimes)
             regime_stats['total_data_points'] = len(market_data)
-            
+
             # Calculate statistics per regime using M1-optimized operations
             regime_details = {}
             for regime_id in unique_regimes:
                 mask = regime_states == regime_id
                 regime_data = market_data[mask]
-                
+
                 # Use M1-optimized math operations
                 count = int(np.sum(mask))
                 percentage = safe_divide(count, len(market_data), 0.0) * 100
-                
+
                 # Convert regime_id to regular Python int for JSON serialization
                 regime_details[int(regime_id)] = {
                     'count': count,
@@ -2156,11 +2156,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'max': safe_float(regime_data['close'].max()) if 'close' in regime_data.columns else 0.0
                     }
                 }
-            
+
             regime_stats['regime_details'] = regime_details
-            
+
             return regime_stats
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in M1-optimized regime statistics: {e}")
             fallback_result = self._calculate_regime_statistics(market_data)
@@ -2173,17 +2173,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'total_data_points': 0
                 }
             return fallback_result
-    
+
     def _calculate_regime_statistics_memory_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate regime statistics with comprehensive memory optimization."""
         try:
             # Use memory context for optimization
             with memory_checkpoint("regime_statistics_calculation"):
                 regime_stats = {}
-                
+
                 # Get regime states efficiently without copying
                 regime_states = market_data['regime_state'].values if 'regime_state' in market_data.columns else np.array([])
-                
+
                 if len(regime_states) == 0:
                     self.logger.warning("⚠️ No regime states found for statistics calculation")
                     return {
@@ -2192,28 +2192,28 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'regime_distribution': {},
                         'total_data_points': 0
                     }
-                
+
                 # Use memory-efficient operations for basic statistics
                 unique_regimes, counts = np.unique(regime_states, return_counts=True)
-                
+
                 # Convert to memory-efficient dictionary
                 regime_counts = {int(k): int(v) for k, v in zip(unique_regimes, counts)}
-                
+
                 regime_stats['regime_distribution'] = regime_counts
                 regime_stats['total_regimes'] = len(unique_regimes)
                 regime_stats['total_data_points'] = len(market_data)
-                
+
                 # Calculate statistics per regime using memory-efficient operations
                 regime_details = {}
                 for regime_id in unique_regimes:
                     # Use boolean indexing for memory efficiency
                     regime_mask = regime_states == regime_id
                     regime_data = market_data[regime_mask]
-                    
+
                     # Calculate statistics efficiently
                     count = int(np.sum(regime_mask))
                     percentage = safe_divide(count, len(market_data), 0.0) * 100
-                    
+
                     # Use vectorized operations for price statistics
                     if 'close' in regime_data.columns:
                         close_prices = regime_data['close'].values
@@ -2230,7 +2230,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             'max_price': 0.0,
                             'volatility_std': 0.0
                         }
-                    
+
                     # Volume statistics if available
                     if 'volume' in regime_data.columns:
                         volume_values = regime_data['volume'].values
@@ -2243,66 +2243,66 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             'mean_volume': 0.0,
                             'total_volume': 0.0
                         }
-                    
+
                     regime_details[int(regime_id)] = {
                         'count': count,
                         'percentage': percentage,
                         **price_stats,
                         **volume_stats
                     }
-                
+
                 regime_stats['regime_details'] = regime_details
-                
+
                 # Optimize final result memory usage
                 regime_stats = self.memory_optimizer.optimize_memory_usage(regime_stats)
-                
+
                 return regime_stats
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error in memory-optimized regime statistics: {e}")
             return {'error': str(e)}
-    
+
     def _validate_splitting_results(
-        self, 
-        splitting_result: Dict[str, Any], 
+        self,
+        splitting_result: Dict[str, Any],
         report: RegimeSplittingReport
     ) -> Dict[str, Any]:
         """Validate the results of regime splitting."""
         self.logger.info("🔍 Validating splitting results...")
         tprint("🔍 Validating splitting results...")
-        
+
         validation_result = {
             'valid': True,
             'errors': [],
             'warnings': []
         }
-        
+
         try:
             if not splitting_result['success']:
                 validation_result['valid'] = False
                 validation_result['errors'].append("Splitting operation failed")
                 return validation_result
-            
+
             regime_data = splitting_result['data']
             if regime_data is None:
                 validation_result['valid'] = False
                 validation_result['errors'].append("No regime data produced")
                 return validation_result
-            
+
             # Validate market data
             market_data = regime_data['market_data']
             if market_data is None or market_data.empty:
                 validation_result['valid'] = False
                 validation_result['errors'].append("Market data is empty")
                 return validation_result
-            
+
             # Validate regime states
             regime_states = regime_data['regime_states']
             if regime_states is None or (hasattr(regime_states, '__len__') and len(regime_states) == 0):
                 validation_result['valid'] = False
                 validation_result['errors'].append("No regime states found")
                 return validation_result
-            
+
             # Check regime diversity - enforce 5-20 regime requirement
             unique_regimes = len(np.unique(regime_states))
             if unique_regimes < 5:
@@ -2311,12 +2311,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             elif unique_regimes > 20:
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Too many regimes: {unique_regimes} found, maximum 20 allowed")
-            
+
             # Check data alignment
             if len(market_data) != len(regime_states):
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Data length mismatch: market_data={len(market_data)}, regime_states={len(regime_states)}")
-            
+
             # Validate regime statistics
             regime_stats = regime_data.get('regime_statistics', {})
             if not isinstance(regime_stats, dict):
@@ -2333,7 +2333,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 else:
                     regime_stats['total_regimes'] = 0
                     validation_result['warnings'].append("No regime states found - setting total_regimes to 0")
-            
+
             # Additional data consistency checks
             # Check for regime state consistency
             if 'regime_state' in market_data.columns:
@@ -2353,17 +2353,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 except (ValueError, TypeError) as e:
                     # Handle shape mismatch or type issues
                     validation_result['warnings'].append(f"Regime state comparison failed: {str(e)}")
-            
+
             # Check for regime probability consistency
             if 'regime_probability' in market_data.columns and regime_data['regime_probabilities'] is not None:
                 regime_probs_in_data = market_data['regime_probability'].values
                 if len(regime_probs_in_data) != len(regime_data['regime_probabilities']):
                     validation_result['warnings'].append("Regime probabilities length mismatch")
-            
+
             # Check for data type consistency
             if not isinstance(regime_states, np.ndarray):
                 validation_result['warnings'].append("Regime states should be numpy array")
-            
+
             # Check for reasonable regime values
             if len(regime_states) > 0:
                 min_regime = np.min(regime_states)
@@ -2372,19 +2372,19 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     validation_result['warnings'].append(f"Negative regime values detected: min={min_regime}")
                 if max_regime > 100:
                     validation_result['warnings'].append(f"Unusually high regime values detected: max={max_regime}")
-            
+
             if validation_result['valid']:
                 self.logger.info("✅ Splitting results validation passed")
                 tprint("✅ Splitting results validation passed")
             else:
                 self.logger.error(f"❌ Splitting results validation failed: {validation_result['errors']}")
                 tprint(f"❌ Splitting results validation failed: {validation_result['errors']}")
-            
+
             if validation_result['warnings']:
                 tprint(f"⚠️ Validation warnings: {validation_result['warnings']}")
-            
+
             return validation_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating splitting results: {e}")
             return {
@@ -2392,7 +2392,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'errors': [f"Validation error: {str(e)}"],
                 'warnings': []
             }
-    
+
     def _generate_comprehensive_report(
         self,
         splitting_result: Dict[str, Any],
@@ -2401,25 +2401,25 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     ) -> RegimeSplittingReport:
         """Generate comprehensive execution report."""
         self.logger.info("📊 Generating comprehensive report...")
-        
+
         try:
             # Update metrics
             regime_data = splitting_result['data']
             regime_stats = regime_data['regime_statistics']
-            
+
             self.metrics.total_data_points = len(market_data)
             self.metrics.regime_count = regime_stats.get('total_regimes', 0)
             self.metrics.regime_distribution = regime_stats.get('regime_distribution', {})
             self.metrics.processing_time_seconds = (datetime.now() - self.start_time).total_seconds()
-            
+
             # Calculate data quality score
             self.metrics.data_quality_score = self._calculate_data_quality_score(market_data)
-            
+
             # Calculate regime continuity score
             self.metrics.regime_continuity_score = self._calculate_regime_continuity_score(
                 regime_data['regime_states']
             )
-            
+
             # Generate execution summary
             report.execution_summary = {
                 'total_data_points': self.metrics.total_data_points,
@@ -2429,26 +2429,26 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'regime_continuity_score': self.metrics.regime_continuity_score,
                 'memory_usage_mb': self.metrics.memory_usage_mb
             }
-            
+
             # Generate recommendations
             report.recommendations = self._generate_recommendations(report)
-            
+
             self.logger.info("✅ Comprehensive report generated")
             return report
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error generating report: {e}")
             report.errors.append(f"Report generation failed: {str(e)}")
             return report
-    
+
     def _calculate_data_quality_score(self, market_data: pd.DataFrame) -> float:
         """Calculate data quality score (0-1) using common utilities."""
         try:
             # Use common data quality metrics
             quality_metrics = calculate_data_quality_metrics(market_data)
-            
+
             score = 1.0
-            
+
             # Check for null values using safe operations
             null_ratio = safe_divide(
                 quality_metrics.get('missing_values', 0),
@@ -2456,7 +2456,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 0.0
             )
             score -= null_ratio * 0.3
-            
+
             # Check for duplicate rows using safe operations
             duplicate_ratio = safe_divide(
                 quality_metrics.get('duplicate_rows', 0),
@@ -2464,7 +2464,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 0.0
             )
             score -= duplicate_ratio * 0.2
-            
+
             # Check for infinite values using safe operations
             numeric_cols = market_data.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0 and len(market_data) > 0:
@@ -2474,7 +2474,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 )
                 inf_ratio = safe_divide(inf_count, len(market_data) * len(numeric_cols), 0.0)
                 score -= inf_ratio * 0.3
-            
+
             # Check for zero/negative prices using safe operations
             if 'close' in market_data.columns:
                 invalid_prices = safe_divide(
@@ -2483,82 +2483,82 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     0.0
                 )
                 score -= invalid_prices * 0.2
-            
+
             # Use safe math operations for final score
             return math_validate_range(score, 0.0, 1.0, "data_quality_score")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating data quality score: {e}")
             return 0.5  # Default score
-    
+
     def _calculate_regime_continuity_score(self, regime_states: np.ndarray) -> float:
         """Calculate regime continuity score (0-1) using safe math operations."""
         try:
             if len(regime_states) < 2:
                 return 1.0
-            
+
             # Count regime transitions using safe operations
             transitions = math_safe_func(
-                np.sum, 
+                np.sum,
                 regime_states[1:] != regime_states[:-1],
                 default=0
             )
             transition_ratio = safe_divide(transitions, len(regime_states) - 1, 0.0)
-            
+
             # Higher continuity = fewer transitions (score closer to 1)
             continuity_score = 1.0 - min(1.0, transition_ratio * 2)
-            
+
             # Validate the score is in valid range
             return math_validate_range(continuity_score, 0.0, 1.0, "continuity_score")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating regime continuity score: {e}")
             return 0.5  # Default score
-    
+
     def _generate_recommendations(self, report: RegimeSplittingReport) -> List[str]:
         """Generate recommendations based on execution results."""
         recommendations = []
-        
+
         # Data quality recommendations
         if self.metrics.data_quality_score < 0.8:
             recommendations.append("Consider improving data quality - current score is below 0.8")
-        
+
         # Regime diversity recommendations
         if self.metrics.regime_count < 3:
             recommendations.append("Consider adjusting regime discovery parameters - only few regimes detected")
-        
+
         # Continuity recommendations
         if self.metrics.regime_continuity_score < 0.7:
             recommendations.append("Regime transitions are frequent - consider smoothing parameters")
-        
+
         # Performance recommendations
         if self.metrics.processing_time_seconds > 60:
             recommendations.append("Processing time is high - consider optimizing data size or parameters")
-        
+
         # Memory recommendations
         if self.metrics.memory_usage_mb > 1000:
             recommendations.append("High memory usage detected - consider streaming processing")
-        
+
         return recommendations
-    
+
     async def _create_artifacts(
-        self, 
-        splitting_result: Dict[str, Any], 
+        self,
+        splitting_result: Dict[str, Any],
         report: RegimeSplittingReport
     ) -> Dict[str, Any]:
         """Create comprehensive artifacts using common serialization utilities."""
         self.logger.info("💾 Creating artifacts...")
-        
+
         try:
             # Create artifacts with enhanced metadata
             # Ensure splitting_result['data'] is properly structured
             self.logger.info(f"🔍 Debug: splitting_result type: {type(splitting_result)}")
             self.logger.info(f"🔍 Debug: splitting_result keys: {list(splitting_result.keys()) if isinstance(splitting_result, dict) else 'Not a dict'}")
-            
+
             regime_data = splitting_result.get('data', {})
             self.logger.info(f"🔍 Debug: regime_data type: {type(regime_data)}")
             self.logger.info(f"🔍 Debug: regime_data keys: {list(regime_data.keys()) if isinstance(regime_data, dict) else 'Not a dict'}")
-            
+
             if not isinstance(regime_data, dict):
                 self.logger.warning(f"⚠️ Regime data is not a dictionary: {type(regime_data)}")
                 regime_data = {}
@@ -2573,7 +2573,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 if 'regime_statistics' not in regime_data:
                     self.logger.warning("⚠️ Regime data missing 'regime_statistics' key")
                     regime_data['regime_statistics'] = {}
-            
+
             # Create artifacts with safe error handling
             try:
                 regime_stats = splitting_result.get('regime_stats', {})
@@ -2581,7 +2581,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 self.logger.error(f"❌ Error getting regime_stats: {e}")
                 regime_stats = {}
-            
+
             try:
                 memory_usage = 0
                 if hasattr(get_memory_usage, '__call__'):
@@ -2592,7 +2592,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 self.logger.error(f"❌ Error calculating memory usage: {e}")
                 memory_usage = 0
-            
+
             try:
                 cpu_cores = 'unknown'
                 if hasattr(self.cpu_optimizer, 'get_cpu_info'):
@@ -2603,7 +2603,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 self.logger.error(f"❌ Error getting CPU info: {e}")
                 cpu_cores = 'unknown'
-            
+
             artifacts = {
                 'regime_data_splitting_result': {
                     'regime_data': regime_data,
@@ -2659,24 +2659,24 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     )
                 }
             }
-            
+
             # Save artifacts using common serialization utilities
             await self._save_artifacts_to_files(artifacts)
-            
+
             self.logger.info("✅ Artifacts created successfully")
             return artifacts
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error creating artifacts: {e}")
             return {}
-    
+
     async def _save_artifacts_to_files(self, artifacts: Dict[str, Any]) -> None:
         """Save artifacts to files using common serialization utilities."""
         try:
             # Create artifacts directory
             artifacts_dir = Path("generated/market_analysis/regime_data_splitting")
             artifacts_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Save regime data splitting result as parquet
             if 'regime_data' in artifacts['regime_data_splitting_result']:
                 regime_data = artifacts['regime_data_splitting_result']['regime_data']
@@ -2690,22 +2690,22 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         self.logger.warning(f"⚠️ Failed to save regime market data: {e}")
                 else:
                     self.logger.warning(f"⚠️ Regime data is not a dictionary, doesn't contain market_data, or market_data is None: {type(regime_data)}")
-            
+
             # Save report as JSON
             report_path = Path("outcomes/market_analysis") / "regime_splitting_report.json"
             report_path.parent.mkdir(parents=True, exist_ok=True)
             self.serializer.save(artifacts['regime_splitting_report'], str(report_path))
             self.logger.info(f"💾 Saved regime splitting report to {report_path}")
-            
+
             # Save validation results as JSON
             validation_path = artifacts_dir / "regime_validation_results.json"
             self.serializer.save(artifacts['regime_validation_results'], str(validation_path))
             self.logger.info(f"💾 Saved validation results to {validation_path}")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error saving artifacts to files: {e}")
             # Continue without file saving
-    
+
     def _update_metrics(self, report: RegimeSplittingReport, splitting_result: Dict[str, Any]) -> None:
         """Update metrics based on execution results."""
         try:
@@ -2713,10 +2713,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.metrics.validation_checks_failed = len([r for r in report.validation_results.values() if not r])
             self.metrics.warnings_count = len(report.warnings)
             self.metrics.errors_count = len(report.errors)
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating metrics: {e}")
-    
+
     def _create_failure_result(self, report: RegimeSplittingReport, error_message: str) -> ComponentResult:
         """Create a failure result with comprehensive error information."""
         return ComponentResult(
@@ -2737,20 +2737,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'failure_timestamp': datetime.now().isoformat()
             }
         )
-    
+
     def cleanup(self) -> Dict[str, Any]:
         """Clean up resources using hardware manager with memory optimization."""
         try:
             # Perform memory cleanup first
             self._perform_emergency_cleanup()
-            
+
             # Stop memory monitoring
             if hasattr(self.memory_optimizer, 'stop_m1_memory_monitoring'):
                 self.memory_optimizer.stop_m1_memory_monitoring()
-            
+
             # Clean up hardware manager
             cleanup_result = self.hardware_manager.cleanup()
-            
+
             # Final garbage collection
             import gc
 
@@ -2781,22 +2781,22 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
             gc.collect()
-            
+
             # Log final memory status
             if hasattr(self.memory_optimizer, 'get_current_memory_usage'):
                 final_memory = self.memory_optimizer.get_current_memory_usage()
                 self.logger.info(f"🧹 Final memory usage: {final_memory:.2f} GB")
-            
+
             self.logger.info(f"🧹 Cleanup completed successfully: {cleanup_result}")
             return cleanup_result
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error during cleanup: {e}")
             return {'status': 'failed', 'error': str(e)}
-    
+
     def get_resource_metrics(self) -> Dict[str, Any]:
         """Get current resource usage metrics."""
         try:
@@ -2805,15 +2805,15 @@ except ImportError:
         except Exception as e:
             self.logger.warning(f"⚠️ Error getting resource metrics: {e}")
             return {'error': str(e)}
-    
+
     def __enter__(self):
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with automatic cleanup."""
         self.cleanup()
-    
+
     def __del__(self):
         """Destructor with safe cleanup using hardware manager."""
         try:
@@ -2825,16 +2825,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -2853,8 +2853,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -2871,13 +2871,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

@@ -13,7 +13,7 @@ def verify_migration():
     """Verify that the migration was successful."""
     print("🔍 Verifying TAS Regime Migration")
     print("=" * 50)
-    
+
     # Check source directory (should be empty or not exist)
     source_path = '/workspace/src/utils/ml_common/optimization/tas'
     if os.path.exists(source_path):
@@ -21,12 +21,12 @@ def verify_migration():
         print("   This is expected if you want to keep the original for reference")
     else:
         print("✅ Source directory has been removed")
-    
+
     # Check destination directory
     dest_path = '/workspace/src/training/steps/market_analysis/tas_regime'
     if os.path.exists(dest_path):
         print(f"✅ Destination directory exists: {dest_path}")
-        
+
         # Check key files
         key_files = [
             '__init__.py',
@@ -37,7 +37,7 @@ def verify_migration():
             'examples/advanced_tas_example.py',
             'tree_cvlSA_demo.py'
         ]
-        
+
         print("\n📁 Checking key files:")
         for file_path in key_files:
             full_path = os.path.join(dest_path, file_path)
@@ -45,14 +45,14 @@ def verify_migration():
                 print(f"✅ {file_path}")
             else:
                 print(f"❌ {file_path}")
-        
+
         # Check directory structure
         required_dirs = [
             'core', 'components', 'evaluation', 'meta_learning',
             'optimization', 'regime_analysis', 'search', 'adaptation',
             'uncertainty', 'utils', 'examples', 'backtesting', 'data_pipeline'
         ]
-        
+
         print("\n📂 Checking directory structure:")
         for dir_name in required_dirs:
             dir_path = os.path.join(dest_path, dir_name)
@@ -60,7 +60,7 @@ def verify_migration():
                 print(f"✅ {dir_name}/")
             else:
                 print(f"❌ {dir_name}/")
-        
+
         return True
     else:
         print(f"❌ Destination directory does not exist: {dest_path}")
@@ -69,9 +69,9 @@ def verify_migration():
 def check_import_paths():
     """Check that import paths have been updated."""
     print("\n🔍 Checking import path updates...")
-    
+
     dest_path = '/workspace/src/training/steps/market_analysis/tas_regime'
-    
+
     # Files that should have updated import paths
     files_to_check = [
         'README.md',
@@ -79,10 +79,10 @@ def check_import_paths():
         'examples/advanced_regime_detection_example.py',
         'tree_cvlSA_demo.py'
     ]
-    
+
     updated_count = 0
     total_count = 0
-    
+
     for file_path in files_to_check:
         full_path = os.path.join(dest_path, file_path)
         if os.path.exists(full_path):
@@ -99,7 +99,7 @@ def check_import_paths():
                         print(f"ℹ️  {file_path} doesn't contain import paths")
             except Exception as e:
                 print(f"❌ Error reading {file_path}: {e}")
-    
+
     print(f"\n📊 Import path update status: {updated_count}/{total_count} files updated")
     return updated_count == total_count
 
@@ -107,18 +107,18 @@ def main():
     """Main verification function."""
     print("🚀 TAS Regime Migration Verification")
     print("=" * 60)
-    
+
     # Verify migration
     migration_success = verify_migration()
-    
+
     # Check import paths
     import_success = check_import_paths()
-    
+
     # Summary
     print("\n" + "=" * 60)
     print("📊 Migration Summary")
     print("=" * 60)
-    
+
     if migration_success and import_success:
         print("🎉 Migration successful!")
         print("✅ TAS regime system has been moved to market analysis pipeline")

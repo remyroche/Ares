@@ -36,7 +36,6 @@ class JSONSerializer:
             logger.error(f"Failed to load JSON: {e}")
             return None
 
-
 class PickleSerializer:
     """Pickle serialization utilities."""
 
@@ -60,7 +59,6 @@ class PickleSerializer:
         except Exception as e:
             logger.error(f"Failed to load pickle: {e}")
             return None
-
 
 class ParquetSerializer:
     """Parquet serialization utilities."""
@@ -88,7 +86,6 @@ class ParquetSerializer:
         except Exception as e:
             logger.error(f"Failed to load parquet: {e}")
             return None
-
 
 class UniversalSerializer:
     """Universal serialization that tries multiple formats."""

@@ -37,14 +37,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class EnsembleTrainingStep(BaseTrainingStep):
     """
     Enhanced base class for ensemble training steps with comprehensive ML utilities.
-    
+
     This class provides common functionality for training ensemble models,
     including base model creation, ensemble training, and evaluation.
-    
+
     Enhanced Features:
     - Overfitting prevention and detection
     - Lookahead bias detection and prevention
@@ -55,7 +54,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
     - Ensemble diversity monitoring
     - Vectorized training capabilities
     """
-    
+
     def __init__(self, config: EnsembleTrainingConfig, enable_vectorization: bool = True):
         """
         Initialize enhanced ensemble training step with optional vectorization.
@@ -71,7 +70,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
         # Ensemble specific results
         self.ensemble_models = {}
         self.ensemble_metadata = {}
-        
+
         # Initialize enhanced training utilities
         if self.enhanced_training_available:
             self._initialize_enhanced_training_utilities()
@@ -94,7 +93,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 self.logger.info("⚠️ Vectorized training not available (import failed)")
 
         self.logger.info("✅ Enhanced Ensemble Training Step initialized")
-    
+
     def _initialize_enhanced_training_utilities(self):
         """Initialize enhanced training utilities for ensemble training (inherited from BaseTrainingStep)."""
         # Enhanced training utilities are already available from base class
@@ -112,17 +111,17 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 enable_ensemble_diversity=True,  # Enable for ensemble
                 model_type='auto'
             )
-            
+
             # Initialize training enhancer
             self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
-            
+
             self.logger.info("✅ Enhanced training utilities initialized successfully")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
             self.enhanced_training_config = None
             self.training_enhancer = None
-    
+
     def create_ensemble_models(
         self,
         base_models: Dict[str, Any],
@@ -155,7 +154,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
         ensembles['oof_stacking_ensemble'] = oof_ensemble
 
         return ensembles
-    
+
     def train_ensemble_models(
         self,
         base_models: Dict[str, Any],
@@ -230,7 +229,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
                     self.logger.warning(f"⚠️ Warning: {warning}")
 
         return ensemble_results
-    
+
     def train_regime_ensembles(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
@@ -425,7 +424,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
             'ensembles': regime_ensembles,
             'metadata': regime_metadata
         }
-    
+
     def _create_base_models_for_regime(
         self,
         regime: int,
@@ -434,29 +433,29 @@ class EnsembleTrainingStep(BaseTrainingStep):
     ) -> Dict[str, Any]:
         """
         Create base models for regime if not provided.
-        
+
         Args:
             regime: Regime identifier
             X: Input features
             y: Target values
-            
+
         Returns:
             Dictionary of base models
         """
         base_models = {}
-        
+
         for model_type in self.config.base_models:
             model = self.training_utils.create_model(
                 model_type=model_type,
                 model_name=f"{self.config.model_name}_{model_type.lower()}_regime_{regime}",
                 model_params=self.training_utils.get_model_params(model_type)
             )
-            
+
             model.fit(X, y)
             base_models[model_type] = model
-        
+
         return base_models
-    
+
     def _optimize_ensemble(
         self,
         base_models: Dict[str, Any],
@@ -526,7 +525,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 'cv_folds': self.config.cv_folds
             }
         }
-    
+
     def _train_single_ensemble(
         self,
         base_models: Dict[str, Any],
@@ -596,16 +595,16 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 'cv_folds': self.config.cv_folds
             }
         }
-    
+
     def _get_meta_model_params(self) -> Dict[str, Any]:
         """
         Get default parameters for meta model based on model type.
-        
+
         Returns:
             Dictionary of meta model parameters
         """
         meta_model = self.config.meta_model
-        
+
         if meta_model == 'ElasticNet':
             return {
                 'alpha': 1.0,
@@ -635,7 +634,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
             return {
                 'random_state': 42
             }
-    
+
     def execute(
         self,
         X: np.ndarray,
@@ -805,7 +804,7 @@ class EnsembleTrainingStep(BaseTrainingStep):
         self._log_training_summary(results, f"Ensemble {self.config.model_name}", n_ensembles)
 
         return results
-    
+
     def _save_ensemble_models(
         self,
         regime_results: Dict[str, Any],
@@ -815,18 +814,18 @@ class EnsembleTrainingStep(BaseTrainingStep):
     ) -> Dict[int, List[str]]:
         """
         Save trained ensemble models for each regime.
-        
+
         Args:
             regime_results: Training results for each regime
             symbol: Optional symbol identifier
             exchange: Optional exchange identifier
             timeframe: Optional timeframe identifier
-            
+
         Returns:
             Dictionary containing saved model paths for each regime
         """
         saved_paths = {}
-        
+
         for regime, ensemble_result in regime_results['ensembles'].items():
             # Save ensemble manager
             ensemble_manager = ensemble_result['ensemble_manager']
@@ -838,9 +837,9 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 timeframe=timeframe,
                 regime=regime
             )
-            
+
             saved_paths[regime] = model_paths
-            
+
             # Save ensemble metadata
             ensemble_metadata = regime_results['metadata'][regime]
             self.save_metadata(
@@ -851,9 +850,9 @@ class EnsembleTrainingStep(BaseTrainingStep):
                 timeframe=timeframe,
                 regime=regime
             )
-        
+
         return saved_paths
-    
+
     def _evaluate_ensembles(
         self,
         regime_results: Dict[str, Any],

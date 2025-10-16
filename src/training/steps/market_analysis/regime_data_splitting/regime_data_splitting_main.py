@@ -216,7 +216,7 @@ except Exception:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.common_operations import (
-    ensure_directory, 
+    ensure_directory,
     safe_json_dump,
     safe_json_load,
     safe_read_parquet,
@@ -949,7 +949,7 @@ class RegimeDataSplittingStep:
         except (AttributeError, KeyError):
             # Fallback to direct import
             from src.utils.math_validation import validate_range as validate_range_func
-        
+
         memory_defaults = {
             # Streaming thresholds with validation
             'streaming_threshold_mb': safe_float_func(500, 500),  # Use streaming for datasets > 500MB
@@ -1010,7 +1010,7 @@ class RegimeDataSplittingStep:
                 safe_int = self.utils.get_function('common_operations', 'safe_int')
                 validate_positive = self.utils.get_function('math_validation', 'validate_positive')
                 validate_range = self.utils.get_function('math_validation', 'validate_range')
-                
+
                 # Initialize M1 GPU Manager through utility injection
                 self.gpu_manager = self.utils.get_function('m1_gpu_utils', 'get_m1_gpu_manager')()
                 self.logger.info('🎯 M1 GPU Manager initialized for step04 with utility injection')
@@ -1019,7 +1019,7 @@ class RegimeDataSplittingStep:
                 memory_limit = self.config.get('memory_limit_gb', 8.0)
                 memory_limit = validate_positive(safe_float(memory_limit, 8.0), "memory_limit_gb")
                 memory_limit = validate_range(memory_limit, 1.0, 64.0, "memory_limit_gb")
-                
+
                 self.memory_optimizer = self.utils.get_function('m1_memory_optimizer', 'M1MemoryOptimizer')(
                     memory_limit_gb=memory_limit,
                     enable_gc_tuning=True,
@@ -1033,7 +1033,7 @@ class RegimeDataSplittingStep:
                 if max_workers is not None:
                     max_workers = validate_positive(safe_int(max_workers, None), "max_parallel_workers")
                     max_workers = validate_range(max_workers, 1, 32, "max_parallel_workers")
-                
+
                 self.cpu_optimizer = self.utils.get_function('m1_cpu_optimizer', 'M1CPUOptimizer')(
                     max_workers=max_workers,
                     enable_hyperthreading=True
@@ -1061,16 +1061,16 @@ class RegimeDataSplittingStep:
                 # Parquet metadata cache for frequently accessed files
                 self.parquet_metadata_cache = {}
                 self.parquet_cache_max_size = self.config.get('parquet_cache_max_size', 100)
-                
+
                 # Partitioning configuration
                 self.enable_parquet_partitioning = self.config.get('enable_parquet_partitioning', True)
                 self.partition_columns = self.config.get('partition_columns', ['composite_cluster_id', 'year', 'month'])
                 self.partition_size_threshold = self.config.get('partition_size_threshold', 1_000_000)  # 1M rows
-                
+
                 # Columnar storage optimization
                 self.columnar_optimization = self.config.get('columnar_optimization', True)
                 self.optimize_column_order = self.config.get('optimize_column_order', True)
-                
+
                 self.logger.info("📊 Parquet optimizations initialized")
                 self.logger.info(f"   🗂️ Partitioning enabled: {self.enable_parquet_partitioning}")
                 self.logger.info(f"   📋 Partition columns: {self.partition_columns}")
@@ -1109,13 +1109,13 @@ class RegimeDataSplittingStep:
             Dictionary with execution results
         """
         tprint('🚀 Starting regime data splitting execution')
-        
+
         # Get utility functions
         safe_dict_get = self.utils.get_function('common_operations', 'safe_dict_get')
         safe_float = self.utils.get_function('common_operations', 'safe_float')
         validate_positive = self.utils.get_function('math_validation', 'validate_positive')
         tprint('📊 Utility functions loaded successfully')
-        
+
         # Use utility functions for parameter extraction and validation
         symbol = safe_dict_get(training_input, 'symbol', None)
         exchange = safe_dict_get(training_input, 'exchange', None)
@@ -1152,7 +1152,7 @@ class RegimeDataSplittingStep:
             execution_time = time.time() - self.start_time
             execution_time = validate_positive(safe_float(execution_time, 0.0), "execution_time")
             tprint(f'⏱️ Execution time: {execution_time:.2f} seconds')
-            
+
             if result.success:
                 tprint('✅ Regime data splitting completed successfully')
                 # Generate advanced metrics report
@@ -1197,7 +1197,7 @@ class RegimeDataSplittingStep:
         # Get utility functions
         safe_float = self.utils.get_function('common_operations', 'safe_float')
         validate_positive = self.utils.get_function('math_validation', 'validate_positive')
-        
+
         elapsed = time.time() - start_time
         elapsed = validate_positive(safe_float(elapsed, 0.0), "elapsed_time")
         self.step_timings[step_name] = elapsed
@@ -1283,12 +1283,12 @@ class RegimeDataSplittingStep:
                 if QUALITY_TOOLS_AVAILABLE and get_quality_scorer is not None:
                     from src.utils.data.quality.data_quality import DataQualityFramework
                     from src.utils.data.quality.data_cleaning import get_data_cleaner
-                    
+
                     # Initialize quality assessment tools
                     quality_scorer = get_quality_scorer()
                     quality_framework = DataQualityFramework()
                     data_cleaner = get_data_cleaner(data_type='klines')
-                
+
                 # Perform comprehensive quality assessment
                 self.logger.info('📊 Performing comprehensive data quality assessment...')
                 quality_assessment = quality_scorer.assess_data_quality(
@@ -1297,14 +1297,14 @@ class RegimeDataSplittingStep:
                     step_name="regime_data_splitting",
                     data_type="klines"
                 )
-                
+
                 # Log quality assessment results
                 self.logger.info(f'📈 Data quality score: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})')
-                
+
                 # Handle quality issues based on assessment level
                 if quality_assessment.level.value in ['poor', 'critical']:
                     self.logger.warning(f'⚠️ Low data quality detected: {quality_assessment.issues}')
-                    
+
                     # Attempt data cleaning for poor quality data
                     if quality_assessment.level.value == 'poor':
                         self.logger.info('🔧 Attempting data cleaning to improve quality...')
@@ -1314,7 +1314,7 @@ class RegimeDataSplittingStep:
                             exchange=exchange,
                             timeframe=timeframe
                         )
-                        
+
                         if cleaned_data is not None and not cleaned_data.empty:
                             # Re-assess quality after cleaning
                             cleaned_assessment = quality_scorer.assess_data_quality(
@@ -1323,14 +1323,14 @@ class RegimeDataSplittingStep:
                                 step_name="regime_data_splitting_cleaned",
                                 data_type="klines"
                             )
-                            
+
                             if cleaned_assessment.overall_score > quality_assessment.overall_score:
                                 self.logger.info(f'✅ Data cleaning improved quality: {cleaned_assessment.overall_score:.2f}')
                                 regime_data = cleaned_data
                                 quality_assessment = cleaned_assessment
                             else:
                                 self.logger.warning('⚠️ Data cleaning did not improve quality, using original data')
-                
+
                 # Store quality assessment results for reporting
                 data_quality_report = {
                     'is_valid': quality_assessment.level.value not in ['critical'],
@@ -1341,7 +1341,7 @@ class RegimeDataSplittingStep:
                     'recommendations': quality_assessment.recommendations,
                     'component_scores': quality_assessment.component_scores
                 }
-                
+
             except ImportError as e:
                 self.logger.warning(f'⚠️ Comprehensive quality tools not available, using fallback: {e}')
                 # Fallback to basic quality check
@@ -1454,7 +1454,7 @@ class RegimeDataSplittingStep:
                     demo_comparison = self.demonstrate_tagging_approach(market_data_with_regimes, regime_ids[0])
                     if demo_comparison:
                         self.logger.info('🎯 Tagging approach demonstration completed')
-                
+
                 await self._save_regime_metadata(regime_ids, data_dir, symbol, exchange, timeframe)
 
                 # Get memory summary for result metadata
@@ -1758,7 +1758,7 @@ class RegimeDataSplittingStep:
                 regime_df = self._read_parquet_with_cache(regime_file)
                 regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
                 regime_df = regime_df.sort_values('timestamp')
-                
+
                 # Use comprehensive data quality assessment for regime data
                 try:
                     if QUALITY_TOOLS_AVAILABLE and get_quality_scorer is not None:
@@ -1769,10 +1769,10 @@ class RegimeDataSplittingStep:
                             step_name="regime_data_validation",
                             data_type="klines"
                         )
-                    
+
                     if regime_quality_assessment.level.value in ['poor', 'critical']:
                         self.logger.warning(f'⚠️ Regime data quality issues: {regime_quality_assessment.issues}')
-                    
+
                     data_quality_report = {
                         'is_valid': regime_quality_assessment.level.value not in ['critical'],
                         'quality_score': regime_quality_assessment.overall_score,
@@ -1795,17 +1795,17 @@ class RegimeDataSplittingStep:
                         'quality_score': quality_result.quality_score,
                         'issues': quality_result.issues
                     }
-                
+
                 if not data_quality_report.get('is_valid', True):
                     self.logger.warning(f'⚠️ Regime data quality issues: {data_quality_report.get("issues", [])}')
-                
+
                 # Use DataFrameValidator for regime data
                 DataFrameValidator = self.utils.get_function('data_processing_utils', 'DataFrameValidator')
                 validator = DataFrameValidator()
                 validation_result = validator.validate(regime_df)
                 if not validation_result.get('is_valid', True):
                     self.logger.warning(f'⚠️ Regime data validation issues: {validation_result.get("issues", [])}')
-                
+
                 # Use DataFrameCleaner to ensure regime data quality
                 DataFrameCleaner = self.utils.get_function('data_processing_utils', 'DataFrameCleaner')
                 cleaner = DataFrameCleaner()
@@ -1819,7 +1819,7 @@ class RegimeDataSplittingStep:
                     df = self.standards.standardize_timestamp(df, 'timestamp')
                     df = self.standards.enforce_schema(df, 'unified')
                     df = df.sort_values('timestamp')
-                    
+
                     # Use comprehensive data quality assessment for each file
                     try:
                         if QUALITY_TOOLS_AVAILABLE and get_quality_scorer is not None:
@@ -1830,10 +1830,10 @@ class RegimeDataSplittingStep:
                                 step_name=f"file_validation_{file_path.stem}",
                                 data_type="klines"
                             )
-                        
+
                         if file_quality_assessment.level.value in ['poor', 'critical']:
                             self.logger.warning(f'⚠️ File {file_path.name} quality issues: {file_quality_assessment.issues}')
-                        
+
                         file_quality_report = {
                             'is_valid': file_quality_assessment.level.value not in ['critical'],
                             'quality_score': file_quality_assessment.overall_score,
@@ -1856,13 +1856,13 @@ class RegimeDataSplittingStep:
                             'quality_score': quality_result.quality_score,
                             'issues': quality_result.issues
                         }
-                    
+
                     if not file_quality_report.get('is_valid', True):
                         self.logger.warning(f'⚠️ File {file_path.name} quality issues: {file_quality_report.get("issues", [])}')
-                    
+
                     # Clean each file's data
                     df = cleaner.clean(df)
-                    
+
                     total_input_rows += len(df)
 
                     if use_asof_merge:
@@ -1931,7 +1931,7 @@ class RegimeDataSplittingStep:
                     regime_df = self._read_parquet_with_cache(regime_file)
             else:
                 regime_df = self._read_parquet_with_cache(regime_file)
-            
+
             regime_df = self.standards.standardize_timestamp(regime_df, 'timestamp')
             regime_df = regime_df.sort_values('timestamp')
 
@@ -1942,7 +1942,7 @@ class RegimeDataSplittingStep:
                 optimal_chunk_size = self.cpu_optimizer.calculate_optimal_batch_size(len(unified_files))
                 chunk_size = min(chunk_size, optimal_chunk_size)
                 self.logger.info(f'⚡ M1 CPU optimizer adjusted chunk size to {chunk_size}')
-            
+
             all_chunks = []
 
             for i in range(0, len(unified_files), chunk_size):
@@ -1959,37 +1959,37 @@ class RegimeDataSplittingStep:
                     batch_chunks = self._process_file_batch_with_m1_optimizations(
                         batch_files, regime_df, use_asof_merge, merge_tolerance_ms
                     )
-                
+
                 all_chunks.extend(batch_chunks)
-                
+
                 # Log memory usage after each batch
                 if self.m1_optimizations_enabled and self.memory_optimizer:
                     memory_report = self.memory_optimizer.get_memory_report()
                     self.logger.info(f'💾 Memory after batch {i//chunk_size + 1}: {memory_report.get("current_mb", 0):.1f}MB')
-            
+
             return self._combine_chunks_with_m1_optimizations(all_chunks)
         except Exception as e:
             self.logger.exception(f'❌ Error in streaming processing: {e}')
             return pd.DataFrame()
-    
+
     def _combine_chunks_with_m1_optimizations(self, all_chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """Combine chunks with M1 memory optimizations."""
         if not all_chunks:
             return pd.DataFrame()
-        
+
         # Use M1 memory checkpoint for combining
         if self.m1_optimizations_enabled and self.memory_optimizer:
             with self.memory_optimizer.memory_checkpoint("combining_chunks"):
                 combined_df = pd.concat(all_chunks, ignore_index=True)
         else:
             combined_df = pd.concat(all_chunks, ignore_index=True)
-        
+
         # Optimize memory usage
         if self.m1_optimizations_enabled and self.memory_optimizer:
             combined_df = self.memory_optimizer.optimize_dataframe_memory(combined_df)
-        
+
         return combined_df
-    
+
     def _process_file_batch_with_m1_optimizations(
         self,
         batch_files: List[Path],
@@ -2050,17 +2050,17 @@ class RegimeDataSplittingStep:
             # Apply columnar storage optimization
             if self.columnar_optimization and PYARROW_AVAILABLE:
                 data = self._optimize_columnar_storage(data)
-            
+
             # Determine if partitioning should be used
             use_partitioning = (
-                self.enable_parquet_partitioning and 
-                len(data) > self.partition_size_threshold and 
+                self.enable_parquet_partitioning and
+                len(data) > self.partition_size_threshold and
                 PYARROW_AVAILABLE
             )
-            
+
             if use_partitioning:
                 return self._save_partitioned_dataset(data, training_dir, exchange, symbol, timeframe)
-            
+
             # Standard save with metadata caching
             unified_file = training_dir / f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet'
             data_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
@@ -2188,21 +2188,21 @@ class RegimeDataSplittingStep:
         try:
             if not self.optimize_column_order:
                 return data
-            
+
             # Define optimal column order for time-series data
             timestamp_cols = [col for col in data.columns if 'timestamp' in col.lower() or 'time' in col.lower()]
             regime_cols = [col for col in data.columns if 'regime' in col.lower() or 'cluster' in col.lower()]
             price_cols = [col for col in data.columns if col in ['open', 'high', 'low', 'close', 'volume']]
             feature_cols = [col for col in data.columns if col not in timestamp_cols + regime_cols + price_cols]
-            
+
             # Reorder columns for optimal columnar storage
             optimal_order = timestamp_cols + regime_cols + price_cols + feature_cols
             existing_cols = [col for col in optimal_order if col in data.columns]
-            
+
             if existing_cols != list(data.columns):
                 data = data[existing_cols]
                 self.logger.info(f"🔄 Optimized column order for columnar storage: {len(existing_cols)} columns")
-            
+
             return data
         except Exception as e:
             self.logger.warning(f"⚠️ Columnar optimization failed: {e}")
@@ -2214,17 +2214,17 @@ class RegimeDataSplittingStep:
             if not PYARROW_AVAILABLE:
                 self.logger.warning("⚠️ PyArrow not available for partitioning, falling back to standard save")
                 return self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe)
-            
+
             # Create partitioned directory structure
             partitioned_dir = training_dir / f'{exchange}_{symbol}_{timeframe}_partitioned_data'
             partitioned_dir.mkdir(exist_ok=True)
-            
+
             # Add partitioning columns if they don't exist
             data = self._add_partitioning_columns(data)
-            
+
             # Convert to PyArrow table
             table = pa.Table.from_pandas(data)
-            
+
             # Write partitioned dataset
             pq.write_to_dataset(
                 table,
@@ -2234,14 +2234,14 @@ class RegimeDataSplittingStep:
                 use_dictionary=True,  # Better compression for categorical data
                 write_statistics=True  # Enable statistics for better query performance
             )
-            
+
             # Cache metadata for future reads
             self._cache_parquet_metadata(str(partitioned_dir), data.shape)
-            
+
             self.logger.info(f"✅ Saved partitioned dataset: {len(data):,} rows -> {partitioned_dir}")
             self.logger.info(f"   📁 Partition columns: {self.partition_columns}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error saving partitioned dataset: {e}")
             return False
@@ -2250,18 +2250,18 @@ class RegimeDataSplittingStep:
         """Add partitioning columns for time-series data."""
         try:
             data = data.copy()
-            
+
             # Add year and month columns for time-based partitioning
             if 'timestamp' in data.columns:
                 timestamp_series = pd.to_datetime(data['timestamp'])
                 data['year'] = timestamp_series.dt.year
                 data['month'] = timestamp_series.dt.month
-                
+
                 # Add to partition columns if not already present
                 for col in ['year', 'month']:
                     if col not in self.partition_columns:
                         self.partition_columns.append(col)
-            
+
             return data
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to add partitioning columns: {e}")
@@ -2274,14 +2274,14 @@ class RegimeDataSplittingStep:
                 # Remove oldest entries
                 oldest_key = min(self.parquet_metadata_cache.keys())
                 del self.parquet_metadata_cache[oldest_key]
-            
+
             # Cache metadata
             self.parquet_metadata_cache[file_path] = {
                 'shape': data_shape,
                 'timestamp': time.time(),
                 'access_count': 0
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to cache Parquet metadata: {e}")
 
@@ -2302,7 +2302,7 @@ class RegimeDataSplittingStep:
         try:
             # Check if metadata is cached
             cached_metadata = self._get_cached_parquet_metadata(file_path)
-            
+
             if cached_metadata:
                 self.logger.debug(f"📋 Using cached metadata for {file_path}")
                 # Use cached metadata to optimize read
@@ -2317,9 +2317,9 @@ class RegimeDataSplittingStep:
                 # Standard read and cache metadata - for processed data files
                 df = safe_read_parquet(file_path)
                 self._cache_parquet_metadata(file_path, df.shape)
-            
+
             return df
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Cached read failed for {file_path}: {e}")
             # Fallback to standard read - for processed data files
@@ -2455,10 +2455,10 @@ class RegimeDataSplittingStep:
 
             # Use the enhanced prediction method from regime models training
             from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent
-            
+
             # Create a temporary instance to use the prediction method
             regime_models_component = RegimeModelsTrainingComponent()
-            
+
             # Make predictions with comprehensive probability information
             prediction_result = regime_models_component.predict_regimes_with_probabilities(
                 models=models,
@@ -2535,7 +2535,7 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.exception(f'❌ Error calculating regime statistics: {e}')
             return {}
-    
+
     def _vectorized_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int]) -> Dict[str, Any]:
         """Vectorized regime statistics calculation with optimized processing for unlimited regime counts."""
         # Get utility functions
@@ -2544,11 +2544,11 @@ class RegimeDataSplittingStep:
         validate_positive = self.utils.get_function('math_validation', 'validate_positive')
         validate_finite = self.utils.get_function('math_validation', 'validate_finite')
         safe_divide = self.utils.get_function('math_validation', 'safe_divide')
-        
+
         stats: Dict[int, Dict[str, Any]] = {}
         total_rows = max(int(len(data)), 1)
         total_rows = validate_positive(safe_int(total_rows, 1), "total_rows")
-        
+
         # Optimize for large numbers of regimes
         num_regimes = len(regime_ids)
         if num_regimes > 100:
@@ -2556,7 +2556,7 @@ class RegimeDataSplittingStep:
             # Use chunked processing for very large regime counts
             chunk_size = min(50, num_regimes)
             regime_chunks = [regime_ids[i:i + chunk_size] for i in range(0, num_regimes, chunk_size)]
-            
+
             for chunk_idx, regime_chunk in enumerate(regime_chunks):
                 self.logger.info(f'📊 Processing regime chunk {chunk_idx + 1}/{len(regime_chunks)} ({len(regime_chunk)} regimes)')
                 chunk_data = data[data['composite_cluster_id'].isin(regime_chunk)]
@@ -2565,30 +2565,30 @@ class RegimeDataSplittingStep:
         else:
             # Standard vectorized processing for normal regime counts
             regime_groups = data.groupby('composite_cluster_id')
-            
+
             # Vectorized calculations for all regimes at once with math validation
             regime_counts = regime_groups.size()
             regime_counts = validate_positive(regime_counts, "regime_counts")
-        
+
         if 'volume' in data.columns:
             regime_volumes = regime_groups['volume'].mean()
             regime_volumes = validate_positive(regime_volumes, "regime_volumes")
             regime_volumes = validate_finite(regime_volumes, "regime_volumes")
         else:
             regime_volumes = pd.Series(0.0, index=regime_counts.index)
-        
+
         # Vectorized timestamp calculations
         regime_timestamps = regime_groups['timestamp'].agg(['min', 'max'])
-        
+
         # Vectorized volatility and momentum calculations if close price exists with math validation
         if 'close' in data.columns:
             # Calculate returns for all data at once with validation
             returns = data['close'].pct_change().fillna(0.0)
             returns = validate_finite(returns, "returns")
-            
+
             data_with_returns = data.copy()
             data_with_returns['returns'] = returns
-            
+
             # VECTORIZED: Calculate regime volatility and momentum without expensive groupby apply
             # Much more efficient than lambda functions
 
@@ -2606,7 +2606,7 @@ class RegimeDataSplittingStep:
         else:
             regime_volatility = pd.Series(0.0, index=regime_counts.index)
             regime_momentum = pd.Series(0.0, index=regime_counts.index)
-        
+
         # Vectorized duration calculation with math validation
         def calculate_duration_minutes(start_ts, end_ts):
             try:
@@ -2622,7 +2622,7 @@ class RegimeDataSplittingStep:
                     return int((pd.to_datetime(end_ts) - pd.to_datetime(start_ts)).total_seconds() / 60)
                 except Exception:
                     return 0
-        
+
         # Build statistics dictionary using vectorized results
         for regime_id in regime_ids:
             if regime_id in regime_counts.index:
@@ -2631,7 +2631,7 @@ class RegimeDataSplittingStep:
                 mean_volume = float(regime_volumes.get(regime_id, 0.0))
                 mean_volatility = float(regime_volatility.get(regime_id, 0.0))
                 mean_momentum = float(regime_momentum.get(regime_id, 0.0))
-                
+
                 # Calculate duration
                 if regime_id in regime_timestamps.index:
                     start_ts = regime_timestamps.loc[regime_id, 'min']
@@ -2647,7 +2647,7 @@ class RegimeDataSplittingStep:
                 mean_volatility = 0.0
                 mean_momentum = 0.0
                 duration_minutes = 0
-            
+
             stats[int(regime_id)] = {
                 'count': count,
                 'duration_minutes': duration_minutes,
@@ -2656,7 +2656,7 @@ class RegimeDataSplittingStep:
                 'mean_volatility': mean_volatility,
                 'mean_momentum': mean_momentum,
             }
-        
+
         return stats
 
     def _calculate_chunk_statistics(self, chunk_data: pd.DataFrame, regime_chunk: List[int], total_rows: int) -> Dict[int, Dict[str, Any]]:
@@ -2667,38 +2667,38 @@ class RegimeDataSplittingStep:
             validate_positive = self.utils.get_function('math_validation', 'validate_positive')
             validate_finite = self.utils.get_function('math_validation', 'validate_finite')
             safe_divide = self.utils.get_function('math_validation', 'safe_divide')
-            
+
             chunk_stats: Dict[int, Dict[str, Any]] = {}
             regime_groups = chunk_data.groupby('composite_cluster_id')
-            
+
             # Vectorized calculations for chunk
             regime_counts = regime_groups.size()
             regime_counts = validate_positive(regime_counts, "regime_counts")
-            
+
             if 'volume' in chunk_data.columns:
                 regime_volumes = regime_groups['volume'].mean()
                 regime_volumes = validate_positive(regime_volumes, "regime_volumes")
                 regime_volumes = validate_finite(regime_volumes, "regime_volumes")
             else:
                 regime_volumes = pd.Series(0.0, index=regime_counts.index)
-            
+
             # Vectorized timestamp calculations
             regime_timestamps = regime_groups['timestamp'].agg(['min', 'max'])
-            
+
             # Vectorized volatility and momentum calculations if close price exists
             if 'close' in chunk_data.columns:
                 returns = chunk_data['close'].pct_change().fillna(0.0)
                 returns = validate_finite(returns, "returns")
-                
+
                 chunk_data_with_returns = chunk_data.copy()
                 chunk_data_with_returns['returns'] = returns
-                
+
                 regime_volatility = chunk_data_with_returns.groupby('composite_cluster_id')['returns'].apply(
                     lambda x: x.rolling(window=30, min_periods=5).std().mean()
                 )
                 regime_volatility = validate_positive(regime_volatility, "regime_volatility")
                 regime_volatility = validate_finite(regime_volatility, "regime_volatility")
-                
+
                 regime_momentum = chunk_data_with_returns.groupby('composite_cluster_id')['returns'].apply(
                     lambda x: x.rolling(window=30, min_periods=5).mean().mean()
                 )
@@ -2706,25 +2706,25 @@ class RegimeDataSplittingStep:
             else:
                 regime_volatility = pd.Series(0.0, index=regime_counts.index)
                 regime_momentum = pd.Series(0.0, index=regime_counts.index)
-            
+
             # Calculate statistics for each regime in chunk
             for regime_id in regime_chunk:
                 if regime_id in regime_counts.index:
                     count = int(regime_counts[regime_id])
                     count = validate_positive(safe_int(count, 0), "regime_count")
-                    
+
                     percentage = safe_divide(count * 100, total_rows, default=0.0)
                     percentage = validate_positive(safe_float(percentage, 0.0), "regime_percentage")
-                    
+
                     volume = safe_float(regime_volumes.get(regime_id, 0.0), 0.0)
                     volume = validate_positive(volume, "regime_volume")
-                    
+
                     volatility = safe_float(regime_volatility.get(regime_id, 0.0), 0.0)
                     volatility = validate_positive(volatility, "regime_volatility")
-                    
+
                     momentum = safe_float(regime_momentum.get(regime_id, 0.0), 0.0)
                     momentum = validate_finite(momentum, "regime_momentum")
-                    
+
                     # Calculate duration
                     if regime_id in regime_timestamps.index:
                         start_ts = regime_timestamps.loc[regime_id, 'min']
@@ -2732,7 +2732,7 @@ class RegimeDataSplittingStep:
                         duration_minutes = self._calculate_duration_minutes(start_ts, end_ts)
                     else:
                         duration_minutes = 0
-                    
+
                     chunk_stats[regime_id] = {
                         'count': count,
                         'percentage': percentage,
@@ -2741,9 +2741,9 @@ class RegimeDataSplittingStep:
                         'mean_volatility': volatility,
                         'mean_momentum': momentum
                     }
-            
+
             return chunk_stats
-            
+
         except Exception as e:
             self.logger.exception(f'❌ Error calculating chunk statistics: {e}')
             return {}
@@ -2754,7 +2754,7 @@ class RegimeDataSplittingStep:
             safe_int = self.utils.get_function('common_operations', 'safe_int')
             validate_positive = self.utils.get_function('math_validation', 'validate_positive')
             safe_divide = self.utils.get_function('math_validation', 'safe_divide')
-            
+
             start_ts = validate_positive(safe_int(start_ts, 0), "start_ts")
             end_ts = validate_positive(safe_int(end_ts, 0), "end_ts")
             duration_ms = end_ts - start_ts
@@ -2767,87 +2767,87 @@ class RegimeDataSplittingStep:
 
     def tag_data_with_regime_probabilities(self, data: pd.DataFrame, regime_labels: np.ndarray, regime_probabilities: np.ndarray) -> pd.DataFrame:
         """Tag data with comprehensive regime probability information.
-        
+
         This method adds detailed probability information to the dataset, including:
         - Individual regime probabilities for each regime
         - Confidence scores and stability measures
         - Entropy and dominance metrics
         - Transition indicators and duration tracking
-        
+
         Args:
             data: The market data DataFrame to tag
             regime_labels: Array of regime labels for each data point
             regime_probabilities: Array of probabilities for each regime (n_samples x n_regimes)
-            
+
         Returns:
             DataFrame with comprehensive regime probability tagging
         """
         try:
             tprint("🏷️ Tagging data with comprehensive regime probability information", color="blue")
-            
+
             # Create a copy of the data to avoid modifying the original
             tagged_data = data.copy()
-            
+
             # Add basic regime information
             tagged_data['composite_cluster_id'] = regime_labels
             tagged_data['regime_probabilities'] = [prob for prob in regime_probabilities]
-            
+
             # Get number of regimes
             n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
-            
+
             # Add individual regime probability columns
             for i in range(n_regimes):
                 tagged_data[f'regime_{i}_probability'] = regime_probabilities[:, i]
-            
+
             # Add confidence scores (max probability for each row)
             tagged_data['regime_confidence'] = np.max(regime_probabilities, axis=1)
-            
+
             # Add regime stability (1 - standard deviation of probabilities)
             tagged_data['regime_stability'] = 1.0 - np.std(regime_probabilities, axis=1)
-            
+
             # Add regime entropy (measure of uncertainty)
             regime_entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + 1e-10), axis=1)
             tagged_data['regime_entropy'] = regime_entropy
-            
+
             # Add regime dominance (difference between highest and second highest probability)
             sorted_probs = np.sort(regime_probabilities, axis=1)
             if n_regimes > 1:
                 tagged_data['regime_dominance'] = sorted_probs[:, -1] - sorted_probs[:, -2]
             else:
                 tagged_data['regime_dominance'] = 1.0
-            
+
             # Add regime transition indicators
             tagged_data['regime_transition'] = False
             if len(regime_labels) > 1:
                 tagged_data['regime_transition'] = np.concatenate([[False], regime_labels[1:] != regime_labels[:-1]])
-            
+
             # Add regime duration (consecutive periods in same regime)
             regime_duration = np.ones(len(regime_labels))
             for i in range(1, len(regime_labels)):
                 if regime_labels[i] == regime_labels[i-1]:
                     regime_duration[i] = regime_duration[i-1] + 1
             tagged_data['regime_duration'] = regime_duration
-            
+
             # Add regime quality metrics
             tagged_data['regime_quality_score'] = (
                 tagged_data['regime_confidence'] * 0.4 +
                 tagged_data['regime_stability'] * 0.3 +
                 (1.0 - tagged_data['regime_entropy']) * 0.3
             )
-            
+
             # Add regime uncertainty (inverse of confidence)
             tagged_data['regime_uncertainty'] = 1.0 - tagged_data['regime_confidence']
-            
+
             # Add regime consistency (how similar probabilities are to the mean)
             mean_probs = np.mean(regime_probabilities, axis=0)
             regime_consistency = 1.0 - np.mean(np.abs(regime_probabilities - mean_probs), axis=1)
             tagged_data['regime_consistency'] = regime_consistency
-            
+
             tprint(f"✅ Data tagged with {n_regimes} regime probabilities and {len(tagged_data.columns) - len(data.columns)} additional columns", color="green")
             tprint(f"📊 Added columns: regime_confidence, regime_stability, regime_entropy, regime_dominance, regime_transition, regime_duration, regime_quality_score, regime_uncertainty, regime_consistency", color="cyan")
-            
+
             return tagged_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error tagging data with regime probabilities: {e}")
             tprint_error(f"❌ Error tagging data with regime probabilities: {e}")
@@ -2855,28 +2855,28 @@ class RegimeDataSplittingStep:
 
     def demonstrate_tagging_approach(self, data: pd.DataFrame, regime_id: int) -> Dict[str, Any]:
         """Demonstrate the tagging approach vs traditional splitting.
-        
+
         This method shows how the tagging approach preserves data compared to splitting.
-        
+
         Args:
             data: The unified dataset with regime tags
             regime_id: Example regime ID to demonstrate
-            
+
         Returns:
             Dictionary showing data retention comparison
         """
         try:
             # Count total rows in unified dataset
             total_rows = len(data)
-            
+
             # Count rows for specific regime (tagged approach)
             regime_rows = len(data[data['composite_cluster_id'] == regime_id])
-            
+
             # Simulate traditional splitting approach (would lose boundary rows)
             # In splitting, you'd typically lose 20-50 rows per regime due to lookback periods
             estimated_split_loss = min(50, regime_rows // 4)  # Conservative estimate
             split_retention = max(0, regime_rows - estimated_split_loss)
-            
+
             comparison = {
                 'tagging_approach': {
                     'total_rows_available': total_rows,
@@ -2900,14 +2900,14 @@ class RegimeDataSplittingStep:
                     'Context preservation around regime changes'
                 ]
             }
-            
+
             self.logger.info(f'📊 Tagging vs Splitting Comparison for Regime {regime_id}:')
             self.logger.info(f'   🏷️ Tagging: {regime_rows} rows (100% retention)')
             self.logger.info(f'   ✂️ Splitting: ~{split_retention} rows ({split_retention/regime_rows*100:.1f}% retention)')
             self.logger.info(f'   📈 Data saved by tagging: {regime_rows - split_retention} rows')
-            
+
             return comparison
-            
+
         except Exception as e:
             self.logger.error(f'❌ Error demonstrating tagging approach: {e}')
             return {}
@@ -2917,9 +2917,9 @@ class RegimeDataSplittingStep:
         """Save metadata about the unified regime dataset."""
         try:
             metadata = {
-                'approach': 'unified_dataset_with_labels', 
-                'total_regimes': len(regime_ids), 
-                'regime_ids': sorted(regime_ids), 
+                'approach': 'unified_dataset_with_labels',
+                'total_regimes': len(regime_ids),
+                'regime_ids': sorted(regime_ids),
                 'created_at': time.time(),
                 'scalability': {
                     'supports_unlimited_regimes': True,
@@ -2928,19 +2928,19 @@ class RegimeDataSplittingStep:
                     'memory_efficient': True
                 },
                 'data_structure': {
-                    'main_file': f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet', 
-                    'regime_column': 'composite_cluster_id', 
-                    'regime_labels_file': f'{exchange}_{symbol}_{timeframe}_regime_labels.json', 
+                    'main_file': f'{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet',
+                    'regime_column': 'composite_cluster_id',
+                    'regime_labels_file': f'{exchange}_{symbol}_{timeframe}_regime_labels.json',
                     'regime_statistics_file': f'{exchange}_{symbol}_{timeframe}_regime_statistics.json'
-                }, 
+                },
                 'usage_instructions': {
-                    'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing', 
+                    'description': 'Load the unified dataset and filter by composite_cluster_id for regime-specific processing',
                     'example': "regime_data = data[data['composite_cluster_id'] == regime_id]",
                     'context_preservation': 'Use regime_handler.filter_data_by_regime() with preserve_context=True to maintain lookback periods',
                     'benefits': [
-                        'Maintains temporal continuity for trading indicators', 
-                        'Preserves lookback periods (no data loss from splitting)', 
-                        'Eliminates need for multiple file management', 
+                        'Maintains temporal continuity for trading indicators',
+                        'Preserves lookback periods (no data loss from splitting)',
+                        'Eliminates need for multiple file management',
                         'Enables regime-aware processing with single dataset',
                         'Supports unlimited regime counts with optimized processing',
                         'Minimizes data loss compared to traditional splitting approach'
@@ -3105,7 +3105,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
             # Create streamlined regime splitting instance
@@ -3168,7 +3168,7 @@ except ImportError:
 @monitor_feature_engineering()
 async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = None, force_rerun: bool = False, config: dict[str, Any]=None) -> StepResult:
     """Run Step 4: Regime Data Splitting with standardized data quality management."
-    
+
     Args:
         symbol: Trading symbol
         exchange: Exchange name
@@ -3176,7 +3176,7 @@ async def run_step(symbol: str, exchange: str, timeframe: str, data_dir: str = N
         data_dir: Data directory (will use standardized path if None)
         force_rerun: Force rerun flag
         config: Configuration dictionary
-        
+
     Returns:
         StepResult: Standardized result with success status and details
     """
@@ -3257,16 +3257,16 @@ if __name__ == '__main__':
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -3285,8 +3285,8 @@ if __name__ == '__main__':
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -3303,13 +3303,13 @@ if __name__ == '__main__':
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

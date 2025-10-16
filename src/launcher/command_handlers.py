@@ -16,11 +16,11 @@ import logging
 
 class BaseCommandHandler(ABC):
     """Base class for all command handlers."""
-    
+
     def __init__(self, launcher):
         self.launcher = launcher
         self.logger = launcher.logger
-        
+
     @abstractmethod
     def execute(self, **kwargs) -> bool:
         """Execute the command with the given parameters."""
@@ -28,8 +28,8 @@ class BaseCommandHandler(ABC):
 
 class TrainingCommandHandler(BaseCommandHandler):
     """Handles training-related commands (light, blank, full)."""
-    
-    def execute(self, training_mode: str, symbol: str, exchange: str, 
+
+    def execute(self, training_mode: str, symbol: str, exchange: str,
                 lookback_days: Optional[int] = None, with_gui: bool = False) -> bool:
         """Execute unified training with the specified mode."""
         return self.launcher._run_unified_training(
@@ -42,8 +42,8 @@ class TrainingCommandHandler(BaseCommandHandler):
 
 class TradingCommandHandler(BaseCommandHandler):
     """Handles trading-related commands (paper, live, challenger)."""
-    
-    def execute(self, trading_mode: str, symbol: str, exchange: str, 
+
+    def execute(self, trading_mode: str, symbol: str, exchange: str,
                 with_gui: bool = False) -> bool:
         """Execute unified trading with the specified mode."""
         return self.launcher._run_unified_trading(
@@ -55,9 +55,9 @@ class TradingCommandHandler(BaseCommandHandler):
 
 class StepBasedCommandHandler(BaseCommandHandler):
     """Handles step-based training commands."""
-    
-    def execute(self, start_step: str, symbol: str, exchange: str, 
-                training_mode: str = "blank", force_rerun: bool = False, 
+
+    def execute(self, start_step: str, symbol: str, exchange: str,
+                training_mode: str = "blank", force_rerun: bool = False,
                 with_gui: bool = False) -> bool:
         """Execute step-based training with validation."""
         return asyncio.run(
@@ -73,8 +73,8 @@ class StepBasedCommandHandler(BaseCommandHandler):
 
 class DataLoadingCommandHandler(BaseCommandHandler):
     """Handles data loading commands."""
-    
-    def execute(self, symbol: str, exchange: str, 
+
+    def execute(self, symbol: str, exchange: str,
                 lookback_days: int = 1460, blank_mode: bool = False) -> bool:
         """Execute data loading and consolidation."""
         actual_lookback = 30 if blank_mode else lookback_days
@@ -86,8 +86,8 @@ class DataLoadingCommandHandler(BaseCommandHandler):
 
 class PipelineCommandHandler(BaseCommandHandler):
     """Handles pipeline execution commands."""
-    
-    def execute(self, pipeline_type: str, symbol: str, exchange: str, 
+
+    def execute(self, pipeline_type: str, symbol: str, exchange: str,
                 with_gui: bool = False) -> bool:
         """Execute the specified pipeline."""
         pipeline_methods = {
@@ -98,11 +98,11 @@ class PipelineCommandHandler(BaseCommandHandler):
             "backtesting": self.launcher.run_backtesting_pipeline,
             "all-pipelines": self.launcher.run_all_pipelines,
         }
-        
+
         if pipeline_type not in pipeline_methods:
             self.logger.error(f"Unknown pipeline type: {pipeline_type}")
             return False
-            
+
         return pipeline_methods[pipeline_type](
             symbol = symbol,
             exchange = exchange,
@@ -111,8 +111,8 @@ class PipelineCommandHandler(BaseCommandHandler):
 
 class RegimeCommandHandler(BaseCommandHandler):
     """Handles regime-related commands."""
-    
-    def execute(self, subcommand: str, symbol: str, exchange: str, 
+
+    def execute(self, subcommand: str, symbol: str, exchange: str,
                 with_gui: bool = False) -> bool:
         """Execute regime operations."""
         return asyncio.run(
@@ -126,7 +126,7 @@ class RegimeCommandHandler(BaseCommandHandler):
 
 class UtilityCommandHandler(BaseCommandHandler):
     """Handles utility commands (modes, precompute, resume)."""
-    
+
     def execute(self, command: str, **kwargs) -> bool:
         """Execute utility commands."""
         if command == "modes":
@@ -145,24 +145,24 @@ class UtilityCommandHandler(BaseCommandHandler):
 
 class CommandHandlerFactory:
     """Factory for creating command handlers."""
-    
+
     @staticmethod
     def create_handler(command: str, launcher) -> BaseCommandHandler:
         """Create the appropriate command handler for the given command."""
         training_commands = ["light", "blank", "full"]
         trading_commands = ["paper", "live", "challenger"]
         step_commands = [
-            "step01", "step01_5", "step1_5", "step02", "step02_5", "step2_5", 
+            "step01", "step01_5", "step1_5", "step02", "step02_5", "step2_5",
             "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
-            "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", 
+            "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13",
             "step14", "step15", "step16", "step17", "step18", "step19", "step20", "step21"
         ]
         pipeline_commands = [
-            "data-collection", "market-analysis", "model-training", 
+            "data-collection", "market-analysis", "model-training",
             "optimisation", "backtesting", "all-pipelines"
         ]
         utility_commands = ["modes", "precompute", "resume"]
-        
+
         if command in training_commands:
             return TrainingCommandHandler(launcher)
         elif command in trading_commands:

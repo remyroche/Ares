@@ -82,14 +82,12 @@ except ImportError as e:
     print(f"⚠️ WARNING: Negative learning integration not available: {e}")
     NEGATIVE_LEARNING_AVAILABLE = False
 
-
 class TrainingPhase(Enum):
     """Training phase enumeration."""
     BASE_MODEL_TRAINING = "base_model_training"
     ENSEMBLE_TRAINING = "ensemble_training"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class TacticianTrainingPipelineConfig:
@@ -161,7 +159,6 @@ class TacticianTrainingPipelineConfig:
 
             self.base_model_types = normalized_types
 
-
 @dataclass
 class TacticianTrainingPipelineResult:
     """Result of Tactician training pipeline."""
@@ -181,7 +178,6 @@ class TacticianTrainingPipelineResult:
     # Status tracking
     base_training_completed: bool = False
     ensemble_training_completed: bool = False
-
 
 class TacticianTrainingPipeline:
     """
@@ -286,7 +282,7 @@ class TacticianTrainingPipeline:
                 # Extract target and analyst outputs for negative learning initialization
                 target_series = training_data[target_columns[0]] if target_columns else pd.Series()
                 analyst_outputs = kwargs.get('analyst_outputs', None)
-                
+
                 init_results = self.nl_integration.initialize_for_training(
                     analyst_features=pd.DataFrame(),  # Not needed for Tactician
                     analyst_target=pd.Series(dtype=float),
@@ -295,7 +291,7 @@ class TacticianTrainingPipeline:
                     analyst_outputs=analyst_outputs,
                     retrain_timestamp=None
                 )
-                
+
                 if init_results.get('status') == 'success':
                     tprint_success("✅ Negative learning initialized for Tactician training")
                 else:
@@ -377,7 +373,6 @@ class TacticianTrainingPipeline:
         }
 
         return metrics
-
 
 # Convenience function for external usage
 async def execute_tactician_training_pipeline(

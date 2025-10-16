@@ -41,7 +41,7 @@ from enum import Enum
 
 # Import tprint for comprehensive logging
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -182,7 +182,6 @@ class TASRegimeResult:
     error_message: Optional[str] = None
     regime_persistence_summary: Optional[Dict[str, Any]] = None
 
-
 class ProcessedDataSummary:
     """Lightweight summary representing processed data without storing full array."""
 
@@ -195,7 +194,6 @@ class ProcessedDataSummary:
 
     def __len__(self) -> int:
         return self._sample_count
-
 
 class TASRegimeDetector:
     """
@@ -213,10 +211,10 @@ class TASRegimeDetector:
         tprint_debug(f"Number of regimes: {config.n_regimes}")
         tprint_debug(f"Tree depth: {config.tree_depth}")
         tprint_debug(f"Number of estimators: {config.n_estimators}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize performance tracking
         self.performance_metrics = {
             'initialization_time': 0.0,
@@ -237,7 +235,7 @@ class TASRegimeDetector:
         # Initialize enhanced utility tools
         tprint_info("🔧 Initializing enhanced utility tools...")
         self._initialize_enhanced_utility_tools()
-        
+
         # Initialize tool integrations
         tprint_info("🛠️ Initializing tool integrations...")
         tprint_debug("💻 Initializing hardware optimization...")
@@ -273,13 +271,13 @@ class TASRegimeDetector:
             self.common_utils = CommonUtilities()
             tprint_success("✅ Common utilities initialized")
             self.logger.info("✅ Common utilities initialized")
-            
+
             # Initialize math validation
             tprint_debug("🧮 Creating math validator...")
             self.math_validator = MathValidation()
             tprint_success("✅ Math validation initialized")
             self.logger.info("✅ Math validation initialized")
-            
+
             # Initialize matrix operations
             tprint_debug("🔢 Creating enhanced matrix operations...")
             self.enhanced_matrix_ops = get_unified_matrix_operations(
@@ -289,23 +287,23 @@ class TASRegimeDetector:
             )
             tprint_success("✅ Enhanced matrix operations initialized")
             self.logger.info("✅ Enhanced matrix operations initialized")
-            
+
             # Initialize serialization
             tprint_debug("💾 Creating enhanced serializer...")
             self.enhanced_serializer = UniversalSerializer()
             tprint_success("✅ Enhanced serialization initialized")
             self.logger.info("✅ Enhanced serialization initialized")
-            
+
             # Initialize data management
             tprint_debug("📊 Creating klines data manager...")
             self.enhanced_klines_manager = get_klines_manager()
             tprint_success("✅ Enhanced klines data manager initialized")
             self.logger.info("✅ Enhanced klines data manager initialized")
-            
+
             # Initialize M1 optimizations
             tprint_debug("🍎 Initializing M1 optimizations...")
             self._initialize_enhanced_m1_optimizations()
-            
+
         except Exception as e:
             tprint_error(f"❌ Enhanced utility tools initialization failed: {e}")
             self.logger.error(f"❌ Enhanced utility tools initialization failed: {e}")
@@ -315,7 +313,7 @@ class TASRegimeDetector:
             self.enhanced_matrix_ops = None
             self.enhanced_serializer = None
             self.enhanced_klines_manager = None
-    
+
     def _initialize_enhanced_m1_optimizations(self):
         """Initialize enhanced M1 hardware optimizations."""
         tprint_debug("🍎 Starting M1 optimizations initialization...")
@@ -327,7 +325,7 @@ class TASRegimeDetector:
             self.enhanced_memory_optimizer = get_m1_memory_optimizer()
             tprint_debug("⚡ Getting M1 CPU optimizer...")
             self.enhanced_cpu_optimizer = get_m1_cpu_optimizer()
-            
+
             # Integrate M1 optimizations
             tprint_debug("🔗 Integrating M1 optimizations...")
             integration_result = integrate_with_m1_optimizers()
@@ -342,14 +340,14 @@ class TASRegimeDetector:
             else:
                 tprint_warning("⚠️ Enhanced M1 optimizations integration failed")
                 self.logger.warning("⚠️ Enhanced M1 optimizations integration failed")
-                
+
         except Exception as e:
             tprint_warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
             self.logger.warning(f"⚠️ Enhanced M1 optimizations initialization failed: {e}")
             self.enhanced_gpu_manager = None
             self.enhanced_memory_optimizer = None
             self.enhanced_cpu_optimizer = None
-    
+
     def _get_enhanced_utility_status(self) -> str:
         """Get status of enhanced utility tools."""
         status = []
@@ -769,10 +767,10 @@ class TASRegimeDetector:
             data_prep_start = time.time()
             processed_data, processed_timestamps = self._prepare_and_enhance_data(market_data, timestamps, enable_patchtst_enhancement)
             data_prep_time = time.time() - data_prep_start
-            
+
             if not isinstance(processed_data, np.ndarray):
                 processed_data = np.asarray(processed_data)
-            
+
             tprint_info(f"✅ Data prepared: {processed_data.shape[0]} samples, {processed_data.shape[1]} features")
 
             clustering_start = time.time()
@@ -785,10 +783,10 @@ class TASRegimeDetector:
                 synthetic_targets = clustering_output.get('synthetic_targets')
                 clustering_time = time.time() - clustering_start
                 self.performance_metrics['regime_detection_time'] = clustering_time
-                
+
                 # Verify feature scaling quality
                 self._verify_feature_scaling(scaled_features, system_name="TAS")
-                
+
                 # Fast fail validation for clustering results
                 if len(regime_predictions) == 0 or len(regime_probabilities) == 0:
                     raise ValueError("Clustering returned empty results")
@@ -796,7 +794,7 @@ class TASRegimeDetector:
                     raise ValueError("Clustering results contain NaN values")
                 if np.any(np.isinf(regime_probabilities)):
                     raise ValueError("Clustering probabilities contain infinite values")
-                    
+
             except Exception as clustering_error:
                 self.logger.error(f"TAS clustering failed: {clustering_error}")
                 tprint_error(f"❌ [TAS_TRAINING] TAS clustering failed - fast fail")
@@ -804,13 +802,13 @@ class TASRegimeDetector:
 
             unique_regimes = len(np.unique(regime_predictions))
             regime_distribution = np.bincount(regime_predictions)
-            
+
             tprint(f"✅ [TAS_TRAINING] Regime clustering completed: {unique_regimes} regimes", color="green")
             tprint_performance("Clustering execution", clustering_time, color="blue")
             tprint_debug(f"   Unique regime distribution: {regime_distribution}")
             tprint_debug(f"   Regime probabilities shape: {regime_probabilities.shape}")
             tprint_debug(f"   Regime probabilities range: {np.min(regime_probabilities):.3f} - {np.max(regime_probabilities):.3f}")
-            
+
             # Log regime statistics
             for i, count in enumerate(regime_distribution):
                 percentage = (count / len(regime_predictions)) * 100
@@ -830,7 +828,6 @@ class TASRegimeDetector:
                 'synthetic_targets': synthetic_targets
             }
 
-
             # Skip complex validation and enhancement steps
             statistical_results = tree_results
             patchtst_results = statistical_results
@@ -838,7 +835,7 @@ class TASRegimeDetector:
             # Step 4: Basic evaluation scores
             self.logger.info("💰 Performing basic evaluation...")
             tprint("💰 [TAS_TRAINING] Calculating economic significance and trading viability", color="green")
-            
+
             eval_start = time.time()
 
             evaluation_summary = self._evaluate_regime_with_cross_validation(
@@ -902,14 +899,14 @@ class TASRegimeDetector:
             # Create result
             execution_time = time.time() - start_time
             self.performance_metrics['total_execution_time'] = execution_time
-            
+
             tprint_debug("Creating TASRegimeResult object...")
             tprint_debug(f"   Regime predictions shape: {adapted_results['regime_predictions'].shape}")
             tprint_debug(f"   Regime probabilities shape: {adapted_results['regime_probabilities'].shape}")
             tprint_debug(f"   Economic scores shape: {economic_scores.shape}")
             tprint_debug(f"   Trading scores shape: {trading_scores.shape}")
             tprint_debug(f"   Stability scores shape: {stability_scores.shape}")
-            
+
             result = TASRegimeResult(
                 success=True,
                 regime_predictions=adapted_results['regime_predictions'],
@@ -990,7 +987,7 @@ class TASRegimeDetector:
             tprint_success(f"🎉 [TAS_TRAINING] Regime detection completed successfully in {execution_time:.2f}s", color="green")
             tprint_info(f"📊 [TAS_TRAINING] Final results: {len(np.unique(result.regime_predictions))} regimes detected", color="blue")
             tprint_performance("Total execution", execution_time, color="cyan")
-            
+
             # Log performance summary
             tprint_info("📊 Performance Summary:")
             tprint_info(f"   Data points processed: {len(processed_data)}")
@@ -1304,7 +1301,7 @@ class TASRegimeDetector:
                 # Create DataFrame from numpy array
                 if timestamps is None:
                     timestamps = np.arange(len(market_data))
-                
+
                 # Dynamically create column names based on actual data shape
                 n_cols = market_data.shape[1]
                 if n_cols >= 5:
@@ -1347,23 +1344,23 @@ class TASRegimeDetector:
             tprint_success(f"✅ [TAS_TRAINING] Data processing completed in {processing_time:.3f}s", color="green")
             tprint_debug(f"   Original shape: {processing_report['original_shape']} → Final shape: {processing_report['final_shape']}")
             tprint_debug(f"   Processing time: {processing_report.get('processing_time_seconds', 0):.2f}s")
-            
+
             self.logger.info(f"✅ Data processing completed: {processing_report['original_shape']} → {processing_report['final_shape']}")
             self.logger.info(f"   Processing time: {processing_report.get('processing_time_seconds', 0):.2f}s")
-            
+
             # Log any warnings from processing
             if processing_report.get('warnings'):
                 for warning in processing_report['warnings']:
                     self.logger.warning(f"⚠️ Processing warning: {warning}")
-            
+
             # Use common data preprocessing utility
             from src.training.steps.market_analysis.shared_utils.data_preprocessing import (
                 prepare_ml_data, validate_ml_data, normalize_ml_data
             )
-            
+
             # Prepare data for ML processing using common utility
             data_array, timestamps = prepare_ml_data(processed_data, timestamps)
-            
+
             # Validate the prepared data
             data_array = validate_ml_data(data_array, "processed_market_data_array")
 
@@ -1433,58 +1430,58 @@ class TASRegimeDetector:
         try:
             if features is None or len(features) == 0:
                 return
-            
+
             # Calculate feature statistics
             feature_means = np.mean(features, axis=0)
             feature_stds = np.std(features, axis=0)
-            
+
             # Calculate overall statistics
             overall_mean = np.mean(np.abs(feature_means))
             overall_std_mean = np.mean(feature_stds)
-            
+
             # Log feature scaling quality
             self.logger.info(f"📊 {system_name} Feature Scaling - Mean: {overall_mean:.4f}, Std: {overall_std_mean:.4f}")
             tprint_info(f"📊 {system_name} Feature Scaling Quality:")
             tprint_info(f"   Mean (abs): {overall_mean:.4f} (target: ~0.0)")
             tprint_info(f"   Std (mean): {overall_std_mean:.4f} (target: ~1.0)")
-            
+
             # Check if features are properly scaled (mean≈0, std≈1)
             mean_threshold = 0.5
             std_lower = 0.3
             std_upper = 3.0
-            
+
             issues = []
-            
+
             if overall_mean > mean_threshold:
                 issues.append(f"High mean ({overall_mean:.4f} > {mean_threshold})")
                 tprint_warning(f"⚠️ WARNING: {system_name} features have high mean ({overall_mean:.4f} > {mean_threshold})")
                 tprint_warning(f"   → Features may not be centered. Consider StandardScaler or normalization.")
-            
+
             if overall_std_mean < std_lower or overall_std_mean > std_upper:
                 issues.append(f"Std out of range ({overall_std_mean:.4f} not in [{std_lower}, {std_upper}])")
                 tprint_warning(f"⚠️ WARNING: {system_name} features have unusual std ({overall_std_mean:.4f})")
                 tprint_warning(f"   → Features may need scaling. Consider StandardScaler.")
-            
+
             # Check for constant or near-constant features
             near_constant = np.sum(feature_stds < 0.01)
             if near_constant > 0:
                 issues.append(f"{near_constant} near-constant features")
                 tprint_warning(f"⚠️ WARNING: {system_name} has {near_constant} near-constant features (std < 0.01)")
                 tprint_warning(f"   → These features provide little information for clustering.")
-            
+
             # Check for extreme values
             extreme_means = np.sum(np.abs(feature_means) > 10)
             if extreme_means > 0:
                 tprint_error(f"⚠️🚨 ALERT: {system_name} has {extreme_means} features with extreme means (|mean| > 10)")
                 tprint_error(f"   → This may cause clustering instability. Strong scaling recommended.")
                 issues.append(f"{extreme_means} features with extreme values")
-            
+
             if issues:
                 self.logger.warning(f"⚠️ {system_name} feature scaling issues: {', '.join(issues)}")
             else:
                 tprint_success(f"✅ {system_name} features are well-scaled")
                 self.logger.info(f"✅ {system_name} features are well-scaled")
-                
+
         except Exception as e:
             self.logger.warning(f"Feature scaling verification failed: {e}")
             tprint_warning(f"⚠️ Feature scaling verification failed: {e}")
@@ -1509,7 +1506,7 @@ class TASRegimeDetector:
             scaler = StandardScaler()
             data_scaled = scaler.fit_transform(data)
             tprint_debug(f"   [REGIME_DETECTION] Data standardized, shape: {data_scaled.shape}")
-            
+
             # Feature selection to reduce dimensionality
             tprint_debug("   [REGIME_DETECTION] Applying feature selection to reduce dimensionality...")
             data_scaled, selected_features = self._apply_feature_selection(data_scaled, self.config.n_regimes)
@@ -1520,13 +1517,13 @@ class TASRegimeDetector:
             initial_labels = self._create_data_driven_labels(data_scaled, self.config.n_regimes)
             unique_initial = len(np.unique(initial_labels))
             tprint_debug(f"   [REGIME_DETECTION] Initial regime assignment completed: {unique_initial} regimes")
-            
+
             # Log regime distribution to verify it's NOT artificially balanced
             regime_counts = np.bincount(initial_labels)
             for i, count in enumerate(regime_counts):
                 percentage = (count / len(initial_labels)) * 100
                 tprint_debug(f"   Initial Regime {i}: {count} samples ({percentage:.1f}%)")
-            
+
             # Calculate balance score (1.0 = perfectly balanced, lower = more natural)
             mean_size = len(initial_labels) / unique_initial
             balance_score = 1.0 / (1.0 + np.std(regime_counts) / mean_size) if mean_size > 0 else 0.0
@@ -1535,7 +1532,7 @@ class TASRegimeDetector:
             # Train Random Forest on the synthetic targets
             tprint_debug("   [REGIME_DETECTION] Training Random Forest classifier...")
             rf_start = time.time()
-            
+
             # Fast fail check for Random Forest parameters
             if self.config.n_estimators <= 0:
                 raise ValueError(f"Invalid n_estimators: {self.config.n_estimators}")
@@ -1545,7 +1542,7 @@ class TASRegimeDetector:
                 raise ValueError(f"Invalid min_samples_split: {self.config.min_samples_split}")
             if self.config.min_samples_leaf < 1:
                 raise ValueError(f"Invalid min_samples_leaf: {self.config.min_samples_leaf}")
-                
+
             rf = RandomForestClassifier(
                 n_estimators=self.config.n_estimators,
                 max_depth=self.config.tree_depth,
@@ -1583,21 +1580,21 @@ class TASRegimeDetector:
             # Calculate multiple validation scores for better optimization sensitivity
             if len(set(labels)) > 1:
                 tprint_debug("   [REGIME_DETECTION] Calculating validation scores...")
-                
+
                 # Silhouette score
                 silhouette = silhouette_score(data_scaled, labels)
-                
+
                 # Calinski-Harabasz score (higher is better)
                 from sklearn.metrics import calinski_harabasz_score
                 ch_score = calinski_harabasz_score(data_scaled, labels)
-                
+
                 # Davies-Bouldin score (lower is better)
                 from sklearn.metrics import davies_bouldin_score
                 db_score = davies_bouldin_score(data_scaled, labels)
-                
+
                 # Combined score (higher is better)
                 combined_score = (silhouette + (ch_score / 1000) + (1 - db_score)) / 3
-                
+
                 self.logger.info(f"Tree-based regime detection scores - Silhouette: {silhouette:.3f}, CH: {ch_score:.1f}, DB: {db_score:.3f}, Combined: {combined_score:.3f}")
                 tprint_debug(f"   [REGIME_DETECTION] Silhouette: {silhouette:.3f}, CH: {ch_score:.1f}, DB: {db_score:.3f}")
             else:
@@ -1639,11 +1636,11 @@ class TASRegimeDetector:
             # Standardize data for consistent label creation
             scaler = StandardScaler()
             data_scaled = scaler.fit_transform(data)
-            
+
             # Create data-driven synthetic targets (not equal chunks!)
             tprint_debug("   [SUPERVISED_DISCOVERY] Creating data-driven synthetic targets...")
             synthetic_targets = self._create_data_driven_labels(data_scaled, self.config.n_regimes)
-            
+
             # Log distribution
             regime_counts = np.bincount(synthetic_targets)
             for i, count in enumerate(regime_counts):
@@ -1757,7 +1754,7 @@ class TASRegimeDetector:
                 'total_regimes': 0,
                 'method': 'unknown'
             }
-    
+
     def _perform_advanced_tree_regime_discovery(self, data: np.ndarray) -> Dict[str, Any]:
         """Perform regime discovery using advanced tree models with meta-learning."""
         try:
@@ -1821,11 +1818,10 @@ class TASRegimeDetector:
                 'optimal_regimes': optimal_regimes,
                 'ensemble_size': len(ensemble_predictions) if ensemble_predictions else 0
             }
-            
+
         except Exception as e:
             self.logger.error(f"Advanced tree regime discovery failed: {e}")
             raise ValueError(f"Advanced tree regime discovery failed: {e}")
-
 
     def _perform_statistical_validation(self, data: np.ndarray, tree_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform statistical validation of regime predictions."""
@@ -1941,7 +1937,7 @@ class TASRegimeDetector:
         """Evaluate economic significance of detected regimes using position-aware analysis."""
         if self.position_analyzer is None:
             raise ValueError("Position analyzer not available. Cannot evaluate economic significance without proper ML models.")
-        
+
         try:
             # Use position-aware analyzer for economic significance
             labels = regime_results['regime_predictions']
@@ -1981,7 +1977,6 @@ class TASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Position-aware economic significance evaluation failed: {e}")
             raise ValueError(f"Economic significance evaluation failed: {e}")
-
 
     def _evaluate_trading_viability(self, data: np.ndarray, regime_results: Dict[str, Any]) -> np.ndarray:
         """Evaluate trading viability of detected regimes using position-aware analysis."""
@@ -2049,7 +2044,6 @@ class TASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Position-aware trading viability evaluation failed: {e}")
             raise ValueError(f"Trading viability evaluation failed: {e}")
-
 
     def _create_score_array(self, length: int, score: float) -> np.ndarray:
         """Create a score array with safe fallbacks."""
@@ -2271,7 +2265,7 @@ class TASRegimeDetector:
 
             # Use stratified sampling for regime classification to ensure all regimes are represented
             from sklearn.model_selection import StratifiedKFold
-            
+
             # Determine appropriate CV strategy based on data size
             if len(X) > 1000:
                 # For larger datasets, use time series split
@@ -2327,7 +2321,7 @@ class TASRegimeDetector:
 
                 X_train, y_train = data[train_idx], labels[train_idx]
                 X_test, y_test = data[test_idx], labels[test_idx]
-                
+
                 # Apply feature selection to each fold for consistency with main TAS detection
                 X_train_selected, selected_features = self._apply_feature_selection(X_train, self.config.n_regimes)
                 X_test_selected = X_test[:, selected_features]
@@ -2554,15 +2548,15 @@ class TASRegimeDetector:
     def _create_data_driven_labels(self, data_scaled: np.ndarray, n_regimes: int) -> np.ndarray:
         """
         Create data-driven synthetic labels using tree-based clustering.
-        
+
         Uses Random Forest feature importance for feature selection (Hybrid),
         better PCA strategy with more components (Option B),
         and tree-based proximity clustering instead of KMeans (truly tree-driven!).
-        
+
         Args:
             data_scaled: Standardized feature matrix
             n_regimes: Target number of regimes
-            
+
         Returns:
             Array of initial regime labels based on data characteristics
         """
@@ -2571,55 +2565,55 @@ class TASRegimeDetector:
             from sklearn.ensemble import RandomForestClassifier
             from sklearn.cluster import AgglomerativeClustering
             from sklearn.metrics.pairwise import euclidean_distances
-            
+
             tprint_debug("   [DATA_DRIVEN_LABELS] Starting TREE-BASED data-driven label creation...")
             n_samples, n_features = data_scaled.shape
-            
+
             # HYBRID APPROACH: Feature Selection using tree importance
             tprint_debug("   🌳 [HYBRID] Step 1: Feature selection via Random Forest importance")
-            
+
             # Create temporary labels for feature importance (quantile-based)
             temp_signal = np.mean(data_scaled, axis=1)
             temp_labels = pd.qcut(temp_signal, q=min(5, n_samples//10), labels=False, duplicates='drop')
-            
+
             # Train RF to get feature importances
             rf_selector = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
             rf_selector.fit(data_scaled, temp_labels)
             feature_importances = rf_selector.feature_importances_
-            
+
             # Select top 15 most important features (most variable/informative)
             n_selected = min(15, n_features)
             top_features = np.argsort(feature_importances)[-n_selected:]
             selected_data = data_scaled[:, top_features]
-            
+
             tprint_debug(f"   🌳 [HYBRID] Selected {n_selected} most important features from {n_features}")
             tprint_debug(f"   🌳 [HYBRID] Top feature importance: {feature_importances[top_features[-1]]:.3f}")
-            
+
             # OPTION B: Better PCA Strategy with more components
             tprint_debug("   📊 [PCA] Step 2: Better PCA with adaptive component selection")
-            
+
             # Use components explaining 95% variance (not just 5 components!)
             pca = PCA()
             pca.fit(selected_data)
             cumulative_variance = np.cumsum(pca.explained_variance_ratio_)
             n_components = max(5, min(np.argmax(cumulative_variance >= 0.95) + 1, n_selected))
-            
+
             tprint_debug(f"   📊 [PCA] Using {n_components} components (explains {cumulative_variance[n_components-1]*100:.1f}% variance)")
-            
+
             # Re-fit with optimal components
             pca = PCA(n_components=n_components)
             pca_features = pca.fit_transform(selected_data)
-            
+
             # Weight components by explained variance to prevent PC1 dominance
             variance_weights = pca.explained_variance_ratio_
             pca_features_weighted = pca_features * variance_weights
-            
+
             tprint_debug(f"   📊 [PCA] Variance per component: {pca.explained_variance_ratio_}")
             tprint_debug(f"   📊 [PCA] PC1 explains: {pca.explained_variance_ratio_[0]*100:.1f}% (prevented from dominating)")
-            
+
             # TREE-BASED CLUSTERING: Use Random Forest proximity for clustering
             tprint_debug(f"   🌲 [TREE_CLUSTERING] Step 3: Tree-based proximity clustering")
-            
+
             # Train unsupervised Random Forest with random labels to get proximity matrix
             # This is more tree-native than KMeans!
             random_labels = np.random.randint(0, n_regimes, n_samples)
@@ -2630,10 +2624,10 @@ class TASRegimeDetector:
                 min_samples_leaf=5
             )
             rf_proximity.fit(pca_features_weighted, random_labels)
-            
+
             # Get leaf indices for each sample (tree structure)
             leaf_indices = rf_proximity.apply(pca_features_weighted)
-            
+
             # Use hierarchical clustering on leaf indices (tree-based distance!)
             tprint_debug(f"   🌲 [TREE_CLUSTERING] Applying hierarchical clustering on tree structure")
             clustering = AgglomerativeClustering(
@@ -2641,71 +2635,71 @@ class TASRegimeDetector:
                 linkage='ward'
             )
             initial_labels = clustering.fit_predict(leaf_indices)
-            
+
             # Validate we got the right number of regimes
             unique_labels = len(np.unique(initial_labels))
             if unique_labels < n_regimes:
                 tprint_warning(f"   ⚠️  Tree clustering found only {unique_labels} regimes, expected {n_regimes}")
-            
+
             # Enforce regime size constraints (like NAS)
             min_regime_size = max(int(0.05 * n_samples), 48)  # Min 5% or 48 samples
             max_regime_size = int(0.25 * n_samples)  # Max 25% per regime (reduced from 35%)
-            
+
             tprint_debug(f"   🔧 [CONSTRAINTS] Enforcing size constraints: min={min_regime_size}, max={max_regime_size}")
             initial_labels = self._enforce_regime_size_constraints(
                 initial_labels, pca_features_weighted, min_regime_size, max_regime_size
             )
-            
+
             # Verify labels are valid
             initial_labels = np.asarray(initial_labels, dtype=int)
             initial_labels = np.clip(initial_labels, 0, max(initial_labels))
-            
+
             # Log distribution
             regime_counts = np.bincount(initial_labels)
             balance_ratio = regime_counts.max() / regime_counts.min() if regime_counts.min() > 0 else np.inf
             tprint_debug(f"   📊 [DISTRIBUTION] Regime size ratio (max/min): {balance_ratio:.2f}x")
-            
+
             for i, count in enumerate(regime_counts):
                 pct = count / n_samples * 100
                 tprint_debug(f"   📊 Regime {i}: {count} samples ({pct:.1f}%)")
-            
+
             if balance_ratio < 1.5:
                 tprint_warning(f"   ⚠️  Labels appear too balanced (ratio={balance_ratio:.2f}), may not reflect natural structure")
             elif balance_ratio > 10:
                 tprint_warning(f"   ⚠️  Labels appear too imbalanced (ratio={balance_ratio:.2f}), may have mega-regimes")
             else:
                 tprint_success(f"   ✅ [DISTRIBUTION] Healthy balance ratio: {balance_ratio:.2f}x")
-            
+
             tprint_success("   ✅ [DATA_DRIVEN_LABELS] Tree-based data-driven labels created successfully")
             return initial_labels
-            
+
         except Exception as e:
             self.logger.error(f"Tree-based label creation failed: {e}")
             tprint_error(f"   ❌ [DATA_DRIVEN_LABELS] Failed: {e}")
             # Emergency fallback: use quantile-based assignment on first feature
             tprint_warning("   [DATA_DRIVEN_LABELS] Using emergency fallback: quantile-based labels")
             return self._create_quantile_based_labels(data_scaled[:, 0:1], n_regimes)
-    
+
     def _enforce_regime_size_constraints(self, labels: np.ndarray, features: np.ndarray,
                                         min_size: int, max_size: int) -> np.ndarray:
         """
         Enforce minimum and maximum regime size constraints.
-        
+
         Args:
             labels: Initial regime labels
             features: Feature matrix for distance calculations
             min_size: Minimum samples per regime
             max_size: Maximum samples per regime
-            
+
         Returns:
             Constrained regime labels
         """
         try:
             from sklearn.metrics.pairwise import euclidean_distances
-            
+
             labels = labels.copy()
             unique_regimes = np.unique(labels)
-            
+
             # Calculate regime sizes and centroids
             regime_sizes = {r: np.sum(labels == r) for r in unique_regimes}
             regime_centroids = {}
@@ -2713,7 +2707,7 @@ class TASRegimeDetector:
                 mask = labels == r
                 if np.sum(mask) > 0:
                     regime_centroids[r] = np.mean(features[mask], axis=0)
-            
+
             # Phase 1: Merge regimes that are too small
             small_regimes = [r for r, size in regime_sizes.items() if size < min_size]
             if small_regimes:
@@ -2721,23 +2715,23 @@ class TASRegimeDetector:
                 for small_regime in sorted(small_regimes, key=lambda r: regime_sizes[r]):
                     small_mask = labels == small_regime
                     large_regimes = [r for r in unique_regimes if r not in small_regimes and regime_sizes.get(r, 0) >= min_size]
-                    
+
                     if large_regimes:
                         # Find nearest large regime
                         small_centroid = regime_centroids[small_regime]
-                        distances = {r: euclidean_distances([small_centroid], [regime_centroids[r]])[0][0] 
+                        distances = {r: euclidean_distances([small_centroid], [regime_centroids[r]])[0][0]
                                    for r in large_regimes}
                         nearest = min(distances.keys(), key=lambda k: distances[k])
-                        
+
                         # Merge
                         labels[small_mask] = nearest
                         regime_sizes[nearest] = regime_sizes.get(nearest, 0) + regime_sizes[small_regime]
                         regime_sizes.pop(small_regime)
                         regime_centroids[nearest] = np.mean(features[labels == nearest], axis=0)
                         regime_centroids.pop(small_regime)
-                        
+
                         tprint_debug(f"   ✅ Merged R{small_regime} ({regime_sizes.get(small_regime, 0)} samples) → R{nearest}")
-            
+
             # Phase 2: Split regimes that are too large
             iteration = 0
             max_iterations = 5
@@ -2745,50 +2739,50 @@ class TASRegimeDetector:
                 large_regimes = [r for r in np.unique(labels) if np.sum(labels == r) > max_size]
                 if not large_regimes:
                     break
-                
+
                 tprint_debug(f"   🔧 [CONSTRAINTS] Iteration {iteration+1}: Splitting {len(large_regimes)} large regimes")
-                
+
                 for large_regime in large_regimes:
                     large_mask = labels == large_regime
                     large_samples = features[large_mask]
-                    
+
                     # Sub-cluster large regime into 2 using hierarchical clustering
                     from sklearn.cluster import AgglomerativeClustering
                     sub_clustering = AgglomerativeClustering(n_clusters=2, linkage='ward')
                     sub_labels = sub_clustering.fit_predict(large_samples)
-                    
+
                     # Assign new regime ID to second sub-cluster
                     new_regime_id = max(np.unique(labels)) + 1
                     large_indices = np.where(large_mask)[0]
                     for i, sub_label in enumerate(sub_labels):
                         if sub_label == 1:
                             labels[large_indices[i]] = new_regime_id
-                    
+
                     tprint_debug(f"   ✅ Split R{large_regime} ({np.sum(large_mask)} samples) → R{large_regime} + R{new_regime_id}")
-                    
+
                 iteration += 1
-            
+
             # Re-map labels to be sequential
             final_regimes = sorted(set(labels))
             regime_mapping = {old_id: new_id for new_id, old_id in enumerate(final_regimes)}
             labels = np.array([regime_mapping[r] for r in labels])
-            
+
             return labels
-            
+
         except Exception as e:
             tprint_warning(f"   ⚠️ Constraint enforcement failed: {e}, returning original labels")
             return labels
-    
+
     def _create_quantile_based_labels(self, data: np.ndarray, n_regimes: int) -> np.ndarray:
         """
         Create regime labels using quantile-based binning.
-        
+
         This is a fallback method that uses data percentiles to assign labels.
-        
+
         Args:
             data: Feature matrix (can be 1D or 2D)
             n_regimes: Number of regimes to create
-            
+
         Returns:
             Array of regime labels
         """
@@ -2798,17 +2792,17 @@ class TASRegimeDetector:
                 regime_signal = np.mean(data, axis=1)  # Simple average
             else:
                 regime_signal = data.ravel()
-            
+
             # Use quantiles to create regime boundaries
             quantiles = np.linspace(0, 100, n_regimes + 1)
             percentiles = np.percentile(regime_signal, quantiles)
-            
+
             # Assign labels based on quantile membership
             labels = np.digitize(regime_signal, percentiles[1:-1])
             labels = np.clip(labels, 0, n_regimes - 1)
-            
+
             return labels.astype(int)
-            
+
         except Exception as e:
             self.logger.error(f"Quantile-based labeling failed: {e}")
             # Ultimate fallback: equal chunks (but at least we tried!)
@@ -2822,7 +2816,7 @@ class TASRegimeDetector:
             # Get the actual number of unique labels (regimes) from the data
             unique_labels = np.unique(labels)
             n_actual_regimes = len(unique_labels)
-            
+
             # Initialize probabilities array with the actual number of regimes
             probabilities = np.zeros((len(data), n_actual_regimes))
 
@@ -2867,7 +2861,7 @@ class TASRegimeDetector:
                 # Find all points in this regime from the actual data
                 regime_mask = labels == label
                 regime_points = data[regime_mask]
-                
+
                 if len(regime_points) > 0:
                     # Calculate distance to regime center
                     center = np.mean(regime_points, axis=0)
@@ -2888,59 +2882,59 @@ class TASRegimeDetector:
         try:
             from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
             from sklearn.ensemble import RandomForestClassifier
-            
+
             n_samples, n_features = data.shape
-            
+
             # Calculate target number of features (aim for 25 features per regime)
             target_features = min(max(n_regimes * 25, 200), n_features // 2)
             target_features = min(target_features, n_samples // 5)  # Don't exceed samples/5
-            
+
             tprint_debug(f"   [FEATURE_SELECTION] Original features: {n_features}, Target: {target_features}")
-            
+
             if n_features <= target_features:
                 tprint_debug("   [FEATURE_SELECTION] No feature selection needed")
                 return data, np.arange(n_features)
-            
+
             # Create synthetic labels for feature selection
             from sklearn.cluster import KMeans
             kmeans = KMeans(n_clusters=n_regimes, random_state=42, n_init=10)
             synthetic_labels = kmeans.fit_predict(data)
-            
+
             # Use multiple feature selection methods and combine results
             # Method 1: F-test (ANOVA F-value)
             selector_f = SelectKBest(score_func=f_classif, k=target_features)
             selector_f.fit(data, synthetic_labels)
             f_scores = selector_f.scores_
-            
+
             # Method 2: Mutual Information
             selector_mi = SelectKBest(score_func=mutual_info_classif, k=target_features)
             selector_mi.fit(data, synthetic_labels)
             mi_scores = selector_mi.scores_
-            
+
             # Method 3: Random Forest feature importance
             rf = RandomForestClassifier(n_estimators=50, random_state=42, max_depth=10)
             rf.fit(data, synthetic_labels)
             rf_importance = rf.feature_importances_
-            
+
             # Combine scores (weighted average)
             combined_scores = (0.4 * f_scores + 0.3 * mi_scores + 0.3 * rf_importance)
-            
+
             # Handle NaN values in scores
             combined_scores = np.nan_to_num(combined_scores, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             # Select top features
             top_features = np.argsort(combined_scores)[-target_features:]
-            
+
             # Sort features by importance for better interpretability
             top_features = top_features[np.argsort(combined_scores[top_features])[::-1]]
-            
+
             selected_data = data[:, top_features]
-            
+
             tprint_debug(f"   [FEATURE_SELECTION] Selected {len(top_features)} features from {n_features}")
             tprint_debug(f"   [FEATURE_SELECTION] Feature importance range: {combined_scores[top_features].min():.4f} - {combined_scores[top_features].max():.4f}")
-            
+
             return selected_data, top_features
-            
+
         except Exception as e:
             self.logger.warning(f"Feature selection failed: {e}, using all features")
             return data, np.arange(data.shape[1])
@@ -2954,7 +2948,7 @@ class TASRegimeDetector:
                 self.logger.error(error_msg)
                 tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
                 raise ValueError(error_msg)
-            
+
             # Check for constant features (zero variance) - FAST FAIL
             feature_vars = np.var(data, axis=0)
             constant_features = np.sum(feature_vars < 1e-10)
@@ -2963,14 +2957,14 @@ class TASRegimeDetector:
                 self.logger.error(error_msg)
                 tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
                 raise ValueError(error_msg)
-            
+
             # Check for NaN or infinite values - FAST FAIL
             if np.any(np.isnan(data)) or np.any(np.isinf(data)):
                 error_msg = "Data contains NaN or infinite values"
                 self.logger.error(error_msg)
                 tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
                 raise ValueError(error_msg)
-            
+
             # Check for sufficient variance across all features - FAST FAIL
             total_variance = np.sum(feature_vars)
             if total_variance < 1e-10:
@@ -2978,14 +2972,14 @@ class TASRegimeDetector:
                 self.logger.error(error_msg)
                 tprint_error(f"❌ [DATA_VALIDATION] {error_msg}")
                 raise ValueError(error_msg)
-            
+
             tprint_debug(f"   [DATA_VALIDATION] Data quality check passed")
             tprint_debug(f"   [DATA_VALIDATION] Data shape: {data.shape}")
             tprint_debug(f"   [DATA_VALIDATION] Feature variance range: {np.min(feature_vars):.6f} - {np.max(feature_vars):.6f}")
             tprint_debug(f"   [DATA_VALIDATION] Total variance: {total_variance:.6f}")
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Data validation failed: {e}")
             raise  # Re-raise to ensure fast fail

@@ -6,11 +6,10 @@ This package provides GUI components for the enhanced monitoring system
 including dashboards, visualizations, and data display interfaces.
 """
 
-
 __all__ = [
     "MonitoringDashboard",
     "create_monitoring_dashboard",
-    "EnhancedMonitoringDashboard", 
+    "EnhancedMonitoringDashboard",
     "create_enhanced_monitoring_dashboard",
     "MonitoringVisualization",
     "VisualizationControlPanel",

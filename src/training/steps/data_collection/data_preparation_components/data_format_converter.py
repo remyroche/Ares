@@ -34,7 +34,7 @@ import time
 
 class DataFormatConverter:
     """Handles conversion between different data formats with focus on Parquet operations.
-    
+
     This class provides functionality for:
     - Writing and reading partitioned Parquet datasets
     - Schema enforcement and validation
@@ -68,27 +68,27 @@ class DataFormatConverter:
     @traced('DataFormatConverter.enforce_schema', log_args = False, log_result_len_only = True)
     def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
         """Enforce a specific schema on the DataFrame.
-        
+
         Args:
             df: DataFrame to enforce schema on
             schema_name: Name of the schema to enforce (klines, aggtrades, futures, split, unified)
-            
+
         Returns:
             DataFrame with enforced schema
         """
         self.logger.info(f'🔧 Enforcing schema "{schema_name}" on DataFrame...')
-        
+
         if df is None or df.empty:
             self.logger.warning('⚠️ DataFrame is None or empty, returning as-is')
             return df
-            
+
         self.logger.info(f'📊 Input DataFrame shape: {df.shape}')
         self.logger.info(f'📋 Input columns: {list(df.columns)}')
         self.logger.info(f'📋 Input dtypes: {dict(df.dtypes)}')
-        
+
         conversions: dict[str, str] = {}
         optional_columns: dict[str, str] = {}
-        
+
         # Define schema conversions
         if schema_name == 'klines':
             conversions = {'timestamp': 'int64', 'open': 'float64', 'high': 'float64', 'low': 'float64', 'close': 'float64', 'volume': 'float64'}
@@ -111,15 +111,15 @@ class DataFormatConverter:
             self.logger.info('📋 Using unified schema: comprehensive market data')
         else:
             self.logger.warning(f'⚠️ Unknown schema name: {schema_name}')
-            
+
         # Add optional columns if present
         for col, dtype in optional_columns.items():
             if col in df.columns:
                 conversions[col] = dtype
                 self.logger.info(f'📋 Added optional column "{col}" as {dtype}')
-                
+
         self.logger.info(f'📋 Total columns to convert: {len(conversions)}')
-        
+
         # Handle timestamp conversion first
         if 'timestamp' in df.columns:
             self.logger.info('🕐 Converting timestamp column...')
@@ -174,15 +174,15 @@ class DataFormatConverter:
                 current_ts = int(pd.Timestamp.now().timestamp() * 1000)
                 df.loc[:, 'timestamp'] = current_ts
                 self.logger.info(f'🕐 Applied fallback timestamp: {current_ts}')
-                
+
         # Convert other columns
         conversion_results = {'success': 0, 'failed': 0, 'skipped': 0}
-        
+
         for col, dtype in conversions.items():
             if col in df.columns:
                 try:
                     original_dtype = str(df[col].dtype)
-                    
+
                     if dtype == 'bool':
                         self.logger.info(f'🔧 Converting "{col}" to boolean: {original_dtype} → {dtype}')
                         df.loc[:, col] = df[col].astype('boolean').astype(bool)
@@ -192,26 +192,26 @@ class DataFormatConverter:
                     else:
                         self.logger.info(f'🔧 Converting "{col}" to {dtype}: {original_dtype} → {dtype}')
                         df.loc[:, col] = pd.to_numeric(df[col], errors='coerce').astype(dtype)
-                        
+
                     new_dtype = str(df[col].dtype)
                     conversion_results['success'] += 1
                     self.logger.info(f'✅ Column "{col}" converted successfully: {original_dtype} → {new_dtype}')
-                    
+
                 except Exception as e:
                     conversion_results['failed'] += 1
                     self.logger.error(f'❌ Failed to convert column "{col}" to {dtype}: {e}')
             else:
                 conversion_results['skipped'] += 1
                 self.logger.warning(f'⚠️ Column "{col}" not found in DataFrame, skipping')
-                
+
         self.logger.info(f'📊 Schema enforcement complete: {conversion_results["success"]} successful, {conversion_results["failed"]} failed, {conversion_results["skipped"]} skipped')
         self.logger.info(f'📋 Final DataFrame dtypes: {dict(df.dtypes)}')
-        
+
         return df
 
     def write_partitioned_dataset(self, df: pd.DataFrame, base_dir: str, partition_cols: list[str], schema_name: str | None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, min_rows_per_group: int = 50000, max_rows_per_file: int = 5000000, use_threads: bool = True, update_manifest: bool = True, metadata: dict[str, Any] | None = None, auto_add_date_columns: bool = True) -> None:
         """Write DataFrame as partitioned Parquet dataset.
-        
+
         Args:
             df: DataFrame to write
             base_dir: Base directory for the dataset
@@ -320,7 +320,7 @@ class DataFormatConverter:
 
     def scan_dataset(self, base_dir: str, filters: list | None = None, columns: list[str] | None = None, batch_size: int | None = None, to_pandas: bool = True, use_threads: bool = True, ignore_hidden_temp: bool = True) -> pd.DataFrame | Any:
         """Scan a partitioned Parquet dataset with optional filters.
-        
+
         Args:
             base_dir: Base directory of the dataset
             filters: Filter expressions as list of tuples
@@ -329,7 +329,7 @@ class DataFormatConverter:
             to_pandas: Whether to convert to pandas DataFrame
             use_threads: Whether to use multiple threads
             ignore_hidden_temp: Whether to ignore hidden/temp files
-            
+
         Returns:
             DataFrame or Arrow Table
         """
@@ -411,7 +411,7 @@ class DataFormatConverter:
 
     def write_flat_parquet(self, df: pd.DataFrame, file_path: str, schema_name: str | None = None, compression: str='snappy', use_dictionary: bool | dict[str, bool]=True, row_group_size: int = 128000, write_statistics: bool = True, metadata: dict[str, Any] | None = None) -> None:
         """Write DataFrame as a single Parquet file.
-        
+
         Args:
             df: DataFrame to write
             file_path: Path to write the file
@@ -435,7 +435,7 @@ class DataFormatConverter:
 
     def update_manifest(self, base_dir: str, ts_column: str='timestamp') -> None:
         """Update manifest file with dataset statistics.
-        
+
         Args:
             base_dir: Base directory of the dataset
             ts_column: Name of the timestamp column
@@ -476,11 +476,11 @@ class DataFormatConverter:
 
     def get_latest_timestamp(self, base_dir: str, ts_column: str='timestamp') -> int | None:
         """Get the latest timestamp from manifest or scan dataset.
-        
+
         Args:
             base_dir: Base directory of the dataset
             ts_column: Name of the timestamp column
-            
+
         Returns:
             Latest timestamp in milliseconds or None
         """

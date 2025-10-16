@@ -50,9 +50,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
@@ -90,7 +90,7 @@ class RobustScoringModels:
         """Initialize robust scoring models."""
         tprint_info("🚀 Initializing Robust Scoring Models")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -114,7 +114,7 @@ class RobustScoringModels:
             'svr': SVR(kernel='rbf'),
             'mlp': MLPRegressor(hidden_layer_sizes=(100, 50), random_state=self.random_state, max_iter=1000)
         }
-        
+
         self.classification_models = {
             'random_forest': RandomForestClassifier(n_estimators=100, random_state=self.random_state),
             'svc': SVC(kernel='rbf', probability=True, random_state=self.random_state),
@@ -138,11 +138,11 @@ class RobustScoringModels:
         self.trained_models = {}
         self.scalers = {}
         self.label_encoders = {}
-        
+
         tprint_success("✅ Robust Scoring Models initialized")
         self.logger.info("✅ Robust Scoring Models initialized")
 
-    def train_scoring_models(self, 
+    def train_scoring_models(self,
                            historical_data: pd.DataFrame,
                            regime_features: np.ndarray,
                            regime_labels: np.ndarray,
@@ -176,10 +176,10 @@ class RobustScoringModels:
 
             # Train models for each target
             model_performances = {}
-            
+
             for target_name, target_type in self.scoring_targets.items():
                 tprint(f"🎯 [ROBUST_SCORING] Training model for {target_name} ({target_type})", color="cyan")
-                
+
                 if target_name in y_targets:
                     performance = self._train_single_model(
                         X, y_targets[target_name], target_name, target_type, feature_names
@@ -191,7 +191,7 @@ class RobustScoringModels:
 
             tprint_success(f"🎉 [ROBUST_SCORING] Scoring model training completed successfully")
             tprint_performance(f"⚡ [ROBUST_SCORING] Final result: {len(model_performances)} models trained")
-            
+
             return model_performances
 
         except Exception as e:
@@ -200,7 +200,7 @@ class RobustScoringModels:
             self.logger.error(f"Scoring model training failed: {e}")
             raise
 
-    def predict_regime_scores(self, 
+    def predict_regime_scores(self,
                             features: np.ndarray,
                             market_data: pd.DataFrame,
                             regime_id: int) -> ScoringModelResult:
@@ -230,7 +230,7 @@ class RobustScoringModels:
             tprint("🎯 [ROBUST_SCORING] Making predictions", color="cyan")
             predictions = {}
             confidence_scores = {}
-            
+
             for target_name in self.scoring_targets.keys():
                 if target_name in self.trained_models:
                     prediction, confidence = self._make_single_prediction(X_pred, target_name)
@@ -245,7 +245,7 @@ class RobustScoringModels:
 
             tprint_success(f"🎉 [ROBUST_SCORING] Score prediction completed successfully")
             tprint_performance(f"⚡ [ROBUST_SCORING] Final result: {len(predictions)} predictions made")
-            
+
             return ScoringModelResult(
                 economic_significance=predictions.get('economic_significance', 0.5),
                 trading_viability=predictions.get('trading_viability', 0.5),
@@ -276,7 +276,7 @@ class RobustScoringModels:
                 model_metadata={'error': str(e)}
             )
 
-    def _prepare_training_data(self, 
+    def _prepare_training_data(self,
                              historical_data: pd.DataFrame,
                              regime_features: np.ndarray,
                              regime_labels: np.ndarray,
@@ -286,60 +286,60 @@ class RobustScoringModels:
             # Combine features and market data
             feature_list = []
             feature_names = []
-            
+
             # Add regime features
             for i in range(regime_features.shape[1]):
                 feature_list.append(regime_features[:, i])
                 feature_names.append(f"regime_feature_{i}")
-            
+
             # Add market data features
             market_features = self._extract_market_features(historical_data)
             for i, feature_name in enumerate(market_features.columns):
                 feature_list.append(market_features.iloc[:, i].values)
                 feature_names.append(f"market_{feature_name}")
-            
+
             # Combine all features
             X = np.column_stack(feature_list)
-            
+
             # Prepare target variables
             y_targets = {}
-            
+
             # Extract targets from regime metrics
             for i, metrics in enumerate(regime_metrics):
                 regime_id = metrics.get('regime_id', i)
                 regime_mask = regime_labels == regime_id
-                
+
                 if np.any(regime_mask):
                     # Economic significance
                     if 'economic_significance' not in y_targets:
                         y_targets['economic_significance'] = np.zeros(len(regime_labels))
                     y_targets['economic_significance'][regime_mask] = metrics.get('economic_significance', 0.5)
-                    
+
                     # Trading viability
                     if 'trading_viability' not in y_targets:
                         y_targets['trading_viability'] = np.zeros(len(regime_labels))
                     y_targets['trading_viability'][regime_mask] = metrics.get('trading_viability', 0.5)
-                    
+
                     # Stability score
                     if 'stability_score' not in y_targets:
                         y_targets['stability_score'] = np.zeros(len(regime_labels))
                     y_targets['stability_score'][regime_mask] = metrics.get('stability_score', 0.5)
-                    
+
                     # Risk score
                     if 'risk_score' not in y_targets:
                         y_targets['risk_score'] = np.zeros(len(regime_labels))
                     y_targets['risk_score'][regime_mask] = metrics.get('risk_score', 0.5)
-                    
+
                     # Performance score
                     if 'performance_score' not in y_targets:
                         y_targets['performance_score'] = np.zeros(len(regime_labels))
                     y_targets['performance_score'][regime_mask] = metrics.get('performance_score', 0.5)
-            
+
             # Create regime quality classification
             y_targets['regime_quality_class'] = self._create_quality_classification(y_targets)
-            
+
             return X, y_targets, feature_names
-            
+
         except Exception as e:
             self.logger.warning(f"Training data preparation failed: {e}")
             return np.array([]), {}, []
@@ -348,7 +348,7 @@ class RobustScoringModels:
         """Extract market features from historical data."""
         try:
             features = pd.DataFrame()
-            
+
             # Price features
             if 'close' in market_data.columns:
                 close_prices = market_data['close']
@@ -356,36 +356,36 @@ class RobustScoringModels:
                 features['volatility'] = close_prices.pct_change().rolling(20).std().fillna(0)
                 features['price_ma_5'] = close_prices.rolling(5).mean().fillna(method='bfill')
                 features['price_ma_20'] = close_prices.rolling(20).mean().fillna(method='bfill')
-            
+
             # Volume features
             if 'volume' in market_data.columns:
                 volume = market_data['volume']
                 features['volume_ma'] = volume.rolling(20).mean().fillna(method='bfill')
                 features['volume_ratio'] = volume / features['volume_ma']
                 features['volume_volatility'] = volume.pct_change().rolling(20).std().fillna(0)
-            
+
             # Technical indicators
             if 'high' in market_data.columns and 'low' in market_data.columns:
                 high = market_data['high']
                 low = market_data['low']
                 close = market_data['close']
-                
+
                 # RSI approximation
                 delta = close.diff()
                 gain = (delta.where(delta > 0, 0)).rolling(14).mean()
                 loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
                 rs = gain / loss
                 features['rsi'] = 100 - (100 / (1 + rs))
-                
+
                 # Bollinger Bands
                 bb_middle = close.rolling(20).mean()
                 bb_std = close.rolling(20).std()
                 features['bb_upper'] = bb_middle + (bb_std * 2)
                 features['bb_lower'] = bb_middle - (bb_std * 2)
                 features['bb_position'] = (close - features['bb_lower']) / (features['bb_upper'] - features['bb_lower'])
-            
+
             return features.fillna(0)
-            
+
         except Exception as e:
             self.logger.warning(f"Market features extraction failed: {e}")
             return pd.DataFrame()
@@ -398,31 +398,31 @@ class RobustScoringModels:
             for target in ['economic_significance', 'trading_viability', 'stability_score', 'performance_score']:
                 if target in y_targets:
                     scores.append(y_targets[target])
-            
+
             if scores:
                 combined_score = np.mean(scores, axis=0)
-                
+
                 # Classify into High/Medium/Low quality
                 high_threshold = np.percentile(combined_score, 75)
                 low_threshold = np.percentile(combined_score, 25)
-                
+
                 quality_class = np.zeros(len(combined_score))
                 quality_class[combined_score >= high_threshold] = 2  # High
                 quality_class[combined_score <= low_threshold] = 0   # Low
                 quality_class[(combined_score > low_threshold) & (combined_score < high_threshold)] = 1  # Medium
-                
+
                 return quality_class
             else:
                 return np.zeros(len(y_targets.get('economic_significance', [])))
-                
+
         except Exception as e:
             self.logger.warning(f"Quality classification creation failed: {e}")
             return np.zeros(100)
 
-    def _train_single_model(self, 
-                          X: np.ndarray, 
-                          y: np.ndarray, 
-                          target_name: str, 
+    def _train_single_model(self,
+                          X: np.ndarray,
+                          y: np.ndarray,
+                          target_name: str,
                           target_type: str,
                           feature_names: List[str]) -> ModelPerformance:
         """Train a single model for a specific target."""
@@ -431,7 +431,7 @@ class RobustScoringModels:
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=self.test_size, random_state=self.random_state
             )
-            
+
             # Scale features if enabled
             if self.enable_feature_scaling:
                 scaler = StandardScaler()
@@ -441,22 +441,22 @@ class RobustScoringModels:
             else:
                 X_train_scaled = X_train
                 X_test_scaled = X_test
-            
+
             # Select and train model
             if target_type == 'regression':
                 models = self.regression_models
             else:
                 models = self.classification_models
-            
+
             best_model = None
             best_score = -np.inf
             best_model_name = None
-            
+
             for model_name, model in models.items():
                 try:
                     # Train model
                     model.fit(X_train_scaled, y_train)
-                    
+
                     # Evaluate model
                     if target_type == 'regression':
                         train_score = model.score(X_train_scaled, y_train)
@@ -464,28 +464,28 @@ class RobustScoringModels:
                     else:
                         train_score = model.score(X_train_scaled, y_train)
                         test_score = model.score(X_test_scaled, y_test)
-                    
+
                     # Cross-validation
                     cv_scores = cross_val_score(model, X_train_scaled, y_train, cv=self.cv_folds)
                     cv_score = np.mean(cv_scores)
                     cv_std = np.std(cv_scores)
-                    
+
                     # Select best model based on test score
                     if test_score > best_score:
                         best_score = test_score
                         best_model = model
                         best_model_name = model_name
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Model {model_name} training failed for {target_name}: {e}")
                     continue
-            
+
             if best_model is None:
                 raise ValueError(f"No model could be trained for {target_name}")
-            
+
             # Store trained model
             self.trained_models[target_name] = best_model
-            
+
             # Calculate feature importance
             feature_importance = {}
             if hasattr(best_model, 'feature_importances_'):
@@ -494,7 +494,7 @@ class RobustScoringModels:
             elif hasattr(best_model, 'coef_'):
                 for i, coef in enumerate(best_model.coef_):
                     feature_importance[feature_names[i]] = abs(coef)
-            
+
             return ModelPerformance(
                 model_name=best_model_name,
                 target_metric=target_name,
@@ -509,7 +509,7 @@ class RobustScoringModels:
                     'n_samples': X.shape[0]
                 }
             )
-            
+
         except Exception as e:
             self.logger.error(f"Single model training failed for {target_name}: {e}")
             raise
@@ -519,7 +519,7 @@ class RobustScoringModels:
         try:
             # Extract market features
             market_features = self._extract_market_features(market_data)
-            
+
             # Combine regime features and market features
             if len(market_features) > 0:
                 # Take the last row of market features (most recent)
@@ -527,9 +527,9 @@ class RobustScoringModels:
                 combined_features = np.concatenate([features.flatten(), market_row])
             else:
                 combined_features = features.flatten()
-            
+
             return combined_features.reshape(1, -1)
-            
+
         except Exception as e:
             self.logger.warning(f"Prediction features preparation failed: {e}")
             return features.reshape(1, -1)
@@ -539,21 +539,21 @@ class RobustScoringModels:
         try:
             if target_name not in self.trained_models:
                 return 0.5, 0.0
-            
+
             model = self.trained_models[target_name]
-            
+
             # Scale features if scaler is available
             if target_name in self.scalers:
                 X_pred_scaled = self.scalers[target_name].transform(X_pred)
             else:
                 X_pred_scaled = X_pred
-            
+
             # Make prediction
             prediction = model.predict(X_pred_scaled)[0]
-            
+
             # Calculate confidence (simplified)
             confidence = 0.8  # Default confidence
-            
+
             # For models that support probability prediction
             if hasattr(model, 'predict_proba'):
                 try:
@@ -561,9 +561,9 @@ class RobustScoringModels:
                     confidence = np.max(proba)
                 except:
                     pass
-            
+
             return prediction, confidence
-            
+
         except Exception as e:
             self.logger.warning(f"Single prediction failed for {target_name}: {e}")
             return 0.5, 0.0
@@ -588,16 +588,16 @@ def create_robust_scoring_models(config: Dict[str, Any]) -> RobustScoringModels:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -616,8 +616,8 @@ def create_robust_scoring_models(config: Dict[str, Any]) -> RobustScoringModels:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -634,13 +634,13 @@ def create_robust_scoring_models(config: Dict[str, Any]) -> RobustScoringModels:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

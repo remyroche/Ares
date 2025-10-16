@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 """Error handling decorators with async/sync support and flexible signature.
 
 This module provides a robust `handles_errors` decorator compatible with various
@@ -48,7 +47,7 @@ def handles_errors(func: Optional[Callable[..., Any]]=None, *, exceptions: Optio
 
     def _log_error(err: BaseException, fn_name: str) -> None:
         import logging
-        
+
         try:
             if system_logger is not None:
                 prefix = f'Error in {fn_name}'

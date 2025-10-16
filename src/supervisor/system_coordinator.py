@@ -20,7 +20,7 @@ __all__ = [
     "CircuitBreaker",
     "OnlineLearningManager",
     "SystemCoordinator",
-    "ComponentMonitor", 
+    "ComponentMonitor",
     "HealthMonitor",
     "RecoveryManager",
 ]

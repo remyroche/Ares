@@ -9,7 +9,6 @@ These parameters can be optimized in step12.
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class ConfidenceThresholdsConfig:
     """Optimizable confidence thresholds for different trading decisions."""
@@ -60,21 +59,19 @@ class ConfidenceThresholdsConfig:
     confidence_max_threshold: float = 0.95
     confidence_min_multiplier: float = 0.5
     confidence_max_multiplier: float = 2.0
-    
+
     # Risk and profit thresholds (the four key thresholds)
     entry_risk_threshold: float = 0.15
     profit_confidence_threshold: float = 0.6
-    
+
     # Linear scaling factors
     confidence_scaling_factor: float = 1.0
     risk_scaling_factor: float = 1.0
     profit_scaling_factor: float = 1.0
 
-
 def get_confidence_config() -> ConfidenceThresholdsConfig:
     """Get confidence thresholds configuration."""
     return ConfidenceThresholdsConfig()
-
 
 def get_confidence_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for confidence threshold optimization."""
@@ -98,17 +95,17 @@ def get_confidence_search_space() -> dict[str, dict[str, Any]]:
         "ensemble_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "breakout_confidence_threshold": {"min": 0.6, "max": 0.9, "type": "float"},
         "false_breakout_filter": {"min": 0.1, "max": 0.3, "type": "float"},
-        
+
         # Linear confidence scaling parameters
         "confidence_min_threshold": {"min": 0.5, "max": 0.7, "type": "float"},
         "confidence_max_threshold": {"min": 0.8, "max": 0.95, "type": "float"},
         "confidence_min_multiplier": {"min": 0.3, "max": 0.7, "type": "float"},
         "confidence_max_multiplier": {"min": 1.5, "max": 3.0, "type": "float"},
-        
+
         # Risk and profit thresholds (the four key thresholds)
         "entry_risk_threshold": {"min": 0.05, "max": 0.3, "type": "float"},
         "profit_confidence_threshold": {"min": 0.5, "max": 0.8, "type": "float"},
-        
+
         # Linear scaling factors
         "confidence_scaling_factor": {"min": 0.8, "max": 1.5, "type": "float"},
         "risk_scaling_factor": {"min": 0.8, "max": 1.3, "type": "float"},

@@ -21,7 +21,6 @@ print("🌲 Tree-based CVLSA Architecture Demo")
 print("Leveraging existing hierarchical ensemble capabilities")
 print("=" * 60)
 
-
 def create_sample_market_data(n_samples: int = 1000) -> pd.DataFrame:
     """Create sample market data for demonstration."""
     np.random.seed(42)
@@ -65,7 +64,6 @@ def create_sample_market_data(n_samples: int = 1000) -> pd.DataFrame:
 
     return market_data
 
-
 def create_sample_target_returns(market_data: pd.DataFrame, n_samples: int = 1000) -> pd.Series:
     """Create sample target returns for demonstration."""
     np.random.seed(42)
@@ -81,7 +79,6 @@ def create_sample_target_returns(market_data: pd.DataFrame, n_samples: int = 100
     target_returns = signal_strength * returns.shift(-1).fillna(0) + noise
 
     return pd.Series(target_returns, index=market_data.index)
-
 
 def demo_cvlSA_architecture():
     """Demonstrate CVLSA tree-based architecture."""
@@ -193,7 +190,6 @@ def demo_cvlSA_architecture():
         print("   - tree_importance")
         print("   - correlation_filter")
 
-
 def demo_comparison_with_neural():
     """Compare CVLSA with neural architectures."""
     print("\n🌲 vs 🤖 CVLSA vs Neural Architecture Comparison")
@@ -257,7 +253,6 @@ def demo_comparison_with_neural():
     df = pd.DataFrame(features)
     print(df.to_string(index=False))
 
-
 def demo_cvlSA_usage_examples():
     """Show practical usage examples of CVLSA."""
     print("\n📋 CVLSA Usage Examples")
@@ -302,7 +297,6 @@ def demo_cvlSA_usage_examples():
         print("   Key Settings:")
         for setting, value in example['settings'].items():
             print(f"     - {setting}: {value}")
-
 
 if __name__ == "__main__":
     print("🌲 Tree-based CVLSA Architecture Demo")

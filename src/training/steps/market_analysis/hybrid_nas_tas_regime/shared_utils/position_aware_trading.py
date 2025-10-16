@@ -12,12 +12,11 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class PositionAwareConfig:
@@ -40,7 +39,6 @@ class PositionAwareConfig:
                 'acceptable': 0.5,
                 'poor': 0.4
             }
-
 
 @dataclass
 class PositionAwareResult:
@@ -80,7 +78,6 @@ class PositionAwareResult:
     position_directions_used: bool
     profitable_period_definition: str
 
-
 class PositionAwareTradingAnalyzer:
     """
     Position-aware trading analyzer that works for both TAS and NAS systems.
@@ -97,7 +94,7 @@ class PositionAwareTradingAnalyzer:
         """
         tprint_info("🚀 Initializing Position-Aware Trading Analyzer")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config or PositionAwareConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -192,7 +189,7 @@ class PositionAwareTradingAnalyzer:
                 results['short_win_rate'] = np.mean(short_wins)
                 results['short_trades'] = len(short_returns)
                 tprint_debug(f"Short analysis: {len(short_returns)} trades, {np.sum(short_wins)} wins, win_rate={results['short_win_rate']:.3f}")
-            
+
             # If we still have 0 trades, add a warning but don't create artificial positions
             if results['long_trades'] == 0 and results['short_trades'] == 0:
                 tprint_warning("⚠️ No long or short positions found - check position inference logic")
@@ -254,7 +251,7 @@ class PositionAwareTradingAnalyzer:
                 elif len(position_directions) < len(returns):
                     # Pad with neutral positions if needed
                     position_directions = np.pad(position_directions, (0, len(returns) - len(position_directions)), mode='constant', constant_values=0)
-            
+
             # Final alignment check
             if len(position_directions) != len(returns):
                 min_length = min(len(returns), len(position_directions))
@@ -304,9 +301,9 @@ class PositionAwareTradingAnalyzer:
                 min_regime_length = min(len(regime_returns), len(regime_positions))
                 regime_returns = regime_returns[:min_regime_length]
                 regime_positions = regime_positions[:min_regime_length]
-                
+
                 tprint_debug(f"   Regime {regime_id}: final lengths - returns={len(regime_returns)}, positions={len(regime_positions)}")
-                
+
                 if len(regime_returns) == 0 or len(regime_positions) == 0:
                     tprint_debug(f"   Regime {regime_id}: skipping (empty arrays after alignment)")
                     continue
@@ -350,7 +347,7 @@ class PositionAwareTradingAnalyzer:
                     'long_trades': 0,
                     'short_trades': 0
                 }
-            
+
             if 'position_balance_analysis' not in results:
                 results['position_balance_analysis'] = {
                     'position_balance_score': 0.5,
@@ -606,11 +603,11 @@ class PositionAwareTradingAnalyzer:
         try:
             # Get returns array (length N-1 due to pct_change)
             returns = market_data['close'].pct_change().values
-            
+
             # Remove NaN values from returns and get valid indices
             valid_returns_mask = ~np.isnan(returns)
             returns = returns[valid_returns_mask]
-            
+
             # Align regime_predictions with the valid returns
             # Since returns is length N-1 due to pct_change, we need to align regime_predictions accordingly
             if len(regime_predictions) != len(market_data):
@@ -621,11 +618,11 @@ class PositionAwareTradingAnalyzer:
                 else:
                     # Pad with last regime if shorter
                     regime_predictions = np.pad(regime_predictions, (0, len(market_data) - len(regime_predictions)), mode='edge')
-            
+
             # Align regime_predictions with returns (skip first element due to pct_change)
             # and apply the same valid mask as returns
             regime_predictions_aligned = regime_predictions[1:][valid_returns_mask]
-            
+
             position_directions = np.zeros(len(returns))
 
             unique_regimes = np.unique(regime_predictions_aligned)
@@ -635,15 +632,15 @@ class PositionAwareTradingAnalyzer:
             for regime in unique_regimes:
                 # Create regime mask aligned with returns
                 regime_mask = regime_predictions_aligned == regime
-                
+
                 # Final safety check - ensure all arrays have same length
                 if len(regime_mask) != len(returns):
                     tprint_error(f"❌ Critical dimension mismatch: regime_mask={len(regime_mask)}, returns={len(returns)}")
                     continue
-                
+
                 if not np.any(regime_mask):
                     continue
-                
+
                 # Safe extraction with dimension check
                 try:
                     regime_returns = returns[regime_mask]
@@ -689,9 +686,9 @@ class PositionAwareTradingAnalyzer:
             short_count = np.sum(position_directions == -1)
             neutral_count = np.sum(position_directions == 0)
             total = len(position_directions)
-            
+
             tprint_debug(f"Position distribution: Long={long_count}, Short={short_count}, Neutral={neutral_count}, Total={total}")
-            
+
             # If we have very few positions, don't create artificial ones
             # This prevents unrealistic win rates from artificial position assignment
             if long_count + short_count < total * 0.1:  # Less than 10% of periods have positions
@@ -723,7 +720,7 @@ class PositionAwareTradingAnalyzer:
         try:
             # Safely get overall_analysis with fallback
             overall_analysis = position_analysis.get('overall_analysis', {})
-            
+
             if position_type == 'long':
                 win_rate = overall_analysis.get('long_win_rate', 0.5)
                 trade_count = overall_analysis.get('long_trades', 0)
@@ -867,7 +864,6 @@ class PositionAwareTradingAnalyzer:
             self.logger.warning(f"Position-aware recommendations failed: {e}")
             return {}
 
-
 def create_position_aware_analyzer(config: PositionAwareConfig = None) -> PositionAwareTradingAnalyzer:
     """
     Create a position-aware trading analyzer instance.
@@ -879,7 +875,6 @@ def create_position_aware_analyzer(config: PositionAwareConfig = None) -> Positi
         PositionAwareTradingAnalyzer instance
     """
     return PositionAwareTradingAnalyzer(config)
-
 
 def quick_position_aware_analysis(
     market_data: pd.DataFrame,

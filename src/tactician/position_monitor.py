@@ -111,22 +111,22 @@ class PositionMonitor:
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
         self._missing_price_provider_logged = False
         self._latest_market_snapshots: Dict[str, Dict[str, Any]] = {}
-        
+
         # Enhanced exit strategy configuration with optimization support
         self.max_position_age = 10800  # 3 hours (will be optimized)
-        
+
         # Load optimized parameters if available
         self.optimized_parameters = self._load_optimized_parameters()
-        
+
         # Confidence-based exit thresholds (optimized)
         self.confidence_thresholds = self._get_optimized_confidence_thresholds()
-        
+
         # PnL-based exit thresholds (optimized)
         self.pnl_thresholds = self._get_optimized_pnl_thresholds()
-        
+
         # Profit-taking configuration (optimized)
         self.profit_taking_config = self._get_optimized_profit_taking_config()
-        
+
         # Additional optimized parameters
         self.stop_loss_config = self._get_optimized_stop_loss_config()
         self.time_based_config = self._get_optimized_time_based_config()
@@ -477,9 +477,9 @@ class PositionMonitor:
             return PositionAction.STAY, f"Error in position assessment: {e}"
 
     def _evaluate_profit_taking(
-        self, 
-        unrealized_pnl: float, 
-        combined_confidence: float, 
+        self,
+        unrealized_pnl: float,
+        combined_confidence: float,
         position_data: Dict[str, Any]
     ) -> tuple[PositionAction, str]:
         """
@@ -500,7 +500,7 @@ class PositionMonitor:
 
             # Calculate confidence-scaled profit targets
             base_profit_target = self.pnl_thresholds["profit_target"]
-            
+
             if self.profit_taking_config["confidence_scaling"]:
                 # Higher confidence = lower profit taking (hold longer for bigger gains)
                 confidence_factor = 1.0 - (combined_confidence - 0.5) * self.profit_taking_config["confidence_profit_multiplier"]
@@ -1558,7 +1558,7 @@ class PositionMonitor:
     def _load_optimized_parameters(self) -> Optional[Dict[str, Any]]:
         """
         Load optimized parameters from backtesting optimization results.
-        
+
         Returns:
             Dict: Optimized parameters or None if not available
         """
@@ -1570,7 +1570,7 @@ class PositionMonitor:
                 "results/exit_strategy_optimization.json",
                 "config/optimized_exit_strategy.json"
             ]
-            
+
             for path in optimization_paths:
                 if Path(path).exists():
                     with open(path, 'r') as f:
@@ -1594,11 +1594,11 @@ class PositionMonitor:
                     elif "best_parameters" in optimization_results and "exit_strategy" in optimization_results["best_parameters"]:
                         self.logger.info(f"✅ Loaded exit strategy parameters from: {path}")
                         return self._convert_optimization_results(optimization_results["best_parameters"]["exit_strategy"])
-            
+
             # Fallback to default parameters
             self.logger.info("📝 Using default exit strategy parameters (no optimization found)")
             return None
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading optimized parameters: {e}"))
             return None
@@ -1927,9 +1927,9 @@ class PositionMonitor:
                     "trailing_sensitivity": exit_strategy_params.get("regime_trailing_sensitivity", 1.0)
                 }
             }
-            
+
             return converted
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error converting optimization results: {e}"))
             return {}
@@ -1938,7 +1938,7 @@ class PositionMonitor:
         """Get optimized confidence thresholds."""
         if self.optimized_parameters and "confidence_thresholds" in self.optimized_parameters:
             return self.optimized_parameters["confidence_thresholds"]
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("confidence_thresholds", {
             "very_low": 0.2,
@@ -1952,13 +1952,13 @@ class PositionMonitor:
         if self.optimized_parameters and "profit_taking" in self.optimized_parameters:
             profit_config = self.optimized_parameters["profit_taking"]
             stop_loss_config = self.optimized_parameters.get("stop_loss", {})
-            
+
             return {
                 "stop_loss": stop_loss_config.get("base_stop_loss", -0.05),
                 "profit_target": profit_config.get("base_profit_target", 0.04),
                 "scaling_levels": profit_config.get("scaling_levels", [0.25, 0.5, 0.75])
             }
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("pnl_thresholds", {
             "stop_loss": -0.05,
@@ -1970,7 +1970,7 @@ class PositionMonitor:
         """Get optimized profit-taking configuration."""
         if self.optimized_parameters and "profit_taking" in self.optimized_parameters:
             return self.optimized_parameters["profit_taking"]
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("profit_taking", {
             "confidence_scaling": True,
@@ -1985,7 +1985,7 @@ class PositionMonitor:
         """Get optimized stop-loss configuration."""
         if self.optimized_parameters and "stop_loss" in self.optimized_parameters:
             return self.optimized_parameters["stop_loss"]
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("stop_loss", {
             "base_stop_loss": -0.05,
@@ -2001,7 +2001,7 @@ class PositionMonitor:
             # Update max position age with optimized value
             self.max_position_age = time_config.get("max_hold_time", 10800)
             return time_config
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("time_based", {
             "max_hold_time": 10800,
@@ -2148,7 +2148,7 @@ class PositionMonitor:
         """Get optimized regime-aware configuration."""
         if self.optimized_parameters and "regime_aware" in self.optimized_parameters:
             return self.optimized_parameters["regime_aware"]
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("regime_aware", {
             "enabled": True,
@@ -2159,14 +2159,14 @@ class PositionMonitor:
     def refresh_optimized_parameters(self, optimization_results: Dict[str, Any]) -> None:
         """
         Refresh optimized parameters from new optimization results.
-        
+
         Args:
             optimization_results: New optimization results
         """
         try:
             if "best_parameters" in optimization_results:
                 self.optimized_parameters = optimization_results["best_parameters"]
-                
+
                 # Update all configurations
                 self.confidence_thresholds = self._get_optimized_confidence_thresholds()
                 self.pnl_thresholds = self._get_optimized_pnl_thresholds()
@@ -2184,17 +2184,17 @@ class PositionMonitor:
                 self.logger.info(f"📊 New confidence thresholds: {self.confidence_thresholds}")
                 self.logger.info(f"💰 New profit targets: {self.pnl_thresholds['profit_target']:.1%}")
                 self.logger.info(f"🛡️ New stop loss: {self.pnl_thresholds['stop_loss']:.1%}")
-                
+
             else:
                 self.logger.warning("⚠️ No 'best_parameters' found in optimization results")
-                
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error refreshing optimized parameters: {e}"))
 
     def get_optimization_status(self) -> Dict[str, Any]:
         """
         Get current optimization status and parameter information.
-        
+
         Returns:
             Dict: Optimization status information
         """
@@ -2210,9 +2210,9 @@ class PositionMonitor:
                 "regime_aware_config": self.regime_aware_config,
                 "max_position_age": self.max_position_age
             }
-            
+
             return status
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error getting optimization status: {e}"))
             return {"error": str(e)}
@@ -2543,32 +2543,32 @@ class PositionMonitor:
             # Check if auto-refresh is enabled
             step12_config = self.config.get("step12_confidence_optimization", {})
             auto_refresh = step12_config.get("auto_refresh", True)
-            
+
             if not auto_refresh:
                 return
-            
+
             # Check if we need to refresh (based on interval)
             current_time = datetime.now()
             if hasattr(self, '_last_step12_refresh'):
                 time_since_refresh = (current_time - self._last_step12_refresh).total_seconds()
                 refresh_interval = step12_config.get("refresh_interval", 300)  # 5 minutes default
-                
+
                 if time_since_refresh < refresh_interval:
                     return
-            
+
             # Try to load updated step12 configuration
             updated_config = self._load_updated_step12_config()
             if updated_config:
                 # Update confidence thresholds
                 position_monitor_config = updated_config.get("position_monitor", {})
-                
+
                 self.high_confidence_threshold = position_monitor_config.get("high_confidence_threshold", self.high_confidence_threshold)
                 self.low_confidence_threshold = position_monitor_config.get("low_confidence_threshold", self.low_confidence_threshold)
                 self.very_low_confidence_threshold = position_monitor_config.get("very_low_confidence_threshold", self.very_low_confidence_threshold)
-                
+
                 self._last_step12_refresh = current_time
                 self.logger.info("✅ Refreshed step12 confidence thresholds automatically")
-                
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error in step12 auto-refresh: {e}"))
 
@@ -2582,7 +2582,7 @@ class PositionMonitor:
         try:
             step12_config = self.config.get("step12_confidence_optimization", {})
             result_paths = step12_config.get("step12_results_paths", [])
-            
+
             for path in result_paths:
                 if Path(path).exists():
                     try:
@@ -2592,7 +2592,7 @@ class PositionMonitor:
                         pass  # TODO: Handle exception
                     except Exception as e:
                         pass  # TODO: Handle exception properly
-                           
+
                         # Check if this is newer than our current config
                         updated_config = yaml.safe_load(f)
                         if "timestamp" in updated_config:
@@ -2604,13 +2604,13 @@ class PositionMonitor:
                                 return updated_config
                         else:
                             return updated_config
-                            
+
                     except Exception as e:
                         self.logger.warning(f"Could not load step12 config from {path}: {e}")
                         continue
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None

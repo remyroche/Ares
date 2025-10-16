@@ -15,12 +15,11 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class VIFModule:
     """
@@ -31,7 +30,7 @@ class VIFModule:
         """Initialize VIF module."""
         tprint_info("🚀 Initializing VIF Module")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -55,7 +54,7 @@ class VIFModule:
         tprint_success("✅ VIF Module initialized")
         self.logger.info("✅ VIF Module initialized")
 
-    def apply_vif_feature_selection(self, 
+    def apply_vif_feature_selection(self,
                                   X: Union[np.ndarray, pd.DataFrame],
                                   y: Optional[Union[np.ndarray, pd.Series]] = None,
                                   feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -133,7 +132,7 @@ class VIFModule:
 
             tprint_success(f"🎉 [VIF_FEATURE_SELECTION] VIF feature selection completed successfully")
             tprint_performance(f"⚡ [VIF_FEATURE_SELECTION] Final result: {len(selected_features)} features selected from {X.shape[1]} original features")
-            
+
             return {
                 'selected_features': selected_features,
                 'selected_indices': [filtered_names.index(f) for f in selected_features if f in filtered_names],
@@ -157,8 +156,8 @@ class VIFModule:
                 'error': str(e)
             }
 
-    def _pre_filter_features(self, 
-                           X: np.ndarray, 
+    def _pre_filter_features(self,
+                           X: np.ndarray,
                            feature_names: List[str]) -> Tuple[np.ndarray, List[str], Dict[str, Any]]:
         """Pre-filter features based on correlation and variance."""
         try:
@@ -202,10 +201,10 @@ class VIFModule:
         try:
             variances = np.var(X, axis=0)
             variance_mask = variances >= self.variance_threshold
-            
+
             X_filtered = X[:, variance_mask]
             filtered_names = [name for i, name in enumerate(feature_names) if variance_mask[i]]
-            
+
             return {
                 'X': X_filtered,
                 'names': filtered_names,
@@ -221,11 +220,11 @@ class VIFModule:
         try:
             if X.shape[1] <= 1:
                 return {'X': X, 'names': feature_names}
-            
+
             # Calculate correlation matrix
             corr_matrix = np.corrcoef(X.T)
             np.fill_diagonal(corr_matrix, 0)  # Set diagonal to 0
-            
+
             # Find highly correlated pairs
             to_remove = set()
             for i in range(len(feature_names)):
@@ -236,13 +235,13 @@ class VIFModule:
                             to_remove.add(i)
                         else:
                             to_remove.add(j)
-            
+
             # Create mask for features to keep
             keep_mask = np.array([i not in to_remove for i in range(len(feature_names))])
-            
+
             X_filtered = X[:, keep_mask]
             filtered_names = [name for i, name in enumerate(feature_names) if keep_mask[i]]
-            
+
             return {
                 'X': X_filtered,
                 'names': filtered_names,
@@ -257,22 +256,22 @@ class VIFModule:
         """Calculate VIF scores for all features."""
         try:
             vif_scores = {}
-            
+
             for i, feature_name in enumerate(feature_names):
                 # Get feature and other features
                 y_feature = X[:, i]
                 X_other = np.delete(X, i, axis=1)
-                
+
                 if X_other.shape[1] == 0:
                     vif_scores[feature_name] = 1.0
                     continue
-                
+
                 # Fit linear regression
                 try:
                     reg = LinearRegression()
                     reg.fit(X_other, y_feature)
                     r_squared = reg.score(X_other, y_feature)
-                    
+
                     # Calculate VIF
                     if r_squared >= 1.0:
                         vif_scores[feature_name] = float('inf')
@@ -281,15 +280,15 @@ class VIFModule:
                 except Exception as vif_e:
                     tprint_debug(f"⚠️ VIF calculation failed for {feature_name}: {vif_e}")
                     vif_scores[feature_name] = 1.0
-            
+
             return vif_scores
         except Exception as e:
             self.logger.warning(f"VIF scores calculation failed: {e}")
             return {name: 1.0 for name in feature_names}
 
-    def _remove_high_vif_features(self, 
-                               X: np.ndarray, 
-                               feature_names: List[str], 
+    def _remove_high_vif_features(self,
+                               X: np.ndarray,
+                               feature_names: List[str],
                                vif_scores: Dict[str, float]) -> Tuple[List[str], Dict[str, Any]]:
         """Remove features with high VIF scores."""
         try:
@@ -298,67 +297,67 @@ class VIFModule:
                 'removal_order': [],
                 'final_vif_scores': {}
             }
-            
+
             current_features = feature_names.copy()
             current_X = X.copy()
             removed_count = 0
-            
+
             if self.stepwise_removal:
                 # Stepwise removal: remove highest VIF feature iteratively
                 while len(current_features) > self.min_features:
                     # Calculate current VIF scores
                     current_vif_scores = self._calculate_vif_scores(current_X, current_features)
-                    
+
                     # Find feature with highest VIF
                     max_vif_feature = max(current_vif_scores.items(), key=lambda x: x[1])
                     feature_name, vif_score = max_vif_feature
-                    
+
                     # Check if VIF is above threshold
                     if vif_score <= self.vif_threshold:
                         break
-                    
+
                     # Remove feature
                     feature_index = current_features.index(feature_name)
                     current_features.remove(feature_name)
                     current_X = np.delete(current_X, feature_index, axis=1)
-                    
+
                     removal_info['removed_features'].append(feature_name)
                     removal_info['removal_order'].append({
                         'feature': feature_name,
                         'vif_score': vif_score,
                         'iteration': removed_count + 1
                     })
-                    
+
                     removed_count += 1
-                    
+
                     # Safety check
                     if removed_count > len(feature_names):
                         break
             else:
                 # Remove all features above threshold at once
                 features_to_remove = [
-                    feature for feature, vif_score in vif_scores.items() 
+                    feature for feature, vif_score in vif_scores.items()
                     if vif_score > self.vif_threshold
                 ]
-                
+
                 # Keep only features below threshold
                 keep_mask = [feature not in features_to_remove for feature in feature_names]
                 current_features = [feature for feature in feature_names if feature in current_features and feature not in features_to_remove]
                 current_X = X[:, keep_mask]
-                
+
                 removal_info['removed_features'] = features_to_remove
                 removal_info['removal_order'] = [
                     {'feature': feature, 'vif_score': vif_scores.get(feature, 0), 'iteration': 1}
                     for feature in features_to_remove
                 ]
-            
+
             # Calculate final VIF scores
             if len(current_features) > 1:
                 final_vif_scores = self._calculate_vif_scores(current_X, current_features)
                 removal_info['final_vif_scores'] = final_vif_scores
-            
+
             return current_features, removal_info
-            
+
         except Exception as e:
             self.logger.warning(f"High VIF feature removal failed: {e}")
             return feature_names, {'removed_features': [], 'removal_order': []}
@@ -368,7 +367,7 @@ class VIFModule:
         try:
             if len(feature_names) <= 1:
                 return {name: 1.0 for name in feature_names}
-            
+
             # Find indices of selected features
             selected_indices = []
             for feature_name in feature_names:
@@ -376,13 +375,13 @@ class VIFModule:
                     if name == feature_name:
                         selected_indices.append(i)
                         break
-            
+
             if len(selected_indices) == 0:
                 return {name: 1.0 for name in feature_names}
-            
+
             # Get selected features
             X_selected = X[:, selected_indices]
-            
+
             # Calculate VIF scores
             return self._calculate_vif_scores(X_selected, feature_names)
         except Exception as e:
@@ -397,7 +396,7 @@ class VIFModule:
                 X_scaled = scaler.fit_transform(X)
             else:
                 X_scaled = X
-            
+
             return self._calculate_vif_scores(X_scaled, feature_names)
         except Exception as e:
             self.logger.error(f"VIF scores calculation failed: {e}")
@@ -407,12 +406,12 @@ class VIFModule:
         """Detect multicollinearity in features."""
         try:
             vif_scores = self.get_vif_scores(X, feature_names)
-            
+
             # Categorize VIF scores
             low_vif = [name for name, score in vif_scores.items() if score < 5.0]
             moderate_vif = [name for name, score in vif_scores.items() if 5.0 <= score < 10.0]
             high_vif = [name for name, score in vif_scores.items() if score >= 10.0]
-            
+
             return {
                 'vif_scores': vif_scores,
                 'low_vif': low_vif,
@@ -431,7 +430,6 @@ class VIFModule:
                 'max_vif': 0.0,
                 'avg_vif': 0.0
             }
-
 
 def create_vif_module(config: Dict[str, Any]) -> VIFModule:
     """Create VIF module."""

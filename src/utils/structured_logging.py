@@ -1,8 +1,8 @@
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 import contextvars
 import logging
 import uuid
-from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import Request

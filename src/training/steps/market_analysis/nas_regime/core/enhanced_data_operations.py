@@ -66,7 +66,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
     DATA_UTILS_AVAILABLE = True
 except ImportError as e:
@@ -78,7 +78,7 @@ logger = logging.getLogger(__name__)
 class EnhancedDataOperations:
     """
     Enhanced data operations for Perfect NAS Regime System.
-    
+
     Integrates with existing data utilities for:
     - Comprehensive data loading and processing
     - Quality analysis and validation
@@ -86,10 +86,10 @@ class EnhancedDataOperations:
     - Serialization and persistence
     - Klines parquet management
     """
-    
+
     def __init__(self, data_dir: str = "historical_data", enable_validation: bool = True):
         """Initialize enhanced data operations.
-        
+
         Args:
             data_dir: Base directory for data storage
             enable_validation: Enable data validation
@@ -97,10 +97,10 @@ class EnhancedDataOperations:
         self.data_dir = data_dir
         self.enable_validation = enable_validation
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize serialization
         self.serializer = UniversalSerializer()
-        
+
         # Initialize data utilities if available
         if DATA_UTILS_AVAILABLE:
             try:
@@ -115,16 +115,16 @@ class EnhancedDataOperations:
         else:
             self.logger.warning("Data utilities not available - using fallback implementations")
             self._initialize_fallback_utilities()
-    
+
     def _initialize_fallback_utilities(self):
         """Initialize fallback utilities when data utils are not available."""
         self.klines_manager = None
         self.data_processor = None
         self.quality_analyzer = None
         self.data_validator = None
-    
+
     @timed_operation
-    def load_market_data(self, symbol: str, interval: str, 
+    def load_market_data(self, symbol: str, interval: str,
                         start_date: Optional[datetime] = None,
                         end_date: Optional[datetime] = None,
                         data_type: str = "processed") -> Optional[pd.DataFrame]:
@@ -134,23 +134,23 @@ class EnhancedDataOperations:
                 data = self.klines_manager.read_data(
                     symbol, interval, start_date, end_date, data_type
                 )
-                
+
                 if data is not None and self.enable_validation:
                     # Validate loaded data
                     validation_result = self.validate_market_data(data)
                     if not validation_result['is_valid']:
                         self.logger.warning(f"Data validation failed for {symbol} {interval}")
                         self.logger.warning(f"Errors: {validation_result.get('errors', [])}")
-                
+
                 return data
             else:
                 # Fallback to manual loading
                 return self._fallback_load_data(symbol, interval, start_date, end_date)
-                
+
         except Exception as e:
             self.logger.error(f"Failed to load market data for {symbol} {interval}: {e}")
             return None
-    
+
     def validate_market_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Validate market data using comprehensive validation."""
         try:
@@ -159,11 +159,11 @@ class EnhancedDataOperations:
             else:
                 # Enhanced fallback validation
                 return self._fallback_validate_data(data)
-                
+
         except Exception as e:
             self.logger.warning(f"Data validation failed: {e}")
             return {'is_valid': False, 'errors': [str(e)]}
-    
+
     def _fallback_validate_data(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Enhanced fallback validation for market data."""
         try:
@@ -173,17 +173,17 @@ class EnhancedDataOperations:
                 'warnings': [],
                 'data_quality_score': 1.0
             }
-            
+
             # Check required columns for OHLCV data
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in data.columns]
-            
+
             if missing_columns:
                 validation_result['errors'].append(f"Missing required columns: {missing_columns}")
                 validation_result['is_valid'] = False
                 validation_result['data_quality_score'] = 0.0
                 return validation_result
-            
+
             # Check for negative prices
             price_columns = ['open', 'high', 'low', 'close']
             for col in price_columns:
@@ -192,68 +192,68 @@ class EnhancedDataOperations:
                     if negative_prices > 0:
                         validation_result['warnings'].append(f"Found {negative_prices} negative prices in {col}")
                         validation_result['data_quality_score'] -= 0.1
-            
+
             # Check price relationships
             invalid_relationships = 0
             for i in range(len(data)):
-                if (data.iloc[i]['high'] < data.iloc[i]['low'] or 
-                    data.iloc[i]['high'] < data.iloc[i]['open'] or 
+                if (data.iloc[i]['high'] < data.iloc[i]['low'] or
+                    data.iloc[i]['high'] < data.iloc[i]['open'] or
                     data.iloc[i]['high'] < data.iloc[i]['close'] or
-                    data.iloc[i]['low'] > data.iloc[i]['open'] or 
+                    data.iloc[i]['low'] > data.iloc[i]['open'] or
                     data.iloc[i]['low'] > data.iloc[i]['close']):
                     invalid_relationships += 1
-            
+
             if invalid_relationships > 0:
                 validation_result['warnings'].append(f"Found {invalid_relationships} records with invalid price relationships")
                 validation_result['data_quality_score'] -= 0.2
-            
+
             # Check for zero volume
             zero_volume = (data['volume'] == 0).sum()
             if zero_volume > 0:
                 validation_result['warnings'].append(f"Found {zero_volume} records with zero volume")
                 validation_result['data_quality_score'] -= 0.05
-            
+
             # Check for missing values
             missing_values = data.isnull().sum().sum()
             if missing_values > 0:
                 validation_result['warnings'].append(f"Found {missing_values} missing values")
                 validation_result['data_quality_score'] -= 0.1
-            
+
             validation_result['data_quality_score'] = max(0.0, validation_result['data_quality_score'])
-            
+
             return validation_result
-            
+
         except Exception as e:
             return {'is_valid': False, 'errors': [str(e)], 'data_quality_score': 0.0}
-    
+
     @timed_operation
-    def process_market_data(self, data: pd.DataFrame, 
+    def process_market_data(self, data: pd.DataFrame,
                            features: List[str] = None) -> pd.DataFrame:
         """Process market data with enhanced feature engineering."""
         try:
             if data is None or data.empty:
                 return data
-            
+
             processed_data = data.copy()
-            
+
             # Add basic technical indicators
             if features is None:
                 features = ['returns', 'volatility', 'momentum', 'rsi', 'macd']
-            
+
             # Calculate returns
             if 'returns' in features:
                 processed_data['returns'] = safe_divide(
                     processed_data['close'].pct_change(), 1.0
                 )
-            
+
             # Calculate volatility
             if 'volatility' in features:
                 processed_data['volatility'] = processed_data['returns'].rolling(20).std()
-            
+
             # Calculate momentum
             if 'momentum' in features:
                 processed_data['momentum'] = processed_data['close'].pct_change(5)
-            
+
             # Calculate RSI (simplified)
             if 'rsi' in features:
                 delta = processed_data['close'].diff()
@@ -261,7 +261,7 @@ class EnhancedDataOperations:
                 loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
                 rs = safe_divide(gain, loss)
                 processed_data['rsi'] = 100 - safe_divide(100, 1 + rs)
-            
+
             # Calculate MACD (simplified)
             if 'macd' in features:
                 exp1 = processed_data['close'].ewm(span=12).mean()
@@ -269,17 +269,17 @@ class EnhancedDataOperations:
                 processed_data['macd'] = exp1 - exp2
                 processed_data['macd_signal'] = processed_data['macd'].ewm(span=9).mean()
                 processed_data['macd_histogram'] = processed_data['macd'] - processed_data['macd_signal']
-            
+
             # Optimize data types
             processed_data = optimize_dataframe_dtypes(processed_data)
-            
+
             return processed_data
-            
+
         except Exception as e:
             self.logger.warning(f"Market data processing failed: {e}")
             return data
-    
-    def save_processed_data(self, data: pd.DataFrame, symbol: str, 
+
+    def save_processed_data(self, data: pd.DataFrame, symbol: str,
                            interval: str, data_type: str = "processed") -> bool:
         """Save processed data using klines parquet manager."""
         try:
@@ -288,24 +288,24 @@ class EnhancedDataOperations:
             else:
                 # Fallback saving
                 return self._fallback_save_data(data, symbol, interval)
-                
+
         except Exception as e:
             self.logger.error(f"Failed to save processed data: {e}")
             return False
-    
+
     def _fallback_save_data(self, data: pd.DataFrame, symbol: str, interval: str) -> bool:
         """Fallback data saving."""
         try:
             ensure_directory(self.data_dir)
             filename = f"{symbol.lower()}_{interval}_processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
             filepath = Path(self.data_dir) / filename
-            
+
             return safe_to_parquet(data, filepath)
-            
+
         except Exception as e:
             self.logger.error(f"Fallback data saving failed: {e}")
             return False
-    
+
     def get_data_quality_report(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Get comprehensive data quality report."""
         try:
@@ -314,11 +314,11 @@ class EnhancedDataOperations:
             else:
                 # Enhanced fallback quality report
                 return create_data_quality_report(data)
-                
+
         except Exception as e:
             self.logger.warning(f"Data quality report generation failed: {e}")
             return {'error': str(e)}
-    
+
     def save_operations_state(self, filepath: str) -> bool:
         """Save current operations state."""
         try:
@@ -328,31 +328,31 @@ class EnhancedDataOperations:
                 'data_utils_available': DATA_UTILS_AVAILABLE,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             return self.serializer.save(state, filepath)
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save operations state: {e}")
             return False
-    
+
     def load_operations_state(self, filepath: str) -> bool:
         """Load operations state."""
         try:
             state = self.serializer.load(filepath)
             if state is None:
                 return False
-            
+
             # Restore settings if available
             if 'enable_validation' in state:
                 self.enable_validation = state['enable_validation']
-            
+
             self.logger.info("✅ Data operations state loaded successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load operations state: {e}")
             return False
-    
+
     def _fallback_load_data(self, symbol: str, interval: str,
                            start_date: Optional[datetime] = None,
                            end_date: Optional[datetime] = None) -> Optional[pd.DataFrame]:
@@ -362,23 +362,23 @@ class EnhancedDataOperations:
             # For now, return None to indicate no data available
             self.logger.warning(f"Fallback data loading not implemented for {symbol} {interval}")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Fallback data loading failed: {e}")
             return None
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -397,8 +397,8 @@ class EnhancedDataOperations:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -415,13 +415,13 @@ class EnhancedDataOperations:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

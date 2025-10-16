@@ -8,7 +8,6 @@ from pathlib import Path
 import typing
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-
 def check_file_format(file_path: Union[str, Path]) -> bool | None:
     """Check if a CSV file follows the correct format.
     Returns True if the file is correctly formatted, False otherwise.

@@ -22,7 +22,7 @@ class DataCollectionStep(BaseStep):
     @log_important_calls
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize data collection step.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -39,7 +39,7 @@ class DataCollectionStep(BaseStep):
             from src.training.steps.data_collection.data_downloader import download_all_data_with_consolidation
             import logging
             import time
-            
+
             self.data_downloader = download_all_data_with_consolidation
             self.logger.info('✅ Data downloader initialized')
         except ImportError:
@@ -48,11 +48,11 @@ class DataCollectionStep(BaseStep):
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """
@@ -77,11 +77,11 @@ class DataCollectionStep(BaseStep):
     @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='data collection execution')
     async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data collection logic.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Updated pipeline state
         """
@@ -133,10 +133,10 @@ class DataCollectionStep(BaseStep):
 
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step outputs.
-        
+
         Args:
             pipeline_state: Updated pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """
@@ -162,7 +162,6 @@ class DataCollectionStep(BaseStep):
         return (len(errors) == 0, errors)
     @log_all_calls
 
-
     def get_required_inputs(self) -> list:
         """Get list of required inputs for this step."""
         return ['symbol', 'exchange', 'timeframe']
@@ -174,7 +173,6 @@ class DataCollectionStep(BaseStep):
     def get_dependencies(self) -> list:
         """Get list of step dependencies."""
         return []
-
 
 @handles_errors(fallback=False)
 async def run_step(symbol: str, exchange: str, timeframe: str = '1m', data_dir: str = None, force_rerun: bool = False) -> bool:

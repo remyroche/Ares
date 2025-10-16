@@ -92,7 +92,7 @@ __all__ = [
     'ConsolidatedPipelineResult',
     'create_unified_pipeline',
     'process_with_unified_pipeline',
-    
+
     # Consolidated pipeline runner for step-based execution
     'ConsolidatedPipelineRunner',
     'run_data_validation_step',
@@ -104,14 +104,14 @@ __all__ = [
     'run_vectorization_step',
     'run_labeling_integration_step',
     'run_final_validation_step',
-    
+
     # Configuration
     'UnifiedPipelineConfig',
     'create_default_config',
     'create_high_performance_config',
     'create_memory_efficient_config',
     'create_fast_config',
-    
+
     # Simplified configuration
     'create_full_config',
     'create_blank_config',
@@ -119,20 +119,20 @@ __all__ = [
     'create_config_by_intensity',
     'list_available_intensities',
     'PipelineIntensity',
-    
+
     # Time series CV
     'PurgedEmbargoedWalkForwardCV',
     'PurgedEmbargoedConfig',
     'TimeSeriesSplit',
     'create_purged_embargoed_cv',
     'validate_time_series_splits',
-    
+
     # Statistical analysis
     'StatisticalAnalysisFramework',
     'DataCharacteristics',
     'PatternAnalysis',
     'RelationshipAnalysis',
-    
+
     # Feature selection
     'MultiObjectiveFeatureSelector',
     'create_default_objectives',

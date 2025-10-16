@@ -18,34 +18,34 @@ logger = logging.getLogger(__name__)
 class UnifiedConfig:
     """
     Unified configuration combining all features_common settings.
-    
+
     This class provides a single interface for managing all configuration
     settings across the features_common system.
     """
-    
+
     optimization: OptimizationConfig
     vectorbt: VectorBTConfig
-    
-    def __init__(self, 
+
+    def __init__(self,
                  optimization: Optional[OptimizationConfig] = None,
                  vectorbt: Optional[VectorBTConfig] = None):
         """
         Initialize unified configuration.
-        
+
         Args:
             optimization: Optimization configuration (uses default if None)
             vectorbt: VectorBT configuration (uses default if None)
         """
         self.optimization = optimization or get_optimization_config()
         self.vectorbt = vectorbt or get_vectorbt_config()
-    
+
     def get_all_settings(self) -> Dict[str, Any]:
         """Get all configuration settings as a dictionary."""
         return {
             'optimization': self.optimization.to_dict(),
             'vectorbt': self.vectorbt.to_dict(),
         }
-    
+
     def get_optimized_settings(self) -> Dict[str, Any]:
         """Get optimized settings for maximum performance."""
         return {
@@ -59,79 +59,78 @@ class UnifiedConfig:
             'chunk_size': self.vectorbt.chunk_size,
             'optimization_level': self.vectorbt.optimization_level,
         }
-    
+
     def should_use_vectorbt(self, data_size: int) -> bool:
         """Determine if VectorBT should be used for given data size."""
-        return (self.optimization.use_vectorbt and 
+        return (self.optimization.use_vectorbt and
                 self.vectorbt.should_use_vectorbt(data_size))
-    
+
     def get_performance_multiplier(self) -> float:
         """Get overall performance multiplier based on all settings."""
         multiplier = 1.0
-        
+
         # VectorBT optimization multiplier
         if self.vectorbt.enable_vectorbt:
             multiplier *= self.vectorbt.get_optimization_level_multiplier()
-        
+
         # Parallel processing multiplier
         if self.optimization.enable_parallel and self.vectorbt.enable_parallel_processing:
             multiplier *= 1.5
-        
+
         # Memory efficiency multiplier
         if self.optimization.memory_efficient and self.vectorbt.enable_memory_efficient:
             multiplier *= 1.2
-        
+
         # Caching multiplier
         if self.optimization.enable_caching and self.vectorbt.enable_caching:
             multiplier *= 1.1
-        
+
         return multiplier
-    
+
     def update_optimization(self, **kwargs) -> None:
         """Update optimization configuration."""
         self.optimization.update(**kwargs)
-    
+
     def update_vectorbt(self, **kwargs) -> None:
         """Update VectorBT configuration."""
         self.vectorbt.update(**kwargs)
-    
-    def update(self, optimization: Optional[Dict[str, Any]] = None, 
+
+    def update(self, optimization: Optional[Dict[str, Any]] = None,
                vectorbt: Optional[Dict[str, Any]] = None) -> None:
         """Update both configurations."""
         if optimization:
             self.update_optimization(**optimization)
         if vectorbt:
             self.update_vectorbt(**vectorbt)
-    
+
     def copy(self) -> 'UnifiedConfig':
         """Create a copy of the unified configuration."""
         return UnifiedConfig(
             optimization=self.optimization.copy(),
             vectorbt=self.vectorbt.copy()
         )
-    
+
     def validate(self) -> bool:
         """Validate the unified configuration."""
         try:
             # Validate individual configurations
             self.optimization._validate_config()
             self.vectorbt._validate_config()
-            
+
             # Check for conflicts
-            if (self.optimization.use_vectorbt and 
+            if (self.optimization.use_vectorbt and
                 not self.vectorbt.enable_vectorbt):
                 logger.warning("Optimization config enables VectorBT but VectorBT config disables it")
-            
-            if (self.optimization.enable_gpu and 
+
+            if (self.optimization.enable_gpu and
                 not self.vectorbt.enable_gpu):
                 logger.warning("Optimization config enables GPU but VectorBT config disables it")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"Configuration validation failed: {e}")
             return False
-
 
 # Global unified configuration instance
 _global_unified_config: Optional[UnifiedConfig] = None
@@ -166,7 +165,7 @@ def create_optimized_config() -> UnifiedConfig:
         enable_performance_monitoring=True,
         optimization_level='aggressive'
     )
-    
+
     vectorbt = VectorBTConfig(
         enable_vectorbt=True,
         enable_parallel_processing=True,
@@ -177,7 +176,7 @@ def create_optimized_config() -> UnifiedConfig:
         enable_memory_pooling=True,
         enable_performance_monitoring=True
     )
-    
+
     return UnifiedConfig(optimization=optimization, vectorbt=vectorbt)
 
 def create_balanced_config() -> UnifiedConfig:
@@ -193,7 +192,7 @@ def create_balanced_config() -> UnifiedConfig:
         enable_performance_monitoring=True,
         optimization_level='balanced'
     )
-    
+
     vectorbt = VectorBTConfig(
         enable_vectorbt=True,
         enable_parallel_processing=True,
@@ -204,7 +203,7 @@ def create_balanced_config() -> UnifiedConfig:
         enable_memory_pooling=True,
         enable_performance_monitoring=True
     )
-    
+
     return UnifiedConfig(optimization=optimization, vectorbt=vectorbt)
 
 def create_conservative_config() -> UnifiedConfig:
@@ -220,7 +219,7 @@ def create_conservative_config() -> UnifiedConfig:
         enable_performance_monitoring=True,
         optimization_level='conservative'
     )
-    
+
     vectorbt = VectorBTConfig(
         enable_vectorbt=True,
         enable_parallel_processing=False,
@@ -231,5 +230,5 @@ def create_conservative_config() -> UnifiedConfig:
         enable_memory_pooling=False,
         enable_performance_monitoring=True
     )
-    
+
     return UnifiedConfig(optimization=optimization, vectorbt=vectorbt)

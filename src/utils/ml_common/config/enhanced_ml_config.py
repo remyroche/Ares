@@ -102,12 +102,12 @@ class EnhancedMLConfig:
     testing: TestingConfig = field(default_factory=TestingConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
     pipeline: PipelineConfig = field(default_factory=PipelineConfig)
-    
+
     # Global settings
     enable_all_components: bool = True
     log_level: str = "INFO"
     debug_mode: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
@@ -153,12 +153,12 @@ class EnhancedMLConfig:
                 'debug_mode': self.debug_mode
             }
         }
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'EnhancedMLConfig':
         """Create configuration from dictionary."""
         config = cls()
-        
+
         # Error detection config
         if 'error_detection' in config_dict:
             ed_config = config_dict['error_detection']
@@ -167,7 +167,7 @@ class EnhancedMLConfig:
                 alert_thresholds=ed_config.get('alert_thresholds', config.error_detection.alert_thresholds),
                 retention_days=ed_config.get('retention_days', 30)
             )
-        
+
         # HPO monitoring config
         if 'hpo_monitoring' in config_dict:
             hpo_config = config_dict['hpo_monitoring']
@@ -176,7 +176,7 @@ class EnhancedMLConfig:
                 failure_detection=hpo_config.get('failure_detection', config.hpo_monitoring.failure_detection),
                 early_stopping=hpo_config.get('early_stopping', config.hpo_monitoring.early_stopping)
             )
-        
+
         # Testing config
         if 'testing' in config_dict:
             test_config = config_dict['testing']
@@ -193,7 +193,7 @@ class EnhancedMLConfig:
                 coverage_analysis=test_config.get('coverage_analysis', True),
                 performance_benchmarks=test_config.get('performance_benchmarks', True)
             )
-        
+
         # Reporting config
         if 'reporting' in config_dict:
             report_config = config_dict['reporting']
@@ -202,7 +202,7 @@ class EnhancedMLConfig:
                 monitoring=report_config.get('monitoring', config.reporting.monitoring),
                 notifications=report_config.get('notifications', config.reporting.notifications)
             )
-        
+
         # Pipeline config
         if 'pipeline' in config_dict:
             pipe_config = config_dict['pipeline']
@@ -214,16 +214,16 @@ class EnhancedMLConfig:
                 enable_automatic_retry=pipe_config.get('enable_automatic_retry', True),
                 max_retry_attempts=pipe_config.get('max_retry_attempts', 3)
             )
-        
+
         # Global settings
         if 'global_settings' in config_dict:
             global_config = config_dict['global_settings']
             config.enable_all_components = global_config.get('enable_all_components', True)
             config.log_level = global_config.get('log_level', 'INFO')
             config.debug_mode = global_config.get('debug_mode', False)
-        
+
         return config
-    
+
     def save_to_file(self, filepath: Union[str, Path]):
         """Save configuration to file using the unified loader."""
         try:
@@ -232,7 +232,7 @@ class EnhancedMLConfig:
         except Exception as e:
             logger.error(f"❌ Failed to save configuration: {e}")
             raise
-    
+
     @classmethod
     def load_from_file(cls, filepath: Union[str, Path]) -> 'EnhancedMLConfig':
         """Load configuration from file using the unified loader."""
@@ -317,8 +317,8 @@ def get_config(preset: str = "default") -> EnhancedMLConfig:
         "development": DEVELOPMENT_CONFIG,
         "production": PRODUCTION_CONFIG
     }
-    
+
     if preset not in presets:
         raise ValueError(f"Unknown preset: {preset}. Available: {list(presets.keys())}")
-    
+
     return presets[preset]

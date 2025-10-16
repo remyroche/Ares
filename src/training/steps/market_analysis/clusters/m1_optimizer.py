@@ -397,7 +397,6 @@ class M1Optimizer:
 
         self.logger.info("M1 Optimizer shutdown complete")
 
-
 # Global instance for easy access
 _m1_optimizer_instance = None
 
@@ -413,19 +412,16 @@ def get_m1_optimizer(enable_monitoring: bool = True, conservative_mode: bool = F
 
     return _m1_optimizer_instance
 
-
 # Convenience functions
 def optimize_for_m1(func: Callable, vectorize: bool = True) -> Callable:
     """Optimize a function for M1 execution."""
     optimizer = get_m1_optimizer()
     return optimizer.optimize_function(func, vectorize)
 
-
 def create_optimized_thread_pool(max_workers: Optional[int] = None, pool_name: str = "default"):
     """Create M1-optimized thread pool."""
     optimizer = get_m1_optimizer()
     return optimizer.create_optimized_thread_pool(max_workers, pool_name)
-
 
 def parallel_map_optimized(func: Callable, items: List[Any],
                          max_workers: Optional[int] = None) -> List[Any]:

@@ -25,7 +25,6 @@ from ..core.tas_result import TASResult
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class PerformanceSnapshot:
     """Snapshot of model performance at a specific point in time."""
@@ -36,7 +35,6 @@ class PerformanceSnapshot:
     system_metrics: Dict[str, float]
     data_characteristics: Dict[str, Any]
     performance_score: float = 0.0
-
 
 @dataclass
 class AnalyticsReport:
@@ -49,7 +47,6 @@ class AnalyticsReport:
     anomaly_detection: Dict[str, Any]
     recommendations: List[str]
     visualizations: Dict[str, Any] = field(default_factory=dict)
-
 
 class TreePerformanceTracker:
     """
@@ -615,7 +612,6 @@ class TreePerformanceTracker:
             return self.performance_history[-limit:]
         return self.performance_history
 
-
 class TreeMetricsCollector:
     """
     Advanced Metrics Collector for Tree Architecture Search.
@@ -763,7 +759,6 @@ class TreeMetricsCollector:
 
         self.logger.info(f"🧹 Cleared metrics for source: {source or 'all'}")
 
-
 class TreeAnalytics:
     """
     Advanced Analytics Engine for Tree Architecture Search.
@@ -883,17 +878,14 @@ class TreeAnalytics:
             self.logger.error(f"❌ Performance prediction failed: {e}")
             return {'error': str(e)}
 
-
 # Convenience functions
 def create_performance_tracker(config: TASConfig) -> TreePerformanceTracker:
     """Create a performance tracker with default configuration."""
     return TreePerformanceTracker(config)
 
-
 def create_metrics_collector(config: TASConfig) -> TreeMetricsCollector:
     """Create a metrics collector with default configuration."""
     return TreeMetricsCollector(config)
-
 
 def create_analytics_engine(config: TASConfig) -> TreeAnalytics:
     """Create an analytics engine with default configuration."""

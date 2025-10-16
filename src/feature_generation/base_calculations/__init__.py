@@ -27,7 +27,7 @@ __all__ = [
     "BaseCalculator",
     "BaseCalculationType",
     "BaseCalculationConfig",
-    "PriceReturnsCalculator", 
+    "PriceReturnsCalculator",
     "ReturnsVWAPCalculator",
     "PriceLevelsCalculator",
     "VolumeWeightedCalculator",

@@ -31,15 +31,15 @@ def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
     """Auto memory skimming for optimal memory usage."""
     logger = logging.getLogger(__name__)
     logger.debug(f"🔧 Auto-skimming {memory_mb:.2f} MB for {operation_type}")
-    
+
     try:
         # Get the memory optimizer
         memory_optimizer = get_m1_memory_optimizer()
-        
+
         # Get initial memory stats
         initial_stats = memory_optimizer.get_memory_stats()
         initial_memory_mb = initial_stats.get('used_memory', 0) / (1024 * 1024)
-        
+
         # Determine optimization level based on requested memory
         if memory_mb > 2000:  # > 2GB
             optimization_result = memory_optimizer.optimize_memory_usage(aggressive=True)
@@ -49,24 +49,24 @@ def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
             # Light optimization for smaller requests
             memory_optimizer._light_memory_cleanup()
             optimization_result = {'success': True, 'memory_saved_mb': 0}
-        
+
         # Get final memory stats
         final_stats = memory_optimizer.get_memory_stats()
         final_memory_mb = final_stats.get('used_memory', 0) / (1024 * 1024)
-        
+
         # Calculate actual memory freed
         memory_freed_mb = initial_memory_mb - final_memory_mb
-        
+
         # If we didn't free enough, try aggressive cleanup
         if memory_freed_mb < memory_mb * 0.1:  # Less than 10% of requested
             logger.warning(f"⚠️ Insufficient memory freed ({memory_freed_mb:.1f} MB), trying aggressive cleanup")
             memory_optimizer._aggressive_memory_cleanup()
-            
+
             # Recalculate after aggressive cleanup
             final_stats = memory_optimizer.get_memory_stats()
             final_memory_mb = final_stats.get('used_memory', 0) / (1024 * 1024)
             memory_freed_mb = initial_memory_mb - final_memory_mb
-        
+
         return {
             'memory_freed_mb': max(memory_freed_mb, 0),
             'operation_type': operation_type,
@@ -76,7 +76,7 @@ def auto_skim_memory(memory_mb: float, operation_type: str) -> Dict[str, Any]:
             'final_memory_mb': final_memory_mb,
             'optimization_result': optimization_result
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Memory skimming failed: {e}")
         return {
@@ -91,29 +91,29 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
     """Smart memory allocation based on operation type."""
     logger = logging.getLogger(__name__)
     logger.debug(f"🔧 Smart allocating {memory_mb:.2f} MB for {operation_type}")
-    
+
     try:
         # Get the memory optimizer
         memory_optimizer = get_m1_memory_optimizer()
-        
+
         # Get current memory stats
         current_stats = memory_optimizer.get_memory_stats()
         current_memory_mb = current_stats.get('used_memory', 0) / (1024 * 1024)
         total_memory_mb = current_stats.get('total_memory', 0) / (1024 * 1024)
         available_memory_mb = current_stats.get('available_memory', 0) / (1024 * 1024)
-        
+
         # Check if we have enough available memory
         if available_memory_mb < memory_mb:
             logger.warning(f"⚠️ Insufficient available memory: {available_memory_mb:.1f} MB < {memory_mb:.1f} MB")
-            
+
             # Try to free up memory
             logger.info("🧹 Attempting to free up memory for allocation")
             skim_result = auto_skim_memory(memory_mb, operation_type)
-            
+
             # Recheck available memory after skimming
             updated_stats = memory_optimizer.get_memory_stats()
             updated_available_mb = updated_stats.get('available_memory', 0) / (1024 * 1024)
-            
+
             if updated_available_mb < memory_mb:
                 logger.error(f"❌ Still insufficient memory after skimming: {updated_available_mb:.1f} MB < {memory_mb:.1f} MB")
                 return {
@@ -126,10 +126,10 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
                     'requested_memory_mb': memory_mb,
                     'skim_result': skim_result
                 }
-        
+
         # Check memory pressure and apply appropriate optimizations
         memory_pressure = current_stats.get('memory_percent', 0) / 100.0
-        
+
         if memory_pressure > 0.85:  # High memory pressure
             logger.warning(f"⚠️ High memory pressure: {memory_pressure:.1%}")
             memory_optimizer._aggressive_memory_cleanup()
@@ -138,14 +138,14 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
             memory_optimizer._moderate_memory_cleanup()
         elif memory_pressure > 0.6:  # Low memory pressure
             memory_optimizer._light_memory_cleanup()
-        
+
         # Get final memory stats
         final_stats = memory_optimizer.get_memory_stats()
         final_available_mb = final_stats.get('available_memory', 0) / (1024 * 1024)
-        
+
         # Determine if allocation was successful
         allocation_successful = final_available_mb >= memory_mb
-        
+
         return {
             'allocated_mb': memory_mb if allocation_successful else 0,
             'operation_type': operation_type,
@@ -157,7 +157,7 @@ def smart_memory_allocation(memory_mb: float, operation_type: str) -> Dict[str, 
             'total_memory_mb': total_memory_mb,
             'current_memory_mb': current_memory_mb
         }
-        
+
     except Exception as e:
         logger.error(f"❌ Smart memory allocation failed: {e}")
         return {
@@ -175,13 +175,13 @@ def memory_skim_decorator(operation_type: str):
         def wrapper(*args, **kwargs):
             logger = logging.getLogger(__name__)
             logger.debug(f"🔧 Memory skim decorator for {operation_type}")
-            
+
             # Pre-operation memory management
             try:
                 memory_optimizer = get_m1_memory_optimizer()
                 initial_stats = memory_optimizer.get_memory_stats()
                 initial_memory_mb = initial_stats.get('used_memory', 0) / (1024 * 1024)
-                
+
                 # Estimate memory requirements for the operation
                 estimated_memory = 100.0  # Default 100MB estimate
                 if hasattr(func, '__name__'):
@@ -191,27 +191,27 @@ def memory_skim_decorator(operation_type: str):
                         estimated_memory = 200.0
                     elif 'optimize' in func.__name__.lower() or 'hyperparameter' in func.__name__.lower():
                         estimated_memory = 1000.0
-                
+
                 # Pre-allocate memory if needed
                 allocation_result = smart_memory_allocation(estimated_memory, operation_type)
                 if not allocation_result['allocation_successful']:
                     logger.warning(f"⚠️ Memory allocation failed for {func.__name__}")
-                
+
             except Exception as e:
                 logger.warning(f"⚠️ Pre-operation memory management failed: {e}")
-            
+
             # Execute the function
             try:
                 result = func(*args, **kwargs)
-                
+
                 # Post-operation cleanup
                 try:
                     auto_skim_memory(50.0, operation_type)  # Clean up 50MB after operation
                 except Exception as e:
                     logger.debug(f"Post-operation cleanup failed: {e}")
-                
+
                 return result
-                
+
             except MemoryError as e:
                 logger.error(f"❌ Memory error in {func.__name__}: {e}")
                 # Try emergency cleanup
@@ -224,7 +224,7 @@ def memory_skim_decorator(operation_type: str):
             except Exception as e:
                 logger.error(f"❌ Error in {func.__name__}: {e}")
                 raise
-                
+
         return wrapper
     return decorator
 
@@ -237,14 +237,14 @@ def auto_memory_skim_context(operation_type: str):
     """Context manager for auto memory skimming."""
     logger = logging.getLogger(__name__)
     logger.debug(f"🔧 Entering memory skim context for {operation_type}")
-    
+
     # Pre-context memory management
     initial_stats = None
     try:
         memory_optimizer = get_m1_memory_optimizer()
         initial_stats = memory_optimizer.get_memory_stats()
         initial_memory_mb = initial_stats.get('used_memory', 0) / (1024 * 1024)
-        
+
         # Pre-allocate memory based on operation type
         estimated_memory = {
             'hyperparameter_optimization': 1000.0,
@@ -255,35 +255,35 @@ def auto_memory_skim_context(operation_type: str):
             'model_inference': 100.0,
             'general': 50.0
         }.get(operation_type, 100.0)
-        
+
         allocation_result = smart_memory_allocation(estimated_memory, operation_type)
         if not allocation_result['allocation_successful']:
             logger.warning(f"⚠️ Memory allocation failed for {operation_type}")
-            
+
     except Exception as e:
         logger.warning(f"⚠️ Pre-context memory management failed: {e}")
-    
+
     try:
         yield
     finally:
         # Post-context cleanup
         try:
             auto_skim_memory(100.0, operation_type)  # Clean up 100MB after operation
-            
+
             # Log memory usage if we have initial stats
             if initial_stats:
                 final_stats = memory_optimizer.get_memory_stats()
                 final_memory_mb = final_stats.get('used_memory', 0) / (1024 * 1024)
                 memory_change = final_memory_mb - initial_memory_mb
-                
+
                 if memory_change > 50:  # Log if memory increased by more than 50MB
                     logger.info(f"🧠 Memory context '{operation_type}' completed: {memory_change:+.1f} MB")
                 else:
                     logger.debug(f"🧠 Memory context '{operation_type}' completed: {memory_change:+.1f} MB")
-                    
+
         except Exception as e:
             logger.debug(f"Post-context cleanup failed: {e}")
-        
+
         logger.debug(f"🔧 Exiting memory skim context for {operation_type}")
 
 @contextmanager
@@ -291,7 +291,7 @@ def smart_memory_context(operation_type: str):
     """Context manager for smart memory allocation."""
     logger = logging.getLogger(__name__)
     logger.debug(f"🔧 Entering smart memory context for {operation_type}")
-    
+
     # Pre-context smart memory allocation
     allocation_result = None
     try:
@@ -305,14 +305,14 @@ def smart_memory_context(operation_type: str):
             'model_inference': 200.0,
             'general': 100.0
         }.get(operation_type, 200.0)
-        
+
         allocation_result = smart_memory_allocation(estimated_memory, operation_type)
         if not allocation_result['allocation_successful']:
             logger.warning(f"⚠️ Smart memory allocation failed for {operation_type}")
-            
+
     except Exception as e:
         logger.warning(f"⚠️ Pre-context smart memory allocation failed: {e}")
-    
+
     try:
         yield allocation_result
     finally:
@@ -321,41 +321,41 @@ def smart_memory_context(operation_type: str):
             if allocation_result and allocation_result.get('allocation_successful'):
                 # Clean up allocated memory
                 auto_skim_memory(estimated_memory * 0.5, operation_type)  # Clean up 50% of allocated memory
-                
+
             # Log final memory stats
             memory_optimizer = get_m1_memory_optimizer()
             final_stats = memory_optimizer.get_memory_stats()
             final_memory_mb = final_stats.get('used_memory', 0) / (1024 * 1024)
             memory_pressure = final_stats.get('memory_percent', 0)
-            
+
             logger.debug(f"🧠 Smart memory context '{operation_type}' completed: {final_memory_mb:.1f} MB used, {memory_pressure:.1f}% pressure")
-            
+
         except Exception as e:
             logger.debug(f"Post-context smart memory cleanup failed: {e}")
-        
+
         logger.debug(f"🔧 Exiting smart memory context for {operation_type}")
 
 logger = logging.getLogger(__name__)
 
 class MLMemoryManager:
     """Memory manager specifically designed for ML operations."""
-    
+
     def __init__(self):
         self.logger = logger.getChild('MLMemoryManager')
         self.logger.info("🚀 Initializing MLMemoryManager...")
         start_time = time.time()
-        
+
         self.memory_optimizer = get_m1_memory_optimizer()
         self.logger.debug("✅ Memory optimizer initialized")
-        
+
         self.operation_memory_usage = {}
         self.logger.debug("✅ Operation memory usage tracking initialized")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ MLMemoryManager initialized in {init_time:.3f}s")
-        
+
     def estimate_ml_memory_requirements(
-        self, 
+        self,
         operation_type: str,
         data_shape: Optional[tuple] = None,
         n_samples: Optional[int] = None,
@@ -365,7 +365,7 @@ class MLMemoryManager:
         **kwargs
     ) -> float:
         """Estimate memory requirements for ML operations."""
-        
+
         # Base memory requirements by operation type
         base_requirements = {
             'hyperparameter_optimization': 2000,  # MB
@@ -378,32 +378,32 @@ class MLMemoryManager:
             'temporal_validation': 300,
             'general': 200
         }
-        
+
         base_mb = base_requirements.get(operation_type, base_requirements['general'])
-        
+
         # Adjust based on data size
         if data_shape:
             data_elements = np.prod(data_shape)
             data_memory_mb = data_elements * 8 / (1024**2)  # Assume float64
             base_mb += data_memory_mb
-        
+
         # Adjust based on samples and features
         if n_samples and n_features:
             matrix_memory_mb = n_samples * n_features * 8 / (1024**2)
             base_mb += matrix_memory_mb
-        
+
         # Adjust based on trials and CV folds
         if n_trials:
             base_mb += n_trials * 100  # 100MB per trial
         if cv_folds:
             base_mb += cv_folds * 200  # 200MB per CV fold
-        
+
         # Cap the estimation to reasonable limits
         estimated_mb = min(base_mb, 8000)  # Max 8GB
-        
+
         self.logger.debug(f"📏 Estimated memory for {operation_type}: {estimated_mb:.1f}MB")
         return estimated_mb
-    
+
     def auto_skim_for_ml_operation(
         self,
         operation_type: str,
@@ -411,13 +411,13 @@ class MLMemoryManager:
         **kwargs
     ) -> Dict[str, Any]:
         """Automatically skim memory for ML operations."""
-        
+
         estimated_memory_mb = self.estimate_ml_memory_requirements(
             operation_type, data_shape, **kwargs
         )
-        
+
         return auto_skim_memory(estimated_memory_mb, operation_type)
-    
+
     def smart_allocate_for_ml_operation(
         self,
         operation_type: str,
@@ -425,11 +425,11 @@ class MLMemoryManager:
         **kwargs
     ) -> Dict[str, Any]:
         """Smart memory allocation for ML operations."""
-        
+
         estimated_memory_mb = self.estimate_ml_memory_requirements(
             operation_type, data_shape, **kwargs
         )
-        
+
         return smart_memory_allocation(estimated_memory_mb, operation_type)
 
 # Global ML memory manager instance
@@ -449,18 +449,18 @@ def ml_memory_skim_decorator(operation_type: str):
         @wraps(func)
         def wrapper(*args, **kwargs):
             manager = get_ml_memory_manager()
-            
+
             # Estimate memory requirements
             estimated_memory_mb = manager.estimate_ml_memory_requirements(
                 operation_type, **kwargs
             )
-            
+
             # Perform smart memory allocation
             allocation_results = smart_memory_allocation(estimated_memory_mb, operation_type)
-            
+
             if not allocation_results['allocation_successful']:
                 logger.warning(f"⚠️ Insufficient memory for {func.__name__} even after skimming")
-            
+
             # Execute the function
             try:
                 result = func(*args, **kwargs)
@@ -474,7 +474,7 @@ def ml_memory_skim_decorator(operation_type: str):
             except Exception as e:
                 logger.error(f"❌ Error in {func.__name__}: {e}")
                 raise
-        
+
         return wrapper
     return decorator
 
@@ -484,21 +484,21 @@ def ml_auto_memory_skim_decorator():
         @wraps(func)
         def wrapper(*args, **kwargs):
             manager = get_ml_memory_manager()
-            
+
             # Try to determine operation type from function name
             operation_type = _infer_operation_type(func.__name__)
-            
+
             # Estimate memory requirements
             estimated_memory_mb = manager.estimate_ml_memory_requirements(
                 operation_type, **kwargs
             )
-            
+
             # Perform smart memory allocation
             allocation_results = smart_memory_allocation(estimated_memory_mb, operation_type)
-            
+
             if not allocation_results['allocation_successful']:
                 logger.warning(f"⚠️ Insufficient memory for {func.__name__} even after skimming")
-            
+
             # Execute the function
             try:
                 result = func(*args, **kwargs)
@@ -512,14 +512,14 @@ def ml_auto_memory_skim_decorator():
             except Exception as e:
                 logger.error(f"❌ Error in {func.__name__}: {e}")
                 raise
-        
+
         return wrapper
     return decorator
 
 def _infer_operation_type(function_name: str) -> str:
     """Infer operation type from function name."""
     function_name_lower = function_name.lower()
-    
+
     if any(keyword in function_name_lower for keyword in ['optimize', 'hyperparameter', 'hpo']):
         return 'hyperparameter_optimization'
     elif any(keyword in function_name_lower for keyword in ['cross_validation', 'cv', 'validation']):
@@ -542,10 +542,10 @@ def _infer_operation_type(function_name: str) -> str:
 def ml_memory_context(operation_type: str, **kwargs):
     """Context manager for ML operations with automatic memory management."""
     manager = get_ml_memory_manager()
-    
+
     # Perform smart memory allocation
     allocation_results = manager.smart_allocate_for_ml_operation(operation_type, **kwargs)
-    
+
     try:
         yield allocation_results
     finally:
@@ -557,13 +557,13 @@ def ml_memory_context(operation_type: str, **kwargs):
 def ml_auto_memory_context(**kwargs):
     """Context manager with automatic memory estimation for ML operations."""
     manager = get_ml_memory_manager()
-    
+
     # Estimate memory requirements
     estimated_memory_mb = manager.estimate_ml_memory_requirements('general', **kwargs)
-    
+
     # Perform smart memory allocation
     allocation_results = smart_memory_allocation(estimated_memory_mb, 'general')
-    
+
     try:
         yield allocation_results
     finally:
@@ -802,7 +802,7 @@ def integrate_memory_skimming_with_data_quality():
 def integrate_all_ml_utilities():
     """Integrate memory skimming with all ML utilities."""
     logger.info("🔗 Integrating memory skimming with all ML utilities")
-    
+
     results = {
         'hpo_integration': integrate_memory_skimming_with_hpo(),
         'cv_integration': integrate_memory_skimming_with_cv(),
@@ -811,12 +811,12 @@ def integrate_all_ml_utilities():
         'feature_selection_integration': integrate_memory_skimming_with_feature_selection(),
         'data_quality_integration': integrate_memory_skimming_with_data_quality()
     }
-    
+
     successful_integrations = sum(results.values())
     total_integrations = len(results)
-    
+
     logger.info(f"✅ Memory skimming integration completed: {successful_integrations}/{total_integrations} successful")
-    
+
     return results
 
 # Auto-integration on import

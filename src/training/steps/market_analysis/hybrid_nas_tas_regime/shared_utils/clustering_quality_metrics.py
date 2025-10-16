@@ -19,7 +19,7 @@ import logging
 import warnings
 from dataclasses import dataclass
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
@@ -27,7 +27,6 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
-
 
 @dataclass
 class ClusteringQualityConfig:
@@ -57,7 +56,6 @@ class ClusteringQualityConfig:
     validate_input_data: bool = True
     handle_outliers: bool = True
     outlier_threshold: float = 3.0  # Standard deviations
-
 
 @dataclass
 class ClusteringQualityResult:
@@ -101,7 +99,6 @@ class ClusteringQualityResult:
     economic_interpretation: str = ""
     economically_significant_regimes: int = 0
     economically_viable_regimes: int = 0
-
 
 class ClusteringQualityMetrics:
     """
@@ -878,11 +875,9 @@ class ClusteringQualityMetrics:
         except Exception:
             return 0.0
 
-
 def create_clustering_quality_evaluator(config: Optional[ClusteringQualityConfig] = None) -> ClusteringQualityMetrics:
     """Create clustering quality metrics evaluator."""
     return ClusteringQualityMetrics(config)
-
 
 def quick_clustering_evaluation(features: Union[pd.DataFrame, np.ndarray],
                               cluster_labels: np.ndarray,

@@ -30,10 +30,10 @@ Usage:
         FeatureGenerationOptimizer,
         EnhancedFeatureEngineering
     )
-    
+
     # Initialize feature bank
     bank = FeatureBank()
-    
+
     # Generate features by category
     features = bank.generate_features(
         data=df,
@@ -116,13 +116,13 @@ try:
         VolatilityFeatureGenerator,
         TrendFeatureGenerator,
         OscillatorFeatureGenerator,
-        
+
         # New consolidated categories
         AccelerationFeatureGenerator,
         InteractionFeatureGenerator,
         CrossTimeframeFeatureGenerator,
         EntropyFeatureGenerator,
-        
+
         # Specific generators from new categories
         MomentumGenerator,
         PriceAccelerationGenerator,
@@ -132,18 +132,18 @@ try:
         VolumeAccelerationGenerator,
         VolatilityAccelerationGenerator,
         create_acceleration_generators,
-        
+
         MomentumDivergenceGenerator,
         MomentumVolumeGenerator,
         MomentumVolatilityGenerator,
         VolatilityVolumeGenerator,
         create_interaction_generators,
-        
+
         CrossTimeframeMomentumGenerator,
         CrossTimeframeVolatilityGenerator,
         CrossTimeframeVolumeGenerator,
         create_cross_timeframe_generators,
-        
+
         PriceEntropyGenerator,
         VolumeEntropyGenerator,
         ReturnEntropyGenerator,
@@ -156,7 +156,7 @@ try:
         CrossAssetEntropyGenerator,
         RegimeEntropyGenerator,
         create_entropy_generators,
-        
+
         # Legacy interaction generators
         CrossTimeframeInteractionGenerator,
         FeatureRatioGenerator,
@@ -214,17 +214,17 @@ try:
         optimize_feature_lookback,
         get_optimization_config,
         LookbackOptimizer,
-        
+
         # Advanced feature engineering
         EnhancedFeatureEngineering,
         Step06UtilityContainer,
         UtilityConfig,
-        
+
         # Analysis pipelines
         CrossTimeframeAnalysisPipeline,
         FractionalDifferentiationPipeline,
         EnhancedMatrixOperations,
-        
+
         # Validation
         validate_feature_quality,
         validate_features_dataframe
@@ -271,7 +271,7 @@ __all__ = []
 if CORE_AVAILABLE:
     __all__.extend([
         "FeatureBank",
-        "FeatureGenerator", 
+        "FeatureGenerator",
         "FeatureCategory",
         "FeatureRegistry",
         "VectorizedFeatureGenerator",
@@ -364,14 +364,14 @@ if UTILS_AVAILABLE:
     __all__.extend([
         # Optimization system
         "FeatureGenerationOptimizer",
-        "FeatureOptimizationConfig", 
+        "FeatureOptimizationConfig",
         "FeatureOptimizationResult",
         "OptimizationMethod",
         "get_feature_optimizer",
         "optimize_feature_lookback",
         "get_optimization_config",
         "LookbackOptimizer",
-        
+
         # Advanced utilities
         "EnhancedFeatureEngineering",
         "Step06UtilityContainer",

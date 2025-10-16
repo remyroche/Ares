@@ -69,7 +69,7 @@ class DataQualityMonitor:
         self.alert_callbacks: List[Callable[[DataQualityAlert], None]] = []
         self.monitoring_active = False
         self.monitoring_interval = 300
-        
+
         # Initialize comprehensive quality tools
         if QUALITY_TOOLS_AVAILABLE:
             try:
@@ -93,13 +93,13 @@ class DataQualityMonitor:
     @handles_errors(exceptions=(Exception,), default_return = False, context='data_quality_monitor.start_monitoring')
     async def start_monitoring(self, symbols: List[str], exchanges: List[str], timeframes: List[str], interval_seconds: int = 300) -> bool:
         """Start real-time monitoring of data quality.
-        
+
         Args:
             symbols: List of symbols to monitor
             exchanges: List of exchanges to monitor
             timeframes: List of timeframes to monitor
             interval_seconds: Monitoring interval in seconds
-            
+
         Returns:
             bool: True if monitoring started successfully
         """
@@ -123,7 +123,7 @@ class DataQualityMonitor:
     @traced(span_name='add_alert_callback')
     def add_alert_callback(self, callback: Callable[[DataQualityAlert], None]) -> None:
         """Add a callback function to be called when alerts are generated.
-        
+
         Args:
             callback: Function to call with alert data
         """
@@ -133,7 +133,7 @@ class DataQualityMonitor:
     @traced(span_name='set_quality_thresholds')
     def set_quality_thresholds(self, thresholds: Dict[str, Any]) -> None:
         """Set quality monitoring thresholds.
-        
+
         Args:
             thresholds: Dictionary of threshold values
         """
@@ -167,31 +167,31 @@ class DataQualityMonitor:
     async def _check_data_quality(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
-            
+
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             quality_results = await manager.comprehensive_quality_check(
-                symbol = symbol, 
-                exchange = exchange, 
-                timeframe = timeframe, 
-                check_gaps = True, 
-                fill_gaps = False, 
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                check_gaps = True,
+                fill_gaps = False,
                 validate_format = True
             )
             await self._evaluate_quality_results(quality_results, symbol, exchange, timeframe)
         except Exception as e:
             await self._handle_quality_check_error(e, symbol, exchange, timeframe)
-    
+
     async def _handle_quality_check_error(self, error: Exception, symbol: str, exchange: str, timeframe: str) -> None:
         """Handle errors during quality check."""
         logger.exception(f'❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {error}')
         alert = DataQualityAlert(
-            alert_type='monitoring_error', 
-            severity='high', 
-            message = f'Failed to check data quality: {str(error)}', 
-            symbol = symbol, 
-            exchange = exchange, 
-            timeframe = timeframe, 
-            timestamp = datetime.now(), 
+            alert_type='monitoring_error',
+            severity='high',
+            message = f'Failed to check data quality: {str(error)}',
+            symbol = symbol,
+            exchange = exchange,
+            timeframe = timeframe,
+            timestamp = datetime.now(),
             details={'error': str(error)}
         )
         await self._generate_alert(alert)
@@ -280,7 +280,7 @@ class DataQualityMonitor:
     @traced(span_name='get_alerts')
     def get_alerts(self, symbol: Optional[str]=None, exchange: Optional[str]=None, severity: Optional[str]=None, alert_type: Optional[str]=None, start_time: Optional[datetime]=None, end_time: Optional[datetime]=None, limit: int = 100) -> List[DataQualityAlert]:
         """Get filtered alerts.
-        
+
         Args:
             symbol: Filter by symbol
             exchange: Filter by exchange
@@ -289,7 +289,7 @@ class DataQualityMonitor:
             start_time: Filter alerts after this time
             end_time: Filter alerts before this time
             limit: Maximum number of alerts to return
-            
+
         Returns:
             List of filtered alerts
         """
@@ -315,10 +315,10 @@ class DataQualityMonitor:
     @traced(span_name='acknowledge_alert')
     def acknowledge_alert(self, alert_index: int) -> bool:
         """Acknowledge an alert by index.
-        
+
         Args:
             alert_index: Index of alert to acknowledge
-            
+
         Returns:
             bool: True if alert was acknowledged
         """
@@ -335,10 +335,10 @@ class DataQualityMonitor:
     @traced(span_name='resolve_alert')
     def resolve_alert(self, alert_index: int) -> bool:
         """Mark an alert as resolved.
-        
+
         Args:
             alert_index: Index of alert to resolve
-            
+
         Returns:
             bool: True if alert was resolved
         """

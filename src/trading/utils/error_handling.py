@@ -27,7 +27,7 @@ class TradingErrorSeverity(Enum):
 
 class TradingError(Exception):
     """Base trading error class."""
-    
+
     def __init__(
         self,
         message: str,
@@ -43,10 +43,10 @@ class TradingError(Exception):
         self.context = context or {}
         self.original_exception = original_exception
         self.timestamp = datetime.now()
-        
+
     def __str__(self) -> str:
         return f"[{self.error_code}] {self.message}"
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert error to dictionary for logging."""
         return {
@@ -61,7 +61,7 @@ class TradingError(Exception):
 
 class RegimeDetectionError(TradingError):
     """Regime detection specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -72,7 +72,7 @@ class RegimeDetectionError(TradingError):
 
 class SignalGenerationError(TradingError):
     """Signal generation specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -83,7 +83,7 @@ class SignalGenerationError(TradingError):
 
 class PositionSizingError(TradingError):
     """Position sizing specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -94,7 +94,7 @@ class PositionSizingError(TradingError):
 
 class ExecutionError(TradingError):
     """Order execution specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -105,7 +105,7 @@ class ExecutionError(TradingError):
 
 class DataCollectionError(TradingError):
     """Data collection specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -116,7 +116,7 @@ class DataCollectionError(TradingError):
 
 class ConfigurationError(TradingError):
     """Configuration specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -127,7 +127,7 @@ class ConfigurationError(TradingError):
 
 class ValidationError(TradingError):
     """Validation specific errors."""
-    
+
     def __init__(self, message: str, **kwargs):
         super().__init__(
             message,
@@ -145,7 +145,7 @@ def trading_error_handler(
 ):
     """
     Comprehensive error handler decorator for trading operations.
-    
+
     Args:
         error_types: Exception types to catch
         severity: Error severity level
@@ -160,10 +160,10 @@ def trading_error_handler(
                 return await func(*args, **kwargs)
             except error_types as e:
                 await _handle_trading_error(
-                    e, func, args, kwargs, severity, 
+                    e, func, args, kwargs, severity,
                     raise_on_error, log_traceback, context_extractor
                 )
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             try:
@@ -173,14 +173,14 @@ def trading_error_handler(
                     e, func, args, kwargs, severity,
                     raise_on_error, log_traceback, context_extractor
                 )
-        
+
         # Return appropriate wrapper based on function type
         import asyncio
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 async def _handle_trading_error(
@@ -201,7 +201,7 @@ async def _handle_trading_error(
             context = context_extractor(*args, **kwargs)
         except Exception as ctx_error:
             logger.warning(f"Failed to extract context: {ctx_error}")
-    
+
     # Create trading error
     if isinstance(error, TradingError):
         trading_error = error
@@ -212,14 +212,14 @@ async def _handle_trading_error(
             context=context,
             original_exception=error
         )
-    
+
     # Log error based on severity
     await _log_trading_error(trading_error, func, log_traceback)
-    
+
     # Handle critical errors
     if severity == TradingErrorSeverity.CRITICAL:
         await _handle_critical_error(trading_error, func)
-    
+
     # Re-raise if requested
     if raise_on_error:
         raise trading_error
@@ -242,7 +242,7 @@ def _handle_trading_error_sync(
             context = context_extractor(*args, **kwargs)
         except Exception as ctx_error:
             logger.warning(f"Failed to extract context: {ctx_error}")
-    
+
     # Create trading error
     if isinstance(error, TradingError):
         trading_error = error
@@ -253,14 +253,14 @@ def _handle_trading_error_sync(
             context=context,
             original_exception=error
         )
-    
+
     # Log error based on severity
     _log_trading_error_sync(trading_error, func, log_traceback)
-    
+
     # Handle critical errors
     if severity == TradingErrorSeverity.CRITICAL:
         _handle_critical_error_sync(trading_error, func)
-    
+
     # Re-raise if requested
     if raise_on_error:
         raise trading_error
@@ -274,31 +274,31 @@ async def _log_trading_error(
     error_dict = error.to_dict()
     error_dict['function'] = func.__name__
     error_dict['module'] = func.__module__
-    
+
     # Print based on severity
     if error.severity == TradingErrorSeverity.CRITICAL:
         tprint_error(f"🚨 CRITICAL ERROR in {func.__name__}: {error.message}")
         tprint_structured(error_dict, LogLevel.ERROR)
-        
+
         # Also log to system logger
         logger.critical(f"CRITICAL TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
             logger.critical(f"Traceback: {traceback.format_exc()}")
-    
+
     elif error.severity == TradingErrorSeverity.HIGH:
         tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
             logger.error(f"Traceback: {traceback.format_exc()}")
-    
+
     elif error.severity == TradingErrorSeverity.MEDIUM:
         tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.warning(f"MEDIUM SEVERITY TRADING ERROR: {error}")
-    
+
     elif error.severity == TradingErrorSeverity.LOW:
         tprint_info(f"ℹ️ LOW SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.info(f"LOW SEVERITY TRADING ERROR: {error}")
-    
+
     else:  # WARNING
         tprint_warning(f"⚠️ WARNING in {func.__name__}: {error.message}")
         logger.warning(f"TRADING WARNING: {error}")
@@ -312,31 +312,31 @@ def _log_trading_error_sync(
     error_dict = error.to_dict()
     error_dict['function'] = func.__name__
     error_dict['module'] = func.__module__
-    
+
     # Print based on severity
     if error.severity == TradingErrorSeverity.CRITICAL:
         tprint_error(f"🚨 CRITICAL ERROR in {func.__name__}: {error.message}")
         tprint_structured(error_dict, LogLevel.ERROR)
-        
+
         # Also log to system logger
         logger.critical(f"CRITICAL TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
             logger.critical(f"Traceback: {traceback.format_exc()}")
-    
+
     elif error.severity == TradingErrorSeverity.HIGH:
         tprint_error(f"❌ HIGH SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.error(f"HIGH SEVERITY TRADING ERROR: {error}")
         if log_traceback and error.original_exception:
             logger.error(f"Traceback: {traceback.format_exc()}")
-    
+
     elif error.severity == TradingErrorSeverity.MEDIUM:
         tprint_warning(f"⚠️ MEDIUM SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.warning(f"MEDIUM SEVERITY TRADING ERROR: {error}")
-    
+
     elif error.severity == TradingErrorSeverity.LOW:
         tprint_info(f"ℹ️ LOW SEVERITY ERROR in {func.__name__}: {error.message}")
         logger.info(f"LOW SEVERITY TRADING ERROR: {error}")
-    
+
     else:  # WARNING
         tprint_warning(f"⚠️ WARNING in {func.__name__}: {error.message}")
         logger.warning(f"TRADING WARNING: {error}")
@@ -347,7 +347,7 @@ async def _handle_critical_error(error: TradingError, func: Callable):
     tprint_error("🛑 TRADING OPERATIONS MAY BE COMPROMISED!")
     tprint_error(f"🔍 Error in function: {func.__name__}")
     tprint_error(f"💥 Error message: {error.message}")
-    
+
     # Log critical error details
     logger.critical("=" * 80)
     logger.critical("CRITICAL TRADING ERROR - IMMEDIATE ATTENTION REQUIRED")
@@ -357,7 +357,7 @@ async def _handle_critical_error(error: TradingError, func: Callable):
     logger.critical(f"Error: {error}")
     logger.critical(f"Context: {error.context}")
     logger.critical("=" * 80)
-    
+
     # In a production system, you might want to:
     # 1. Send alerts to monitoring systems
     # 2. Stop trading operations
@@ -370,7 +370,7 @@ def _handle_critical_error_sync(error: TradingError, func: Callable):
     tprint_error("🛑 TRADING OPERATIONS MAY BE COMPROMISED!")
     tprint_error(f"🔍 Error in function: {func.__name__}")
     tprint_error(f"💥 Error message: {error.message}")
-    
+
     # Log critical error details
     logger.critical("=" * 80)
     logger.critical("CRITICAL TRADING ERROR - IMMEDIATE ATTENTION REQUIRED")
@@ -398,7 +398,7 @@ def require_no_fallback(message: str = "Operation failed with no fallback availa
                     severity=TradingErrorSeverity.HIGH,
                     original_exception=e
                 )
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             try:
@@ -410,12 +410,12 @@ def require_no_fallback(message: str = "Operation failed with no fallback availa
                     severity=TradingErrorSeverity.HIGH,
                     original_exception=e
                 )
-        
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 def critical_operation(func):
@@ -443,7 +443,7 @@ def warn_on_failure(message: str = "Operation completed with warnings"):
                 tprint_warning(f"⚠️ {message}: {str(e)}")
                 logger.warning(f"{message}: {str(e)}")
                 return None
-        
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             try:
@@ -452,42 +452,42 @@ def warn_on_failure(message: str = "Operation completed with warnings"):
                 tprint_warning(f"⚠️ {message}: {str(e)}")
                 logger.warning(f"{message}: {str(e)}")
                 return None
-        
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 # Context extractors for common trading operations
 def extract_symbol_context(*args, **kwargs) -> Dict[str, Any]:
     """Extract symbol context from function arguments."""
     context = {}
-    
+
     # Look for symbol in args and kwargs
     if args and isinstance(args[0], str):
         context['symbol'] = args[0]
     elif 'symbol' in kwargs:
         context['symbol'] = kwargs['symbol']
-    
+
     return context
 
 def extract_market_data_context(*args, **kwargs) -> Dict[str, Any]:
     """Extract market data context from function arguments."""
     context = {}
-    
+
     # Look for market data
     for arg in args:
         if hasattr(arg, 'shape') and len(arg.shape) == 2:  # Likely DataFrame
             context['data_shape'] = arg.shape
             context['data_columns'] = list(arg.columns) if hasattr(arg, 'columns') else None
             break
-    
+
     if 'market_data' in kwargs:
         data = kwargs['market_data']
         if hasattr(data, 'shape'):
             context['data_shape'] = data.shape
             context['data_columns'] = list(data.columns) if hasattr(data, 'columns') else None
-    
+
     return context

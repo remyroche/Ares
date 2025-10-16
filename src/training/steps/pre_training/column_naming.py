@@ -14,7 +14,6 @@ from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional, Set,
 
 import pandas as pd
 
-
 class ColumnNamespace(str, Enum):
     """Logical namespaces supported by the pre-training pipeline."""
 
@@ -23,7 +22,6 @@ class ColumnNamespace(str, Enum):
     TARGET = "target"
     META = "meta"
 
-
 # Canonical prefixes that the pipeline should emit.
 _NAMESPACE_TO_PREFIX = {
     ColumnNamespace.FEATURE: "X_",
@@ -31,7 +29,6 @@ _NAMESPACE_TO_PREFIX = {
     ColumnNamespace.TARGET: "y_",
     ColumnNamespace.META: "meta_",
 }
-
 
 # Historical/legacy prefixes that may appear at step boundaries.  These values
 # are accepted for ingestion but will be translated into the canonical forms.
@@ -52,7 +49,6 @@ _LEGACY_NAMESPACE_PREFIXES: Mapping[ColumnNamespace, Tuple[str, ...]] = {
     ColumnNamespace.META: ("meta__",),
 }
 
-
 # Column aliases that we want to interpret as belonging to a namespace even
 # without a prefix.  These are typically found when interacting with external
 # utilities (e.g. scikit-learn) that expect ``X``/``y`` naming conventions.
@@ -63,7 +59,6 @@ _NAMESPACE_ALIASES: Mapping[ColumnNamespace, Tuple[str, ...]] = {
     ColumnNamespace.META: ("meta",),
 }
 
-
 _ALIAS_DEFAULT_BASE: Mapping[ColumnNamespace, Mapping[str, str]] = {
     ColumnNamespace.FEATURE: {"x": "feature", "features": "feature", "feat": "feature"},
     ColumnNamespace.LABEL: {"y": "target", "label": "label", "labels": "label", "target": "target", "targets": "target", "return": "return"},
@@ -71,13 +66,11 @@ _ALIAS_DEFAULT_BASE: Mapping[ColumnNamespace, Mapping[str, str]] = {
     ColumnNamespace.META: {"meta": "meta"},
 }
 
-
 def _all_prefixes() -> Tuple[str, ...]:
     prefixes = set(_NAMESPACE_TO_PREFIX.values())
     for legacy_values in _LEGACY_NAMESPACE_PREFIXES.values():
         prefixes.update(legacy_values)
     return tuple(sorted(prefixes))
-
 
 ALLOWED_PREFIXES: Tuple[str, ...] = _all_prefixes()
 
@@ -95,13 +88,11 @@ DEFAULT_ALLOWED_UNPREFIXED: Set[str] = {
     "window_end",
 }
 
-
 def get_namespace_prefix(namespace: Union[ColumnNamespace, str]) -> str:
     """Return the canonical prefix for a namespace."""
 
     ns = ColumnNamespace(namespace) if not isinstance(namespace, ColumnNamespace) else namespace
     return _NAMESPACE_TO_PREFIX[ns]
-
 
 def _match_prefix(column: str, namespace: ColumnNamespace) -> Optional[str]:
     """Return ``column`` without a recognized prefix for ``namespace`` if present."""
@@ -114,7 +105,6 @@ def _match_prefix(column: str, namespace: ColumnNamespace) -> Optional[str]:
         if column.startswith(legacy_prefix):
             return column[len(legacy_prefix) :]
     return None
-
 
 def _match_alias(column: str, namespace: ColumnNamespace) -> Optional[str]:
     """Return a base name when ``column`` matches a namespace alias."""
@@ -135,7 +125,6 @@ def _match_alias(column: str, namespace: ColumnNamespace) -> Optional[str]:
             return remainder or _ALIAS_DEFAULT_BASE.get(namespace, {}).get(alias_lower, alias_lower)
     return None
 
-
 def strip_namespace(column: str) -> Tuple[str, Optional[ColumnNamespace]]:
     """Remove a known namespace prefix from ``column`` if present."""
 
@@ -144,7 +133,6 @@ def strip_namespace(column: str) -> Tuple[str, Optional[ColumnNamespace]]:
         if matched is not None:
             return matched, namespace
     return column, None
-
 
 def ensure_namespace(column: str, namespace: Union[ColumnNamespace, str]) -> str:
     """Ensure ``column`` is namespaced with the prefix associated to ``namespace``."""
@@ -165,7 +153,6 @@ def ensure_namespace(column: str, namespace: Union[ColumnNamespace, str]) -> str
 
     return f"{get_namespace_prefix(target_namespace)}{base_name}"
 
-
 def ensure_dataframe_namespace(
     df: pd.DataFrame,
     namespace: Union[ColumnNamespace, str],
@@ -183,7 +170,6 @@ def ensure_dataframe_namespace(
         return df
     return df.rename(columns=rename_map)
 
-
 def filter_namespace_columns(
     columns: Iterable[str],
     namespace: Union[ColumnNamespace, str],
@@ -200,7 +186,6 @@ def filter_namespace_columns(
         if _match_alias(column, target_namespace) is not None:
             namespaced.append(ensure_namespace(column, target_namespace))
     return namespaced
-
 
 def standardize_namespace_frame(
     data: pd.DataFrame,
@@ -235,7 +220,6 @@ def standardize_namespace_frame(
         data = data.rename(columns=rename_map)
     return data
 
-
 def find_nonconforming_columns(
     columns: Iterable[str],
     allowed_unprefixed: Optional[Iterable[str]] = None,
@@ -255,7 +239,6 @@ def find_nonconforming_columns(
         invalid.append(column)
     return invalid
 
-
 def validate_column_names(
     columns: Iterable[str],
     *,
@@ -271,7 +254,6 @@ def validate_column_names(
             f"Allowed prefixes: {ALLOWED_PREFIXES}"
         )
 
-
 def validate_dataframe_names(
     df: pd.DataFrame,
     *,
@@ -284,7 +266,6 @@ def validate_dataframe_names(
         return
     validate_column_names(df.columns, allowed_unprefixed=allowed_unprefixed, frame_name=frame_name)
 
-
 def map_by_namespace(columns: Iterable[str]) -> Mapping[ColumnNamespace, List[str]]:
     """Group columns by namespace."""
 
@@ -294,7 +275,6 @@ def map_by_namespace(columns: Iterable[str]) -> Mapping[ColumnNamespace, List[st
         if ns is not None:
             grouped[ns].append(column)
     return grouped
-
 
 def ensure_namespace_for_mapping(mapping: Mapping[str, str], namespace: Union[ColumnNamespace, str]) -> Mapping[str, str]:
     """Return a copy of mapping with namespaced values."""

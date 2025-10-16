@@ -9,13 +9,11 @@ from typing import Final, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 
-
 class PipelineMode(Enum):
     """Pipeline execution modes."""
     FULL = "full"
     LIGHT = "light"
     BLANK = "blank"
-
 
 @dataclass
 class ModeConfiguration:
@@ -43,7 +41,6 @@ class ModeConfiguration:
     enable_ensemble_training: bool
     enable_multi_timeframe_training: bool
     enable_adaptive_training: bool
-
 
 # Centralized mode definitions
 FULL_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
@@ -124,7 +121,6 @@ BLANK_MODE_CONFIG: Final[ModeConfiguration] = ModeConfiguration(
     enable_adaptive_training=True
 )
 
-
 # Mode registry for easy access
 MODE_REGISTRY: Final[Dict[str, ModeConfiguration]] = {
     "full": FULL_MODE_CONFIG,
@@ -132,65 +128,55 @@ MODE_REGISTRY: Final[Dict[str, ModeConfiguration]] = {
     "blank": BLANK_MODE_CONFIG
 }
 
-
 def get_mode_config(mode: str) -> ModeConfiguration:
     """
     Get configuration for a specific pipeline mode.
-    
+
     Args:
         mode: Pipeline mode name ("full", "light", "blank")
-        
+
     Returns:
         ModeConfiguration object for the specified mode
-        
+
     Raises:
         ValueError: If mode is not recognized
     """
     if mode not in MODE_REGISTRY:
         raise ValueError(f"Unknown pipeline mode: {mode}. Available modes: {list(MODE_REGISTRY.keys())}")
-    
-    return MODE_REGISTRY[mode]
 
+    return MODE_REGISTRY[mode]
 
 def get_full_mode_config() -> ModeConfiguration:
     """Get the full mode configuration (convenience function)."""
     return get_mode_config("full")
 
-
 def get_light_mode_config() -> ModeConfiguration:
     """Get the light mode configuration (convenience function)."""
     return get_mode_config("light")
-
 
 def get_blank_mode_config() -> ModeConfiguration:
     """Get the blank mode configuration (convenience function)."""
     return get_mode_config("blank")
 
-
 def get_mode_lookback_days(mode: str) -> int:
     """Get lookback days for a specific mode."""
     return get_mode_config(mode).lookback_days
-
 
 def get_mode_lookback_years(mode: str) -> int:
     """Get lookback years for a specific mode."""
     return get_mode_config(mode).lookback_years
 
-
 def get_mode_intensity_percentage(mode: str) -> float:
     """Get intensity percentage for a specific mode."""
     return get_mode_config(mode).intensity_percentage
-
 
 def get_mode_estimated_duration(mode: str) -> int:
     """Get estimated duration in minutes for a specific mode."""
     return get_mode_config(mode).estimated_duration_minutes
 
-
 def get_all_mode_configs() -> Dict[str, ModeConfiguration]:
     """Get all mode configurations."""
     return MODE_REGISTRY.copy()
-
 
 def get_mode_summary() -> Dict[str, Dict[str, Any]]:
     """Get a summary of all modes for display purposes."""
@@ -208,7 +194,6 @@ def get_mode_summary() -> Dict[str, Dict[str, Any]]:
             "n_trials": config.n_trials
         }
     return summary
-
 
 # Legacy compatibility - maintain existing constants
 DEFAULT_LOOKBACK_DAYS: Final[int] = FULL_MODE_CONFIG.lookback_days

@@ -9,7 +9,6 @@ from typing import Any
 
 from .m1_gpu_config import get_m1_gpu_config
 
-
 def get_enhanced_matrix_training_config() -> dict[str, Any]:
     """Get comprehensive configuration for enhanced matrix operations in training pipeline.
 
@@ -94,7 +93,6 @@ def get_enhanced_matrix_training_config() -> dict[str, Any]:
     enhanced_matrix_config.update(m1_config)
 
     return enhanced_matrix_config
-
 
 def get_optimized_enhanced_matrix_config(
     optimization_target: str = "performance",
@@ -181,7 +179,6 @@ def get_optimized_enhanced_matrix_config(
 
     return base_config
 
-
 def get_production_enhanced_matrix_config() -> dict[str, Any]:
     """Get production-ready configuration for enhanced matrix operations.
 
@@ -223,7 +220,6 @@ def get_production_enhanced_matrix_config() -> dict[str, Any]:
 
     return config
 
-
 def get_minimal_enhanced_matrix_config() -> dict[str, Any]:
     """Get minimal configuration for enhanced matrix operations.
 
@@ -258,7 +254,6 @@ def get_minimal_enhanced_matrix_config() -> dict[str, Any]:
 
     return config
 
-
 def _validate_required_settings(config: dict[str, Any]) -> bool:
     """Validate required settings are present."""
     required_settings = [
@@ -273,7 +268,6 @@ def _validate_required_settings(config: dict[str, Any]) -> bool:
 
     return all(setting in config for setting in required_settings)
 
-
 def _validate_optimization_modes(config: dict[str, Any]) -> bool:
     """Validate optimization modes are valid."""
     valid_modes = ["performance", "memory", "accuracy", "stability"]
@@ -282,7 +276,6 @@ def _validate_optimization_modes(config: dict[str, Any]) -> bool:
         return False
 
     return config["model_training_optimization_mode"] in valid_modes
-
 
 def _validate_numeric_settings(config: dict[str, Any]) -> bool:
     """Validate numeric settings are within valid ranges."""
@@ -296,7 +289,6 @@ def _validate_numeric_settings(config: dict[str, Any]) -> bool:
         return False
 
     return not (config["gpu_memory_fraction"] <= 0 or config["gpu_memory_fraction"] > 1)
-
 
 def validate_enhanced_matrix_config(config: dict[str, Any]) -> bool:
     """Validate enhanced matrix operations configuration.
@@ -320,7 +312,6 @@ def validate_enhanced_matrix_config(config: dict[str, Any]) -> bool:
     except (KeyError, TypeError, ValueError):
         return False
 
-
 def get_default_enhanced_matrix_config() -> dict[str, Any]:
     """Get default configuration for enhanced matrix operations.
 
@@ -329,7 +320,6 @@ def get_default_enhanced_matrix_config() -> dict[str, Any]:
 
     """
     return get_enhanced_matrix_training_config()
-
 
 def get_enhanced_matrix_config_for_training_type(training_type: str) -> dict[str, Any]:
     """Get configuration optimized for specific training type.

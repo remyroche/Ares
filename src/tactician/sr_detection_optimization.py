@@ -3,7 +3,21 @@ from src.utils.tprint import tprint
 from typing import Dict, List, Optional, Union, Any, Tuple, Callable, Awaitable
 from ...utils.logger import system_logger
 from .core.decorators import handles_errors
-'\nEnhanced S/R Detection Optimization Module\n\nThis module implements comprehensive optimization strategies for S/R detection\nspecifically optimized for 1-30m timeframes. It includes:\n\n1. Multi-Method Ensemble Optimization\n2. Advanced Strength Scoring Optimization\n3. Multi-Timeframe Confluence Optimization\n4. Advanced S/R Method Optimization\n5. DBSCAN Clustering Optimization with real data testing\n6. Timeframe-specific parameter optimization\n\nThe optimized parameters are then used by the main S/R predictor.\n'
+"""
+Enhanced S/R Detection Optimization Module
+
+This module implements comprehensive optimization strategies for S/R detection
+specifically optimized for 1-30m timeframes. It includes:
+
+1. Multi-Method Ensemble Optimization
+2. Advanced Strength Scoring Optimization
+3. Multi-Timeframe Confluence Optimization
+4. Advanced S/R Method Optimization
+5. DBSCAN Clustering Optimization with real data testing
+6. Timeframe-specific parameter optimization
+
+The optimized parameters are then used by the main S/R predictor.
+"""
 import json
 import warnings
 from dataclasses import dataclass, field
@@ -665,7 +679,7 @@ class SRDetectionOptimizer:
             performance_score = self._calculate_timeframe_specific_score(optimization_result, target_timeframe)
             if not hasattr(self, 'backtest_results'):
                 self.backtest_results = []
-            self.backtest_results.append({'backtest_result': backtest_result, 'sr_context': sr_context, 'target_timeframe': target_timeframe, 'timestamp': pd.Timestamp.now()})
+            self.backtest_results.append({'backtest_result': optimization_result, 'sr_context': sr_context, 'target_timeframe': target_timeframe, 'timestamp': pd.Timestamp.now()})
             return performance_score
         except Exception as e:
             self.logger.exception(f'Enhanced performance score calculation failed: {e}')
@@ -945,9 +959,10 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
+    def _generate_parameter_combinations(self, param_ranges: dict[str, list[Any]]) -> list[dict[str, Any]]:
+        """Generate parameter combinations for grid search."""
+        import itertools
+        
         keys = list(param_ranges.keys())
         values = list(param_ranges.values())
         combinations = []

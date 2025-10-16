@@ -5,7 +5,12 @@ from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import pandas as pd
 import warnings
-'Enhanced S/R Breakout Predictor.\n\nThis module provides advanced breakout prediction capabilities with ML integration,\nreal-time monitoring, and comprehensive validation.\n'
+"""
+Enhanced S/R Breakout Predictor.
+
+This module provides advanced breakout prediction capabilities with ML integration,
+real-time monitoring, and comprehensive validation.
+"""
 from dataclasses import dataclass
 from enum import Enum
 
@@ -341,35 +346,6 @@ class EnhancedSRBreakoutPredictor:
             try:
                 from src.training.steps.vectorized_advanced_feature_engineering import VectorizedAdvancedFeatureEngineeringRefactored
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
                 step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
                 step06_result = await step06_engineer.engineer_features(market_data)
                 all_features = {}
@@ -1421,9 +1397,6 @@ except ImportError:
             self.logger.error(f'Error counting level touches: {e}')
             return 1
 
-# Alias for backward compatibility
-SRBreakoutPredictor = EnhancedSRBreakoutPredictor
-
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
@@ -1484,3 +1457,7 @@ SRBreakoutPredictor = EnhancedSRBreakoutPredictor
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+
+# Alias for backward compatibility
+SRBreakoutPredictor = EnhancedSRBreakoutPredictor

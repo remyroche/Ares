@@ -122,7 +122,7 @@ class EnhancedOptimizationSystem:
 
         # Initialize extensive feature generation systems
         if EXTENSIVE_FEATURE_SYSTEMS_AVAILABLE:
-            self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+            self.enhanced_feature_engineering = EnhancedFeatureEngineering({})
             self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
             self.microstructure_features = LimitedMicrostructureFeatures()
             self.logger.info("✅ Extensive feature generation systems initialized")

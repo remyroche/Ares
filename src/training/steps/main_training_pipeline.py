@@ -747,7 +747,7 @@ class MainTrainingPipeline:
             end_date=end_date
         )
 
-        if market_data is None or market_data.empty:
+        if market_data is None or len(market_data) == 0:
             self.logger.error(f"❌ Failed to load market data for {config.symbol} {config.timeframe}")
             return []
 
@@ -1089,7 +1089,7 @@ def get_full_pipeline_config(
                 data_type="processed"
             )
 
-            if sample_data is not None and not sample_data.empty:
+            if sample_data is not None and not len(sample_data) == 0:
                 # Get the last available date from the data
                 if 'timestamp' in sample_data.columns:
                     timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
@@ -1216,7 +1216,7 @@ def get_light_pipeline_config(
                 data_type="processed"
             )
 
-            if sample_data is not None and not sample_data.empty:
+            if sample_data is not None and not len(sample_data) == 0:
                 # Get the last available date from the data
                 if 'timestamp' in sample_data.columns:
                     timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
@@ -1328,7 +1328,7 @@ def get_blank_pipeline_config(
             data_type="processed"
         )
 
-        if sample_data is not None and not sample_data.empty:
+        if sample_data is not None and not len(sample_data) == 0:
             # Get the last available date from the data
             if 'timestamp' in sample_data.columns:
                 timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')

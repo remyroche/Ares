@@ -411,7 +411,7 @@ class DataAccessProtection:
             if file_extension == '.parquet':
                 try:
                     df = pd.read_parquet(data_path, nrows = 1)  # Read only first row for structure check
-                    if df.empty:
+                    if len(df) == 0:
                         return {'valid': False, 'reason': 'Parquet file is empty'}
                 except Exception as e:
                     return {'valid': False, 'reason': f'Parquet file corrupted: {e}'}
@@ -595,7 +595,7 @@ class DataAccessProtection:
                 raise PermissionError(f"Access denied: {access_validation['reason']}")
 
             # Validate data before writing
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 raise ValueError("Cannot write empty or None data")
 
             # Validate data schema

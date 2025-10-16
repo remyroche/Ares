@@ -267,9 +267,9 @@ class TASEngine:
                 )
                 tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
-                tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
+                tprint_debug(f"🔍 Data check: data is None={data is None}, len(data) == 0={len(data) == 0 if data is not None else 'N/A'}")
                 return None
 
             tprint_info(f"📊 Loaded {len(data)} records")
@@ -321,9 +321,9 @@ class TASEngine:
             with memory_checkpoint("data_processing"):
                 processed_data = self._process_trading_data(data, apply_feature_engineering)
 
-            if processed_data is None or processed_data.empty:
+            if processed_data is None or processed_len(data) == 0:
                 tprint_error("❌ Data processing failed")
-                tprint_debug(f"🔍 Processed data check: data is None={processed_data is None}, data.empty={processed_data.empty if processed_data is not None else 'N/A'}")
+                tprint_debug(f"🔍 Processed data check: data is None={processed_data is None}, len(data) == 0={processed_len(data) == 0 if processed_data is not None else 'N/A'}")
                 return None
 
             tprint_info(f"✅ Data processing completed: {len(processed_data)} records")
@@ -606,7 +606,7 @@ class TASEngine:
                 regime_mask = regimes == regime
                 regime_data = data[regime_mask]
 
-                if not regime_data.empty:
+                if not regime_len(data) == 0:
                     regime_stats[f'regime_{regime}'] = {
                         'count': len(regime_data),
                         'percentage': safe_divide(len(regime_data), len(data)) * 100,

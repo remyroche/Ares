@@ -159,7 +159,7 @@ class EconomicPeriodEvaluator:
         start_time = time.time()
 
         def _validate_inputs():
-            if not isinstance(data, pd.DataFrame) or data.empty:
+            if not isinstance(data, pd.DataFrame) or len(data) == 0:
                 raise ValueError("Data must be a non-empty DataFrame")
             if 'close' not in data.columns:
                 raise ValueError("Data must contain 'close' column")

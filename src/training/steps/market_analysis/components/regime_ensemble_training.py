@@ -948,7 +948,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         tprint(f"🔧 [REGIME_ENSEMBLE] Using generator: {generator.config.name}", color="blue")
                         result = generator.generate(data)
 
-                        if result and hasattr(result, 'data') and not result.data.empty:
+                        if result and hasattr(result, 'data') and not len(result.data) == 0:
                             # Add feature with category prefix
                             feature_name = f"{category.value}_{result.name}"
                             category_features[feature_name] = result.data

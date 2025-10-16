@@ -68,7 +68,7 @@ def validate_training_data(data: Any, data_name: str, required_columns: Optional
         raise ValueError(f"{data_name} cannot be None")
 
     if isinstance(data, pd.DataFrame):
-        if data.empty:
+        if len(data) == 0:
             raise ValueError(f"{data_name} DataFrame is empty")
 
         # Check for required columns

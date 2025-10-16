@@ -336,7 +336,7 @@ class TacticianModelsTrainingStep:
             # Enhanced input validation
             validation_errors = []
 
-            if training_data.empty:
+            if len(training_data) == 0:
                 validation_errors.append("Training data is empty")
             if not feature_columns:
                 validation_errors.append("No feature columns provided")
@@ -395,7 +395,7 @@ class TacticianModelsTrainingStep:
                 )
 
                 # Use whole dataset - no filtering
-                if enhanced_data.empty:
+                if len(enhanced_data) == 0:
                     raise ValueError("Enhanced data is empty after Analyst OOF integration")
 
                 tprint_success(f"✅ Using whole dataset: {len(enhanced_data)} samples")

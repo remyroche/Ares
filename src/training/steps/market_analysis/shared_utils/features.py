@@ -154,7 +154,7 @@ def prepare_market_features(
 
     try:
         # Validate input data
-        if market_data is None or market_data.empty:
+        if market_data is None or len(market_data) == 0:
             if verbose:
                 tprint_error("❌ [SHARED_FEATURES] Market data is None or empty")
             raise ValueError("Market data is None or empty")

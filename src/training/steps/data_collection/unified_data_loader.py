@@ -174,7 +174,7 @@ class UnifiedDataLoader:
                 all_data = []
                 for file_path in parquet_files:
                     file_data = await self._load_data_file(file_path, columns)
-                    if file_data is not None and not file_data.empty:
+                    if file_data is not None and not len(file_data) == 0:
                         all_data.append(file_data)
                 
                 if not all_data:
@@ -201,7 +201,10 @@ class UnifiedDataLoader:
                 
                 # Combine all data
                 data = pd.concat(all_data, ignore_index=True)
-                
+
+                # Apply forward/backward fill to handle non-finite values after concatenation
+                data = self._fix_non_finite_values(data)
+
                 # DEBUG: Check data quality after concatenation
                 total_non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
                 print(f"🔍 [DEBUG] UnifiedDataLoader - After concat: shape={data.shape}, non-finite={total_non_finite_after}")
@@ -263,7 +266,7 @@ class UnifiedDataLoader:
             else:
                 data = safe_read_parquet(file_path)
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 self.logger.error(f"No data loaded from {file_path}")
                 return None
 
@@ -301,6 +304,9 @@ class UnifiedDataLoader:
                                 )
                                 print(f"🔍 [DEBUG] Context:\n{context_window}")
 
+            # Apply forward/backward fill to handle non-finite values (up to 6 consecutive rows)
+            data = self._fix_non_finite_values(data)
+
             # Convert timestamp index to column if it exists
             if data.index.name == 'timestamp' or (hasattr(data.index, 'name') and data.index.name == 'timestamp'):
                 data = data.reset_index()
@@ -330,6 +336,101 @@ class UnifiedDataLoader:
         except Exception as e:
             self.logger.exception(f"Error loading file {file_path}: {e}")
             return None
+
+    def _fix_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Fix non-finite values using forward/backward fill with 6-row consecutive limit.
+
+        Args:
+            data: DataFrame with potential non-finite values
+
+        Returns:
+            DataFrame with non-finite values handled
+        """
+        import numpy as np
+
+        # Check for non-finite values before fixing
+        non_finite_before = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+        if non_finite_before == 0:
+            return data
+
+        print(f"🔧 [DEBUG] Fixing {non_finite_before} non-finite values using forward/backward fill (limit 6 consecutive)")
+
+        # Process each numeric column
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        fixed_columns = []
+
+        for col in numeric_columns:
+            original_non_finite = (~np.isfinite(data[col])).sum()
+
+            if original_non_finite == 0:
+                fixed_columns.append(col)
+                continue
+
+            print(f"🔧 [DEBUG] Column '{col}': {original_non_finite} non-finite values to fix")
+
+            # Create a copy of the column to work with
+            col_data = data[col].copy()
+
+            # Find sequences of consecutive non-finite values
+            non_finite_mask = ~np.isfinite(col_data)
+            consecutive_groups = []
+
+            if non_finite_mask.any():
+                # Group consecutive non-finite values
+                diff = np.diff(np.concatenate(([False], non_finite_mask.values, [False])))
+                start_indices = np.where(diff > 0)[0]
+                end_indices = np.where(diff < 0)[0]
+
+                for start, end in zip(start_indices, end_indices):
+                    group_length = end - start
+                    consecutive_groups.append((start, end, group_length))
+
+                    # Handle groups larger than 6 consecutive missing values
+                    if group_length > 6:
+                        print(f"⚠️ [WARNING] Column '{col}' has {group_length} consecutive non-finite values at indices {start}-{end-1} (exceeds 6-row limit)")
+
+            # Apply forward fill first, then backward fill for remaining gaps
+            col_data = col_data.fillna(method='ffill', limit=6)
+            col_data = col_data.fillna(method='bfill', limit=6)
+
+            # Check how many non-finite values remain after fixing
+            remaining_non_finite = (~np.isfinite(col_data)).sum()
+            if remaining_non_finite > 0:
+                print(f"⚠️ [WARNING] Column '{col}': {remaining_non_finite} non-finite values remain after forward/backward fill")
+
+                # For remaining non-finite values, use the column mean as a fallback
+                if col_data.dtype in [np.float64, np.float32]:
+                    col_mean = col_data.mean()
+                    if np.isfinite(col_mean):
+                        col_data = col_data.fillna(col_mean)
+                        print(f"🔧 [DEBUG] Column '{col}': Filled remaining {remaining_non_finite} values with column mean {col_mean}")
+                    else:
+                        print(f"⚠️ [ERROR] Column '{col}': Cannot use mean fallback - column mean is also non-finite")
+                else:
+                    print(f"⚠️ [ERROR] Column '{col}': Cannot apply fallback for non-float column")
+
+            # Update the original data
+            data[col] = col_data
+            fixed_columns.append(col)
+
+            # Verify the fix
+            final_non_finite = (~np.isfinite(data[col])).sum()
+            if final_non_finite == 0:
+                print(f"✅ [SUCCESS] Column '{col}': Successfully fixed all {original_non_finite} non-finite values")
+            elif final_non_finite < original_non_finite:
+                print(f"✅ [PARTIAL] Column '{col}': Reduced non-finite values from {original_non_finite} to {final_non_finite}")
+            else:
+                print(f"❌ [FAILED] Column '{col}': Non-finite values unchanged or increased ({final_non_finite})")
+
+        # Final check of all numeric columns
+        non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+        if non_finite_after == 0:
+            print(f"✅ [SUCCESS] All non-finite values fixed! Reduced from {non_finite_before} to {non_finite_after}")
+        else:
+            print(f"⚠️ [PARTIAL] {non_finite_after} non-finite values remain after fixing (was {non_finite_before})")
+
+        return data
+
     def _extract_metadata_from_path(self, file_path: Path) -> Dict[str, Any]:
         """Extract partition metadata (exchange, symbol, timeframe, year, month, day) from file path."""
         metadata: Dict[str, Any] = {}

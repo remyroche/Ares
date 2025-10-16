@@ -301,7 +301,7 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
         try:
             # Basic validation checks
             basic_checks = {
-                'has_data': not data.empty,
+                'has_data': not len(data) == 0,
                 'has_required_columns': all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']),
                 'no_all_nan': not data.isnull().all().any(),
                 'sufficient_rows': len(data) >= 100
@@ -362,7 +362,7 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
                 end_date=end_date
             )
             
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 raise ValueError(f"No data found for {symbol} {timeframe} on {exchange}")
             
             # Debug: Print data info
@@ -421,7 +421,7 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
             
             # Perform basic validation (synchronous)
             basic_checks = {
-                'has_data': not data.empty,
+                'has_data': not len(data) == 0,
                 'has_required_columns': all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']),
                 'no_all_nan': not data.isnull().all().any(),
                 'sufficient_rows': len(data) >= 100
@@ -483,7 +483,7 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
                     return False
             
             # Check if DataFrame is empty
-            if data.empty:
+            if len(data) == 0:
                 if TPRINT_AVAILABLE:
                     tprint_error("❌ DataFrame is empty")
                 else:
@@ -560,7 +560,7 @@ async def handle_feature_generation_data_validation_step(
             data_dir='historical_data'
         )
         
-        if sample_data is None or sample_data.empty:
+        if sample_data is None or len(sample_data) == 0:
             raise ValueError(f"No data found for {symbol} {timeframe} on {exchange}")
             
     except Exception as e:

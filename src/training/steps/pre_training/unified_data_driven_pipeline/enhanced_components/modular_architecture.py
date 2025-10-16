@@ -133,7 +133,7 @@ class InputValidator:
                 errors.append("Data must be a pandas DataFrame")
                 return ValidationResult(False, level, errors, warnings, {})
 
-            if data.empty:
+            if len(data) == 0:
                 errors.append("DataFrame cannot be empty")
                 return ValidationResult(False, level, errors, warnings, {})
 

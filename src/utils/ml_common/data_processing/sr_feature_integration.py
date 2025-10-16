@@ -255,7 +255,7 @@ class SRFeatureIntegration:
         try:
             features = {}
 
-            if not sr_levels or market_data.empty:
+            if not sr_levels or len(market_data) == 0:
                 return self._get_default_trading_features()
 
             # SR level density (levels per price range)
@@ -351,7 +351,7 @@ class SRFeatureIntegration:
             sr_levels = pipeline_state.get('sr_levels', [])
             market_data = pipeline_state.get('market_data')
 
-            if not sr_levels or market_data is None or market_data.empty:
+            if not sr_levels or market_data is None or len(market_data) == 0:
                 self.logger.warning("No SR data available for feature integration")
                 return existing_features
 

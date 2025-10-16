@@ -144,7 +144,7 @@ class MarketDataProcessor:
                 tprint_warning("Klines manager not available, using fallback data loading")
                 data = await self._load_fallback_data()
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 tprint_error(f"No data available for {self.config.symbol} {self.config.timeframe}")
                 raise ValueError(f"No data available for {self.config.symbol} {self.config.timeframe}")
 
@@ -182,8 +182,8 @@ class MarketDataProcessor:
                 'data_shape': data.shape,
                 'columns': list(data.columns),
                 'date_range': {
-                    'start': data.index.min().isoformat() if not data.empty else None,
-                    'end': data.index.max().isoformat() if not data.empty else None
+                    'start': data.index.min().isoformat() if not len(data) == 0 else None,
+                    'end': data.index.max().isoformat() if not len(data) == 0 else None
                 },
                 'performance_metrics': perf_metrics,
                 'hardware_optimization': self.hardware_accelerator is not None,
@@ -237,7 +237,7 @@ class MarketDataProcessor:
                     data_type=self.config.data_type
                 )
 
-                if all_data is not None and not all_data.empty:
+                if all_data is not None and not all_len(data) == 0:
                     # Determine the last 10 days of available data
                     if 'timestamp' in all_data.columns:
                         # Convert timestamp to datetime
@@ -259,7 +259,7 @@ class MarketDataProcessor:
                         mask = (timestamps >= start_date) & (timestamps <= end_date)
                         data = all_data[mask]
 
-                        if data.empty:
+                        if len(data) == 0:
                             self.logger.warning(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
                             # Fall back to the last 10 days of available data
                             last_10_days = max_date - timedelta(days=10)
@@ -288,7 +288,7 @@ class MarketDataProcessor:
                     data_type=self.config.data_type
                 )
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 # Fallback to raw data
                 self.logger.info(f"📊 No processed data found, trying raw data")
                 data = manager.read_data(
@@ -352,7 +352,7 @@ class MarketDataProcessor:
             }
 
             # Check for empty DataFrame
-            if data.empty:
+            if len(data) == 0:
                 validation_results['issues'].append('DataFrame is empty')
                 validation_results['is_valid'] = False
                 return validation_results

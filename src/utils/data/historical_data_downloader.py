@@ -232,7 +232,7 @@ class HistoricalDataDownloader:
                     exchange, symbol, interval, current_start, current_end
                 )
 
-                if batch_data is not None and not batch_data.empty:
+                if batch_data is not None and not len(batch_data) == 0:
                     all_data.append(batch_data)
                     self.total_downloaded += len(batch_data)
 
@@ -333,7 +333,7 @@ class HistoricalDataDownloader:
 
             # Read a sample to get timestamp info
             df = self.parquet_utils.safe_read_parquet(str(latest_file))
-            if df is None or df.empty:
+            if df is None or len(df) == 0:
                 return None
 
             return {
@@ -615,7 +615,7 @@ class HistoricalDataDownloader:
         for file_path in files:
             try:
                 df = self.parquet_utils.safe_read_parquet(str(file_path))
-                if df is not None and not df.empty:
+                if df is not None and not len(df) == 0:
                     total_records += len(df)
                     date_ranges.append((df.index.min(), df.index.max()))
             except Exception as e:

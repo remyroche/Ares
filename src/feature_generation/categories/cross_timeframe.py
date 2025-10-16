@@ -394,7 +394,7 @@ class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimi
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'ctf_momentum_{self.timeframe}')
 
         try:
@@ -505,7 +505,7 @@ class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOpti
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'ctf_volatility_{self.timeframe}')
 
         try:
@@ -610,7 +610,7 @@ class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimiza
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'ctf_volume_{self.timeframe}')
 
         try:

@@ -110,7 +110,7 @@ class TradingSignalGenerator:
             A list of signal dictionaries compatible with :class:`TradingEngine`.
         """
 
-        if market_data is None or market_data.empty:
+        if market_data is None or len(market_data) == 0:
             self.logger.debug("No market data supplied – skipping signal generation.")
             return []
 

@@ -43,7 +43,7 @@ class DataLoader:
                             if month_dir.is_dir() and month_dir.name.startswith('month='):
                                 for file_path in month_dir.glob('*.parquet'):
                                     df = self.parquet_utils.safe_read_parquet(str(file_path))
-                                    if df is not None and not df.empty:
+                                    if df is not None and not len(df) == 0:
                                         dataframes.append(df)
 
                 if dataframes:
@@ -83,7 +83,7 @@ class DataLoader:
                 dataframes = []
                 for file_path in raw_path.glob('ethusdt_1m_*.parquet'):
                     df = self.parquet_utils.safe_read_parquet(str(file_path))
-                    if df is not None and not df.empty:
+                    if df is not None and not len(df) == 0:
                         dataframes.append(df)
 
                 if dataframes:
@@ -156,7 +156,7 @@ class DataLoader:
             dataframes = []
             for file_path in raw_path.glob('ethusdt_1m_*.parquet'):
                 df = self.parquet_utils.safe_read_parquet(str(file_path))
-                if df is not None and not df.empty:
+                if df is not None and not len(df) == 0:
                     dataframes.append(df)
 
             if dataframes:
@@ -187,7 +187,7 @@ class DataLoader:
             Dictionary with prepared data and metadata
         """
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 return {}
 
             # Ensure required columns exist

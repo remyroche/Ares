@@ -230,9 +230,9 @@ class NASEngine:
                 )
                 tprint_debug(f"📊 Raw data retrieved: {len(data) if data is not None else 0} records")
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 tprint_error(f"❌ No data loaded for {symbol} {interval}")
-                tprint_debug(f"🔍 Data check: data is None={data is None}, data.empty={data.empty if data is not None else 'N/A'}")
+                tprint_debug(f"🔍 Data check: data is None={data is None}, len(data) == 0={len(data) == 0 if data is not None else 'N/A'}")
                 return None
 
             tprint_info(f"📊 Loaded {len(data)} records")

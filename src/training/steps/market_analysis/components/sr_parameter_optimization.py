@@ -399,7 +399,7 @@ class SRParameterOptimizationComponent(BaseMarketAnalysisComponent):
 
         if PANDAS_AVAILABLE and isinstance(data, pd.DataFrame):
             # Check if DataFrame is empty
-            if data.empty:
+            if len(data) == 0:
                 self.logger.error("Market data DataFrame is empty")
                 return False
 

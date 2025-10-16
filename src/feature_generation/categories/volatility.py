@@ -250,7 +250,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
         elif hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty or 'close' not in data.columns:
+        if len(data) == 0 or 'close' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volatility_{self.period}')
 
         close_prices = data['close'].astype(float)
@@ -379,7 +379,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             self.unified_optimizer.reset_performance_stats()
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
-        if not data.empty:
+        if not len(data) == 0:
             closes = data['close'].astype(float)
             history_window = max(self.period, 1)
             close_history = closes.tolist()[-history_window:]
@@ -775,7 +775,7 @@ class VectorBTVolatilityFeatureGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive volatility features using VectorBT."""
-        if data.empty or 'close' not in data.columns:
+        if len(data) == 0 or 'close' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_{self.period}')
 
         try:
@@ -852,7 +852,7 @@ class VectorBTBollingerBandsGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Bollinger Bands features using VectorBT."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_bbands_{self.period}')
 
         # Generate Bollinger Bands using VectorBT
@@ -889,7 +889,7 @@ class VectorBTAverageTrueRangeGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate ATR using VectorBT."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_atr_{self.period}')
 
         # Generate ATR using VectorBT
@@ -930,7 +930,7 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Garman-Klass Volatility using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+        if len(data) == 0 or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_garman_klass_volatility_{self.period}')
 
         try:
@@ -1001,7 +1001,7 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Parkinson Volatility using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['high', 'low']):
+        if len(data) == 0 or not all(col in data.columns for col in ['high', 'low']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_parkinson_volatility_{self.period}')
 
         try:
@@ -1069,7 +1069,7 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Rogers-Satchell Volatility using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+        if len(data) == 0 or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rogers_satchell_volatility_{self.period}')
 
         try:
@@ -1142,7 +1142,7 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Yang-Zhang Volatility using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+        if len(data) == 0 or not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
 
         try:

@@ -1633,7 +1633,7 @@ class MarketAnalysisSubPipeline:
                         data_type="processed"
                     )
 
-                    if sample_data is not None and not sample_data.empty:
+                    if sample_data is not None and not len(sample_data) == 0:
                         # Get the last available date from the data
                         if 'timestamp' in sample_data.columns:
                             timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
@@ -1670,7 +1670,7 @@ class MarketAnalysisSubPipeline:
                 data_dir=config.data_dir
             )
 
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError(f"No market data found for {config.symbol} on {config.exchange} ({config.timeframe})")
 
             self.logger.info(f'📊 Loaded full market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns')

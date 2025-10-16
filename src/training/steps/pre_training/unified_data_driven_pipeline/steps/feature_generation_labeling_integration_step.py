@@ -75,7 +75,8 @@ class FeatureGenerationLabelingIntegrationStep(BasePreTrainingComponent):
         # Extract parameters from training_input or kwargs
         if training_input is None:
             # Extract from kwargs (called from component factory)
-            data = data or kwargs.get('data')
+            if data is None:
+                data = kwargs.get('data')
             symbol = kwargs.get('symbol', 'ETHUSDT')
             timeframe = kwargs.get('timeframe', '15m')
             direction = kwargs.get('direction', 'longs')
@@ -171,7 +172,7 @@ class FeatureGenerationLabelingIntegrationStep(BasePreTrainingComponent):
                 data = pd.DataFrame(data)
             
             # Basic validation
-            if data.empty:
+            if len(data) == 0:
                 if TPRINT_AVAILABLE:
                     tprint_error("❌ Input data is empty")
                 else:
@@ -209,7 +210,7 @@ class FeatureGenerationLabelingIntegrationStep(BasePreTrainingComponent):
                     print("ERROR: Validation failed: Data is not a DataFrame")
                 return False
             
-            if data.empty:
+            if len(data) == 0:
                 if TPRINT_AVAILABLE:
                     tprint_error("❌ Validation failed: Data is empty")
                 else:

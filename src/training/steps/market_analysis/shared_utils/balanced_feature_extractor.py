@@ -399,7 +399,7 @@ class BalancedFeatureExtractor:
                 if len(data.shape) < 2:
                     raise DataValidationError("Input array must be at least 2D")
             elif isinstance(data, pd.DataFrame):
-                if data.empty:
+                if len(data) == 0:
                     raise DataValidationError("Input DataFrame is empty")
                 if len(data.columns) < 2:
                     raise DataValidationError("Input DataFrame must have at least 2 columns")

@@ -347,7 +347,7 @@ class DataValidator(IDataValidator):
         if data is None:
             self.logger.error('Data is None')
             return False
-        if hasattr(data, 'empty') and data.empty:
+        if len(data) == 0:
             self.logger.error('Data is empty')
             return False
         self.logger.info('Data validation passed')

@@ -467,7 +467,7 @@ class ClusteringEngine:
                 validation_results["issues"].append("Insufficient features for clustering")
 
             # Validate market data using common utilities
-            if market_data is not None and not market_data.empty:
+            if market_data is not None and not len(market_data) == 0:
                 # Calculate data quality metrics
                 try:
                     data_quality = calculate_data_quality_metrics(market_data)

@@ -68,7 +68,7 @@ class BasicReturnsEngineer:
             self.logger.info(f"📖 Loading raw {symbol} {interval} data from disk...")
             raw_data = self._load_all_raw_data(symbol, interval)
 
-            if raw_data is None or raw_data.empty:
+            if raw_data is None or len(raw_data) == 0:
                 self.logger.warning(f"❌ No raw data found for {symbol}")
                 return {"success": False, "error": "No raw data found"}
 
@@ -91,7 +91,7 @@ class BasicReturnsEngineer:
                 try:
                     self.logger.info(f"📊 Resampling {i}/{len(target_intervals)}: {interval} → {target_interval}...")
                     resampled_data = self._resample_data(featured_data, target_interval)
-                    if resampled_data is not None and not resampled_data.empty:
+                    if resampled_data is not None and not len(resampled_data) == 0:
                         self.logger.info(f"💾 Saving {symbol} {target_interval} data...")
                         self._save_processed_data(resampled_data, symbol, target_interval)
                         resampling_results[target_interval] = {
@@ -155,7 +155,7 @@ class BasicReturnsEngineer:
             for file_path in sorted(files):
                 try:
                     df = self.parquet_utils.safe_read_parquet(str(file_path))
-                    if df is not None and not df.empty:
+                    if df is not None and not len(df) == 0:
                         dataframes.append(df)
                 except Exception as e:
                     self.logger.warning(f"Could not read {file_path}: {e}")

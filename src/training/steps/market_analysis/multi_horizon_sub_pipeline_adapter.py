@@ -103,7 +103,7 @@ class DataFilteringManager:
         Returns:
             Filtered DataFrame with quality validation
         """
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             self.logger.warning("❌ No data provided for filtering")
             return pd.DataFrame()
 
@@ -796,7 +796,7 @@ class MultiHorizonSubPipelineAdapter:
         """Enhanced data validation with quality checks."""
         try:
             # Basic validation
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 return False
 
             # Required column validation
@@ -1009,7 +1009,7 @@ class MultiHorizonSubPipelineAdapter:
                         self.logger.info(f'📊 Final result: {type(labeled_data)}, shape: {labeled_data.shape if labeled_data is not None else "None"}')
 
                         # If successful with small data, apply to the filtered dataset
-                        if labeled_data is not None and not labeled_data.empty:
+                        if labeled_data is not None and not labeled_len(data) == 0:
                             self.logger.info('✅ Small test successful, applying dynamic labeling to filtered data...')
 
                             # Apply dynamic labeling to the already-filtered dataset

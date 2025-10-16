@@ -49,7 +49,7 @@ class DataProcessor:
             DataFrame with regularized timestamps
         """
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 return data
 
             # Make a copy to avoid modifying original data
@@ -604,7 +604,7 @@ class DataProcessor:
         Returns:
             Dictionary with enhanced quality metrics
         """
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             return {}
 
         metrics = {}
@@ -622,7 +622,7 @@ class DataProcessor:
 
             # Statistical metrics for numeric columns
             numeric_data = data.select_dtypes(include=[np.number])
-            if not numeric_data.empty:
+            if not numeric_len(data) == 0:
                 # Volatility metrics
                 volatility = numeric_data.std() / numeric_data.mean().replace(0, 1e-8)
                 volatility = volatility.replace([np.inf, -np.inf], 0).fillna(0)
@@ -656,7 +656,7 @@ class DataProcessor:
             if isinstance(data.index, pd.DatetimeIndex):
                 # Time series specific metrics
                 time_gaps = data.index.to_series().diff().dropna()
-                if not time_gaps.empty:
+                if not len(time_gaps) == 0:
                     expected_freq = time_gaps.mode().iloc[0] if len(time_gaps.mode()) > 0 else time_gaps.median()
                     irregular_gaps = abs(time_gaps - expected_freq) > pd.Timedelta(seconds=30)
                     gap_ratio = irregular_gaps.sum() / len(time_gaps)

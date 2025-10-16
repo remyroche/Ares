@@ -62,7 +62,7 @@ class OptimizedParquetStorage:
             True if successful, False otherwise
         """
         try:
-            if df is None or df.empty:
+            if df is None or len(df) == 0:
                 self.logger.warning("Cannot save empty DataFrame")
                 return False
 
@@ -175,14 +175,14 @@ class OptimizedParquetStorage:
                                 df = self.m1_data_manager.load_data_efficiently(
                                     str(pf), columns=columns
                                 )
-                                if df is not None and not df.empty:
+                                if df is not None and not len(df) == 0:
                                     dataframes.append(df)
                         else:
                             # For raw data or single files
                             df = self.m1_data_manager.load_data_efficiently(
                                 str(file_path), columns=columns
                             )
-                            if df is not None and not df.empty:
+                            if df is not None and not len(df) == 0:
                                 dataframes.append(df)
                     except Exception as e:
                         self.logger.warning(f"Could not read {file_path}: {e}")
@@ -357,13 +357,13 @@ class OptimizedParquetStorage:
                         parquet_files = list(file_path.glob("*.parquet"))
                         for pf in parquet_files:
                             df = self.parquet_utils.safe_read_parquet(str(pf))
-                            if df is not None and not df.empty:
+                            if df is not None and not len(df) == 0:
                                 total_records += len(df)
                                 date_ranges.append((df.index.min(), df.index.max()))
                     else:
                         # For raw data or single files
                         df = self.parquet_utils.safe_read_parquet(str(file_path))
-                        if df is not None and not df.empty:
+                        if df is not None and not len(df) == 0:
                             total_records += len(df)
                             date_ranges.append((df.index.min(), df.index.max()))
                 except Exception as e:
@@ -412,7 +412,7 @@ class OptimizedParquetStorage:
             # Load data
             data = self.load_optimized_data(symbol, interval, data_type)
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 self.logger.warning(f"No data found to optimize for {symbol} {interval}")
                 return False
 

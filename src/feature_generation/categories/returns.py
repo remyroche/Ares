@@ -131,7 +131,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name='returns_1')
 
         close_prices = data['close'].astype(float).values
@@ -248,7 +248,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         return returns
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
-        if not data.empty:
+        if not len(data) == 0:
             closes = data['close'].astype(float)
             history_window = max(int(getattr(self.config, 'min_lookback', 2)), 2)
             close_history = closes.tolist()[-history_window:]
@@ -256,7 +256,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 'last_close': float(closes.iloc[-1]),
                 'close_history': close_history
             }
-            if not feature_data.empty:
+            if not feature_len(data) == 0:
                 last_return = feature_data.iloc[-1]
                 if pd.notna(last_return):
                     state_update['last_return'] = float(last_return)

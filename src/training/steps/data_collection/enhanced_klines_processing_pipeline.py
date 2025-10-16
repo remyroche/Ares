@@ -28,11 +28,53 @@ Quality Features:
 - Comprehensive quality scoring with component breakdowns
 - Advanced quality metrics and statistical analysis
 - Quality trend analysis and monitoring
-- Automated data cleaning with detailed statistics
-- Quality alert system for proactive issue detection
-- Comprehensive quality metadata collection
-- Robust error handling with quality fallbacks
 """
+
+# Type annotations for lazy-loaded quality utilities
+from typing import Optional, TYPE_CHECKING, Any, Union
+import sys
+from pathlib import Path
+
+if TYPE_CHECKING:
+    # Type-only imports for linter - these help the linter understand types
+    try:
+        from src.utils.data.quality.comprehensive_duplicate_analyzer import (
+            ComprehensiveDuplicateAnalyzer,
+            analyze_duplicates_comprehensive
+        )
+        from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
+        from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer
+        from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
+        from src.utils.data.quality.data_cleaning import DataCleaner
+        from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
+        from src.utils.data.quality.quality_alert_system import QualityAlertManager
+
+        # Type aliases for clarity
+        QualityUtilityType = Union[
+            ComprehensiveDuplicateAnalyzer,
+            ComprehensiveQualityScorer,
+            AdvancedQualityMetrics,
+            DataCleaner,
+            StatisticalValidator,
+            DataQualityFramework,
+            QualityThresholds,
+            QualityResult,
+            QualityAlertManager,
+            type(None)
+        ]
+    except ImportError:
+        # Fallback types for when imports fail
+        QualityUtilityType = Any
+        ComprehensiveDuplicateAnalyzer = Any
+        analyze_duplicates_comprehensive = Any
+        DataQualityFramework = Any
+        QualityThresholds = Any
+        QualityResult = Any
+        ComprehensiveQualityScorer = Any
+        AdvancedQualityMetrics = Any
+        DataCleaner = Any
+        StatisticalValidator = Any
+        QualityAlertManager = Any
 
 import asyncio
 import pandas as pd
@@ -47,25 +89,78 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Use lazy imports to avoid circular import issues
+def get_system_logger():
+    """Lazy import of system logger to avoid circular imports."""
+    try:
+        from src.utils.logger import system_logger
+        return system_logger
+    except ImportError:
+        import logging
+        return logging.getLogger(__name__)
+
+def get_tprint_functions():
+    """Lazy import of tprint functions to avoid circular imports."""
+    try:
+        from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+        return tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+    except ImportError:
+        # Fallback functions
+        def tprint(*args, **kwargs):
+            print(*args, **kwargs)
+        return tprint, tprint, tprint, tprint, tprint
+
+# Initialize lazy imports
+system_logger = get_system_logger()
+tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_functions()
 # Import comprehensive data quality utilities from src/utils/data/quality/
-try:
-    from src.utils.data.quality.comprehensive_duplicate_analyzer import (
-        ComprehensiveDuplicateAnalyzer,
-        analyze_duplicates_comprehensive
-    )
-    from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
-    from src.utils.data.quality.comprehensive_scorer import ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
-    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics, QualityAssessment
-    from src.utils.data.quality.data_cleaning import DataCleaner
-    from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
-    from src.utils.data.quality.quality_alert_system import QualityAlertSystem
-    QUALITY_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    # Fallback for environments where the quality utilities are not available
-    tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
-    QUALITY_UTILITIES_AVAILABLE = False
+# Use lazy imports to avoid circular import issues
+
+# Global variables for lazy-loaded quality utilities with type annotations
+QUALITY_UTILITIES_AVAILABLE: bool = False
+_COMPREHENSIVE_DUPLICATE_ANALYZER: Optional[ComprehensiveDuplicateAnalyzer] = None
+_DATA_QUALITY_FRAMEWORK: Optional[DataQualityFramework] = None
+_COMPREHENSIVE_QUALITY_SCORER: Optional[ComprehensiveQualityScorer] = None
+_ADVANCED_QUALITY_METRICS: Optional[AdvancedQualityMetrics] = None
+_DATA_CLEANER: Optional[DataCleaner] = None
+_STATISTICAL_VALIDATOR: Optional[StatisticalValidator] = None
+_QUALITY_ALERT_SYSTEM: Optional[QualityAlertManager] = None
+_ANALYZE_DUPLICATES_COMPREHENSIVE = None
+
+def _lazy_import_quality_utilities():
+    """Lazy import of quality utilities to avoid circular imports."""
+    global QUALITY_UTILITIES_AVAILABLE, _COMPREHENSIVE_DUPLICATE_ANALYZER, _DATA_QUALITY_FRAMEWORK
+    global _COMPREHENSIVE_QUALITY_SCORER, _ADVANCED_QUALITY_METRICS, _DATA_CLEANER
+    global _STATISTICAL_VALIDATOR, _QUALITY_ALERT_SYSTEM, _ANALYZE_DUPLICATES_COMPREHENSIVE
+    
+    if QUALITY_UTILITIES_AVAILABLE is not False:
+        return
+    
+    try:
+        from src.utils.data.quality.comprehensive_duplicate_analyzer import (
+            ComprehensiveDuplicateAnalyzer,
+            analyze_duplicates_comprehensive
+        )
+        from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
+        from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
+        from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics, QualityAssessment
+        from src.utils.data.quality.data_cleaning import DataCleaner
+        from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
+        from src.utils.data.quality.quality_alert_system import QualityAlertManager
+        
+        _COMPREHENSIVE_DUPLICATE_ANALYZER = ComprehensiveDuplicateAnalyzer
+        _DATA_QUALITY_FRAMEWORK = DataQualityFramework
+        _COMPREHENSIVE_QUALITY_SCORER = ComprehensiveQualityScorer
+        _ADVANCED_QUALITY_METRICS = AdvancedQualityMetrics
+        _DATA_CLEANER = DataCleaner
+        _STATISTICAL_VALIDATOR = StatisticalValidator
+        _QUALITY_ALERT_SYSTEM = QualityAlertManager
+        _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
+        
+        QUALITY_UTILITIES_AVAILABLE = True
+    except ImportError as e:
+        tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
+        QUALITY_UTILITIES_AVAILABLE = False
 
     class ComprehensiveDuplicateAnalyzer:
         def analyze_duplicates(self, df):
@@ -78,6 +173,8 @@ except ImportError as e:
 
     def analyze_duplicates_comprehensive(df):
         return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
+
+    _ANALYZE_DUPLICATES_COMPREHENSIVE = analyze_duplicates_comprehensive
 
     # Fallback classes for missing quality utilities
     class DataQualityFramework:
@@ -120,10 +217,6 @@ except ImportError as e:
             return {}
         
         def run_comprehensive_validation(self, data):
-            return []
-
-    class QualityAlertSystem:
-        def check_alerts(self, score):
             return []
 # Enhanced exchange interface using existing exchange modules
 class ExchangeInterface:
@@ -1153,7 +1246,7 @@ class EnhancedKlinesProcessingPipeline:
                 tprint_success(f"✅ Loaded {len(klines_data)} total records")
                 tprint_info(f"📅 Date range: {klines_data.index.min()} to {klines_data.index.max()}")
 
-            if klines_data.empty:
+            if len(klines_data) == 0:
                 raise RuntimeError("No data loaded from parquet files")
 
             # Ensure proper column names and types
@@ -1173,7 +1266,7 @@ class EnhancedKlinesProcessingPipeline:
             klines_data['interval'] = interval
             klines_data['exchange'] = self.exchange
 
-            if klines_data.empty:
+            if len(klines_data) == 0:
                 raise RuntimeError("Loaded data is empty")
 
             result.success = True
@@ -1181,8 +1274,8 @@ class EnhancedKlinesProcessingPipeline:
             result.metadata = {
                 "records_downloaded": len(klines_data),
                 "date_range": {
-                    "start": klines_data.index.min().isoformat() if not klines_data.empty else None,
-                    "end": klines_data.index.max().isoformat() if not klines_data.empty else None
+                    "start": klines_data.index.min().isoformat() if not len(klines_data) == 0 else None,
+                    "end": klines_data.index.max().isoformat() if not len(klines_data) == 0 else None
                 }
             }
 
@@ -1411,7 +1504,7 @@ class EnhancedKlinesProcessingPipeline:
             distribution_validation = statistical_validator.run_comprehensive_validation(df.values)
 
             # Check for duplicates using comprehensive analyzer
-            duplicate_analysis = analyze_duplicates_comprehensive(df)
+            duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df)
 
             # Determine quality level based on comprehensive assessment
             if score.overall_score >= 90:
@@ -1822,7 +1915,7 @@ class EnhancedKlinesProcessingPipeline:
                 scorer = ComprehensiveQualityScorer()
                 advanced_metrics = AdvancedQualityMetrics()
                 statistical_validator = StatisticalValidator()
-                quality_alert_system = QualityAlertSystem()
+                quality_alert_system = QualityAlertManager()
 
                 # Perform comprehensive final quality assessment
                 final_score = scorer.assess_data_quality(df, context="final_quality_check", step_name="final_validation", data_type="klines")
@@ -1857,7 +1950,7 @@ class EnhancedKlinesProcessingPipeline:
                 null_issues.append(f"Final data contains null values: {null_counts.to_dict()}")
 
             # Perform final duplicate check
-            final_duplicate_analysis = analyze_duplicates_comprehensive(df)
+            final_duplicate_analysis = _ANALYZE_DUPLICATES_COMPREHENSIVE(df)
 
             # Check quality alerts
             try:
@@ -2305,13 +2398,13 @@ if __name__ == "__main__":
                 exchange_interface = FallbackExchangeInterface()
 
             # Process existing data
-        results = await process_klines_data_enhanced(
-            symbol="ETHUSDT",
-            interval="1m",
+            results = await process_klines_data_enhanced(
+                symbol="ETHUSDT",
+                interval="1m",
                 years=4,  # Process 4 years of existing data
-            exchange_interface=exchange_interface,
-            config=pipeline_config,
-            resampling_config=resampling_config,
+                exchange_interface=exchange_interface,
+                config=pipeline_config,
+                resampling_config=resampling_config,
                 batch_id="existing_data_processing"
             )
 
@@ -2321,7 +2414,7 @@ if __name__ == "__main__":
             print(f"💾 Stored files: {results['stored_files']}")
             print(f"🔄 Resampled intervals: {results['resampled_intervals']}")
 
-        await exchange_interface.disconnect()
+            await exchange_interface.disconnect()
 
         except Exception as e:
             print(f"❌ Error in main processing: {e}")

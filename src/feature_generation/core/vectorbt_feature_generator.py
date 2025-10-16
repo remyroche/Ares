@@ -835,7 +835,7 @@ class VectorBTVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate volatility feature using VectorBT ATR."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_{self.period}')
 
         # Use VectorBT ATR for volatility calculation
@@ -869,7 +869,7 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate RSI feature using VectorBT."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rsi_{self.period}')
 
         # Use VectorBT RSI
@@ -903,7 +903,7 @@ class VectorBTTrendGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate SMA feature using VectorBT rolling mean."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_sma_{self.period}')
 
         # Use VectorBT rolling mean for SMA

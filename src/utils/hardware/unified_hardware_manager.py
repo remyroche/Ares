@@ -449,14 +449,14 @@ class AdaptiveTaskScheduler:
 class UnifiedHardwareManager:
     """Unified hardware management system."""
 
+    _instance = None
     _init_done = False
 
     def __init__(self, config: Optional[HardwareConfig] = None):
-        if UnifiedHardwareManager._init_done:
-            # Return early if already initialized
-            self.logger = logger.getChild('UnifiedHardwareManager')
+        # Prevent multiple initialization
+        if hasattr(self, '_initialized'):
             return
-
+            
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
 
@@ -475,8 +475,16 @@ class UnifiedHardwareManager:
         self.is_initialized = False
         self.current_workload_type: Optional[WorkloadType] = None
         self.optimization_contexts: Dict[str, Any] = {}
+        self._initialized = True
 
         self.logger.info("🔧 Unified Hardware Manager initialized")
+
+    @classmethod
+    def get_instance(cls, config: Optional[HardwareConfig] = None):
+        """Get singleton instance of UnifiedHardwareManager."""
+        if cls._instance is None:
+            cls._instance = cls(config)
+        return cls._instance
 
     def initialize(self) -> bool:
         """Initialize all hardware components."""
@@ -511,6 +519,17 @@ class UnifiedHardwareManager:
         """Switch back to normal thresholds."""
         self.performance_monitor.set_normal_thresholds()
         self.logger.info("🔧 Switched back to normal thresholds")
+
+    def configure_workload(self, workload_type, optimization_level):
+        """Configure the hardware manager for a specific workload type and optimization level."""
+        self.current_workload_type = workload_type
+        self.logger.info(f"🔧 Configured for workload: {workload_type}, optimization: {optimization_level}")
+        
+        # Set thresholds based on optimization level
+        if optimization_level.name.upper() == 'INTENSIVE':
+            self.set_intensive_thresholds()
+        else:
+            self.set_normal_thresholds()
 
     def shutdown(self):
         """Shutdown all components."""

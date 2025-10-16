@@ -104,32 +104,87 @@ class UnifiedVectorBTManager(OptimizationMixin, PerformanceMixin, VectorBTMixin,
         """Register default VectorBT operations."""
         try:
             import vectorbt as vbt
-            from vectorbt.generic import (
-                rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply,
-                scale, rank, zscore, winsorize, clip, quantile
-            )
+            
+            # Try to import from vectorbt.generic (newer API)
+            try:
+                from vectorbt.generic import (
+                    rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply,
+                    scale, rank, zscore, winsorize, clip, quantile
+                )
+                use_vectorbt_native = True
+            except ImportError:
+                # Fallback to pandas implementations
+                use_vectorbt_native = False
+                logger.info("VectorBT rolling functions not available, using pandas fallbacks")
 
-            # Register rolling operations
-            self.register_operation('rolling_mean', rolling_mean)
-            self.register_operation('rolling_std', rolling_std)
-            self.register_operation('rolling_var', rolling_var)
-            self.register_operation('rolling_min', rolling_min)
-            self.register_operation('rolling_max', rolling_max)
-            self.register_operation('rolling_sum', rolling_sum)
-            self.register_operation('rolling_apply', rolling_apply)
+            if use_vectorbt_native:
+                # Register rolling operations from VectorBT
+                self.register_operation('rolling_mean', rolling_mean)
+                self.register_operation('rolling_std', rolling_std)
+                self.register_operation('rolling_var', rolling_var)
+                self.register_operation('rolling_min', rolling_min)
+                self.register_operation('rolling_max', rolling_max)
+                self.register_operation('rolling_sum', rolling_sum)
+                self.register_operation('rolling_apply', rolling_apply)
 
-            # Register scaling operations
-            self.register_operation('scale', scale)
-            self.register_operation('rank', rank)
-            self.register_operation('zscore', zscore)
-            self.register_operation('winsorize', winsorize)
-            self.register_operation('clip', clip)
-            self.register_operation('quantile', quantile)
+                # Register scaling operations
+                self.register_operation('scale', scale)
+                self.register_operation('rank', rank)
+                self.register_operation('zscore', zscore)
+                self.register_operation('winsorize', winsorize)
+                self.register_operation('clip', clip)
+                self.register_operation('quantile', quantile)
+            else:
+                # Register pandas fallback implementations
+                self._register_pandas_fallbacks()
 
             logger.debug("Default VectorBT operations registered")
 
         except ImportError as e:
             logger.warning(f"Failed to register default VectorBT operations: {e}")
+            self._register_pandas_fallbacks()
+
+    def _register_pandas_fallbacks(self) -> None:
+        """Register pandas fallback implementations for VectorBT operations."""
+        import pandas as pd
+        import numpy as np
+        
+        # Rolling operations using pandas
+        self.register_operation('rolling_mean', lambda data, window, **kwargs: data.rolling(window, **kwargs).mean())
+        self.register_operation('rolling_std', lambda data, window, **kwargs: data.rolling(window, **kwargs).std())
+        self.register_operation('rolling_var', lambda data, window, **kwargs: data.rolling(window, **kwargs).var())
+        self.register_operation('rolling_min', lambda data, window, **kwargs: data.rolling(window, **kwargs).min())
+        self.register_operation('rolling_max', lambda data, window, **kwargs: data.rolling(window, **kwargs).max())
+        self.register_operation('rolling_sum', lambda data, window, **kwargs: data.rolling(window, **kwargs).sum())
+        
+        # Rolling apply with pandas
+        def rolling_apply_fallback(data, window, func, **kwargs):
+            return data.rolling(window, **kwargs).apply(func)
+        self.register_operation('rolling_apply', rolling_apply_fallback)
+        
+        # Scaling operations using pandas/numpy
+        self.register_operation('scale', lambda data, **kwargs: (data - data.mean()) / data.std())
+        self.register_operation('rank', lambda data, **kwargs: data.rank(**kwargs))
+        self.register_operation('zscore', lambda data, **kwargs: (data - data.mean()) / data.std())
+        
+        # Winsorize using numpy
+        def winsorize_fallback(data, limits=0.05, **kwargs):
+            data = data.copy()
+            if isinstance(limits, (int, float)):
+                limits = (limits, limits)
+            lower = data.quantile(limits[0])
+            upper = data.quantile(1 - limits[1])
+            data = np.clip(data, lower, upper)
+            return data
+        self.register_operation('winsorize', winsorize_fallback)
+        
+        # Clip using numpy
+        self.register_operation('clip', lambda data, a_min=None, a_max=None, **kwargs: np.clip(data, a_min, a_max))
+        
+        # Quantile using pandas
+        self.register_operation('quantile', lambda data, q, **kwargs: data.quantile(q, **kwargs))
+        
+        logger.debug("Pandas fallback operations registered")
 
     def register_operation(self, name: str, operation_func: Callable) -> None:
         """Register a VectorBT operation."""

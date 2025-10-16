@@ -239,7 +239,7 @@ class TrainingDebugger:
                 suggestions=["Check data loading and conversion process"]
             )
 
-        if data.empty:
+        if len(data) == 0:
             return ValidationResult(
                 is_valid=False,
                 error_message="Training data is empty",

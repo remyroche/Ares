@@ -191,7 +191,7 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration-based features using VectorBT optimization."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name='acceleration_feature')
         
         # Default implementation - calculate simple price acceleration
@@ -265,7 +265,7 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
         """Generate momentum using VectorBT operations with full optimization."""
         tprint(f"Generating VectorBT momentum feature with period {self.period} and base calculation {self.base_calculation.value}")
 
-        if data.empty:
+        if len(data) == 0:
             tprint("Warning: Empty data provided for momentum calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
 
@@ -372,7 +372,7 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
         """Generate acceleration using VectorBT operations."""
         tprint(f"Generating VectorBT acceleration feature with period {self.period} and base calculation {self.base_calculation.value}")
 
-        if data.empty:
+        if len(data) == 0:
             tprint("Warning: Empty data provided for acceleration calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}')
 
@@ -424,7 +424,7 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
         """Generate jerk using VectorBT operations."""
         tprint(f"Generating VectorBT jerk feature with period {self.period} and base calculation {self.base_calculation.value}")
 
-        if data.empty:
+        if len(data) == 0:
             tprint("Warning: Empty data provided for jerk calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_jerk_{self.period}_{self.base_calculation.value}')
 
@@ -477,7 +477,7 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate trend strength using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -554,7 +554,7 @@ class VectorBTTrendConsistencyGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate trend consistency using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_consistency_{self.window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -594,7 +594,7 @@ class VectorBTVolumeAccelerationGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate volume acceleration using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volume_acceleration_{self.period}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -634,7 +634,7 @@ class VectorBTVolatilityAccelerationGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate volatility acceleration using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_acceleration_{self.period}_{self.volatility_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -677,7 +677,7 @@ class VectorBTMomentumAccelerationGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate momentum acceleration using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_acceleration_{self.period}_{self.momentum_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -720,7 +720,7 @@ class VectorBTAccelerationMomentumGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration momentum using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_momentum_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -765,7 +765,7 @@ class VectorBTAccelerationVolatilityGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration volatility using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_volatility_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -810,7 +810,7 @@ class VectorBTAccelerationTrendStrengthGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration trend strength using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_trend_strength_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -858,7 +858,7 @@ class VectorBTAccelerationConsistencyGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration consistency using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_consistency_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -904,7 +904,7 @@ class VectorBTAccelerationRegimeGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration regime using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_regime_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -954,7 +954,7 @@ class VectorBTMultiTimeframeAccelerationGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate multi-timeframe acceleration using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_multi_timeframe_acceleration_{self.short_period}_{self.long_period}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -1003,7 +1003,7 @@ class VectorBTAccelerationCorrelationGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration correlation using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_correlation_{self.period}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)
@@ -1049,7 +1049,7 @@ class VectorBTAccelerationDivergenceGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration divergence using VectorBT operations."""
-        if data.empty:
+        if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_divergence_{self.period}_{self.base_calculation.value}')
 
         base_values = self.base_calculator.calculate(data)

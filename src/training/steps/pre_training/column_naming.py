@@ -196,7 +196,7 @@ def standardize_namespace_frame(
 ) -> pd.DataFrame:
     """Return a copy of ``data`` with columns coerced into a namespace."""
 
-    if data is None or data.empty:
+    if data is None or len(data) == 0:
         return data
 
     allowed = set(DEFAULT_ALLOWED_UNPREFIXED)

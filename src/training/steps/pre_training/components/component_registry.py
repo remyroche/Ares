@@ -122,7 +122,7 @@ class ComponentRegistry:
         
         # Register feature generation period lookback optimization step
         if FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE and FeatureGenerationPeriodLookbackOptimizationStep is not None:
-            ComponentFactory.register_component('feature_generation_period_lookback_optimization', FeatureGenerationPeriodLookbackOptimizationStep)
+            ComponentFactory.register_component('feature_generation_period_lookback_optimization_step', FeatureGenerationPeriodLookbackOptimizationStep)
         
         # Register feature generation vectorization step
         if FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE and FeatureGenerationVectorizationStep is not None:

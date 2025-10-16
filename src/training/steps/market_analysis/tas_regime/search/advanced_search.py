@@ -189,7 +189,7 @@ class AdvancedTASSearch:
             raise ValueError("Market data and target returns must be set before evaluation")
 
         numeric_data = self.market_data.select_dtypes(include=[np.number])
-        if numeric_data.empty:
+        if len(numeric_data) == 0:
             return float('-inf')
 
         target = self.target_returns

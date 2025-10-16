@@ -187,7 +187,7 @@ def validate_dataframe(data, required_columns: list = None, min_rows: int = 1):
     if data is None:
         fast_fail_error("DataFrame is None")
 
-    if hasattr(data, 'empty') and data.empty:
+    if len(data) == 0:
         fast_fail_error("DataFrame is empty")
 
     if hasattr(data, 'shape') and data.shape[0] < min_rows:

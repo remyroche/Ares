@@ -202,7 +202,7 @@ class ComprehensiveQualityScorer:
 
     def _assess_completeness(self, data: pd.DataFrame, data_type: str) -> float:
         """Assess data completeness."""
-        if data.empty:
+        if len(data) == 0:
             return 0.0
 
         # Check for missing values
@@ -233,7 +233,7 @@ class ComprehensiveQualityScorer:
 
     def _assess_consistency(self, data: pd.DataFrame, data_type: str) -> float:
         """Assess data consistency."""
-        if data.empty:
+        if len(data) == 0:
             return 0.0
 
         consistency_score = 1.0
@@ -296,7 +296,7 @@ class ComprehensiveQualityScorer:
 
     def _assess_timeliness(self, data: pd.DataFrame, data_type: str) -> float:
         """Assess data timeliness."""
-        if data.empty or 'timestamp' not in data.columns:
+        if len(data) == 0 or 'timestamp' not in data.columns:
             return 0.5  # Default score if no timestamp
 
         try:
@@ -349,7 +349,7 @@ class ComprehensiveQualityScorer:
 
     def _assess_uniqueness(self, data: pd.DataFrame, data_type: str) -> float:
         """Assess data uniqueness."""
-        if data.empty:
+        if len(data) == 0:
             return 0.0
 
         # Check for duplicate rows

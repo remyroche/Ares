@@ -388,7 +388,7 @@ class TacticianTrainingStep:
         try:
             tprint_info("🔧 Training base models...")
 
-            if training_data.empty or not selected_features:
+            if len(training_data) == 0 or not selected_features:
                 raise ValueError("Insufficient training data for base models")
 
             # Prepare training data
@@ -477,7 +477,7 @@ class TacticianTrainingStep:
         try:
             tprint_info("🔄 Training ensemble models with full feature integration...")
 
-            if training_data.empty or not selected_features or not base_models:
+            if len(training_data) == 0 or not selected_features or not base_models:
                 raise ValueError("Insufficient data for ensemble training")
 
             # Prepare training data (same as base models)
@@ -841,13 +841,13 @@ class TacticianTrainingStep:
             }
 
             # Evaluate long models if available
-            if result.long_base_models and not long_training_data.empty:
+            if result.long_base_models and not long_len(training_data) == 0:
                 try:
                     long_metrics = self._calculate_model_metrics(
                         result.long_base_models,
                         long_training_data,
-                        long_validation_data if not long_validation_data.empty else None,
-                        long_test_data if not long_test_data.empty else None,
+                        long_validation_data if not len(long_validation_data) == 0 else None,
+                        long_test_data if not len(long_test_data) == 0 else None,
                         "long"
                     )
                     evaluation_metrics.update(long_metrics)
@@ -857,13 +857,13 @@ class TacticianTrainingStep:
                     evaluation_metrics.update(self._get_default_metrics("long"))
 
             # Evaluate short models if available
-            if result.short_base_models and not short_training_data.empty:
+            if result.short_base_models and not short_len(training_data) == 0:
                 try:
                     short_metrics = self._calculate_model_metrics(
                         result.short_base_models,
                         short_training_data,
-                        short_validation_data if not short_validation_data.empty else None,
-                        short_test_data if not short_test_data.empty else None,
+                        short_validation_data if not len(short_validation_data) == 0 else None,
+                        short_test_data if not len(short_test_data) == 0 else None,
                         "short"
                     )
                     evaluation_metrics.update(short_metrics)
@@ -958,7 +958,7 @@ class TacticianTrainingStep:
             metrics[f'{signal_type}_r2_score'] = r2_score(y_train, avg_predictions)
 
             # Calculate validation metrics if available
-            if validation_data is not None and not validation_data.empty:
+            if validation_data is not None and not len(validation_data) == 0:
                 X_val = validation_data[feature_cols].values
                 y_val = validation_data[target_cols[0]].values
                 y_val_binary = (y_val > 0).astype(int)
@@ -969,7 +969,7 @@ class TacticianTrainingStep:
                 metrics[f'{signal_type}_validation_accuracy'] = accuracy_score(y_val_binary, avg_val_predictions_binary)
 
             # Calculate test metrics if available
-            if test_data is not None and not test_data.empty:
+            if test_data is not None and not len(test_data) == 0:
                 X_test = test_data[feature_cols].values
                 y_test = test_data[target_cols[0]].values
                 y_test_binary = (y_test > 0).astype(int)

@@ -141,7 +141,7 @@ class MathValidationIntegration:
         try:
             # Validate input data
             data = validate_finite(data, "data")
-            if data.empty:
+            if len(data) == 0:
                 raise ValueError("DataFrame is empty")
 
             # Calculate correlation matrix
@@ -197,7 +197,7 @@ class MathValidationIntegration:
         try:
             # Validate input data
             features = validate_finite(features, "features")
-            if features.empty:
+            if len(features) == 0:
                 raise ValueError("Features DataFrame is empty")
 
             # Calculate feature variance
@@ -425,7 +425,7 @@ class MathValidationIntegration:
 
         try:
             numeric_data = data.select_dtypes(include=[np.number])
-            if numeric_data.empty:
+            if len(numeric_data) == 0 or len(data) == 0:
                 return MathValidationResult(
                     success=False,
                     value=pd.DataFrame(),
@@ -671,7 +671,7 @@ class MathValidationIntegration:
             from sklearn.feature_selection import mutual_info_regression
 
             numeric_data = data.select_dtypes(include=[np.number])
-            if numeric_data.empty:
+            if len(numeric_data) == 0 or len(data) == 0:
                 return MathValidationResult(
                     success=False,
                     value={},

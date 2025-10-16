@@ -272,7 +272,7 @@ class SRDetectionStep(BaseStep):
             self.logger.error('❌ CRITICAL: Input data is None for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is None for S/R detection. Cannot proceed.")
 
-        if data.empty:
+        if len(data) == 0:
             self.logger.error('❌ CRITICAL: Input data is empty for S/R detection. Cannot proceed.')
             raise ValueError("CRITICAL: Input data is empty for S/R detection. Cannot proceed.")
 

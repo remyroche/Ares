@@ -219,7 +219,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive volume features using VectorBT optimization."""
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name='volume_features')
 
         # Optimize DataFrame for processing and memory usage
@@ -321,7 +321,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMix
         Returns:
             DataFrame with generated features
         """
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.DataFrame(index=data.index)
 
         # Optimize DataFrame for processing
@@ -1068,7 +1068,7 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume SMA using VectorBT optimization."""
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_sma_{self.period}')
 
         # Optimize DataFrame for processing
@@ -1194,7 +1194,7 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         else:
             return self._optimized_rolling_operation(volume, "mean", self.period)
 
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ema_{self.period}')
 
         volume = data['volume']
@@ -1282,7 +1282,7 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
             avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
             return volume / avg_volume_safe
 
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ratio_{self.period}')
 
         volume = data['volume']
@@ -1353,7 +1353,7 @@ class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         volume = data['volume']
 
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_roc_{self.period}')
 
         volume = data['volume']
@@ -1428,7 +1428,7 @@ class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         volume = data['volume']
 
-        if data.empty or 'volume' not in data.columns:
+        if len(data) == 0 or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_std_{self.period}')
 
         volume = data['volume']
@@ -1755,7 +1755,7 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume VWAP using VectorBT optimization."""
-        if data.empty or 'close' not in data.columns or 'volume' not in data.columns:
+        if len(data) == 0 or 'close' not in data.columns or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_vwap_{self.period}')
 
         # Optimize DataFrame for processing
@@ -2489,7 +2489,7 @@ class VectorBTEnhancedOBVGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Enhanced OBV using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['close', 'volume']):
+        if len(data) == 0 or not all(col in data.columns for col in ['close', 'volume']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_enhanced_obv_{self.period}')
 
         try:
@@ -2587,7 +2587,7 @@ class VectorBTEnhancedADLineGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Enhanced AD Line using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
+        if len(data) == 0 or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_enhanced_ad_line_{self.period}')
 
         try:
@@ -2696,7 +2696,7 @@ class VectorBTVolumeWeightedADLineGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Volume-Weighted AD Line using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
+        if len(data) == 0 or not all(col in data.columns for col in ['high', 'low', 'close', 'volume']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volume_weighted_ad_line_{self.period}')
 
         try:
@@ -2783,7 +2783,7 @@ class VectorBTSmoothedOBVGenerator(VectorBTFeatureGenerator):
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Smoothed OBV using VectorBT."""
-        if data.empty or not all(col in data.columns for col in ['close', 'volume']):
+        if len(data) == 0 or not all(col in data.columns for col in ['close', 'volume']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_smoothed_obv_{self.period}')
 
         try:

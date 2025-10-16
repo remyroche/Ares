@@ -360,7 +360,7 @@ class EnhancedSchemaValidator:
             warnings.append(f"Unexpected columns found: {list(unexpected_columns)}")
 
         # Check data shape
-        if data.empty:
+        if len(data) == 0:
             errors.append("Data is empty")
         elif len(data) < 1:
             errors.append("Data has no rows")

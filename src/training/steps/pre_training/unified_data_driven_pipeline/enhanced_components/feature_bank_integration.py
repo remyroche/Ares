@@ -72,7 +72,7 @@ except ImportError:
 
 # Import multi-horizon profit labeler
 try:
-    from ...multi_horizon_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
+    from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
     MULTI_HORIZON_AVAILABLE = True
 except ImportError:
     MULTI_HORIZON_AVAILABLE = False
@@ -221,7 +221,7 @@ class FeatureBankIntegration:
         # Initialize enhanced feature generation utilities
         if ENHANCED_FEATURE_GENERATION_AVAILABLE:
             try:
-                self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                self.enhanced_feature_engineering = EnhancedFeatureEngineering({})
                 self.feature_optimizer = FeatureGenerationOptimizer()
                 self.cross_timeframe_pipeline = CrossTimeframeAnalysisPipeline()
                 self.fractional_diff_pipeline = FractionalDifferentiationPipeline()
@@ -310,7 +310,7 @@ class FeatureBankIntegration:
             tprint_debug("🔧 Generating features using Feature Bank system")
             feature_data = self._generate_features_with_bank(data, pipeline_state)
 
-            if feature_data is None or feature_data.empty:
+            if feature_data is None or len(feature_data) == 0:
                 tprint_error("❌ Feature generation failed")
                 return FeatureGenerationResult(
                     feature_names=[],
@@ -428,7 +428,7 @@ class FeatureBankIntegration:
             tprint_debug("🏦 Generating features with Feature Bank system")
             feature_data = self.feature_bank.generate_features(data_for_features)
 
-            if feature_data is None or feature_data.empty:
+            if feature_data is None or len(feature_data) == 0:
                 tprint_error("❌ Feature Bank returned empty features - this is not expected")
                 return None
 

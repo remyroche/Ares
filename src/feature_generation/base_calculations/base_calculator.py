@@ -103,7 +103,7 @@ class BaseCalculator(ABC):
         Raises:
             ValueError: If data validation fails
         """
-        if data.empty:
+        if len(data) == 0:
             raise ValueError("Input data is empty")
 
         required_columns = self.get_required_columns()

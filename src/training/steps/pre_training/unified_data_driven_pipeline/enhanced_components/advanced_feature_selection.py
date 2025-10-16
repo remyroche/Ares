@@ -366,7 +366,7 @@ class AdvancedFeatureSelector:
     def _validate_inputs(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> bool:
         """Validate input data and parameters."""
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 tprint_error("Data is None or empty")
                 return False
 
@@ -1175,7 +1175,7 @@ class AdvancedFeatureSelector:
 
             # Handle non-numeric data
             numeric_data = data.select_dtypes(include=[np.number])
-            if numeric_data.empty:
+            if numeric_len(data) == 0:
                 return list(data.columns)
 
             mi_scores = mutual_info_regression(numeric_data, targets, random_state=42)

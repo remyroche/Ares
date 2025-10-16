@@ -911,7 +911,7 @@ class CrossTimeframeFeatureGenerator:
         # Prepare feature data
         features_data = self._prepare_feature_data(price_data, volume_data)
 
-        if features_data.empty:
+        if len(features_data) == 0:
             self.logger.warning("⚠️ No features available for interaction generation")
             return {}
 
@@ -1551,7 +1551,7 @@ class CrossTimeframeFeatureGenerator:
 
                 # Convert the cross timeframe features to the expected format
                 features = {}
-                if hasattr(result, 'cross_timeframe_features') and not result.cross_timeframe_features.empty:
+                if hasattr(result, 'cross_timeframe_features') and not len(result.cross_timeframe_features) == 0:
                     for col in result.cross_timeframe_features.columns:
                         features[col] = result.cross_timeframe_features[col]
 
@@ -1580,7 +1580,7 @@ class CrossTimeframeFeatureGenerator:
 
     def _validate_input_data(self, price_data: pd.DataFrame) -> bool:
         """Validate input data meets requirements"""
-        if price_data.empty or len(price_data) < self.config.min_data_points:
+        if len(price_data) == 0 or len(price_data) < self.config.min_data_points:
             self.logger.warning(f'⚠️ Insufficient data: {len(price_data)} rows, need at least {self.config.min_data_points}')
             return False
         required_cols = {'open', 'high', 'low', 'close'}
@@ -1854,7 +1854,7 @@ class CrossTimeframeFeatureGenerator:
 
     def _is_valid_feature(self, feature: pd.Series) -> bool:
         """Check if a feature is valid"""
-        if feature is None or feature.empty:
+        if feature is None or len(feature) == 0:
             return False
         if feature.var() <= self.config.variance_threshold:
             return False
@@ -1895,7 +1895,7 @@ class InteractionFeatureGenerator:
         Returns:
             DataFrame containing interaction features
         """
-        if features.empty:
+        if len(features) == 0:
             self.logger.warning('⚠️ Empty features provided')
             return pd.DataFrame()
         selected_features = self._select_top_features(features)
@@ -2029,7 +2029,7 @@ class InteractionFeatureGenerator:
 
     def _is_valid_interaction(self, feature: pd.Series) -> bool:
         """Check if an interaction feature is valid"""
-        if feature.empty:
+        if len(feature) == 0:
             return False
         if feature.var() <= self.config.variance_threshold:
             return False
@@ -2038,7 +2038,7 @@ class InteractionFeatureGenerator:
 
     def _remove_correlated_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Remove highly correlated features"""
-        if features.empty:
+        if len(features) == 0:
             return features
         corr_matrix = features.corr().abs()
         upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))

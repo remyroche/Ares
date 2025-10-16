@@ -40,7 +40,7 @@ def per_regime_processing(result_type: str='generic', parallel: bool = True, pre
             """Wrapper that handles per-regime processing."""
             logger.info(f'🔄 Starting per-regime processing for {func.__name__}')
             data = await regime_handler.load_unified_regime_data(symbol, exchange, timeframe, data_dir)
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 logger.error('❌ No regime data found')
                 return {}
 
@@ -72,7 +72,7 @@ def aggregate_regime_results(results: Dict[int, pd.DataFrame], aggregation_metho
     """
     if not results:
         return pd.DataFrame()
-    valid_results = {k: v for k, v in results.items() if v is not None and (not v.empty)}
+    valid_results = {k: v for k, v in results.items() if v is not None and (not len(v) == 0)}
     if not valid_results:
         return pd.DataFrame()
     if aggregation_method == 'concat':
@@ -142,7 +142,7 @@ class RegimeProcessingContext:
     async def process_regime(self, regime_id: int, processing_func: Callable, **kwargs) -> Any:
         """Process a specific regime."""
         regime_data = self.get_regime_data(regime_id)
-        if regime_data.empty:
+        if regime_len(data) == 0:
             logger.warning(f'⚠️ No data for regime {regime_id}')
             return None
         return await processing_func(regime_data, regime_id = regime_id, symbol = self.symbol, exchange = self.exchange, timeframe = self.timeframe, **kwargs)

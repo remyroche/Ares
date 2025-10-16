@@ -188,7 +188,7 @@ class HMMRegimeTagger:
         if not isinstance(market_data, pd.DataFrame):
             raise ValueError(f"market_data must be a DataFrame, got {type(market_data)} - Convert data to pandas DataFrame")
 
-        if market_data.empty:
+        if len(market_data) == 0:
             raise ValueError("market_data is empty - Provide non-empty market data")
 
         # HMM functionality removed - return empty result
@@ -286,7 +286,7 @@ class NasTasRegimeDataSplitting:
             # Step 2: Load and validate market data
             tprint('📊 Step 2: Loading and validating market data...')
             market_data = self._load_and_validate_market_data(symbol, exchange, timeframe, data_dir)
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 tprint('❌ No market data available for regime tagging')
                 raise ValueError("No market data available for regime tagging")
             tprint(f'✅ Market data loaded: {market_data.shape}')
@@ -585,7 +585,7 @@ class NasTasRegimeDataSplitting:
                 market_data = pd.read_parquet(data_path)
 
             # Validate data quality
-            if market_data.empty:
+            if len(market_data) == 0:
                 self.logger.error("❌ Market data is empty")
                 return None
 
@@ -850,7 +850,7 @@ class NasTasRegimeDataSplitting:
             self.path_manager.ensure_directories_exist(output_path)
 
             # Validate data before saving
-            if market_data.empty:
+            if len(market_data) == 0:
                 return {'success': False, 'error': 'Market data is empty'}
 
             # Check for required regime columns

@@ -916,7 +916,7 @@ class UnifiedDataConverter:
                 self.logger.info('⚠️ Could not determine existing unified dates - full reprocessing needed')
                 return False
             klines_data = await self._load_klines_data(symbol, exchange, timeframe)
-            if klines_data is None or klines_data.empty:
+            if klines_data is None or len(klines_data) == 0:
                 self.logger.error('❌ No klines data available for incremental processing')
                 return False
             klines_data = klines_data.copy()
@@ -958,7 +958,7 @@ class UnifiedDataConverter:
         try:
             self.logger.info('🔄 Converting existing consolidated data to unified format incrementally...')
             klines_data = await self._load_klines_data(symbol, exchange, timeframe)
-            if klines_data is None or klines_data.empty:
+            if klines_data is None or len(klines_data) == 0:
                 self.logger.error('❌ No klines data found - cannot proceed with conversion')
                 return False
             self.logger.info(f'✅ Loaded {len(klines_data)} klines rows')
@@ -1004,7 +1004,7 @@ class UnifiedDataConverter:
                     daily_aggtrades = await self._load_aggtrades_for_date(symbol, exchange, current_date)
                     daily_futures = await self._load_futures_for_date(symbol, exchange, current_date)
                     unified = await self._merge_daily_data(daily_klines, daily_aggtrades, daily_futures, symbol, exchange, timeframe)
-                    if unified is not None and (not unified.empty):
+                    if unified is not None and (not len(unified) == 0):
                         success = await self._write_daily_partition(unified, symbol, exchange, timeframe, current_date, base_dir)
                         if success:
                             total_rows_processed += len(unified)
@@ -1104,14 +1104,14 @@ class UnifiedDataConverter:
             unified['exchange'] = exchange.upper()
             unified['symbol'] = symbol
             unified['timeframe'] = timeframe
-            if daily_aggtrades is not None and (not daily_aggtrades.empty):
+            if daily_aggtrades is not None and (not len(daily_aggtrades) == 0):
                 # Only drop columns if they exist (since we may not have added them when no aggtrades data exists)
                 aggtrade_cols = ['trade_volume', 'trade_count', 'avg_price', 'min_price', 'max_price', 'volume_ratio']
                 cols_to_drop = [col for col in aggtrade_cols if col in unified.columns]
                 if cols_to_drop:
                     unified = unified.drop(columns=cols_to_drop)
                 unified = await self._merge_daily_aggtrades(unified, daily_aggtrades, timeframe)
-            if daily_futures is not None and (not daily_futures.empty):
+            if daily_futures is not None and (not len(daily_futures) == 0):
                 unified = await self._merge_daily_futures(unified, daily_futures)
             unified = await self._fill_missing_values(unified)
             unified = await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
@@ -1528,7 +1528,7 @@ class UnifiedDataConverter:
             pdm = ParquetDatasetManager(logger = self.logger)
             base_dir = os.path.join(self.unified_dir, exchange.lower(), symbol, timeframe)
             sample_data = pdm.scan_dataset(base_dir = base_dir, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'], batch_size = 1000)
-            if sample_data is not None and (not sample_data.empty):
+            if sample_data is not None and (not len(sample_data) == 0):
                 self.logger.info(f'✅ Dataset validation successful: {len(sample_data)} sample rows')
                 required = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 missing = [c for c in required if c not in sample_data.columns]
@@ -1625,7 +1625,7 @@ class UnifiedDataConverter:
                 return df
             self.logger.info('🔄 No klines data found, attempting to download klines directly...')
             klines_df = await self._download_klines_data(symbol, exchange, timeframe)
-            if klines_df is not None and (not klines_df.empty):
+            if klines_df is not None and (not len(klines_df) == 0):
                 self.logger.info(f'✅ Successfully downloaded klines data: {len(klines_df)} rows')
                 return klines_df
             self.logger.warning(f'⚠️ No klines data found for {exchange}_{symbol}_{timeframe}')

@@ -185,7 +185,7 @@ class UnifiedValidationFramework:
     def _rule_validate_dataframe_input(data: Any, context: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         if not isinstance(data, pd.DataFrame):
             return False, f"Expected DataFrame, got {type(data).__name__}", None
-        if data.empty:
+        if len(data) == 0:
             return False, "DataFrame is empty", None
         required_columns = context.get("required_columns", [])
         if required_columns:
@@ -297,7 +297,7 @@ class UnifiedValidationFramework:
         if not isinstance(data, pd.Series):
             return False, f"Expected Series output, got {type(data).__name__}", None
         warnings: List[str] = []
-        if data.empty:
+        if len(data) == 0:
             warnings.append("Output Series is empty")
         if data.isna().any():
             warnings.append(f"Output Series contains {int(data.isna().sum())} NaN values")

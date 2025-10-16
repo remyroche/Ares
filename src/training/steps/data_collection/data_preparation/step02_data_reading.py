@@ -142,7 +142,7 @@ class DataReadingStep(BaseStep):
                     base_path=partitioned_path,
                     schema_name='unified'
                 )
-                if data is not None and not data.empty:
+                if data is not None and not len(data) == 0:
                     self.logger.info(f'✅ Successfully loaded partitioned data: {len(data)} rows')
                 else:
                     self.logger.warning('⚠️ Partitioned data directory exists but is empty or invalid')
@@ -152,13 +152,13 @@ class DataReadingStep(BaseStep):
                 data = None
 
             # Fallback to single file if partitioned data not available
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 standards = PipelineStandards(self.logger)
                 data_path = standards.build_path('unified', exchange, symbol, timeframe=timeframe)
                 self.logger.info(f'📖 Fallback: Reading unified data from: {data_path}')
                 if os.path.exists(data_path):
                     data = standardized_parquet_handler.read_parquet_standardized(data_path, schema_name='unified')
-                    if data is not None and not data.empty:
+                    if data is not None and not len(data) == 0:
                         self.logger.info(f'✅ Successfully loaded unified data: {len(data)} rows')
                     else:
                         self.logger.warning('⚠️ Unified data file exists but is empty or invalid')
@@ -175,7 +175,7 @@ class DataReadingStep(BaseStep):
                     base_path=data_path,
                     schema_name='unified'
                 )
-                if data is None or data.empty:
+                if data is None or len(data) == 0:
                     # Fallback to individual file reading
                     parquet_files = list(data_path_obj.glob('**/*.parquet'))
                     if not parquet_files:
@@ -185,7 +185,7 @@ class DataReadingStep(BaseStep):
                     for i, file_path in enumerate(parquet_files):
                         self.logger.info(f'📖 Reading file {i + 1}/{len(parquet_files)}: {file_path.name}')
                         df = standardized_parquet_handler.read_parquet_standardized(str(file_path), schema_name='unified')
-                        if df is not None and (not df.empty):
+                        if df is not None and (not len(df) == 0):
                             dataframes.append(df)
                     if not dataframes:
                         raise ValueError(f'Failed to read any data from parquet files in {data_path}')
@@ -195,7 +195,7 @@ class DataReadingStep(BaseStep):
                 raise ValueError(f'Path does not exist: {data_path}')
 
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 # Attempt centralized auto re-collection and one retry
                 self.logger.warning(f"⚠️ Empty data after read. Attempting auto re-collection and retry...")
                 try:
@@ -213,7 +213,7 @@ class DataReadingStep(BaseStep):
                             dataframes = []
                             for file_path in parquet_files:
                                 df = standardized_parquet_handler.read_parquet_standardized(str(file_path), schema_name='unified')
-                                if df is not None and (not df.empty):
+                                if df is not None and (not len(df) == 0):
                                     try:
                                         df = PipelineStandards(self.logger).enforce_schema(df, 'unified')
                                     except Exception as _se2:
@@ -223,7 +223,7 @@ class DataReadingStep(BaseStep):
                                 data = pd.concat(dataframes, ignore_index = True)
                 except Exception as _qe2:
                     self.logger.warning(f"Auto re-collection retry failed: {_qe2}")
-                if data is None or data.empty:
+                if data is None or len(data) == 0:
                     raise ValueError(f'Failed to read data from {data_path}')
             self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns')
 

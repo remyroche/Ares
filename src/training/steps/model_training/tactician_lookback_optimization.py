@@ -745,7 +745,7 @@ class TacticianLookbackOptimizer:
                 tprint_error(f"❌ Market data must be DataFrame, got {type(market_data)}")
                 return False
 
-            if market_data.empty:
+            if len(market_data) == 0:
                 tprint_error("❌ Market data is empty")
                 return False
 

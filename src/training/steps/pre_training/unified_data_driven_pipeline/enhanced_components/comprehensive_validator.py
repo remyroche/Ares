@@ -251,7 +251,7 @@ class ComprehensiveValidator:
                 )
 
             # Check if data is empty
-            if data.empty:
+            if len(data) == 0:
                 errors.append("Data is empty")
                 return ValidationResult(
                     is_valid=False,

@@ -2498,7 +2498,7 @@ class TacticianPreMLOrchestrator:
             short_tagged_data = tagged_market_data[tagged_market_data['signal_direction'] == 'short'].copy()
 
             # Prepare long training data
-            if not long_tagged_data.empty and long_pid_features and long_targets and long_selected_features:
+            if not len(long_tagged_data) == 0 and long_pid_features and long_targets and long_selected_features:
                 try:
                     tprint_info("📈 Preparing long training data...")
                     long_data = await self._prepare_signal_training_data(
@@ -2514,7 +2514,7 @@ class TacticianPreMLOrchestrator:
                 tprint_info(f"⏭️ Skipping long training data preparation - missing components (data: {len(long_tagged_data)}, features: {long_pid_features is not None}, targets: {len(long_targets)}, selected: {len(long_selected_features)})")
 
             # Prepare short training data
-            if not short_tagged_data.empty and short_pid_features and short_targets and short_selected_features:
+            if not len(short_tagged_data) == 0 and short_pid_features and short_targets and short_selected_features:
                 try:
                     tprint_info("📉 Preparing short training data...")
                     short_data = await self._prepare_signal_training_data(
@@ -2555,7 +2555,7 @@ class TacticianPreMLOrchestrator:
             tprint_info(f"📚 Preparing training data for {signal_type}...")
 
             # Validate signal_data has an index
-            if signal_data.empty:
+            if len(signal_data) == 0:
                 tprint_warning(f"⚠️ Empty signal_data for {signal_type}")
                 return pd.DataFrame()
 
@@ -2746,12 +2746,12 @@ class TacticianPreMLOrchestrator:
                 tprint_debug(f"💾 Saved short selected features: {short_features_path}")
 
             # Save training data
-            if not result.long_training_data.empty:
+            if not len(result.long_training_data) == 0:
                 long_training_path = output_dir / "long_training_data.parquet"
                 result.long_training_data.to_parquet(long_training_path)
                 tprint_debug(f"💾 Saved long training data: {long_training_path}")
 
-            if not result.short_training_data.empty:
+            if not len(result.short_training_data) == 0:
                 short_training_path = output_dir / "short_training_data.parquet"
                 result.short_training_data.to_parquet(short_training_path)
                 tprint_debug(f"💾 Saved short training data: {short_training_path}")

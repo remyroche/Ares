@@ -143,7 +143,7 @@ class AdvancedDataLoader:
         tprint_debug("📥 Starting market data loading")
 
         # If data is already provided, validate and process it properly
-        if data is not None and not data.empty:
+        if data is not None and not len(data) == 0:
             tprint_info(f"📊 Provided data detected: {data.shape[0]} rows, {data.shape[1]} columns")
 
             # Validate provided data
@@ -152,7 +152,7 @@ class AdvancedDataLoader:
             else:
                 # Apply data processing to provided data
                 processed_data = await self._process_provided_data(data, pipeline_state)
-                if processed_data is not None and not processed_data.empty:
+                if processed_data is not None and not processed_len(data) == 0:
                     tprint_success(f"✅ Using validated and processed provided data: {processed_data.shape}")
                     return processed_data
                 else:
@@ -174,7 +174,7 @@ class AdvancedDataLoader:
             tprint_debug("🚀 Using ares launcher integration for data loading")
             try:
                 market_data = await self._load_with_ares_integration(config)
-                if market_data is not None and not market_data.empty:
+                if market_data is not None and not market_len(data) == 0:
                     # Cache the loaded data
                     if self.feature_cache:
                         await self._save_to_cache(market_data, config)
@@ -661,7 +661,7 @@ class AdvancedDataLoader:
                 symbol, exchange, interval, start_time, end_time, batch_id
             )
 
-            if not data.empty:
+            if not len(data) == 0:
                 self.stats['klines_loads'] += 1
                 tprint_success(f"✅ Loaded {len(data)} klines records for {symbol}")
             else:
@@ -678,7 +678,7 @@ class AdvancedDataLoader:
         """Validate klines data format."""
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
 
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             return False
 
         # Check for required columns
@@ -781,7 +781,7 @@ class AdvancedDataLoader:
         """Validate provided data for basic requirements."""
         try:
             # Check if data is not empty
-            if data.empty:
+            if len(data) == 0:
                 tprint_warning("⚠️ Provided data is empty")
                 return False
 
@@ -850,7 +850,7 @@ class AdvancedDataLoader:
             # Remove any remaining NaN values
             processed_data = processed_data.dropna()
 
-            if processed_data.empty:
+            if processed_len(data) == 0:
                 tprint_warning("⚠️ All data removed during cleaning")
                 return None
 

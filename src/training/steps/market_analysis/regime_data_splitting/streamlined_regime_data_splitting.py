@@ -311,7 +311,7 @@ class StreamlinedRegimeDataSplitting:
             with memory_checkpoint("regime_data_loading"):
                 data = safe_read_parquet(data_path)
 
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 self.logger.error("No data loaded or data is empty")
                 return None
 

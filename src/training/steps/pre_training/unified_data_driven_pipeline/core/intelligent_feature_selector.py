@@ -395,7 +395,7 @@ class IntelligentFeatureSelector:
         start_time = time.time()
 
         def _validate_inputs():
-            if not isinstance(data, pd.DataFrame) or data.empty:
+            if not isinstance(data, pd.DataFrame) or len(data) == 0:
                 raise ValueError("Data must be a non-empty DataFrame")
             if targets is not None and len(targets) != len(data):
                 raise ValueError("Targets length must match data length")

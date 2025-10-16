@@ -182,7 +182,7 @@ class AdvancedPerformanceMonitor:
                 'analysis_time': 0.0
             }
 
-        if data.empty:
+        if len(data) == 0:
             tprint_warning(f"⚠️ Data is empty for quality monitoring: {operation_name}")
             return {
                 'operation_name': operation_name,

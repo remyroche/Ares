@@ -137,7 +137,7 @@ class ConsolidatedPipelineRunner:
             tprint_info(f"⚙️ Intensity: {intensity}, Exchange: {exchange}")
 
             # Validate input data
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 raise ValueError("Input data cannot be None or empty")
 
             if not isinstance(data, pd.DataFrame):
@@ -694,10 +694,9 @@ class ConsolidatedPipelineRunner:
                                           custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run pipeline up to labeling integration step."""
         try:
-            # Debug: Check what custom_overrides contains
-            self.logger.info(f"Debug: custom_overrides type: {type(custom_overrides)}")
+            # Check what custom_overrides contains
             if isinstance(custom_overrides, pd.DataFrame):
-                self.logger.warning("custom_overrides is a DataFrame, this might cause issues")
+                self.logger.warning("custom_overrides is a DataFrame, converting to None")
                 custom_overrides = None
             
             # Configure pipeline based on intensity

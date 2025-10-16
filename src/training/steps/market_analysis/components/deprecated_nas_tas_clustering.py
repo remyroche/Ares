@@ -2277,7 +2277,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 # Data information
                 'data_info': {
                     'total_samples': len(cluster_assignments),
-                    'n_features': market_data.shape[1] if not market_data.empty else 0,
+                    'n_features': market_data.shape[1] if not market_len(data) == 0 else 0,
                     'n_clusters': n_clusters,
                     'symbol': getattr(self.config, 'symbol', 'UNKNOWN'),
                     'timeframe': getattr(self.config, 'timeframe', 'UNKNOWN'),
@@ -2467,7 +2467,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
             market_data = await self._load_market_data(data)
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 tprint("No market data available for clustering", "ERROR")
                 raise ValueError("No market data available for clustering")
 
@@ -2608,7 +2608,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         """Load and validate market data for clustering."""
         try:
             tprint("Loading market data...", "INFO")
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            if data is None or (isinstance(data, pd.DataFrame) and len(data) == 0):
                 tprint("No market data provided, attempting to load from pipeline state", "WARNING")
                 return None
 
@@ -5158,7 +5158,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             # Validate data
             if data is not None:
                 if isinstance(data, pd.DataFrame):
-                    if data.empty:
+                    if len(data) == 0:
                         raise ValueError("DataFrame is empty")
                     if len(data.columns) == 0:
                         raise ValueError("DataFrame has no columns")
@@ -5168,7 +5168,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     market_data = data['market_data']
                     if not isinstance(market_data, pd.DataFrame):
                         raise ValueError("market_data must be a DataFrame")
-                    if market_data.empty:
+                    if market_len(data) == 0:
                         raise ValueError("market_data DataFrame is empty")
                 else:
                     raise ValueError(f"Unsupported data type: {type(data)}")

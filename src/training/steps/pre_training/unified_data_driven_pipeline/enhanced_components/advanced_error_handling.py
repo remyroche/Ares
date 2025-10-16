@@ -398,7 +398,7 @@ class AdvancedErrorHandler:
             tprint_error(f"❌ DataFrame is None for operation: {operation}")
             return pd.DataFrame()
 
-        if data.empty:
+        if len(data) == 0:
             tprint_warning(f"⚠️ DataFrame is empty for operation: {operation}")
             return data
 

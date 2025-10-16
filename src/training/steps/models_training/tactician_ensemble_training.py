@@ -406,7 +406,7 @@ class TacticianEnsembleTrainingStep:
                 tprint_success("✅ Input validation passed")
             else:
                 # Fallback validation
-                if training_data.empty or not feature_columns or not target_columns or not base_models:
+                if len(training_data) == 0 or not feature_columns or not target_columns or not base_models:
                     raise ValueError("Insufficient data for ensemble training")
 
             # Prepare training data

@@ -510,7 +510,7 @@ class TacticianDifferentiatedLabeler:
 
         CHANGE: Now uses EnhancedEntryQualityScorer with adaptive multi-factor scoring.
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.0
 
         # Use enhanced scorer if available
@@ -1471,7 +1471,7 @@ class TacticianPreMLOrchestrator:
             regime_mask = regime_assignments == regime
             regime_data = training_data[regime_mask]
 
-            if not regime_data.empty:
+            if not len(regime_data) == 0:
                 regime_datasets[f'regime_{regime}'] = regime_data
                 tprint_info(f"🏷️ Regime {regime}: {len(regime_data)} samples ({len(regime_data)/len(training_data)*100:.1f}%)")
 

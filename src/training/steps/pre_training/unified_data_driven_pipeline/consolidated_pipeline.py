@@ -1630,8 +1630,6 @@ class UnifiedDataDrivenPipeline:
                 drift_threshold=0.05,
                 warning_threshold=0.1,
                 critical_threshold=0.2,
-                hmm_n_components=4,
-                hmm_covariance_type="full",
                 save_results=True,
                 output_directory="reports/integrated_analysis"
             )
@@ -1918,7 +1916,7 @@ class UnifiedDataDrivenPipeline:
             )
 
             # Apply additional common operations enhancements
-            if processed_data is not None and not processed_data.empty:
+            if processed_data is not None and not len(processed_data) == 0:
                 tprint_debug("🔧 Applying common operations enhancements to processed data")
 
                 # Optimize DataFrame dtypes for memory efficiency
@@ -2093,7 +2091,7 @@ class UnifiedDataDrivenPipeline:
 
             # Use the cleaned data from advanced validator if validation was successful
             # This ensures we use the cleaned data instead of overwriting it
-            if is_valid and cleaned_data is not None and not cleaned_data.empty:
+            if is_valid and cleaned_data is not None and not len(cleaned_data) == 0:
                 tprint_success(f"✅ Using cleaned data from advanced validator: {cleaned_data.shape}")
             else:
                 # Fallback to processed data if cleaning failed or returned empty data
@@ -2112,7 +2110,7 @@ class UnifiedDataDrivenPipeline:
                 return self._create_empty_result(start_time, error_msg)
 
             # Apply additional data processing to market data
-            if market_data is not None and not market_data.empty:
+            if market_data is not None and not len(market_data) == 0:
                 tprint_info("🔧 Applying additional data processing to market data...")
                 market_data, market_processing_report = self.unified_data_utils.process_and_validate(
                     data=market_data,
@@ -2173,7 +2171,7 @@ class UnifiedDataDrivenPipeline:
                 labeling_data = pd.DataFrame()
 
             # Apply data processing to labeling data if available
-            if labeling_data is not None and not labeling_data.empty:
+            if labeling_data is not None and not len(labeling_data) == 0:
                 tprint_info("🔧 Applying data processing to labeling data...")
                 labeling_data, labeling_processing_report = self.unified_data_utils.process_and_validate(
                     data=labeling_data,
@@ -2195,7 +2193,7 @@ class UnifiedDataDrivenPipeline:
             )
 
             # Final data quality check before feature generation
-            if processed_data is not None and not processed_data.empty:
+            if processed_data is not None and not len(processed_data) == 0:
                 tprint_info("🔍 Performing final data quality check...")
                 final_quality_result = self.quality_framework.validate_dataframe_quality(
                     processed_data, context=f"pre_feature_generation_{timeframe}"
@@ -2553,7 +2551,7 @@ class UnifiedDataDrivenPipeline:
             if VECTORBT_UTILITIES_AVAILABLE and enhanced_feature_results:
                 # Apply vectorized operations to the enhanced features if they exist
                 enhanced_features_data = enhanced_feature_results.get('enhanced_features', pd.DataFrame())
-                if not enhanced_features_data.empty:
+                if not len(enhanced_features_data) == 0:
                     # Apply additional vectorized rolling operations
                     vectorized_enhanced_features = self._vectorized_rolling_operations(
                         enhanced_features_data,
@@ -2838,7 +2836,7 @@ class UnifiedDataDrivenPipeline:
             # Try to recover data quality if possible
             try:
                 tprint_info("🔧 Attempting data quality recovery...")
-                if 'data' in locals() and data is not None and not data.empty:
+                if 'data' in locals() and data is not None and not len(data) == 0:
                     # Apply basic data cleaning as recovery attempt
                     recovered_data, recovery_report = self.unified_data_utils.clean_data(
                         data=data,
@@ -2868,7 +2866,7 @@ class UnifiedDataDrivenPipeline:
             }
 
             # Add data quality metrics to error context if available
-            if 'data' in locals() and data is not None and not data.empty:
+            if 'data' in locals() and data is not None and not len(data) == 0:
                 try:
                     quality_metrics = self.data_processor.calculate_enhanced_quality_metrics(data)
                     error_context['data_quality_metrics'] = quality_metrics
@@ -2951,7 +2949,7 @@ class UnifiedDataDrivenPipeline:
             if not isinstance(data, pd.DataFrame):
                 raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
 
-            if data.empty:
+            if len(data) == 0:
                 raise ValueError("Data cannot be empty")
 
             # Check required columns
@@ -3034,7 +3032,7 @@ class UnifiedDataDrivenPipeline:
 
         try:
             # Check if data is empty
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 result['is_valid'] = False
                 result['errors'].append(f"Data is empty or None in {context}")
                 return result
@@ -3093,7 +3091,7 @@ class UnifiedDataDrivenPipeline:
         tprint_debug(f"📊 Input data shape: {data.shape}, timeframe: {timeframe}")
 
         # Validate input data before processing
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             error_msg = "Input data is None or empty for period optimization"
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
@@ -3198,7 +3196,7 @@ class UnifiedDataDrivenPipeline:
         tprint_debug(f"🎯 Targets shape: {targets.shape if targets is not None else 'None'}")
 
         # Validate input data before processing
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             error_msg = "Input data is None or empty for feature selection"
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
@@ -3323,7 +3321,7 @@ class UnifiedDataDrivenPipeline:
         tprint_debug(f"📊 Input data shape: {data.shape}")
 
         # Validate input data before processing
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             error_msg = "Input data is None or empty for feature generation"
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
@@ -4304,7 +4302,7 @@ class UnifiedDataDrivenPipeline:
                     tprint_debug("🔧 Preparing data for roadmap interactions")
                     transformed_data = self._prepare_data_for_interactions(features_df)
 
-                    if transformed_data is None or transformed_data.empty:
+                    if transformed_data is None or len(transformed_data) == 0:
                         tprint_warning("⚠️ Transformed data is None or empty for roadmap interactions")
                     else:
                         # Generate interactions using the roadmap engine with regime awareness
@@ -6268,7 +6266,7 @@ class UnifiedDataDrivenPipeline:
         # Validate data is not None or empty
         if data is None:
             raise ValueError("Data cannot be None")
-        if data.empty:
+        if len(data) == 0:
             raise ValueError("Data cannot be empty")
 
         # Validate required OHLCV columns

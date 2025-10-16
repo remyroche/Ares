@@ -902,7 +902,7 @@ class MultiHorizonProfitLabeler:
                     market_data = batch
                     break
 
-                if market_data is None or market_data.empty:
+                if market_data is None or len(market_data) == 0:
                     tprint_error(f"❌ No market data available for {symbol} {timeframe}")
                     raise ValueError(f"No market data available for {symbol} {timeframe}")
 
@@ -1827,7 +1827,7 @@ class MultiHorizonProfitLabeler:
 
     def _prepare_market_data_frame(self, data: pd.DataFrame) -> pd.DataFrame:
         """Ensure loaded market data is indexed and typed as expected by the labeler."""
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             raise ValueError("Loaded market data is empty")
 
         df = data.copy()

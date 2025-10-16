@@ -94,7 +94,7 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
             # Get market data
             market_data = await self._load_market_data(data, symbol)
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 raise ValueError(f"No market data available for NAS regime discovery for symbol: {symbol}")
 
             # Configure NAS regime detection
@@ -386,7 +386,7 @@ class NASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     async def _load_market_data(self, data: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime discovery."""
         try:
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            if data is None or (isinstance(data, pd.DataFrame) and len(data) == 0):
                 self.logger.warning("⚠️ No market data provided, attempting to load from klines_parquet")
 
                 if symbol is None:

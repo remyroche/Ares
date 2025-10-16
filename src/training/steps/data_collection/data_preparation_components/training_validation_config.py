@@ -195,7 +195,7 @@ def validate_data_collection(data: dict[str, Any]) -> tuple[bool, list[str]]:
     for key in required_keys:
         if key not in data:
             errors.append(f'Missing required data type: {key}')
-        elif data[key] is None or (hasattr(data[key], 'empty') and data[key].empty):
+        elif data[key] is None or len(data[key]) == 0:
             errors.append(f'Empty data for: {key}')
     if 'klines' in data and data['klines'] is not None:
         klines = data['klines']

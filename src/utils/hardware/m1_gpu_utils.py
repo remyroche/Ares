@@ -469,7 +469,7 @@ def optimize_dataframe_for_m1(df):
             return df
 
         # Additional safety check for empty DataFrame
-        if df.empty:
+        if len(df) == 0:
             logger.info("DataFrame is empty, returning as-is")
             return df
 
@@ -551,7 +551,7 @@ async def m1_backtesting_simulate(
             # Convert DataFrame to tensor
             try:
                 numeric_data = gpu_data.select_dtypes(include=[np.number])
-                if not numeric_data.empty:
+                if not len(numeric_data) == 0:
                     tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
                 else:
                     tensor_data = torch.tensor([]).to('mps')
@@ -704,7 +704,7 @@ async def m1_monte_carlo_simulate(
             # Convert DataFrame to tensor
             try:
                 numeric_data = data.select_dtypes(include=[np.number])
-                if not numeric_data.empty:
+                if not len(numeric_data) == 0:
                     tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
                 else:
                     tensor_data = torch.tensor([]).to('mps')

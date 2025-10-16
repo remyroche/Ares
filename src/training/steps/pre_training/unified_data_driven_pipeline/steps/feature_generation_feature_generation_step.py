@@ -134,7 +134,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
                 self.feature_config.timeframe = timeframe
 
             # Validate input data
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 raise ValueError("Input data is None or empty")
             
             required_columns = ['close', 'volume']
@@ -347,7 +347,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
         # Basic validation - check if data is not None and has required columns
         if data is None:
             return False
-        if hasattr(data, 'empty') and data.empty:
+        if hasattr(data, 'empty') and len(data) == 0:
             return False
         return True
 

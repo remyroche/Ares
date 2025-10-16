@@ -109,7 +109,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Get market data
             tprint_info("📊 Loading market data...")
             market_data = await self._load_market_data(data, symbol)
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 tprint_error(f"❌ No market data available for symbol: {symbol}")
                 raise ValueError(f"No market data available for TAS regime discovery for symbol: {symbol}")
             tprint_success(f"✅ Market data loaded: {len(market_data)} rows")
@@ -435,7 +435,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     async def _load_market_data(self, data: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime discovery."""
         try:
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            if data is None or (isinstance(data, pd.DataFrame) and len(data) == 0):
                 self.logger.warning("⚠️ No market data provided, attempting to load from klines_parquet")
 
                 if symbol is None:

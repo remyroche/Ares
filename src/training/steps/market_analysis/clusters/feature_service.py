@@ -140,7 +140,7 @@ class FeatureService:
             feature_config = self._create_feature_config(config)
 
             # Validate market data before feature preparation
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError("Market data is None or empty in feature preparation")
 
             shared_result = await self._prepare_features_shared(market_data, feature_config)
@@ -272,7 +272,7 @@ class FeatureService:
             tprint("📊 Preparing features using shared utilities", "INFO")
 
             # Validate inputs
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError("Market data is None or empty in shared feature preparation")
 
             if feature_config is None:

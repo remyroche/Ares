@@ -97,8 +97,6 @@ class ParquetUtils:
         Returns:
             DataFrame if successful, None otherwise
         """
-        self.logger.info(f"🔧 Safe reading parquet file: {file_path}")
-
         # Enhanced strategies with schema compatibility options
         # Note: use_legacy_dataset is deprecated in newer pandas/pyarrow versions
         strategies = [
@@ -110,15 +108,10 @@ class ParquetUtils:
 
         for idx, strategy in enumerate(strategies, start=1):
             try:
-                engine = strategy.get("engine")
-                strategy_msg = f"   Trying strategy {idx}/{len(strategies)}: {'default' if engine is None else engine} engine"
-                if strategy.get("coerce_int96_timestamp_unit"):
-                    strategy_msg += f" ({strategy.get('coerce_int96_timestamp_unit')} timestamps)"
-                self.logger.info(strategy_msg)
-
                 read_kwargs = dict(kwargs)
                 read_kwargs.update({k: v for k, v in strategy.items() if k != "engine"})
 
+                engine = strategy.get("engine")
                 if engine is not None:
                     read_kwargs["engine"] = engine
 
@@ -130,14 +123,16 @@ class ParquetUtils:
                 # Apply immediate schema harmonization to prevent downstream issues
                 df = self._harmonize_schema_immediately(df)
 
-                self.logger.info(f"✅ Successfully read with strategy {idx}: {df.shape}")
+                # Only log successful reads with file info
+                self.logger.info(f"✅ Read parquet: {os.path.basename(file_path)} -> {df.shape}")
                 return df
 
             except Exception as e:
-                self.logger.warning(f"   Strategy {idx} failed: {e}")
+                # Only log strategy failures at debug level to reduce verbosity
+                self.logger.debug(f"Strategy {idx} failed for {os.path.basename(file_path)}: {e}")
                 continue
 
-        self.logger.error(f"❌ All strategies failed for file: {file_path}")
+        self.logger.error(f"❌ Failed to read parquet file: {os.path.basename(file_path)}")
         return None
 
     @handles_errors(default_return = None, context="ParquetUtils.safe_read_parquet_with_dtype_normalization")

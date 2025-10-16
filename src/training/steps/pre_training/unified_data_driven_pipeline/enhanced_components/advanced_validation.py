@@ -211,7 +211,7 @@ class AdvancedInputValidator:
         if data is None or not isinstance(data, pd.DataFrame):
             return False, self._create_failed_summary("Data is None or not a DataFrame"), pd.DataFrame()
 
-        if data.empty:
+        if len(data) == 0:
             return False, self._create_failed_summary("DataFrame is empty"), data
 
         # Store original data for potential fixes
@@ -305,7 +305,7 @@ class AdvancedInputValidator:
 
     def _validate_dataframe_not_empty(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate that DataFrame is not empty."""
-        if data.empty:
+        if len(data) == 0:
             return False, "DataFrame is empty", {"rows": 0, "columns": 0}
         return True, "DataFrame is not empty", {"rows": len(data), "columns": len(data.columns)}
 

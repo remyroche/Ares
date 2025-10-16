@@ -310,7 +310,7 @@ class SRBacktestingEngine:
 
     def _validate_inputs(self, market_data: pd.DataFrame, sr_levels: List[SRLevel]) -> bool:
         """Validate backtest inputs."""
-        if market_data is None or market_data.empty:
+        if market_data is None or len(market_data) == 0:
             self.logger.error("Market data is None or empty")
             return False
 
@@ -483,7 +483,7 @@ class SRBacktestingEngine:
 
         # Extract trade data
         trade_df = pd.DataFrame(self.trades)
-        if trade_df.empty:
+        if len(trade_df) == 0:
             return {
                 'total_return': 0.0,
                 'annualized_return': 0.0,

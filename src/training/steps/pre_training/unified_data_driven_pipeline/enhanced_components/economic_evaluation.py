@@ -205,7 +205,7 @@ class EconomicPeriodEvaluator:
     def _validate_inputs(self, data: pd.DataFrame, candidate_periods: List[int]) -> bool:
         """Validate input data and parameters."""
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 tprint_error("Data is None or empty")
                 return False
 

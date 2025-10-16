@@ -148,7 +148,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Step 2: Load market data
             tprint("📊 Step 2: Loading market data")
             market_data = await self._load_market_data(data, symbol)
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 raise ValueError(f"No market data available for hybrid regime discovery for symbol: {symbol}")
 
             log_success(f"Market data loaded: {len(market_data)} rows")
@@ -482,7 +482,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         """Load and prepare market data for regime discovery."""
         tprint("📊 Starting market data loading process")
         try:
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            if data is None or (isinstance(data, pd.DataFrame) and len(data) == 0):
                 tprint("📥 No market data provided, loading from klines_parquet")
                 log_info("No market data provided, loading from klines_parquet")
 
@@ -512,12 +512,12 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tprint("🔍 Attempting to load processed data first")
                 market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="processed")
 
-                if market_data is None or market_data.empty:
+                if market_data is None or market_len(data) == 0:
                     # Fallback to raw data
                     tprint("⚠️ Processed data not available, falling back to raw data")
                     market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")
 
-                if market_data is None or market_data.empty:
+                if market_data is None or market_len(data) == 0:
                     log_error(f"No data available for {symbol} {timeframe}")
                     tprint(f"❌ No data available for {symbol} {timeframe}")
                     return None
@@ -1498,7 +1498,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     def _prepare_features_for_assessment(self, market_data: pd.DataFrame, min_length: int) -> Optional[np.ndarray]:
         """Prepare features for regime centroid comparison."""
         try:
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 return None
 
             # Use the same feature preparation as the main component

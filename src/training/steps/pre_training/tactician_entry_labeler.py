@@ -678,7 +678,7 @@ class TacticianDifferentiatedLabeler:
 
         CHANGE: Now uses EnhancedEntryQualityScorer with adaptive multi-factor scoring.
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             tprint_warning("⚠️ Empty future data for entry quality calculation")
             return 0.0
 

@@ -390,7 +390,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if len(market_data) > 50000:  # Large dataset threshold
                 tprint('🔄 Large dataset detected, using streaming processing...')
                 market_data = await self._stream_process_large_dataset(market_data)
-                if market_data is None or market_data.empty:
+                if market_data is None or len(market_data) == 0:
                     tprint('❌ Streaming processing failed')
                     report.status = RegimeSplittingStatus.FAILED
                     report.errors.append("Streaming processing failed")
@@ -574,7 +574,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.error("❌ Data is not a DataFrame")
                 return None
 
-            if market_data.empty:
+            if len(market_data) == 0:
                 self.logger.error("❌ Market data is empty")
                 return None
 
@@ -2291,7 +2291,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
 
             # Validate market data
             market_data = regime_data['market_data']
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 validation_result['valid'] = False
                 validation_result['errors'].append("Market data is empty")
                 return validation_result

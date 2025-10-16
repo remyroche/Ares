@@ -1316,7 +1316,7 @@ class DataCleaner:
         Returns:
             Cleaned DataFrame or None if cleaning failed
         """
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             self.logger.warning("⚠️ Input data is None or empty, returning None")
             return None
 

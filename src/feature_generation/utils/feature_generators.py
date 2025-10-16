@@ -2038,7 +2038,7 @@ class FeatureGenerators:
         """
         self.logger.info("🚀 Generating focused HMM-ready feature set...")
 
-        if data.empty:
+        if len(data) == 0:
             self.logger.warning("⚠️ Empty data provided to generate_features_for_hmm")
             return pd.DataFrame()
 

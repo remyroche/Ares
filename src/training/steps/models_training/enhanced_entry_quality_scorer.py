@@ -135,7 +135,7 @@ class EnhancedEntryQualityScorer:
         Returns:
             Quality score in range [0.0, 1.0]
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.0
 
         # Validate required columns
@@ -327,7 +327,7 @@ class EnhancedEntryQualityScorer:
         Expected Utility Theory scoring: U = E[Return] - (λ/2) * Var[Return]
         Incorporates risk aversion parameter.
         """
-        if future_data.empty or len(future_data) < 2:
+        if len(future_data) == 0 or len(future_data) < 2:
             return 0.0
 
         entry_price = entry_point['close']
@@ -380,7 +380,7 @@ class EnhancedEntryQualityScorer:
         Uses percentile-based movements for robustness.
         All calculations in decimal form (0.005 = 0.5%).
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.0
 
         entry_price = entry_point['close']
@@ -419,7 +419,7 @@ class EnhancedEntryQualityScorer:
         Timing score: measures how quickly price moves favorably after entry.
         Faster favorable movement = better timing.
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.0
 
         entry_price = float(entry_point['close'])
@@ -456,7 +456,7 @@ class EnhancedEntryQualityScorer:
         - vol=0.020 (2.0%) → score≈0.50
         - vol=0.100 (10%) → score≈0.03
         """
-        if future_data.empty or len(future_data) < 2:
+        if len(future_data) == 0 or len(future_data) < 2:
             return 0.5
 
         # Calculate realized volatility (as decimal)
@@ -482,7 +482,7 @@ class EnhancedEntryQualityScorer:
         Volume quality: moderate volume (1-1.5x average) with increasing trend is optimal.
         Uses softer slope to avoid saturation at extremes.
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.5
 
         entry_volume = entry_point['volume']
@@ -551,7 +551,7 @@ class EnhancedEntryQualityScorer:
         """
         Market microstructure quality: tight spreads, low gaps (from prior close), consistent volume.
         """
-        if future_data.empty:
+        if len(future_data) == 0:
             return 0.5
 
         # 1. Effective spread (HL range)

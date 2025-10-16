@@ -149,7 +149,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Get market data
             tprint("📊 [HYBRID_NAS_TAS] Loading market data", color="blue")
             market_data = await self._load_market_data(data, symbol)
-            if market_data is None or market_data.empty:
+            if market_data is None or market_len(data) == 0:
                 tprint(f"❌ [HYBRID_NAS_TAS] No market data available for symbol: {symbol}", color="red", bold=True)
                 raise ValueError(f"No market data available for hybrid regime discovery for symbol: {symbol}")
             tprint(f"✅ [HYBRID_NAS_TAS] Market data loaded: {len(market_data)} rows", color="green")
@@ -946,7 +946,7 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     async def _load_market_data(self, data: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime discovery."""
         try:
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            if data is None or (isinstance(data, pd.DataFrame) and len(data) == 0):
                 tprint("⚠️ [HYBRID_NAS_TAS] No market data provided, loading from klines_parquet", color="yellow")
                 self.logger.warning("⚠️ No market data provided, attempting to load from klines_parquet")
 
@@ -977,12 +977,12 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tprint("🔍 [HYBRID_NAS_TAS] Attempting to load processed data", color="blue")
                 market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="processed")
 
-                if market_data is None or market_data.empty:
+                if market_data is None or market_len(data) == 0:
                     # Fallback to raw data
                     tprint("⚠️ [HYBRID_NAS_TAS] Processed data empty, falling back to raw data", color="yellow")
                     market_data = manager.read_data(symbol, timeframe, start_date=start_date, end_date=end_date, data_type="raw")
 
-                if market_data is None or market_data.empty:
+                if market_data is None or market_len(data) == 0:
                     tprint(f"❌ [HYBRID_NAS_TAS] No data available for {symbol} {timeframe}", color="red", bold=True)
                     self.logger.error(f"❌ No data available for {symbol} {timeframe}")
                     return None

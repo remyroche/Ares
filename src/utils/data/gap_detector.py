@@ -54,7 +54,7 @@ class GapDetector:
             # Load all data for the symbol
             all_data = self._load_all_data(symbol, interval)
 
-            if all_data is None or all_data.empty:
+            if all_data is None or len(all_data) == 0:
                 self.logger.warning(f"No data found for {symbol}")
                 return []
 
@@ -159,7 +159,7 @@ class GapDetector:
             for file_path in sorted(files):
                 try:
                     df = self.parquet_utils.safe_read_parquet(str(file_path))
-                    if df is not None and not df.empty:
+                    if df is not None and not len(df) == 0:
                         dataframes.append(df)
                 except Exception as e:
                     self.logger.warning(f"Could not read {file_path}: {e}")

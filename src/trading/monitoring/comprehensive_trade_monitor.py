@@ -476,7 +476,7 @@ class ComprehensiveTradeMonitor:
     ):
         """Extract market context from market data."""
         try:
-            if market_data.empty:
+            if len(market_data) == 0:
                 return
 
             latest_data = market_data.iloc[-1]
@@ -551,7 +551,7 @@ class ComprehensiveTradeMonitor:
     ):
         """Generate SHAP and LIME explanations for the trade decision."""
         try:
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 tprint_warning("⚠️ No market data available for explanations")
                 return
 
@@ -600,7 +600,7 @@ class ComprehensiveTradeMonitor:
     def _prepare_features_for_explanation(self, market_data: pd.DataFrame) -> Dict[str, float]:
         """Prepare features for SHAP/LIME explanation."""
         try:
-            if market_data.empty:
+            if len(market_data) == 0:
                 return {}
 
             latest_data = market_data.iloc[-1]

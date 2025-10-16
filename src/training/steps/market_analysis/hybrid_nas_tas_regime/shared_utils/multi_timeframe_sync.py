@@ -266,7 +266,7 @@ class MultiTimeframeSynchronizer:
                     data_type="processed"
                 )
 
-                if data is not None and not data.empty:
+                if data is not None and not len(data) == 0:
                     self.logger.info(f"✅ Loaded {timeframe} data: {data.shape}")
                     return data
                 else:

@@ -660,7 +660,7 @@ class TradingOrchestrator:
                 return None
 
             market_data = self.data_collector.get_processed_data_df(n=200)
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 return None
 
             feature_bundle = prepare_trailing_feature_bundle(market_data)

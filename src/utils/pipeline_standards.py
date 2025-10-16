@@ -474,7 +474,7 @@ class PipelineStandards:
         Returns:
             Quality score between 0 and 1
         """
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             return 0.0
         scores = []
         completeness = 1 - data.isnull().sum().sum() / (len(data) * len(data.columns))

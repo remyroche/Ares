@@ -464,8 +464,8 @@ class FeatureEngineeringPipeline:
                     if result:
                         self.logger.info(f"🔍 Generator {generator.config.name} result has data: {hasattr(result, 'data')}")
                         if hasattr(result, 'data'):
-                            self.logger.info(f"🔍 Generator {generator.config.name} data shape: {result.data.shape if not result.data.empty else 'empty'}")
-                    if result and hasattr(result, 'data') and not result.data.empty:
+                            self.logger.info(f"🔍 Generator {generator.config.name} data shape: {result.data.shape if not len(result.data) == 0 else 'empty'}")
+                    if result and hasattr(result, 'data') and not len(result.data) == 0:
                         # Convert Series to DataFrame and add features with category prefix to avoid naming conflicts
                         feature_name = f"{category.value}_{result.name}"
                         category_features = pd.DataFrame({feature_name: result.data})

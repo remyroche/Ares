@@ -438,7 +438,7 @@ class FeatureGenerator(ABC):
         if not isinstance(data, pd.DataFrame):
             fast_fail_error(f"Data must be DataFrame, got {type(data)}", DataValidationError)
 
-        if data.empty:
+        if len(data) == 0:
             fast_fail_error("DataFrame is empty", DataValidationError)
 
         # Allow state injection through kwargs for compatibility
@@ -563,7 +563,7 @@ class FeatureGenerator(ABC):
 
     def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
         """Update default state information after successful generation."""
-        if data.empty:
+        if len(data) == 0:
             return
 
         last_row = data.iloc[-1]
@@ -572,7 +572,7 @@ class FeatureGenerator(ABC):
             'last_row': last_row.to_dict()
         }
 
-        if not feature_data.empty:
+        if not feature_len(data) == 0:
             state_update['last_feature_value'] = feature_data.iloc[-1]
 
         self.update_state(state_update)
@@ -658,7 +658,7 @@ class FeatureGenerator(ABC):
         """
         tprint(f"Validating output for {self.config.name}", level="debug")
 
-        if feature_data.empty:
+        if feature_len(data) == 0:
             fast_fail_error("Generated feature is empty", DataValidationError)
 
         # Check for all NaN values

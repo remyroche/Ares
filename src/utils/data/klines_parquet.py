@@ -81,9 +81,9 @@ class KlinesParquetManager:
                     mask = timestamp_col >= start_date
                     filtered_df = df[mask]
 
-                    tprint(f"📅 Fallback: Using last {x_days} days from {max_date.date()}")
-                    tprint(f"📅 Fallback date range: {start_date.date()} to {max_date.date()}")
-                    tprint(f"📅 Fallback result: {len(filtered_df)} records")
+                    # Only log successful fallback data retrieval
+                    max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
+                    self.logger.info(f"✅ Fallback data loaded: last {x_days} days from {max_date_str} -> {len(filtered_df)} records")
 
                     return filtered_df
 
@@ -106,9 +106,23 @@ class KlinesParquetManager:
         if df is None or df.empty:
             return None
 
+        # Convert string dates to datetime objects if needed
+        if start_date and isinstance(start_date, str):
+            try:
+                start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            except:
+                start_date = None
+        
+        if end_date and isinstance(end_date, str):
+            try:
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            except:
+                end_date = None
+
         # Apply date filtering if specified
         if start_date is not None or end_date is not None:
-            self.logger.info(f"📅 Applying date filter to dataframe: {start_date} to {end_date}")
+            # Only log the date filter application at debug level to reduce verbosity
+            self.logger.debug(f"📅 Applying date filter to dataframe: {start_date} to {end_date}")
 
             # Convert timestamps to datetime for proper filtering
             timestamp_col = None
@@ -167,10 +181,14 @@ class KlinesParquetManager:
                 df = df[mask]
 
                 if len(df) == 0:
-                    self.logger.warning(f"⚠️ No data found in date range {start_date} to {end_date}")
+                    # Only log at debug level to reduce verbosity
+                    self.logger.debug(f"⚠️ No data found in date range {start_date} to {end_date}")
                     return None
 
-                self.logger.info(f"📅 Date filtering result: {len(df)} records")
+                # Only log successful filtering results
+                start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
+                end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
+                self.logger.info(f"📅 Data filtered: {len(df)} records from {start_date_str} to {end_date_str}")
             else:
                 self.logger.warning("⚠️ Could not find timestamp column for date filtering or timestamp column is empty")
                 return None
@@ -353,6 +371,18 @@ class KlinesParquetManager:
             DataFrame with klines data or None if not found
         """
         try:
+            # Convert string dates to datetime objects if needed
+            if start_date and isinstance(start_date, str):
+                try:
+                    start_date = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                except:
+                    start_date = None
+            
+            if end_date and isinstance(end_date, str):
+                try:
+                    end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                except:
+                    end_date = None
             # Auto-detect data type: use processed data for timeframes > 1m
             if data_type == "raw" and interval in ["1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w"]:
                 self.logger.info(f"🔄 Auto-switching to processed data for {interval} timeframe")
@@ -373,20 +403,12 @@ class KlinesParquetManager:
             # Find matching files - be more flexible with pattern matching
             files = list(data_dir.glob(f"*{symbol.lower()}_{interval}*"))
 
-            self.logger.info(f"🔍 DEBUG: Searching in {data_dir}")
-            self.logger.info(f"🔍 DEBUG: Using pattern: *{symbol.lower()}_{interval}*")
-            self.logger.info(f"🔍 DEBUG: Found {len(files)} files: {[f.name for f in files]}")
-
             if not files:
                 self.logger.warning(f"⚠️ No files found for {symbol} {interval}")
-                # List all files in the directory for debugging
-                all_files = list(data_dir.glob("*"))
-                self.logger.warning(f"🔍 DEBUG: All files in {data_dir}: {[f.name for f in all_files]}")
                 return None
 
             # Load and combine data
             dataframes = []
-            tprint(f"🔍 Found {len(files)} files for {symbol} {interval}")
 
             # Prioritize consolidated files over partitioned directories
             consolidated_files = [f for f in files if f.is_file() and 'consolidated' in f.name.lower()]
@@ -397,36 +419,32 @@ class KlinesParquetManager:
                 consolidated_in_dir = list(dir_path.glob('*consolidated*.parquet'))
                 if consolidated_in_dir:
                     consolidated_files.extend(consolidated_in_dir)
-                    self.logger.info(f"🔍 Found consolidated file in directory: {consolidated_in_dir[0].name}")
-
-            tprint(f"🔍 Found {len(consolidated_files)} consolidated files and {len(partitioned_dirs)} partitioned directories")
 
             # Determine data loading strategy
             use_consolidated_only = False
 
             # First try consolidated files - if found, use ONLY consolidated files
             if consolidated_files:
-                tprint(f"🔍 Found consolidated files, attempting to load...")
                 for file_path in sorted(consolidated_files):
                     try:
                         df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
                         if df is not None and not df.empty:
-                            self.logger.info(f"🔍 DEBUG: Loaded consolidated file with {len(df)} total records")
-                            self.logger.info(f"🔍 DEBUG: Consolidated file date range: {df.index.min()} to {df.index.max()}")
-
                             # Apply date filtering to consolidated file if dates are specified
                             if start_date is not None or end_date is not None:
                                 df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
                                 if df is not None and not df.empty:
-                                    self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records (date filtered)")
+                                    # Only log successful data retrieval with timeframe and period info
+                                    start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
+                                    end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
+                                    period_info = f"from {start_date_str} to {end_date_str}" if start_date and end_date else "full period"
+                                    self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(df)} records")
                                     dataframes.append(df)
                                     use_consolidated_only = True  # Mark to use only consolidated data
                                     break  # Use only the first consolidated file
-                                else:
-                                    self.logger.info(f"📅 Consolidated file filtered out by date range")
                             else:
+                                # Only log successful data retrieval with timeframe info
+                                self.logger.info(f"✅ Data loaded: {symbol} {interval} full period -> {len(df)} records")
                                 dataframes.append(df)
-                                self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records")
                                 use_consolidated_only = True  # Mark to use only consolidated data
                                 break  # Use only the first consolidated file
                     except Exception as e:
@@ -434,12 +452,9 @@ class KlinesParquetManager:
 
             # Load partitioned data only if we haven't loaded consolidated data
             if not use_consolidated_only and partitioned_dirs:
-                tprint(f"🔍 Loading partitioned data")
-
                 # Filter partitioned directories by date range if dates are specified
                 filtered_partitioned_dirs = []
                 if start_date is not None or end_date is not None:
-                    tprint(f"📅 Filtering partitioned directories by date range: {start_date} to {end_date}")
                     for file_path in sorted(partitioned_dirs):
                         # Extract year and month from path (format: year=YYYY/month=MM)
                         path_str = str(file_path)
@@ -458,21 +473,30 @@ class KlinesParquetManager:
                                 partition_end = datetime(year, month + 1, 1) - timedelta(days=1)
 
                             # Check if partition overlaps with requested range
-                            range_start = start_date if start_date else datetime.min
-                            range_end = end_date if end_date else datetime.max
+                            # Convert string dates to datetime objects if needed
+                            if start_date and isinstance(start_date, str):
+                                try:
+                                    range_start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                                except:
+                                    range_start = datetime.min
+                            else:
+                                range_start = start_date if start_date else datetime.min
+                            
+                            if end_date and isinstance(end_date, str):
+                                try:
+                                    range_end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                                except:
+                                    range_end = datetime.max
+                            else:
+                                range_end = end_date if end_date else datetime.max
 
                             if partition_end >= range_start and partition_start <= range_end:
                                 filtered_partitioned_dirs.append(file_path)
-                                self.logger.info(f"📅 Including partition: {year}-{month:02d} ({partition_start.date()} to {partition_end.date()})")
-                            else:
-                                self.logger.info(f"📅 Skipping partition: {year}-{month:02d} (outside range)")
                         else:
                             # If we can't parse the date, include it (fallback)
                             filtered_partitioned_dirs.append(file_path)
                 else:
                     filtered_partitioned_dirs = partitioned_dirs
-
-                tprint(f"📅 Loading {len(filtered_partitioned_dirs)}/{len(partitioned_dirs)} filtered partitions")
 
                 for file_path in sorted(filtered_partitioned_dirs):
                     try:
@@ -515,22 +539,14 @@ class KlinesParquetManager:
                 return None
 
             # Combine all dataframes
-            tprint(f"🔧 Combining {len(dataframes)} dataframes")
             if dataframes:
-                self.logger.info(f"🔧 First dataframe shape: {dataframes[0].shape}")
-                self.logger.info(f"🔧 First dataframe columns: {list(dataframes[0].columns)}")
-                # Log details about each dataframe being combined
-                total_records_before_combine = 0
-                for idx, df in enumerate(dataframes):
-                    df_records = len(df)
-                    total_records_before_combine += df_records
-                    self.logger.info(
-                        f"   📦 DataFrame {idx+1}/{len(dataframes)}: {df_records:,} records, "
-                        f"index range: {df.index.min()} to {df.index.max()}"
-                    )
-                self.logger.info(f"   📊 Total records before concat: {total_records_before_combine:,}")
+                # Only log successful data combination with summary info
+                total_records_before_combine = sum(len(df) for df in dataframes)
+                start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
+                end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
+                period_info = f"from {start_date_str} to {end_date_str}" if start_date and end_date else "full period"
+                self.logger.info(f"✅ Combining {len(dataframes)} dataframes for {symbol} {interval} {period_info} -> {total_records_before_combine} records")
             combined_df = pd.concat(dataframes, ignore_index=False)
-            tprint(f"🔧 After concat: {len(combined_df)} records")
 
             # Normalize index types before sorting to prevent Timestamp vs int comparison errors
             if not combined_df.empty and len(combined_df.index) > 0:
@@ -553,7 +569,6 @@ class KlinesParquetManager:
                         self.logger.warning(f"Could not convert index to numeric either: {e2}")
 
             combined_df = combined_df.sort_index()
-            tprint(f"🔧 After sorting: {len(combined_df)} records")
 
             # Remove true duplicates - with detailed logging
             records_before_dedup = len(combined_df)
@@ -647,12 +662,9 @@ class KlinesParquetManager:
                 num_duplicates = 0
 
             combined_df = combined_df[~duplicate_mask]
-            tprint(f"🔧 After duplicate removal: {len(combined_df)} records (removed {num_duplicates:,})")
 
             # Apply date filtering if specified
             if start_date is not None or end_date is not None:
-                tprint(f"🔧 Date filtering requested, determining available data range")
-                tprint(f"🔧 Before date filtering: {len(combined_df)} records")
 
                 # Convert timestamps to datetime for proper filtering
                 timestamp_col = None
@@ -760,16 +772,21 @@ class KlinesParquetManager:
                         self.logger.warning(f"⚠️ No valid timestamps found in data")
                         return None
 
-                    tprint(f"📅 Available data range: {min_date.date()} to {max_date.date()}")
+                    min_date_str = min_date.date() if hasattr(min_date, 'date') else str(min_date)
+                    max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
+                    tprint(f"📅 Available data range: {min_date_str} to {max_date_str}")
 
                     # If the requested date range doesn't match available data, use last 20 days (light mode default)
                     if start_date is not None:
                         # Convert string to datetime if needed
                         if isinstance(start_date, str):
                             start_date = pd.to_datetime(start_date)
+                        start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
+                        max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
+                        min_date_str = min_date.date() if hasattr(min_date, 'date') else str(min_date)
                         if start_date.date() > max_date.date():
-                            tprint(f"⚠️ Requested start_date {start_date.date()} is beyond available data (max: {max_date.date()})")
-                            tprint(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                            tprint(f"⚠️ Requested start_date {start_date_str} is beyond available data (max: {max_date_str})")
+                            tprint(f"📅 Using all available data from {min_date_str} to {max_date_str}")
                             start_date = min_date
                             end_date = max_date
 
@@ -777,26 +794,29 @@ class KlinesParquetManager:
                         # Convert string to datetime if needed
                         if isinstance(end_date, str):
                             end_date = pd.to_datetime(end_date)
+                        end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
                         if end_date.date() > max_date.date():
-                            tprint(f"⚠️ Requested end_date {end_date.date()} is beyond available data (max: {max_date.date()})")
-                            tprint(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                            tprint(f"⚠️ Requested end_date {end_date_str} is beyond available data (max: {max_date_str})")
+                            tprint(f"📅 Using all available data from {min_date_str} to {max_date_str}")
                             start_date = min_date
                             end_date = max_date
 
                     if start_date is not None and end_date is not None and start_date.date() > end_date.date():
-                        tprint(f"⚠️ Invalid date range: start_date {start_date.date()} > end_date {end_date.date()}")
-                        tprint(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                        tprint(f"⚠️ Invalid date range: start_date {start_date_str} > end_date {end_date_str}")
+                        tprint(f"📅 Using all available data from {min_date_str} to {max_date_str}")
                         start_date = min_date
                         end_date = max_date
 
-                    tprint(f"📅 Final date range: {start_date.date()} to {end_date.date()}")
+                    final_start_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
+                    final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
+                    tprint(f"📅 Final date range: {final_start_str} to {final_end_str}")
 
                     # Apply the date filtering
                     mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
                     combined_df = combined_df[mask]
 
                     if len(combined_df) == 0:
-                        tprint(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
+                        tprint(f"⚠️ No data found in date range {final_start_str} to {final_end_str}")
                         tprint("🔄 Applying fallback: Using last 20 days of available data")
                         # Use the new fallback method to get last x days of available data
                         combined_df = self._get_last_x_days_fallback(combined_df, x_days=20)
@@ -828,11 +848,11 @@ class KlinesParquetManager:
                         self.logger.warning(f"Could not apply date filtering: {e}")
                         # Continue without filtering if conversion fails
 
-                tprint(f"🔧 After date filtering: {len(combined_df)} records")
-            else:
-                tprint(f"🔧 No date filtering applied")
-
-            tprint(f"📊 Loaded {len(combined_df)} records for {symbol} {interval}")
+            # Only log final successful data retrieval with timeframe and period info
+            final_start_str = start_date.date() if hasattr(start_date, 'date') else str(start_date) if start_date else None
+            final_end_str = end_date.date() if hasattr(end_date, 'date') else str(end_date) if end_date else None
+            period_info = f"from {final_start_str} to {final_end_str}" if start_date and end_date else "full period"
+            self.logger.info(f"✅ Data loaded: {symbol} {interval} {period_info} -> {len(combined_df)} records")
             return combined_df
 
         except Exception as e:
@@ -978,13 +998,13 @@ class KlinesParquetManager:
             True if successful, False otherwise
         """
         try:
-            if new_data is None or new_data.empty:
+            if new_data is None or len(new_data) == 0:
                 return True
 
             # Read existing data
             existing_data = self.read_data(symbol, interval, data_type=data_type)
 
-            if existing_data is None or existing_data.empty:
+            if existing_data is None or len(existing_data) == 0:
                 # No existing data, just write new data
                 return self.write_data(new_data, symbol, interval, data_type, overwrite=True)
 
@@ -1164,20 +1184,19 @@ class KlinesParquetManager:
             # First, get all available data without date filtering
             all_data = self.read_data(symbol, interval, data_type=data_type, columns=columns)
 
-            if all_data is None or all_data.empty:
+            if all_data is None or len(all_data) == 0:
                 self.logger.warning(f"No data available for {symbol} {interval}")
                 return None
 
             # Apply the last x days fallback
             last_x_days_data = self._get_last_x_days_fallback(all_data, x_days)
 
-            if last_x_days_data is not None and not last_x_days_data.empty:
-                tprint(f"✅ Successfully loaded last {x_days} days of data for {symbol} {interval}")
-                tprint(f"📊 Data range: {last_x_days_data.index.min()} to {last_x_days_data.index.max()}")
-                tprint(f"📈 Total records: {len(last_x_days_data)}")
+            if last_x_days_data is not None and not len(last_x_days_data) == 0:
+                # Only log successful data retrieval with timeframe and period info
+                self.logger.info(f"✅ Data loaded: {symbol} {interval} last {x_days} days -> {len(last_x_days_data)} records")
                 return last_x_days_data
             else:
-                tprint(f"❌ Could not get last {x_days} days of data for {symbol} {interval}")
+                self.logger.warning(f"❌ Could not get last {x_days} days of data for {symbol} {interval}")
                 return None
 
         except Exception as e:
@@ -1205,7 +1224,7 @@ class KlinesParquetManager:
             # Read a sample of data for detailed statistics
             sample_data = self.read_data(symbol, interval, data_type=data_type)
 
-            if sample_data is None or sample_data.empty:
+            if sample_data is None or len(sample_data) == 0:
                 return info
 
             # Calculate additional statistics

@@ -228,7 +228,7 @@ class EnhancedDataOperations:
                            features: List[str] = None) -> pd.DataFrame:
         """Process market data with enhanced feature engineering."""
         try:
-            if data is None or data.empty:
+            if data is None or len(data) == 0:
                 return data
 
             processed_data = data.copy()

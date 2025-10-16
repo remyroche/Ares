@@ -154,7 +154,7 @@ class DataNormalizer:
             self.logger.info(f"   Method: {self.config.method.value}")
 
             # Validate input data
-            if data.empty:
+            if len(data) == 0:
                 raise ValueError("Input data is empty")
 
             # Select target columns

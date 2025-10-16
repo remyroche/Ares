@@ -879,7 +879,7 @@ class FeatureBank:
         tprint("🚀 Starting feature generation...")
         self.logger.info(f"🎯 Starting feature generation...")
 
-        if data.empty:
+        if len(data) == 0:
             tprint("⚠️ Empty data provided")
             self.logger.warning("Empty data provided")
             return pd.DataFrame()

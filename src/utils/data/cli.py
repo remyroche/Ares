@@ -740,7 +740,7 @@ def comprehensive_data_checker(args):
             # Load and validate data
             try:
                 data = manager.read_data(args.symbol, interval, data_type="processed")
-                if data is None or data.empty:
+                if data is None or len(data) == 0:
                     error_msg = f"Empty data for {args.symbol} {interval}"
                     validation_results["errors"].append(error_msg)
                     validation_results["overall_success"] = False
@@ -799,7 +799,7 @@ def comprehensive_data_checker(args):
                 # Check for NaN values
                 nan_counts = data.isnull().sum()
                 nan_columns = nan_counts[nan_counts > 0]
-                if not nan_columns.empty:
+                if not len(nan_columns) == 0:
                     for col, count in nan_columns.items():
                         pct = (count / len(data)) * 100
                         if pct > 1:  # More than 1% NaN
@@ -810,7 +810,7 @@ def comprehensive_data_checker(args):
                 # Check for infinite values
                 inf_counts = np.isinf(data.select_dtypes(include=[np.number])).sum()
                 inf_columns = inf_counts[inf_counts > 0]
-                if not inf_columns.empty:
+                if not len(inf_columns) == 0:
                     for col, count in inf_columns.items():
                         content_issues.append(f"Column {col}: {count} infinite values")
 

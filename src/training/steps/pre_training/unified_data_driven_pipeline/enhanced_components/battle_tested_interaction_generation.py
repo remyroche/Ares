@@ -239,7 +239,7 @@ class BattleTestedInteractionGenerator:
                                   feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
         """Validate and prepare data for interaction generation."""
         # Validate inputs
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             raise ValueError("Input data is None or empty")
         if targets is None or targets.empty:
             raise ValueError("Targets is None or empty")
@@ -374,7 +374,7 @@ class BattleTestedInteractionGenerator:
                 # Generate interaction data
                 interaction_data = self._apply_template(data, template)
                 
-                if interaction_data is None or interaction_data.empty:
+                if interaction_data is None or len(interaction_data) == 0:
                     continue
                 
                 # Calculate basic metrics

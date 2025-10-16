@@ -333,7 +333,7 @@ class StandardizedLabelingInterface:
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
-                n_samples=len(labeled_data) if not labeled_data.empty else 0,
+                n_samples=len(labeled_data) if not len(labeled_data) == 0 else 0,
                 n_targets=len(target_columns),
                 n_horizons=len(horizon_weights)
             )

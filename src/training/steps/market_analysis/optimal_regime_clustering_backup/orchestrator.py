@@ -493,7 +493,7 @@ class OptimalRegimeClusteringOrchestrator:
             # Concatenate all dataframes
             combined_data = pd.concat(dfs, ignore_index=True)
 
-            if combined_data.empty:
+            if len(combined_data) == 0:
                 self.logger.warning(f"⚠️ Combined data is empty for {processed_data_path}")
                 return None
 
@@ -944,8 +944,8 @@ class OptimalRegimeClusteringOrchestrator:
                         'has_volume': 'volume' in cluster_data.columns,
                         'has_price': 'close' in cluster_data.columns or 'price' in cluster_data.columns,
                         'date_range': {
-                            'start': str(cluster_data.index.min()) if not cluster_data.empty else None,
-                            'end': str(cluster_data.index.max()) if not cluster_data.empty else None
+                            'start': str(cluster_data.index.min()) if not len(cluster_data) == 0 else None,
+                            'end': str(cluster_data.index.max()) if not len(cluster_data) == 0 else None
                         }
                     }
 

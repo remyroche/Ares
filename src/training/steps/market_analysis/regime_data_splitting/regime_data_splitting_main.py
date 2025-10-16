@@ -1315,7 +1315,7 @@ class RegimeDataSplittingStep:
                             timeframe=timeframe
                         )
 
-                        if cleaned_data is not None and not cleaned_data.empty:
+                        if cleaned_data is not None and not len(cleaned_data) == 0:
                             # Re-assess quality after cleaning
                             cleaned_assessment = quality_scorer.assess_data_quality(
                                 cleaned_data,

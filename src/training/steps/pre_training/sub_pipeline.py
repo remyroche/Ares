@@ -3156,7 +3156,7 @@ class PreTrainingSubPipeline:
             raise ValueError("Market data is missing from multi-horizon labeling result")
 
         labels_df = mh_result.get('labeled_data') if mh_result else None
-        if labels_df is None or (isinstance(labels_df, pd.DataFrame) and labels_df.empty):
+        if labels_df is None or (isinstance(labels_df, pd.DataFrame) and len(labels_df) == 0):
             labels_df = mh_result.get('labels') if mh_result else None
         targets: Dict[str, pd.Series] = {}
         if isinstance(labels_df, pd.DataFrame):
@@ -3221,7 +3221,7 @@ class PreTrainingSubPipeline:
             self.logger.warning(message)
 
         def handle_dataframe(dataset_name: str, df: pd.DataFrame) -> None:
-            if df is None or df.empty:
+            if df is None or len(df) == 0:
                 return
             df_id = id(df)
             if df_id in visited_frames:
@@ -3436,7 +3436,7 @@ class PreTrainingSubPipeline:
                     end_date=config.end_date
                 )
                 
-                if market_data is None or market_data.empty:
+                if market_data is None or len(market_data) == 0:
                     raise ValueError(f"No market data found for {config.symbol} {analyst_timeframe_data}")
 
                 # Add market data to pipeline state
@@ -3582,7 +3582,7 @@ class PreTrainingSubPipeline:
                 self.logger.error(f"❌ Failed to load market data: {e}")
                 raise ValueError(f"Could not load market data for tactician_entry_labeler: {e}") from e
 
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError("Market data is required for tactician_entry_labeler but none was loaded")
 
             component_result = await component.execute(market_data, pipeline_state)
@@ -3763,7 +3763,7 @@ class PreTrainingSubPipeline:
                 self.logger.error(f"❌ Failed to load market data: {e}")
                 raise ValueError(f"Could not load market data for unified_data_driven_pipeline: {e}") from e
 
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError("Market data is required for unified_data_driven_pipeline but none was loaded")
 
 #             # Get labels from previous pipeline steps (analyst_profit_labeler or tactician_entry_labeler)
@@ -4475,7 +4475,7 @@ class PreTrainingSubPipeline:
 #                     pipeline_state=ares_pipeline_state
 #                 )
 #
-#                 if market_data is not None and not market_data.empty:
+#                 if market_data is not None and not len(market_data) == 0:
 #                     tprint_success(f"✅ [SUB_PIPELINE] Loaded {len(market_data)} rows of market data via ares launcher integration")
 #                     tprint_info(f"📊 [SUB_PIPELINE] Data summary:")
 #                     tprint_info(f"   → Shape: {market_data.shape}")

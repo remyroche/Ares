@@ -51,7 +51,7 @@ class SRDetectionComponent(BaseMarketAnalysisComponent):
 
             # Get market data
             market_data = await self._load_market_data(data)
-            if market_data is None or market_data.empty:
+            if market_data is None or len(market_data) == 0:
                 raise ValueError("No market data available for SR detection")
 
             # Get optimized parameters from previous stage

@@ -218,7 +218,7 @@ class EnhancedFinancialMetricsLogger:
             # Get regime data
             regime_data = data[regime_column].dropna()
 
-            if regime_data.empty:
+            if len(regime_data) == 0:
                 validation_errors.append("No valid regime data found")
                 return RegimeValidationResult(
                     is_valid=False,
@@ -489,7 +489,7 @@ class EnhancedFinancialMetricsLogger:
 
     def _validate_data_quality_comprehensive(self, data: pd.DataFrame, warnings: List[str], critical_issues: List[str]) -> float:
         """Comprehensive data quality validation."""
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             critical_issues.append("Data is None or empty")
             return 0.0
 
@@ -645,7 +645,7 @@ class EnhancedFinancialMetricsLogger:
         """Comprehensive feature quality validation."""
         score = 1.0
 
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             return 0.0
 
         # Check feature count
@@ -724,7 +724,7 @@ class EnhancedFinancialMetricsLogger:
         score = 1.0
 
         # Check for required columns based on step
-        if data is not None and not data.empty:
+        if data is not None and not len(data) == 0:
             required_columns = self._get_required_columns_for_step(step_name)
             missing_columns = set(required_columns) - set(data.columns)
             if missing_columns:
@@ -740,7 +740,7 @@ class EnhancedFinancialMetricsLogger:
                 score -= 0.3
 
         # Check for data consistency
-        if data is not None and not data.empty:
+        if data is not None and not len(data) == 0:
             # Check for negative prices (if price columns exist)
             price_columns = [col for col in data.columns if 'price' in col.lower()]
             for col in price_columns:
@@ -752,7 +752,7 @@ class EnhancedFinancialMetricsLogger:
 
     def _detect_empty_running_comprehensive(self, data: pd.DataFrame, warnings: List[str], critical_issues: List[str]) -> bool:
         """Comprehensive empty running detection."""
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             critical_issues.append("Data is None or empty")
             return True
 

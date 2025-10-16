@@ -169,7 +169,7 @@ class AresLauncherDataLoader:
                 columns=columns
             )
 
-            if data is not None and not data.empty:
+            if data is not None and not len(data) == 0:
                 tprint_success(f"✅ [ARES_DATA_LOADER] Loaded {len(data)} records for {symbol} ({interval})")
                 tprint_info(f"📅 [ARES_DATA_LOADER] Data range: {data.index.min().date()} to {data.index.max().date()}")
                 tprint_debug(f"   → Data shape: {data.shape}")
@@ -240,7 +240,7 @@ class AresLauncherDataLoader:
                 columns
             )
 
-            if data is not None and not data.empty:
+            if data is not None and not len(data) == 0:
                 tprint_success(f"✅ Loaded {len(data)} records for {symbol} ({interval})")
                 tprint_info(f"📅 Data range: {data.index.min().date()} to {data.index.max().date()}")
                 return data

@@ -291,7 +291,7 @@ class AnalystModelsTrainingStep:
 
         try:
             # Validate inputs
-            if training_data.empty or not feature_columns or not target_columns:
+            if len(training_data) == 0 or not feature_columns or not target_columns:
                 raise ValueError("Insufficient training data or missing columns")
 
             # Prepare training data
@@ -1192,7 +1192,7 @@ class AnalystModelsTrainingStep:
             feature_set = list(dict.fromkeys(feature_columns))
             dataset = training_data[feature_set + target_columns].dropna(subset=target_columns).copy()
 
-            if dataset.empty:
+            if len(dataset) == 0:
                 raise ValueError("No valid data for NAS training")
 
             dataset = dataset.rename(columns={target_columns[0]: 'target'})
@@ -1319,7 +1319,7 @@ class AnalystModelsTrainingStep:
             feature_set = list(dict.fromkeys(feature_columns))
             dataset = training_data[feature_set + target_columns].dropna(subset=target_columns).copy()
 
-            if dataset.empty:
+            if len(dataset) == 0:
                 raise ValueError("No valid data for TAS training")
 
             dataset = dataset.rename(columns={target_columns[0]: 'target'})
@@ -1679,7 +1679,7 @@ class AnalystModelsTrainingStep:
             feature_set = list(dict.fromkeys(feature_columns))
             dataset = training_data[feature_set + [target_column]].dropna(subset=[target_column]).copy()
 
-            if dataset.empty:
+            if len(dataset) == 0:
                 tprint_warning(f"⚠️ No data available for {model_type.value} ({direction_key}) after cleaning, skipping")
                 continue
 

@@ -847,7 +847,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         try:
             # Check if data is empty
-            if data.empty:
+            if len(data) == 0:
                 tprint("❌ [REGIME_MODELS] Input data is empty", color="red")
                 return False
 
@@ -1187,7 +1187,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         tprint(f"🔧 [REGIME_MODELS] Using generator: {generator.config.name}", color="blue")
                         result = generator.generate(data)
 
-                        if result and hasattr(result, 'data') and not result.data.empty:
+                        if result and hasattr(result, 'data') and not result.len(data) == 0:
                             # Add feature with category prefix
                             feature_name = f"{category.value}_{result.name}"
                             category_features[feature_name] = result.data

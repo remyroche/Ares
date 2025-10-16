@@ -101,7 +101,7 @@ class VectorBTMemoryOptimizer:
         Returns:
             Optimized DataFrame
         """
-        if data.empty:
+        if len(data) == 0:
             return data
 
         optimized_data = data.copy()

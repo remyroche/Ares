@@ -234,7 +234,7 @@ class BattleTestedFeatureSelector:
                                   feature_columns: Optional[List[str]]) -> Tuple[pd.DataFrame, pd.Series, List[str]]:
         """Validate and prepare data for feature selection."""
         # Validate inputs
-        if data is None or data.empty:
+        if data is None or len(data) == 0:
             raise ValueError("Input data is None or empty")
         if targets is None or targets.empty:
             raise ValueError("Targets is None or empty")

@@ -136,7 +136,7 @@ class EnhancedValidator:
             warnings = []
 
             # Check if data is empty
-            if data.empty:
+            if len(data) == 0:
                 issues.append("DataFrame is empty")
 
             # Check for missing values

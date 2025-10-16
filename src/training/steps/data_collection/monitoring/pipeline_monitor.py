@@ -92,18 +92,18 @@ class PipelineMetrics:
 
 class PerformanceMonitor:
     """Monitor system performance metrics."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.metrics: List[MetricData] = []
         self.monitoring = False
         self.monitor_thread: Optional[threading.Thread] = None
-    
+
     def start_monitoring(self, interval: float = 1.0) -> None:
         """Start monitoring system performance."""
         if self.monitoring:
             return
-        
+
         self.monitoring = True
         self.monitor_thread = threading.Thread(
             target = self._monitor_loop,
@@ -112,14 +112,14 @@ class PerformanceMonitor:
         )
         self.monitor_thread.start()
         self.logger.info("Performance monitoring started")
-    
+
     def stop_monitoring(self) -> None:
         """Stop monitoring system performance."""
         self.monitoring = False
         if self.monitor_thread:
             self.monitor_thread.join(timeout = 5.0)
         self.logger.info("Performance monitoring stopped")
-    
+
     def _monitor_loop(self, interval: float) -> None:
         """Main monitoring loop."""
         while self.monitoring:
@@ -130,7 +130,7 @@ class PerformanceMonitor:
             except Exception as e:
                 self.logger.exception(f"Error in monitoring loop: {e}")
                 time.sleep(interval)
-    
+
     def _collect_system_metrics(self) -> None:
         """Collect current system metrics."""
         try:
@@ -143,7 +143,7 @@ class PerformanceMonitor:
                 unit="percent",
                 context={"available": memory.available, "total": memory.total}
             ))
-            
+
             # CPU usage
             cpu_percent = psutil.cpu_percent(interval = 0.1)
             self.metrics.append(MetricData(
@@ -153,7 +153,7 @@ class PerformanceMonitor:
                 unit="percent",
                 context={}
             ))
-            
+
             # Disk usage
             disk = psutil.disk_usage('/')
             self.metrics.append(MetricData(
@@ -163,17 +163,17 @@ class PerformanceMonitor:
                 unit="percent",
                 context={"used": disk.used, "total": disk.total, "free": disk.free}
             ))
-            
+
         except Exception as e:
             self.logger.exception(f"Error collecting system metrics: {e}")
-    
+
     def get_current_metrics(self) -> Dict[str, Any]:
         """Get current system metrics."""
         try:
             memory = psutil.virtual_memory()
             cpu_percent = psutil.cpu_percent(interval = 0.1)
             disk = psutil.disk_usage('/')
-            
+
             return {
                 "memory": {
                     "percent": memory.percent,
@@ -196,7 +196,7 @@ class PerformanceMonitor:
 
 class StepMonitor:
     """Monitor individual pipeline steps."""
-    
+
     def __init__(self, step_name: str):
         self.step_name = step_name
         self.logger = logging.getLogger(f"{__name__}.{step_name}")
@@ -210,48 +210,48 @@ class StepMonitor:
         self.warnings = 0
         self.custom_metrics: Dict[str, Any] = {}
         self.performance_monitor = PerformanceMonitor()
-    
+
     def start_step(self) -> None:
         """Start monitoring a step."""
         self.start_time = time.time()
         self.status = MonitorStatus.RUNNING
         self.performance_monitor.start_monitoring(interval = 0.5)
         self.logger.info(f"Started monitoring step: {self.step_name}")
-    
+
     def end_step(self, status: MonitorStatus = MonitorStatus.COMPLETED) -> None:
         """End monitoring a step."""
         self.end_time = time.time()
         self.status = status
         self.performance_monitor.stop_monitoring()
-        
+
         # Get peak metrics
         current_metrics = self.performance_monitor.get_current_metrics()
         if current_metrics:
             self.memory_peak = current_metrics.get("memory", {}).get("percent", 0.0)
             self.cpu_peak = current_metrics.get("cpu", {}).get("percent", 0.0)
-        
+
         self.logger.info(f"Ended monitoring step: {self.step_name} - Status: {status.value}")
-    
+
     def record_error(self) -> None:
         """Record an error in the step."""
         self.errors += 1
         self.logger.warning(f"Error recorded in step: {self.step_name} (Total: {self.errors})")
-    
+
     def record_warning(self) -> None:
         """Record a warning in the step."""
         self.warnings += 1
         self.logger.info(f"Warning recorded in step: {self.step_name} (Total: {self.warnings})")
-    
+
     def record_data_processed(self, size: int) -> None:
         """Record data processed in the step."""
         self.data_processed += size
         self.logger.debug(f"Data processed in step: {self.step_name} - {size} bytes (Total: {self.data_processed})")
-    
+
     def set_custom_metric(self, name: str, value: Any) -> None:
         """Set a custom metric for the step."""
         self.custom_metrics[name] = value
         self.logger.debug(f"Custom metric set in step: {self.step_name} - {name}: {value}")
-    
+
     def get_step_metrics(self) -> StepMetrics:
         """Get metrics for the step."""
         duration = 0.0
@@ -259,7 +259,7 @@ class StepMonitor:
             duration = self.end_time - self.start_time
         elif self.start_time:
             duration = time.time() - self.start_time
-        
+
         return StepMetrics(
             step_name = self.step_name,
             start_time = format_datetime(get_current_datetime()) if self.start_time else "",
@@ -276,7 +276,7 @@ class StepMonitor:
 
 class PipelineMonitor:
     """Monitor the entire pipeline execution."""
-    
+
     def __init__(self, pipeline_id: str, config: Dict[str, Any]):
         self.pipeline_id = pipeline_id
         self.config = config
@@ -294,10 +294,10 @@ class PipelineMonitor:
         self.total_warnings = 0
         self.custom_metrics: Dict[str, Any] = {}
         self.monitoring_file = Path(config.get('monitoring_file', f'logs/pipeline_monitor_{pipeline_id}.json'))
-        
+
         # Ensure monitoring directory exists
         self.monitoring_file.parent.mkdir(parents = True, exist_ok = True)
-    
+
     def start_pipeline(self, total_steps: int) -> None:
         """Start monitoring the pipeline."""
         self.start_time = time.time()
@@ -305,12 +305,12 @@ class PipelineMonitor:
         self.steps_total = total_steps
         self.steps_completed = 0
         self.logger.info(f"Started monitoring pipeline: {self.pipeline_id} ({total_steps} steps)")
-    
+
     def end_pipeline(self, status: MonitorStatus = MonitorStatus.COMPLETED) -> None:
         """End monitoring the pipeline."""
         self.end_time = time.time()
         self.status = status
-        
+
         # Calculate totals
         for step_monitor in self.step_monitors.values():
             step_metrics = step_monitor.get_step_metrics()
@@ -319,28 +319,28 @@ class PipelineMonitor:
             self.total_data_processed += step_metrics.data_processed
             self.total_errors += step_metrics.errors
             self.total_warnings += step_metrics.warnings
-        
+
         self.logger.info(f"Ended monitoring pipeline: {self.pipeline_id} - Status: {status.value}")
-        
+
         # Save final metrics
         self._save_metrics()
-    
+
     def start_step(self, step_name: str) -> StepMonitor:
         """Start monitoring a step."""
         if step_name not in self.step_monitors:
             self.step_monitors[step_name] = StepMonitor(step_name)
-        
+
         step_monitor = self.step_monitors[step_name]
         step_monitor.start_step()
         return step_monitor
-    
+
     def end_step(self, step_name: str, status: MonitorStatus = MonitorStatus.COMPLETED) -> None:
         """End monitoring a step."""
         if step_name in self.step_monitors:
             self.step_monitors[step_name].end_step(status)
             if status == MonitorStatus.COMPLETED:
                 self.steps_completed += 1
-    
+
     def get_pipeline_metrics(self) -> PipelineMetrics:
         """Get overall pipeline metrics."""
         total_duration = 0.0
@@ -348,9 +348,9 @@ class PipelineMonitor:
             total_duration = self.end_time - self.start_time
         elif self.start_time:
             total_duration = time.time() - self.start_time
-        
+
         step_metrics = [monitor.get_step_metrics() for monitor in self.step_monitors.values()]
-        
+
         return PipelineMetrics(
             pipeline_id = self.pipeline_id,
             start_time = format_datetime(get_current_datetime()) if self.start_time else "",
@@ -367,13 +367,13 @@ class PipelineMonitor:
             step_metrics = step_metrics,
             custom_metrics = self.custom_metrics
         )
-    
+
     def get_progress(self) -> Dict[str, Any]:
         """Get current pipeline progress."""
         progress_percent = 0.0
         if self.steps_total > 0:
             progress_percent = (self.steps_completed / self.steps_total) * 100
-        
+
         return {
             "pipeline_id": self.pipeline_id,
             "status": self.status.value,
@@ -383,25 +383,25 @@ class PipelineMonitor:
             "current_step": self._get_current_step(),
             "estimated_remaining_time": self._estimate_remaining_time()
         }
-    
+
     def _get_current_step(self) -> Optional[str]:
         """Get the currently running step."""
         for step_name, monitor in self.step_monitors.items():
             if monitor.status == MonitorStatus.RUNNING:
                 return step_name
         return None
-    
+
     def _estimate_remaining_time(self) -> Optional[float]:
         """Estimate remaining time based on current progress."""
         if not self.start_time or self.steps_completed == 0:
             return None
-        
+
         elapsed_time = time.time() - self.start_time
         avg_time_per_step = elapsed_time / self.steps_completed
         remaining_steps = self.steps_total - self.steps_completed
-        
+
         return remaining_steps * avg_time_per_step
-    
+
     def _save_metrics(self) -> None:
         """Save pipeline metrics to file."""
         try:
@@ -410,33 +410,33 @@ class PipelineMonitor:
             self.logger.info(f"Pipeline metrics saved to: {self.monitoring_file}")
         except Exception as e:
             self.logger.exception(f"Error saving pipeline metrics: {e}")
-    
+
     def print_progress_report(self) -> None:
         """Print a formatted progress report."""
         progress = self.get_progress()
         metrics = self.get_pipeline_metrics()
-        
+
         tprint("\n" + "="*80)
         tprint("📊 PIPELINE PROGRESS REPORT")
         tprint("="*80)
         tprint(f"Pipeline ID: {progress['pipeline_id']}")
         tprint(f"Status: {progress['status']}")
         tprint(f"Progress: {progress['progress_percent']:.1f}% ({progress['steps_completed']}/{progress['steps_total']} steps)")
-        
+
         if progress['current_step']:
             tprint(f"Current Step: {progress['current_step']}")
-        
+
         if progress['estimated_remaining_time']:
             remaining_minutes = progress['estimated_remaining_time'] / 60
             tprint(f"Estimated Remaining Time: {remaining_minutes:.1f} minutes")
-        
+
         tprint(f"Total Duration: {metrics.total_duration:.1f} seconds")
         tprint(f"Memory Peak: {metrics.total_memory_peak:.1f}%")
         tprint(f"CPU Peak: {metrics.total_cpu_peak:.1f}%")
         tprint(f"Data Processed: {metrics.total_data_processed:,} bytes")
         tprint(f"Errors: {metrics.total_errors}")
         tprint(f"Warnings: {metrics.total_warnings}")
-        
+
         if metrics.step_metrics:
             tprint("\nStep Details:")
             for step in metrics.step_metrics:
@@ -448,41 +448,41 @@ class PipelineMonitor:
                     MonitorStatus.CANCELLED: "⏹️",
                     MonitorStatus.IDLE: "⏳"
                 }.get(step.status, "❓")
-                
+
                 tprint(f"  {status_icon} {step.step_name}: {step.duration:.1f}s | "
                     f"Memory: {step.memory_peak:.1f}% | "
                     f"CPU: {step.cpu_peak:.1f}% | "
                     f"Data: {step.data_processed:,} bytes | "
                     f"Errors: {step.errors} | "
                     f"Warnings: {step.warnings}")
-        
+
         tprint("="*80)
 
 class RealTimeMonitor:
     """Real-time monitoring with live updates."""
-    
+
     def __init__(self, pipeline_monitor: PipelineMonitor):
         self.pipeline_monitor = pipeline_monitor
         self.logger = logging.getLogger(__name__)
         self.monitoring = False
         self.update_interval = 5.0  # seconds
-    
+
     def start_real_time_monitoring(self) -> None:
         """Start real-time monitoring with live updates."""
         self.monitoring = True
         self.logger.info("Real-time monitoring started")
-        
+
         # Print initial report
         self.pipeline_monitor.print_progress_report()
-        
+
         # Start monitoring loop
         asyncio.create_task(self._monitoring_loop())
-    
+
     def stop_real_time_monitoring(self) -> None:
         """Stop real-time monitoring."""
         self.monitoring = False
         self.logger.info("Real-time monitoring stopped")
-    
+
     async def _monitoring_loop(self) -> None:
         """Real-time monitoring loop."""
         while self.monitoring:
@@ -490,7 +490,7 @@ class RealTimeMonitor:
                 # Clear screen and print updated report
                 os.system('clear' if os.name == 'posix' else 'cls')
                 self.pipeline_monitor.print_progress_report()
-                
+
                 await asyncio.sleep(self.update_interval)
             except Exception as e:
                 self.logger.exception(f"Error in real-time monitoring loop: {e}")

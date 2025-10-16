@@ -18,7 +18,7 @@ from .statistical_framework import (
 __all__ = [
     'StatisticalAnalysisFramework',
     'DataCharacteristics',
-    'PatternAnalysis', 
+    'PatternAnalysis',
     'RelationshipAnalysis',
     'StatisticalTest',
     'NormalityTest',

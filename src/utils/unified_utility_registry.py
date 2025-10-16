@@ -102,21 +102,21 @@ class UtilityMetadata:
 
 class UtilityRegistry:
     """Centralized registry for all utility modules."""
-    
+
     def __init__(self):
         self._registry: Dict[str, Any] = {}
         self._metadata: Dict[str, UtilityMetadata] = {}
         self._instances: Dict[str, Any] = {}
         self._lock = threading.RLock()
         self._health_status: Dict[str, Dict[str, Any]] = {}
-        
+
         # Initialize with core utilities
         self._register_core_utilities()
         self._register_ml_common_utilities()
-    
+
     def _register_core_utilities(self):
         """Register core utility functions and classes."""
-        
+
         # Data Operations
         self.register("safe_json_dump", safe_json_dump, UtilityCategory.FILE_IO,
                      description="Safely dump data to JSON with error handling")
@@ -126,7 +126,7 @@ class UtilityRegistry:
                      description="Safely check file existence")
         self.register("ensure_directory", ensure_directory, UtilityCategory.FILE_IO,
                      description="Ensure directory exists, creating if necessary")
-        
+
         # Mathematical Operations
         self.register("safe_divide", safe_divide, UtilityCategory.MATHEMATICAL,
                      description="Safe division with zero protection")
@@ -138,7 +138,7 @@ class UtilityRegistry:
                      description="Safe mean calculation with error handling")
         self.register("safe_std", safe_std, UtilityCategory.MATHEMATICAL,
                      description="Safe standard deviation calculation")
-        
+
         # DataFrame Operations
         self.register("safe_dataframe_operation", safe_dataframe_operation, UtilityCategory.DATA_OPERATIONS,
                      description="Safely perform operations on DataFrames")
@@ -146,7 +146,7 @@ class UtilityRegistry:
                      description="Validate DataFrame column requirements")
         self.register("calculate_data_quality_metrics", calculate_data_quality_metrics, UtilityCategory.VALIDATION,
                      description="Calculate comprehensive data quality metrics")
-        
+
         # Serialization
         self.register("JSONSerializer", JSONSerializer, UtilityCategory.SERIALIZATION,
                      description="JSON serialization utilities")
@@ -154,7 +154,7 @@ class UtilityRegistry:
                      description="Parquet serialization utilities")
         self.register("UniversalSerializer", UniversalSerializer, UtilityCategory.SERIALIZATION,
                      description="Universal serialization with auto-format detection")
-        
+
         # Performance Utilities
         self.register("M1GPUManager", M1GPUManager, UtilityCategory.GPU,
                      description="M1 GPU optimization manager")
@@ -162,7 +162,7 @@ class UtilityRegistry:
                      description="M1 memory optimization utilities")
         self.register("M1CPUOptimizer", M1CPUOptimizer, UtilityCategory.CPU,
                      description="M1 CPU optimization utilities")
-        
+
         # Advanced Data Processing
         self.register("DataFrameValidator", DataFrameValidator, UtilityCategory.VALIDATION,
                      description="Comprehensive DataFrame validation")
@@ -170,17 +170,17 @@ class UtilityRegistry:
                      description="DataFrame cleaning and preprocessing")
         self.register("DataFrameTransformer", DataFrameTransformer, UtilityCategory.DATA_OPERATIONS,
                      description="DataFrame transformation utilities")
-        
+
         # Parquet Utilities
         self.register("ParquetUtils", ParquetUtils, UtilityCategory.FILE_IO,
                      description="Advanced parquet file operations")
-    
-    def register(self, name: str, utility: Any, category: UtilityCategory, 
+
+    def register(self, name: str, utility: Any, category: UtilityCategory,
                 dependencies: Optional[List[str]] = None, **metadata) -> None:
         """Register a utility with metadata."""
         with self._lock:
             self._registry[name] = utility
-            
+
             # Create metadata
             meta = UtilityMetadata(
                 name=name,
@@ -194,30 +194,30 @@ class UtilityRegistry:
                 description=metadata.get('description', '')
             )
             self._metadata[name] = meta
-            
+
             logger.debug(f"✅ Registered utility: {name} ({category.value})")
-    
+
     def get(self, name: str, create_instance: bool = False) -> Any:
         """Get a registered utility."""
         with self._lock:
             if name not in self._registry:
                 raise KeyError(f"Utility '{name}' not found in registry")
-            
+
             utility = self._registry[name]
-            
+
             # Update usage statistics
             if name in self._metadata:
                 self._metadata[name].usage_count += 1
                 self._metadata[name].last_used = time.time()
-            
+
             # Create instance if requested and it's a class
             if create_instance and isinstance(utility, type):
                 if name not in self._instances:
                     self._instances[name] = utility()
                 return self._instances[name]
-            
+
             return utility
-    
+
     def get_by_category(self, category: UtilityCategory) -> Dict[str, Any]:
         """Get all utilities in a category."""
         with self._lock:
@@ -225,12 +225,12 @@ class UtilityRegistry:
                 name: utility for name, utility in self._registry.items()
                 if self._metadata.get(name, {}).category == category
             }
-    
+
     def get_dependencies(self, name: str) -> List[str]:
         """Get dependencies for a utility."""
         with self._lock:
             return self._metadata.get(name, {}).dependencies or []
-    
+
     def get_usage_stats(self) -> Dict[str, Dict[str, Any]]:
         """Get usage statistics for all utilities."""
         with self._lock:
@@ -244,7 +244,7 @@ class UtilityRegistry:
                 }
                 for name, meta in self._metadata.items()
             }
-    
+
     def health_check(self) -> Dict[str, Any]:
         """Perform health check on all utilities."""
         with self._lock:
@@ -254,7 +254,7 @@ class UtilityRegistry:
                 'health_status': 'healthy',
                 'issues': []
             }
-            
+
             # Check each category
             for category in UtilityCategory:
                 category_utils = self.get_by_category(category)
@@ -262,17 +262,17 @@ class UtilityRegistry:
                     'count': len(category_utils),
                     'utilities': list(category_utils.keys())
                 }
-            
+
             # Check for unused utilities
             unused_utilities = [
                 name for name, meta in self._metadata.items()
                 if meta.usage_count == 0
             ]
-            
+
             if unused_utilities:
                 health_report['issues'].append(f"Unused utilities: {unused_utilities}")
                 health_report['health_status'] = 'warning'
-            
+
             return health_report
 
     def _register_ml_common_utilities(self):
@@ -330,45 +330,45 @@ class UtilityRegistry:
 
 class UtilityFactory:
     """Factory for creating utility instances with dependency injection."""
-    
+
     def __init__(self, registry: UtilityRegistry):
         self.registry = registry
         self._instances: Dict[str, Any] = {}
         self._lock = threading.RLock()
-    
+
     def create(self, name: str, config: Optional[Dict[str, Any]] = None) -> Any:
         """Create a utility instance with configuration."""
         with self._lock:
             if name in self._instances:
                 return self._instances[name]
-            
+
             utility_class = self.registry.get(name)
-            
+
             if not isinstance(utility_class, type):
                 return utility_class
-            
+
             # Resolve dependencies
             dependencies = self.registry.get_dependencies(name)
             resolved_deps = {}
-            
+
             for dep_name in dependencies:
                 resolved_deps[dep_name] = self.create(dep_name, config)
-            
+
             # Create instance
             try:
                 if config:
                     instance = utility_class(config, **resolved_deps)
                 else:
                     instance = utility_class(**resolved_deps)
-                
+
                 self._instances[name] = instance
                 logger.debug(f"✅ Created instance: {name}")
                 return instance
-                
+
             except Exception as e:
                 logger.error(f"❌ Failed to create instance {name}: {e}")
                 raise
-    
+
     def get_or_create(self, name: str, config: Optional[Dict[str, Any]] = None) -> Any:
         """Get existing instance or create new one."""
         with self._lock:
@@ -378,24 +378,24 @@ class UtilityFactory:
 
 class CrossUtilityIntegrator:
     """Integrator for cross-utility operations and optimizations."""
-    
+
     def __init__(self, registry: UtilityRegistry, factory: UtilityFactory):
         self.registry = registry
         self.factory = factory
         self._integration_cache: Dict[str, Any] = {}
-    
+
     def create_data_pipeline(self, operations: List[Dict[str, Any]]) -> Callable:
         """Create an optimized data processing pipeline."""
         def pipeline(data: Any) -> Any:
             result = data
-            
+
             for operation in operations:
                 op_name = operation['name']
                 op_params = operation.get('params', {})
-                
+
                 # Get utility
                 utility = self.factory.get_or_create(op_name)
-                
+
                 # Apply operation
                 if callable(utility):
                     result = utility(result, **op_params)
@@ -405,21 +405,21 @@ class CrossUtilityIntegrator:
                     method = getattr(utility, method_name, None)
                     if method:
                         result = method(result, **op_params)
-            
+
             return result
-        
+
         return pipeline
-    
+
     def optimize_memory_usage(self, data_size_mb: float) -> Dict[str, Any]:
         """Optimize memory usage across utilities."""
         memory_optimizer = self.factory.get_or_create("M1MemoryOptimizer")
-        
+
         # Get memory-efficient utilities
         memory_efficient_utils = [
             name for name, meta in self.registry._metadata.items()
             if meta.memory_usage == "low"
         ]
-        
+
         return {
             'recommended_utilities': memory_efficient_utils,
             'chunk_size': memory_optimizer.calculate_optimal_chunk_size(
@@ -427,12 +427,12 @@ class CrossUtilityIntegrator:
             ),
             'should_chunk': memory_optimizer.should_chunk_data(data_size_mb, "general")
         }
-    
+
     def optimize_performance(self, operation_type: str) -> Dict[str, Any]:
         """Optimize performance across utilities."""
         cpu_optimizer = self.factory.get_or_create("M1CPUOptimizer")
         gpu_manager = self.factory.get_or_create("M1GPUManager")
-        
+
         return {
             'optimal_workers': cpu_optimizer.get_optimal_workers_for_task(operation_type),
             'use_gpu': gpu_manager.should_use_gpu(10000, operation_type),

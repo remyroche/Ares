@@ -8,7 +8,6 @@ from .environment import get_environment_settings
 # Get environment settings
 settings = get_environment_settings()
 
-
 def get_trading_config() -> dict[str, Any]:
     """Get the complete trading configuration.
 
@@ -27,7 +26,7 @@ def get_trading_config() -> dict[str, Any]:
         "maker_fee": 0.0002,
         "state_file": "ares_state.json",
         "lookback_years": 4,  # 2 years of historical data
-        
+
         # --- NAS/TAS Enhancement Configuration ---
         "nas_tas_enabled": True,
         "nas_config": {
@@ -224,31 +223,29 @@ def get_trading_config() -> dict[str, Any]:
         },
     }
 
-
 def _get_config_section(section_path: str, default: dict[str, Any] | None = None) -> dict[str, Any]:
     """Generic function to get a configuration section by path.
-    
+
     Args:
         section_path: Dot-separated path to config section (e.g., 'risk_management.position_sizing')
         default: Default value if section not found
-        
+
     Returns:
         dict: Configuration section
     """
     if default is None:
         default = {}
-        
+
     config = get_trading_config()
     sections = section_path.split('.')
-    
+
     for section in sections:
         if isinstance(config, dict):
             config = config.get(section, {})
         else:
             return default
-    
-    return config if isinstance(config, dict) else default
 
+    return config if isinstance(config, dict) else default
 
 def get_exchange_config(exchange_name: str) -> dict[str, Any]:
     """Get configuration for a specific exchange.
@@ -263,7 +260,6 @@ def get_exchange_config(exchange_name: str) -> dict[str, Any]:
     exchanges = _get_config_section("exchanges")
     return exchanges.get(exchange_name.lower(), {})
 
-
 def get_risk_management_config() -> dict[str, Any]:
     """Get risk management configuration.
 
@@ -272,7 +268,6 @@ def get_risk_management_config() -> dict[str, Any]:
 
     """
     return _get_config_section("risk_management")
-
 
 def get_position_sizing_config() -> dict[str, Any]:
     """Get position sizing configuration.
@@ -283,7 +278,6 @@ def get_position_sizing_config() -> dict[str, Any]:
     """
     return _get_config_section("risk_management.position_sizing")
 
-
 def get_stop_loss_config() -> dict[str, Any]:
     """Get stop loss configuration.
 
@@ -292,7 +286,6 @@ def get_stop_loss_config() -> dict[str, Any]:
 
     """
     return _get_config_section("stop_loss")
-
 
 def get_take_profit_config() -> dict[str, Any]:
     """Get take profit configuration.
@@ -303,7 +296,6 @@ def get_take_profit_config() -> dict[str, Any]:
     """
     return _get_config_section("take_profit")
 
-
 def get_time_based_exit_config() -> dict[str, Any]:
     """Get time-based exit configuration.
 
@@ -312,7 +304,6 @@ def get_time_based_exit_config() -> dict[str, Any]:
 
     """
     return _get_config_section("time_based_exit")
-
 
 def get_leverage_sizing_config() -> dict[str, Any]:
     """Get leverage sizing configuration.
@@ -328,7 +319,6 @@ def get_leverage_sizing_config() -> dict[str, Any]:
         "default_leverage": 3
     })
 
-
 def get_position_closing_config() -> dict[str, Any]:
     """Get position closing configuration.
 
@@ -343,7 +333,6 @@ def get_position_closing_config() -> dict[str, Any]:
         "trailing_stop_enabled": False
     })
 
-
 def get_position_division_config() -> dict[str, Any]:
     """Get position division configuration.
 
@@ -356,7 +345,6 @@ def get_position_division_config() -> dict[str, Any]:
         "max_divisions": 3,
         "division_interval_pct": 0.02
     })
-
 
 def get_position_monitoring_config() -> dict[str, Any]:
     """Get position monitoring configuration.

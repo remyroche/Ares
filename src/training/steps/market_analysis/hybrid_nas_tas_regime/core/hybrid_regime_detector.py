@@ -23,7 +23,7 @@ warnings.filterwarnings('ignore')
 # Import tprint for enhanced logging
 try:
     from src.utils.tprint import (
-        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
         tprint_success, tprint_progress, tprint_performance, tprint_timer
     )
     TPRINT_AVAILABLE = True
@@ -92,7 +92,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ class HybridNASTASRegimeDetector:
         self.logger.info(f"   Momentum Integration: {config.clustering_config.get('momentum_integration', True)}")
         self.logger.info(f"   Volume Integration: {config.clustering_config.get('volume_integration', True)}")
         self.logger.info(f"   Position-Aware Analysis: ✅ Enabled")
-        
+
         tprint("✅ HybridNASTASRegimeDetector initialization complete", color="green")
         tprint(f"⚙️ TAS Weight: {config.tas_config.get('base_weight', 0.4)}, NAS Weight: {config.nas_config.get('base_weight', 0.6)}", color="cyan")
 
@@ -329,7 +329,7 @@ class HybridNASTASRegimeDetector:
             self.logger.info(f"   Execution time: {execution_time:.2f}s")
             self.logger.info(f"   Average economic significance: {np.mean(economic_scores):.3f}")
             self.logger.info(f"   Average financial relevance: {np.mean(financial_scores):.3f}")
-            
+
             tprint("✅ Hybrid regime detection completed successfully", color="green")
             tprint(f"⏱️ Execution time: {execution_time:.2f}s", color="cyan")
             tprint(f"📊 Avg economic significance: {np.mean(economic_scores):.3f}, Avg financial relevance: {np.mean(financial_scores):.3f}", color="cyan")
@@ -367,7 +367,7 @@ class HybridNASTASRegimeDetector:
         try:
             tprint(f"🔧 [HYBRID_NAS_TAS] Preprocessing market data: {market_data.shape if hasattr(market_data, 'shape') else len(market_data)} points", color="cyan")
             tprint_debug(f"📊 [HYBRID_NAS_TAS] Input data type: {type(market_data)}")
-            
+
             if isinstance(market_data, np.ndarray):
                 tprint("🔄 [HYBRID_NAS_TAS] Converting numpy array to DataFrame", color="blue")
                 # Convert numpy array to DataFrame with default columns
@@ -395,10 +395,10 @@ class HybridNASTASRegimeDetector:
                     else:
                         missing_columns.append(col)
                         tprint_error(f"❌ [HYBRID_NAS_TAS] Required column '{col}' not found in market data")
-            
+
             if missing_columns:
                 raise ValueError(f"Required columns missing: {missing_columns}")
-            
+
             tprint("✅ [HYBRID_NAS_TAS] All required columns validated", color="green")
 
             # Add timestamps if provided
@@ -419,7 +419,7 @@ class HybridNASTASRegimeDetector:
             initial_rows = len(market_data)
             market_data = market_data.dropna()
             tprint(f"📊 [HYBRID_NAS_TAS] After NaN removal: {len(market_data)} rows (removed {initial_rows - len(market_data)})", color="cyan")
-            
+
             market_data = market_data.replace([np.inf, -np.inf], np.nan).dropna()
             final_rows = len(market_data)
             tprint(f"📊 [HYBRID_NAS_TAS] After infinite value removal: {final_rows} rows (removed {initial_rows - final_rows})", color="cyan")
@@ -444,7 +444,7 @@ class HybridNASTASRegimeDetector:
             # Use TAS integration component
             tprint("🔧 [HYBRID_NAS_TAS] Using TAS integration component...")
             tprint_debug(f"🔧 [HYBRID_NAS_TAS] TAS config: {self.config.tas_config}")
-            
+
             features, results = self.tas_integration.extract_features(market_data)
             tprint(f"✅ [HYBRID_NAS_TAS] TAS integration completed: {features.shape}")
             tprint_debug(f"📈 [HYBRID_NAS_TAS] TAS results keys: {list(results.keys()) if isinstance(results, dict) else 'Not a dict'}")
@@ -473,7 +473,7 @@ class HybridNASTASRegimeDetector:
             # Use NAS integration component
             tprint("🔧 [HYBRID_NAS_TAS] Using NAS integration component...")
             tprint_debug(f"🔧 [HYBRID_NAS_TAS] NAS config: {self.config.nas_config}")
-            
+
             features, results = self.nas_integration.extract_features(market_data)
             tprint(f"✅ [HYBRID_NAS_TAS] NAS integration completed: {features.shape}")
             tprint_debug(f"📈 [HYBRID_NAS_TAS] NAS results keys: {list(results.keys()) if isinstance(results, dict) else 'Not a dict'}")
@@ -515,7 +515,7 @@ class HybridNASTASRegimeDetector:
             # Strategy-specific combination
             strategy = self.config.combination_strategy
             tprint(f"🎯 [HYBRID_NAS_TAS] Using combination strategy: {strategy.value}", color="magenta")
-            
+
             if strategy == RegimeCombinationStrategy.WEIGHTED_AVERAGE:
                 tprint("📊 [HYBRID_NAS_TAS] Using weighted average combination", color="blue")
                 combined_features = tas_weight * tas_features + nas_weight * nas_features
@@ -721,7 +721,7 @@ class HybridNASTASRegimeDetector:
             unique_clusters = len(set(labels))
             self.logger.info(f"   Clustering completed with algorithm: {algorithm}")
             self.logger.info(f"   Silhouette score: {metrics.get('silhouette_score', 0):.3f}")
-            
+
             tprint_success(f"✅ [HYBRID_NAS_TAS] Clustering completed: {algorithm}, {unique_clusters} clusters, silhouette: {metrics.get('silhouette_score', 0):.3f}")
             tprint_performance(f"⚡ [HYBRID_NAS_TAS] Clustering performance: {len(labels)} samples clustered into {unique_clusters} regimes")
             return labels, metrics
@@ -742,22 +742,22 @@ class HybridNASTASRegimeDetector:
         """Calculate probability of each data point belonging to each regime."""
         try:
             tprint("📊 Calculating regime probabilities using GMM", color="blue")
-            
+
             # Use Gaussian Mixture Model to estimate probabilities
             gmm = GaussianMixture(n_components=self.config.n_regimes, random_state=42)
             gmm.fit(features)
 
             probabilities = gmm.predict_proba(features)
-            
+
             # Ensure probabilities sum to 1 for each sample
             probabilities = probabilities / np.sum(probabilities, axis=1, keepdims=True)
-            
+
             # Add small epsilon to avoid log(0) issues
             probabilities = np.clip(probabilities, 1e-10, 1.0)
-            
+
             tprint(f"✅ Regime probabilities calculated: {probabilities.shape}", color="green")
             tprint(f"📈 Probability range: [{probabilities.min():.4f}, {probabilities.max():.4f}]", color="cyan")
-            
+
             return probabilities
 
         except Exception as e:
@@ -1048,16 +1048,16 @@ def quick_hybrid_regime_detection(market_data: Union[pd.DataFrame, np.ndarray],
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1076,8 +1076,8 @@ def quick_hybrid_regime_detection(market_data: Union[pd.DataFrame, np.ndarray],
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1094,13 +1094,13 @@ def quick_hybrid_regime_detection(market_data: Union[pd.DataFrame, np.ndarray],
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

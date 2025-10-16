@@ -96,21 +96,21 @@ class EconomicEvaluationConfig:
     economic_indicators: List[str] = field(default_factory=lambda: [
         'gdp_growth', 'inflation_rate', 'interest_rate', 'unemployment_rate'
     ])
-    
+
     # Dynamic weighting based on market conditions
     enable_dynamic_weighting: bool = True
     volatility_sensitivity: float = 0.3  # How much volatility affects weights
     trend_sensitivity: float = 0.2      # How much trend affects weights
-    
+
     # Position-aware analysis
     enable_position_aware_analysis: bool = True
     position_aware_config: Optional['PositionAwareConfig'] = None
-    
+
     # Economic indicators
     enable_economic_indicators: bool = True
     enable_bootstrap_analysis: bool = True
     enable_regime_specific_analysis: bool = True
-    
+
     # Additional thresholds and weights
     price_impact_threshold: float = 0.5
     volume_threshold: float = 0.4
@@ -121,29 +121,29 @@ class EconomicEvaluationConfig:
     economic_correlation_threshold: float = 0.3
     bootstrap_iterations: int = 100
     confidence_level: float = 0.95
-    
+
     # Enhanced metrics
     enable_enhanced_price_analysis: bool = True
     enable_volume_pattern_analysis: bool = True
     enable_regime_transition_analysis: bool = True
     enable_cross_regime_correlation: bool = True
-    
+
     # Regime-specific analysis
     min_regime_samples: int = 50
     regime_stability_threshold: float = 0.7
-    
+
     # TAS-specific enhancements
     enable_tree_based_analysis: bool = True
     tree_importance_threshold: float = 0.1
     tree_depth_penalty: float = 0.1
     tree_complexity_weight: float = 0.2
-    
+
     # NAS-specific enhancements
     enable_neural_based_analysis: bool = True
     neural_confidence_threshold: float = 0.8
     neural_uncertainty_weight: float = 0.3
     neural_architecture_complexity: float = 0.1
-    
+
     # Hybrid analysis
     enable_hybrid_analysis: bool = True
     hybrid_weighting: float = 0.5
@@ -160,7 +160,7 @@ class TradingViabilityConfig:
     transaction_costs_weight: float = 0.1
     market_liquidity_weight: float = 0.05
     regime_stability_weight: float = 0.05
-    
+
     # Thresholds
     viability_threshold: float = 0.5
     min_trading_frequency: float = 0.1
@@ -169,39 +169,39 @@ class TradingViabilityConfig:
     max_position_duration: float = 1440.0
     min_model_confidence: float = 0.6
     min_risk_adjusted_return: float = 0.1
-    
+
     # Transaction costs
     transaction_cost_bps: float = 1.0  # 1 basis point
     slippage_bps: float = 0.5  # 0.5 basis points
     market_impact_threshold: float = 0.001  # 0.1%
-    
+
     # Position-aware analysis
     enable_position_aware_analysis: bool = True
     position_aware_config: Optional['PositionAwareConfig'] = None
-    
+
     # Advanced features
     enable_liquidity_analysis: bool = True
     liquidity_lookback: int = 20  # Lookback periods for liquidity
     enable_execution_analysis: bool = True
     execution_slippage_threshold: float = 0.002  # 0.2%
-    
+
     # Regime-specific analysis
     enable_regime_specific_analysis: bool = True
     min_regime_samples: int = 50
     regime_stability_threshold: float = 0.7
-    
+
     # TAS-specific enhancements
     enable_tree_based_viability: bool = True
     tree_decision_threshold: float = 0.6
     tree_leaf_penalty: float = 0.1
     tree_interpretability_weight: float = 0.3
-    
+
     # NAS-specific enhancements
     enable_neural_based_viability: bool = True
     neural_confidence_threshold: float = 0.8
     neural_uncertainty_weight: float = 0.2
     neural_architecture_efficiency: float = 0.1
-    
+
     # Hybrid enhancements
     enable_hybrid_viability: bool = True
     hybrid_consensus_threshold: float = 0.7
@@ -222,18 +222,18 @@ class HardwareOptimizationConfig:
 @dataclass
 class PerfectNASConfig:
     """Perfect NAS Regime System Configuration."""
-    
+
     # System identification
     system_name: str = "Perfect NAS Regime System"
     version: str = "1.0.0"
-    
+
     # Core architecture settings
     primary_architecture: NeuralArchitectureType = NeuralArchitectureType.HYBRID
     enable_neural_odes: bool = True
     enable_vision_transformers: bool = True
     enable_state_space_models: bool = True
     enable_meta_learning: bool = True
-    
+
     # NAS search configuration
     search_strategy: SearchStrategy = SearchStrategy.EVOLUTIONARY
     population_size: int = 50
@@ -241,7 +241,7 @@ class PerfectNASConfig:
     mutation_rate: float = 0.1
     crossover_rate: float = 0.8
     elite_size: int = 5
-    
+
     # Multi-objective optimization
     objectives: List[OptimizationObjective] = field(default_factory=lambda: [
         OptimizationObjective.REGIME_ACCURACY,
@@ -257,19 +257,19 @@ class PerfectNASConfig:
         OptimizationObjective.COMPUTATIONAL_EFFICIENCY: 0.1,
         OptimizationObjective.ARCHITECTURE_COMPLEXITY: 0.1
     })
-    
+
     # Regime detection settings
     n_regimes: int = 10
     min_regime_duration: int = 15
     max_regime_duration: int = 180
     enable_micro_regime_detection: bool = True
     micro_regime_sensitivity: float = 0.7
-    
+
     # Timeframe settings
     primary_timeframe: str = "15m"
     micro_timeframe: str = "5m"
     sequence_length: int = 100
-    
+
     # Component configurations
     neural_ode_config: NeuralODEConfig = field(default_factory=NeuralODEConfig)
     vision_transformer_config: VisionTransformerConfig = field(default_factory=VisionTransformerConfig)
@@ -277,33 +277,33 @@ class PerfectNASConfig:
     economic_config: EconomicEvaluationConfig = field(default_factory=EconomicEvaluationConfig)
     trading_config: TradingViabilityConfig = field(default_factory=TradingViabilityConfig)
     hardware_config: HardwareOptimizationConfig = field(default_factory=HardwareOptimizationConfig)
-    
+
     # Performance thresholds - Updated for better sensitivity
     accuracy_threshold: float = 0.5  # Reduced from 0.9 to 0.5 for higher sensitivity
     economic_significance_threshold: float = 0.6  # Reduced from 0.8 to 0.6
     trading_viability_threshold: float = 0.5  # Reduced from 0.7 to 0.5
     regime_stability_threshold: float = 0.6  # Reduced from 0.8 to 0.6
     transition_accuracy_threshold: float = 0.5  # Reduced from 0.85 to 0.5
-    
+
     # Execution settings
     max_execution_time: int = 300  # seconds
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     enable_checkpointing: bool = True
     checkpoint_interval: int = 10
-    
+
     # Logging and monitoring
     log_level: str = "INFO"
     enable_profiling: bool = True
     enable_visualization: bool = True
     save_results: bool = True
     results_directory: str = "perfect_nas_results"
-    
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         self._validate_config()
         self._setup_logging()
-    
+
     def _validate_config(self):
         """Validate configuration parameters."""
         try:
@@ -313,34 +313,34 @@ class PerfectNASConfig:
                 logger.warning(f"Objective weights sum to {total_weight}, normalizing to 1.0")
                 for obj in self.objective_weights:
                     self.objective_weights[obj] /= total_weight
-            
+
             # Validate thresholds
             if not (0.0 <= self.accuracy_threshold <= 1.0):
                 raise ValueError(f"Invalid accuracy threshold: {self.accuracy_threshold}")
-            
+
             if not (0.0 <= self.economic_significance_threshold <= 1.0):
                 raise ValueError(f"Invalid economic significance threshold: {self.economic_significance_threshold}")
-            
+
             if not (0.0 <= self.trading_viability_threshold <= 1.0):
                 raise ValueError(f"Invalid trading viability threshold: {self.trading_viability_threshold}")
-            
+
             # Validate timeframes
             if self.min_regime_duration >= self.max_regime_duration:
                 raise ValueError("Minimum regime duration must be less than maximum")
-            
+
             logger.info("✅ Configuration validation passed")
-            
+
         except Exception as e:
             logger.error(f"❌ Configuration validation failed: {e}")
             raise
-    
+
     def _setup_logging(self):
         """Setup logging configuration."""
         logging.basicConfig(
             level=getattr(logging, self.log_level.upper()),
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-    
+
     def get_architecture_config(self) -> Dict[str, Any]:
         """Get architecture-specific configuration."""
         config = {
@@ -351,7 +351,7 @@ class PerfectNASConfig:
             'hybrid_mode': self.primary_architecture == NeuralArchitectureType.HYBRID
         }
         return config
-    
+
     def get_nas_search_config(self) -> Dict[str, Any]:
         """Get NAS search configuration."""
         return {
@@ -362,7 +362,7 @@ class PerfectNASConfig:
             'crossover_rate': self.crossover_rate,
             'elite_size': self.elite_size
         }
-    
+
     def get_evaluation_config(self) -> Dict[str, Any]:
         """Get evaluation configuration."""
         return {
@@ -378,11 +378,11 @@ class PerfectNASConfig:
                 'transition_accuracy': self.transition_accuracy_threshold
             }
         }
-    
+
     def get_hardware_config(self) -> Dict[str, Any]:
         """Get hardware optimization configuration."""
         return self.hardware_config.__dict__
-    
+
     def create_short_term_trading_config() -> 'PerfectNASConfig':
         """Create configuration optimized for short-term trading."""
         config = PerfectNASConfig()
@@ -396,7 +396,7 @@ class PerfectNASConfig:
         config.economic_config.significance_threshold = 0.7
         config.trading_config.viability_threshold = 0.6
         return config
-    
+
     def create_research_config() -> 'PerfectNASConfig':
         """Create configuration optimized for research and experimentation."""
         config = PerfectNASConfig()
@@ -409,7 +409,7 @@ class PerfectNASConfig:
         config.enable_profiling = True
         config.enable_visualization = True
         return config
-    
+
     def create_production_config() -> 'PerfectNASConfig':
         """Create configuration optimized for production deployment."""
         config = PerfectNASConfig()

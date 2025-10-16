@@ -32,10 +32,8 @@ try:  # pragma: no cover - optional dependency import guard
 except ImportError:  # pragma: no cover - sklearn optional
     _sk_check_random_state = None  # type: ignore[assignment]
 
-
 _PANDAS_RANDOM_STATE_ORIGINAL: Optional[Callable[..., Any]] = None
 _SKLEARN_RANDOM_STATE_ORIGINAL: Optional[Callable[..., Any]] = None
-
 
 @dataclass(frozen=True)
 class SeededRNGs:
@@ -57,19 +55,16 @@ class SeededRNGs:
             "tensorflow": self.tensorflow,
         }
 
-
 def _seed_python(seed: int) -> random.Random:
     random.seed(seed)
     py_rng = random.Random(seed)
     return py_rng
-
 
 def _seed_numpy(seed: int) -> "_np.random.Generator":  # type: ignore[name-defined]
     if _np is None:  # pragma: no cover - numpy should exist but guard defensively
         raise ImportError("numpy is required for deterministic seeding")
     _np.random.seed(seed)  # Legacy API compatibility for code using global state
     return _np.random.default_rng(seed)
-
 
 def _seed_torch(seed: int) -> Optional["_torch.Generator"]:  # type: ignore[name-defined]
     if _torch is None:
@@ -84,7 +79,6 @@ def _seed_torch(seed: int) -> Optional["_torch.Generator"]:  # type: ignore[name
     generator.manual_seed(seed)
     return generator
 
-
 def _seed_tensorflow(seed: int) -> Optional[Any]:
     if _tf is None:
         return None
@@ -94,7 +88,6 @@ def _seed_tensorflow(seed: int) -> Optional[Any]:
     except Exception:
         _tf.random.set_seed(seed)
         return None
-
 
 def seed_rngs(seed: int) -> SeededRNGs:
     """Seed all supported RNG backends and return the seeded instances.
@@ -119,7 +112,6 @@ def seed_rngs(seed: int) -> SeededRNGs:
         torch=torch_rng,
         tensorflow=tensorflow_rng,
     )
-
 
 def _configure_pandas_randomness(numpy_rng: "_np.random.Generator") -> None:  # type: ignore[name-defined]
     """Patch pandas helpers so ``random_state=None`` reuses the seeded RNG."""
@@ -157,7 +149,6 @@ def _configure_pandas_randomness(numpy_rng: "_np.random.Generator") -> None:  # 
             except Exception:  # pragma: no cover - attribute may be read-only
                 pass
 
-
 def _configure_sklearn_randomness(seed: int) -> None:
     """Ensure scikit-learn helpers use the deterministic RNG when available."""
 
@@ -184,7 +175,6 @@ def _configure_sklearn_randomness(seed: int) -> None:
         _sk_utils.check_random_state = _wrapped  # type: ignore[assignment]
     except Exception:  # pragma: no cover - extremely defensive
         return
-
 
 def set_global_seed(seed: int) -> SeededRNGs:
     """Seed every supported backend and apply framework specific patches."""

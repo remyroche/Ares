@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from src.utils.tprint import tprint
 
-
 """Multi-Output Prediction Configuration.
 
 This module provides configuration settings for enabling intelligent multi-output

@@ -30,7 +30,6 @@ from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, 
 from src.utils.parquet_utils import ParquetUtils
 from src.core.decorators import handles_errors, traced, log_execution_time
 
-
 @dataclass
 class KlinesMetadata:
     """Metadata for klines data batches."""
@@ -50,7 +49,6 @@ class KlinesMetadata:
     resampled_intervals: List[str] = field(default_factory=list)
     additional_metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class StorageConfig:
     """Enhanced configuration for klines storage with optimization options."""
@@ -67,11 +65,10 @@ class StorageConfig:
     enable_schema_optimization: bool = True  # Enable schema optimization
     enable_compression_analysis: bool = True  # Enable compression analysis
 
-
 class KlinesParquetManager:
     """
     Manager for efficient klines data storage and retrieval using parquet format.
-    
+
     Provides:
     - Efficient storage with compression
     - Batch management for incremental updates
@@ -79,10 +76,10 @@ class KlinesParquetManager:
     - Automatic directory structure management
     - Exchange-agnostic data format
     """
-    
+
     def __init__(self, config: Optional[StorageConfig] = None):
         """Initialize the KlinesParquetManager.
-        
+
         Args:
             config: Storage configuration
         """
@@ -90,15 +87,15 @@ class KlinesParquetManager:
         self.base_dir = Path(self.config.base_dir)
         self.parquet_utils = ParquetUtils()
         self.logger = system_logger.getChild("KlinesParquetManager")
-        
+
         # Ensure base directory exists
         self.base_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Storage tracking
         self._metadata_cache: Dict[str, KlinesMetadata] = {}
         self._batch_counter: Dict[str, int] = {}
         self._compression_stats: Dict[str, Any] = {}
-        
+
         # Column optimization mapping
         self.column_optimizations = {
             'timestamp': {'dtype': 'datetime64[ns]', 'nullable': False},
@@ -111,9 +108,9 @@ class KlinesParquetManager:
             'exchange': {'dtype': 'category', 'nullable': False},
             'interval': {'dtype': 'category', 'nullable': False},
         }
-        
+
         self.logger.info(f"✅ KlinesParquetManager initialized with base_dir: {self.base_dir}")
-    
+
     @handles_errors(default_return=False, context="KlinesParquetManager.store_klines")
     @traced()
     @log_execution_time()
@@ -127,7 +124,7 @@ class KlinesParquetManager:
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Store klines data in parquet format.
-        
+
         Args:
             df: DataFrame containing klines data
             symbol: Trading symbol (e.g., "ETHUSDT")
@@ -135,58 +132,58 @@ class KlinesParquetManager:
             interval: Data interval (e.g., "1m")
             batch_id: Optional batch identifier
             metadata: Additional metadata to store
-            
+
         Returns:
             True if storage was successful, False otherwise
         """
         if df is None or df.empty:
             tprint_error("❌ Cannot store empty DataFrame")
             return False
-        
+
         try:
             # Generate batch ID if not provided
             if batch_id is None:
                 batch_id = self._generate_batch_id(symbol, exchange, interval)
-            
+
             # Apply comprehensive optimizations
             storage_df = self._apply_comprehensive_optimizations(df, symbol, exchange, interval)
-            
+
             # Determine storage path
             storage_path = self._get_storage_path(symbol, exchange, interval, batch_id)
-            
+
             # Ensure directory exists
             storage_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Get optimal parquet write parameters
             parquet_kwargs = self._get_optimal_parquet_kwargs(storage_df)
-            
+
             # Store data with optimizations
             success = self._store_dataframe_optimized(storage_df, storage_path, parquet_kwargs)
             if not success:
                 return False
-            
+
             # Calculate compression statistics
             compression_stats = self._calculate_compression_stats(df, storage_df, storage_path)
-            
+
             # Create and store metadata with compression stats
             klines_metadata = self._create_enhanced_metadata(
-                storage_df, symbol, exchange, interval, batch_id, 
+                storage_df, symbol, exchange, interval, batch_id,
                 storage_path, metadata, compression_stats
             )
-            
+
             # Store metadata
             self._store_metadata(klines_metadata, storage_path)
-            
+
             # Update cache
             self._metadata_cache[f"{symbol}_{exchange}_{interval}_{batch_id}"] = klines_metadata
-            
+
             tprint_success(f"✅ Stored {len(storage_df)} klines records for {symbol} {interval}")
             return True
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to store klines data: {e}")
             return False
-    
+
     @handles_errors(default_return=pd.DataFrame(), context="KlinesParquetManager.load_klines")
     @traced()
     @log_execution_time()
@@ -200,7 +197,7 @@ class KlinesParquetManager:
         batch_id: Optional[str] = None
     ) -> pd.DataFrame:
         """Load klines data from parquet files.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
@@ -208,7 +205,7 @@ class KlinesParquetManager:
             start_time: Optional start time filter
             end_time: Optional end time filter
             batch_id: Optional specific batch to load
-            
+
         Returns:
             DataFrame containing klines data
         """
@@ -218,44 +215,44 @@ class KlinesParquetManager:
             if not files:
                 tprint_warning(f"⚠️ No klines files found for {symbol} {exchange} {interval}")
                 return pd.DataFrame()
-            
+
             # Load and combine data
             combined_df = self._load_and_combine_files(files, start_time, end_time)
-            
+
             if combined_df.empty:
                 tprint_warning(f"⚠️ No data found for {symbol} {exchange} {interval}")
                 return pd.DataFrame()
-            
+
             tprint_success(f"✅ Loaded {len(combined_df)} klines records for {symbol} {interval}")
             return combined_df
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to load klines data: {e}")
             return pd.DataFrame()
-    
+
     @handles_errors(default_return=List[str], context="KlinesParquetManager.list_available_data")
     def list_available_data(self) -> List[Dict[str, Any]]:
         """List all available klines data.
-        
+
         Returns:
             List of dictionaries containing available data information
         """
         try:
             available_data = []
-            
+
             # Scan base directory for klines data
             for exchange_dir in self.base_dir.iterdir():
                 if not exchange_dir.is_dir():
                     continue
-                
+
                 for symbol_dir in exchange_dir.iterdir():
                     if not symbol_dir.is_dir():
                         continue
-                    
+
                     klines_dir = symbol_dir / "klines"
                     if not klines_dir.exists():
                         continue
-                    
+
                     # Find parquet files
                     for file_path in klines_dir.glob("*.parquet"):
                         metadata = self._load_file_metadata(file_path)
@@ -271,13 +268,13 @@ class KlinesParquetManager:
                                 "file_size_mb": metadata.file_size_bytes / (1024 * 1024),
                                 "created_at": metadata.created_at
                             })
-            
+
             return available_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to list available data: {e}")
             return []
-    
+
     @handles_errors(default_return=False, context="KlinesParquetManager.update_klines")
     def update_klines(
         self,
@@ -288,14 +285,14 @@ class KlinesParquetManager:
         append_mode: bool = True
     ) -> bool:
         """Update existing klines data.
-        
+
         Args:
             df: New klines data
             symbol: Trading symbol
             exchange: Exchange name
             interval: Data interval
             append_mode: If True, append to existing data; if False, replace
-            
+
         Returns:
             True if update was successful, False otherwise
         """
@@ -303,7 +300,7 @@ class KlinesParquetManager:
             if append_mode:
                 # Load existing data
                 existing_df = self.load_klines(symbol, exchange, interval)
-                
+
                 if not existing_df.empty:
                     # Combine with existing data
                     combined_df = pd.concat([existing_df, df], ignore_index=True)
@@ -313,14 +310,14 @@ class KlinesParquetManager:
                     combined_df = df
             else:
                 combined_df = df
-            
+
             # Store updated data
             return self.store_klines(combined_df, symbol, exchange, interval)
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to update klines data: {e}")
             return False
-    
+
     @handles_errors(default_return=False, context="KlinesParquetManager.delete_klines")
     def delete_klines(
         self,
@@ -330,84 +327,83 @@ class KlinesParquetManager:
         batch_id: Optional[str] = None
     ) -> bool:
         """Delete klines data.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             interval: Data interval
             batch_id: Optional specific batch to delete
-            
+
         Returns:
             True if deletion was successful, False otherwise
         """
         try:
             files = self._find_klines_files(symbol, exchange, interval, batch_id)
-            
+
             for file_path in files:
                 # Delete parquet file
                 if file_path.exists():
                     file_path.unlink()
                     tprint_info(f"🗑️ Deleted {file_path}")
-                
+
                 # Delete metadata file
                 metadata_path = file_path.with_suffix('.metadata.json')
                 if metadata_path.exists():
                     metadata_path.unlink()
                     tprint_info(f"🗑️ Deleted {metadata_path}")
-            
+
             tprint_success(f"✅ Deleted klines data for {symbol} {exchange} {interval}")
             return True
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to delete klines data: {e}")
             return False
-    
+
     def _generate_batch_id(self, symbol: str, exchange: str, interval: str) -> str:
         """Generate a unique batch ID."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         counter = self._batch_counter.get(f"{symbol}_{exchange}_{interval}", 0) + 1
         self._batch_counter[f"{symbol}_{exchange}_{interval}"] = counter
         return f"batch_{counter:03d}_{timestamp}"
-    
-    
+
     def _apply_comprehensive_optimizations(
-        self, 
-        df: pd.DataFrame, 
-        symbol: str, 
-        exchange: str, 
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        exchange: str,
         interval: str
     ) -> pd.DataFrame:
         """Apply comprehensive optimizations to DataFrame."""
         optimized_df = df.copy()
-        
+
         # 1. Optimize data types
         optimized_df = self._optimize_dtypes(optimized_df)
-        
+
         # 2. Sort data for better compression
         optimized_df = self._sort_for_compression(optimized_df)
-        
+
         # 3. Remove unnecessary columns
         optimized_df = self._remove_unnecessary_columns(optimized_df)
-        
+
         # 4. Optimize categorical data
         optimized_df = self._optimize_categorical_data(optimized_df)
-        
+
         # 5. Handle missing values efficiently
         optimized_df = self._handle_missing_values(optimized_df)
-        
+
         # 6. Add required columns if missing
         optimized_df = self._ensure_required_columns(optimized_df, symbol, exchange, interval)
-        
+
         return optimized_df
-    
+
     def _optimize_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize data types for parquet storage."""
         optimized_df = df.copy()
-        
+
         for col, config in self.column_optimizations.items():
             if col in optimized_df.columns:
                 target_dtype = config['dtype']
-                
+
                 try:
                     if target_dtype == 'category':
                         # Use category for high-cardinality string columns
@@ -419,18 +415,18 @@ class KlinesParquetManager:
                     else:
                         # Convert to target numeric type
                         optimized_df[col] = optimized_df[col].astype(target_dtype)
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Could not optimize {col} to {target_dtype}: {e}")
-        
+
         return optimized_df
-    
+
     def _sort_for_compression(self, df: pd.DataFrame) -> pd.DataFrame:
         """Sort data for better compression efficiency."""
         if 'timestamp' in df.columns:
             return df.sort_values('timestamp').reset_index(drop=True)
         return df
-    
+
     def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove columns that don't add value for storage."""
         # Keep only essential columns
@@ -438,51 +434,51 @@ class KlinesParquetManager:
             'timestamp', 'open', 'high', 'low', 'close', 'volume',
             'symbol', 'exchange', 'interval'
         ]
-        
+
         # Add any additional columns that exist
         existing_columns = [col for col in essential_columns if col in df.columns]
         additional_columns = [col for col in df.columns if col not in essential_columns]
-        
+
         return df[existing_columns + additional_columns]
-    
+
     def _optimize_categorical_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize categorical columns for better compression."""
         optimized_df = df.copy()
-        
+
         categorical_columns = ['symbol', 'exchange', 'interval']
         for col in categorical_columns:
             if col in optimized_df.columns:
                 # Use category type for better compression
                 optimized_df[col] = optimized_df[col].astype('category')
-        
+
         return optimized_df
-    
+
     def _handle_missing_values(self, df: pd.DataFrame) -> pd.DataFrame:
         """Handle missing values efficiently."""
         optimized_df = df.copy()
-        
+
         # For OHLCV data, forward fill missing values
         ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_columns:
             if col in optimized_df.columns:
                 if optimized_df[col].isnull().any():
                     optimized_df[col] = optimized_df[col].fillna(method='ffill')
-        
+
         return optimized_df
-    
+
     def _ensure_required_columns(self, df: pd.DataFrame, symbol: str, exchange: str, interval: str) -> pd.DataFrame:
         """Ensure required columns exist."""
         optimized_df = df.copy()
-        
+
         if 'exchange' not in optimized_df.columns:
             optimized_df['exchange'] = exchange
         if 'symbol' not in optimized_df.columns:
             optimized_df['symbol'] = symbol
         if 'interval' not in optimized_df.columns:
             optimized_df['interval'] = interval
-        
+
         return optimized_df
-    
+
     def _get_optimal_parquet_kwargs(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Get optimal parquet write parameters."""
         kwargs = {
@@ -490,11 +486,11 @@ class KlinesParquetManager:
             'index': self.config.index,
             'compression': self.config.compression,
         }
-        
+
         # Add compression level for zstd
         if self.config.compression == 'zstd':
             kwargs['compression_level'] = self.config.compression_level
-        
+
         # Row group size optimization
         if len(df) > 0:
             optimal_row_group_size = min(
@@ -502,15 +498,15 @@ class KlinesParquetManager:
                 max(1000, len(df) // 10)  # At least 10 row groups
             )
             kwargs['row_group_size'] = optimal_row_group_size
-        
+
         # Dictionary encoding for categorical columns
         if self.config.use_dictionary_encoding:
             categorical_columns = df.select_dtypes(include=['category']).columns.tolist()
             if categorical_columns:
                 kwargs['use_dictionary'] = True
-        
+
         return kwargs
-    
+
     def _store_dataframe_optimized(self, df: pd.DataFrame, path: Path, kwargs: Dict[str, Any]) -> bool:
         """Store DataFrame with optimizations."""
         try:
@@ -519,21 +515,21 @@ class KlinesParquetManager:
         except Exception as e:
             tprint_error(f"❌ Failed to store optimized DataFrame: {e}")
             return False
-    
+
     def _calculate_compression_stats(
-        self, 
-        original_df: pd.DataFrame, 
-        optimized_df: pd.DataFrame, 
+        self,
+        original_df: pd.DataFrame,
+        optimized_df: pd.DataFrame,
         file_path: Path
     ) -> Dict[str, Any]:
         """Calculate compression statistics."""
         if not file_path.exists():
             return {}
-        
+
         original_size = original_df.memory_usage(deep=True).sum()
         file_size = file_path.stat().st_size
         compression_ratio = (1 - file_size / original_size) * 100 if original_size > 0 else 0
-        
+
         return {
             'original_size_bytes': original_size,
             'file_size_bytes': file_size,
@@ -541,28 +537,27 @@ class KlinesParquetManager:
             'compression_ratio': compression_ratio,
             'optimization_applied': True
         }
-    
+
     def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
         """Legacy method - now handled by _optimize_dtypes."""
         return self._optimize_dtypes(df)
-    
+
     def _get_storage_path(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        interval: str, 
+        self,
+        symbol: str,
+        exchange: str,
+        interval: str,
         batch_id: str
     ) -> Path:
         """Get the storage path for klines data."""
         return (
-            self.base_dir / 
-            exchange.lower() / 
-            symbol.lower() / 
-            "klines" / 
+            self.base_dir /
+            exchange.lower() /
+            symbol.lower() /
+            "klines" /
             f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
         )
-    
-    
+
     def _create_enhanced_metadata(
         self,
         df: pd.DataFrame,
@@ -576,7 +571,7 @@ class KlinesParquetManager:
     ) -> KlinesMetadata:
         """Create enhanced metadata with optimization details."""
         file_size = file_path.stat().st_size if file_path.exists() else 0
-        
+
         # Calculate compression ratio
         compression_ratio = 0.0
         if compression_stats and 'compression_ratio' in compression_stats:
@@ -585,7 +580,7 @@ class KlinesParquetManager:
             # Fallback calculation
             estimated_size = len(df) * len(df.columns) * 8  # Rough estimate
             compression_ratio = (1 - file_size / estimated_size) * 100 if estimated_size > 0 else 0
-        
+
         return KlinesMetadata(
             symbol=symbol,
             exchange=exchange,
@@ -606,7 +601,7 @@ class KlinesParquetManager:
                 'compression_stats': compression_stats or {}
             }
         )
-    
+
     def _create_metadata(
         self,
         df: pd.DataFrame,
@@ -619,7 +614,7 @@ class KlinesParquetManager:
     ) -> KlinesMetadata:
         """Create metadata for klines data."""
         file_size = file_path.stat().st_size if file_path.exists() else 0
-        
+
         return KlinesMetadata(
             symbol=symbol,
             exchange=exchange,
@@ -633,14 +628,14 @@ class KlinesParquetManager:
             created_at=datetime.now(),
             additional_metadata=additional_metadata or {}
         )
-    
+
     def _store_metadata(self, metadata: KlinesMetadata, file_path: Path) -> None:
         """Store metadata to JSON file."""
         if not self.config.enable_metadata:
             return
-        
+
         metadata_path = file_path.with_suffix('.metadata.json')
-        
+
         metadata_dict = {
             "symbol": metadata.symbol,
             "exchange": metadata.exchange,
@@ -658,21 +653,21 @@ class KlinesParquetManager:
             "resampled_intervals": metadata.resampled_intervals,
             "additional_metadata": metadata.additional_metadata
         }
-        
+
         with open(metadata_path, 'w') as f:
             json.dump(metadata_dict, f, indent=2)
-    
+
     def _load_file_metadata(self, file_path: Path) -> Optional[KlinesMetadata]:
         """Load metadata from JSON file."""
         metadata_path = file_path.with_suffix('.metadata.json')
-        
+
         if not metadata_path.exists():
             return None
-        
+
         try:
             with open(metadata_path, 'r') as f:
                 data = json.load(f)
-            
+
             return KlinesMetadata(
                 symbol=data['symbol'],
                 exchange=data['exchange'],
@@ -693,7 +688,7 @@ class KlinesParquetManager:
         except Exception as e:
             tprint_warning(f"⚠️ Failed to load metadata from {metadata_path}: {e}")
             return None
-    
+
     def _find_klines_files(
         self,
         symbol: str,
@@ -703,16 +698,16 @@ class KlinesParquetManager:
     ) -> List[Path]:
         """Find klines files matching criteria."""
         klines_dir = self.base_dir / exchange.lower() / symbol.lower() / "klines"
-        
+
         if not klines_dir.exists():
             return []
-        
+
         pattern = f"klines_{exchange}_{symbol}_{interval}_*.parquet"
         if batch_id:
             pattern = f"klines_{exchange}_{symbol}_{interval}_{batch_id}.parquet"
-        
+
         return list(klines_dir.glob(pattern))
-    
+
     def _load_and_combine_files(
         self,
         files: List[Path],
@@ -721,7 +716,7 @@ class KlinesParquetManager:
     ) -> pd.DataFrame:
         """Load and combine multiple parquet files."""
         dataframes = []
-        
+
         for file_path in files:
             try:
                 df = self.parquet_utils.safe_read_parquet(str(file_path))
@@ -730,59 +725,59 @@ class KlinesParquetManager:
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to load {file_path}: {e}")
                 continue
-        
+
         if not dataframes:
             return pd.DataFrame()
-        
+
         # Combine dataframes
         combined_df = pd.concat(dataframes, ignore_index=True)
-        
+
         # Remove duplicates
         combined_df = combined_df.drop_duplicates(subset=['timestamp'], keep='last')
-        
+
         # Sort by timestamp
         combined_df = combined_df.sort_values('timestamp')
-        
+
         # Apply time filters
         if start_time:
             combined_df = combined_df[combined_df['timestamp'] >= start_time]
         if end_time:
             combined_df = combined_df[combined_df['timestamp'] <= end_time]
-        
+
         return combined_df
-    
+
     def get_storage_stats(self) -> Dict[str, Any]:
         """Get storage statistics."""
         try:
             available_data = self.list_available_data()
-            
+
             if not available_data:
                 return {"total_files": 0, "total_size_mb": 0, "total_records": 0}
-            
+
             total_files = len(available_data)
             total_size_mb = sum(item["file_size_mb"] for item in available_data)
             total_records = sum(item["record_count"] for item in available_data)
-            
+
             # Group by exchange and symbol
             by_exchange = {}
             by_symbol = {}
-            
+
             for item in available_data:
                 exchange = item["exchange"]
                 symbol = item["symbol"]
-                
+
                 if exchange not in by_exchange:
                     by_exchange[exchange] = {"files": 0, "size_mb": 0, "records": 0}
                 by_exchange[exchange]["files"] += 1
                 by_exchange[exchange]["size_mb"] += item["file_size_mb"]
                 by_exchange[exchange]["records"] += item["record_count"]
-                
+
                 if symbol not in by_symbol:
                     by_symbol[symbol] = {"files": 0, "size_mb": 0, "records": 0}
                 by_symbol[symbol]["files"] += 1
                 by_symbol[symbol]["size_mb"] += item["file_size_mb"]
                 by_symbol[symbol]["records"] += item["record_count"]
-            
+
             return {
                 "total_files": total_files,
                 "total_size_mb": round(total_size_mb, 2),
@@ -790,11 +785,11 @@ class KlinesParquetManager:
                 "by_exchange": by_exchange,
                 "by_symbol": by_symbol
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to get storage stats: {e}")
             return {"error": str(e)}
-    
+
     def get_optimization_recommendations(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Get optimization recommendations based on data characteristics."""
         recommendations = {
@@ -804,7 +799,7 @@ class KlinesParquetManager:
             'column_count': len(df.columns),
             'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
         }
-        
+
         # Compression recommendation based on data size
         if len(df) > 1000000:  # > 1M rows
             recommendations['compression'] = 'zstd'
@@ -815,23 +810,23 @@ class KlinesParquetManager:
         else:
             recommendations['compression'] = 'snappy'
             recommendations['reason'] = 'Small dataset - use snappy for speed'
-        
+
         # Row group size recommendation
         if len(df) > 0:
             optimal_row_groups = max(1, len(df) // 50000)  # ~50k rows per group
             recommendations['row_group_size'] = min(100000, len(df) // optimal_row_groups)
-        
+
         return recommendations
-    
+
     def get_compression_stats(self) -> Dict[str, Any]:
         """Get overall compression statistics."""
         if not self._compression_stats:
             return {"message": "No compression statistics available"}
-        
+
         total_original_size = sum(stats.get('original_size_bytes', 0) for stats in self._compression_stats.values())
         total_file_size = sum(stats.get('file_size_bytes', 0) for stats in self._compression_stats.values())
         overall_compression_ratio = (1 - total_file_size / total_original_size) * 100 if total_original_size > 0 else 0
-        
+
         return {
             "total_files": len(self._compression_stats),
             "total_original_size_mb": total_original_size / (1024 * 1024),
@@ -841,12 +836,10 @@ class KlinesParquetManager:
             "compression_stats": self._compression_stats
         }
 
-
 # Convenience functions
 def create_klines_manager(config: Optional[StorageConfig] = None) -> KlinesParquetManager:
     """Create a new KlinesParquetManager instance."""
     return KlinesParquetManager(config)
-
 
 def get_klines_manager() -> KlinesParquetManager:
     """Get a singleton KlinesParquetManager instance."""
@@ -854,12 +847,11 @@ def get_klines_manager() -> KlinesParquetManager:
         get_klines_manager._instance = KlinesParquetManager()
     return get_klines_manager._instance
 
-
 if __name__ == "__main__":
     # Example usage
     import numpy as np
     from datetime import datetime, timedelta
-    
+
     # Create test data
     dates = pd.date_range(start=datetime.now() - timedelta(days=1), periods=1440, freq='1min')
     test_data = pd.DataFrame({
@@ -870,18 +862,18 @@ if __name__ == "__main__":
         'close': np.random.uniform(3000, 3100, 1440),
         'volume': np.random.uniform(100, 1000, 1440)
     })
-    
+
     # Test the manager
     manager = KlinesParquetManager()
-    
+
     # Store data
     success = manager.store_klines(test_data, "ETHUSDT", "binance", "1m")
     print(f"Storage successful: {success}")
-    
+
     # Load data
     loaded_data = manager.load_klines("ETHUSDT", "binance", "1m")
     print(f"Loaded {len(loaded_data)} records")
-    
+
     # Get stats
     stats = manager.get_storage_stats()
     print(f"Storage stats: {stats}")

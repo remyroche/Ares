@@ -81,28 +81,28 @@ class TacticianSignalGenerator:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the tactician signal generator with TAS enhancement.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = logger.getChild('TacticianSignalGenerator')
-        
+
         # Tactician component (will be injected)
         self.tactician = None
-        
+
         # TAS engine for enhanced signal generation
         self.tas_engine = None
         self.tas_models = {}  # Per-signal-type TAS models
         self.tas_architectures = {}  # Per-signal-type TAS architectures
-        
+
         # Signal generation parameters
         self.confidence_threshold = config.get('confidence_threshold', 0.6)
         self.tas_confidence_threshold = config.get('tas_confidence_threshold', 0.7)
         self.risk_per_trade = config.get('risk_per_trade', 0.02)  # 2% risk per trade
         self.max_leverage = config.get('max_leverage', 3.0)
         self.kelly_fraction = config.get('kelly_fraction', 0.25)  # Conservative Kelly
-        
+
         # Confidence thresholds
         self.confidence_thresholds = {
             TimingConfidence.LOW: 0.5,
@@ -110,15 +110,15 @@ class TacticianSignalGenerator:
             TimingConfidence.HIGH: 0.8,
             TimingConfidence.VERY_HIGH: 0.9
         }
-        
+
         # TAS configuration
         self.enable_tas_enhancement = config.get('enable_tas_enhancement', True)
         self.tas_timeframe = config.get('tas_timeframe', '1m')
-        
+
         # Signal history
         self.signal_history: List[TacticianSignal] = []
         self.max_history = config.get('max_history', 1000)
-        
+
         # Performance tracking
         self.signal_count = 0
         self.successful_signals = 0
@@ -128,27 +128,27 @@ class TacticianSignalGenerator:
     async def initialize(self, tactician_component, tas_models: Optional[Dict[str, Any]] = None) -> bool:
         """
         Initialize the signal generator with tactician component and TAS models.
-        
+
         Args:
             tactician_component: Initialized Tactician component
             tas_models: Pre-trained TAS models for per-signal-type timing generation
-            
+
         Returns:
             bool: True if initialization successful
         """
         try:
             self.tactician = tactician_component
-            
+
             # Initialize TAS engine if enhancement is enabled
             if self.enable_tas_enhancement:
                 await self._initialize_tas_engine(tas_models)
-            
+
             self.logger.info("✅ Tactician Signal Generator initialized with TAS enhancement")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Tactician Signal Generator: {e}")
             return False
-    
+
     async def _initialize_tas_engine(self, tas_models: Optional[Dict[str, Any]] = None):
         """Initialize TAS engine for enhanced timing signal generation."""
         try:
@@ -162,19 +162,19 @@ class TacticianSignalGenerator:
                 population_size=30,
                 generations=50
             )
-            
+
             # Initialize TAS engine
             self.tas_engine = EnhancedTASRegimeDetector(tas_config)
-            
+
             # Load pre-trained TAS models if provided
             if tas_models:
                 self.tas_models = tas_models
                 self.logger.info(f"✅ Loaded {len(tas_models)} TAS models for timing signal generation")
             else:
                 self.logger.warning("⚠️ No TAS models provided, using fallback analysis")
-            
+
             self.logger.info("✅ TAS engine initialized for timing signal generation")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize TAS engine: {e}")
             self.enable_tas_enhancement = False
@@ -193,7 +193,7 @@ class TacticianSignalGenerator:
     ) -> Optional[TacticianSignal]:
         """
         Generate timing signal using Tactician component.
-        
+
         Args:
             symbol: Trading symbol
             analyst_signal: Signal from Analyst component
@@ -201,7 +201,7 @@ class TacticianSignalGenerator:
             current_position: Current position information
             account_balance: Account balance for position sizing
             additional_context: Additional context for signal generation
-            
+
         Returns:
             TacticianSignal or None if no signal generated
         """
@@ -211,43 +211,43 @@ class TacticianSignalGenerator:
                 return None
 
             tprint_info(f"🔄 Generating tactician timing signal for {symbol}")
-            
+
             # Perform timing analysis using Tactician
             timing_analysis = await self._perform_timing_analysis(
                 symbol, analyst_signal, market_data, current_position, additional_context
             )
-            
+
             if not timing_analysis:
                 tprint_warning(f"⚠️ No timing analysis result for {symbol}")
                 return None
-            
+
             # Enhance with TAS prediction if available
             tas_prediction = None
             if self.enable_tas_enhancement and self.tas_engine:
                 tas_prediction = await self._generate_tas_prediction(
                     symbol, analyst_signal, market_data, current_position
                 )
-            
+
             # Calculate position sizing
             position_sizing = await self._calculate_position_sizing(
                 symbol, analyst_signal, timing_analysis, account_balance
             )
-            
+
             # Generate timing signal with TAS enhancement
             signal = await self._generate_timing_signal_from_analysis(
                 symbol, timing_analysis, position_sizing, current_position, tas_prediction
             )
-            
+
             if signal:
                 # Store signal in history
                 self._store_signal(signal)
                 self.signal_count += 1
-                
+
                 tprint_success(f"✅ Generated {signal.timing_signal.value} signal for {symbol} "
                              f"(confidence: {signal.confidence_score:.3f})")
-            
+
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"❌ Timing signal generation failed for {symbol}: {e}")
             return None
@@ -270,7 +270,7 @@ class TacticianSignalGenerator:
                 'current_position': current_position,
                 'additional_context': additional_context or {}
             }
-            
+
             # Call Tactician's timing analysis method
             if hasattr(self.tactician, 'analyze_timing'):
                 timing_result = await self.tactician.analyze_timing(timing_context)
@@ -279,9 +279,9 @@ class TacticianSignalGenerator:
             else:
                 # Fallback to basic timing analysis
                 timing_result = await self._fallback_timing_analysis(timing_context)
-            
+
             return timing_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Timing analysis failed: {e}")
             return None
@@ -292,23 +292,23 @@ class TacticianSignalGenerator:
             market_data = context['market_data']
             analyst_signal = context['analyst_signal']
             current_position = context.get('current_position')
-            
+
             if len(market_data) < 20:
                 return None
-            
+
             # Basic timing indicators
             close_prices = market_data['close'].values
             returns = np.diff(close_prices) / close_prices[:-1]
-            
+
             # Calculate timing metrics
             recent_volatility = np.std(returns[-10:])
             price_momentum = returns[-5:].mean()
             volume_trend = market_data['volume'].iloc[-5:].mean() / market_data['volume'].iloc[-20:-5].mean()
-            
+
             # Determine timing signal based on analyst signal and market conditions
             analyst_direction = analyst_signal.get('signal_type', 'hold')
             confidence_score = analyst_signal.get('confidence_score', 0.5)
-            
+
             # Timing logic
             if current_position:
                 # We have a position, consider exit timing
@@ -326,7 +326,7 @@ class TacticianSignalGenerator:
                 else:
                     timing_signal = 'hold'
                     timing_confidence = 0.5
-            
+
             # Generate timing analysis result
             timing_result = {
                 'timing_signal': timing_signal,
@@ -351,9 +351,9 @@ class TacticianSignalGenerator:
                     'timestamp': datetime.now().isoformat()
                 }
             }
-            
+
             return timing_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Fallback timing analysis failed: {e}")
             return None
@@ -370,35 +370,35 @@ class TacticianSignalGenerator:
             # Get confidence scores
             analyst_confidence = analyst_signal.get('confidence_score', 0.5)
             timing_confidence = timing_analysis.get('confidence_score', 0.5)
-            
+
             # Combined confidence
             combined_confidence = (analyst_confidence + timing_confidence) / 2
-            
+
             # Kelly criterion calculation for position sizing
             # Note: These values represent actual trading outcomes, not model training targets
             win_probability = combined_confidence
             avg_win = 0.005   # 0.5% average win (realistic trading outcome expectation)
             avg_loss = 0.003  # 0.3% average loss (realistic risk management)
-            
+
             kelly_fraction = (win_probability * avg_win - (1 - win_probability) * avg_loss) / avg_win
             kelly_fraction = max(0, min(kelly_fraction, self.kelly_fraction))  # Cap at configured fraction
-            
+
             # Position size calculation
             risk_amount = account_balance * self.risk_per_trade
             confidence_multiplier = combined_confidence
-            
+
             # Base position size
             base_size = risk_amount * confidence_multiplier
-            
+
             # Apply Kelly fraction
             recommended_size = base_size * kelly_fraction
-            
+
             # Maximum position size (10% of account)
             max_size = account_balance * 0.1
-            
+
             # Leverage calculation
             leverage = min(combined_confidence * self.max_leverage, self.max_leverage)
-            
+
             return PositionSizing(
                 recommended_size=min(recommended_size, max_size),
                 max_size=max_size,
@@ -407,7 +407,7 @@ class TacticianSignalGenerator:
                 kelly_fraction=kelly_fraction,
                 confidence_multiplier=confidence_multiplier
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Position sizing calculation failed: {e}")
             # Return conservative defaults
@@ -431,24 +431,24 @@ class TacticianSignalGenerator:
         try:
             if not self.tas_engine:
                 return None
-            
+
             # Determine signal type from analyst signal
             signal_type = self._map_analyst_signal_to_type(analyst_signal)
-            
+
             # Use TAS model for this signal type if available
             if signal_type in self.tas_models:
                 tas_model = self.tas_models[signal_type]
-                
+
                 # Prepare features for TAS prediction
                 features = self._prepare_tas_features(market_data, analyst_signal, current_position)
-                
+
                 # Generate TAS prediction for timing signals
                 tas_result = self.tas_engine.search(
                     train_data=(features.reshape(1, -1), np.array([0])),  # Dummy training data
                     validation_data=(features.reshape(1, -1), np.array([0])),  # Dummy validation data
                     regime_data={'analyst_signals': [signal_type]}
                 )
-                
+
                 if tas_result.best_score > 0:
                     return {
                         'tas_prediction': tas_result.best_prediction,
@@ -457,13 +457,13 @@ class TacticianSignalGenerator:
                         'signal_type': signal_type,
                         'tas_contribution': 'timing_signals'
                     }
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ TAS prediction failed for {symbol}: {e}")
             return None
-    
+
     def _map_analyst_signal_to_type(self, analyst_signal: Dict[str, Any]) -> int:
         """Map analyst signal to signal type for TAS model selection."""
         signal_type = analyst_signal.get('signal_type', 'hold')
@@ -473,18 +473,18 @@ class TacticianSignalGenerator:
             return -1  # Short signal
         else:
             return 0  # Hold signal
-    
+
     def _prepare_tas_features(self, market_data: pd.DataFrame, analyst_signal: Dict[str, Any], current_position: Optional[Dict[str, Any]]) -> np.ndarray:
         """Prepare features for TAS prediction."""
         try:
             features = []
-            
+
             # Market data features
             if len(market_data) >= 20:
                 close_prices = market_data['close'].values
                 returns = np.diff(close_prices) / close_prices[:-1]
                 volumes = market_data['volume'].values
-                
+
                 # Price features
                 features.extend([
                     returns[-1],  # Latest return
@@ -492,13 +492,13 @@ class TacticianSignalGenerator:
                     returns[-10:].mean(),  # 10-period average return
                     np.std(returns[-10:]),  # 10-period volatility
                 ])
-                
+
                 # Volume features
                 features.extend([
                     volumes[-1] / volumes[-5:].mean(),  # Volume ratio
                     volumes[-5:].mean() / volumes[-20:].mean(),  # Volume trend
                 ])
-                
+
                 # Price momentum
                 features.extend([
                     (close_prices[-1] - close_prices[-5]) / close_prices[-5],  # 5-period momentum
@@ -507,13 +507,13 @@ class TacticianSignalGenerator:
             else:
                 # Fallback features
                 features = [0.0] * 8
-            
+
             # Analyst signal features
             features.extend([
                 analyst_signal.get('confidence_score', 0.0),
                 1.0 if analyst_signal.get('signal_type') == 'buy' else -1.0 if analyst_signal.get('signal_type') == 'sell' else 0.0
             ])
-            
+
             # Position features
             if current_position:
                 features.extend([
@@ -523,13 +523,13 @@ class TacticianSignalGenerator:
                 ])
             else:
                 features.extend([0.0, 0.0, 0.0])
-            
+
             return np.array(features)
-            
+
         except Exception as e:
             self.logger.error(f"❌ TAS feature preparation failed: {e}")
             return np.zeros(13)  # Fallback features
-    
+
     async def _generate_timing_signal_from_analysis(
         self,
         symbol: str,
@@ -543,15 +543,15 @@ class TacticianSignalGenerator:
             # Extract timing information
             timing_signal_str = timing_analysis.get('timing_signal', 'hold')
             confidence_score = timing_analysis.get('confidence_score', 0.0)
-            
+
             # Enhance with TAS prediction if available
             if tas_prediction:
                 tas_confidence = tas_prediction.get('tas_confidence', 0.0)
                 tas_prediction_value = tas_prediction.get('tas_prediction', {})
-                
+
                 # Combine confidence scores (weighted average: 60% analysis, 40% TAS)
                 combined_confidence = (confidence_score * 0.6) + (tas_confidence * 0.4)
-                
+
                 # Use TAS prediction to enhance timing if confidence is high
                 if tas_confidence >= self.tas_confidence_threshold:
                     tas_timing = tas_prediction_value.get('timing', timing_signal_str)
@@ -560,19 +560,19 @@ class TacticianSignalGenerator:
                         timing_signal_str = tas_timing
                         confidence_score = combined_confidence
                         self.tas_enhanced_signals += 1
-                
+
                 confidence_score = combined_confidence
-            
+
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
                 return None
-            
+
             # Map timing signal
             timing_signal = self._map_timing_signal(timing_signal_str, current_position)
-            
+
             # Determine confidence level
             confidence = self._determine_confidence_level(confidence_score)
-            
+
             # Create signal with TAS enhancement
             signal = TacticianSignal(
                 timestamp=datetime.now(),
@@ -591,9 +591,9 @@ class TacticianSignalGenerator:
                 signal_type=tas_prediction.get('signal_type') if tas_prediction else None,
                 metadata=timing_analysis.get('analysis_metadata', {})
             )
-            
+
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"❌ Timing signal generation from analysis failed: {e}")
             return None
@@ -630,7 +630,7 @@ class TacticianSignalGenerator:
     def _store_signal(self, signal: TacticianSignal):
         """Store signal in history."""
         self.signal_history.append(signal)
-        
+
         # Maintain history size
         if len(self.signal_history) > self.max_history:
             self.signal_history.pop(0)
@@ -649,17 +649,17 @@ class TacticianSignalGenerator:
                 'avg_confidence': 0.0,
                 'avg_position_size': 0.0
             }
-        
+
         # Calculate signal distribution
         signal_distribution = {}
         for signal in self.signal_history:
             signal_type = signal.timing_signal.value
             signal_distribution[signal_type] = signal_distribution.get(signal_type, 0) + 1
-        
+
         # Calculate averages
         avg_confidence = np.mean([s.confidence_score for s in self.signal_history])
         avg_position_size = np.mean([s.position_sizing.recommended_size for s in self.signal_history])
-        
+
         return {
             'total_signals': self.signal_count,
             'success_rate': self.successful_signals / self.signal_count if self.signal_count > 0 else 0.0,
@@ -694,7 +694,7 @@ async def generate_tactician_signal(
     """Generate tactician signal with convenience function."""
     if not signal_generator.tactician:
         await signal_generator.initialize(tactician_component)
-    
+
     return await signal_generator.generate_timing_signal(
         symbol=symbol,
         analyst_signal=analyst_signal,

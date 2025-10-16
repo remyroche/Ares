@@ -121,13 +121,13 @@ class DirectionalConfig:
     enable_cyclic_noise: bool = True
     cyclic_noise_scale: float = 1e-3
     cyclic_noise_period: int = 512
-    
+
     # Directional optimization parameters
     directional_weight_boost: float = 1.5  # Boost weight for strong directional moves
     asymmetric_loss_alpha: float = 0.7     # Asymmetric loss parameter
     min_directional_threshold: float = 0.1  # Minimum threshold for directional moves
     temporal_decay_tau: float = 7 * 24 * 3600  # Temporal decay constant (seconds)
-    
+
     tau: float = 7.0  # Exponential decay time constant in days for recency weighting
 
     # Feature engineering parameters
@@ -137,7 +137,7 @@ class DirectionalConfig:
 
     # Feature normalization parameters
     enable_directional_quantiles: bool = False
-    
+
     def __post_init__(self):
         if self.directional_lookback_periods is None:
             self.directional_lookback_periods = [5, 10, 15, 20, 30]
@@ -147,7 +147,7 @@ class DirectionalConfig:
 
 class DirectionalFeatureEngineer:
     """Feature engineering specialized for directional prediction."""
-    
+
     def __init__(self, config: DirectionalConfig):
         self.config = config
         self.logger = logger.getChild('DirectionalFeatureEngineer')
@@ -174,25 +174,25 @@ class DirectionalFeatureEngineer:
         """
         if not self.config.enable_directional_features:
             return df.copy()
-        
+
         self.logger.debug("Creating directional features...")
-        
+
         df_enhanced = df.copy()
-        
+
         # Add directional momentum features
         df_enhanced = self._add_directional_momentum_features(df_enhanced)
-        
+
         # Add asymmetric volatility features
         df_enhanced = self._add_asymmetric_volatility_features(df_enhanced)
-        
+
         # Add regime directional bias features
         df_enhanced = self._add_regime_directional_features(df_enhanced, target)
-        
+
         # Add volume directional features
         df_enhanced = self._add_volume_directional_features(df_enhanced)
-        
+
         self.logger.debug(f"Created {df_enhanced.shape[1] - df.shape[1]} directional features")
-        
+
         if self.quantile_transformer is not None:
             df_enhanced = self._apply_quantile_transform(df_enhanced, fit=fit)
 
@@ -207,84 +207,84 @@ class DirectionalFeatureEngineer:
             return self.quantile_transformer.fit_transform(df, numeric_columns)
 
         return self.quantile_transformer.transform(df, numeric_columns)
-    
+
     def _add_directional_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add momentum features optimized for directional prediction."""
-        
+
         for period in self.config.momentum_periods:
             # Long-biased momentum (emphasizes sustained moves)
             df[f'momentum_long_{period}'] = (
                 df['close'].pct_change(period).rolling(period//2).mean()
             )
-            
+
             # Short-biased momentum (emphasizes rapid moves)
             df[f'momentum_short_{period}'] = (
                 df['close'].pct_change(period//2).rolling(period//4).mean()
             )
-            
+
             # Directional strength
             price_change = df['close'].pct_change(period)
             volatility = df['close'].pct_change().rolling(period).std()
             df[f'directional_strength_{period}'] = safe_divide(
                 np.abs(price_change), volatility, default=0.0
             )
-        
+
         return df
-    
+
     def _add_asymmetric_volatility_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volatility features that capture directional asymmetries."""
-        
+
         returns = df['close'].pct_change()
-        
+
         for period in self.config.directional_lookback_periods:
             # Upside volatility (for long predictions)
             upside_returns = returns.where(returns > 0, 0)
             df[f'upside_volatility_{period}'] = upside_returns.rolling(period).std()
-            
-            # Downside volatility (for short predictions) 
+
+            # Downside volatility (for short predictions)
             downside_returns = returns.where(returns < 0, 0)
             df[f'downside_volatility_{period}'] = downside_returns.rolling(period).std()
-            
+
             # Volatility ratio (asymmetry measure)
             df[f'volatility_asymmetry_{period}'] = safe_divide(
                 df[f'upside_volatility_{period}'],
                 df[f'downside_volatility_{period}'],
                 default=1.0
             )
-        
+
         return df
-    
+
     def _add_regime_directional_features(self, df: pd.DataFrame, target: np.ndarray) -> pd.DataFrame:
         """Add features that capture regime-specific directional biases."""
-        
+
         # Calculate rolling directional bias
         target_series = pd.Series(target, index=df.index[:len(target)])
-        
+
         for period in self.config.directional_lookback_periods:
             # Long bias strength
             long_signals = (target_series > self.config.min_directional_threshold).astype(int)
             df[f'long_bias_strength_{period}'] = long_signals.rolling(period).mean()
-            
+
             # Short bias strength
             short_signals = (target_series < -self.config.min_directional_threshold).astype(int)
             df[f'short_bias_strength_{period}'] = short_signals.rolling(period).mean()
-            
+
             # Directional consistency
             directional_changes = np.abs(target_series.diff())
             df[f'directional_consistency_{period}'] = (
                 1.0 / (1.0 + directional_changes.rolling(period).std())
             )
-        
+
         return df
-    
+
     def _add_volume_directional_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add volume features optimized for directional prediction."""
-        
+
         if 'volume' not in df.columns:
             return df
-        
+
         price_change = df['close'].pct_change()
-        
+
         for period in self.config.directional_lookback_periods:
             # Volume on up moves (accumulation)
             up_moves = price_change > 0
@@ -292,58 +292,58 @@ class DirectionalFeatureEngineer:
                 (df['volume'] * up_moves).rolling(period).sum() /
                 df['volume'].rolling(period).sum()
             )
-            
+
             # Volume on down moves (distribution)
             down_moves = price_change < 0
             df[f'distribution_volume_{period}'] = (
                 (df['volume'] * down_moves).rolling(period).sum() /
                 df['volume'].rolling(period).sum()
             )
-            
+
             # Volume directional bias
             df[f'volume_directional_bias_{period}'] = (
                 df[f'accumulation_volume_{period}'] - df[f'distribution_volume_{period}']
             )
-        
+
         return df
 
 class DirectionalSpecialistModel:
     """
     LightGBM-based directional specialist model for Analyst ensemble.
-    
+
     This model serves as the 4th base model in the ensemble and specializes
     in directional prediction with asymmetric objectives.
     """
-    
+
     def __init__(self, config: Optional[DirectionalConfig] = None):
         """Initialize the directional specialist model."""
         self.config = config or DirectionalConfig()
         self.logger = logger.getChild('DirectionalSpecialistModel')
-        
+
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM is required but not available. Please install lightgbm.")
-        
+
         # Initialize feature engineer
         self.feature_engineer = DirectionalFeatureEngineer(self.config)
-        
+
         # Initialize hardware optimizers
         self.gpu_manager = get_m1_gpu_manager()
         self.memory_optimizer = get_m1_memory_optimizer()
         self.cpu_optimizer = get_m1_cpu_optimizer()
-        
+
         # Model components
         self.model = None
         self.feature_columns = None
         self.is_fitted = False
-        
+
         # Directional statistics
         self.directional_stats = {}
-        
+
         self.logger.info("🎯 Directional Specialist Model initialized")
         self.logger.info(f"   LightGBM parameters: n_estimators={self.config.n_estimators}")
         self.logger.info(f"   Directional features: {self.config.enable_directional_features}")
         self.logger.info(f"   Asymmetric loss alpha: {self.config.asymmetric_loss_alpha}")
-    
+
     def fit(
         self,
         X: pd.DataFrame,
@@ -353,18 +353,18 @@ class DirectionalSpecialistModel:
     ) -> 'DirectionalSpecialistModel':
         """
         Fit the directional specialist model.
-        
+
         Args:
             X: Input features
             y: Target values
             sample_weight: Optional sample weights
             timestamps: Optional timestamps aligned with samples for temporal decay
-            
+
         Returns:
             Self for method chaining
         """
         self.logger.info("🚀 Training directional specialist model...")
-        
+
         # Create directional features
         X_enhanced = self.feature_engineer.create_directional_features(X, y)
 
@@ -398,7 +398,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
                 CyclicNoiseConfig,
                 add_cyclic_noise,
@@ -434,7 +434,7 @@ except ImportError:
             half_life_td,
             self.config.tau,
         )
-        
+
         # Initialize LightGBM model
         self.model = lgb.LGBMRegressor(
             objective='regression',
@@ -452,7 +452,7 @@ except ImportError:
             verbose=-1,
             n_jobs=-1
         )
-        
+
         # Fit model with directional optimization
         self.model.fit(
             X_prepared,
@@ -467,91 +467,91 @@ except ImportError:
         self.feature_columns = X_prepared.columns.tolist()
         self.directional_stats = self._calculate_directional_statistics(y, sample_weight)
         self.is_fitted = True
-        
+
         self.logger.info("✅ Directional specialist model training completed")
         self.logger.info(f"   Features used: {len(self.feature_columns)}")
         self.logger.info(f"   Long samples: {self.directional_stats['long_samples']}")
         self.logger.info(f"   Short samples: {self.directional_stats['short_samples']}")
         self.logger.info(f"   Directional clarity: {self.directional_stats['directional_clarity']:.3f}")
-        
+
         return self
-    
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """
         Make predictions with the directional specialist model.
-        
+
         Args:
             X: Input features
-            
+
         Returns:
             Predictions array
         """
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
-        
+
         # Create directional features (using dummy target for feature engineering)
         dummy_target = np.zeros(len(X))
         X_enhanced = self.feature_engineer.create_directional_features(X, dummy_target, fit=False)
-        
+
         # Ensure feature alignment
         X_aligned = X_enhanced.reindex(columns=self.feature_columns, fill_value=0)
-        
+
         # Make predictions
         predictions = self.model.predict(X_aligned)
-        
+
         return predictions
-    
+
     def predict_with_direction_confidence(self, X: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, str]:
         """
         Make predictions with directional confidence assessment.
-        
+
         Args:
             X: Input features
-            
+
         Returns:
             Tuple of (predictions, confidence_scores, dominant_direction)
         """
         predictions = self.predict(X)
-        
+
         # Calculate directional confidence
         confidence_scores = self._calculate_prediction_confidence(X, predictions)
-        
+
         # Determine dominant direction
         dominant_direction = 'long' if np.mean(predictions) > 0 else 'short'
-        
+
         return predictions, confidence_scores, dominant_direction
-    
+
     def get_feature_importance(self, importance_type: str = 'gain') -> Dict[str, float]:
         """
         Get feature importance from the trained model.
-        
+
         Args:
             importance_type: Type of importance ('gain', 'split', 'weight')
-            
+
         Returns:
             Dictionary of feature importances
         """
         if not self.is_fitted:
             raise ValueError("Model must be fitted to get feature importance")
-        
+
         importance_values = self.model.feature_importances_
         importance_dict = dict(zip(self.feature_columns, importance_values))
-        
+
         # Sort by importance
         sorted_importance = dict(sorted(importance_dict.items(), key=lambda x: x[1], reverse=True))
-        
+
         return sorted_importance
-    
+
     def get_directional_feature_importance(self) -> Dict[str, Dict[str, float]]:
         """Get feature importance categorized by directional type."""
         all_importance = self.get_feature_importance()
-        
+
         categorized_importance = {
             'long_features': {},
             'short_features': {},
             'general_features': {}
         }
-        
+
         for feature, importance in all_importance.items():
             if 'long' in feature or 'accumulation' in feature or 'upside' in feature:
                 categorized_importance['long_features'][feature] = importance
@@ -559,9 +559,9 @@ except ImportError:
                 categorized_importance['short_features'][feature] = importance
             else:
                 categorized_importance['general_features'][feature] = importance
-        
+
         return categorized_importance
-    
+
     def _create_directional_sample_weights(
         self,
         y: np.ndarray,
@@ -739,7 +739,7 @@ except ImportError:
 
         converted_numeric = pd.to_datetime(numeric_series, unit=unit, errors='coerce', utc=True)
         return converted_numeric.tz_convert(None)
-    
+
     def _calculate_directional_statistics(self, y: np.ndarray, sample_weight: np.ndarray) -> Dict[str, Any]:
         """Calculate statistics about directional distribution."""
 
@@ -789,42 +789,42 @@ except ImportError:
 
     def _calculate_prediction_confidence(self, X: pd.DataFrame, predictions: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for predictions."""
-        
+
         # Simple confidence based on prediction magnitude and consistency
         pred_magnitude = np.abs(predictions)
         pred_consistency = 1.0 / (1.0 + np.std(predictions))
-        
+
         # Normalize to 0-1 range
         magnitude_norm = pred_magnitude / (np.max(pred_magnitude) + 1e-8)
         confidence_scores = (magnitude_norm + pred_consistency) / 2
-        
+
         return np.clip(confidence_scores, 0.0, 1.0)
 
 # Integration with existing ensemble architecture
 class DirectionalSpecialistEnsemble(BaseEnsemble):
     """
     Ensemble wrapper for directional specialist model.
-    
+
     This allows the directional specialist to integrate seamlessly
     with the existing ensemble architecture.
     """
-    
+
     def __init__(self, config: Optional[DirectionalConfig] = None):
         super().__init__()
         self.directional_model = DirectionalSpecialistModel(config)
         self.logger = logger.getChild('DirectionalSpecialistEnsemble')
-    
+
     def fit(self, X: pd.DataFrame, y: np.ndarray, **kwargs) -> 'DirectionalSpecialistEnsemble':
         """Fit the directional specialist ensemble."""
         timestamps = kwargs.get('timestamps')
         sample_weight = kwargs.get('sample_weight')
         self.directional_model.fit(X, y, sample_weight=sample_weight, timestamps=timestamps)
         return self
-    
+
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Make predictions using the directional specialist."""
         return self.directional_model.predict(X)
-    
+
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the directional specialist model."""
         return {
@@ -847,12 +847,12 @@ def create_directional_specialist_ensemble(config: Optional[DirectionalConfig] =
 # Example usage and testing
 if __name__ == '__main__':
     tprint("🧪 Testing Directional Specialist Model")
-    
+
     # Create test data
     np.random.seed(42)
     n_samples = 1000
     n_features = 20
-    
+
     # Create synthetic OHLCV data
     test_data = pd.DataFrame({
         'open': np.random.randn(n_samples).cumsum() + 100,
@@ -861,32 +861,32 @@ if __name__ == '__main__':
         'close': np.random.randn(n_samples).cumsum() + 100,
         'volume': np.random.randint(1000, 10000, n_samples)
     })
-    
+
     # Add additional features
     for i in range(n_features - 5):
         test_data[f'feature_{i}'] = np.random.randn(n_samples)
-    
+
     # Create directional targets
     returns = test_data['close'].pct_change()
     target = returns.rolling(5).mean().shift(-5).fillna(0)  # Future directional movement
-    
+
     # Test directional specialist
     config = DirectionalConfig(n_estimators=100)  # Reduced for testing
     model = DirectionalSpecialistModel(config)
-    
+
     # Fit model
     model.fit(test_data, target.values)
-    
+
     # Make predictions
     predictions = model.predict(test_data)
-    
+
     # Get directional predictions with confidence
     pred, conf, direction = model.predict_with_direction_confidence(test_data)
-    
+
     # Get feature importance
     importance = model.get_feature_importance()
     directional_importance = model.get_directional_feature_importance()
-    
+
     tprint("✅ Directional Specialist Model test completed!")
     tprint(f"   Predictions shape: {predictions.shape}")
     tprint(f"   Dominant direction: {direction}")
@@ -897,16 +897,16 @@ if __name__ == '__main__':
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -925,8 +925,8 @@ if __name__ == '__main__':
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -943,13 +943,13 @@ if __name__ == '__main__':
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

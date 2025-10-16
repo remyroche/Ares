@@ -12,12 +12,11 @@ from dataclasses import dataclass, field
 from enum import Enum
 import logging
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class LayerType(Enum):
     """Neural network layer types for NAS."""
@@ -48,7 +47,6 @@ class LayerType(Enum):
     XGBOOST = "xgboost"
     LIGHTGBM = "lightgbm"
 
-
 class ActivationFunction(Enum):
     """Activation functions for neural networks."""
     RELU = "relu"
@@ -63,7 +61,6 @@ class ActivationFunction(Enum):
     SOFTMAX = "softmax"
     NONE = "none"
 
-
 class ConnectionType(Enum):
     """Connection types between layers."""
     DENSE = "dense"
@@ -73,7 +70,6 @@ class ConnectionType(Enum):
     SKIP = "skip"
     HIGHWAY = "highway"
     CONCATENATE = "concatenate"
-
 
 @dataclass
 class LayerSpecification:
@@ -90,7 +86,6 @@ class LayerSpecification:
     layer_norm: bool = False
     residual: bool = False
     parameters: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class TreeSpecification:
@@ -113,7 +108,6 @@ class TreeSpecification:
     reg_alpha: float = 0.0
     reg_lambda: float = 1.0
 
-
 @dataclass
 class ArchitectureConstraints:
     """Constraints for valid architectures."""
@@ -135,7 +129,6 @@ class ArchitectureConstraints:
     enforce_gradient_flow: bool = True
     max_memory_usage_mb: int = 4096  # 4GB
     max_training_time_seconds: int = 3600  # 1 hour
-
 
 @dataclass
 class NeuralArchitecture:
@@ -169,7 +162,6 @@ class NeuralArchitecture:
 
         return min(complexity, 5.0)  # Cap at 5.0
 
-
 @dataclass
 class TreeArchitecture:
     """Complete tree architecture specification."""
@@ -202,7 +194,6 @@ class TreeArchitecture:
         complexity += len(self.feature_preprocessing) * 0.05
 
         return min(complexity, 5.0)
-
 
 class NeuralSearchSpace:
     """Comprehensive search space for neural architectures."""
@@ -403,7 +394,6 @@ class NeuralSearchSpace:
 
         return len(errors) == 0, errors
 
-
 class TreeSearchSpace:
     """Comprehensive search space for tree architectures."""
 
@@ -565,11 +555,9 @@ class TreeSearchSpace:
 
         return len(errors) == 0, errors
 
-
 def create_neural_search_space(constraints: Optional[ArchitectureConstraints] = None) -> NeuralSearchSpace:
     """Create a neural search space instance."""
     return NeuralSearchSpace(constraints)
-
 
 def create_tree_search_space(constraints: Optional[ArchitectureConstraints] = None) -> TreeSearchSpace:
     """Create a tree search space instance."""

@@ -51,7 +51,7 @@ class LazyVBT:
         if vbt_module is None:
             raise AttributeError(f"VectorBT not available, cannot access {name}")
         return getattr(vbt_module, name)
-    
+
     def __call__(self, *args, **kwargs):
         vbt_module = get_vbt()
         if vbt_module is None:
@@ -211,7 +211,6 @@ class UnifiedVectorizationManager:
 def get_unified_vectorization_manager(*args, **kwargs):
     """Get unified vectorization manager."""
     return UnifiedVectorizationManager(*args, **kwargs)
-
 
 # Math validation utilities (imported from constants to avoid circular imports)
 if TPRINT_AVAILABLE and MATH_VALIDATION_AVAILABLE:

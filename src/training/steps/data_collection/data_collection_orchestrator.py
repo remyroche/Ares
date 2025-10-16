@@ -476,5 +476,3 @@ async def download_and_process_data(
     return await orchestrator.run_complete_pipeline(
         symbol, exchange, data_types, timeframes, **kwargs
     )
-
-

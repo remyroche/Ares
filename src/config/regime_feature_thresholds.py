@@ -27,13 +27,11 @@ _DEFAULTS: Dict[str, Any] = {
     },
 }
 
-
 def _config_path(override_path: Optional[Path] = None) -> Path:
     """Return the path to the regime feature configuration file."""
     if override_path is not None:
         return override_path
     return Path(__file__).resolve().parents[2] / "config" / "regime_features.yaml"
-
 
 def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively merge ``updates`` into ``base`` and return the result."""
@@ -47,7 +45,6 @@ def _deep_update(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any
         else:
             base[key] = value
     return base
-
 
 @lru_cache(maxsize=None)
 def get_regime_feature_thresholds(config_path: Optional[str] = None) -> Dict[str, Any]:
@@ -80,6 +77,5 @@ def get_regime_feature_thresholds(config_path: Optional[str] = None) -> Dict[str
             pass
 
     return data
-
 
 __all__ = ["get_regime_feature_thresholds"]

@@ -23,7 +23,7 @@ except ImportError:
             self.message = message
             self.status_code = status_code
             self.details = kwargs
-        
+
         def to_dict(self) -> Dict[str, Any]:
             return {
                 'error': self.__class__.__name__,
@@ -70,7 +70,7 @@ class NonRetryableError(AppError):
 # Error recovery strategies
 class ErrorRecoveryStrategies:
     """Error recovery strategies."""
-    
+
     @staticmethod
     def retry_with_backoff(func: Callable, max_retries: int = 3) -> Any:
         """Retry function with exponential backoff."""
@@ -254,13 +254,13 @@ __all__ = [
     # Error classes
     'AppError', 'ValidationError', 'AuthenticationError', 'AuthorizationError',
     'ServiceUnavailableError', 'AppTimeoutError', 'RetryableError', 'NonRetryableError',
-    
+
     # Error handlers
     'EnhancedErrorHandler', 'ErrorRecoveryStrategies',
-    
+
     # Error constants
     'DATA_OPERATION_ERRORS', 'EXCEPTION_TYPES',
-    
+
     # Error functions
     'handles_errors', 'core_handles_errors', '_handles_errors',
     'error_context', 'error_mapper', 'categorize_errors',

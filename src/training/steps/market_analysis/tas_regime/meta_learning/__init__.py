@@ -23,7 +23,7 @@ class FewShotTreeLearner:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("FewShotTreeLearner not available - using fallback")
-    
+
     def learn_from_few_examples(self, *args, **kwargs):
         """Fallback learning method."""
         return {}
@@ -33,7 +33,7 @@ class TreeFewShotAdapter:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeFewShotAdapter not available - using fallback")
-    
+
     def adapt_to_new_regime(self, *args, **kwargs):
         """Fallback adaptation method."""
         return {}
@@ -43,7 +43,7 @@ class ContinualTreeLearner:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("ContinualTreeLearner not available - using fallback")
-    
+
     def learn_continuously(self, *args, **kwargs):
         """Fallback learning method."""
         return {}
@@ -53,7 +53,7 @@ class TreeEpisodicMemory:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.logger.warning("TreeEpisodicMemory not available - using fallback")
-    
+
     def store_episode(self, *args, **kwargs):
         """Fallback storage method."""
         return {}

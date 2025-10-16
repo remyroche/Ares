@@ -85,13 +85,13 @@ class PerfectNASResult:
 class PerfectNASRegimeDetector:
     """
     Perfect NAS Regime Detector - The ultimate regime qualification system.
-    
+
     Combines the best of both nas_modeling and nas_clustering systems with
     enhanced economic significance and trading viability evaluation.
     Now includes full integration with existing tools infrastructure and
     adaptive threshold learning for data-driven thresholds.
     """
-    
+
     def __init__(self, config: Union[PerfectNASConfig, EnhancedPerfectNASConfig]):
         """Initialize Perfect NAS Regime Detector (Enhanced Mode Only).
 
@@ -106,15 +106,15 @@ class PerfectNASRegimeDetector:
         tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Search Strategy: {config.search_strategy.value}", color="blue")
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Check if using enhanced configuration with adaptive thresholds
         self.using_adaptive_thresholds = isinstance(config, EnhancedPerfectNASConfig)
         tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Using adaptive thresholds: {self.using_adaptive_thresholds}", color="blue")
-        
+
         # Initialize enhanced utilities
         tprint("🔧 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced utilities", color="yellow")
         self._initialize_enhanced_utilities()
-        
+
         # Initialize enhanced detector with full tool integration
         tprint("🧠 [PERFECT_NAS_REGIME_DETECTOR] Initializing enhanced detector", color="yellow")
         self.enhanced_detector = EnhancedPerfectNASRegimeDetector(config)
@@ -134,7 +134,7 @@ class PerfectNASRegimeDetector:
         self.logger.info(f"   Meta-learning: {config.enable_meta_learning}")
         self.logger.info(f"   Search Strategy: {config.search_strategy.value}")
         self.logger.info(f"   Maximum Advancement: Enabled")
-        
+
         if self.using_adaptive_thresholds:
             tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Adaptive Thresholds: {config.adaptive_thresholds.learning_mode.value}", color="blue")
             tprint(f"📊 [PERFECT_NAS_REGIME_DETECTOR] Economic Learning: {config.adaptive_thresholds.enable_economic_learning}", color="blue")
@@ -144,32 +144,32 @@ class PerfectNASRegimeDetector:
             self.logger.info(f"   Economic Learning: {config.adaptive_thresholds.enable_economic_learning}")
             self.logger.info(f"   Trading Learning: {config.adaptive_thresholds.enable_trading_learning}")
             self.logger.info(f"   Stability Learning: {config.adaptive_thresholds.enable_stability_learning}")
-    
+
     def _initialize_enhanced_utilities(self):
         """Initialize enhanced utility components."""
         try:
             # Initialize serialization
             self.serializer = UniversalSerializer()
-            
+
             # Initialize M1 optimizations
             self.m1_integration = integrate_with_m1_optimizers()
             self.gpu_manager = get_m1_gpu_manager()
             self.memory_optimizer = get_m1_memory_optimizer()
             self.cpu_optimizer = get_m1_cpu_optimizer()
-            
+
             # Initialize enhanced data operations
             self.data_operations = EnhancedDataOperations(
                 data_dir="nas_regime_data",
                 enable_validation=True
             )
-            
+
             # Initialize enhanced matrix operations
             self.matrix_operations = EnhancedMatrixOperations(
                 enable_gpu=True,
                 enable_optimization=True,
                 enable_m1_optimization=True
             )
-            
+
             # Initialize enhanced ML common integration
             ml_config = MLCommonConfig(
                 enable_validation=True,
@@ -185,13 +185,13 @@ class PerfectNASRegimeDetector:
                 enable_performance_monitoring=True
             )
             self.ml_common_integration = EnhancedMLCommonIntegration(ml_config)
-            
+
             self.logger.info("✅ Enhanced utilities initialized successfully")
             self.logger.info(f"   M1 Integration: {'✅ Available' if self.m1_integration.get('success', False) else '❌ Not available'}")
             self.logger.info(f"   Data Operations: ✅ Initialized")
             self.logger.info(f"   Matrix Operations: ✅ Initialized")
             self.logger.info(f"   ML Common Integration: ✅ Initialized")
-            
+
         except Exception as e:
             self.logger.warning(f"Enhanced utilities initialization failed: {e}")
             # Initialize fallback components
@@ -310,22 +310,22 @@ class PerfectNASRegimeDetector:
 
                 # Validate numeric data using enhanced validation
                 validate_numeric_array(market_data_array, "market_data")
-                
+
                 # Additional validation using ML common integration if available
                 if self.ml_common_integration:
                     ml_validation = self.ml_common_integration.validate_data(market_data_array, 'market_data')
                     if not ml_validation['is_valid']:
                         self.logger.warning(f"ML validation failed: {ml_validation.get('errors', [])}")
-                
+
                 # Pre-process data using enhanced matrix operations if available
                 if self.matrix_operations:
                     with gpu_context("data_preprocessing"):
                         # Normalize data for better regime detection
                         normalized_data = self.matrix_operations.normalize_data(market_data_array, method='robust')
-                        
+
                         # Calculate enhanced features for regime detection
                         enhanced_features = self.matrix_operations.calculate_enhanced_features(normalized_data, window=20)
-                        
+
                         # Combine original data with enhanced features
                         if enhanced_features:
                             feature_arrays = []
@@ -334,7 +334,7 @@ class PerfectNASRegimeDetector:
                                     feature_arrays.append(feature_data.reshape(-1, 1))
                                 else:
                                     feature_arrays.append(feature_data)
-                            
+
                             if feature_arrays:
                                 enhanced_features_array = np.concatenate(feature_arrays, axis=1)
                                 market_data_array = np.concatenate([market_data_array, enhanced_features_array], axis=1)
@@ -343,17 +343,17 @@ class PerfectNASRegimeDetector:
                                 self.logger.info("⚠️ No enhanced features generated, using original data")
                 else:
                     self.logger.info("⚠️ Matrix operations not available, using original data")
-                
+
                 # Learn adaptive thresholds if enabled
-                if (self.using_adaptive_thresholds and 
-                    learn_thresholds and 
+                if (self.using_adaptive_thresholds and
+                    learn_thresholds and
                     self.config.should_learn_thresholds(len(market_data_array))):
-                    
+
                     self.logger.info("🧠 Learning adaptive thresholds from data...")
                     threshold_learning_success = self.config.learn_thresholds(
                         market_data_array, np.array([]), timestamps
                     )
-                    
+
                     if threshold_learning_success:
                         self.logger.info("✅ Adaptive thresholds learned successfully")
                         # Get threshold explanations
@@ -362,12 +362,12 @@ class PerfectNASRegimeDetector:
                             self.logger.info(f"   {metric}: {explanation}")
                     else:
                         self.logger.warning("⚠️ Adaptive threshold learning failed, using fallback thresholds")
-                
+
                 # Use enhanced detector with full tool integration (only mode available)
                 enhanced_result = self.enhanced_detector.detect_regimes(
                     market_data_array, timestamps, optimize_architecture, enable_meta_learning
                 )
-                
+
         except Exception as e:
             error_msg = str(e)
             # Check if this is a generator-related error
@@ -464,27 +464,27 @@ class PerfectNASRegimeDetector:
                         enhanced_stability = self.matrix_operations.calculate_regime_stability(
                             enhanced_result.regime_predictions, timestamps if timestamps is not None else np.arange(len(enhanced_result.regime_predictions))
                         )
-                        
+
                         # Update stability scores if calculated
                         if enhanced_stability is not None:
                             enhanced_result.regime_stability_scores = enhanced_stability
                             self.logger.info("✅ Enhanced regime stability calculated")
-                    
+
                     # Calculate transition probabilities using enhanced operations
                     if enhanced_result.regime_predictions is not None:
                         n_regimes = len(np.unique(enhanced_result.regime_predictions))
                         enhanced_transitions = self.matrix_operations.calculate_transition_probabilities(
                             enhanced_result.regime_predictions, n_regimes
                         )
-                        
+
                         # Update transition probabilities if calculated
                         if enhanced_transitions is not None:
                             enhanced_result.transition_probabilities = enhanced_transitions
                             self.logger.info("✅ Enhanced transition probabilities calculated")
-                            
+
             except Exception as e:
                 self.logger.warning(f"Enhanced post-processing failed: {e}")
-        
+
         # Convert enhanced result to standard result
         result = PerfectNASResult(
             success=enhanced_result.success,
@@ -501,7 +501,7 @@ class PerfectNASRegimeDetector:
             metadata=enhanced_result.metadata,
             error_message=enhanced_result.error_message
         )
-        
+
         # Add adaptive threshold information to metadata
         if self.using_adaptive_thresholds and result.metadata:
             result.metadata['adaptive_thresholds'] = {
@@ -511,7 +511,7 @@ class PerfectNASRegimeDetector:
                 'confidence_intervals': self.config.get_threshold_confidence_intervals(),
                 'threshold_explanations': self.config.get_threshold_explanations()
             }
-        
+
         # Add enhanced utilities information to metadata
         if result.metadata:
             result.metadata['enhanced_utilities'] = {
@@ -521,16 +521,16 @@ class PerfectNASRegimeDetector:
                 'm1_integration_available': self.m1_integration is not None and self.m1_integration.get('success', False),
                 'serialization_available': self.serializer is not None
             }
-        
+
         return result
-    
+
     def save_detector_state(self, filepath: str) -> bool:
         """Save detector state using enhanced serialization."""
         try:
             if not self.serializer:
                 self.logger.warning("Serialization not available")
                 return False
-            
+
             state = {
                 'config': self.config,
                 'using_adaptive_thresholds': self.using_adaptive_thresholds,
@@ -543,46 +543,46 @@ class PerfectNASRegimeDetector:
                 },
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             # Save state
             success = self.serializer.save(state, filepath)
-            
+
             if success:
                 self.logger.info(f"✅ Detector state saved to {filepath}")
             else:
                 self.logger.error(f"Failed to save detector state to {filepath}")
-            
+
             return success
-            
+
         except Exception as e:
             self.logger.error(f"Failed to save detector state: {e}")
             return False
-    
+
     def load_detector_state(self, filepath: str) -> bool:
         """Load detector state using enhanced serialization."""
         try:
             if not self.serializer:
                 self.logger.warning("Serialization not available")
                 return False
-            
+
             state = self.serializer.load(filepath)
             if state is None:
                 self.logger.error(f"Failed to load state from {filepath}")
                 return False
-            
+
             # Restore configuration
             if 'config' in state:
                 self.config = state['config']
                 self.using_adaptive_thresholds = state.get('using_adaptive_thresholds', False)
-            
+
             self.logger.info(f"✅ Detector state loaded from {filepath}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load detector state: {e}")
             return False
-    
-    def load_market_data(self, symbol: str, interval: str, 
+
+    def load_market_data(self, symbol: str, interval: str,
                         start_date=None, end_date=None, data_type: str = "processed") -> Optional[pd.DataFrame]:
         """Load market data using enhanced data operations."""
         try:
@@ -594,7 +594,7 @@ class PerfectNASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Failed to load market data: {e}")
             return None
-    
+
     def get_data_quality_report(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Get data quality report using enhanced data operations."""
         try:
@@ -604,7 +604,7 @@ class PerfectNASRegimeDetector:
                 return {'error': 'Enhanced data operations not available'}
         except Exception as e:
             return {'error': str(e)}
-    
+
     def save_processed_data(self, data: pd.DataFrame, symbol: str, interval: str) -> bool:
         """Save processed data using enhanced data operations."""
         try:
@@ -616,7 +616,7 @@ class PerfectNASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Failed to save processed data: {e}")
             return False
-    
+
     def get_enhanced_features(self, data: np.ndarray, window: int = 20) -> Dict[str, np.ndarray]:
         """Get enhanced features using matrix operations."""
         try:
@@ -627,7 +627,7 @@ class PerfectNASRegimeDetector:
         except Exception as e:
             self.logger.error(f"Failed to calculate enhanced features: {e}")
             return {}
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics from all enhanced utilities."""
         metrics = {
@@ -639,10 +639,10 @@ class PerfectNASRegimeDetector:
                 'serialization': self.serializer is not None
             }
         }
-        
+
         # Add matrix operations metrics if available
         if self.matrix_operations:
             matrix_metrics = self.matrix_operations.get_performance_metrics()
             metrics['matrix_operations_metrics'] = matrix_metrics
-        
+
         return metrics

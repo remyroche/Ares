@@ -1434,7 +1434,7 @@ class UnifiedDataConverter:
             daily_data['exchange'] = exchange.upper()
             daily_data['symbol'] = symbol
             daily_data['timeframe'] = timeframe
-            
+
             # Use standardized handler to write partitioned data
             success = standardized_parquet_handler.write_partitioned_parquet(
                 df=daily_data,
@@ -1442,7 +1442,7 @@ class UnifiedDataConverter:
                 schema_name='unified',
                 partition_cols=['exchange', 'symbol', 'timeframe', 'year', 'month', 'day']
             )
-            
+
             if success:
                 self.logger.info(f'✅ Successfully wrote daily partition for {target_date} using standardized handler')
                 return True
@@ -1882,22 +1882,22 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 from src.utils.version_manager import get_version_manager
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1916,8 +1916,8 @@ from src.utils.version_manager import get_version_manager
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1934,13 +1934,13 @@ from src.utils.version_manager import get_version_manager
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

@@ -23,7 +23,6 @@ import warnings
 
 logger = logging.getLogger(__name__)
 
-
 class SignalType(Enum):
     """Types of trading signals."""
     BUY = "buy"
@@ -32,14 +31,12 @@ class SignalType(Enum):
     STRONG_BUY = "strong_buy"
     STRONG_SELL = "strong_sell"
 
-
 class SignalSource(Enum):
     """Source of trading signals."""
     NEURAL_NETWORK = "neural_network"
     TREE_MODEL = "tree_model"
     ENSEMBLE = "ensemble"
     HYBRID = "hybrid"
-
 
 class ConfidenceLevel(Enum):
     """Confidence levels for signals."""
@@ -48,7 +45,6 @@ class ConfidenceLevel(Enum):
     MEDIUM = "medium"       # 0.7 - 0.8
     HIGH = "high"           # 0.8 - 0.9
     VERY_HIGH = "very_high" # > 0.9
-
 
 @dataclass
 class TradingSignal:
@@ -60,7 +56,6 @@ class TradingSignal:
     price: float
     volume: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class SignalQualityMetrics:
@@ -74,7 +69,6 @@ class SignalQualityMetrics:
     win_rate: float
     profit_factor: float
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ArchitectureSignalConfig:
@@ -106,7 +100,6 @@ class ArchitectureSignalConfig:
     enable_real_time_processing: bool = True
     signal_buffer_size: int = 1000
     update_frequency_seconds: int = 60
-
 
 class NeuralSignalGenerator:
     """Signal generator for neural architectures."""
@@ -221,7 +214,6 @@ class NeuralSignalGenerator:
             self.logger.warning(f"Regime adjustment failed: {e}")
             return signal_type, confidence
 
-
 class TreeSignalGenerator:
     """Signal generator for tree-based architectures."""
 
@@ -324,7 +316,6 @@ class TreeSignalGenerator:
         except Exception as e:
             self.logger.warning(f"Regime adjustment failed: {e}")
             return signal_type, confidence
-
 
 class EnsembleSignalGenerator:
     """Ensemble signal generator combining multiple architectures."""
@@ -478,7 +469,6 @@ class EnsembleSignalGenerator:
             metadata={'combination_method': 'majority_vote', 'vote_counts': vote_counts}
         )
 
-
 class SignalQualityEvaluator:
     """Evaluator for signal quality metrics."""
 
@@ -593,7 +583,6 @@ class SignalQualityEvaluator:
             return float('inf') if positive_returns > 0 else 0.0
 
         return positive_returns / negative_returns
-
 
 class ArchitectureSignalGenerator:
     """
@@ -779,11 +768,9 @@ class ArchitectureSignalGenerator:
             self.logger.error(f"❌ Failed to save signal generator: {e}")
             return False
 
-
 def create_architecture_signal_generator(config: ArchitectureSignalConfig) -> ArchitectureSignalGenerator:
     """Create architecture signal generator instance."""
     return ArchitectureSignalGenerator(config)
-
 
 def quick_signal_generation(architectures: Dict[str, Any],
                           market_data: np.ndarray,

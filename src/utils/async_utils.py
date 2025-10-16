@@ -1,13 +1,13 @@
+from collections.abc import Coroutine, Awaitable
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional, Set, Callable, Union
 import asyncio
 import contextlib
 import json
 import os
 import signal
 import time
-from collections.abc import Coroutine, Awaitable
-from typing import Any, Dict, List, Optional, Set, Callable, Union
-from dataclasses import dataclass, field
-from enum import Enum
 
 import aiofiles
 
@@ -17,7 +17,6 @@ from .warning_symbols import invalid, failed, missing
 from logging import warning
 from src.utils.decorators import handles_errors
 # src/utils/async_utils.py
-
 
 class AsyncFileManager:
     """
@@ -275,7 +274,6 @@ class AsyncFileManager:
         self.clear_cache()
         self.logger.info("✅ Async File Manager stopped successfully")
 
-
 class AsyncTaskManager:
     """
     Enhanced async task manager with comprehensive error handling and type safety.
@@ -498,13 +496,9 @@ class AsyncTaskManager:
         self.task_results.clear()
         self.logger.info("✅ Async Task Manager stopped successfully")
 
-
 # Global instances
 async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
-
-
-
 
 class AsyncProcessesManager:
     """
@@ -582,10 +576,8 @@ class AsyncProcessesManager:
             },
         }
 
-
 # Create a global instance for backward compatibility
 async_processes_manager = AsyncProcessesManager()
-
 
 # =============================================================================
 # ENHANCED ASYNC UTILITIES
@@ -599,7 +591,6 @@ class TaskState(Enum):
     CANCELLED = "cancelled"
     FAILED = "failed"
     TIMEOUT = "timeout"
-
 
 @dataclass
 class TaskResult:
@@ -615,7 +606,6 @@ class TaskResult:
     def __post_init__(self):
         if self.end_time:
             self.execution_time = self.end_time - self.start_time
-
 
 class EnhancedAsyncManager:
     """Enhanced async task manager with comprehensive error handling and cancellation support."""
@@ -897,10 +887,8 @@ class EnhancedAsyncManager:
         self._shutdown_event.set()
         self.logger.info("EnhancedAsyncManager shutdown complete")
 
-
 # Global enhanced async manager instance
 enhanced_async_manager = EnhancedAsyncManager()
-
 
 # =============================================================================
 # ASYNC UTILITY FUNCTIONS
@@ -936,7 +924,6 @@ async def safe_await(coro: Awaitable[T],
         logger.error(f"Error awaiting coroutine: {e}")
         return default
 
-
 async def run_with_timeout(coro: Coroutine[Any, Any, T],
                           timeout: float,
                           default: T = None) -> T:
@@ -960,7 +947,6 @@ async def run_with_timeout(coro: Coroutine[Any, Any, T],
         logger = system_logger.getChild("run_with_timeout")
         logger.error(f"Error in coroutine: {e}")
         return default
-
 
 async def retry_async(func: Callable[..., Awaitable[T]],
                      max_retries: int = 3,

@@ -52,22 +52,22 @@ def create_directories():
 def validate_config():
     """Validate configuration and return any errors"""
     errors = []
-    
+
     # Check if assets list is not empty
     if not ASSETS:
         errors.append("No assets specified in ASSETS list")
-    
+
     # Check data configuration
     if DATA_CONFIG["years"] <= 0:
         errors.append("Years must be positive")
-    
+
     if DATA_CONFIG["interval"] not in ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"]:
         errors.append(f"Invalid interval: {DATA_CONFIG['interval']}")
-    
+
     # Check hardware configuration
     if HARDWARE_CONFIG["max_workers"] <= 0:
         errors.append("max_workers must be positive")
-    
+
     return errors
 
 def get_config_summary():

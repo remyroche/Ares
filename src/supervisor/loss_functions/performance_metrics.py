@@ -90,7 +90,7 @@ class PerformanceMetricsCalculator(PnLLossFunctionsBase):
         exceptions=(ValueError, KeyError, TypeError),
         default_return={},
     )
-    def calculate_sortino_ratio(self, returns: np.ndarray, 
+    def calculate_sortino_ratio(self, returns: np.ndarray,
                                target_return: float = 0.0) -> float:
         """
         Calculate Sortino ratio.
@@ -128,7 +128,7 @@ class PerformanceMetricsCalculator(PnLLossFunctionsBase):
         exceptions=(ValueError, KeyError, TypeError),
         default_return={},
     )
-    def calculate_calmar_ratio(self, returns: np.ndarray, 
+    def calculate_calmar_ratio(self, returns: np.ndarray,
                             equity_curve: np.ndarray) -> float:
         """
         Calculate Calmar ratio.
@@ -168,7 +168,7 @@ class PerformanceMetricsCalculator(PnLLossFunctionsBase):
         exceptions=(ValueError, KeyError, TypeError),
         default_return={},
     )
-    def calculate_recovery_factor(self, total_pnl: float, 
+    def calculate_recovery_factor(self, total_pnl: float,
                                 max_drawdown: float) -> float:
         """
         Calculate recovery factor.

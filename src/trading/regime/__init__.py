@@ -13,7 +13,7 @@ from .regime_weights import RegimeWeightManager
 
 __all__ = [
     "RegimeDetector",
-    "RegimeClassifier", 
+    "RegimeClassifier",
     "RegimeAnalyzer",
     "RegimeWeightManager"
 ]

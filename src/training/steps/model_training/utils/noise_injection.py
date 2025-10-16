@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 ArrayLike = Union[np.ndarray, pd.DataFrame]
 
-
 @dataclass
 class CyclicNoiseConfig:
     """Configuration for cyclic noise injection."""
@@ -22,7 +21,6 @@ class CyclicNoiseConfig:
     cycle_length: int = 512
     random_state: Optional[int] = None
     min_feature_scale: float = 1e-12
-
 
 def add_cyclic_noise(
     features: ArrayLike,
@@ -57,7 +55,6 @@ def add_cyclic_noise(
 
     return to_dataframe(noisy)
 
-
 def _generate_cyclic_noise(shape: Tuple[int, int], config: CyclicNoiseConfig) -> np.ndarray:
     """Generate a deterministic cyclic noise pattern for the requested shape."""
 
@@ -79,7 +76,6 @@ def _generate_cyclic_noise(shape: Tuple[int, int], config: CyclicNoiseConfig) ->
     tiled = np.tile(normalized_cycle, (repeats, 1))[:n_samples]
 
     return tiled
-
 
 def _as_ndarray(features: ArrayLike) -> Tuple[np.ndarray, callable]:
     """Return array representation and converter back to the original type."""

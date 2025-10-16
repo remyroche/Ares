@@ -28,22 +28,22 @@ class ServiceDefinition:
 
 class DependencyInjectionContainer:
     """Comprehensive dependency injection container for step07 utilities."""
-    
+
     def __init__(self):
         self._services: Dict[str, ServiceDefinition] = {}
         self._instances: Dict[str, Any] = {}
         self.logger = logger.getChild('DIContainer')
-        
-    def register_singleton(self, name: str, service_type: Type, implementation: Any = None, 
+
+    def register_singleton(self, name: str, service_type: Type, implementation: Any = None,
                           dependencies: List[str] = None) -> None:
         """Register a singleton service."""
         self._register_service(name, service_type, implementation, True, dependencies or [])
-        
+
     def register_transient(self, name: str, service_type: Type, implementation: Any = None,
                           dependencies: List[str] = None) -> None:
         """Register a transient service."""
         self._register_service(name, service_type, implementation, False, dependencies or [])
-        
+
     def register_factory(self, name: str, service_type: Type, factory: Callable,
                         dependencies: List[str] = None) -> None:
         """Register a service with a factory function."""
@@ -55,13 +55,13 @@ class DependencyInjectionContainer:
             factory=factory
         )
         self.logger.debug(f"Registered factory service: {name}")
-        
+
     def _register_service(self, name: str, service_type: Type, implementation: Any,
                          singleton: bool, dependencies: List[str]) -> None:
         """Internal method to register a service."""
         if implementation is None:
             implementation = service_type
-            
+
         self._services[name] = ServiceDefinition(
             service_type=service_type,
             implementation=implementation,
@@ -69,87 +69,87 @@ class DependencyInjectionContainer:
             dependencies=dependencies
         )
         self.logger.debug(f"Registered {'singleton' if singleton else 'transient'} service: {name}")
-        
+
     def get(self, name: str) -> Any:
         """Get a service instance by name."""
         if name not in self._services:
             raise ValueError(f"Service '{name}' not registered")
-            
+
         service_def = self._services[name]
-        
+
         # Return existing singleton instance
         if service_def.singleton and name in self._instances:
             return self._instances[name]
-            
+
         # Create new instance
         instance = self._create_instance(service_def)
-        
+
         # Store singleton instance
         if service_def.singleton:
             self._instances[name] = instance
-            
+
         return instance
-        
+
     def get_by_type(self, service_type: Type[T]) -> T:
         """Get a service instance by type."""
         for name, service_def in self._services.items():
             if service_def.service_type == service_type:
                 return self.get(name)
         raise ValueError(f"Service of type '{service_type}' not registered")
-        
+
     def _create_instance(self, service_def: ServiceDefinition) -> Any:
         """Create an instance of a service."""
         try:
             # Use factory if available
             if service_def.factory:
                 return self._create_from_factory(service_def)
-                
+
             # Use implementation
             implementation = service_def.implementation
-            
+
             # Check if it's a class that needs instantiation
             if inspect.isclass(implementation):
                 return self._create_from_class(implementation, service_def.dependencies)
             else:
                 # Already an instance
                 return implementation
-                
+
         except Exception as e:
             self.logger.error(f"Failed to create instance for {service_def.service_type}: {e}")
             raise
-            
+
     def _create_from_factory(self, service_def: ServiceDefinition) -> Any:
         """Create instance from factory function."""
         # Resolve dependencies
         resolved_deps = [self.get(dep) for dep in service_def.dependencies]
         return service_def.factory(*resolved_deps)
-        
+
     def _create_from_class(self, cls: Type, dependencies: List[str]) -> Any:
         """Create instance from class with dependency injection."""
         # Get constructor signature
         sig = inspect.signature(cls.__init__)
         params = {}
-        
+
         # Resolve dependencies by name
         for dep_name in dependencies:
             if dep_name in self._services:
                 params[dep_name] = self.get(dep_name)
-                
+
         # Try to instantiate with resolved dependencies
         try:
             return cls(**params)
         except TypeError:
             # Fallback to no-args constructor
             return cls()
-            
+
     def is_registered(self, name: str) -> bool:
         """Check if a service is registered."""
         return name in self._services
-        
+
     def get_all_services(self) -> Dict[str, ServiceDefinition]:
         """Get all registered services."""
         return self._services.copy()
-        
+
     def clear(self) -> None:
         """Clear all services and instances."""
         self._services.clear()
@@ -162,15 +162,15 @@ def inject_dependencies(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         # Get the global container (you might want to pass this differently)
         container = get_global_container()
-        
+
         # Get function signature
         sig = inspect.signature(func)
-        
+
         # Inject dependencies
         for param_name, param in sig.parameters.items():
             if param_name not in kwargs and param_name in container._services:
                 kwargs[param_name] = container.get(param_name)
-                
+
         return func(*args, **kwargs)
     return wrapper
 
@@ -187,10 +187,10 @@ def get_global_container() -> DependencyInjectionContainer:
 def setup_step07_dependencies() -> DependencyInjectionContainer:
     """Setup all step07 utility dependencies."""
     container = get_global_container()
-    
+
     # Clear existing services
     container.clear()
-    
+
     # Register utility services
     _register_common_operations(container)
     _register_common_utilities(container)
@@ -199,7 +199,7 @@ def setup_step07_dependencies() -> DependencyInjectionContainer:
     _register_serialization_utils(container)
     _register_data_processing_utils(container)
     _register_m1_optimizers(container)
-    
+
     logger.info("✅ Step07 dependency injection container setup complete")
     return container
 
@@ -219,7 +219,7 @@ def _register_common_operations(container: DependencyInjectionContainer) -> None
             timed_operation, format_bytes, chunked_iterable, parallel_map,
             safe_log_metric, safe_log_params, safe_log_artifact, standardize_price_action_probabilities
         )
-        
+
         # Register as singleton services
         container.register_singleton('datetime_utils', type(get_current_datetime), get_current_datetime)
         container.register_singleton('dataframe_utils', type(create_empty_dataframe), create_empty_dataframe)
@@ -237,9 +237,9 @@ def _register_common_operations(container: DependencyInjectionContainer) -> None
         container.register_singleton('parallel_utils', type(parallel_map), parallel_map)
         container.register_singleton('mlflow_utils', type(safe_log_metric), safe_log_metric)
         container.register_singleton('probability_utils', type(standardize_price_action_probabilities), standardize_price_action_probabilities)
-        
+
         logger.debug("✅ Registered common_operations utilities")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register common_operations utilities: {e}")
 
@@ -253,7 +253,7 @@ def _register_common_utilities(container: DependencyInjectionContainer) -> None:
             safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
             get_dataframe_info, safe_filter_dataframe, create_data_quality_report
         )
-        
+
         # Register as singleton services
         container.register_singleton('dataframe_operations', type(safe_dataframe_operation), safe_dataframe_operation)
         container.register_singleton('dataframe_validation', type(validate_dataframe_columns), validate_dataframe_columns)
@@ -270,9 +270,9 @@ def _register_common_utilities(container: DependencyInjectionContainer) -> None:
         container.register_singleton('dataframe_info', type(get_dataframe_info), get_dataframe_info)
         container.register_singleton('dataframe_filter', type(safe_filter_dataframe), safe_filter_dataframe)
         container.register_singleton('data_quality_report', type(create_data_quality_report), create_data_quality_report)
-        
+
         logger.debug("✅ Registered common_utilities")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register common_utilities: {e}")
 
@@ -285,7 +285,7 @@ def _register_math_validation(container: DependencyInjectionContainer) -> None:
             safe_weighted_average, safe_percentage_change, validate_correlation_matrix,
             safe_matrix_inverse, math_safe
         )
-        
+
         # Register as singleton services
         container.register_singleton('safe_divide', type(safe_divide), safe_divide)
         container.register_singleton('safe_log', type(safe_log), safe_log)
@@ -300,9 +300,9 @@ def _register_math_validation(container: DependencyInjectionContainer) -> None:
         container.register_singleton('correlation_validation', type(validate_correlation_matrix), validate_correlation_matrix)
         container.register_singleton('matrix_inverse', type(safe_matrix_inverse), safe_matrix_inverse)
         container.register_singleton('math_safe_decorator', type(math_safe), math_safe)
-        
+
         logger.debug("✅ Registered math_validation utilities")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register math_validation utilities: {e}")
 
@@ -310,12 +310,12 @@ def _register_parquet_utils(container: DependencyInjectionContainer) -> None:
     """Register parquet utilities."""
     try:
         from src.utils.parquet_utils import ParquetUtils, get_parquet_utils
-        
+
         # Register as singleton services
         container.register_singleton('parquet_utils', ParquetUtils, get_parquet_utils)
-        
+
         logger.debug("✅ Registered parquet_utils")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register parquet_utils: {e}")
 
@@ -327,7 +327,7 @@ def _register_serialization_utils(container: DependencyInjectionContainer) -> No
             save_json, load_json, save_pickle, load_pickle, save_parquet, load_parquet,
             save_data, load_data
         )
-        
+
         # Register as singleton services
         container.register_singleton('json_serializer', JSONSerializer, JSONSerializer)
         container.register_singleton('pickle_serializer', PickleSerializer, PickleSerializer)
@@ -341,9 +341,9 @@ def _register_serialization_utils(container: DependencyInjectionContainer) -> No
         container.register_singleton('load_parquet', type(load_parquet), load_parquet)
         container.register_singleton('save_data', type(save_data), save_data)
         container.register_singleton('load_data', type(load_data), load_data)
-        
+
         logger.debug("✅ Registered serialization_utils")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register serialization_utils: {e}")
 
@@ -354,7 +354,7 @@ def _register_data_processing_utils(container: DependencyInjectionContainer) -> 
             DataFrameValidator, DataFrameCleaner, DataFrameTransformer,
             validate_dataframe, clean_dataframe, transform_dataframe, get_dataframe_info
         )
-        
+
         # Register as singleton services
         container.register_singleton('dataframe_validator', DataFrameValidator, DataFrameValidator)
         container.register_singleton('dataframe_cleaner', DataFrameCleaner, DataFrameCleaner)
@@ -363,9 +363,9 @@ def _register_data_processing_utils(container: DependencyInjectionContainer) -> 
         container.register_singleton('clean_dataframe_util', type(clean_dataframe), clean_dataframe)
         container.register_singleton('transform_dataframe_util', type(transform_dataframe), transform_dataframe)
         container.register_singleton('get_dataframe_info_util', type(get_dataframe_info), get_dataframe_info)
-        
+
         logger.debug("✅ Registered data_processing_utils")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register data_processing_utils: {e}")
 
@@ -375,14 +375,14 @@ def _register_m1_optimizers(container: DependencyInjectionContainer) -> None:
         from .hardware.m1_gpu_utils import M1GPUManager, get_m1_gpu_manager, initialize_m1_gpu
         from .hardware.m1_memory_optimizer import M1MemoryOptimizer, get_m1_memory_optimizer
         from .hardware.m1_cpu_optimizer import M1CPUOptimizer, get_m1_cpu_optimizer, initialize_m1_cpu_optimizer
-        
+
         # Register as singleton services
         container.register_singleton('m1_gpu_manager', M1GPUManager, get_m1_gpu_manager)
         container.register_singleton('m1_memory_optimizer', M1MemoryOptimizer, get_m1_memory_optimizer)
         container.register_singleton('m1_cpu_optimizer', M1CPUOptimizer, get_m1_cpu_optimizer)
-        
+
         logger.debug("✅ Registered M1 optimization utilities")
-        
+
     except ImportError as e:
         logger.warning(f"Failed to register M1 optimization utilities: {e}")
 

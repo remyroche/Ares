@@ -6,7 +6,6 @@ import numpy as np
 from pathlib import Path
 import json
 
-
 def compute_cluster_size_bounds(total_samples: int, min_frac: float, max_frac: float) -> Tuple[int, int]:
 	min_size = int(np.floor(total_samples * min_frac))
 	max_size = int(np.ceil(total_samples * max_frac))
@@ -14,13 +13,11 @@ def compute_cluster_size_bounds(total_samples: int, min_frac: float, max_frac: f
 	max_size = max(min_size, max_size)
 	return min_size, max_size
 
-
 def normalize_dict_values(values: Dict[str, float]) -> Dict[str, float]:
 	total = sum(values.values())
 	if total <= 0:
 		return {k: 0.0 for k in values}
 	return {k: v / total for k, v in values.items()}
-
 
 def extract_regime_summary_vectors(
 	regime_characteristics: Dict[str, dict],
@@ -77,21 +74,19 @@ def extract_regime_summary_vectors(
 		X = [[i, 0, 0, 0] for i in range(len(regime_keys))]
 
 	X = np.asarray(X, dtype=float)
-	
+
 	# Apply StandardScaler for consistent scaling across all dimensions
 	from sklearn.preprocessing import StandardScaler
 	scaler = StandardScaler()
 	X_scaled = scaler.fit_transform(X)
-	
-	return X_scaled, regime_keys
 
+	return X_scaled, regime_keys
 
 def aggregate_assignments_to_regimes(assignments: List[int]) -> Dict[int, int]:
 	counts: Dict[int, int] = {}
 	for a in assignments:
 		counts[a] = counts.get(a, 0) + 1
 	return counts
-
 
 def map_regime_key_to_int(regime_key: str) -> int:
 	# regime keys come as f"regime_{id}"; fallback to hash if missing
@@ -100,14 +95,12 @@ def map_regime_key_to_int(regime_key: str) -> int:
 	except Exception:
 		return abs(hash(regime_key)) % (10 ** 9)
 
-
 def _load_json(path: Path) -> Optional[dict]:
 	try:
 		with open(path, "r") as f:
 			return json.load(f)
 	except Exception:
 		return None
-
 
 def find_latest_hmm_discovery_artifact_path(
 	base_dir: str = "artifacts",
@@ -149,7 +142,6 @@ def find_latest_hmm_discovery_artifact_path(
 	candidates.sort(key=lambda x: x[0], reverse=True)
 	return candidates[0][1]
 
-
 def load_latest_hmm_discovery_artifact(
 	base_dir: str = "artifacts",
 	symbol: Optional[str] = None,
@@ -166,4 +158,3 @@ def load_latest_hmm_discovery_artifact(
 	if "hmm_regime_discovery_result" in data and isinstance(data["hmm_regime_discovery_result"], dict):
 		return data["hmm_regime_discovery_result"]
 	return data
-

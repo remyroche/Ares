@@ -44,13 +44,13 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class EnhancedRegimeClassifier:
     """
     Enhanced regime classifier with refined regime types for strategy generation.
-    
+
     Refined Regimes:
     1. STRONG_BULL: Strong uptrend with high momentum
     2. MODERATE_BULL: Steady uptrend with normal momentum
@@ -99,7 +99,7 @@ class EnhancedRegimeClassifier:
     def calculate_enhanced_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate enhanced features for refined regime detection.
-        
+
         Features include:
         - Multi-timeframe momentum
         - Volatility patterns
@@ -137,11 +137,11 @@ class EnhancedRegimeClassifier:
     def classify_regime(self, features: pd.Series, hmm_state: int = None) -> str:
         """
         Classify market regime based on enhanced features.
-        
+
         Args:
             features: Current feature values
             hmm_state: Optional HMM state for additional context
-            
+
         Returns:
             Refined regime classification
         """
@@ -189,10 +189,10 @@ class EnhancedRegimeClassifier:
     async def predict_regime(self, market_data: pd.DataFrame) -> Tuple[str, float, Dict[str, Any]]:
         """
         Predict current market regime with confidence.
-        
+
         Args:
             market_data: Recent market data
-            
+
         Returns:
             Tuple of (regime, confidence, metadata)
         """
@@ -262,16 +262,16 @@ class EnhancedRegimeClassifier:
         try:
             if not hasattr(self.hmm_model, 'transmat_') or self.hmm_model.transmat_ is None:
                 return
-            
+
             n_components = self.hmm_model.transmat_.shape[0]
-            
+
             # Check if transition matrix has any zero-sum rows
             row_sums = self.hmm_model.transmat_.sum(axis=1)
             zero_sum_rows = np.where(np.abs(row_sums) < 1e-10)[0]
-            
+
             if len(zero_sum_rows) > 0:
                 self.logger.warning(f"⚠️ Found {len(zero_sum_rows)} zero-sum rows in transition matrix: {zero_sum_rows}")
-                
+
                 # Fix zero-sum rows by setting them to uniform distribution
                 for row_idx in zero_sum_rows:
                     # Set uniform transition probabilities with slight bias towards self-transition
@@ -279,21 +279,21 @@ class EnhancedRegimeClassifier:
                     self.hmm_model.transmat_[row_idx, :] = uniform_prob
                     if n_components > 1:
                         self.hmm_model.transmat_[row_idx, row_idx] = 0.7  # Higher self-transition probability
-                
+
                 # Renormalize all rows to ensure they sum to 1
                 self.hmm_model.transmat_ = self.hmm_model.transmat_ / self.hmm_model.transmat_.sum(axis=1, keepdims=True)
-                
+
                 self.logger.info(f"✅ Fixed {len(zero_sum_rows)} zero-sum rows in transition matrix")
-            
+
             # Additional validation: ensure no NaN or infinite values
             if np.any(np.isnan(self.hmm_model.transmat_)) or np.any(np.isinf(self.hmm_model.transmat_)):
                 self.logger.warning("⚠️ Found NaN or infinite values in transition matrix, applying regularization")
-                
+
                 # Replace NaN/inf with regularized uniform distribution
                 epsilon = 1e-6
                 regularized_transmat = np.full((n_components, n_components), epsilon)
                 np.fill_diagonal(regularized_transmat, 0.7)
-                
+
                 # Distribute remaining probability
                 for i in range(n_components):
                     remaining_prob = 1.0 - regularized_transmat[i, i]
@@ -301,13 +301,13 @@ class EnhancedRegimeClassifier:
                     for j in range(n_components):
                         if i != j:
                             regularized_transmat[i, j] = other_states_prob
-                
+
                 # Normalize and assign
                 regularized_transmat = regularized_transmat / regularized_transmat.sum(axis=1, keepdims=True)
                 self.hmm_model.transmat_ = regularized_transmat.astype(np.float64)
-                
+
                 self.logger.info("✅ Applied regularization to fix NaN/infinite values in transition matrix")
-            
+
             # Final validation
             final_row_sums = self.hmm_model.transmat_.sum(axis=1)
             if not np.allclose(final_row_sums, 1.0, atol=1e-6):
@@ -315,7 +315,7 @@ class EnhancedRegimeClassifier:
                 # Force normalization
                 self.hmm_model.transmat_ = self.hmm_model.transmat_ / self.hmm_model.transmat_.sum(axis=1, keepdims=True)
                 self.logger.info("✅ Forced normalization of transition matrix")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating transition matrix: {e}")
             # Fallback: create a safe uniform transition matrix
@@ -328,7 +328,7 @@ class EnhancedRegimeClassifier:
     def get_regime_strategy_params(self, regime: str) -> Dict[str, Any]:
         """
         Get strategy parameters based on regime.
-        
+
         Returns regime-specific parameters for:
         - Position sizing
         - Risk management
@@ -340,16 +340,16 @@ class EnhancedRegimeClassifier:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -368,8 +368,8 @@ class EnhancedRegimeClassifier:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -386,13 +386,13 @@ class EnhancedRegimeClassifier:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

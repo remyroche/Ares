@@ -34,12 +34,11 @@ from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimiz
 
 from .unified_architecture_config import ArchitectureType, OptimizationObjective
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class HardwareType(Enum):
     """Types of hardware resources."""
@@ -48,7 +47,6 @@ class HardwareType(Enum):
     MEMORY = "memory"
     STORAGE = "storage"
     NETWORK = "network"
-
 
 class WorkloadType(Enum):
     """Types of workloads for optimization."""
@@ -60,7 +58,6 @@ class WorkloadType(Enum):
     ML_TRAINING = "ml_training"
     NEURAL_TRAINING = "neural_training"
     TREE_TRAINING = "tree_training"
-
 
 @dataclass
 class HardwareMetrics:
@@ -75,7 +72,6 @@ class HardwareMetrics:
     throughput: float = 0.0
     latency: float = 0.0
 
-
 @dataclass
 class OptimizationResult:
     """Result of hardware optimization."""
@@ -86,7 +82,6 @@ class OptimizationResult:
     success: bool
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class HardwareConfig:
     """Hardware optimization configuration."""
@@ -94,7 +89,7 @@ class HardwareConfig:
     cpu_optimization_level: CanonicalOptimizationLevel = CanonicalOptimizationLevel.BALANCED
     max_cpu_cores: int = None
     cpu_affinity: List[int] = None
-    
+
     # GPU optimization
     gpu_optimization_level: CanonicalOptimizationLevel = CanonicalOptimizationLevel.BALANCED
     enable_gpu_acceleration: bool = True
@@ -102,42 +97,41 @@ class HardwareConfig:
     enable_mixed_precision: bool = True
     enable_tensor_core: bool = True
     enable_cudnn_benchmark: bool = True
-    
+
     # Memory optimization
     memory_optimization_level: CanonicalOptimizationLevel = CanonicalOptimizationLevel.BALANCED
     max_memory_usage_gb: float = 8.0
     enable_memory_mapping: bool = True
     enable_memory_pooling: bool = True
     garbage_collection_interval: int = 100
-    
+
     # Batch processing
     enable_batch_processing: bool = True
     adaptive_batch_size: bool = True
     min_batch_size: int = 1
     max_batch_size: int = 1024
     batch_size_increment: int = 2
-    
+
     # Monitoring
     enable_performance_monitoring: bool = True
     monitoring_interval: float = 5.0
     enable_adaptive_optimization: bool = True
     optimization_threshold: float = 0.1
-    
+
     # Advanced features
     enable_mps_acceleration: bool = True  # Apple Metal Performance Shaders
     enable_gpu_memory_pooling: bool = True
     learning_enabled: bool = True
     auto_tuning_enabled: bool = True
 
-
 class UnifiedHardwareManager:
     """Unified hardware management system for TAS and NAS architectures using existing hardware utilities."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  architecture_type: ArchitectureType,
                  config: HardwareConfig = None):
         """Initialize the unified hardware manager.
-        
+
         Args:
             architecture_type: Type of architecture (TAS/NAS/Hybrid)
             config: Hardware optimization configuration
@@ -145,42 +139,42 @@ class UnifiedHardwareManager:
         tprint_info("🚀 Initializing Unified Hardware Manager")
         tprint_debug(f"Architecture type: {architecture_type}")
         tprint_debug(f"Configuration: {config}")
-        
+
         self.architecture_type = architecture_type
         self.config = config or HardwareConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
+
         # Initialize existing hardware utilities
         tprint_info("🔧 Initializing hardware utilities...")
         self._initialize_hardware_utilities()
-        
+
         # Hardware state
         tprint_debug("💻 Initializing hardware state...")
         self.device = self._initialize_device()
         self.optimization_history: List[OptimizationResult] = []
         self.performance_metrics: List[HardwareMetrics] = []
-        
+
         # Monitoring
         tprint_debug("📊 Initializing monitoring...")
         self.monitoring_active = False
         self.monitoring_thread: Optional[threading.Thread] = None
         self.last_optimization_time = time.time()
-        
+
         # Adaptive optimization
         tprint_debug("🧠 Initializing adaptive optimization...")
         self.performance_baseline = {}
         self.optimization_learnings: Dict[str, Any] = {}
-        
+
         # Batch processing
         tprint_debug("📦 Initializing batch processing...")
         self.current_batch_size = self.config.min_batch_size
         self.batch_performance_history = deque(maxlen=100)
-        
+
         # Memory management
         tprint_debug("💾 Initializing memory management...")
         self.memory_pool = {}
         self.gc_counter = 0
-        
+
         tprint_success(f"✅ Unified Hardware Manager initialized for {architecture_type.value}")
         tprint_info(f"   Using existing hardware utilities from utils/hardware/")
         tprint_info(f"   Device: {self.device}")
@@ -191,7 +185,7 @@ class UnifiedHardwareManager:
         self.logger.info(f"   Device: {self.device}")
         self.logger.info(f"   GPU Acceleration: {self.config.enable_gpu_acceleration}")
         self.logger.info(f"   Memory Limit: {self.config.max_memory_usage_gb}GB")
-    
+
     def _initialize_hardware_utilities(self):
         """Initialize existing hardware utilities."""
         tprint_debug("🔧 Initializing existing hardware utilities...")
@@ -201,29 +195,29 @@ class UnifiedHardwareManager:
             canonical_config = self._convert_to_canonical_config()
             self.canonical_hardware_manager = CanonicalHardwareManager(canonical_config)
             tprint_success("✅ Canonical hardware manager initialized")
-            
+
             # Initialize adaptive optimization engine
             tprint_debug("🧠 Initializing adaptive optimization engine...")
             self.adaptive_engine = AdaptiveOptimizationEngine(
                 hardware_manager=self.canonical_hardware_manager
             )
             tprint_success("✅ Adaptive optimization engine initialized")
-            
+
             # Initialize specialized optimizers
             tprint_debug("⚡ Initializing specialized optimizers...")
             self.cpu_optimizer = AdvancedM1CPUOptimizer()
             self.gpu_manager = EnhancedM1GPUManager()
             self.memory_optimizer = AdvancedM1MemoryOptimizer()
             tprint_success("✅ Specialized optimizers initialized")
-            
+
             tprint_success("✅ Existing hardware utilities initialized successfully")
             self.logger.info("✅ Existing hardware utilities initialized successfully")
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to initialize hardware utilities: {e}")
             self.logger.error(f"❌ Failed to initialize hardware utilities: {e}")
             raise
-    
+
     def _convert_to_canonical_config(self) -> CanonicalHardwareConfig:
         """Convert unified config to canonical hardware config."""
         return CanonicalHardwareConfig(
@@ -232,26 +226,26 @@ class UnifiedHardwareManager:
             enable_core_affinity=self.config.cpu_affinity is not None,
             enable_thermal_monitoring=True,
             enable_power_management=True,
-            
+
             # GPU Configuration
             gpu_optimization_level=self.config.gpu_optimization_level,
             enable_mps_acceleration=self.config.enable_mps_acceleration,
             enable_gpu_memory_pooling=self.config.enable_gpu_memory_pooling,
             enable_batch_operations=self.config.enable_batch_processing,
-            
+
             # Memory Configuration
             memory_optimization_level=self.config.memory_optimization_level,
             memory_limit_gb=self.config.max_memory_usage_gb,
             enable_memory_pooling=self.config.enable_memory_pooling,
             enable_predictive_allocation=True,
             enable_compression=True,
-            
+
             # Adaptive Configuration
             enable_adaptive_optimization=self.config.enable_adaptive_optimization,
             learning_enabled=self.config.learning_enabled,
             auto_tuning_enabled=self.config.auto_tuning_enabled,
             performance_monitoring_enabled=self.config.enable_performance_monitoring,
-            
+
             # Monitoring Configuration
             monitoring_interval=self.config.monitoring_interval,
             metrics_retention_hours=24,
@@ -262,7 +256,7 @@ class UnifiedHardwareManager:
                 'temperature': 85.0
             }
         )
-    
+
     def _initialize_device(self) -> torch.device:
         """Initialize the computation device."""
         if self.config.enable_gpu_acceleration and torch.cuda.is_available():
@@ -275,50 +269,50 @@ class UnifiedHardwareManager:
         else:
             device = torch.device("cpu")
             self.logger.info("💻 Using CPU")
-        
+
         return device
-    
-    def optimize_for_workload(self, 
+
+    def optimize_for_workload(self,
                             workload_type: WorkloadType,
                             parameters: Dict[str, Any] = None) -> OptimizationResult:
         """Optimize hardware for a specific workload type using existing utilities.
-        
+
         Args:
             workload_type: Type of workload to optimize for
             parameters: Additional parameters for optimization
-            
+
         Returns:
             Optimization result
         """
         start_time = time.time()
         parameters = parameters or {}
-        
+
         self.logger.info(f"🔧 Optimizing hardware for {workload_type.value} using existing utilities")
-        
+
         try:
             # Convert workload type to canonical type
             canonical_workload = self._convert_workload_type(workload_type)
-            
+
             # Use existing hardware manager for optimization
             optimization_result = self.canonical_hardware_manager.optimize_for_workload(
                 workload_type=canonical_workload,
                 parameters=parameters
             )
-            
+
             # Use adaptive optimization engine for advanced optimization
             if self.config.enable_adaptive_optimization:
                 adaptive_result = self.adaptive_engine.optimize_workload(
                     workload_type=canonical_workload,
                     parameters=parameters
                 )
-                
+
                 # Combine results
                 optimization_result = self._combine_optimization_results(
                     optimization_result, adaptive_result
                 )
-            
+
             optimization_time = time.time() - start_time
-            
+
             # Create unified optimization result
             unified_result = OptimizationResult(
                 optimization_type=f"{workload_type.value}_{self.architecture_type.value}",
@@ -333,13 +327,13 @@ class UnifiedHardwareManager:
                     'canonical_result': optimization_result
                 }
             )
-            
+
             self.optimization_history.append(unified_result)
             self.last_optimization_time = time.time()
-            
+
             self.logger.info(f"✅ Workload optimization completed in {optimization_time:.2f}s")
             return unified_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Workload optimization failed: {e}")
             return OptimizationResult(
@@ -350,7 +344,7 @@ class UnifiedHardwareManager:
                 success=False,
                 metadata={'error': str(e)}
             )
-    
+
     def _convert_workload_type(self, workload_type: WorkloadType) -> CanonicalWorkloadType:
         """Convert unified workload type to canonical workload type."""
         mapping = {
@@ -364,78 +358,78 @@ class UnifiedHardwareManager:
             WorkloadType.TREE_TRAINING: CanonicalWorkloadType.FEATURE_ENGINEERING
         }
         return mapping.get(workload_type, CanonicalWorkloadType.GENERAL)
-    
-    def _combine_optimization_results(self, 
-                                    base_result: Dict[str, Any], 
+
+    def _combine_optimization_results(self,
+                                    base_result: Dict[str, Any],
                                     adaptive_result: Dict[str, Any]) -> Dict[str, Any]:
         """Combine base and adaptive optimization results."""
         combined = base_result.copy()
-        
+
         # Combine performance improvements
         base_improvement = base_result.get('performance_improvement', 0.0)
         adaptive_improvement = adaptive_result.get('performance_improvement', 0.0)
         combined['performance_improvement'] = max(base_improvement, adaptive_improvement)
-        
+
         # Combine resource savings
         base_savings = base_result.get('resource_savings', {})
         adaptive_savings = adaptive_result.get('resource_savings', {})
         combined['resource_savings'] = {**base_savings, **adaptive_savings}
-        
+
         # Add adaptive metadata
         combined['adaptive_optimization'] = adaptive_result
-        
+
         return combined
-    
+
     def start_performance_monitoring(self):
         """Start hardware performance monitoring using existing utilities."""
         if self.monitoring_active:
             return
-        
+
         self.monitoring_active = True
-        
+
         # Use existing hardware manager for monitoring
         self.canonical_hardware_manager.start_monitoring()
-        
+
         # Start custom monitoring thread for unified metrics
         self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
         self.monitoring_thread.start()
-        
+
         self.logger.info("📊 Performance monitoring started using existing utilities")
-    
+
     def stop_performance_monitoring(self):
         """Stop hardware performance monitoring."""
         self.monitoring_active = False
-        
+
         # Stop canonical hardware manager monitoring
         if hasattr(self.canonical_hardware_manager, 'stop_monitoring'):
             self.canonical_hardware_manager.stop_monitoring()
-        
+
         if self.monitoring_thread:
             self.monitoring_thread.join(timeout=5.0)
-        
+
         self.logger.info("⏹️ Performance monitoring stopped")
-    
+
     def _monitoring_loop(self):
         """Main monitoring loop for hardware performance."""
         while self.monitoring_active:
             try:
                 # Get metrics from canonical hardware manager
                 canonical_metrics = self.canonical_hardware_manager.get_performance_metrics()
-                
+
                 # Convert to unified format
                 unified_metrics = self._convert_to_unified_metrics(canonical_metrics)
                 self.performance_metrics.append(unified_metrics)
-                
+
                 # Keep only recent metrics
                 if len(self.performance_metrics) > 1000:
                     self.performance_metrics = self.performance_metrics[-1000:]
-                
+
                 time.sleep(self.config.monitoring_interval)
-                
+
             except Exception as e:
                 self.logger.error(f"Error in monitoring loop: {e}")
                 time.sleep(self.config.monitoring_interval)
-    
+
     def _convert_to_unified_metrics(self, canonical_metrics: CanonicalPerformanceMetrics) -> HardwareMetrics:
         """Convert canonical metrics to unified format."""
         return HardwareMetrics(
@@ -448,7 +442,7 @@ class UnifiedHardwareManager:
             throughput=canonical_metrics.performance_score,
             latency=0.0  # Not available in canonical metrics
         )
-    
+
     def get_hardware_status(self) -> Dict[str, Any]:
         """Get current hardware status and performance."""
         status = {
@@ -470,14 +464,14 @@ class UnifiedHardwareManager:
                 'metrics_collected': len(self.performance_metrics)
             }
         }
-        
+
         # Get status from canonical hardware manager
         try:
             canonical_status = self.canonical_hardware_manager.get_status()
             status['canonical_hardware_status'] = canonical_status
         except Exception as e:
             self.logger.warning(f"Could not get canonical hardware status: {e}")
-        
+
         # Add current metrics if available
         if self.performance_metrics:
             latest_metrics = self.performance_metrics[-1]
@@ -488,9 +482,9 @@ class UnifiedHardwareManager:
                 'gpu_memory_usage': latest_metrics.gpu_memory_usage,
                 'temperature': latest_metrics.temperature
             }
-        
+
         return status
-    
+
     def get_optimization_recommendations(self) -> Dict[str, Any]:
         """Get hardware optimization recommendations using existing utilities."""
         recommendations = {
@@ -499,55 +493,55 @@ class UnifiedHardwareManager:
             'memory_optimizations': [],
             'general_recommendations': []
         }
-        
+
         try:
             # Get recommendations from canonical hardware manager
             canonical_recommendations = self.canonical_hardware_manager.get_optimization_recommendations()
-            
+
             # Convert to unified format
             if 'cpu_optimizations' in canonical_recommendations:
                 recommendations['cpu_optimizations'] = canonical_recommendations['cpu_optimizations']
-            
+
             if 'gpu_optimizations' in canonical_recommendations:
                 recommendations['gpu_optimizations'] = canonical_recommendations['gpu_optimizations']
-            
+
             if 'memory_optimizations' in canonical_recommendations:
                 recommendations['memory_optimizations'] = canonical_recommendations['memory_optimizations']
-            
+
             # Add architecture-specific recommendations
             if self.architecture_type == ArchitectureType.TAS:
                 recommendations['general_recommendations'].append("Consider disabling GPU for tree-based operations")
             elif self.architecture_type == ArchitectureType.NAS:
                 recommendations['general_recommendations'].append("Enable mixed precision training for neural networks")
-            
+
         except Exception as e:
             self.logger.warning(f"Could not get optimization recommendations: {e}")
-        
+
         return recommendations
-    
-    def optimize_for_inference(self, 
+
+    def optimize_for_inference(self,
                               model_type: str = 'neural_network',
                               batch_size: int = 1,
                               precision: str = 'float32',
                               enable_quantization: bool = True,
                               enable_pruning: bool = False) -> OptimizationResult:
         """Optimize hardware specifically for inference workloads.
-        
+
         Args:
             model_type: Type of model ('neural_network', 'tree', 'ensemble')
             batch_size: Batch size for inference
             precision: Numerical precision ('float32', 'float16', 'int8')
             enable_quantization: Enable model quantization
             enable_pruning: Enable model pruning
-            
+
         Returns:
             Optimization result for inference
         """
         start_time = time.time()
-        
+
         self.logger.info(f"🔧 Optimizing hardware for {model_type} inference")
         tprint_info(f"🚀 Optimizing for inference: {model_type}")
-        
+
         try:
             # Create inference-specific workload parameters
             inference_params = {
@@ -558,25 +552,25 @@ class UnifiedHardwareManager:
                 'enable_pruning': enable_pruning,
                 'workload_type': 'inference'
             }
-            
+
             # Use existing hardware manager for inference optimization
             optimization_result = self.canonical_hardware_manager.optimize_for_workload(
                 workload_type=CanonicalWorkloadType.DATA_PROCESSING,  # Map to inference
                 parameters=inference_params
             )
-            
+
             # Apply inference-specific optimizations
             inference_optimizations = self._apply_inference_optimizations(
                 model_type, batch_size, precision, enable_quantization, enable_pruning
             )
-            
+
             # Combine results
             combined_result = self._combine_optimization_results(
                 optimization_result, inference_optimizations
             )
-            
+
             optimization_time = time.time() - start_time
-            
+
             # Create unified optimization result
             unified_result = OptimizationResult(
                 optimization_type=f"inference_{model_type}_{self.architecture_type.value}",
@@ -595,14 +589,14 @@ class UnifiedHardwareManager:
                     'inference_optimizations': inference_optimizations
                 }
             )
-            
+
             self.optimization_history.append(unified_result)
             self.last_optimization_time = time.time()
-            
+
             self.logger.info(f"✅ Inference optimization completed in {optimization_time:.2f}s")
             tprint_success(f"✅ Inference optimization completed: {unified_result.performance_improvement:.2%} improvement")
             return unified_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Inference optimization failed: {e}")
             tprint_error(f"❌ Inference optimization failed: {e}")
@@ -614,8 +608,8 @@ class UnifiedHardwareManager:
                 success=False,
                 metadata={'error': str(e)}
             )
-    
-    def _apply_inference_optimizations(self, 
+
+    def _apply_inference_optimizations(self,
                                      model_type: str,
                                      batch_size: int,
                                      precision: str,
@@ -628,7 +622,7 @@ class UnifiedHardwareManager:
             'success': True,
             'inference_settings': {}
         }
-        
+
         try:
             # Model-specific optimizations
             if model_type == 'neural_network':
@@ -638,12 +632,12 @@ class UnifiedHardwareManager:
                     'batch_size': batch_size,
                     'precision': precision
                 })
-                
+
                 # GPU optimizations for neural networks
                 if self.config.enable_gpu_acceleration:
                     optimizations['resource_savings']['gpu_memory'] = 0.2  # 20% memory savings
                     optimizations['performance_improvement'] += 0.3  # 30% performance improvement
-                
+
             elif model_type == 'tree':
                 # CPU optimizations for tree models
                 optimizations['inference_settings'].update({
@@ -653,7 +647,7 @@ class UnifiedHardwareManager:
                 })
                 optimizations['resource_savings']['cpu_usage'] = 0.15  # 15% CPU savings
                 optimizations['performance_improvement'] += 0.2  # 20% performance improvement
-                
+
             elif model_type == 'ensemble':
                 # Mixed optimizations for ensemble models
                 optimizations['inference_settings'].update({
@@ -663,7 +657,7 @@ class UnifiedHardwareManager:
                 })
                 optimizations['resource_savings']['memory_usage'] = 0.25  # 25% memory savings
                 optimizations['performance_improvement'] += 0.25  # 25% performance improvement
-            
+
             # Precision optimizations
             if precision == 'float16':
                 optimizations['resource_savings']['memory_usage'] = optimizations['resource_savings'].get('memory_usage', 0) + 0.5
@@ -671,35 +665,35 @@ class UnifiedHardwareManager:
             elif precision == 'int8':
                 optimizations['resource_savings']['memory_usage'] = optimizations['resource_savings'].get('memory_usage', 0) + 0.75
                 optimizations['performance_improvement'] += 0.1
-            
+
             # Quantization optimizations
             if enable_quantization:
                 optimizations['resource_savings']['model_size'] = 0.4  # 40% model size reduction
                 optimizations['performance_improvement'] += 0.1  # 10% performance improvement
-            
+
             # Pruning optimizations
             if enable_pruning:
                 optimizations['resource_savings']['model_size'] = optimizations['resource_savings'].get('model_size', 0) + 0.3
                 optimizations['performance_improvement'] += 0.05  # 5% performance improvement
-            
+
             # Batch size optimizations
             if batch_size > 1:
                 optimizations['performance_improvement'] += min(0.2, batch_size * 0.02)  # Up to 20% improvement
-            
+
             # Memory optimizations
             if self.config.enable_memory_pooling:
                 optimizations['resource_savings']['memory_fragmentation'] = 0.3
                 optimizations['performance_improvement'] += 0.05
-            
+
             # Adaptive batch size optimization
             if self.config.adaptive_batch_size:
                 optimal_batch_size = self._calculate_optimal_batch_size(model_type, precision)
                 optimizations['inference_settings']['optimal_batch_size'] = optimal_batch_size
                 if optimal_batch_size != batch_size:
                     optimizations['performance_improvement'] += 0.1
-            
+
             return optimizations
-            
+
         except Exception as e:
             self.logger.error(f"Failed to apply inference optimizations: {e}")
             return {
@@ -708,7 +702,7 @@ class UnifiedHardwareManager:
                 'success': False,
                 'error': str(e)
             }
-    
+
     def _calculate_optimal_batch_size(self, model_type: str, precision: str) -> int:
         """Calculate optimal batch size for inference."""
         try:
@@ -717,7 +711,7 @@ class UnifiedHardwareManager:
                 current_memory = self.performance_metrics[-1].memory_usage
             else:
                 current_memory = 50.0  # Default assumption
-            
+
             # Base batch size calculation
             if model_type == 'neural_network':
                 base_batch_size = 32 if precision == 'float32' else 64
@@ -725,7 +719,7 @@ class UnifiedHardwareManager:
                 base_batch_size = 128
             else:  # ensemble
                 base_batch_size = 16
-            
+
             # Adjust based on available memory
             available_memory = 100 - current_memory
             if available_memory > 80:
@@ -736,15 +730,15 @@ class UnifiedHardwareManager:
                 multiplier = 1.0
             else:
                 multiplier = 0.5
-            
+
             optimal_batch_size = max(1, int(base_batch_size * multiplier))
-            
+
             # Ensure it's within configured limits
-            optimal_batch_size = max(self.config.min_batch_size, 
+            optimal_batch_size = max(self.config.min_batch_size,
                                    min(optimal_batch_size, self.config.max_batch_size))
-            
+
             return optimal_batch_size
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate optimal batch size: {e}")
             return self.config.min_batch_size
@@ -754,7 +748,7 @@ class UnifiedHardwareManager:
         try:
             output_path = Path(filepath)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             data = {
                 'hardware_config': self.config.__dict__,
                 'performance_metrics': [
@@ -781,16 +775,15 @@ class UnifiedHardwareManager:
                 'recommendations': self.get_optimization_recommendations(),
                 'using_existing_utilities': True
             }
-            
+
             with open(output_path, 'w') as f:
                 json.dump(data, f, indent=2, default=str)
-            
+
             self.logger.info(f"✅ Hardware data exported to {filepath}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to export hardware data: {e}")
             raise
-
 
 # Convenience functions
 def create_hardware_manager(architecture_type: ArchitectureType,
@@ -805,7 +798,6 @@ def create_hardware_manager(architecture_type: ArchitectureType,
     )
     return UnifiedHardwareManager(architecture_type=architecture_type, config=config)
 
-
 def create_basic_hardware_manager(architecture_type: ArchitectureType) -> UnifiedHardwareManager:
     """Create a basic hardware manager using existing utilities."""
     config = HardwareConfig(
@@ -816,7 +808,6 @@ def create_basic_hardware_manager(architecture_type: ArchitectureType) -> Unifie
         enable_adaptive_optimization=False
     )
     return UnifiedHardwareManager(architecture_type=architecture_type, config=config)
-
 
 def create_aggressive_hardware_manager(architecture_type: ArchitectureType) -> UnifiedHardwareManager:
     """Create an aggressive hardware manager for maximum performance using existing utilities."""

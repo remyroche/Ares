@@ -37,7 +37,7 @@ from .matrix_profile_discovery import (
 
 __all__ = [
     'PurePricePatternOrchestrator',
-    'PurePatternResult', 
+    'PurePatternResult',
     'PurePricePattern',
     'GradientPatternTargetGenerator',
     'PatternIntensityMeasurement',

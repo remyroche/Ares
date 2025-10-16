@@ -46,17 +46,15 @@ except ImportError:
     def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
-
 @dataclass
 class DataValidationResult:
     """Result of data validation step."""
-    
+
     success: bool
     data_quality_score: float
     validation_metadata: Dict[str, Any]
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
-
 
 class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
     """Data validation step that calls the consolidated pipeline."""
@@ -65,7 +63,7 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
         """Initialize the data validation step."""
         super().__init__(config or ComponentConfig())
         self.logger = logging.getLogger(__name__)
-    
+
     async def execute(self,
                      training_input: Dict[str, Any],
                      pipeline_state: Dict[str, Any]) -> ComponentResult:
@@ -141,7 +139,6 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
         """Optimize dataframe for matrix operations."""
         return optimize_dataframe(df)
 
-
 # Command handler for ares_launcher integration
 async def handle_feature_generation_data_validation_step(
     symbol: str = "ETHUSDT",
@@ -157,7 +154,7 @@ async def handle_feature_generation_data_validation_step(
 ) -> DataValidationResult:
     """
     Handle feature generation data validation step command.
-    
+
     Args:
         symbol: Trading symbol (default: "ETHUSDT")
         timeframe: Timeframe (default: "15m")
@@ -169,7 +166,7 @@ async def handle_feature_generation_data_validation_step(
         exchange: Exchange (default: "binance")
         custom_overrides: Custom configuration overrides (optional)
         **kwargs: Additional arguments
-        
+
     Returns:
         DataValidationResult with validation results
     """
@@ -181,10 +178,10 @@ async def handle_feature_generation_data_validation_step(
         'close': np.random.randn(1000).cumsum() + 100,
         'volume': np.random.randint(1000, 10000, 1000)
     })
-    
+
     # Create step instance and execute
     step = FeatureGenerationDataValidationStep()
-    
+
     return await step.execute(
         data=sample_data,
         symbol=symbol,
@@ -198,7 +195,6 @@ async def handle_feature_generation_data_validation_step(
         custom_overrides=custom_overrides
     )
 
-
 # Register component with factory
 def _register_feature_generation_data_validation_step():
     """Register the feature generation data validation step component with the factory."""
@@ -211,7 +207,6 @@ def _register_feature_generation_data_validation_step():
     except ImportError:
         # Component factory not available, skip registration
         pass
-
 
 # Register the component when module is imported
 _register_feature_generation_data_validation_step()

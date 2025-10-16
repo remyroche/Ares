@@ -25,7 +25,7 @@ from ...shared_utils import (
     create_default_config,
     ConfigValidator,
     BaseConfig,
-    
+
     # Logging
     get_logger,
     log_execution,
@@ -51,7 +51,6 @@ from src.utils.tprint import (
     tprint_timer,
     tprint_structured,
 )
-
 
 @dataclass
 class ClusteringContext:
@@ -80,24 +79,24 @@ class ClusteringContext:
     pca_loading_scores: Dict[str, float] = field(default_factory=dict)
     pre_pca_feature_count: Optional[int] = None
     duration: Optional[float] = None
-    
+
     def __enter__(self):
         """Context manager entry for memory management."""
         if self.memory_optimizer:
             self.memory_optimizer.start_monitoring()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with proper cleanup."""
         cleanup_errors = []
-        
+
         try:
             # Stop monitoring first
             if self.memory_optimizer:
                 self.memory_optimizer.stop_monitoring()
         except Exception as e:
             cleanup_errors.append(f"Memory optimizer cleanup failed: {e}")
-        
+
         # Clean up large arrays
         try:
             if hasattr(self, 'original_features'):
@@ -108,21 +107,20 @@ class ClusteringContext:
                 del self.market_data
         except Exception as e:
             cleanup_errors.append(f"Array cleanup failed: {e}")
-        
+
         # Force garbage collection
         try:
             import gc
             gc.collect()
         except Exception as e:
             cleanup_errors.append(f"Garbage collection failed: {e}")
-        
+
         if cleanup_errors:
             tprint_error(f"Context cleanup warnings: {'; '.join(cleanup_errors)}")
-        
+
         # Re-raise original exception if any
         if exc_type is not None:
             raise exc_type(exc_val).with_traceback(exc_tb)
-
 
 @dataclass
 class NASTASClusteringConfig(BaseConfig):
@@ -132,24 +130,24 @@ class NASTASClusteringConfig(BaseConfig):
     # Empirical regime search bounds
     regime_search_min: int = 2
     regime_search_max: int = 5
-    
+
     # Clustering parameters
     n_regimes: int = 3  # Reduced to 3 for better balance with current data
     # algorithm_type removed - always use custom progressive regime optimization
     enable_economic_clustering: bool = True
     enable_ensemble_clustering: bool = True
-    
+
     # Balance control parameters - SOFTENED for better optimization
     max_regime_percentage: float = 0.60  # Maximum percentage for any single regime (softened from 50% to 60%)
     min_regime_percentage: float = 0.05  # Minimum percentage for any single regime (softened from 10% to 5%)
     # balance_weight removed - balance will be used as constraints, not objective weights
-    
+
     # Regime-focused clustering weights (removed momentum_weight)
     economic_weight: float = 0.25
     volatility_regime_weight: float = 0.30
     volume_regime_weight: float = 0.25
     structural_trend_weight: float = 0.20
-    
+
     # Regime-focused feature configuration
     feature_categories: List[str] = None
     use_regime_focused_features: bool = True
@@ -180,11 +178,11 @@ class NASTASClusteringConfig(BaseConfig):
     min_regime_persistence: Optional[float] = None
     max_feature_noise_ratio: Optional[float] = None
     min_temporal_stability: Optional[float] = None
-    
+
     # Output configuration
     output_dir: str = "data_cache"
     save_intermediate_results: bool = True
-    
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         self.regime_search_min = int(max(5, min(20, self.regime_search_min)))
@@ -226,7 +224,7 @@ class NASTASClusteringConfig(BaseConfig):
                 'statistical_regime': 30,
                 'regime_quality': 20,
             }
-        
+
         # Ensure n_regimes is within learned bounds
         if not (self.regime_search_min <= self.n_regimes <= self.regime_search_max):
             self.n_regimes = max(

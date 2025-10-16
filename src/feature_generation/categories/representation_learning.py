@@ -205,7 +205,7 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
             close_std_20 = data["close"].rolling(window=20).std()
             close_mean_10 = data["close"].rolling(window=10).mean()
             close_mean_30 = data["close"].rolling(window=30).mean()
-        
+
         price_features = [
             data["close"].pct_change(),
             (data["close"] - close_mean_20) / close_std_20,
@@ -230,7 +230,7 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
                     volume_mean_20 = data["volume"].rolling(window=20).mean()
             else:
                 volume_mean_20 = data["volume"].rolling(window=20).mean()
-            
+
             volume_features = [
                 data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
@@ -288,7 +288,7 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
                 else:
                     rolling_mean = attention_series.rolling(window=window).mean().fillna(0)
                 temporal_features.append(rolling_mean.values)
-                
+
                 # Rolling std using VectorBT
                 if VECTORBT_AVAILABLE and len(attention_series) > 1000:
                     try:
@@ -363,7 +363,7 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
         else:
             close_mean_10 = data["close"].rolling(window=10).mean()
             close_std_20 = data["close"].rolling(window=20).std()
-        
+
         indicators = [
             data["close"].pct_change(),
             close_mean_10,
@@ -381,7 +381,7 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
                     volume_mean_20 = data["volume"].rolling(window=20).mean()
             else:
                 volume_mean_20 = data["volume"].rolling(window=20).mean()
-            
+
             indicators.extend([
                 data["volume"] / volume_mean_20,
                 data["volume"].pct_change(),
@@ -536,16 +536,16 @@ class ContrastiveLearningGenerator(FeatureGenerator):
         return np.array(representations)
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -564,8 +564,8 @@ class ContrastiveLearningGenerator(FeatureGenerator):
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

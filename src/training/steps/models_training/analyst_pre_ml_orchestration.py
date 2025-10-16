@@ -79,7 +79,6 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import utilities: {e}")
     UTILS_AVAILABLE = False
 
-
 class OrchestrationPhase(Enum):
     """Orchestration execution phases."""
     HORIZON_LABELING = "horizon_labeling"
@@ -88,7 +87,6 @@ class OrchestrationPhase(Enum):
     FEATURE_SELECTION = "feature_selection"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class AnalystPreMLConfig:
@@ -177,7 +175,6 @@ class AnalystPreMLConfig:
             tprint_error(f"❌ Configuration validation failed: {e}")
             raise
 
-
 @dataclass
 class AnalystPreMLResult:
     """Enhanced result of Analyst pre-ML orchestration with comprehensive metrics."""
@@ -244,7 +241,6 @@ class AnalystPreMLResult:
             'parallel_processing_efficiency': self.parallel_processing_efficiency,
             'error_message': self.error_message
         }
-
 
 class AnalystPreMLOrchestrator:
     """
@@ -477,7 +473,7 @@ class AnalystPreMLOrchestrator:
 
         except Exception as e:
             tprint_warning(f"⚠️ Performance metrics update failed: {e}")
-    
+
     async def orchestrate(
         self,
         training_data: pd.DataFrame,
@@ -544,7 +540,7 @@ class AnalystPreMLOrchestrator:
             tprint_info(f"  - Bayesian TPE: {self.config.enable_bayesian_optimization}")
             tprint_info(f"  - Data quality checks: {self.config.enable_data_quality_checks}")
             tprint_info(f"  - Performance monitoring: {self.config.enable_performance_monitoring}")
-            
+
             # Step 1: Multi-Horizon Profit Labeling with enhanced monitoring
             step_start_time = tprint_timer()
             tprint_info("📈 Step 1/4: Multi-Horizon Profit Labeling...")
@@ -570,7 +566,7 @@ class AnalystPreMLOrchestrator:
                 result.horizon_labeling_time = tprint_timer(step_start_time)
                 tprint_error(f"❌ Horizon labeling failed after {result.horizon_labeling_time:.2f}s: {e}")
                 raise
-            
+
             # Step 2: Feature Lookback Optimization (per-regime/cluster) with enhanced monitoring
             step_start_time = tprint_timer()
             tprint_info("⚙️ Step 2/4: Feature Lookback Optimization (per-regime/cluster)...")
@@ -649,7 +645,7 @@ class AnalystPreMLOrchestrator:
                 if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
                     tprint_info("🛡️ Enabling gate feature protection for final feature selection...")
                     enable_gate_protection()
-                    
+
                     # Add gate protection config to sub_config
                     if self.config.gate_protection_config:
                         sub_config.custom_params['gate_protection'] = self.config.gate_protection_config
@@ -697,7 +693,7 @@ class AnalystPreMLOrchestrator:
                 result.feature_selection_time = tprint_timer(step_start_time)
                 tprint_error(f"❌ Feature selection failed after {result.feature_selection_time:.2f}s: {e}")
                 raise
-            
+
             # Mark as completed and update final metrics
             result.success = True
             result.phase = OrchestrationPhase.COMPLETED
@@ -755,7 +751,7 @@ class AnalystPreMLOrchestrator:
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to save result summary: {e}")
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get comprehensive performance metrics for the orchestrator."""
         return {
@@ -803,7 +799,6 @@ class AnalystPreMLOrchestrator:
             tprint_debug("🧹 Cleaning up orchestration context")
             self._cleanup_hardware_optimization()
 
-
 # Convenience function for external usage
 async def execute_analyst_pre_ml_orchestration(
     training_data: pd.DataFrame,
@@ -813,13 +808,13 @@ async def execute_analyst_pre_ml_orchestration(
 ) -> AnalystPreMLResult:
     """
     Execute Analyst pre-ML orchestration.
-    
+
     Args:
         training_data: Input DataFrame with market data (60m timeframe)
         regime_assignments: Optional regime assignments for per-regime optimization
         config: Optional configuration
         **kwargs: Additional parameters
-        
+
     Returns:
         AnalystPreMLResult with orchestrated features and metadata
     """

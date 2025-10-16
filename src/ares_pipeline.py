@@ -428,28 +428,28 @@ class AresPipeline:
             if self.analyst:
                 tprint('   🔍 Executing market analysis...')
                 self.logger.info('   🔍 Executing market analysis...')
-                
+
                 # Set current timestamp for lookahead bias detection
                 current_time = datetime.now()
                 bias_detector = get_global_detector()
                 bias_detector.set_current_timestamp(current_time)
-                
+
                 analysis_input = {'symbol': 'ETHUSDT', 'timeframe': '1h', 'limit': 100, 'analysis_type': 'technical', 'include_indicators': True, 'include_patterns': True}
                 analysis_result = await self.analyst.execute_analysis(analysis_input)
-                
+
                 # Handle regime transitions with position protection
                 if analysis_result and self.regime_transition_handler:
                     regime_info = analysis_result.get('regime_analysis', {})
                     current_regime = regime_info.get('current_regime', 'unknown')
                     regime_confidence = regime_info.get('confidence', 0.5)
                     market_volatility = regime_info.get('volatility', 0.02)
-                    
+
                     transition_result = handle_regime_transition(
                         current_regime=current_regime,
                         regime_confidence=regime_confidence,
                         market_volatility=market_volatility
                     )
-                    
+
                     if transition_result['transition_detected']:
                         self.logger.info(f"🔄 Regime transition detected: {transition_result['transition_type']}")
                         if transition_result['should_exit']:
@@ -517,8 +517,6 @@ class AresPipeline:
             tprint(warning(f'Error executing pipeline cycle: {e}'))
             self.logger.exception('Error executing pipeline cycle')
             raise
-
-
 
     def get_pipeline_status(self) -> dict[str, Any]:
         """
@@ -624,14 +622,14 @@ class AresPipeline:
         """Initialize enhanced monitoring system."""
         try:
             self.logger.info('🔍 Initializing Enhanced Monitoring System...')
-            
+
             # Get trading mode from environment
             trading_mode = os.environ.get('TRADING_MODE', 'PAPER').upper()
-            
+
             # Initialize enhanced monitoring orchestrator
             self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
             await self.enhanced_monitoring.initialize()
-            
+
             if self.enhanced_monitoring:
                 self.logger.info('✅ Enhanced Monitoring System initialized successfully')
                 self.logger.info(f'   📊 Trading Mode: {trading_mode}')
@@ -647,10 +645,10 @@ class AresPipeline:
         """Launch auto monitoring system."""
         try:
             self.logger.info('🚀 Launching Auto Enhanced Monitoring System...')
-            
+
             # Launch the auto monitoring system
             success = await launch_auto_monitoring()
-            
+
             if success:
                 self.auto_monitoring_launcher = await get_auto_monitoring()
                 self.logger.info('✅ Auto Enhanced Monitoring System launched successfully')
@@ -673,16 +671,16 @@ class AresPipeline:
         except Exception as e:
             self.logger.exception(f'Error initializing regime transition handler: {e}')
             raise
-    
+
     @handles_errors(default_return=None, context='regime consensus validator initialization')
     async def _initialize_regime_consensus_validator(self) -> None:
         """Initialize regime consensus validator for semantic consensus validation."""
         try:
             self.logger.info('🧠 Initializing regime consensus validator...')
-            
+
             # Import the regime consensus validator
             from src.validation.regime_consensus_validator import RegimeConsensusValidator
-            
+
             # Initialize with configuration
             validator_config = self.config.get('regime_consensus_validator', {
                 'enable_semantic_consensus': True,
@@ -691,10 +689,10 @@ class AresPipeline:
                 'enable_regime_mapping': True,
                 'enable_feature_based_mapping': True
             })
-            
+
             self.regime_consensus_validator = RegimeConsensusValidator(validator_config)
             self.logger.info('✅ Regime consensus validator initialized successfully')
-            
+
         except ImportError:
             self.logger.warning('⚠️ Regime consensus validator not available - semantic consensus validation disabled')
             self.regime_consensus_validator = None
@@ -719,11 +717,11 @@ class AresPipeline:
             self.logger.info('📦 Checking optional dependencies...')
             dep_manager = get_dependency_manager()
             available_packages = dep_manager.get_available_packages()
-            
+
             self.logger.info(f'Available packages: {len(available_packages)}')
             for package in sorted(available_packages):
                 self.logger.debug(f'  ✅ {package}')
-            
+
             # Check for critical missing packages
             critical_packages = ['numpy', 'pandas']
             missing_critical = dep_manager.get_missing_packages(critical_packages)
@@ -731,11 +729,10 @@ class AresPipeline:
                 self.logger.warning(f'⚠️ Missing critical packages: {missing_critical}')
             else:
                 self.logger.info('✅ All critical packages available')
-                
+
         except Exception as e:
             self.logger.exception(f'Error checking dependencies: {e}')
             raise
-
 
 async def main() -> None:
     """Main entry point for the Ares Pipeline."""

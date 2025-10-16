@@ -73,7 +73,7 @@ class FeatureOptimizationConfig:
     # Add methods parameter for backward compatibility
     methods: Optional[List[str]] = None
     optimization_metric: str = "sharpe_ratio"
-    
+
     # Stability Enhancement Parameters
     l1_regularization: float = 0.01  # L1 regularization for feature selection
     l2_regularization: float = 0.001  # L2 regularization for stability
@@ -81,12 +81,12 @@ class FeatureOptimizationConfig:
     lookback_range_penalty: float = 0.1  # Penalty for wide lookback ranges
     temporal_consistency_weight: float = 0.3  # Weight for temporal consistency
     stability_weight: float = 0.4  # Balance performance vs stability
-    
+
     # Rolling Window Parameters
     rolling_window_size: str = "30D"  # Rolling window size for optimization
     rolling_step_size: str = "7D"  # Step size for rolling optimization
     min_stability_score: float = 0.7  # Minimum required stability score
-    
+
     # Cross-Validation Stability Parameters
     cv_stability_metric: str = "coefficient_variance"  # Stability metric for CV
     stability_cv_folds: int = 3  # Additional CV folds for stability assessment
@@ -107,21 +107,21 @@ class FeatureOptimizationResult:
 class FeatureGenerationOptimizer:
     """
     Optimizes feature generation parameters using data-driven approaches.
-    
+
     This class provides comprehensive optimization for feature parameters,
     particularly lookback periods, using various statistical and machine learning
     methods to determine optimal values for each feature.
     """
-    
+
     def __init__(self, config: Optional[FeatureOptimizationConfig] = None):
         """Initialize the feature generation optimizer."""
         self.logger = logger.getChild('FeatureGenerationOptimizer')
         self.logger.info("🚀 Initializing FeatureGenerationOptimizer...")
         start_time = time.time()
-        
+
         self.config = config or FeatureOptimizationConfig()
         self.logger.info(f"📊 Configuration loaded: {self.config.optimization_method.value}")
-        
+
         # Initialize components
         self.logger.debug("🔧 Initializing GPU manager...")
         try:
@@ -133,31 +133,31 @@ class FeatureGenerationOptimizer:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize GPU manager: {e}")
             self.gpu_manager = None
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ FeatureGenerationOptimizer initialized in {init_time:.3f}s")
         self.logger.info(f"📊 Min lookback: {self.config.min_lookback}, Max lookback: {self.config.max_lookback}")
         self.logger.info(f"📊 CV folds: {self.config.cv_folds}, Parallel processing: {self.config.parallel_processing}")
         self.parallel_processor = ParallelProcessor(max_workers=self.config.max_workers)
-        
+
         # Cache for optimization results
         self._optimization_cache: Dict[str, FeatureOptimizationResult] = {}
-        
+
         # Validation
         self._validate_config()
-    
+
     def _validate_config(self) -> None:
         """Validate the optimization configuration."""
         if self.config.min_lookback >= self.config.max_lookback:
             raise ValueError("min_lookback must be less than max_lookback")
-        
+
         if self.config.step_size <= 0:
             raise ValueError("step_size must be positive")
-        
+
         if not SKLEARN_AVAILABLE and self.config.optimization_method == OptimizationMethod.CROSS_VALIDATION:
             self.logger.warning("Scikit-learn not available, falling back to statistical analysis")
             self.config.optimization_method = OptimizationMethod.STATISTICAL_ANALYSIS
-    
+
     async def optimize_feature_lookback(
         self,
         data: pd.DataFrame,
@@ -168,25 +168,25 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """
         Optimize the lookback period for a specific feature.
-        
+
         Args:
             data: Input data DataFrame
             feature_name: Name of the feature to optimize
             target_column: Name of the target column
             feature_generator: Function that generates the feature given data and lookback
             regime_column: Optional regime column for regime-aware optimization
-            
+
         Returns:
             FeatureOptimizationResult with optimal parameters
         """
         self.logger.info(f"Optimizing lookback period for feature: {feature_name}")
-        
+
         # Check cache first
         cache_key = f"{feature_name}_{hash(str(data.shape))}"
         if cache_key in self._optimization_cache:
             self.logger.info(f"Using cached optimization result for {feature_name}")
             return self._optimization_cache[cache_key]
-        
+
         try:
             # Generate lookback range
             lookback_range = range(
@@ -194,7 +194,7 @@ class FeatureGenerationOptimizer:
                 self.config.max_lookback + 1,
                 self.config.step_size
             )
-            
+
             # Optimize based on method
             if self.config.optimization_method == OptimizationMethod.CROSS_VALIDATION:
                 result = await self._optimize_with_cross_validation(
@@ -216,28 +216,28 @@ class FeatureGenerationOptimizer:
                 result = await self._optimize_adaptive(
                     data, feature_name, target_column, feature_generator, lookback_range
                 )
-            
+
             # Add regime-specific analysis if regime column provided
             if regime_column and regime_column in data.columns:
                 result.regime_specific_results = await self._analyze_regime_specific_performance(
                     data, feature_name, target_column, feature_generator, result.optimal_lookback, regime_column
                 )
-            
+
             # Add decay analysis
             result.decay_analysis = await self._analyze_feature_decay(
                 data, feature_name, feature_generator, result.optimal_lookback
             )
-            
+
             # Cache result
             self._optimization_cache[cache_key] = result
-            
+
             self.logger.info(f"Optimization completed for {feature_name}: optimal_lookback={result.optimal_lookback}")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"Error optimizing feature {feature_name}: {e}")
             raise
-    
+
     async def _optimize_with_cross_validation(
         self,
         data: pd.DataFrame,
@@ -248,58 +248,58 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """Optimize using cross-validation approach."""
         self.logger.info(f"Using cross-validation optimization for {feature_name}")
-        
+
         best_score = -np.inf
         best_lookback = self.config.min_lookback
         validation_scores = []
-        
+
         for lookback in lookback_range:
             try:
                 # Generate feature with current lookback
                 feature_values = feature_generator(data, lookback)
-                
+
                 # Prepare data for cross-validation
                 valid_indices = ~(feature_values.isna() | data[target_column].isna())
                 X = feature_values[valid_indices].values.reshape(-1, 1)
                 y = data[target_column][valid_indices].values
-                
+
                 if len(X) < 10:  # Need minimum data for CV
                     continue
-                
+
                 # Perform time series cross-validation
                 tscv = TimeSeriesSplit(n_splits=self.config.cv_folds)
                 scores = []
-                
+
                 for train_idx, val_idx in tscv.split(X):
                     X_train, X_val = X[train_idx], X[val_idx]
                     y_train, y_val = y[train_idx], y[val_idx]
-                    
+
                     # Train model
                     model = RandomForestRegressor(n_estimators=50, random_state=42)
                     model.fit(X_train, y_train)
-                    
+
                     # Evaluate
                     y_pred = model.predict(X_val)
                     score = -mean_squared_error(y_val, y_pred)  # Negative MSE for maximization
                     scores.append(score)
-                
+
                 avg_score = np.mean(scores)
                 validation_scores.append(avg_score)
-                
+
                 if avg_score > best_score:
                     best_score = avg_score
                     best_lookback = lookback
-                    
+
             except Exception as e:
                 self.logger.warning(f"Error in cross-validation for lookback {lookback}: {e}")
                 continue
-        
+
         # Calculate stability score
         stability_score = self._calculate_stability_score(validation_scores)
-        
+
         # Calculate confidence interval
         confidence_interval = self._calculate_confidence_interval(validation_scores)
-        
+
         return FeatureOptimizationResult(
             feature_name=feature_name,
             optimal_lookback=best_lookback,
@@ -309,7 +309,7 @@ class FeatureGenerationOptimizer:
             optimization_method=OptimizationMethod.CROSS_VALIDATION.value,
             validation_scores=validation_scores
         )
-    
+
     async def _optimize_with_statistical_analysis(
         self,
         data: pd.DataFrame,
@@ -320,46 +320,46 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """Optimize using statistical analysis approach."""
         self.logger.info(f"Using statistical analysis optimization for {feature_name}")
-        
+
         best_score = -np.inf
         best_lookback = self.config.min_lookback
         scores = []
-        
+
         for lookback in lookback_range:
             try:
                 # Generate feature with current lookback
                 feature_values = feature_generator(data, lookback)
-                
+
                 # Calculate correlation with target
                 valid_indices = ~(feature_values.isna() | data[target_column].isna())
                 if valid_indices.sum() < 10:
                     continue
-                
+
                 correlation = abs(feature_values[valid_indices].corr(data[target_column][valid_indices]))
-                
+
                 # Calculate feature stability (low variance is better)
                 feature_std = feature_values[valid_indices].std()
                 feature_mean = feature_values[valid_indices].mean()
                 stability = 1 / (1 + feature_std / abs(feature_mean)) if feature_mean != 0 else 0
-                
+
                 # Combined score
                 score = correlation * stability
                 scores.append(score)
-                
+
                 if score > best_score:
                     best_score = score
                     best_lookback = lookback
-                    
+
             except Exception as e:
                 self.logger.warning(f"Error in statistical analysis for lookback {lookback}: {e}")
                 continue
-        
+
         # Calculate stability score
         stability_score = self._calculate_stability_score(scores)
-        
+
         # Calculate confidence interval
         confidence_interval = self._calculate_confidence_interval(scores)
-        
+
         return FeatureOptimizationResult(
             feature_name=feature_name,
             optimal_lookback=best_lookback,
@@ -369,7 +369,7 @@ class FeatureGenerationOptimizer:
             optimization_method=OptimizationMethod.STATISTICAL_ANALYSIS.value,
             validation_scores=scores
         )
-    
+
     async def _optimize_with_information_theory(
         self,
         data: pd.DataFrame,
@@ -380,43 +380,43 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """Optimize using information theory approach."""
         self.logger.info(f"Using information theory optimization for {feature_name}")
-        
+
         best_score = -np.inf
         best_lookback = self.config.min_lookback
         scores = []
-        
+
         for lookback in lookback_range:
             try:
                 # Generate feature with current lookback
                 feature_values = feature_generator(data, lookback)
-                
+
                 # Calculate mutual information
                 valid_indices = ~(feature_values.isna() | data[target_column].isna())
                 if valid_indices.sum() < 10:
                     continue
-                
+
                 # Discretize for mutual information calculation
                 feature_discrete = pd.cut(feature_values[valid_indices], bins=10, labels=False)
                 target_discrete = pd.cut(data[target_column][valid_indices], bins=10, labels=False)
-                
+
                 # Calculate mutual information
                 mi_score = self._calculate_mutual_information(feature_discrete, target_discrete)
                 scores.append(mi_score)
-                
+
                 if mi_score > best_score:
                     best_score = mi_score
                     best_lookback = lookback
-                    
+
             except Exception as e:
                 self.logger.warning(f"Error in information theory analysis for lookback {lookback}: {e}")
                 continue
-        
+
         # Calculate stability score
         stability_score = self._calculate_stability_score(scores)
-        
+
         # Calculate confidence interval
         confidence_interval = self._calculate_confidence_interval(scores)
-        
+
         return FeatureOptimizationResult(
             feature_name=feature_name,
             optimal_lookback=best_lookback,
@@ -426,7 +426,7 @@ class FeatureGenerationOptimizer:
             optimization_method=OptimizationMethod.INFORMATION_THEORY.value,
             validation_scores=scores
         )
-    
+
     async def _optimize_with_regime_awareness(
         self,
         data: pd.DataFrame,
@@ -438,50 +438,50 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """Optimize using regime-aware approach."""
         self.logger.info(f"Using regime-aware optimization for {feature_name}")
-        
+
         regime_results = {}
         overall_scores = []
-        
+
         # Get unique regimes
         regimes = data[regime_column].unique()
-        
+
         for regime in regimes:
             regime_data = data[data[regime_column] == regime]
             if len(regime_data) < 20:  # Need minimum data per regime
                 continue
-            
+
             regime_scores = []
             best_regime_score = -np.inf
             best_regime_lookback = self.config.min_lookback
-            
+
             for lookback in lookback_range:
                 try:
                     # Generate feature for this regime
                     feature_values = feature_generator(regime_data, lookback)
-                    
+
                     # Calculate performance for this regime
                     valid_indices = ~(feature_values.isna() | regime_data[target_column].isna())
                     if valid_indices.sum() < 5:
                         continue
-                    
+
                     correlation = abs(feature_values[valid_indices].corr(regime_data[target_column][valid_indices]))
                     regime_scores.append(correlation)
-                    
+
                     if correlation > best_regime_score:
                         best_regime_score = correlation
                         best_regime_lookback = lookback
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Error in regime-aware analysis for regime {regime}, lookback {lookback}: {e}")
                     continue
-            
+
             regime_results[regime] = {
                 'optimal_lookback': best_regime_lookback,
                 'performance_score': best_regime_score,
                 'scores': regime_scores
             }
             overall_scores.extend(regime_scores)
-        
+
         # Calculate overall optimal lookback (weighted average)
         if regime_results:
             weighted_lookback = sum(
@@ -491,16 +491,16 @@ class FeatureGenerationOptimizer:
             optimal_lookback = int(round(weighted_lookback))
         else:
             optimal_lookback = self.config.min_lookback
-        
+
         # Calculate overall performance score
         overall_performance = np.mean(overall_scores) if overall_scores else 0
-        
+
         # Calculate stability score
         stability_score = self._calculate_stability_score(overall_scores)
-        
+
         # Calculate confidence interval
         confidence_interval = self._calculate_confidence_interval(overall_scores)
-        
+
         return FeatureOptimizationResult(
             feature_name=feature_name,
             optimal_lookback=optimal_lookback,
@@ -511,7 +511,7 @@ class FeatureGenerationOptimizer:
             regime_specific_results=regime_results,
             validation_scores=overall_scores
         )
-    
+
     async def _optimize_adaptive(
         self,
         data: pd.DataFrame,
@@ -522,16 +522,16 @@ class FeatureGenerationOptimizer:
     ) -> FeatureOptimizationResult:
         """Adaptive optimization that combines multiple methods."""
         self.logger.info(f"Using adaptive optimization for {feature_name}")
-        
+
         # Try different methods and combine results
         methods = [
             OptimizationMethod.STATISTICAL_ANALYSIS,
             OptimizationMethod.INFORMATION_THEORY
         ]
-        
+
         if SKLEARN_AVAILABLE:
             methods.append(OptimizationMethod.CROSS_VALIDATION)
-        
+
         results = []
         for method in methods:
             try:
@@ -551,17 +551,17 @@ class FeatureGenerationOptimizer:
             except Exception as e:
                 self.logger.warning(f"Error in adaptive optimization with method {method}: {e}")
                 continue
-        
+
         if not results:
             # Fallback to statistical analysis
             return await self._optimize_with_statistical_analysis(
                 data, feature_name, target_column, feature_generator, lookback_range
             )
-        
+
         # Combine results (weighted average)
         weights = [r.performance_score for r in results]
         total_weight = sum(weights)
-        
+
         if total_weight > 0:
             optimal_lookback = int(round(
                 sum(r.optimal_lookback * w for r, w in zip(results, weights)) / total_weight
@@ -570,16 +570,16 @@ class FeatureGenerationOptimizer:
         else:
             optimal_lookback = results[0].optimal_lookback
             performance_score = results[0].performance_score
-        
+
         # Calculate combined stability score
         all_scores = []
         for result in results:
             if result.validation_scores:
                 all_scores.extend(result.validation_scores)
-        
+
         stability_score = self._calculate_stability_score(all_scores)
         confidence_interval = self._calculate_confidence_interval(all_scores)
-        
+
         return FeatureOptimizationResult(
             feature_name=feature_name,
             optimal_lookback=optimal_lookback,
@@ -589,7 +589,7 @@ class FeatureGenerationOptimizer:
             optimization_method=OptimizationMethod.ADAPTIVE.value,
             validation_scores=all_scores
         )
-    
+
     async def _analyze_regime_specific_performance(
         self,
         data: pd.DataFrame,
@@ -602,16 +602,16 @@ class FeatureGenerationOptimizer:
         """Analyze performance across different regimes."""
         regime_analysis = {}
         regimes = data[regime_column].unique()
-        
+
         for regime in regimes:
             regime_data = data[data[regime_column] == regime]
             if len(regime_data) < 10:
                 continue
-            
+
             try:
                 feature_values = feature_generator(regime_data, optimal_lookback)
                 valid_indices = ~(feature_values.isna() | regime_data[target_column].isna())
-                
+
                 if valid_indices.sum() > 5:
                     correlation = feature_values[valid_indices].corr(regime_data[target_column][valid_indices])
                     regime_analysis[regime] = {
@@ -623,9 +623,9 @@ class FeatureGenerationOptimizer:
             except Exception as e:
                 self.logger.warning(f"Error analyzing regime {regime}: {e}")
                 continue
-        
+
         return regime_analysis
-    
+
     async def _analyze_feature_decay(
         self,
         data: pd.DataFrame,
@@ -635,13 +635,13 @@ class FeatureGenerationOptimizer:
     ) -> Dict[str, Any]:
         """Analyze how feature performance decays with different lookback periods."""
         decay_analysis = {}
-        
+
         # Test lookback periods around the optimal
         test_lookbacks = range(
             max(1, optimal_lookback - 10),
             min(optimal_lookback + 11, self.config.max_lookback + 1)
         )
-        
+
         correlations = []
         for lookback in test_lookbacks:
             try:
@@ -652,7 +652,7 @@ class FeatureGenerationOptimizer:
             except Exception as e:
                 self.logger.warning(f"Error in decay analysis for lookback {lookback}: {e}")
                 correlations.append(0)
-        
+
         if correlations:
             decay_analysis = {
                 'lookbacks': list(test_lookbacks),
@@ -660,34 +660,34 @@ class FeatureGenerationOptimizer:
                 'decay_rate': np.polyfit(test_lookbacks, correlations, 1)[0] if len(correlations) > 1 else 0,
                 'peak_lookback': test_lookbacks[np.argmax(correlations)] if correlations else optimal_lookback
             }
-        
+
         return decay_analysis
-    
+
     def _calculate_stability_score(self, scores: List[float]) -> float:
         """Calculate stability score from a list of scores."""
         if not scores or len(scores) < 2:
             return 0.0
-        
+
         # Stability is inverse of coefficient of variation
         mean_score = np.mean(scores)
         std_score = np.std(scores)
-        
+
         if mean_score == 0:
             return 0.0
-        
+
         cv = std_score / abs(mean_score)
         stability = 1 / (1 + cv)
         return min(1.0, max(0.0, stability))
-    
+
     def _calculate_confidence_interval(self, scores: List[float], confidence: float = 0.95) -> Tuple[float, float]:
         """Calculate confidence interval for scores."""
         if not scores or len(scores) < 2:
             return (0.0, 0.0)
-        
+
         mean_score = np.mean(scores)
         std_score = np.std(scores)
         n = len(scores)
-        
+
         # Use t-distribution for small samples
         if n < 30:
             from scipy.stats import t
@@ -695,21 +695,21 @@ class FeatureGenerationOptimizer:
         else:
             from scipy.stats import norm
             t_val = norm.ppf((1 + confidence) / 2)
-        
+
         margin_error = t_val * (std_score / np.sqrt(n))
-        
+
         return (mean_score - margin_error, mean_score + margin_error)
-    
+
     def _calculate_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
         """Calculate mutual information between two discrete series."""
         try:
             # Create contingency table
             contingency = pd.crosstab(x, y)
-            
+
             # Calculate mutual information
             n = contingency.sum().sum()
             mi = 0
-            
+
             for i in range(contingency.shape[0]):
                 for j in range(contingency.shape[1]):
                     if contingency.iloc[i, j] > 0:
@@ -717,12 +717,12 @@ class FeatureGenerationOptimizer:
                         p_i = contingency.iloc[i, :].sum() / n
                         p_j = contingency.iloc[:, j].sum() / n
                         mi += p_ij * np.log2(p_ij / (p_i * p_j))
-            
+
             return mi
         except Exception as e:
             self.logger.warning(f"Error calculating mutual information: {e}")
             return 0.0
-    
+
     async def optimize_multiple_features(
         self,
         data: pd.DataFrame,
@@ -732,20 +732,20 @@ class FeatureGenerationOptimizer:
     ) -> Dict[str, FeatureOptimizationResult]:
         """
         Optimize multiple features in parallel.
-        
+
         Args:
             data: Input data DataFrame
             feature_configs: Dictionary mapping feature names to their configurations
             target_column: Name of the target column
             regime_column: Optional regime column for regime-aware optimization
-            
+
         Returns:
             Dictionary mapping feature names to optimization results
         """
         self.logger.info(f"Optimizing {len(feature_configs)} features in parallel")
-        
+
         results = {}
-        
+
         if self.config.parallel_processing and len(feature_configs) > 1:
             # Parallel optimization
             tasks = []
@@ -755,7 +755,7 @@ class FeatureGenerationOptimizer:
                     data, feature_name, target_column, feature_generator, regime_column
                 )
                 tasks.append((feature_name, task))
-            
+
             # Execute tasks
             for feature_name, task in tasks:
                 try:
@@ -776,15 +776,15 @@ class FeatureGenerationOptimizer:
                 except Exception as e:
                     self.logger.error(f"Error optimizing feature {feature_name}: {e}")
                     continue
-        
+
         self.logger.info(f"Completed optimization for {len(results)} features")
         return results
-    
+
     def get_optimization_summary(self, results: Dict[str, FeatureOptimizationResult]) -> Dict[str, Any]:
         """Generate a summary of optimization results."""
         if not results:
             return {}
-        
+
         summary = {
             'total_features': len(results),
             'optimization_methods': {},
@@ -793,12 +793,12 @@ class FeatureGenerationOptimizer:
             'stability_stats': {},
             'recommendations': []
         }
-        
+
         # Analyze methods used
         for result in results.values():
             method = result.optimization_method
             summary['optimization_methods'][method] = summary['optimization_methods'].get(method, 0) + 1
-        
+
         # Analyze lookback distribution
         lookbacks = [result.optimal_lookback for result in results.values()]
         summary['lookback_distribution'] = {
@@ -808,7 +808,7 @@ class FeatureGenerationOptimizer:
             'min': np.min(lookbacks),
             'max': np.max(lookbacks)
         }
-        
+
         # Analyze performance
         performances = [result.performance_score for result in results.values()]
         summary['performance_stats'] = {
@@ -818,7 +818,7 @@ class FeatureGenerationOptimizer:
             'min': np.min(performances),
             'max': np.max(performances)
         }
-        
+
         # Analyze stability
         stabilities = [result.stability_score for result in results.values()]
         summary['stability_stats'] = {
@@ -828,23 +828,23 @@ class FeatureGenerationOptimizer:
             'min': np.min(stabilities),
             'max': np.max(stabilities)
         }
-        
+
         # Generate recommendations
-        low_performance = [name for name, result in results.items() 
+        low_performance = [name for name, result in results.items()
                           if result.performance_score < self.config.performance_threshold]
-        low_stability = [name for name, result in results.items() 
+        low_stability = [name for name, result in results.items()
                         if result.stability_score < self.config.stability_threshold]
-        
+
         if low_performance:
             summary['recommendations'].append(
                 f"Consider removing or redesigning features with low performance: {low_performance}"
             )
-        
+
         if low_stability:
             summary['recommendations'].append(
                 f"Consider stabilizing features with low stability: {low_stability}"
             )
-        
+
         return summary
 
     async def optimize_features(
@@ -877,24 +877,24 @@ class FeatureGenerationOptimizer:
                     'error': error_msg,
                     'fallback_reason': 'invalid_data_type'
                 }
-            
+
             # Enhanced optimization with stability constraints
             results = {}
             numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
+
             # Filter out raw OHLCV data and basic transformations - focus on REAL technical indicators
             excluded_columns = [
                 'timestamp', 'open_time', 'open', 'high', 'low', 'close', 'volume', 'returns', 'close_return',
-                'close_time', 'quote_volume', 'trades', 'day', 'close_log_return', 'volume_return', 
-                'volume_log_return', 'price_range', 'price_range_pct', 'body_size', 'body_size_pct', 
+                'close_time', 'quote_volume', 'trades', 'day', 'close_log_return', 'volume_return',
+                'volume_log_return', 'price_range', 'price_range_pct', 'body_size', 'body_size_pct',
                 'hour', 'day_of_week', 'is_weekend', 'exchange', 'timeframe', 'symbol', 'interval'
             ]
             feature_columns = [col for col in numeric_columns if col not in excluded_columns]
-            
+
             # Check for real technical indicators (RSI, SMA, EMA, etc.)
-            ta_indicators = [col for col in feature_columns if any(indicator in col.lower() for indicator in 
+            ta_indicators = [col for col in feature_columns if any(indicator in col.lower() for indicator in
                            ['sma', 'ema', 'rsi', 'macd', 'bollinger', 'atr', 'stoch', 'williams', 'cci', 'roc'])]
-            
+
             # If no real technical indicators available, use the FeatureBank to generate comprehensive features
             if not ta_indicators:
                 tprint("⚠️ No technical indicators found, generating comprehensive features using FeatureBank...")
@@ -902,10 +902,10 @@ class FeatureGenerationOptimizer:
                     # Import and use the proper FeatureBank system via factory
                     from ..core.factory import get_feature_bank, list_available_categories
                     from ..core.feature_generator import FeatureCategory
-                    
+
                     # Get the global feature bank and manually register generators
                     feature_bank = get_feature_bank()
-                    
+
                     # Manually register ALL available generators using correct imports
                     try:
                         # Direct class imports for main generators
@@ -918,7 +918,7 @@ class FeatureGenerationOptimizer:
                         from ..categories.support_resistance import SupportResistanceFeatureGenerator
                         from ..categories.candlestick_pattern import CandlestickPatternFeatureGenerator
                         from ..categories.interaction import InteractionFeatureGenerator
-                        
+
                         # Factory functions for complex generators
                         from ..categories.microstructure import create_default_microstructure_generators
                         from ..categories.order_flow import create_default_order_flow_generators
@@ -953,9 +953,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-                        
+
                         # Register main generators
                         generators_to_register = [
                             MomentumFeatureGenerator(),
@@ -968,7 +968,7 @@ except ImportError:
                             CandlestickPatternFeatureGenerator(),
                             InteractionFeatureGenerator()
                         ]
-                        
+
                         # Add generators from factory functions (with error handling for missing data)
                         try:
                             microstructure_gens = create_default_microstructure_generators()
@@ -982,44 +982,44 @@ except ImportError:
                             tprint(f"✅ Added {len(filtered_microstructure)} microstructure generators (filtered from {len(microstructure_gens)})")
                         except Exception as e:
                             tprint(f"⚠️ Skipping microstructure generators: {e}")
-                        
+
                         try:
                             generators_to_register.extend(create_default_order_flow_generators())
                         except Exception as e:
                             tprint(f"⚠️ Skipping order flow generators: {e}")
-                        
+
                         try:
                             generators_to_register.extend(create_default_cross_timeframe_generators())
                         except Exception as e:
                             tprint(f"⚠️ Skipping cross-timeframe generators: {e}")
-                        
+
                         try:
                             generators_to_register.extend(create_default_entropy_generators())
                         except Exception as e:
                             tprint(f"⚠️ Skipping entropy generators: {e}")
-                        
+
                         try:
                             generators_to_register.extend(create_default_time_generators())
                         except Exception as e:
                             tprint(f"⚠️ Skipping time generators: {e}")
-                        
+
                         for generator in generators_to_register:
                             feature_bank.register_generator(generator)
-                        
+
                         tprint(f"✅ Registered {len(generators_to_register)} feature generators")
-                        
+
                     except Exception as reg_error:
                         tprint(f"⚠️ Failed to register generators: {reg_error}")
                         raise Exception("Failed to register generators")
-                    
+
                     # Check what categories are available now
                     available_categories = list_available_categories()
                     tprint(f"📊 Available feature categories: {len(available_categories)}")
-                    
+
                     if not available_categories:
                         tprint("⚠️ No feature generators available after registration, will use fallback indicators...")
                         raise Exception("No feature generators available")
-                    
+
                     # Generate features for ALL available categories
                     categories_to_generate = [
                         FeatureCategory.MOMENTUM,
@@ -1037,9 +1037,9 @@ except ImportError:
                         FeatureCategory.TIME
                         # Note: CUSTOM and LEGACY categories available too
                     ]
-                    
+
                     tprint(f"🚀 Generating features for {len(categories_to_generate)} categories...")
-                    
+
                     # Generate features using the FeatureBank with reduced hardware optimization
                     feature_df = feature_bank.generate_features(
                         data=data,
@@ -1056,14 +1056,14 @@ except ImportError:
                         gpu_usage_threshold=60.0,              # Lower GPU threshold
                         temperature_threshold=70.0             # Lower temperature threshold
                     )
-                    
+
                     # Merge generated features with original data
                     if not feature_df.empty:
                         # Add generated features to data
                         for col in feature_df.columns:
                             if col not in data.columns:
                                 data[col] = feature_df[col]
-                        
+
                         # Update feature columns to include generated features
                         feature_columns = [col for col in feature_df.columns if col not in excluded_columns]
                         tprint(f"✅ Generated {len(feature_columns)} features using FeatureBank system")
@@ -1072,7 +1072,7 @@ except ImportError:
                         # Fallback to basic indicators if FeatureBank fails
                         self._create_basic_technical_indicators(data)
                         feature_columns = ['sma_20', 'ema_12', 'rsi_14', 'volatility_20']
-                        
+
                 except Exception as e:
                     tprint(f"⚠️ FeatureBank failed: {e}, creating basic technical indicators...")
                     # Fallback to basic indicators
@@ -1082,19 +1082,19 @@ except ImportError:
                 # Use existing real technical indicators
                 feature_columns = ta_indicators
                 tprint(f"✅ Found {len(feature_columns)} existing technical indicators: {feature_columns[:5]}...")
-            
+
             all_scores = []
             all_lookbacks = []
-            
+
             # Limit to reasonable number of features for optimization
             optimization_features = feature_columns[:8] if len(feature_columns) > 8 else feature_columns
             tprint(f"🎯 Optimizing {len(optimization_features)} engineered features: {optimization_features}")
-            
+
             for i, col in enumerate(optimization_features):
                 # Generate candidate lookback values
                 candidate_lookbacks = list(range(config.min_lookback, min(config.max_lookback, 50), 5))
                 candidate_scores = []
-                
+
                 for lookback in candidate_lookbacks:
                     # Simple correlation-based scoring
                     try:
@@ -1104,12 +1104,12 @@ except ImportError:
                             target_options = [
                                 # FORCE: Use directional_confidence first (we know this exists)
                                 'directional_confidence',        # Strength of directional bias - CONFIRMED WORKING
-                                
+
                                 # Try other bi-directional targets
                                 'opportunity_asymmetry',         # Long-short bias indicator
                                 'long_overall_opportunity',      # Long opportunity score
-                                'short_overall_opportunity',     # Short opportunity score  
-                                
+                                'short_overall_opportunity',     # Short opportunity score
+
                                 # Original targets (backward compatibility) - LOWER PRIORITY
                                 'leverage_adjusted_score',       # Primary multi-horizon target (long-biased)
                                 'immediate_opportunity',         # Secondary multi-horizon target
@@ -1118,13 +1118,13 @@ except ImportError:
                                 'close_return',                  # Alternative returns name
                                 'close'                         # Last resort
                             ]
-                            
+
                             target_col = None
                             for target_option in target_options:
                                 if target_option in data.columns:
                                     target_col = target_option
                                     break
-                            
+
                             if target_col is None:
                                 correlation = 0.0
                                 raw_correlation = 0.0
@@ -1132,7 +1132,7 @@ except ImportError:
                             else:
                                 raw_correlation = rolling_feature.corr(data[target_col])
                                 correlation = abs(raw_correlation)  # Use absolute for optimization
-                                
+
                                 # Enhanced logging for bi-directional targets
                                 if target_col in ['long_overall_opportunity', 'short_overall_opportunity', 'opportunity_asymmetry', 'directional_confidence']:
                                     direction = "positive" if raw_correlation > 0 else "negative"
@@ -1144,7 +1144,7 @@ except ImportError:
                                         interpretation = "Higher feature → Higher LONG opportunity" if raw_correlation > 0 else "Higher feature → Lower LONG opportunity (contrarian)"
                                         tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
                                         tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
-                                    elif target_col == 'short_overall_opportunity':  
+                                    elif target_col == 'short_overall_opportunity':
                                         interpretation = "Higher feature → Higher SHORT opportunity" if raw_correlation > 0 else "Higher feature → Lower SHORT opportunity (contrarian)"
                                         tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
                                         tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
@@ -1152,9 +1152,9 @@ except ImportError:
                                         interpretation = "Higher feature → LONG bias" if raw_correlation > 0 else "Higher feature → SHORT bias"
                                         tprint(f"🎯 Using BI-DIRECTIONAL target '{target_col}' for {col} optimization")
                                         tprint(f"   📊 Correlation: {raw_correlation:.4f} ({direction}) - {interpretation}")
-                                    
+
                                 elif target_col in ['leverage_adjusted_score', 'immediate_opportunity', 'short_term_opportunity']:
-                                    direction = "positive" if raw_correlation > 0 else "negative" 
+                                    direction = "positive" if raw_correlation > 0 else "negative"
                                     tprint(f"🎯 Using multi-horizon target '{target_col}' for {col} optimization (correlation: {raw_correlation:.4f} - {direction})")
                             if not np.isnan(correlation):
                                 candidate_scores.append(correlation)
@@ -1164,29 +1164,29 @@ except ImportError:
                             candidate_scores.append(0.0)
                     except Exception:
                         candidate_scores.append(0.0)
-                
+
                 # Apply regularization
                 regularized_scores = self._apply_regularization(candidate_scores, candidate_lookbacks)
-                
+
                 # Apply stability constraints
                 constrained_scores = self._calculate_stability_constraints(candidate_lookbacks, regularized_scores)
-                
+
                 # Find best with stability weighting
                 stability_metrics = self._calculate_stability_metrics(constrained_scores, candidate_lookbacks)
-                
+
                 # Combine performance and stability
                 if constrained_scores:
                     best_idx = np.argmax(constrained_scores)
                     performance_score = constrained_scores[best_idx]
                     stability_score = stability_metrics['overall_stability']
-                    
+
                     # Weighted final score
                     final_score = (1 - config.stability_weight) * performance_score + config.stability_weight * stability_score
-                    
+
                     optimal_lookback = candidate_lookbacks[best_idx]
                     all_scores.append(final_score)
                     all_lookbacks.append(optimal_lookback)
-                    
+
                     results[col] = {
                         'optimal_lookback': optimal_lookback,
                         'performance_score': performance_score,
@@ -1203,12 +1203,12 @@ except ImportError:
                         'final_score': 0.5,
                         'confidence_interval': (0.4, 0.6)
                     }
-            
+
             # Calculate overall stability metrics
             overall_stability_metrics = {}
             if all_scores and all_lookbacks:
                 overall_stability_metrics = self._calculate_stability_metrics(all_scores, all_lookbacks)
-            
+
             metadata = {
                 'optimization_method': config.optimization_method.value,
                 'features_processed': len(numeric_columns),
@@ -1242,7 +1242,7 @@ except ImportError:
         except Exception as e:
             self.logger.error(f"Feature optimization failed: {e}")
             raise
-    
+
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         """Calculate RSI (Relative Strength Index)."""
         try:
@@ -1254,7 +1254,7 @@ except ImportError:
             return rsi
         except Exception:
             return pd.Series([50] * len(prices), index=prices.index)  # Neutral RSI fallback
-    
+
     def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
         """Calculate Average True Range (ATR)."""
         try:
@@ -1266,7 +1266,7 @@ except ImportError:
             return atr
         except Exception:
             return pd.Series([1.0] * len(data), index=data.index)  # Fallback ATR
-    
+
     def _calculate_bollinger_bands(self, prices: pd.Series, period: int = 20, std_dev: float = 2) -> Tuple[pd.Series, pd.Series]:
         """Calculate Bollinger Bands."""
         try:
@@ -1278,7 +1278,7 @@ except ImportError:
         except Exception:
             # Fallback bands
             return pd.Series(prices * 1.02, index=prices.index), pd.Series(prices * 0.98, index=prices.index)
-    
+
     def _create_basic_technical_indicators(self, data: pd.DataFrame) -> None:
         """Create basic technical indicators as fallback."""
         try:
@@ -1290,85 +1290,85 @@ except ImportError:
                 tprint("✅ Created 4 basic technical indicators as fallback")
         except Exception as e:
             tprint(f"⚠️ Failed to create basic indicators: {e}")
-    
+
     def _apply_regularization(self, scores: List[float], lookback_values: List[int]) -> List[float]:
         """Apply L1/L2 regularization to optimization scores."""
         try:
             regularized_scores = scores.copy()
-            
+
             # L1 regularization - penalize extreme lookback values
             if self.config.l1_regularization > 0:
                 lookback_array = np.array(lookback_values)
                 l1_penalty = self.config.l1_regularization * np.abs(lookback_array - np.mean(lookback_array))
                 regularized_scores = [score - penalty for score, penalty in zip(regularized_scores, l1_penalty)]
-            
+
             # L2 regularization - penalize variance in lookback values
             if self.config.l2_regularization > 0:
                 lookback_variance = np.var(lookback_values)
                 l2_penalty = self.config.l2_regularization * lookback_variance
                 regularized_scores = [score - l2_penalty for score in regularized_scores]
-            
+
             return regularized_scores
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Regularization failed: {e}")
             return scores
-    
+
     def _calculate_stability_constraints(self, lookback_values: List[int], scores: List[float]) -> List[float]:
         """Apply stability constraints to optimization scores."""
         try:
             constrained_scores = scores.copy()
-            
+
             # Calculate lookback variance penalty (reduced to prevent excessive penalties)
             if len(lookback_values) > 1:
                 lookback_variance = np.var(lookback_values) / np.mean(lookback_values)  # Coefficient of variation
-                
+
                 # Apply much smaller penalty to avoid turning positive correlations negative
                 max_variance_threshold = getattr(self.config, 'max_lookback_variance', 1.0)
                 penalty_weight = getattr(self.config, 'lookback_range_penalty', 0.1)
-                
+
                 # Reduce penalty weight to prevent sign flips
                 reduced_penalty_weight = min(penalty_weight, 0.05)  # Cap at 5% penalty
-                
+
                 if lookback_variance > max_variance_threshold:
                     variance_penalty = reduced_penalty_weight * (lookback_variance - max_variance_threshold)
                     # Ensure penalty doesn't exceed 50% of the original score
                     max_penalty = max([abs(score) * 0.5 for score in constrained_scores])
                     variance_penalty = min(variance_penalty, max_penalty)
                     constrained_scores = [score - variance_penalty for score in constrained_scores]
-            
+
             return constrained_scores
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Stability constraints failed: {e}")
             return scores
-    
-    def _rolling_window_optimization(self, data: pd.DataFrame, feature_name: str, 
+
+    def _rolling_window_optimization(self, data: pd.DataFrame, feature_name: str,
                                    target_column: str, feature_generator: Callable) -> Dict[str, Any]:
         """Perform rolling window optimization for temporal stability."""
         try:
             if 'timestamp' not in data.columns:
                 self.logger.warning("⚠️ No timestamp column for rolling window optimization")
                 return {}
-            
+
             # Convert rolling window size to timedelta
             window_size = pd.Timedelta(self.config.rolling_window_size)
             step_size = pd.Timedelta(self.config.rolling_step_size)
-            
+
             rolling_results = []
             start_time = data['timestamp'].min()
             end_time = data['timestamp'].max()
-            
+
             current_time = start_time + window_size
             while current_time <= end_time:
                 # Get window data
                 window_start = current_time - window_size
                 window_data = data[(data['timestamp'] >= window_start) & (data['timestamp'] < current_time)]
-                
+
                 if len(window_data) < 100:  # Minimum data requirement
                     current_time += step_size
                     continue
-                
+
                 # Optimize for this window
                 window_results = []
                 for lookback in range(self.config.min_lookback, min(self.config.max_lookback, len(window_data)//4)):
@@ -1385,20 +1385,20 @@ except ImportError:
                                 })
                     except Exception:
                         continue
-                
+
                 if window_results:
                     best_window = max(window_results, key=lambda x: x['score'])
                     rolling_results.append(best_window)
-                
+
                 current_time += step_size
-            
+
             # Calculate temporal consistency
             if rolling_results:
                 lookback_values = [r['lookback'] for r in rolling_results]
                 score_values = [r['score'] for r in rolling_results]
-                
+
                 temporal_stability = 1.0 - (np.std(lookback_values) / np.mean(lookback_values)) if np.mean(lookback_values) > 0 else 0.0
-                
+
                 return {
                     'rolling_results': rolling_results,
                     'temporal_stability': temporal_stability,
@@ -1406,33 +1406,33 @@ except ImportError:
                     'stability_score': temporal_stability,
                     'window_count': len(rolling_results)
                 }
-            
+
             return {}
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Rolling window optimization failed: {e}")
             return {}
-    
+
     def _calculate_stability_metrics(self, scores: List[float], lookback_values: List[int]) -> Dict[str, float]:
         """Calculate comprehensive stability metrics."""
         try:
             metrics = {}
-            
+
             # Coefficient of variation for scores
             if len(scores) > 1:
                 metrics['score_cv'] = np.std(scores) / np.mean(scores) if np.mean(scores) > 0 else 0.0
             else:
                 metrics['score_cv'] = 0.0
-            
+
             # Coefficient of variation for lookback values
             if len(lookback_values) > 1:
                 metrics['lookback_cv'] = np.std(lookback_values) / np.mean(lookback_values) if np.mean(lookback_values) > 0 else 0.0
             else:
                 metrics['lookback_cv'] = 0.0
-            
+
             # Overall stability score (lower CV = higher stability)
             metrics['overall_stability'] = 1.0 - min(1.0, (metrics['score_cv'] + metrics['lookback_cv']) / 2.0)
-            
+
             # Temporal consistency (based on lookback range)
             if len(lookback_values) > 1:
                 lookback_range = max(lookback_values) - min(lookback_values)
@@ -1440,9 +1440,9 @@ except ImportError:
                 metrics['range_consistency'] = 1.0 - (lookback_range / max_possible_range)
             else:
                 metrics['range_consistency'] = 1.0
-            
+
             return metrics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Stability metrics calculation failed: {e}")
             return {'overall_stability': 0.5, 'score_cv': 1.0, 'lookback_cv': 1.0, 'range_consistency': 0.5}
@@ -1467,16 +1467,16 @@ async def optimize_feature_lookback(
     )
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1495,8 +1495,8 @@ async def optimize_feature_lookback(
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

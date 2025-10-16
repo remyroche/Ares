@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 import pandas as pd
 import numpy as np
 """
@@ -69,7 +68,7 @@ class StepConfig:
 class IPipelineStep(ABC):
     """
     Base interface for all pipeline steps.
-    
+
     Every step must implement this interface to ensure consistency.
     """
 
@@ -87,7 +86,7 @@ class IPipelineStep(ABC):
     async def validate_inputs(self, **kwargs) -> bool:
         """
         Validate input parameters before execution.
-        
+
         Returns:
             True if inputs are valid, False otherwise
         """
@@ -96,7 +95,7 @@ class IPipelineStep(ABC):
     async def execute(self, **kwargs) -> StepResult:
         """
         Execute the step logic.
-        
+
         Returns:
             StepResult containing output data and metadata
         """
@@ -167,7 +166,7 @@ class IValidationStep(IPipelineStep):
 class BasePipelineStep(IPipelineStep):
     """
     Base implementation of IPipelineStep with common functionality.
-    
+
     Concrete steps should inherit from this class.
     """
 
@@ -193,7 +192,7 @@ class BasePipelineStep(IPipelineStep):
     async def execute(self, **kwargs) -> StepResult:
         """
         Standard execution wrapper with error handling and metrics.
-        
+
         Subclasses should implement _execute_impl instead of this method.
         """
         result = StepResult(status = StepStatus.PENDING, start_time = datetime.now())
@@ -226,7 +225,7 @@ class BasePipelineStep(IPipelineStep):
     async def _execute_impl(self, **kwargs) -> Any:
         """
         Actual implementation of step logic.
-        
+
         Subclasses must implement this method.
         """
 

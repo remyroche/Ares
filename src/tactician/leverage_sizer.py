@@ -18,8 +18,8 @@ from src.utils.math_validation import validate_positive
 from src.utils.math_validation import validate_range
 from src.config.leverage_constants import MIN_LEVERAGE, MAX_LEVERAGE, validate_leverage
 from src.utils.validation.unified_framework import (
-    safe_divide as unified_safe_divide, safe_log as unified_safe_log, 
-    validate_positive as unified_validate_positive, validate_range as unified_validate_range, 
+    safe_divide as unified_safe_divide, safe_log as unified_safe_log,
+    validate_positive as unified_validate_positive, validate_range as unified_validate_range,
     MathValidationError as unified_MathValidationError
 )
 
@@ -53,11 +53,11 @@ class LeverageSizer:
 
     @handles_errors(
         error_handlers={
-            ValueError: (False, 'Invalid leverage sizer configuration'), 
-            AttributeError: (False, 'Missing required leverage parameters'), 
+            ValueError: (False, 'Invalid leverage sizer configuration'),
+            AttributeError: (False, 'Missing required leverage parameters'),
             KeyError: (False, 'Missing configuration keys')
-        }, 
-        default_return=False, 
+        },
+        default_return=False,
         context='leverage sizer initialization'
     )
     async def initialize(self) -> bool:
@@ -109,10 +109,10 @@ class LeverageSizer:
 
     @handles_errors(
         error_handlers={
-            ValueError: (None, 'Invalid input data for leverage sizing'), 
+            ValueError: (None, 'Invalid input data for leverage sizing'),
             AttributeError: (None, 'Sizer not properly initialized')
-        }, 
-        default_return={}, 
+        },
+        default_return={},
         context='leverage sizing calculation'
     )
     async def calculate_leverage(self, ml_predictions: dict[str, Any], current_price: float = 0.0, account_balance: float = 1000.0, analyst_confidence: float = 0.5, tactician_confidence: float = 0.5, market_health_analysis: dict[str, Any] | None = None, strategist_risk_parameters: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -141,30 +141,30 @@ class LeverageSizer:
             intensity = ml_predictions.get('intensity', 1.0)
             reliability = ml_predictions.get('reliability', 1.0)
             risk_score = ml_predictions.get('risk_score', 0.0)
-            
+
             # Simplified leverage calculation: ML confidence * multiplier, capped between min/max
             base_leverage = combined_confidence * self.leverage_multiplier
             # Validate and clamp leverage to centralized limits
             final_leverage = validate_leverage(base_leverage)
             final_leverage = max(self.min_leverage, min(self.max_leverage, final_leverage))
-            
+
             leverage_analysis = {
-                'timestamp': datetime.now(), 
-                'current_price': current_price, 
-                'account_balance': account_balance, 
+                'timestamp': datetime.now(),
+                'current_price': current_price,
+                'account_balance': account_balance,
                 'base_leverage': base_leverage,
-                'final_leverage': final_leverage, 
-                'combined_confidence': combined_confidence, 
-                'intensity': intensity, 
-                'reliability': reliability, 
-                'risk_score': risk_score, 
+                'final_leverage': final_leverage,
+                'combined_confidence': combined_confidence,
+                'intensity': intensity,
+                'reliability': reliability,
+                'risk_score': risk_score,
                 'leverage_multiplier': self.leverage_multiplier,
                 'min_leverage': self.min_leverage,
                 'max_leverage': self.max_leverage,
-                'price_target_confidences': price_target_confidences, 
-                'adversarial_confidences': adversarial_confidences, 
-                'market_health_modifiers': market_health_analysis or {}, 
-                'strategist_risk_parameters': strategist_risk_parameters or {}, 
+                'price_target_confidences': price_target_confidences,
+                'adversarial_confidences': adversarial_confidences,
+                'market_health_modifiers': market_health_analysis or {},
+                'strategist_risk_parameters': strategist_risk_parameters or {},
                 'leverage_reason': self._generate_simplified_leverage_reason(final_leverage, combined_confidence, base_leverage)
             }
             self.leverage_sizing_history.append(leverage_analysis)

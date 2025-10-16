@@ -57,7 +57,6 @@ except ImportError:
     COMMON_OPERATIONS_AVAILABLE = False
     tprint("⚠️ Common operations not available - using fallback implementations")
 
-
 def analyze_infinity_values(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> Dict[str, Any]:
     """
     Comprehensive analysis of infinity values in the dataset.
@@ -155,7 +154,6 @@ def analyze_infinity_values(X: Union[np.ndarray, pd.DataFrame], method_name: str
         analysis['feature_analysis'].sort(key=lambda x: x['total_infinity'], reverse=True)
 
     return analysis
-
 
 def preprocess_features_for_ml(X: Union[np.ndarray, pd.DataFrame], method_name: str = "unknown", feature_names: List[str] = None) -> np.ndarray:
     """
@@ -314,19 +312,18 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited feature selection functionality")
 
-
 class MRMRSelector:
     """Minimum Redundancy Maximum Relevance (mRMR) feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize mRMR selector."""
         self.config = config or {}
         self.logger = logger.getChild('MRMRSelector')
-        
+
         self.relevance_method = self.config.get('relevance_method', 'mutual_info')
         self.redundancy_method = self.config.get('redundancy_method', 'correlation')
         self.n_neighbors = self.config.get('n_neighbors', 3)
-        
+
         _LOGGER.info("🔍 MRMRSelector initialized")
         _LOGGER.info(f"⚙️ Relevance method: {self.relevance_method}")
         _LOGGER.info(f"⚙️ Redundancy method: {self.redundancy_method}")
@@ -350,23 +347,23 @@ class MRMRSelector:
 
             # Calculate relevance scores
             relevance_scores = self._calculate_relevance_scores(X, y, feature_names)
-            
+
             # Initialize selected features
             selected_features = []
             remaining_features = list(range(n_total_features))
-            
+
             # Select first feature with highest relevance
             first_feature = max(relevance_scores.keys(), key=lambda k: relevance_scores[k])
             selected_features.append(first_feature)
             remaining_features.remove(first_feature)
-            
+
             _LOGGER.info(f"🎯 Selected first feature: {feature_names[first_feature]} (relevance: {relevance_scores[first_feature]:.4f})")
-            
+
             # Iteratively select remaining features
             for i in range(1, n_features):
                 best_feature = None
                 best_score = -np.inf
-                
+
                 for feature_idx in remaining_features:
                     # Calculate mRMR score
                     relevance = relevance_scores[feature_idx]
@@ -382,7 +379,7 @@ class MRMRSelector:
                     if mrmr_score > best_score:
                         best_score = mrmr_score
                         best_feature = feature_idx
-                
+
                 if best_feature is not None:
                     selected_features.append(best_feature)
                     remaining_features.remove(best_feature)
@@ -403,9 +400,9 @@ class MRMRSelector:
                 _LOGGER.info("ℹ️ 🎯 " + "\nℹ️ 🎯 ".join(recap_lines))
 
             selected_scores = {feature_names[i]: relevance_scores[i] for i in selected_features}
-            
+
             execution_time = time.time() - start_time
-            
+
             result = {
                 'selected_features': selected_feature_names,
                 'selected_indices': selected_features,
@@ -419,12 +416,12 @@ class MRMRSelector:
                 'execution_time': execution_time,
                 'success': True
             }
-            
+
             _LOGGER.info(f"✅ mRMR selection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(selected_features)} features: {selected_feature_names}")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ mRMR selection failed: {e}")
             return {
@@ -498,16 +495,15 @@ class MRMRSelector:
 
         return safe_mean(redundancies) if redundancies else 0.0
 
-
 class ElasticNetStabilitySelector:
     """Elastic Net-based stability selection for feature selection.
-    
+
     Elastic Net combines L1 (LASSO) and L2 (Ridge) regularization, providing:
     - Better handling of correlated features (unlike LASSO which arbitrarily selects one)
     - More stable feature selection across different data samples
     - Balanced feature selection and shrinkage
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize Elastic Net stability selector."""
         self.config = config or {}
@@ -520,16 +516,16 @@ class ElasticNetStabilitySelector:
         self.l1_ratio_range = self.config.get('l1_ratio_range', (0.1, 0.9))  # Balance between L1 and L2
         self.cv_folds = self.config.get('cv_folds', 5)
         self.random_state = self.config.get('random_state', 42)
-        
+
         # Initialize optimization tools
         self._initialize_optimization_tools()
-        
+
         _LOGGER.info("🔍 ElasticNetStabilitySelector initialized")
         _LOGGER.info(f"⚙️ Bootstrap samples: {self.n_bootstraps}")
         _LOGGER.info(f"⚙️ Bootstrap fraction: {self.bootstrap_fraction}")
         _LOGGER.info(f"⚙️ Stability threshold: {self.stability_threshold}")
         _LOGGER.info(f"⚙️ L1 ratio range: {self.l1_ratio_range}")
-    
+
     def _initialize_optimization_tools(self):
         """Initialize hardware optimization utilities."""
         try:
@@ -537,7 +533,7 @@ class ElasticNetStabilitySelector:
                 self.gpu_manager = get_m1_gpu_manager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
-                
+
                 if self.gpu_manager:
                     _LOGGER.info("✅ M1 GPU manager initialized for Elastic Net stability")
                 if self.memory_optimizer:
@@ -553,7 +549,7 @@ class ElasticNetStabilitySelector:
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
-        
+
         try:
             if OPTIMIZATION_AVAILABLE and MATRIX_OPERATIONS_AVAILABLE:
                 self.matrix_ops = get_unified_matrix_operations()
@@ -596,62 +592,62 @@ class ElasticNetStabilitySelector:
 
             n_samples, n_features = X.shape
             bootstrap_size = int(n_samples * self.bootstrap_fraction)
-            
+
             # Initialize feature selection counts
             feature_selection_counts = np.zeros(n_features)
             alpha_values = []
             l1_ratio_values = []
-            
+
             # Perform bootstrap sampling
             np.random.seed(self.random_state)
-            
+
             for bootstrap_idx in range(self.n_bootstraps):
                 _LOGGER.debug(f"🔄 Bootstrap {bootstrap_idx + 1}/{self.n_bootstraps}")
-                
+
                 # Sample bootstrap data
                 bootstrap_indices = np.random.choice(n_samples, size=bootstrap_size, replace=True)
                 X_bootstrap = X[bootstrap_indices]
                 y_bootstrap = y[bootstrap_indices]
-                
+
                 # Fit Elastic Net with cross-validation
                 # Use a range of l1_ratio values to find optimal balance between L1 and L2
                 l1_ratios = np.linspace(self.l1_ratio_range[0], self.l1_ratio_range[1], 10)
                 alphas = np.logspace(
-                    np.log10(self.alpha_range[0]), 
-                    np.log10(self.alpha_range[1]), 
+                    np.log10(self.alpha_range[0]),
+                    np.log10(self.alpha_range[1]),
                     50
                 )
-                
+
                 elastic_net_cv = ElasticNetCV(
                     l1_ratio=l1_ratios,
                     alphas=alphas,
-                    cv=self.cv_folds, 
-                    random_state=self.random_state, 
+                    cv=self.cv_folds,
+                    random_state=self.random_state,
                     max_iter=1000,
                     n_jobs=1  # Avoid nested parallelism issues
                 )
-                
+
                 elastic_net_cv.fit(X_bootstrap, y_bootstrap)
                 alpha_values.append(elastic_net_cv.alpha_)
                 l1_ratio_values.append(elastic_net_cv.l1_ratio_)
-                
+
                 # Count selected features (non-zero coefficients)
                 # Use a more conservative threshold for Elastic Net due to L2 regularization
                 selected_features = np.abs(elastic_net_cv.coef_) > 1e-5
                 feature_selection_counts += selected_features.astype(int)
-            
+
             # Calculate stability scores
             stability_scores = feature_selection_counts / self.n_bootstraps
-            
+
             # Select stable features
             stable_features = np.where(stability_scores >= self.stability_threshold)[0]
-            
+
             # Prepare results
             selected_feature_names = [feature_names[i] for i in stable_features]
             stability_scores_dict = {feature_names[i]: stability_scores[i] for i in stable_features}
-            
+
             execution_time = time.time() - start_time
-            
+
             result = {
                 'selected_features': selected_feature_names,
                 'selected_indices': stable_features.tolist(),
@@ -675,14 +671,14 @@ class ElasticNetStabilitySelector:
                 'execution_time': execution_time,
                 'success': True
             }
-            
+
             _LOGGER.info(f"✅ Elastic Net stability selection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(stable_features)} stable features: {selected_feature_names}")
             _LOGGER.info(f"📊 Average L1 ratio: {np.mean(l1_ratio_values):.3f} (L1/L2 balance)")
             _LOGGER.info(f"📊 Average alpha: {np.mean(alpha_values):.3f} (regularization strength)")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Elastic Net stability selection failed: {e}")
             return {
@@ -694,18 +690,17 @@ class ElasticNetStabilitySelector:
                 'success': False
             }
 
-
 class CorrelationBasedFilter:
     """Correlation-based feature filtering."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize correlation-based filter."""
         self.config = config or {}
         self.logger = logger.getChild('CorrelationBasedFilter')
-        
+
         self.correlation_threshold = self.config.get('correlation_threshold', 0.95)
         self.target_correlation_threshold = self.config.get('target_correlation_threshold', 0.99)
-        
+
         _LOGGER.info("🔍 CorrelationBasedFilter initialized")
         _LOGGER.info(f"⚙️ Correlation threshold: {self.correlation_threshold}")
         _LOGGER.info(f"⚙️ Target correlation threshold: {self.target_correlation_threshold}")
@@ -715,13 +710,13 @@ class CorrelationBasedFilter:
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting correlation-based filtering...")
         _LOGGER.info(f"📊 Parameters - Data shape: {X.shape}")
-        
+
         try:
             n_samples, n_features = X.shape
-            
+
             # Calculate correlation matrix
             correlation_matrix = np.corrcoef(X.T)
-            
+
             # Find highly correlated feature pairs
             high_corr_pairs = []
             for i in range(n_features):
@@ -729,19 +724,19 @@ class CorrelationBasedFilter:
                     corr = abs(correlation_matrix[i, j])
                     if corr > self.correlation_threshold:
                         high_corr_pairs.append((i, j, corr))
-            
+
             # Remove one feature from each highly correlated pair
             features_to_remove = set()
             for i, j, corr in high_corr_pairs:
                 # Keep the feature with higher correlation to target
                 corr_i_target = abs(safe_correlation(X[:, i], y))
                 corr_j_target = abs(safe_correlation(X[:, j], y))
-                
+
                 if corr_i_target < corr_j_target:
                     features_to_remove.add(i)
                 else:
                     features_to_remove.add(j)
-            
+
             # Check for suspicious target correlations
             suspicious_features = []
             for i in range(n_features):
@@ -750,23 +745,23 @@ class CorrelationBasedFilter:
                     if corr > self.target_correlation_threshold:
                         suspicious_features.append(i)
                         features_to_remove.add(i)
-            
+
             # Select remaining features
             selected_features = [i for i in range(n_features) if i not in features_to_remove]
-            
+
             # Prepare results
             selected_feature_names = [feature_names[i] for i in selected_features]
-            correlation_scores = {feature_names[i]: abs(safe_correlation(X[:, i], y)) 
+            correlation_scores = {feature_names[i]: abs(safe_correlation(X[:, i], y))
                                 for i in selected_features}
-            
+
             execution_time = time.time() - start_time
-            
+
             result = {
                 'selected_features': selected_feature_names,
                 'selected_indices': selected_features,
                 'correlation_scores': correlation_scores,
                 'removed_features': [feature_names[i] for i in features_to_remove],
-                'high_correlation_pairs': [(feature_names[i], feature_names[j], corr) 
+                'high_correlation_pairs': [(feature_names[i], feature_names[j], corr)
                                          for i, j, corr in high_corr_pairs],
                 'suspicious_features': [feature_names[i] for i in suspicious_features],
                 'method': 'correlation_filter',
@@ -777,12 +772,12 @@ class CorrelationBasedFilter:
                 'execution_time': execution_time,
                 'success': True
             }
-            
+
             _LOGGER.info(f"✅ Correlation-based filtering completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(selected_features)} features, removed {len(features_to_remove)} features")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Correlation-based filtering failed: {e}")
             return {
@@ -794,35 +789,34 @@ class CorrelationBasedFilter:
                 'success': False
             }
 
-
 class RecursiveFeatureEliminator:
     """Recursive Feature Elimination (RFE) for feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize RFE selector."""
         self.config = config or {}
         self.logger = logger.getChild('RecursiveFeatureEliminator')
-        
+
         self.step = self.config.get('step', 0.1)
         self.cv = self.config.get('cv', 3)
         self.scoring = self.config.get('scoring', 'accuracy')
         self.random_state = self.config.get('random_state', 42)
-        
+
         _LOGGER.info("🔍 RecursiveFeatureEliminator initialized")
         _LOGGER.info(f"⚙️ Step size: {self.step}")
         _LOGGER.info(f"⚙️ CV folds: {self.cv}")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int, model: Any = None) -> Dict[str, Any]:
         """Perform recursive feature elimination."""
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting RFE feature selection...")
         _LOGGER.info(f"📊 Parameters - Features to select: {n_features}, Data shape: {X.shape}")
-        
+
         try:
             if not SKLEARN_AVAILABLE:
                 raise ImportError("Scikit-learn is required for RFE")
-            
+
             # Use default model if none provided
             if model is None:
                 # Auto-detect if classification or regression
@@ -830,11 +824,11 @@ class RecursiveFeatureEliminator:
                     model = RandomForestClassifier(n_estimators=100, random_state=self.random_state)
                 else:  # Regression
                     model = RandomForestRegressor(n_estimators=100, random_state=self.random_state)
-            
+
             # Perform RFE
             rfe = RFE(estimator=model, n_features_to_select=n_features, step=self.step)
             rfe.fit(X, y)
-            
+
             # Get selected features
             selected_features = np.where(rfe.support_)[0].tolist()
             feature_rankings = rfe.ranking_
@@ -846,9 +840,9 @@ class RecursiveFeatureEliminator:
             rankings_dict = {}
             for i in range(min(len(feature_names), len(feature_rankings))):
                 rankings_dict[feature_names[i]] = feature_rankings[i]
-            
+
             execution_time = time.time() - start_time
-            
+
             result = {
                 'selected_features': selected_feature_names,
                 'selected_indices': selected_features,
@@ -863,12 +857,12 @@ class RecursiveFeatureEliminator:
                 'execution_time': execution_time,
                 'success': True
             }
-            
+
             _LOGGER.info(f"✅ RFE selection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(selected_features)} features: {selected_feature_names}")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ RFE selection failed: {e}")
             return {
@@ -880,20 +874,19 @@ class RecursiveFeatureEliminator:
                 'success': False
             }
 
-
 class FeatureImportanceRanker:
     """Feature importance ranking using tree-based models."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize feature importance ranker."""
         self.config = config or {}
         self.logger = logger.getChild('FeatureImportanceRanker')
-        
+
         self.n_estimators = self.config.get('n_estimators', 100)
         self.max_depth = self.config.get('max_depth', 10)
         self.bootstrap = self.config.get('bootstrap', True)
         self.random_state = self.config.get('random_state', 42)
-        
+
         _LOGGER.info("🔍 FeatureImportanceRanker initialized")
         _LOGGER.info(f"⚙️ N estimators: {self.n_estimators}")
         _LOGGER.info(f"⚙️ Max depth: {self.max_depth}")
@@ -927,28 +920,28 @@ class FeatureImportanceRanker:
                     bootstrap=self.bootstrap,
                     random_state=self.random_state
                 )
-            
+
             # Fit model
             model.fit(X, y)
-            
+
             # Get feature importances
             importances = model.feature_importances_
-            
+
             # Sort features by importance
             feature_importance_pairs = list(zip(feature_names, importances))
             feature_importance_pairs.sort(key=lambda x: x[1], reverse=True)
-            
+
             # Select top features
             selected_features = feature_importance_pairs[:n_features]
             selected_feature_names = [feat[0] for feat in selected_features]
             selected_indices = [feature_names.index(feat[0]) for feat in selected_features]
-            
+
             # Prepare results
             importance_scores = {feat[0]: feat[1] for feat in selected_features}
             all_importances = {feat[0]: imp for feat, imp in zip(feature_names, importances)}
-            
+
             execution_time = time.time() - start_time
-            
+
             result = {
                 'selected_features': selected_feature_names,
                 'selected_indices': selected_indices,
@@ -964,12 +957,12 @@ class FeatureImportanceRanker:
                 'execution_time': execution_time,
                 'success': True
             }
-            
+
             _LOGGER.info(f"✅ Feature importance ranking completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Selected {len(selected_features)} features: {selected_feature_names}")
-            
+
             return result
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Feature importance ranking failed: {e}")
             return {
@@ -981,18 +974,17 @@ class FeatureImportanceRanker:
                 'success': False
             }
 
-
 # Additional selector classes can be added here following the same pattern
 class StabilityWeightedSelector:
     """Stability-weighted feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize stability-weighted selector."""
         self.config = config or {}
         self.logger = logger.getChild('StabilityWeightedSelector')
         _LOGGER.info("🔍 StabilityWeightedSelector initialized")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform stability-weighted feature selection."""
         # Implementation would go here
@@ -1005,17 +997,16 @@ class StabilityWeightedSelector:
             'success': False
         }
 
-
 class CompositeFeatureScorer:
     """Composite feature scoring combining multiple methods."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize composite feature scorer."""
         self.config = config or {}
         self.logger = logger.getChild('CompositeFeatureScorer')
         _LOGGER.info("🔍 CompositeFeatureScorer initialized")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform composite feature scoring."""
         # Implementation would go here
@@ -1028,17 +1019,16 @@ class CompositeFeatureScorer:
             'success': False
         }
 
-
 class CrossValidatedSelector:
     """Cross-validated feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize cross-validated selector."""
         self.config = config or {}
         self.logger = logger.getChild('CrossValidatedSelector')
         _LOGGER.info("🔍 CrossValidatedSelector initialized")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform cross-validated feature selection."""
         # Implementation would go here
@@ -1051,17 +1041,16 @@ class CrossValidatedSelector:
             'success': False
         }
 
-
 class TreeBasedEnsembleSelector:
     """Tree-based ensemble feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize tree-based ensemble selector."""
         self.config = config or {}
         self.logger = logger.getChild('TreeBasedEnsembleSelector')
         _LOGGER.info("🔍 TreeBasedEnsembleSelector initialized")
 
-    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str], 
+    def select_features(self, X: np.ndarray, y: np.ndarray, feature_names: List[str],
                        n_features: int) -> Dict[str, Any]:
         """Perform tree-based ensemble feature selection."""
         # Implementation would go here

@@ -43,22 +43,22 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 logger = logging.getLogger(__name__)
 
 class OptimizedFeatureFactory:
     """Factory for creating optimized feature generators."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  enable_pipeline_optimization: bool = True,
                  enable_vectorization_optimization: bool = True,
                  pipeline_config: Optional[PipelineConfig] = None,
                  vectorization_config: Optional[VectorizationConfig] = None):
         """
         Initialize the optimized feature factory.
-        
+
         Args:
             enable_pipeline_optimization: Whether to enable pipeline optimization
             enable_vectorization_optimization: Whether to enable vectorization optimization
@@ -67,24 +67,24 @@ class OptimizedFeatureFactory:
         """
         self.enable_pipeline_optimization = enable_pipeline_optimization
         self.enable_vectorization_optimization = enable_vectorization_optimization
-        
+
         # Initialize optimization components
         if enable_pipeline_optimization:
             self.pipeline = get_optimized_feature_pipeline(pipeline_config)
         else:
             self.pipeline = None
-            
+
         if enable_vectorization_optimization:
             self.vectorization_optimizer = get_vectorization_optimizer(vectorization_config)
         else:
             self.vectorization_optimizer = None
-        
+
         # Get feature bank
         self.feature_bank = get_global_feature_bank()
-        
+
         logger.info("✅ Optimized Feature Factory initialized")
-    
-    def generate_features_optimized(self, 
+
+    def generate_features_optimized(self,
                                    data: pd.DataFrame,
                                    categories: Optional[List[Union[str, FeatureCategory]]] = None,
                                    features: Optional[List[str]] = None,
@@ -92,14 +92,14 @@ class OptimizedFeatureFactory:
                                    **kwargs) -> pd.DataFrame:
         """
         Generate features using the optimized pipeline.
-        
+
         Args:
             data: Input DataFrame
             categories: List of feature categories
             features: List of specific features
             target_column: Target column for optimization
             **kwargs: Additional parameters
-            
+
         Returns:
             DataFrame with generated features
         """
@@ -112,7 +112,7 @@ class OptimizedFeatureFactory:
                         category_strings.append(cat.value)
                     else:
                         category_strings.append(cat)
-            
+
             result = self.pipeline.process_features(
                 data=data,
                 categories=category_strings if category_strings else None,
@@ -120,7 +120,7 @@ class OptimizedFeatureFactory:
                 target_column=target_column,
                 **kwargs
             )
-            
+
             if result.success:
                 logger.info(f"✅ Optimized feature generation completed in {result.processing_time:.3f}s")
                 return result.features
@@ -129,7 +129,7 @@ class OptimizedFeatureFactory:
                 # Fall back to standard feature bank
         else:
             logger.warning("Pipeline optimization not available, using standard feature bank")
-        
+
         # Fallback to standard feature bank
         return self.feature_bank.generate_features(
             data=data,
@@ -139,13 +139,13 @@ class OptimizedFeatureFactory:
             use_optimized_pipeline=False,  # Avoid recursion
             **kwargs
         )
-    
+
     def optimize_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for processing."""
         if self.vectorization_optimizer:
             return self.vectorization_optimizer.optimize_dataframe_processing(data)
         return data
-    
+
     def get_performance_report(self) -> Dict[str, Any]:
         """Get comprehensive performance report."""
         report = {
@@ -154,13 +154,13 @@ class OptimizedFeatureFactory:
                 'vectorization_optimization_enabled': self.vectorization_optimizer is not None
             }
         }
-        
+
         if self.pipeline:
             report['pipeline_performance'] = self.pipeline.get_performance_report()
-        
+
         if self.vectorization_optimizer:
             report['vectorization_performance'] = self.vectorization_optimizer.get_performance_report()
-        
+
         return report
 
 # Global factory instance
@@ -169,10 +169,10 @@ _optimized_factory: Optional[OptimizedFeatureFactory] = None
 def get_optimized_feature_factory() -> OptimizedFeatureFactory:
     """Get or create the global optimized feature factory."""
     global _optimized_factory
-    
+
     if _optimized_factory is None:
         _optimized_factory = OptimizedFeatureFactory()
-    
+
     return _optimized_factory
 
 def generate_features_optimized(data: pd.DataFrame,
@@ -186,16 +186,16 @@ def generate_features_optimized(data: pd.DataFrame,
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -214,8 +214,8 @@ def generate_features_optimized(data: pd.DataFrame,
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

@@ -1,10 +1,10 @@
-from typing import List, Dict, Any, Optional, Tuple
-import warnings
-import pandas as pd
-from datetime import datetime
-import numpy as np
 from ...utils.logger import system_logger
+from datetime import datetime
 from src.core.decorators import handles_errors
+from typing import List, Dict, Any, Optional, Tuple
+import numpy as np
+import pandas as pd
+import warnings
 'Enhanced S/R Breakout Predictor.\n\nThis module provides advanced breakout prediction capabilities with ML integration,\nreal-time monitoring, and comprehensive validation.\n'
 from dataclasses import dataclass
 from enum import Enum
@@ -368,7 +368,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
                 step06_engineer = VectorizedAdvancedFeatureEngineeringRefactored()
                 step06_result = await step06_engineer.engineer_features(market_data)
@@ -1019,7 +1019,7 @@ except ImportError:
             # Use basic level detection for now
             support_levels = await self._detect_support_levels(market_data)
             resistance_levels = await self._detect_resistance_levels(market_data)
-            
+
             return {
                 'support_levels': support_levels,
                 'resistance_levels': resistance_levels,
@@ -1035,7 +1035,7 @@ except ImportError:
         try:
             self.logger.info(f'🔍 Starting support level detection using {self.sr_detection_method} method on {len(market_data)} data points')
             levels = []
-            
+
             if self.sr_detection_method == 'fractal':
                 self.logger.info('📊 Using fractal method for support detection...')
                 levels = self._detect_fractal_levels(market_data, 'support')
@@ -1052,7 +1052,7 @@ except ImportError:
                 # Default to fractal
                 self.logger.info('📊 Using default fractal method for support detection...')
                 levels = self._detect_fractal_levels(market_data, 'support')
-            
+
             self.logger.info(f'✅ Support detection completed: {len(levels)} levels found using {self.sr_detection_method} method')
             return levels
         except Exception as e:
@@ -1064,7 +1064,7 @@ except ImportError:
         try:
             self.logger.info(f'🔍 Starting resistance level detection using {self.sr_detection_method} method on {len(market_data)} data points')
             levels = []
-            
+
             if self.sr_detection_method == 'fractal':
                 self.logger.info('📊 Using fractal method for resistance detection...')
                 levels = self._detect_fractal_levels(market_data, 'resistance')
@@ -1081,7 +1081,7 @@ except ImportError:
                 # Default to fractal
                 self.logger.info('📊 Using default fractal method for resistance detection...')
                 levels = self._detect_fractal_levels(market_data, 'resistance')
-            
+
             self.logger.info(f'✅ Resistance detection completed: {len(levels)} levels found using {self.sr_detection_method} method')
             return levels
         except Exception as e:
@@ -1093,9 +1093,9 @@ except ImportError:
         try:
             levels = []
             sample_data = market_data
-            
+
             window = 5  # Increased window for better fractal detection
-            
+
             if level_type == 'support':
                 # Use vectorized operations for better performance
                 lows = sample_data['low'].values
@@ -1112,23 +1112,23 @@ except ImportError:
                 for i in range(window, len(lows) - window):
                     # Update progress with enhanced logging
                     progress_logger.update(i - window)
-                    
+
                     current_low = lows[i]
                     # Check if current point is a local minimum
-                    if (current_low <= lows[i-window:i].min() and 
+                    if (current_low <= lows[i-window:i].min() and
                         current_low <= lows[i+1:i+window+1].min()):
-                        
+
                         # Simplified touch counting for performance
                         touches = 1
                         threshold = 0.002  # More sensitive threshold for better level detection
-                        
+
                         # Optimized touch counting using vectorized operations
                         start_idx = max(0, i - 500)
                         end_idx = min(len(lows), i + 500)
                         window_lows = lows[start_idx:end_idx]
                         price_diffs = abs(window_lows - current_low) / current_low
                         touches = np.sum(price_diffs < threshold)
-                        
+
                         if touches >= 3:
                             levels.append({
                                 'price': float(current_low),
@@ -1154,23 +1154,23 @@ except ImportError:
                 for i in range(window, len(highs) - window):
                     # Update progress with enhanced logging
                     progress_logger.update(i - window)
-                    
+
                     current_high = highs[i]
                     # Check if current point is a local maximum
-                    if (current_high >= highs[i-window:i].max() and 
+                    if (current_high >= highs[i-window:i].max() and
                         current_high >= highs[i+1:i+window+1].max()):
-                        
+
                         # Simplified touch counting for performance
                         touches = 1
                         threshold = 0.002  # More sensitive threshold for better level detection
-                        
+
                         # Optimized touch counting using vectorized operations
                         start_idx = max(0, i - 500)
                         end_idx = min(len(highs), i + 500)
                         window_highs = highs[start_idx:end_idx]
                         price_diffs = abs(window_highs - current_high) / current_high
                         touches = np.sum(price_diffs < threshold)
-                        
+
                         if touches >= 3:
                             levels.append({
                                 'price': float(current_high),
@@ -1196,7 +1196,7 @@ except ImportError:
         """Detect levels using volume-based method - vectorized for performance."""
         try:
             self.logger.info(f'🔍 Starting volume-based {level_type} level detection on {len(market_data)} points')
-            
+
             # Add timeout protection for large datasets
             if len(market_data) > 100000:  # If more than 100k rows
                 self.logger.warning(f'⚠️ Large dataset detected ({len(market_data)} rows). Volume detection may take time...')
@@ -1205,76 +1205,76 @@ except ImportError:
                     sample_size = 100000
                     market_data = market_data.sample(n=sample_size, random_state=42)
                     self.logger.info(f'📊 Sampled dataset to {len(market_data)} rows for performance')
-            
+
             # Enhanced volume analysis with HVN (High Volume Nodes)
             # Use multiple volume thresholds for better level detection
             volume_90th = market_data['volume'].quantile(0.9)
             volume_80th = market_data['volume'].quantile(0.8)
             volume_70th = market_data['volume'].quantile(0.7)
-            
+
             # Create volume profile bins
             price_range = market_data['high'].max() - market_data['low'].min()
             bin_size = price_range / 50  # 50 price bins for volume profile
-            
+
             # Calculate volume at each price level
             volume_profile = {}
             total_rows = len(market_data)
             self.logger.info(f'📊 Processing {total_rows} rows for volume profile calculation...')
-            
+
             for idx, row in market_data.iterrows():
                 if idx % 5000 == 0:  # Log progress every 5k rows for more frequent updates
                     self.logger.info(f'📊 Volume profile progress: {idx}/{total_rows} ({idx/total_rows*100:.1f}%)')
-                
+
                 price_bin = round(row['low'] / bin_size) * bin_size
                 if price_bin not in volume_profile:
                     volume_profile[price_bin] = 0
                 volume_profile[price_bin] += row['volume']
-            
+
             self.logger.info(f'✅ Volume profile calculation completed: {len(volume_profile)} price bins')
-            
+
             # Find HVN (High Volume Nodes) - price levels with highest volume
             sorted_volume_profile = sorted(volume_profile.items(), key=lambda x: x[1], reverse=True)
             hvn_levels = [price for price, volume in sorted_volume_profile[:20]]  # Top 20 HVN levels
-            
+
             # Calculate volume statistics for dynamic strength calculation
             all_volumes = [volume for _, volume in volume_profile.items()]
             volume_mean = np.mean(all_volumes) if all_volumes else 1.0
             volume_std = np.std(all_volumes) if all_volumes else 1.0
-            
+
             # Also get traditional high volume points
             high_volume_mask = market_data['volume'] > volume_80th
             high_volume_data = market_data[high_volume_mask]
-            
+
             self.logger.info(f'📊 Found {len(high_volume_data)} high-volume points and {len(hvn_levels)} HVN levels')
-            
+
             levels = []
-            
+
             # Add HVN levels first (these are the most important)
             self.logger.info(f'📊 Processing {len(hvn_levels)} HVN levels for touch count calculation...')
             for i, hvn_price in enumerate(hvn_levels):
                 if i % 5 == 0:  # Log progress every 5 HVN levels
                     self.logger.info(f'📊 HVN processing progress: {i}/{len(hvn_levels)} ({i/len(hvn_levels)*100:.1f}%)')
-                
+
                 hvn_volume = volume_profile.get(hvn_price, 0)
-                
+
                 # Calculate dynamic strength based on volume characteristics
                 volume_ratio = hvn_volume / volume_mean if volume_mean > 0 else 1.0
                 volume_z_score = (hvn_volume - volume_mean) / volume_std if volume_std > 0 else 0.0
-                
+
                 # Calculate touch count for this price level
                 touch_count = 0
                 for idx, row in market_data.iterrows():
                     price_bin = round(row['low'] / bin_size) * bin_size
                     if abs(price_bin - hvn_price) < bin_size * 0.1:  # Within 10% of bin size
                         touch_count += 1
-                
+
                 # Dynamic strength calculation: 60% volume ratio + 30% z-score + 10% touch count
                 touch_score = min(touch_count / 10.0, 1.0)  # Normalize touch count
                 strength = min(volume_ratio * 0.6 + max(0, volume_z_score * 0.3) + touch_score * 0.1, 0.95)
-                
+
                 # Ensure minimum strength for HVN levels
                 strength = max(strength, 0.3)
-                
+
                 levels.append({
                     'price': float(hvn_price),
                     'strength': round(strength, 3),  # Dynamic strength calculation
@@ -1286,14 +1286,14 @@ except ImportError:
                     'volume_z_score': round(volume_z_score, 3),
                     'timestamp': datetime.now().isoformat()
                 })
-            
+
             if len(high_volume_data) > 0:
                 if level_type == 'support':
                     # Vectorized support level creation
                     prices = high_volume_data['low'].values
                     volumes = high_volume_data['volume'].values
                     timestamps = high_volume_data.index
-                    
+
                     for i, (price, volume) in enumerate(zip(prices, volumes)):
                         levels.append({
                             'price': float(price),
@@ -1309,7 +1309,7 @@ except ImportError:
                     prices = high_volume_data['high'].values
                     volumes = high_volume_data['volume'].values
                     timestamps = high_volume_data.index
-                    
+
                     for i, (price, volume) in enumerate(zip(prices, volumes)):
                         levels.append({
                             'price': float(price),
@@ -1320,7 +1320,7 @@ except ImportError:
                             'volume': float(volume),
                             'timestamp': timestamps[i].isoformat() if hasattr(timestamps[i], 'isoformat') else str(timestamps[i])
                         })
-            
+
             # Limit results for performance
             levels = levels[:30]  # Max 30 volume levels (including HVN)
             self.logger.info(f'✅ Volume detection found {len(levels)} {level_type} levels')
@@ -1338,11 +1338,11 @@ except ImportError:
                 high_24h = market_data['high'].iloc[-24:].max()
                 low_24h = market_data['low'].iloc[-24:].min()
                 close = market_data['close'].iloc[-1]
-                
+
                 pivot = (high_24h + low_24h + close) / 3
                 r1 = 2 * pivot - low_24h
                 s1 = 2 * pivot - high_24h
-                
+
                 if level_type == 'support':
                     levels.append({
                         'price': s1,
@@ -1361,7 +1361,7 @@ except ImportError:
                         'touch_count': 1,
                         'timestamp': datetime.now().isoformat()
                     })
-            
+
             return levels
         except Exception as e:
             self.logger.error(f'Error in pivot level detection: {e}')
@@ -1373,7 +1373,7 @@ except ImportError:
             levels = []
             atr = self._calculate_atr(market_data)
             current_price = market_data['close'].iloc[-1]
-            
+
             if level_type == 'support':
                 support_price = current_price - (atr * 2)
                 levels.append({
@@ -1396,7 +1396,7 @@ except ImportError:
                     'atr': atr,
                     'timestamp': datetime.now().isoformat()
                 })
-            
+
             return levels
         except Exception as e:
             self.logger.error(f'Error in ATR level detection: {e}')
@@ -1407,7 +1407,7 @@ except ImportError:
         try:
             touches = 1
             threshold = 0.002
-            
+
             for i in range(start_idx + 1, len(data)):
                 if level_type == 'resistance':
                     if abs(data['high'].iloc[i] - level_price) / level_price < threshold:
@@ -1415,7 +1415,7 @@ except ImportError:
                 else:  # support
                     if abs(data['low'].iloc[i] - level_price) / level_price < threshold:
                         touches += 1
-            
+
             return touches
         except Exception as e:
             self.logger.error(f'Error counting level touches: {e}')
@@ -1426,16 +1426,16 @@ SRBreakoutPredictor = EnhancedSRBreakoutPredictor
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1454,8 +1454,8 @@ SRBreakoutPredictor = EnhancedSRBreakoutPredictor
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1472,13 +1472,13 @@ SRBreakoutPredictor = EnhancedSRBreakoutPredictor
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

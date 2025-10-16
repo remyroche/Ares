@@ -36,7 +36,6 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 
 logger = system_logger.getChild("MonthlyDataDownloader")
 
-
 class MonthlyDataDownloader:
     """Monthly data downloader with comprehensive quality checks."""
 
@@ -913,7 +912,6 @@ class MonthlyDataDownloader:
 
         self.logger.info("="*80)
 
-
 # Convenience functions for easy usage
 
 async def download_monthly_ethusdt_data(
@@ -949,7 +947,6 @@ async def download_monthly_ethusdt_data(
         years=years
     )
 
-
 def get_monthly_file_list(symbol: str = "ETHUSDT", exchange: str = "binance",
                          data_type: str = "klines", timeframe: str = "1m") -> List[Path]:
     """
@@ -971,7 +968,6 @@ def get_monthly_file_list(symbol: str = "ETHUSDT", exchange: str = "binance",
         return list(base_path.glob(pattern))
     else:
         return []
-
 
 if __name__ == "__main__":
     # Example usage

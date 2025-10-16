@@ -13,10 +13,9 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
-
 class DataIntegrityChecker:
     """Validates data integrity and logical consistency of market data.
-    
+
     This class provides functionality for:
     - OHLC consistency validation
     - Price and volume integrity checks
@@ -29,17 +28,17 @@ class DataIntegrityChecker:
     def __init__(self, config: Optional[dict[str, Any]]=None) -> None:
         self.logger = system_logger.getChild('DataIntegrityChecker')
         self.config = config or self._get_default_config()
-        
+
         # Initialize comprehensive quality tools
         try:
             from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
             from src.utils.data.quality.data_quality import DataQualityFramework
             from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics
-            
+
             self.quality_scorer = get_quality_scorer()
             self.quality_framework = DataQualityFramework()
             self.advanced_quality_metrics = AdvancedQualityMetrics()
-            
+
             self.logger.info("✅ DataIntegrityChecker initialized with comprehensive quality tools")
         except ImportError as e:
             self.logger.warning(f"⚠️ Comprehensive quality tools not available: {e}")
@@ -55,17 +54,17 @@ class DataIntegrityChecker:
     def validate_data_integrity(self, data: pd.DataFrame, results: Optional[dict[str, Any]]=None) -> Tuple[bool, dict[str, Any]]:
         """
         Validate data integrity and logical consistency using comprehensive quality assessment.
-        
+
         Args:
             data: DataFrame with OHLCV data
             results: Optional results dictionary to append to
-            
+
         Returns:
             Tuple of (is_valid, detailed_results)
         """
         if results is None:
             results = {'critical_issues': [], 'warnings': [], 'detailed_analysis': {}}
-        
+
         # Use comprehensive quality assessment if tools are available
         if self.quality_scorer is not None:
             try:
@@ -75,7 +74,7 @@ class DataIntegrityChecker:
                     step_name="data_integrity_check",
                     data_type="klines"
                 )
-                
+
                 # Extract integrity-related issues from comprehensive assessment
                 for issue in quality_assessment.issues:
                     if any(keyword in issue.lower() for keyword in ['ohlc', 'price', 'volume', 'consistency', 'integrity']):
@@ -83,19 +82,19 @@ class DataIntegrityChecker:
                             results['critical_issues'].append(issue)
                         else:
                             results['warnings'].append(issue)
-                
+
                 # Add comprehensive quality metrics
                 results['detailed_analysis']['comprehensive_quality'] = {
                     'overall_score': quality_assessment.overall_score,
                     'quality_level': quality_assessment.level.value,
                     'component_scores': quality_assessment.component_scores
                 }
-                
+
                 self.logger.info(f"📊 Comprehensive integrity assessment: {quality_assessment.overall_score:.2f} ({quality_assessment.level.value})")
-                
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Comprehensive integrity assessment failed, using fallback: {e}")
-        
+
         # Continue with legacy integrity checks as fallback
         is_valid = True
         if self.config['integrity_checks']['check_ohlc_consistency']:
@@ -216,11 +215,11 @@ class DataIntegrityChecker:
     def validate_market_specific_issues(self, data: pd.DataFrame, results: Optional[dict[str, Any]]=None) -> Tuple[bool, dict[str, Any]]:
         """
         Validate market-specific issues and anomalies.
-        
+
         Args:
             data: DataFrame with market data
             results: Optional results dictionary
-            
+
         Returns:
             Tuple of (is_valid, detailed_results)
         """
@@ -252,11 +251,11 @@ class DataIntegrityChecker:
     def check_cross_validation(self, data: pd.DataFrame, validation_rules: Optional[dict[str, Any]]=None) -> dict[str, Any]:
         """
         Perform cross-validation between related data points.
-        
+
         Args:
             data: DataFrame to validate
             validation_rules: Custom validation rules
-            
+
         Returns:
             Validation results
         """

@@ -12,12 +12,12 @@ Usage Examples:
     # Basic feature selection
     from src.feature_selection import select_features
     result = select_features(X, y, method='comprehensive')
-    
+
     # Adaptive selection for small samples
     from src.feature_selection.specialized import AdaptiveFeatureSelector
     selector = AdaptiveFeatureSelector()
     result = selector.select_features(X, y)
-    
+
     # Regularization-based selection
     from src.feature_selection.methods import FeatureRegularizationSelector
     selector = FeatureRegularizationSelector()
@@ -143,13 +143,13 @@ from .advanced import (
     LightGBMFeatureSelector,
     EnsembleAdvancedSelector,
     create_advanced_selector,
-    
+
     FeatureSelectionValidator,
     CrossValidationFramework,
     RegressionTestFramework,
     ValidationMetrics,
     create_validation_framework,
-    
+
     PermutationImportanceCalculator,
     PermutationConfig,
     create_permutation_calculator,
@@ -185,7 +185,7 @@ __all__ = [
     'reset_framework',
     'get_enhanced_framework',
     'enhanced_select_features',
-    
+
     # VectorBT framework
     'VectorBTUnifiedFramework',
     'create_vectorbt_unified_framework',
@@ -199,7 +199,7 @@ __all__ = [
     'VectorBTMemoryOptimizer',
     'VectorBTRollingOperations',
     'VectorBTFeatureSelectionConfig',
-    
+
     # Selection methods
     'MRMRSelector',
     'ElasticNetStabilitySelector',
@@ -209,7 +209,7 @@ __all__ = [
     'FeatureRegularizationSelector',
     'FeatureRegularizationConfig',
     'create_feature_regularization_selector',
-    
+
     # Specialized selectors
     'EntropyBalancerConfig',
     'EntropyFilterResult',
@@ -219,19 +219,19 @@ __all__ = [
     'AdaptiveFeatureSelectionResult',
     'DirectionalFeatureSelectionConfig',
     'DirectionalFeatureSelectionResult',
-    
+
     # Dimensionality reduction
     'PCAModule',
     'create_pca_module',
     'VIFModule',
     'create_vif_module',
-    
+
     # Enhanced capabilities
     'IntelligentFeatureCache',
     'FeatureSelectionCacheManager',
     'cached_feature_selection',
     'create_feature_cache',
-    
+
     'FeatureSelectionError',
     'InsufficientDataError',
     'SelectionConvergenceError',
@@ -239,29 +239,29 @@ __all__ = [
     'EnhancedErrorHandler',
     'robust_feature_selection',
     'create_error_handler',
-    
+
     'MemoryEfficientFeatureSelector',
     'ChunkedFeatureProcessor',
     'SparseFeatureSelector',
     'create_memory_efficient_selector',
-    
+
     'ParallelFeatureSelector',
     'ParallelSelectionManager',
     'create_parallel_selector',
-    
+
     'VectorizedFeatureSelector',
     'OptimizedCorrelationFilter',
     'OptimizedVarianceFilter',
     'create_vectorized_selector',
-    
+
     'SparseMatrixSelector',
     'SparseMatrixProcessor',
     'create_sparse_selector',
-    
+
     'ChunkedProcessor',
     'AdaptiveChunkProcessor',
     'create_chunked_processor',
-    
+
     # Advanced selection methods
     'AdvancedFeatureSelector',
     'LASSOFeatureSelector',
@@ -269,17 +269,17 @@ __all__ = [
     'LightGBMFeatureSelector',
     'EnsembleAdvancedSelector',
     'create_advanced_selector',
-    
+
     'FeatureSelectionValidator',
     'CrossValidationFramework',
     'RegressionTestFramework',
     'ValidationMetrics',
     'create_validation_framework',
-    
+
     'PermutationImportanceCalculator',
     'PermutationConfig',
     'create_permutation_calculator',
-    
+
     # Enhanced advanced methods
     'EnhancedEnsembleAdvancedSelector',
     'EnhancedAdvancedFeatureSelector',
@@ -287,13 +287,13 @@ __all__ = [
     'EnhancedAdvancedConfig',
     'create_enhanced_ensemble_selector',
     'create_enhanced_advanced_selector',
-    
+
     # Pre-filtering and improved mRMR
     'MRMRSpearmanPreFilter',
     'create_mrmr_spearman_prefilter',
     'ImprovedMRMR',
     'create_improved_mrmr',
-    
+
     # Enhanced multi-stage RFE
     'EnhancedMultiStageRFE',
     'PlateauDetector',

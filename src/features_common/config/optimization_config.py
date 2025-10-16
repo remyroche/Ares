@@ -16,11 +16,11 @@ logger = logging.getLogger(__name__)
 class OptimizationConfig:
     """
     Centralized optimization configuration.
-    
+
     This class manages all optimization settings for the features_common system,
     providing a single source of truth for performance parameters.
     """
-    
+
     # VectorBT optimization settings
     use_vectorbt: bool = True
     vectorbt_threshold: int = 100  # Lower threshold to use VectorBT more often
@@ -28,45 +28,45 @@ class OptimizationConfig:
     enable_parallel: bool = True
     memory_efficient: bool = True
     prefer_vectorbt: bool = True  # Prefer VectorBT over pandas when available
-    
+
     # Performance optimization settings
     enable_caching: bool = True
     cache_size: int = 1000
     enable_batch_processing: bool = True
     batch_size: int = 10000
-    
+
     # Memory optimization settings
     optimize_data_types: bool = True
     enable_memory_pooling: bool = True
     max_memory_usage: float = 0.8  # 80% of available memory
-    
+
     # Adaptive optimization settings
     enable_adaptive_optimization: bool = True
     performance_threshold: float = 0.1  # 10% improvement threshold
     auto_tune_parameters: bool = True
-    
+
     # Monitoring and profiling settings
     enable_performance_monitoring: bool = True
     enable_profiling: bool = False
     profile_threshold: float = 1.0  # Profile operations taking >1 second
-    
+
     # Fallback settings
     enable_fallbacks: bool = True
     fallback_timeout: float = 30.0  # 30 seconds timeout for fallbacks
-    
+
     # Advanced settings
     enable_experimental_features: bool = False
     debug_mode: bool = False
     verbose_logging: bool = False
-    
+
     # Environment-specific overrides
     _env_overrides: Dict[str, Any] = field(default_factory=dict)
-    
+
     def __post_init__(self):
         """Apply environment-specific overrides after initialization."""
         self._apply_env_overrides()
         self._validate_config()
-    
+
     def _apply_env_overrides(self) -> None:
         """Apply environment variable overrides."""
         env_mappings = {
@@ -82,7 +82,7 @@ class OptimizationConfig:
             'FEATURES_COMMON_DEBUG_MODE': ('debug_mode', bool),
             'FEATURES_COMMON_VERBOSE_LOGGING': ('verbose_logging', bool),
         }
-        
+
         for env_var, (attr_name, type_func) in env_mappings.items():
             env_value = os.getenv(env_var)
             if env_value is not None:
@@ -95,27 +95,27 @@ class OptimizationConfig:
                     self._env_overrides[attr_name] = value
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Invalid environment variable {env_var}={env_value}: {e}")
-    
+
     def _validate_config(self) -> None:
         """Validate configuration parameters."""
         if self.vectorbt_threshold < 1:
             raise ValueError("vectorbt_threshold must be >= 1")
-        
+
         if self.cache_size < 0:
             raise ValueError("cache_size must be >= 0")
-        
+
         if self.batch_size < 1:
             raise ValueError("batch_size must be >= 1")
-        
+
         if not 0 < self.max_memory_usage <= 1:
             raise ValueError("max_memory_usage must be between 0 and 1")
-        
+
         if not 0 <= self.performance_threshold <= 1:
             raise ValueError("performance_threshold must be between 0 and 1")
-        
+
         if self.fallback_timeout <= 0:
             raise ValueError("fallback_timeout must be > 0")
-    
+
     def get_vectorbt_settings(self) -> Dict[str, Any]:
         """Get VectorBT-specific settings."""
         return {
@@ -125,7 +125,7 @@ class OptimizationConfig:
             'enable_parallel': self.enable_parallel,
             'memory_efficient': self.memory_efficient,
         }
-    
+
     def get_performance_settings(self) -> Dict[str, Any]:
         """Get performance optimization settings."""
         return {
@@ -137,7 +137,7 @@ class OptimizationConfig:
             'enable_memory_pooling': self.enable_memory_pooling,
             'max_memory_usage': self.max_memory_usage,
         }
-    
+
     def get_adaptive_settings(self) -> Dict[str, Any]:
         """Get adaptive optimization settings."""
         return {
@@ -145,7 +145,7 @@ class OptimizationConfig:
             'performance_threshold': self.performance_threshold,
             'auto_tune_parameters': self.auto_tune_parameters,
         }
-    
+
     def get_monitoring_settings(self) -> Dict[str, Any]:
         """Get monitoring and profiling settings."""
         return {
@@ -153,14 +153,14 @@ class OptimizationConfig:
             'enable_profiling': self.enable_profiling,
             'profile_threshold': self.profile_threshold,
         }
-    
+
     def get_fallback_settings(self) -> Dict[str, Any]:
         """Get fallback settings."""
         return {
             'enable_fallbacks': self.enable_fallbacks,
             'fallback_timeout': self.fallback_timeout,
         }
-    
+
     def get_debug_settings(self) -> Dict[str, Any]:
         """Get debug and experimental settings."""
         return {
@@ -168,7 +168,7 @@ class OptimizationConfig:
             'debug_mode': self.debug_mode,
             'verbose_logging': self.verbose_logging,
         }
-    
+
     def update(self, **kwargs) -> None:
         """Update configuration with new values."""
         for key, value in kwargs.items():
@@ -176,9 +176,9 @@ class OptimizationConfig:
                 setattr(self, key, value)
             else:
                 logger.warning(f"Unknown configuration parameter: {key}")
-        
+
         self._validate_config()
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
@@ -207,11 +207,10 @@ class OptimizationConfig:
             'verbose_logging': self.verbose_logging,
             'env_overrides': self._env_overrides,
         }
-    
+
     def copy(self) -> 'OptimizationConfig':
         """Create a copy of the configuration."""
         return OptimizationConfig(**self.to_dict())
-
 
 # Global configuration instance
 _global_config: Optional[OptimizationConfig] = None

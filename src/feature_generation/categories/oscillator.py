@@ -130,7 +130,7 @@ except ImportError:
 # Unified Vectorization Manager
 try:
     from ...utils.ml_common.unified_vectorization_manager import (
-        UnifiedVectorizationManager, OperationType, OptimizationStrategy, 
+        UnifiedVectorizationManager, OperationType, OptimizationStrategy,
         OperationConfig, OptimizationResult
     )
     UNIFIED_MANAGER_AVAILABLE = True
@@ -151,7 +151,7 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 except ImportError:
-    
+
     cp = None
 
 from ..base_calculations import (
@@ -168,14 +168,14 @@ logger = logging.getLogger(__name__)
 
 class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Feature generator for oscillator-based features with comprehensive VectorBT optimization."""
-    
-    def __init__(self, config: Optional[FeatureConfig] = None, 
+
+    def __init__(self, config: Optional[FeatureConfig] = None,
                  enable_gpu: bool = False, enable_parallel: bool = True,
                  use_unified_manager: bool = True):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_calculations': 0,
@@ -187,27 +187,27 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             'average_time_per_calculation': 0.0,
             'memory_usage_mb': 0.0
         }
-        
+
         # Initialize optimization components
         self.enable_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel
         self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
-        
+
         # Initialize VectorBT optimizer
         if VECTORBT_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
-                enable_gpu=self.enable_gpu, 
+                enable_gpu=self.enable_gpu,
                 enable_parallel=self.enable_parallel
             )
         else:
             self.vectorbt_optimizer = None
-        
+
         # Initialize Unified Vectorization Manager
         if self.use_unified_manager:
             self.unified_manager = UnifiedVectorizationManager()
         else:
             self.unified_manager = None
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -226,20 +226,20 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     @classmethod
     def create_default(cls) -> 'OscillatorFeatureGenerator':
         return cls()
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         start_time = time.time()
-        
+
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
         close_prices = data['close']
-        
+
         # Use UnifiedVectorizationManager for intelligent optimization
         if self.unified_manager and self._should_use_unified_manager(close_prices):
             try:
@@ -248,7 +248,7 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 return result
             except Exception as e:
                 self.logger.warning(f"UnifiedVectorizationManager failed: {e}, using VectorBT fallback")
-        
+
         try:
             # Use VectorBT for oscillator calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
@@ -274,13 +274,13 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 self.performance_stats['average_time_per_calculation'] = (
                     self.performance_stats['total_time'] / self.performance_stats['total_calculations']
                 )
-    
+
     def _generate_with_unified_manager(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using UnifiedVectorizationManager."""
         try:
             # Use Unified Vectorization Manager for optimized oscillator calculation
             close_prices = data['close']
-            
+
             oscillator_result = self.unified_manager.optimize_operation(
                 OperationType.TECHNICAL_INDICATORS,
                 {
@@ -297,14 +297,14 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 )
             )
             oscillator = oscillator_result.result
-            
+
             # Update memory usage
             if hasattr(self.unified_manager, 'get_performance_stats'):
                 stats = self.unified_manager.get_performance_stats()
                 self.performance_stats['memory_usage_mb'] = stats.get('memory_used_mb', 0)
-            
+
             return oscillator.rename('oscillator_unified')
-            
+
         except Exception as e:
             self.logger.warning(f"Unified Vectorization Manager oscillator calculation failed: {e}")
             # Fallback to VectorBT rolling optimizer
@@ -318,23 +318,23 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                     return self._generate_with_pandas_fallback(data, **kwargs)
             else:
                 return self._generate_with_pandas_fallback(data, **kwargs)
-    
+
     def _generate_with_pandas_fallback(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using pandas fallback."""
         close_prices = data['close']
         oscillator = close_prices.rolling(window=14).mean() - close_prices
         return oscillator.rename('oscillator_pandas')
-    
+
     def _should_use_unified_manager(self, data: pd.Series) -> bool:
         """Determine if UnifiedVectorizationManager should be used."""
-        return (self.use_unified_manager and 
-                self.unified_manager is not None and 
+        return (self.use_unified_manager and
+                self.unified_manager is not None and
                 len(data) >= 1000)
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
-    
+
     def reset_performance_stats(self):
         """Reset performance statistics."""
         self.performance_stats = {
@@ -347,16 +347,16 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             'average_time_per_calculation': 0.0,
             'memory_usage_mb': 0.0
         }
-    
-    def generate_optimized_oscillator_features(self, data: pd.DataFrame, 
+
+    def generate_optimized_oscillator_features(self, data: pd.DataFrame,
                                              feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Generate multiple oscillator features using optimized batch processing.
-        
+
         Args:
             data: OHLCV data
             feature_configs: List of feature configuration dictionaries
-            
+
         Returns:
             DataFrame with generated oscillator features
         """
@@ -389,7 +389,7 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                 return self._process_oscillator_features_individually(data, feature_configs)
         else:
             return self._process_oscillator_features_individually(data, feature_configs)
-    
+
     def _process_oscillator_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Process oscillator features individually as fallback when batch processing fails."""
         results = {}
@@ -397,30 +397,30 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             feature_name = config['name']
             feature_type = config.get('type', 'oscillator')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'oscillator':
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
-                        
+
                         if self.vectorbt_optimizer:
                             rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window)
                             oscillator = rolling_mean - series_data
                         else:
                             rolling_mean = series_data.rolling(window).mean()
                             oscillator = rolling_mean - series_data
-                        
+
                         results[feature_name] = oscillator
-                
+
             except Exception as e:
                 self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
+
     def _generate_batch_with_vectorbt(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Generate batch features using VectorBT rolling optimizer."""
         results = {}
@@ -428,49 +428,49 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             feature_name = config['name']
             feature_type = config.get('type', 'oscillator')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'oscillator':
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window)
                         oscillator = rolling_mean - series_data
                         results[feature_name] = oscillator
-                
+
             except Exception as e:
                 self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
-    def _generate_batch_with_vectorbt(self, data: pd.DataFrame, 
+
+    def _generate_batch_with_vectorbt(self, data: pd.DataFrame,
                                     feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Generate batch features using VectorBT rolling optimizer."""
         results = {}
-        
+
         for config in feature_configs:
             feature_name = config['name']
             feature_type = config.get('type', 'oscillator')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'oscillator':
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         rolling_mean = self.vectorbt_optimizer.rolling_mean(series_data, window=window)
                         results[feature_name] = rolling_mean - series_data
-                
+
                 elif feature_type == 'rolling':
                     operation = params.get('operation', 'mean')
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         if operation == 'mean':
@@ -481,38 +481,38 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                             results[feature_name] = self.vectorbt_optimizer.rolling_min(series_data, window=window)
                         elif operation == 'max':
                             results[feature_name] = self.vectorbt_optimizer.rolling_max(series_data, window=window)
-                
+
             except Exception as e:
                 self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
-    def _generate_batch_with_pandas(self, data: pd.DataFrame, 
+
+    def _generate_batch_with_pandas(self, data: pd.DataFrame,
                                   feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Generate batch features using pandas fallback."""
         results = {}
-        
+
         for config in feature_configs:
             feature_name = config['name']
             feature_type = config.get('type', 'oscillator')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'oscillator':
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         rolling_mean = series_data.rolling(window=window).mean()
                         results[feature_name] = rolling_mean - series_data
-                
+
                 elif feature_type == 'rolling':
                     operation = params.get('operation', 'mean')
                     window = params.get('window', 14)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         rolling_obj = series_data.rolling(window=window)
@@ -524,11 +524,11 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                             results[feature_name] = rolling_obj.min()
                         elif operation == 'max':
                             results[feature_name] = rolling_obj.max()
-                
+
             except Exception as e:
                 self.logger.warning(f"Oscillator feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
@@ -547,41 +547,41 @@ def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[F
             't3': [14],
             'kama': [30]
         }
-    
+
     generators = []
-    
+
     # CCI generators
     for period in periods.get('cci', [20]):
         generators.append(CCIGenerator(period=period))
-    
+
     # ADX generators
     for period in periods.get('adx', [14]):
         generators.append(ADXGenerator(period=period))
-    
+
     # Aroon generators
     for period in periods.get('aroon', [25]):
         generators.append(AroonGenerator(period=period))
-    
+
     # Ultimate Oscillator generators
     for period in periods.get('ultimate', [14]):
         generators.append(UltimateOscillatorGenerator(period=period))
-    
+
     # KST generators
     for period in periods.get('kst', [10]):
         generators.append(KSTGenerator(period=period))
-    
+
     # APO generators
     for period in periods.get('apo', [12]):
         generators.append(APOGenerator(period=period))
-    
+
     # CMO generators
     for period in periods.get('cmo', [14]):
         generators.append(CMOGenerator(period=period))
-    
+
     # NATR generators
     for period in periods.get('natr', [14]):
         generators.append(NATRGenerator(period=period))
-    
+
     # PFE generators
     for period in periods.get('pfe', [12]):
         generators.append(PFEGenerator(period=period))  # type: ignore
@@ -593,7 +593,7 @@ def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[F
     # KAMA generators
     for period in periods.get('kama', [30]):
         generators.append(KAMAGenerator(period=period))  # type: ignore
-    
+
     return generators
 
 def create_default_oscillator_generators() -> List[FeatureGenerator]:
@@ -601,10 +601,9 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
 
 # CCI (Commodity Channel Index)
 
-
 class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for CCI (Commodity Channel Index) with comprehensive VectorBT optimization."""
-    
+
     def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
@@ -614,7 +613,7 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                  **base_kwargs):
         """
         Initialize CCI generator.
-        
+
         Args:
             period: CCI period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -622,16 +621,16 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"cci_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -649,7 +648,7 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_calculations': 0,
@@ -661,27 +660,27 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             'average_time_per_calculation': 0.0,
             'memory_usage_mb': 0.0
         }
-        
+
         # Initialize optimization components
         self.enable_gpu = False  # GPU support removed
         self.enable_parallel = enable_parallel
         self.use_unified_manager = use_unified_manager and UNIFIED_MANAGER_AVAILABLE
-        
+
         # Initialize VectorBT optimizer
         if VECTORBT_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
-                enable_gpu=self.enable_gpu, 
+                enable_gpu=self.enable_gpu,
                 enable_parallel=self.enable_parallel
             )
         else:
             self.vectorbt_optimizer = None
-        
+
         # Initialize Unified Vectorization Manager
         if self.use_unified_manager:
             self.unified_manager = UnifiedVectorizationManager()
         else:
             self.unified_manager = None
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate CCI based on the specified base calculation with comprehensive VectorBT optimization."""
         start_time = time.time()
@@ -785,14 +784,14 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 # ADX (Average Directional Index)
 class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for ADX (Average Directional Index) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 14,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize ADX generator.
-        
+
         Args:
             period: ADX period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -800,16 +799,16 @@ class ADXGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"adx_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -827,7 +826,7 @@ class ADXGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -838,7 +837,7 @@ class ADXGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Use VectorBT for ADX calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
@@ -847,23 +846,23 @@ class ADXGenerator(VectorizedFeatureGenerator):
                     tr2 = abs(high - close.shift(1))
                     tr3 = abs(low - close.shift(1))
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
+
                     # Calculate Directional Movement
                     dm_plus = high.diff()
                     dm_minus = -low.diff()
-                    
+
                     dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
                     dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
-                    
+
                     # Calculate smoothed values using VectorBT
                     atr = self.vectorbt_optimizer.rolling_mean(tr, window=self.period)
                     di_plus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
                     di_minus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
-                    
+
                     # Calculate ADX
                     dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
                     adx = self.vectorbt_optimizer.rolling_mean(dx, window=self.period)
-                    
+
                     return adx
                 except Exception as e:
                     self.logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
@@ -872,23 +871,23 @@ class ADXGenerator(VectorizedFeatureGenerator):
                     tr2 = abs(high - close.shift(1))
                     tr3 = abs(low - close.shift(1))
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
+
                     # Calculate Directional Movement
                     dm_plus = high.diff()
                     dm_minus = -low.diff()
-                    
+
                     dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
                     dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
-                    
+
                     # Calculate smoothed values
                     atr = tr.rolling(window=self.period).mean()
                     di_plus = 100 * (pd.Series(dm_plus, index=data.index).rolling(window=self.period).mean() / atr)
                     di_minus = 100 * (pd.Series(dm_minus, index=data.index).rolling(window=self.period).mean() / atr)
-                    
+
                     # Calculate ADX
                     dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
                     adx = dx.rolling(window=self.period).mean()
-                    
+
                     return adx
             else:
                 # Calculate True Range
@@ -896,27 +895,27 @@ class ADXGenerator(VectorizedFeatureGenerator):
                 tr2 = abs(high - close.shift(1))
                 tr3 = abs(low - close.shift(1))
                 tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                
+
                 # Calculate Directional Movement
                 dm_plus = high.diff()
                 dm_minus = -low.diff()
-                
+
                 dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
                 dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
-                
+
                 # Calculate smoothed values
                 atr = tr.rolling(window=self.period).mean()
                 di_plus = 100 * (pd.Series(dm_plus, index=data.index).rolling(window=self.period).mean() / atr)
                 di_minus = 100 * (pd.Series(dm_minus, index=data.index).rolling(window=self.period).mean() / atr)
-                
+
                 # Calculate ADX
                 dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
                 adx = dx.rolling(window=self.period).mean()
-                
+
                 return adx
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # Use VectorBT for base values calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
@@ -945,14 +944,14 @@ class ADXGenerator(VectorizedFeatureGenerator):
 # Aroon Oscillator
 class AroonGenerator(VectorizedFeatureGenerator):
     """Generator for Aroon Oscillator with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 14,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize Aroon generator.
-        
+
         Args:
             period: Aroon period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -960,16 +959,16 @@ class AroonGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"aroon_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -987,7 +986,7 @@ class AroonGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -997,7 +996,7 @@ class AroonGenerator(VectorizedFeatureGenerator):
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             high = data['high']
             low = data['low']
-            
+
             # Use VectorBT for Aroon calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
@@ -1005,10 +1004,10 @@ class AroonGenerator(VectorizedFeatureGenerator):
                     # Use pandas built-in rolling idxmax/idxmin for better performance
                     aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                     aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                    
+
                     # Calculate Aroon Oscillator
                     aroon = aroon_up - aroon_down
-                    
+
                     return aroon
                 except Exception as e:
                     self.logger.warning(f"VectorBT Aroon calculation failed: {e}, using pandas fallback")
@@ -1016,24 +1015,24 @@ class AroonGenerator(VectorizedFeatureGenerator):
                     # Use pandas built-in rolling idxmax/idxmin for better performance
                     aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                     aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                    
+
                     # Calculate Aroon Oscillator
                     aroon = aroon_up - aroon_down
-                    
+
                     return aroon
             else:
                 # OPTIMIZED: Use vectorized argmax/argmin calculations
                 # Use pandas built-in rolling idxmax/idxmin for better performance
                 aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                 aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                
+
                 # Calculate Aroon Oscillator
                 aroon = aroon_up - aroon_down
-                
+
                 return aroon
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # Use VectorBT for Aroon calculation on base values
             if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
@@ -1041,9 +1040,9 @@ class AroonGenerator(VectorizedFeatureGenerator):
                     # Use pandas built-in rolling idxmax/idxmin for better performance
                     aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                     aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                    
+
                     aroon = aroon_up - aroon_down
-                    
+
                     return aroon
                 except Exception as e:
                     self.logger.warning(f"VectorBT Aroon base calculation failed: {e}, using pandas fallback")
@@ -1051,24 +1050,24 @@ class AroonGenerator(VectorizedFeatureGenerator):
                     # Use pandas built-in rolling idxmax/idxmin for better performance
                     aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                     aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                    
+
                     aroon = aroon_up - aroon_down
-                    
+
                     return aroon
             else:
                 # OPTIMIZED: Use vectorized argmax/argmin calculations
                 # Use pandas built-in rolling idxmax/idxmin for better performance
                 aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
                 aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-                
+
                 aroon = aroon_up - aroon_down
-                
+
                 return aroon
 
 # Parabolic SAR
 class SARGenerator(VectorizedFeatureGenerator):
     """Generator for Parabolic SAR with different base calculations."""
-    
+
     def __init__(self,
                  acceleration: float = 0.02,
                  maximum: float = 0.2,
@@ -1076,7 +1075,7 @@ class SARGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize Parabolic SAR generator.
-        
+
         Args:
             acceleration: SAR acceleration factor
             maximum: SAR maximum acceleration
@@ -1085,16 +1084,16 @@ class SARGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"sar_{acceleration}_{maximum}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1114,7 +1113,7 @@ class SARGenerator(VectorizedFeatureGenerator):
         self.acceleration = acceleration
         self.maximum = maximum
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1125,49 +1124,49 @@ class SARGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Use VectorBT for SAR calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # Simplified SAR calculation
                     sar = pd.Series(index=data.index, dtype=float)
                     sar.iloc[0] = low.iloc[0]
-                    
+
                     for i in range(1, len(data)):
                         if close.iloc[i] > sar.iloc[i-1]:
                             sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
                         else:
                             sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
-                    
+
                     return sar
                 except Exception as e:
                     self.logger.warning(f"VectorBT SAR calculation failed: {e}, using pandas fallback")
                     # Simplified SAR calculation
                     sar = pd.Series(index=data.index, dtype=float)
                     sar.iloc[0] = low.iloc[0]
-                    
+
                     for i in range(1, len(data)):
                         if close.iloc[i] > sar.iloc[i-1]:
                             sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
                         else:
                             sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
-                    
+
                     return sar
             else:
                 # Simplified SAR calculation
                 sar = pd.Series(index=data.index, dtype=float)
                 sar.iloc[0] = low.iloc[0]
-                
+
                 for i in range(1, len(data)):
                     if close.iloc[i] > sar.iloc[i-1]:
                         sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
                     else:
                         sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
-                
+
                 return sar
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # Use VectorBT for base values calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
@@ -1187,7 +1186,7 @@ class SARGenerator(VectorizedFeatureGenerator):
 # Ultimate Oscillator
 class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Ultimate Oscillator with different base calculations."""
-    
+
     def __init__(self,
                  period1: int = 7,
                  period2: int = 14,
@@ -1196,7 +1195,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize Ultimate Oscillator generator.
-        
+
         Args:
             period1: First period
             period2: Second period
@@ -1206,16 +1205,16 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"ultimate_oscillator_{period1}_{period2}_{period3}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1237,7 +1236,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
         self.period2 = period2
         self.period3 = period3
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1248,7 +1247,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Use VectorBT for Ultimate Oscillator calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
@@ -1257,17 +1256,17 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
                     tr2 = abs(high - close.shift(1))
                     tr3 = abs(low - close.shift(1))
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
+
                     # Calculate Buying Pressure
                     bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
-                    
+
                     # Calculate Ultimate Oscillator using VectorBT rolling sum
                     avg7 = rolling_sum(bp, window=self.period1) / rolling_sum(tr, window=self.period1)
                     avg14 = rolling_sum(bp, window=self.period2) / rolling_sum(tr, window=self.period2)
                     avg28 = rolling_sum(bp, window=self.period3) / rolling_sum(tr, window=self.period3)
-                    
+
                     uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
-                    
+
                     return uo
                 except Exception as e:
                     self.logger.warning(f"VectorBT Ultimate Oscillator calculation failed: {e}, using pandas fallback")
@@ -1276,17 +1275,17 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
                     tr2 = abs(high - close.shift(1))
                     tr3 = abs(low - close.shift(1))
                     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    
+
                     # Calculate Buying Pressure
                     bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
-                    
+
                     # Calculate Ultimate Oscillator
                     avg7 = bp.rolling(window=self.period1).sum() / tr.rolling(window=self.period1).sum()
                     avg14 = bp.rolling(window=self.period2).sum() / tr.rolling(window=self.period2).sum()
                     avg28 = bp.rolling(window=self.period3).sum() / tr.rolling(window=self.period3).sum()
-                    
+
                     uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
-                    
+
                     return uo
             else:
                 # Calculate True Range
@@ -1294,21 +1293,21 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
                 tr2 = abs(high - close.shift(1))
                 tr3 = abs(low - close.shift(1))
                 tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                
+
                 # Calculate Buying Pressure
                 bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
-                
+
                 # Calculate Ultimate Oscillator
                 avg7 = bp.rolling(window=self.period1).sum() / tr.rolling(window=self.period1).sum()
                 avg14 = bp.rolling(window=self.period2).sum() / tr.rolling(window=self.period2).sum()
                 avg28 = bp.rolling(window=self.period3).sum() / tr.rolling(window=self.period3).sum()
-                
+
                 uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
-                
+
                 return uo
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # Use VectorBT for base values calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
@@ -1328,7 +1327,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
 # KST (Know Sure Thing)
 class KSTGenerator(VectorizedFeatureGenerator):
     """Generator for KST (Know Sure Thing) with different base calculations."""
-    
+
     def __init__(self,
                  roc1: int = 10,
                  roc2: int = 15,
@@ -1342,7 +1341,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize KST generator.
-        
+
         Args:
             roc1: First ROC period
             roc2: Second ROC period
@@ -1357,16 +1356,16 @@ class KSTGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"kst_{roc1}_{roc2}_{roc3}_{roc4}_{sma1}_{sma2}_{sma3}_{sma4}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1398,7 +1397,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
         self.sma3 = sma3
         self.sma4 = sma4
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1407,7 +1406,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
         """Generate KST based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             close = data['close']
-            
+
             # Use VectorBT for KST calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
@@ -1416,16 +1415,16 @@ class KSTGenerator(VectorizedFeatureGenerator):
                     roc2 = close.pct_change(periods=self.roc2) * 100
                     roc3 = close.pct_change(periods=self.roc3) * 100
                     roc4 = close.pct_change(periods=self.roc4) * 100
-                    
+
                     # Calculate SMA of ROC using VectorBT
                     sma_roc1 = self.vectorbt_optimizer.rolling_mean(roc1, window=self.sma1)
                     sma_roc2 = self.vectorbt_optimizer.rolling_mean(roc2, window=self.sma2)
                     sma_roc3 = self.vectorbt_optimizer.rolling_mean(roc3, window=self.sma3)
                     sma_roc4 = self.vectorbt_optimizer.rolling_mean(roc4, window=self.sma4)
-                    
+
                     # Calculate KST
                     kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
-                    
+
                     return kst
                 except Exception as e:
                     self.logger.warning(f"VectorBT KST calculation failed: {e}, using pandas fallback")
@@ -1434,16 +1433,16 @@ class KSTGenerator(VectorizedFeatureGenerator):
                     roc2 = close.pct_change(periods=self.roc2) * 100
                     roc3 = close.pct_change(periods=self.roc3) * 100
                     roc4 = close.pct_change(periods=self.roc4) * 100
-                    
+
                     # Calculate SMA of ROC
                     sma_roc1 = roc1.rolling(window=self.sma1).mean()
                     sma_roc2 = roc2.rolling(window=self.sma2).mean()
                     sma_roc3 = roc3.rolling(window=self.sma3).mean()
                     sma_roc4 = roc4.rolling(window=self.sma4).mean()
-                    
+
                     # Calculate KST
                     kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
-                    
+
                     return kst
             else:
                 # Calculate ROC
@@ -1451,20 +1450,20 @@ class KSTGenerator(VectorizedFeatureGenerator):
                 roc2 = close.pct_change(periods=self.roc2) * 100
                 roc3 = close.pct_change(periods=self.roc3) * 100
                 roc4 = close.pct_change(periods=self.roc4) * 100
-                
+
                 # Calculate SMA of ROC
                 sma_roc1 = roc1.rolling(window=self.sma1).mean()
                 sma_roc2 = roc2.rolling(window=self.sma2).mean()
                 sma_roc3 = roc3.rolling(window=self.sma3).mean()
                 sma_roc4 = roc4.rolling(window=self.sma4).mean()
-                
+
                 # Calculate KST
                 kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
-                
+
                 return kst
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # Use VectorBT for base values calculation
             if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
@@ -1484,7 +1483,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
 # APO (Absolute Price Oscillator)
 class APOGenerator(VectorizedFeatureGenerator):
     """Generator for APO (Absolute Price Oscillator) with different base calculations."""
-    
+
     def __init__(self,
                  fast_period: int = 12,
                  slow_period: int = 26,
@@ -1492,7 +1491,7 @@ class APOGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize APO generator.
-        
+
         Args:
             fast_period: Fast EMA period
             slow_period: Slow EMA period
@@ -1501,16 +1500,16 @@ class APOGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"apo_{fast_period}_{slow_period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1530,7 +1529,7 @@ class APOGenerator(VectorizedFeatureGenerator):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1538,49 +1537,49 @@ class APOGenerator(VectorizedFeatureGenerator):
 
         """Generate APO based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for APO calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate EMA using ewm
                 ema_fast = base_values.ewm(span=self.fast_period).mean()
                 ema_slow = base_values.ewm(span=self.slow_period).mean()
-                
+
                 # Calculate APO
                 apo = ema_fast - ema_slow
-                
+
                 return apo
             except Exception as e:
                 self.logger.warning(f"VectorBT APO calculation failed: {e}, using pandas fallback")
                 # Calculate EMA
                 ema_fast = base_values.ewm(span=self.fast_period).mean()
                 ema_slow = base_values.ewm(span=self.slow_period).mean()
-                
+
                 # Calculate APO
                 apo = ema_fast - ema_slow
-                
+
                 return apo
         else:
             # Calculate EMA
             ema_fast = base_values.ewm(span=self.fast_period).mean()
             ema_slow = base_values.ewm(span=self.slow_period).mean()
-            
+
             # Calculate APO
             apo = ema_fast - ema_slow
-            
+
             return apo
 
 # CMO (Chande Momentum Oscillator)
 class CMOGenerator(VectorizedFeatureGenerator):
     """Generator for CMO (Chande Momentum Oscillator) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 14,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize CMO generator.
-        
+
         Args:
             period: CMO period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1588,16 +1587,16 @@ class CMOGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"cmo_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1615,7 +1614,7 @@ class CMOGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1623,33 +1622,33 @@ class CMOGenerator(VectorizedFeatureGenerator):
 
         """Generate CMO based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate momentum
         momentum = base_values.diff()
-        
+
         # Calculate positive and negative momentum
         pos_momentum = momentum.where(momentum > 0, 0)
         neg_momentum = -momentum.where(momentum < 0, 0)
-        
+
         # Calculate CMO
         pos_sum = pos_momentum.rolling(window=self.period).sum()
         neg_sum = neg_momentum.rolling(window=self.period).sum()
-        
+
         cmo = 100 * (pos_sum - neg_sum) / (pos_sum + neg_sum)
-        
+
         return cmo
 
 # NATR (Normalized Average True Range)
 class NATRGenerator(VectorizedFeatureGenerator):
     """Generator for NATR (Normalized Average True Range) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 14,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize NATR generator.
-        
+
         Args:
             period: NATR period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1657,16 +1656,16 @@ class NATRGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"natr_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1684,7 +1683,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1695,36 +1694,36 @@ class NATRGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Calculate True Range
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
+
             # Calculate NATR
             atr = tr.rolling(window=self.period).mean()
             natr = 100 * atr / close
-            
+
             return natr
         else:
             base_values = self.base_calculator.calculate(data)
-            
+
             # For other base calculations, use rolling std as proxy
             natr = base_values.rolling(window=self.period).std()
-            
+
             return natr
 
 # PFE (Polarized Fractal Efficiency)class PFEGenerator(VectorizedFeatureGenerator):
     """Generator for PFE (Polarized Fractal Efficiency) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 10,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize PFE generator.
-        
+
         Args:
             period: PFE period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1732,16 +1731,16 @@ class NATRGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"pfe_{period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1759,7 +1758,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1767,22 +1766,22 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
         """Generate PFE based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate PFE - OPTIMIZED: Vectorized PFE calculation
         # Pre-calculate differences and their norms
         diff_values = base_values.diff().fillna(0)
         diff_norms = np.sqrt(diff_values**2 + 1)
-        
+
         # Vectorized PFE calculation
         numerator = np.sqrt((base_values - base_values.shift(self.period))**2 + self.period**2)
         denominator = diff_norms.rolling(window=self.period).sum()
         pfe = 100 * numerator / denominator
-        
+
         return pfe
 
 # T3 (T3 Moving Average)class T3Generator(VectorizedFeatureGenerator):
     """Generator for T3 (T3 Moving Average) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 20,
                  volume_factor: float = 0.7,
@@ -1790,7 +1789,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize T3 generator.
-        
+
         Args:
             period: T3 period
             volume_factor: T3 volume factor
@@ -1799,16 +1798,16 @@ class NATRGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"t3_{period}_{volume_factor}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1828,7 +1827,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
         self.period = period
         self.volume_factor = volume_factor
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1836,15 +1835,15 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
         """Generate T3 based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate T3 (simplified version)
         t3 = base_values.ewm(span=self.period).mean()
-        
+
         return t3
 
 # KAMA (Kaufman's Adaptive Moving Average)class KAMAGenerator(VectorizedFeatureGenerator):
     """Generator for KAMA (Kaufman's Adaptive Moving Average) with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 30,
                  fast_period: int = 2,
@@ -1853,7 +1852,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize KAMA generator.
-        
+
         Args:
             period: KAMA period
             fast_period: Fast period
@@ -1863,16 +1862,16 @@ class NATRGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator - map period to lookback_period for base calculator
         base_kwargs_copy = base_kwargs.copy()
         if 'period' in base_kwargs_copy:
             base_kwargs_copy['lookback_period'] = base_kwargs_copy.pop('period')
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs_copy)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"kama_{period}_{fast_period}_{slow_period}_{base_calculation.value}",
             category=FeatureCategory.OSCILLATOR,
@@ -1894,7 +1893,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
         self.fast_period = fast_period
         self.slow_period = slow_period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1902,18 +1901,18 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
         """Generate KAMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate KAMA (simplified version)
         kama = base_values.ewm(span=self.period).mean()
-        
+
         return kama
 
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
         if not hasattr(self, 'rolling_optimizer'):
             self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        
+
         try:
             if operation == 'mean':
                 return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
@@ -1932,12 +1931,12 @@ class NATRGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             logger.warning(f"VectorBT rolling operation failed: {e}, using fallback")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         rolling_obj = data.rolling(window=window, **kwargs)
-        
+
         if operation == 'mean':
             return rolling_obj.mean()
         elif operation == 'std':
@@ -1952,7 +1951,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
             return rolling_obj.sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Normalize feature using direct scaling to avoid circular imports."""
         try:
@@ -1970,7 +1969,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             logger.warning(f"Normalization failed: {e}, using simple zscore")
             return (data - data.mean()) / data.std()
-    
+
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
         if method == 'zscore':
@@ -1986,16 +1985,16 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
@@ -2014,8 +2013,8 @@ class NATRGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

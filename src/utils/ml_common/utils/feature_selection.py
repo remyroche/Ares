@@ -345,7 +345,6 @@ class FeatureSelectionFramework:
         """Deprecated local evaluation. Use caller-provided evaluation flow."""
         return {'success': False, 'error': 'deprecated'}
 
-
 # Global instance for easy access
 _feature_selection_instance = None
 

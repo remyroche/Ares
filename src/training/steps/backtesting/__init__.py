@@ -27,11 +27,11 @@ from .improved_trading_strategies import (
 __all__ = [
     # Original consolidated backtesting
     'ConsolidatedBacktestingStep',
-    'ConsolidatedBacktestingConfig', 
+    'ConsolidatedBacktestingConfig',
     'ConsolidatedBacktestingResults',
     'BacktestingMode',
     'FinalParametersOptimizer',
-    
+
     # New backtesting steps
     'BasicBacktestingPreStep',
     'BasicBacktestingPreConfig',
@@ -51,7 +51,7 @@ __all__ = [
     'ReportingStep',
     'ReportingConfig',
     'ReportingResults',
-    
+
     # Unified infrastructure
     'UnifiedDataLoader',
     'DataLoadingConfig',
@@ -67,7 +67,7 @@ __all__ = [
     'optimize_backtesting_data',
     'cleanup_backtesting_memory',
     'memory_managed_backtesting',
-    
+
     # Improved trading strategies
     'ImprovedTradingStrategy',
     'StrategyFactory',

@@ -5,7 +5,6 @@
 
 from typing import Any
 
-
 def get_computational_optimization_config() -> dict[str, Any]:
     """Get computational optimization configuration.
 
@@ -123,7 +122,6 @@ def get_computational_optimization_config() -> dict[str, Any]:
         },
     }
 
-
 def get_optimization_phase_config(phase: str) -> dict[str, Any]:
     """Get configuration for a specific optimization phase.
 
@@ -138,7 +136,6 @@ def get_optimization_phase_config(phase: str) -> dict[str, Any]:
     phases = config["computational_optimization"]["phases"]
     return phases.get(phase, {})
 
-
 def get_backtesting_optimization_config() -> dict[str, Any]:
     """Get backtesting optimization configuration.
 
@@ -148,7 +145,6 @@ def get_backtesting_optimization_config() -> dict[str, Any]:
     """
     config = get_computational_optimization_config()
     return config["computational_optimization"]["backtesting"]
-
 
 def get_model_training_optimization_config() -> dict[str, Any]:
     """Get model training optimization configuration.
@@ -160,7 +156,6 @@ def get_model_training_optimization_config() -> dict[str, Any]:
     config = get_computational_optimization_config()
     return config["computational_optimization"]["model_training"]
 
-
 def get_feature_engineering_optimization_config() -> dict[str, Any]:
     """Get feature engineering optimization configuration.
 
@@ -170,7 +165,6 @@ def get_feature_engineering_optimization_config() -> dict[str, Any]:
     """
     config = get_computational_optimization_config()
     return config["computational_optimization"]["feature_engineering"]
-
 
 def get_multi_objective_optimization_config() -> dict[str, Any]:
     """Get multi-objective optimization configuration.
@@ -182,7 +176,6 @@ def get_multi_objective_optimization_config() -> dict[str, Any]:
     config = get_computational_optimization_config()
     return config["computational_optimization"]["multi_objective"]
 
-
 def get_memory_management_config() -> dict[str, Any]:
     """Get memory management configuration.
 
@@ -192,7 +185,6 @@ def get_memory_management_config() -> dict[str, Any]:
     """
     config = get_computational_optimization_config()
     return config["computational_optimization"]["memory_management"]
-
 
 def get_performance_monitoring_config() -> dict[str, Any]:
     """Get performance monitoring configuration.
@@ -204,7 +196,6 @@ def get_performance_monitoring_config() -> dict[str, Any]:
     config = get_computational_optimization_config()
     return config["computational_optimization"]["performance_monitoring"]
 
-
 def get_expected_improvements() -> dict[str, float]:
     """Get expected performance improvements.
 
@@ -214,7 +205,6 @@ def get_expected_improvements() -> dict[str, float]:
     """
     config = get_computational_optimization_config()
     return config["computational_optimization"]["expected_improvements"]
-
 
 def is_optimization_enabled(optimization_type: str) -> bool:
     """Check if a specific optimization type is enabled.
@@ -244,7 +234,6 @@ def is_optimization_enabled(optimization_type: str) -> bool:
     if optimization_type == "adaptive_complexity":
         return optimization_config.get("enable_adaptive_complexity", False)
     return False
-
 
 def get_optimization_statistics() -> dict[str, Any]:
     """Get optimization statistics and status.

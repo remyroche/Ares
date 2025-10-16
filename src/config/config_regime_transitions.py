@@ -9,7 +9,6 @@ These parameters control how we handle transitions between HMM states.
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class RegimeTransitionConfig:
     """Optimizable regime transition parameters."""
@@ -58,11 +57,9 @@ class RegimeTransitionConfig:
     transition_accuracy_threshold: float = 0.7
     transition_stability_weight: float = 0.3
 
-
 def get_regime_transition_config() -> RegimeTransitionConfig:
     """Get regime transition configuration."""
     return RegimeTransitionConfig()
-
 
 def get_regime_transition_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for regime transition optimization."""

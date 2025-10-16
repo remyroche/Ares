@@ -25,7 +25,6 @@ from sklearn.metrics import mean_squared_error, r2_score
 
 logger = logging.getLogger(__name__)
 
-
 class EstimatorType(Enum):
     """Types of performance estimators."""
     LINEAR = "linear"
@@ -35,7 +34,6 @@ class EstimatorType(Enum):
     ENSEMBLE = "ensemble"
     META_LEARNER = "meta_learner"
     NEURAL = "neural"
-
 
 @dataclass
 class PerformancePrediction:
@@ -47,7 +45,6 @@ class PerformancePrediction:
     estimation_method: str
     estimation_time: float
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class UnifiedPerformanceEstimatorConfig:
@@ -74,7 +71,6 @@ class UnifiedPerformanceEstimatorConfig:
     # Output settings
     save_predictions: bool = True
     prediction_history_size: int = 1000
-
 
 class UnifiedPerformanceEstimator:
     """
@@ -601,11 +597,9 @@ class UnifiedPerformanceEstimator:
             self.logger.error(f"❌ Failed to load estimator state: {e}")
             return False
 
-
 def create_unified_performance_estimator(config: Dict[str, Any]) -> UnifiedPerformanceEstimator:
     """Create a unified performance estimator instance."""
     return UnifiedPerformanceEstimator(config)
-
 
 def quick_performance_estimate(architecture: Dict[str, Any],
                               config: Optional[Dict[str, Any]] = None) -> float:

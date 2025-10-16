@@ -1,5 +1,5 @@
-import os
 from typing import Any, Literal
+import os
 try:
     from dotenv import load_dotenv
 except Exception:
@@ -57,7 +57,7 @@ class EnvironmentSettings(BaseSettings):
     email_recipient_address: str | None = Field(default=None, alias='EMAIL_RECIPIENT_ADDRESS')
     mlflow_tracking_uri: str | None = Field(default='file:./mlruns', alias='MLFLOW_TRACKING_URI')
     mlflow_experiment_name: str | None = Field(default='Ares_Trading_Models', alias='MLFLOW_EXPERIMENT_NAME')
-    
+
     # Enhanced Monitoring Configuration
     enable_enhanced_monitoring: bool = Field(default=True, alias='ENABLE_ENHANCED_MONITORING')
     monitoring_export_directory: str = Field(default='monitoring_exports', alias='MONITORING_EXPORT_DIRECTORY')

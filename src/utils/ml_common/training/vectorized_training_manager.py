@@ -94,7 +94,6 @@ except ImportError:
 
 logger = system_logger.getChild('VectorizedTrainingManager')
 
-
 class VectorizedTrainingManager:
     """
     Comprehensive vectorized training manager for ML model training.
@@ -2017,7 +2016,6 @@ class VectorizedTrainingManager:
             self.logger.error(f"❌ CPU fallback training also failed: {e}")
             return {'success': False, 'error': str(e)}
 
-
 # Convenience functions for backward compatibility
 def create_vectorized_training_manager(
     max_workers: int = None,
@@ -2030,7 +2028,6 @@ def create_vectorized_training_manager(
         enable_gpu=enable_gpu,
         enable_memory_optimization=enable_memory_optimization
     )
-
 
 def vectorized_ensemble_training(
     X: np.ndarray,
@@ -2049,7 +2046,6 @@ def vectorized_ensemble_training(
         is_classification, enable_hpo, cv_folds
     )
 
-
 def vectorized_cross_validation(
     models: Dict[str, Any],
     X: np.ndarray,
@@ -2061,7 +2057,6 @@ def vectorized_cross_validation(
     """Convenience function for vectorized cross-validation."""
     manager = create_vectorized_training_manager()
     return manager.vectorized_cross_validation(models, X, y, cv_folds, scoring, is_classification)
-
 
 def vectorized_data_preprocessing(
     X: np.ndarray,
@@ -2076,7 +2071,6 @@ def vectorized_data_preprocessing(
     return manager.vectorized_data_preprocessing(
         X, y, feature_names, scaling_method, enable_feature_selection, batch_size_mb
     )
-
 
 if __name__ == "__main__":
     print("Vectorized Training Manager - Computational Optimizations")

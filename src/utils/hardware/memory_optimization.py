@@ -118,7 +118,7 @@ class MemoryMonitor:
             self.logger.warning(f'⚠️ PRESSURE {status_msg}')
         else:
             self.logger.info(f'💾 {status_msg}')
-    
+
     def start_monitoring(self) -> None:
         """Start memory monitoring."""
         self.logger.info("🧠 Memory monitoring started")
@@ -155,10 +155,10 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame data types for memory efficiency with enhanced optimization."""
     if not PANDAS_AVAILABLE or df is None or df.empty:
         return df
-    
+
     original_memory = df.memory_usage(deep=True).sum() / 1024 / 1024
     optimized_df = df.copy()
-    
+
     # Optimize float columns
     for col in optimized_df.select_dtypes(include=['float64']).columns:
         try:
@@ -168,14 +168,14 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                 optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='float')
         except Exception:
             pass
-    
+
     # Optimize integer columns
     for col in optimized_df.select_dtypes(include=['int64']).columns:
         try:
             optimized_df[col] = pd.to_numeric(optimized_df[col], downcast='integer')
         except Exception:
             pass
-    
+
     # Optimize object columns to categories
     for col in optimized_df.select_dtypes(include=['object']).columns:
         try:
@@ -184,7 +184,7 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
                 optimized_df[col] = optimized_df[col].astype('category')
         except Exception:
             pass
-    
+
     # Optimize datetime columns
     for col in optimized_df.select_dtypes(include=['datetime64[ns]']).columns:
         try:
@@ -192,13 +192,13 @@ def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
             optimized_df[col] = optimized_df[col].astype('datetime64[s]')
         except Exception:
             pass
-    
+
     optimized_memory = optimized_df.memory_usage(deep=True).sum() / 1024 / 1024
     savings = original_memory - optimized_memory
-    
+
     if savings > 0:
         logging.info(f'DataFrame optimization: {original_memory:.1f}MB -> {optimized_memory:.1f}MB (saved {savings:.1f}MB)')
-    
+
     return optimized_df
 
 def chunk_dataframe(df: pd.DataFrame, chunk_size: int, memory_monitor: Optional[MemoryMonitor]=None) -> List[pd.DataFrame]:
@@ -229,19 +229,19 @@ class MemoryOptimizedProcessor:
         """Process DataFrame in chunks to manage memory usage with adaptive chunk sizing."""
         if df is None or df.empty:
             return df
-        
+
         # Adaptive chunk sizing based on memory pressure
         if self.monitor.is_memory_pressure():
             chunk_size = int(chunk_size * self.config.chunk_size_multiplier)
             self.logger.info(f'Memory pressure detected, reducing chunk size to {chunk_size}')
-        
+
         self.logger.info(f'Processing DataFrame of shape {df.shape} in chunks of {chunk_size}')
         chunks = chunk_dataframe(df, chunk_size, self.monitor)
         processed_chunks = []
-        
+
         for i, chunk in enumerate(chunks):
             self.logger.debug(f'Processing chunk {i + 1}/{len(chunks)}')
-            
+
             # Check memory before processing each chunk
             if self.monitor.is_critical_memory():
                 self.logger.warning('Critical memory usage, triggering aggressive cleanup')
@@ -250,16 +250,16 @@ class MemoryOptimizedProcessor:
                 if self.monitor.is_critical_memory():
                     chunk_size = max(1000, int(chunk_size * 0.5))
                     self.logger.warning(f'Further reducing chunk size to {chunk_size}')
-            
+
             processed_chunk = processor_func(chunk)
             processed_chunks.append(processed_chunk)
-            
+
             # Adaptive memory management
             if self.monitor.is_memory_pressure():
                 self.monitor.trigger_gc()
             if (i + 1) % 10 == 0:
                 self.monitor.log_memory_status(f'chunk {i + 1}/{len(chunks)}')
-        
+
         if processed_chunks:
             result = pd.concat(processed_chunks, ignore_index = True)
             self.logger.info(f'Completed processing: {len(processed_chunks)} chunks -> {result.shape}')
@@ -331,12 +331,12 @@ class MemoryContext:
         self.monitor = MemoryMonitor(self.config)
         self.context_name = context_name
         self.initial_memory = 0.0
-        
+
     def __enter__(self):
         self.initial_memory = self.monitor.get_usage_mb()
         self.monitor.log_memory_status(f"entering {self.context_name}")
         return self.monitor
-        
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         final_memory = self.monitor.get_usage_mb()
         delta = final_memory - self.initial_memory

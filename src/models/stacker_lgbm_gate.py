@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 EPS = 1e-9
 
-
 @dataclass
 class RegimeGatingConfig:
     """Configuration specific to the regime-aware gating head."""
@@ -38,7 +37,6 @@ class RegimeGatingConfig:
     monotonic_features: Tuple[str, ...] = ("volatility_level", "trend_score")
     weight_clip: float = 10.0
     random_state: int = 42
-
 
 @dataclass
 class StackerLGBMGateConfig:
@@ -54,7 +52,6 @@ class StackerLGBMGateConfig:
 
     # Regime gating configuration
     gating: RegimeGatingConfig = field(default_factory=RegimeGatingConfig)
-
 
 class RegimeGatingHead:
     """Simple neural gating head optimised via gradient descent."""
@@ -189,7 +186,6 @@ class RegimeGatingHead:
         head.bias = np.asarray(state.get("bias", head.bias))
         head.loss_history = list(state.get("loss_history", []))
         return head
-
 
 class StackerLGBMGate(BaseEstimator, RegressorMixin):
     """Regime-aware gated stacker with calibration."""
@@ -615,7 +611,6 @@ class StackerLGBMGate(BaseEstimator, RegressorMixin):
         if self.gating_head is None:
             return []
         return list(self.gating_head.loss_history)
-
 
 def create_stacker_lgbm_gate(
     config: Optional[StackerLGBMGateConfig] = None,

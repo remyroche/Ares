@@ -38,7 +38,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 # Setup logging
@@ -131,21 +131,21 @@ class FeatureValidationError(Exception):
     """Feature validation error."""
     pass
 
-def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series], 
+def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
                            feature_name: str = "feature",
                            warn_on_issues: bool = True,
                            raise_on_critical: bool = False,
                            exclude_first_rows: int = 50) -> Dict[str, Any]:
     """
     Validate feature quality and return a comprehensive report.
-    
+
     Args:
         feature_data: The feature data to validate
         feature_name: Name of the feature for logging
         warn_on_issues: Whether to issue warnings for quality issues
         raise_on_critical: Whether to raise exceptions for critical issues
         exclude_first_rows: Number of rows to exclude from validation (default: 50)
-        
+
     Returns:
         Dictionary with validation results and statistics
     """
@@ -166,29 +166,29 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
         'critical_issues': [],
         'warnings': []
     }
-    
+
     try:
         # Convert to numpy array for easier processing
         if isinstance(feature_data, pd.Series):
             data_array = feature_data.values
         else:
             data_array = feature_data
-            
+
         # Basic statistics
         validation_report['total_values'] = len(data_array)
-        
+
         # Exclude first N rows from validation (typically for warm-up period)
         if exclude_first_rows > 0 and len(data_array) > exclude_first_rows:
             data_array = data_array[exclude_first_rows:]
             validation_report['excluded_first_rows'] = exclude_first_rows
         else:
             validation_report['excluded_first_rows'] = 0
-        
+
         # Check for infinite values
         infinite_mask = np.isinf(data_array)
         infinite_count = np.sum(infinite_mask)
         validation_report['infinite_values'] = infinite_count
-        
+
         if infinite_count > 0:
             issue_msg = f"Feature '{feature_name}' contains {infinite_count} infinite values"
             validation_report['issues'].append(issue_msg)
@@ -197,12 +197,12 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
                 warnings.warn(issue_msg, UserWarning)
             if raise_on_critical:
                 raise FeatureValidationError(issue_msg)
-        
+
         # Check for NaN values
         nan_mask = np.isnan(data_array)
         nan_count = np.sum(nan_mask)
         validation_report['nan_values'] = nan_count
-        
+
         if nan_count > 0:
             issue_msg = f"Feature '{feature_name}' contains {nan_count} NaN values"
             validation_report['issues'].append(issue_msg)
@@ -211,12 +211,12 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
                 warnings.warn(issue_msg, UserWarning)
             if raise_on_critical:
                 raise FeatureValidationError(issue_msg)
-        
+
         # Get valid (finite, non-NaN) values
         valid_mask = ~(infinite_mask | nan_mask)
         valid_data = data_array[valid_mask]
         validation_report['valid_values'] = len(valid_data)
-        
+
         if len(valid_data) == 0:
             issue_msg = f"Feature '{feature_name}' has no valid values"
             validation_report['issues'].append(issue_msg)
@@ -226,11 +226,11 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
             if raise_on_critical:
                 raise FeatureValidationError(issue_msg)
             return validation_report
-        
+
         # Check for constant features
         unique_values = np.unique(valid_data)
         validation_report['unique_values'] = len(unique_values)
-        
+
         if len(unique_values) == 1:
             issue_msg = f"Feature '{feature_name}' is constant (all values = {unique_values[0]})"
             validation_report['issues'].append(issue_msg)
@@ -238,11 +238,11 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
             validation_report['constant_feature'] = True
             if warn_on_issues:
                 warnings.warn(issue_msg, UserWarning)
-        
+
         # Check for zero values
         zero_count = np.sum(valid_data == 0)
         validation_report['zero_values'] = zero_count
-        
+
         if zero_count > 0:
             zero_pct = (zero_count / len(valid_data)) * 100
             if zero_pct > 1:  # More than 1% zeros
@@ -251,13 +251,13 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
                 validation_report['warnings'].append(issue_msg)
                 if warn_on_issues:
                     warnings.warn(issue_msg, UserWarning)
-        
+
         # Calculate statistics for valid data
         validation_report['min_value'] = float(np.min(valid_data))
         validation_report['max_value'] = float(np.max(valid_data))
         validation_report['mean_value'] = float(np.mean(valid_data))
         validation_report['std_value'] = float(np.std(valid_data))
-        
+
         # Check for extreme values
         if validation_report['std_value'] == 0 and not validation_report['constant_feature']:
             issue_msg = f"Feature '{feature_name}' has zero standard deviation"
@@ -265,55 +265,55 @@ def validate_feature_quality(feature_data: Union[np.ndarray, pd.Series],
             validation_report['warnings'].append(issue_msg)
             if warn_on_issues:
                 warnings.warn(issue_msg, UserWarning)
-        
+
         # Log summary with feature name
         logger.debug(f"Feature validation for '{feature_name}': "
                     f"{validation_report['valid_values']}/{validation_report['total_values']} valid, "
                     f"{len(validation_report['issues'])} issues")
-        
+
         # Log each issue with feature name for better visibility
         if validation_report['issues']:
             logger.warning(f"Feature '{feature_name}' validation issues:")
             for issue in validation_report['issues']:
                 logger.warning(f"  - {issue}")
-        
+
     except Exception as e:
         error_msg = f"Error validating feature '{feature_name}': {str(e)}"
         validation_report['critical_issues'].append(error_msg)
         logger.error(error_msg)
         if raise_on_critical:
             raise FeatureValidationError(error_msg)
-    
+
     return validation_report
 
-def validate_features_dataframe(df: pd.DataFrame, 
+def validate_features_dataframe(df: pd.DataFrame,
                               feature_columns: Optional[List[str]] = None,
                               warn_on_issues: bool = True,
                               raise_on_critical: bool = False,
                               exclude_first_rows: int = 50) -> Dict[str, Dict[str, Any]]:
     """
     Validate all features in a DataFrame.
-    
+
     Args:
         df: DataFrame containing features
         feature_columns: List of column names to validate (if None, validates all numeric columns)
         warn_on_issues: Whether to issue warnings for quality issues
         raise_on_critical: Whether to raise exceptions for critical issues
         exclude_first_rows: Number of rows to exclude from validation (default: 50)
-        
+
     Returns:
         Dictionary mapping feature names to their validation reports
     """
     if feature_columns is None:
         # Validate all numeric columns
         feature_columns = df.select_dtypes(include=[np.number]).columns.tolist()
-    
+
     validation_results = {}
-    
+
     for column in feature_columns:
         if column in df.columns:
             validation_results[column] = validate_feature_quality(
-                df[column], 
+                df[column],
                 feature_name=column,
                 warn_on_issues=warn_on_issues,
                 raise_on_critical=raise_on_critical,
@@ -321,24 +321,24 @@ def validate_features_dataframe(df: pd.DataFrame,
             )
         else:
             logger.warning(f"Column '{column}' not found in DataFrame")
-    
+
     return validation_results
 
-def feature_validation_decorator(warn_on_issues: bool = True, 
+def feature_validation_decorator(warn_on_issues: bool = True,
                                 raise_on_critical: bool = False,
                                 validate_output: bool = True,
                                 validate_input: bool = False,
                                 exclude_first_rows: int = 50):
     """
     Decorator to automatically validate features generated by functions.
-    
+
     Args:
         warn_on_issues: Whether to issue warnings for quality issues
         raise_on_critical: Whether to raise exceptions for critical issues
         validate_output: Whether to validate the function's output
         validate_input: Whether to validate the function's input DataFrame
         exclude_first_rows: Number of rows to exclude from validation (default: 50)
-        
+
     Returns:
         Decorated function with automatic feature validation
     """
@@ -352,29 +352,29 @@ def feature_validation_decorator(warn_on_issues: bool = True,
                 if isinstance(input_df, pd.DataFrame):
                     logger.debug(f"Validating input DataFrame for function {func.__name__}")
                     input_validation = validate_features_dataframe(
-                        input_df, 
+                        input_df,
                         warn_on_issues=warn_on_issues,
                         raise_on_critical=raise_on_critical,
                         exclude_first_rows=exclude_first_rows
                     )
-            
+
             # Execute the original function
             result = func(*args, **kwargs)
-            
+
             # Validate output if requested and result is a DataFrame
             if validate_output and isinstance(result, pd.DataFrame):
                 logger.debug(f"Validating output DataFrame for function {func.__name__}")
                 output_validation = validate_features_dataframe(
-                    result, 
+                    result,
                     warn_on_issues=warn_on_issues,
                     raise_on_critical=raise_on_critical,
                     exclude_first_rows=exclude_first_rows
                 )
-                
+
                 # Log summary of validation results with feature details
                 total_issues = sum(len(report['issues']) for report in output_validation.values())
                 total_critical = sum(len(report['critical_issues']) for report in output_validation.values())
-                
+
                 if total_critical > 0:
                     logger.error(f"Function {func.__name__} generated {total_critical} critical feature issues:")
                     for feature_name, report in output_validation.items():
@@ -391,9 +391,9 @@ def feature_validation_decorator(warn_on_issues: bool = True,
                                 logger.warning(f"    - {issue}")
                 else:
                     logger.debug(f"Function {func.__name__} generated features passed validation")
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -430,16 +430,16 @@ def strict_feature_validation(func: Callable) -> Callable:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -458,8 +458,8 @@ def strict_feature_validation(func: Callable) -> Callable:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

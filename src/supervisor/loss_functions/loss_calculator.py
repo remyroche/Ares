@@ -27,7 +27,7 @@ class LossCalculator(PnLLossFunctionsBase):
         exceptions=(ValueError, KeyError, TypeError),
         default_return={},
     )
-    def calculate_trading_loss(self, predictions: np.ndarray, 
+    def calculate_trading_loss(self, predictions: np.ndarray,
                             actuals: np.ndarray,
                             costs: np.ndarray = None) -> Dict[str, float]:
         """
@@ -47,15 +47,15 @@ class LossCalculator(PnLLossFunctionsBase):
 
             # Basic MSE loss
             mse_loss = np.mean((predictions - actuals) ** 2)
-            
+
             # Mean Absolute Error
             mae_loss = np.mean(np.abs(predictions - actuals))
-            
+
             # Directional accuracy
             pred_direction = np.sign(predictions)
             actual_direction = np.sign(actuals)
             directional_accuracy = np.mean(pred_direction == actual_direction)
-            
+
             # Trading loss with costs
             if costs is not None:
                 # Penalize wrong directions more when costs are high
@@ -103,24 +103,24 @@ class LossCalculator(PnLLossFunctionsBase):
 
             # Basic prediction error
             prediction_error = predictions - returns
-            
+
             # Asymmetric loss (penalize losses more than gains)
             downside_mask = returns < 0
             asymmetric_loss = np.mean(
                 prediction_error ** 2 * (1 + downside_mask * risk_penalties["downside_penalty"])
             )
-            
+
             # Volatility penalty
             volatility = np.std(returns)
             volatility_loss = volatility * risk_penalties["volatility_penalty"]
-            
+
             # Drawdown penalty
             cumulative_returns = np.cumprod(1 + returns) - 1
             running_max = np.maximum.accumulate(cumulative_returns)
             drawdown = (cumulative_returns - running_max) / (1 + running_max)
             max_drawdown = np.min(drawdown)
             drawdown_loss = abs(max_drawdown) * risk_penalties["drawdown_penalty"]
-            
+
             # Combined risk-adjusted loss
             total_loss = asymmetric_loss + volatility_loss + drawdown_loss
 
@@ -157,26 +157,26 @@ class LossCalculator(PnLLossFunctionsBase):
         try:
             unique_regimes = np.unique(regimes)
             regime_losses = {}
-            
+
             for regime in unique_regimes:
                 regime_mask = regimes == regime
                 regime_preds = predictions[regime_mask]
                 regime_actuals = actuals[regime_mask]
-                
+
                 if len(regime_preds) > 0:
                     regime_mse = np.mean((regime_preds - regime_actuals) ** 2)
                     regime_mae = np.mean(np.abs(regime_preds - regime_actuals))
-                    
+
                     regime_losses[f"regime_{regime}"] = {
                         "mse": float(regime_mse),
                         "mae": float(regime_mae),
                         "count": int(np.sum(regime_mask)),
                     }
-            
+
             # Overall weighted loss
             total_mse = np.mean((predictions - actuals) ** 2)
             total_mae = np.mean(np.abs(predictions - actuals))
-            
+
             return {
                 "total_mse": float(total_mse),
                 "total_mae": float(total_mae),

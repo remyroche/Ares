@@ -84,7 +84,7 @@ try:
         feature_values = X[feature_name].values
         bin_edges = np.linspace(feature_values.min(), feature_values.max(), bins + 1)
         ale_values = []
-        
+
         for i in range(bins):
             bin_start, bin_end = bin_edges[i], bin_edges[i + 1]
             mask = (feature_values >= bin_start) & (feature_values < bin_end)
@@ -98,9 +98,9 @@ try:
                 ale_values.append(np.mean(pred_end - pred_start))
             else:
                 ale_values.append(0.0)
-        
+
         return np.array(ale_values)
-    
+
     ALE_AVAILABLE = True
     ale_1d = simple_ale_1d
 except ImportError:
@@ -131,7 +131,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class LightGBMFeatureToolsConfig:
     """Configuration for LightGBM + Featuretools feature generation."""
@@ -144,38 +143,37 @@ class LightGBMFeatureToolsConfig:
     colsample_bytree: float = 0.8
     random_state: int = 42
     n_jobs: int = -1
-    
+
     # Feature selection parameters
     max_features_to_select: int = 100  # Maximum 100 features as requested
     feature_importance_threshold: float = 0.01
     correlation_threshold: float = 0.95
-    
+
     # SHAP parameters
     use_shap: bool = True
     shap_sample_size: int = 1000
     shap_explainer_type: str = 'tree'  # 'tree', 'linear', 'kernel'
-    
+
     # Featuretools parameters
     use_featuretools: bool = True
     max_depth_featuretools: int = 2
     max_features_featuretools: int = 50
     n_jobs_featuretools: int = 4
-    
+
     # ALE validation parameters
     use_ale_validation: bool = True
     ale_sample_size: int = 500
     ale_n_bins: int = 20
-    
+
     # VectorBT optimization
     enable_vectorbt: bool = True
     enable_parallel: bool = True
     max_workers: int = 4
     memory_efficient: bool = True
-    
+
     # Caching
     enable_caching: bool = True
     cache_ttl_hours: int = 24
-
 
 @dataclass
 class GeneratedFeature:
@@ -190,7 +188,6 @@ class GeneratedFeature:
     feature_type: str = 'generated'
     generation_method: str = 'lightgbm_featuretools'
     metadata: Dict[str, Any] = None
-
 
 @dataclass
 class FeatureGenerationResult:
@@ -207,24 +204,23 @@ class FeatureGenerationResult:
     featuretools_features_generated: int
     metadata: Dict[str, Any]
 
-
 class LightGBMFeatureToolsGenerator:
     """
     LightGBM/CatBoost + Featuretools + ALE feature generation system.
-    
+
     This system uses:
     1. LightGBM or CatBoost for SHAP interactions (faster and better calibrated than RF)
     2. Featuretools Deep Feature Synthesis to expand relational and time-based features
     3. ALE validation to confirm feature impact
     """
-    
+
     def __init__(self, config: Optional[LightGBMFeatureToolsConfig] = None):
         """Initialize the LightGBM + Featuretools feature generator."""
         self.config = config or LightGBMFeatureToolsConfig()
-        
+
         # Initialize components
         self._initialize_components()
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_generations': 0,
@@ -238,13 +234,13 @@ class LightGBMFeatureToolsGenerator:
             'featuretools_operations': 0,
             'vectorbt_operations': 0
         }
-        
+
         tprint_success("✅ LightGBM + Featuretools + ALE Feature Generator initialized")
-    
+
     def _initialize_components(self):
         """Initialize all generator components."""
         tprint_debug("Initializing LightGBM + Featuretools feature generator components")
-        
+
         # Initialize VectorBT optimizer
         if VECTORBT_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
@@ -252,7 +248,7 @@ class LightGBMFeatureToolsGenerator:
         else:
             self.vectorbt_optimizer = None
             tprint_warning("⚠️ VectorBT not available, using fallback implementations")
-        
+
         # Initialize caching
         if CACHING_AVAILABLE:
             self.feature_cache = FeatureCacheService(subdirectory="lightgbm_featuretools_features")
@@ -266,12 +262,12 @@ class LightGBMFeatureToolsGenerator:
             self.json_serializer = None
             self.pickle_serializer = None
             tprint_warning("⚠️ Caching not available")
-        
+
         # Initialize scalers
         self.scaler = RobustScaler()  # More robust to outliers than StandardScaler
-        
+
         tprint_success("✅ LightGBM + Featuretools feature generator components initialized")
-    
+
     def generate_features(
         self,
         data: pd.DataFrame,
@@ -281,43 +277,43 @@ class LightGBMFeatureToolsGenerator:
     ) -> FeatureGenerationResult:
         """
         Generate features using LightGBM + Featuretools + ALE validation.
-        
+
         Args:
             data: Input data with features and targets
             target_column: Name of the target column
             feature_columns: Optional list of feature columns to use
             execution_mode: Execution mode ('light', 'full', 'blank')
-            
+
         Returns:
             FeatureGenerationResult with generated features and metadata
         """
         tprint_info(f"🚀 Starting LightGBM + Featuretools feature generation for {execution_mode} mode")
         tprint_debug(f"📊 Data shape: {data.shape}, Target: {target_column}")
-        
+
         start_time = time.time()
-        
+
         try:
             # Prepare data
             prepared_data = self._prepare_data(data, target_column, feature_columns)
             if prepared_data is None:
                 return self._create_failed_result("Data preparation failed")
-            
+
             # Generate base features
             tprint_info("🔧 Generating base features")
             base_features = self._generate_base_features(prepared_data, execution_mode)
-            
+
             # Train LightGBM/CatBoost model
             tprint_info("🌲 Training LightGBM/CatBoost model")
             model, feature_importance = self._train_lightgbm_catboost_model(
                 base_features, prepared_data[target_column]
             )
-            
+
             # Generate feature combinations using SHAP interactions
             tprint_info("⚡ Generating feature combinations using SHAP interactions")
             feature_combinations = self._generate_feature_combinations_shap(
                 base_features, model, feature_importance
             )
-            
+
             # Generate Featuretools features
             featuretools_features = []
             if self.config.use_featuretools and FEATURETOOLS_AVAILABLE:
@@ -325,38 +321,38 @@ class LightGBMFeatureToolsGenerator:
                 featuretools_features = self._generate_featuretools_features(
                     prepared_data, target_column, base_features
                 )
-            
+
             # Combine all features
             all_features = feature_combinations + featuretools_features
-            
+
             # SHAP analysis
             shap_values = None
             if self.config.use_shap and SHAP_AVAILABLE:
                 tprint_info("🔍 Performing SHAP analysis")
                 shap_values = self._perform_shap_analysis(model, base_features)
-            
+
             # ALE validation
             ale_values = None
             if self.config.use_ale_validation and ALE_AVAILABLE:
                 tprint_info("📊 Performing ALE validation")
                 ale_values = self._perform_ale_validation(model, base_features)
-            
+
             # Select best features (max 100)
             tprint_info("🎯 Selecting best features (max 100)")
             selected_features = self._select_best_features(
                 all_features, feature_importance, shap_values, ale_values
             )
-            
+
             # Create generated features
             generated_features = self._create_generated_features(
                 selected_features, base_features, shap_values, ale_values
             )
-            
+
             # Calculate performance metrics
             model_performance = self._calculate_model_performance(
                 model, base_features, prepared_data[target_column]
             )
-            
+
             # Create result
             generation_time = time.time() - start_time
             result = FeatureGenerationResult(
@@ -366,7 +362,7 @@ class LightGBMFeatureToolsGenerator:
                 generation_time=generation_time,
                 n_features_generated=len(all_features),
                 n_features_selected=len(selected_features),
-                cache_hit_rate=self.performance_stats['cache_hits'] / max(1, 
+                cache_hit_rate=self.performance_stats['cache_hits'] / max(1,
                     self.performance_stats['cache_hits'] + self.performance_stats['cache_misses']),
                 shap_analysis_completed=shap_values is not None,
                 ale_validation_completed=ale_values is not None,
@@ -381,7 +377,7 @@ class LightGBMFeatureToolsGenerator:
                     'vectorbt_available': VECTORBT_AVAILABLE
                 }
             )
-            
+
             # Update performance stats
             self.performance_stats.update({
                 'total_generations': 1,
@@ -391,22 +387,22 @@ class LightGBMFeatureToolsGenerator:
                 'ale_validations': 1 if ale_values is not None else 0,
                 'featuretools_operations': len(featuretools_features)
             })
-            
+
             tprint_success(f"✅ Feature generation completed in {generation_time:.3f}s")
             tprint_info(f"📊 Generated {len(generated_features)} features from {len(base_features.columns)} base features")
             tprint_info(f"🔧 Featuretools generated {len(featuretools_features)} additional features")
-            
+
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
             self.performance_stats['failed_generations'] += 1
             return self._create_failed_result(str(e))
-    
+
     def _prepare_data(
-        self, 
-        data: pd.DataFrame, 
-        target_column: str, 
+        self,
+        data: pd.DataFrame,
+        target_column: str,
         feature_columns: Optional[List[str]]
     ) -> Optional[pd.DataFrame]:
         """Prepare data for feature generation."""
@@ -424,38 +420,38 @@ class LightGBMFeatureToolsGenerator:
                 if target_column in numeric_columns:
                     numeric_columns.remove(target_column)
                 feature_data = data[numeric_columns + [target_column]]
-            
+
             # Remove rows with NaN values
             feature_data = feature_data.dropna()
-            
+
             if len(feature_data) < 10:
                 tprint_error("❌ Insufficient data after cleaning")
                 return None
-            
+
             tprint_debug(f"📊 Prepared data shape: {feature_data.shape}")
             return feature_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Data preparation failed: {e}")
             return None
-    
+
     def _generate_base_features(
-        self, 
-        data: pd.DataFrame, 
+        self,
+        data: pd.DataFrame,
         execution_mode: str
     ) -> pd.DataFrame:
         """Generate base features from the data."""
         try:
             base_features = pd.DataFrame(index=data.index)
-            
+
             # Get feature columns (exclude target)
             feature_columns = [col for col in data.columns if col != data.columns[-1]]  # Assume last column is target
-            
+
             # Generate basic technical indicators
             for col in feature_columns:
                 if col in data.columns:
                     series = data[col]
-                    
+
                     # Moving averages
                     for window in [5, 10, 20, 50]:
                         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
@@ -463,7 +459,7 @@ class LightGBMFeatureToolsGenerator:
                         else:
                             ma = series.rolling(window=window).mean()
                         base_features[f"{col}_ma_{window}"] = ma
-                    
+
                     # Rolling standard deviation
                     for window in [10, 20]:
                         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
@@ -471,7 +467,7 @@ class LightGBMFeatureToolsGenerator:
                         else:
                             std = series.rolling(window=window).std()
                         base_features[f"{col}_std_{window}"] = std
-                    
+
                     # Price ratios
                     if 'close' in col.lower():
                         for window in [5, 10, 20]:
@@ -480,26 +476,26 @@ class LightGBMFeatureToolsGenerator:
                             else:
                                 ma = series.rolling(window=window).mean()
                             base_features[f"{col}_ratio_{window}"] = series / ma
-            
+
             # Remove columns with all NaN values
             base_features = base_features.dropna(axis=1, how='all')
-            
+
             # Limit features based on execution mode
             if execution_mode == 'light':
                 base_features = base_features.iloc[:, :50]  # Limit to 50 features
             elif execution_mode == 'blank':
                 base_features = base_features.iloc[:, :20]  # Limit to 20 features
-            
+
             tprint_debug(f"📊 Generated {len(base_features.columns)} base features")
             return base_features
-            
+
         except Exception as e:
             tprint_error(f"❌ Base feature generation failed: {e}")
             return pd.DataFrame()
-    
+
     def _train_lightgbm_catboost_model(
-        self, 
-        features: pd.DataFrame, 
+        self,
+        features: pd.DataFrame,
         target: pd.Series
     ) -> Tuple[Any, Dict[str, float]]:
         """Train LightGBM or CatBoost model and get feature importance."""
@@ -507,11 +503,11 @@ class LightGBMFeatureToolsGenerator:
             # Prepare data
             X = features.fillna(0)  # Fill NaN with 0
             y = target.fillna(0)
-            
+
             # Scale features
             X_scaled = self.scaler.fit_transform(X)
             X_scaled = pd.DataFrame(X_scaled, columns=X.columns, index=X.index)
-            
+
             # Train model based on config
             if self.config.model_type == 'lightgbm' and LIGHTGBM_AVAILABLE:
                 model = lgb.LGBMRegressor(
@@ -538,42 +534,42 @@ class LightGBMFeatureToolsGenerator:
             else:
                 tprint_error("❌ Neither LightGBM nor CatBoost available")
                 return None, {}
-            
+
             model.fit(X_scaled, y)
-            
+
             # Get feature importance
             if hasattr(model, 'feature_importances_'):
                 feature_importance = dict(zip(X.columns, model.feature_importances_))
             else:
                 # Fallback for models without feature_importances_
                 feature_importance = {col: 1.0 for col in X.columns}
-            
+
             tprint_success(f"✅ {self.config.model_type.upper()} model trained successfully")
             return model, feature_importance
-            
+
         except Exception as e:
             tprint_error(f"❌ {self.config.model_type.upper()} training failed: {e}")
             return None, {}
-    
+
     def _generate_feature_combinations_shap(
-        self, 
-        features: pd.DataFrame, 
-        model: Any, 
+        self,
+        features: pd.DataFrame,
+        model: Any,
         feature_importance: Dict[str, float]
     ) -> List[Dict[str, Any]]:
         """Generate feature combinations based on SHAP interactions."""
         try:
             combinations = []
-            
+
             # Get top features by importance
             top_features = sorted(
-                feature_importance.items(), 
-                key=lambda x: x[1], 
+                feature_importance.items(),
+                key=lambda x: x[1],
                 reverse=True
             )[:min(20, self.config.max_features_to_select // 2)]  # Limit to avoid too many combinations
-            
+
             top_feature_names = [name for name, _ in top_features]
-            
+
             # Generate pairwise combinations
             for i, feat1 in enumerate(top_feature_names):
                 for feat2 in top_feature_names[i+1:]:
@@ -586,12 +582,12 @@ class LightGBMFeatureToolsGenerator:
                                 'formula': f"{feat1} * {feat2}",
                                 'parent_features': [feat1, feat2],
                                 'feature_series': product,
-                                'importance_score': (feature_importance.get(feat1, 0) + 
+                                'importance_score': (feature_importance.get(feat1, 0) +
                                                    feature_importance.get(feat2, 0)) / 2,
                                 'interaction_type': 'shap_product',
                                 'generation_method': 'shap_interaction'
                             })
-                        
+
                         # Ratio interaction
                         ratio = features[feat1] / (features[feat2] + 1e-8)
                         if not ratio.isna().all():
@@ -600,12 +596,12 @@ class LightGBMFeatureToolsGenerator:
                                 'formula': f"{feat1} / ({feat2} + 1e-8)",
                                 'parent_features': [feat1, feat2],
                                 'feature_series': ratio,
-                                'importance_score': (feature_importance.get(feat1, 0) + 
+                                'importance_score': (feature_importance.get(feat1, 0) +
                                                    feature_importance.get(feat2, 0)) / 2,
                                 'interaction_type': 'shap_ratio',
                                 'generation_method': 'shap_interaction'
                             })
-                        
+
                         # Difference interaction
                         diff = features[feat1] - features[feat2]
                         if not diff.isna().all():
@@ -614,37 +610,37 @@ class LightGBMFeatureToolsGenerator:
                                 'formula': f"{feat1} - {feat2}",
                                 'parent_features': [feat1, feat2],
                                 'feature_series': diff,
-                                'importance_score': (feature_importance.get(feat1, 0) + 
+                                'importance_score': (feature_importance.get(feat1, 0) +
                                                    feature_importance.get(feat2, 0)) / 2,
                                 'interaction_type': 'shap_difference',
                                 'generation_method': 'shap_interaction'
                             })
-                            
+
                     except Exception as e:
                         tprint_debug(f"Error generating SHAP combination for {feat1}, {feat2}: {e}")
                         continue
-            
+
             tprint_debug(f"📊 Generated {len(combinations)} SHAP-based feature combinations")
             return combinations
-            
+
         except Exception as e:
             tprint_error(f"❌ SHAP feature combination generation failed: {e}")
             return []
-    
+
     def _generate_featuretools_features(
-        self, 
-        data: pd.DataFrame, 
-        target_column: str, 
+        self,
+        data: pd.DataFrame,
+        target_column: str,
         base_features: pd.DataFrame
     ) -> List[Dict[str, Any]]:
         """Generate features using Featuretools Deep Feature Synthesis."""
         try:
             if not FEATURETOOLS_AVAILABLE:
                 return []
-            
+
             # Create EntitySet
             es = ft.EntitySet(id="financial_data")
-            
+
             # Add entity
             es = es.add_dataframe(
                 dataframe_name="data",
@@ -652,7 +648,7 @@ class LightGBMFeatureToolsGenerator:
                 index="id",
                 make_index=True
             )
-            
+
             # Generate features using Deep Feature Synthesis
             feature_matrix, feature_defs = ft.dfs(
                 entityset=es,
@@ -661,7 +657,7 @@ class LightGBMFeatureToolsGenerator:
                 n_jobs=self.config.n_jobs_featuretools,
                 verbose=False
             )
-            
+
             # Convert to list of feature dictionaries
             featuretools_features = []
             for col in feature_matrix.columns:
@@ -681,90 +677,90 @@ class LightGBMFeatureToolsGenerator:
                     except Exception as e:
                         tprint_debug(f"Error processing Featuretools feature {col}: {e}")
                         continue
-            
+
             # Limit number of features
             featuretools_features = featuretools_features[:self.config.max_features_featuretools]
-            
+
             tprint_debug(f"📊 Generated {len(featuretools_features)} Featuretools features")
             return featuretools_features
-            
+
         except Exception as e:
             tprint_error(f"❌ Featuretools feature generation failed: {e}")
             return []
-    
+
     def _perform_shap_analysis(
-        self, 
-        model: Any, 
+        self,
+        model: Any,
         features: pd.DataFrame
     ) -> Optional[np.ndarray]:
         """Perform SHAP analysis on the trained model."""
         try:
             if not SHAP_AVAILABLE or model is None:
                 return None
-            
+
             # Sample data for SHAP analysis (to avoid memory issues)
             sample_size = min(self.config.shap_sample_size, len(features))
             sample_indices = np.random.choice(len(features), size=sample_size, replace=False)
             X_sample = features.iloc[sample_indices].fillna(0)
-            
+
             # Create SHAP explainer
             if self.config.shap_explainer_type == 'tree':
                 explainer = shap.TreeExplainer(model)
             else:
                 explainer = shap.Explainer(model)
-            
+
             # Calculate SHAP values
             shap_values = explainer.shap_values(X_sample)
-            
+
             self.performance_stats['shap_analyses'] += 1
             tprint_success("✅ SHAP analysis completed")
             return shap_values
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ SHAP analysis failed: {e}")
             return None
-    
+
     def _perform_ale_validation(
-        self, 
-        model: Any, 
+        self,
+        model: Any,
         features: pd.DataFrame
     ) -> Optional[Dict[str, np.ndarray]]:
         """Perform ALE validation on the trained model."""
         try:
             if not ALE_AVAILABLE or model is None:
                 return None
-            
+
             # Sample data for ALE analysis
             sample_size = min(self.config.ale_sample_size, len(features))
             sample_indices = np.random.choice(len(features), size=sample_size, replace=False)
             X_sample = features.iloc[sample_indices].fillna(0)
-            
+
             # Calculate ALE values for each feature
             ale_values = {}
             for col in features.columns:
                 try:
                     ale_1d_result = ale_1d(
-                        model, 
-                        X_sample, 
-                        col, 
+                        model,
+                        X_sample,
+                        col,
                         bins=self.config.ale_n_bins
                     )
                     ale_values[col] = ale_1d_result
                 except Exception as e:
                     tprint_debug(f"ALE calculation failed for {col}: {e}")
                     continue
-            
+
             self.performance_stats['ale_validations'] += 1
             tprint_success("✅ ALE validation completed")
             return ale_values
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ ALE validation failed: {e}")
             return None
-    
+
     def _select_best_features(
-        self, 
-        combinations: List[Dict[str, Any]], 
+        self,
+        combinations: List[Dict[str, Any]],
         feature_importance: Dict[str, float],
         shap_values: Optional[np.ndarray],
         ale_values: Optional[Dict[str, np.ndarray]]
@@ -773,16 +769,16 @@ class LightGBMFeatureToolsGenerator:
         try:
             if not combinations:
                 return []
-            
+
             # Sort by importance score
             combinations.sort(key=lambda x: x['importance_score'], reverse=True)
-            
+
             # Remove highly correlated features
             selected = []
             for combo in combinations:
                 if len(selected) >= self.config.max_features_to_select:  # Max 100 features
                     break
-                
+
                 # Check correlation with already selected features
                 is_correlated = False
                 for selected_combo in selected:
@@ -793,7 +789,7 @@ class LightGBMFeatureToolsGenerator:
                             break
                     except:
                         continue
-                
+
                 # Check ALE validation if available
                 ale_validated = True
                 if ale_values and combo['parent_features']:
@@ -804,22 +800,22 @@ class LightGBMFeatureToolsGenerator:
                             if np.std(ale_vals) < 0.01:  # Very low variance
                                 ale_validated = False
                                 break
-                
-                if (not is_correlated and 
+
+                if (not is_correlated and
                     combo['importance_score'] > self.config.feature_importance_threshold and
                     ale_validated):
                     selected.append(combo)
-            
+
             tprint_debug(f"📊 Selected {len(selected)} best features (max {self.config.max_features_to_select})")
             return selected
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature selection failed: {e}")
             return combinations[:self.config.max_features_to_select]
-    
+
     def _create_generated_features(
-        self, 
-        selected_combinations: List[Dict[str, Any]], 
+        self,
+        selected_combinations: List[Dict[str, Any]],
         base_features: pd.DataFrame,
         shap_values: Optional[np.ndarray],
         ale_values: Optional[Dict[str, np.ndarray]]
@@ -827,7 +823,7 @@ class LightGBMFeatureToolsGenerator:
         """Create GeneratedFeature objects from selected combinations."""
         try:
             generated_features = []
-            
+
             for combo in selected_combinations:
                 # Get ALE values for this feature if available
                 feature_ale_values = None
@@ -836,7 +832,7 @@ class LightGBMFeatureToolsGenerator:
                         if parent_feat in ale_values:
                             feature_ale_values = ale_values[parent_feat]
                             break
-                
+
                 feature = GeneratedFeature(
                     name=combo['name'],
                     formula=combo['formula'],
@@ -854,48 +850,48 @@ class LightGBMFeatureToolsGenerator:
                     }
                 )
                 generated_features.append(feature)
-            
+
             return generated_features
-            
+
         except Exception as e:
             tprint_error(f"❌ Generated feature creation failed: {e}")
             return []
-    
+
     def _calculate_model_performance(
-        self, 
-        model: Any, 
-        features: pd.DataFrame, 
+        self,
+        model: Any,
+        features: pd.DataFrame,
         target: pd.Series
     ) -> Dict[str, float]:
         """Calculate model performance metrics."""
         try:
             if model is None:
                 return {'r2_score': 0.0, 'mse': 0.0, 'mae': 0.0}
-            
+
             # Prepare data
             X = features.fillna(0)
             y = target.fillna(0)
             X_scaled = self.scaler.transform(X)
-            
+
             # Make predictions
             y_pred = model.predict(X_scaled)
-            
+
             # Calculate metrics
             r2 = r2_score(y, y_pred)
             mse = mean_squared_error(y, y_pred)
             mae = mean_absolute_error(y, y_pred)
-            
+
             return {
                 'r2_score': r2,
                 'mse': mse,
                 'mae': mae,
                 'rmse': np.sqrt(mse)
             }
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Performance calculation failed: {e}")
             return {'r2_score': 0.0, 'mse': 0.0, 'mae': 0.0}
-    
+
     def _create_failed_result(self, error_message: str) -> FeatureGenerationResult:
         """Create a failed result."""
         return FeatureGenerationResult(
@@ -911,11 +907,11 @@ class LightGBMFeatureToolsGenerator:
             featuretools_features_generated=0,
             metadata={'error': error_message}
         )
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
-    
+
     def reset_stats(self):
         """Reset performance statistics."""
         self.performance_stats = {
@@ -930,7 +926,6 @@ class LightGBMFeatureToolsGenerator:
             'featuretools_operations': 0,
             'vectorbt_operations': 0
         }
-
 
 def create_lightgbm_featuretools_generator(
     config: Optional[LightGBMFeatureToolsConfig] = None

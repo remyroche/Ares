@@ -39,8 +39,8 @@ from src.utils.common_operations import (
 
 # Core decorators and validation
 from src.core.decorators import (
-    handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose, validate_data_quality, 
+    handles_errors, validates, traced, log_execution_time,
+    timeout, error_boundary, compose, validate_data_quality,
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
 from src.core.errors import (
@@ -50,7 +50,6 @@ from src.core.errors import (
 
 logger = logging.getLogger(__name__)
 
-
 class ConfigurationFormat(Enum):
     """Supported configuration formats."""
     JSON = "json"
@@ -59,7 +58,6 @@ class ConfigurationFormat(Enum):
     INI = "ini"
     ENV = "env"
 
-
 class ConfigurationScope(Enum):
     """Configuration scope levels."""
     GLOBAL = "global"
@@ -67,7 +65,6 @@ class ConfigurationScope(Enum):
     TEST = "test"
     MODEL = "model"
     RUNTIME = "runtime"
-
 
 @dataclass
 class ConfigurationSchema:
@@ -81,7 +78,6 @@ class ConfigurationSchema:
     optional_fields: List[str] = field(default_factory=list)
     default_values: Dict[str, Any] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ConfigurationEntry:
@@ -102,7 +98,6 @@ class ConfigurationEntry:
     parent_config_id: Optional[str] = None
     environment: str = "default"
 
-
 @dataclass
 class ConfigurationTemplate:
     """Configuration template for generating new configurations."""
@@ -115,24 +110,23 @@ class ConfigurationTemplate:
     parameters: Dict[str, Any] = field(default_factory=dict)
     validation_rules: Dict[str, Any] = field(default_factory=dict)
 
-
 class ConfigurationValidator:
     """Advanced configuration validator."""
-    
+
     def __init__(self):
         """Initialize configuration validator."""
         self.logger = logger.getChild('ConfigurationValidator')
         self.schemas: Dict[str, ConfigurationSchema] = {}
-        
+
         # Initialize default schemas
         self._initialize_default_schemas()
-        
+
         self.logger.info("🚀 ConfigurationValidator initialized")
         self.logger.info(f"📊 Schemas loaded: {len(self.schemas)}")
-    
+
     def _initialize_default_schemas(self) -> None:
         """Initialize default configuration schemas."""
-        
+
         # A/B/C Testing Configuration Schema
         abc_testing_schema = {
             "type": "object",
@@ -181,7 +175,7 @@ class ConfigurationValidator:
             },
             "required": ["test_name", "symbol", "exchange", "timeframe", "model_configs"]
         }
-        
+
         self.schemas["abc_testing"] = ConfigurationSchema(
             schema_id="abc_testing",
             name="A/B/C Testing Configuration",
@@ -204,7 +198,7 @@ class ConfigurationValidator:
                 }
             }
         )
-        
+
         # Model Configuration Schema
         model_schema = {
             "type": "object",
@@ -223,7 +217,7 @@ class ConfigurationValidator:
             },
             "required": ["model_id", "model_name", "model_type"]
         }
-        
+
         self.schemas["model"] = ConfigurationSchema(
             schema_id="model",
             name="Model Configuration",
@@ -241,7 +235,7 @@ class ConfigurationValidator:
                 "enable_position_sizing": True
             }
         )
-        
+
         # Monitoring Configuration Schema
         monitoring_schema = {
             "type": "object",
@@ -271,7 +265,7 @@ class ConfigurationValidator:
             },
             "required": ["monitoring_interval", "enable_alerting"]
         }
-        
+
         self.schemas["monitoring"] = ConfigurationSchema(
             schema_id="monitoring",
             name="Monitoring Configuration",
@@ -291,7 +285,7 @@ class ConfigurationValidator:
                 }
             }
         )
-    
+
     def register_schema(self, schema: ConfigurationSchema) -> bool:
         """Register a new configuration schema."""
         try:
@@ -301,43 +295,43 @@ class ConfigurationValidator:
         except Exception as e:
             self.logger.error(f"❌ Error registering schema {schema.name}: {e}")
             return False
-    
+
     def validate_configuration(self, config: Dict[str, Any], schema_id: str) -> Tuple[bool, List[str]]:
         """Validate configuration against schema."""
         try:
             if schema_id not in self.schemas:
                 return False, [f"Schema {schema_id} not found"]
-            
+
             schema = self.schemas[schema_id]
             errors = []
-            
+
             # JSON Schema validation
             try:
                 validate(instance=config, schema=schema.schema)
             except ValidationError as e:
                 errors.append(f"Schema validation error: {e.message}")
-            
+
             # Custom validation rules
             for field, rules in schema.validation_rules.items():
                 if field in config:
                     field_errors = self._validate_field(config[field], rules)
                     errors.extend(field_errors)
-            
+
             # Required fields check
             for field in schema.required_fields:
                 if field not in config:
                     errors.append(f"Required field missing: {field}")
-            
+
             return len(errors) == 0, errors
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating configuration: {e}")
             return False, [str(e)]
-    
+
     def _validate_field(self, value: Any, rules: Dict[str, Any]) -> List[str]:
         """Validate a single field against custom rules."""
         errors = []
-        
+
         for rule_type, rule_value in rules.items():
             if rule_type == "min_length" and isinstance(value, str):
                 if len(value) < rule_value:
@@ -355,59 +349,58 @@ class ConfigurationValidator:
                 import re
                 if not re.match(rule_value, value):
                     errors.append(f"Pattern mismatch: {rule_value}")
-        
+
         return errors
-    
+
     def apply_defaults(self, config: Dict[str, Any], schema_id: str) -> Dict[str, Any]:
         """Apply default values to configuration."""
         if schema_id not in self.schemas:
             return config
-        
+
         schema = self.schemas[schema_id]
         result = copy.deepcopy(config)
-        
+
         def apply_defaults_recursive(target: Dict[str, Any], defaults: Dict[str, Any]) -> None:
             for key, default_value in defaults.items():
                 if key not in target:
                     target[key] = default_value
                 elif isinstance(default_value, dict) and isinstance(target[key], dict):
                     apply_defaults_recursive(target[key], default_value)
-        
+
         apply_defaults_recursive(result, schema.default_values)
         return result
 
-
 class ConfigurationManager:
     """Comprehensive configuration management system."""
-    
+
     def __init__(self, config_dir: str = "config"):
         """Initialize configuration manager."""
         self.config_dir = Path(config_dir)
         ensure_directory(self.config_dir)
-        
+
         self.logger = logger.getChild('ConfigurationManager')
         self.validator = ConfigurationValidator()
-        
+
         # Configuration storage
         self.configurations: Dict[str, ConfigurationEntry] = {}
         self.templates: Dict[str, ConfigurationTemplate] = {}
         self.environments: Dict[str, Dict[str, Any]] = {}
-        
+
         # Configuration history
         self.config_history: Dict[str, List[ConfigurationEntry]] = {}
-        
+
         # Load existing configurations
         self._load_configurations()
-        
+
         self.logger.info("🚀 ConfigurationManager initialized")
         self.logger.info(f"📁 Config directory: {self.config_dir}")
         self.logger.info(f"📊 Configurations loaded: {len(self.configurations)}")
-    
+
     def _load_configurations(self) -> None:
         """Load existing configurations from disk."""
         try:
             config_files = list(self.config_dir.glob("*.json")) + list(self.config_dir.glob("*.yaml"))
-            
+
             for config_file in config_files:
                 try:
                     if config_file.suffix == '.json':
@@ -418,7 +411,7 @@ class ConfigurationManager:
                             config_data = yaml.safe_load(f)
                     else:
                         continue
-                    
+
                     # Create configuration entry
                     config_entry = ConfigurationEntry(
                         config_id=config_data.get('config_id', str(uuid.uuid4())),
@@ -437,15 +430,15 @@ class ConfigurationManager:
                         parent_config_id=config_data.get('parent_config_id'),
                         environment=config_data.get('environment', 'default')
                     )
-                    
+
                     self.configurations[config_entry.config_id] = config_entry
-                    
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not load configuration {config_file}: {e}")
-        
+
         except Exception as e:
             self.logger.error(f"❌ Error loading configurations: {e}")
-    
+
     def save_configuration(self, config: ConfigurationEntry) -> bool:
         """Save configuration to disk."""
         try:
@@ -455,18 +448,18 @@ class ConfigurationManager:
                 if not is_valid:
                     self.logger.error(f"❌ Configuration validation failed: {errors}")
                     return False
-            
+
             # Update metadata
             config.updated_at = datetime.now()
-            
+
             # Store in memory
             self.configurations[config.config_id] = config
-            
+
             # Add to history
             if config.config_id not in self.config_history:
                 self.config_history[config.config_id] = []
             self.config_history[config.config_id].append(copy.deepcopy(config))
-            
+
             # Save to disk
             config_data = {
                 'config_id': config.config_id,
@@ -485,7 +478,7 @@ class ConfigurationManager:
                 'parent_config_id': config.parent_config_id,
                 'environment': config.environment
             }
-            
+
             # Determine file extension
             if config.format == ConfigurationFormat.JSON:
                 file_extension = '.json'
@@ -493,48 +486,48 @@ class ConfigurationManager:
                 file_extension = '.yaml'
             else:
                 file_extension = '.json'
-            
+
             config_file = self.config_dir / f"{config.name}{file_extension}"
-            
+
             if config.format == ConfigurationFormat.JSON:
                 with open(config_file, 'w') as f:
                     json.dump(config_data, f, indent=2)
             elif config.format == ConfigurationFormat.YAML:
                 with open(config_file, 'w') as f:
                     yaml.dump(config_data, f, default_flow_style=False)
-            
+
             self.logger.info(f"✅ Configuration saved: {config.name}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error saving configuration {config.name}: {e}")
             return False
-    
+
     def load_configuration(self, config_id: str) -> Optional[ConfigurationEntry]:
         """Load configuration by ID."""
         return self.configurations.get(config_id)
-    
+
     def get_configuration_by_name(self, name: str, environment: str = "default") -> Optional[ConfigurationEntry]:
         """Get configuration by name and environment."""
         for config in self.configurations.values():
             if config.name == name and config.environment == environment and config.is_active:
                 return config
         return None
-    
-    def list_configurations(self, scope: Optional[ConfigurationScope] = None, 
+
+    def list_configurations(self, scope: Optional[ConfigurationScope] = None,
                           environment: Optional[str] = None) -> List[ConfigurationEntry]:
         """List configurations with optional filtering."""
         configs = list(self.configurations.values())
-        
+
         if scope:
             configs = [c for c in configs if c.scope == scope]
-        
+
         if environment:
             configs = [c for c in configs if c.environment == environment]
-        
+
         return [c for c in configs if c.is_active]
-    
-    def create_configuration_from_template(self, template_id: str, 
+
+    def create_configuration_from_template(self, template_id: str,
                                          parameters: Dict[str, Any],
                                          name: str,
                                          environment: str = "default") -> Optional[ConfigurationEntry]:
@@ -542,17 +535,17 @@ class ConfigurationManager:
         if template_id not in self.templates:
             self.logger.error(f"❌ Template {template_id} not found")
             return None
-        
+
         try:
             template = self.templates[template_id]
-            
+
             # Generate configuration content
             config_content = self._generate_config_from_template(template, parameters)
-            
+
             # Apply defaults
             if template.schema_id:
                 config_content = self.validator.apply_defaults(config_content, template.schema_id)
-            
+
             # Create configuration entry
             config = ConfigurationEntry(
                 config_id=str(uuid.uuid4()),
@@ -564,22 +557,22 @@ class ConfigurationManager:
                 environment=environment,
                 description=f"Generated from template {template.name}"
             )
-            
+
             # Save configuration
             if self.save_configuration(config):
                 return config
             else:
                 return None
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error creating configuration from template: {e}")
             return None
-    
-    def _generate_config_from_template(self, template: ConfigurationTemplate, 
+
+    def _generate_config_from_template(self, template: ConfigurationTemplate,
                                      parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Generate configuration content from template."""
         config_content = copy.deepcopy(template.template_data)
-        
+
         # Replace parameters
         def replace_parameters(obj: Any) -> Any:
             if isinstance(obj, dict):
@@ -591,22 +584,22 @@ class ConfigurationManager:
                 return parameters.get(param_name, obj)
             else:
                 return obj
-        
+
         return replace_parameters(config_content)
-    
+
     def merge_configurations(self, base_config_id: str, override_config_id: str) -> Optional[ConfigurationEntry]:
         """Merge two configurations with override taking precedence."""
         try:
             base_config = self.load_configuration(base_config_id)
             override_config = self.load_configuration(override_config_id)
-            
+
             if not base_config or not override_config:
                 self.logger.error("❌ Base or override configuration not found")
                 return None
-            
+
             # Deep merge configurations
             merged_content = self._deep_merge(base_config.content, override_config.content)
-            
+
             # Create merged configuration
             merged_config = ConfigurationEntry(
                 config_id=str(uuid.uuid4()),
@@ -619,40 +612,40 @@ class ConfigurationManager:
                 description=f"Merged from {base_config.name} and {override_config.name}",
                 parent_config_id=base_config.config_id
             )
-            
+
             return merged_config
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error merging configurations: {e}")
             return None
-    
+
     def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """Deep merge two dictionaries."""
         result = copy.deepcopy(base)
-        
+
         for key, value in override.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 result[key] = self._deep_merge(result[key], value)
             else:
                 result[key] = copy.deepcopy(value)
-        
+
         return result
-    
+
     def validate_configuration(self, config_id: str) -> Tuple[bool, List[str]]:
         """Validate configuration against its schema."""
         config = self.load_configuration(config_id)
         if not config:
             return False, ["Configuration not found"]
-        
+
         if not config.schema_id:
             return True, []  # No schema to validate against
-        
+
         return self.validator.validate_configuration(config.content, config.schema_id)
-    
+
     def get_configuration_history(self, config_id: str) -> List[ConfigurationEntry]:
         """Get configuration history."""
         return self.config_history.get(config_id, [])
-    
+
     def rollback_configuration(self, config_id: str, version: int = -1) -> bool:
         """Rollback configuration to a previous version."""
         try:
@@ -660,35 +653,35 @@ class ConfigurationManager:
             if not history:
                 self.logger.error(f"❌ No history found for configuration {config_id}")
                 return False
-            
+
             if version < 0:
                 version = len(history) + version
-            
+
             if version < 0 or version >= len(history):
                 self.logger.error(f"❌ Invalid version {version}")
                 return False
-            
+
             # Get the version to rollback to
             rollback_config = history[version]
-            
+
             # Update current configuration
             current_config = self.configurations[config_id]
             current_config.content = rollback_config.content
             current_config.updated_at = datetime.now()
-            
+
             # Save the rollback
             return self.save_configuration(current_config)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error rolling back configuration: {e}")
             return False
-    
+
     def export_configuration(self, config_id: str, format: ConfigurationFormat = ConfigurationFormat.JSON) -> str:
         """Export configuration to string."""
         config = self.load_configuration(config_id)
         if not config:
             return ""
-        
+
         try:
             if format == ConfigurationFormat.JSON:
                 return json.dumps(config.content, indent=2)
@@ -696,11 +689,11 @@ class ConfigurationManager:
                 return yaml.dump(config.content, default_flow_style=False)
             else:
                 return json.dumps(config.content, indent=2)
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error exporting configuration: {e}")
             return ""
-    
+
     def import_configuration(self, config_data: str, format: ConfigurationFormat = ConfigurationFormat.JSON,
                            name: str = "imported_config", environment: str = "default") -> Optional[ConfigurationEntry]:
         """Import configuration from string."""
@@ -711,7 +704,7 @@ class ConfigurationManager:
                 content = yaml.safe_load(config_data)
             else:
                 content = json.loads(config_data)
-            
+
             # Create configuration entry
             config = ConfigurationEntry(
                 config_id=str(uuid.uuid4()),
@@ -722,17 +715,16 @@ class ConfigurationManager:
                 environment=environment,
                 description="Imported configuration"
             )
-            
+
             # Save configuration
             if self.save_configuration(config):
                 return config
             else:
                 return None
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error importing configuration: {e}")
             return None
-
 
 # Convenience function for easy integration
 def create_configuration_manager(config_dir: str = "config") -> ConfigurationManager:

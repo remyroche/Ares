@@ -16,16 +16,13 @@ from src.utils.ml_common.validation.universal_ml_validation import (
     UniversalMLValidationConfig,
 )
 
-
 def save_validation_config(config: Union[EnhancedValidationConfig, UniversalMLValidationConfig], filepath: Union[str, Path]) -> None:
     _save_to_file(config, filepath)
-
 
 def load_validation_config(
     filepath: Union[str, Path], target_cls: Type[Union[EnhancedValidationConfig, UniversalMLValidationConfig]] = EnhancedValidationConfig
 ) -> Union[EnhancedValidationConfig, UniversalMLValidationConfig]:
     return _load_from_file(filepath, target_cls)  # type: ignore[return-value]
-
 
 __all__ = [
     "EnhancedValidationConfig",
@@ -33,4 +30,3 @@ __all__ = [
     "save_validation_config",
     "load_validation_config",
 ]
-

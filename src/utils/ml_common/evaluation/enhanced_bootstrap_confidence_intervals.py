@@ -27,7 +27,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class BootstrapAnalysisResult:
     """Structured bootstrap confidence interval analysis results."""
@@ -39,7 +38,6 @@ class BootstrapAnalysisResult:
     stability_scores: Dict[str, float]
     n_successful_bootstrap: int
     recommendations: List[str] = field(default_factory=list)
-
 
 class EnhancedBootstrapConfidenceIntervalAnalyzer:
     """Enhanced bootstrap analyzer integrated with ml_common infrastructure."""
@@ -459,22 +457,22 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                 # Perform t-test using means and standard deviations
                 try:
                     from scipy import stats
-                    
+
                     # Calculate pooled standard error
                     n1 = model1_results.get('n_successful_bootstrap', 100)
                     n2 = model2_results.get('n_successful_bootstrap', 100)
-                    
+
                     pooled_std = np.sqrt((values1_std**2 / n1) + (values2_std**2 / n2))
-                    
+
                     # Calculate t-statistic
                     t_stat = (values1_mean - values2_mean) / pooled_std
-                    
+
                     # Calculate degrees of freedom
                     df = n1 + n2 - 2
-                    
+
                     # Calculate p-value (two-tailed test)
                     p_value = 2 * (1 - stats.t.cdf(abs(t_stat), df))
-                    
+
                 except ImportError:
                     # Fallback to simple comparison if scipy not available
                     significant = abs(values1_mean - values2_mean) > 2 * np.sqrt(values1_std**2 + values2_std**2)
@@ -485,7 +483,7 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                     # Use raw bootstrap values for more accurate testing
                     try:
                         from scipy import stats
-                        
+
                         # Perform paired t-test if same number of bootstrap samples
                         if len(values1) == len(values2):
                             t_stat, p_value = stats.ttest_rel(values1, values2)
@@ -494,7 +492,7 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                             # Perform independent t-test
                             t_stat, p_value = stats.ttest_ind(values1, values2)
                             df = len(values1) + len(values2) - 2
-                        
+
                     except ImportError:
                         # Fallback to simple comparison
                         mean1, mean2 = np.mean(values1), np.mean(values2)
@@ -506,7 +504,7 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
 
             # Determine significance (using alpha = 0.05)
             significant = p_value < 0.05
-            
+
             # Calculate confidence interval for the difference
             if 'values1' in locals() and 'values2' in locals():
                 diff_values = np.array(values1) - np.array(values2)
@@ -553,7 +551,7 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
     ) -> Dict[str, Any]:
         """
         Perform comprehensive model comparison with statistical significance testing.
-        
+
         Args:
             models: List of trained model instances
             model_names: Names for each model
@@ -561,37 +559,37 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
             y: Target labels
             train_size: Fraction of data to use for training
             significance_level: Significance level for statistical tests
-            
+
         Returns:
             Comprehensive comparison results with statistical significance
         """
         try:
             if len(models) != len(model_names):
                 raise ValueError("Number of models must match number of model names")
-            
+
             logger.info(f"🔬 Starting comprehensive model comparison with {len(models)} models")
-            
+
             # Analyze each model
             model_results = {}
             for model, name in zip(models, model_names):
                 logger.info(f"   → Analyzing model: {name}")
                 model_results[name] = self.analyze_model_stability(model, X, y, train_size)
-            
+
             # Perform pairwise statistical significance tests
             significance_matrix = {}
             pairwise_comparisons = []
-            
+
             for i, name1 in enumerate(model_names):
                 significance_matrix[name1] = {}
                 for j, name2 in enumerate(model_names):
                     if i != j:
                         # Test significance for test_accuracy metric
                         sig_result = self.detect_statistical_significance(
-                            model_results[name1], 
-                            model_results[name2], 
+                            model_results[name1],
+                            model_results[name2],
                             metric='test_accuracy'
                         )
-                        
+
                         significance_matrix[name1][name2] = sig_result
                         pairwise_comparisons.append({
                             'model1': name1,
@@ -601,17 +599,17 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                             'mean_difference': sig_result.get('mean_difference', 0.0),
                             'effect_size': sig_result.get('effect_size', 0.0)
                         })
-            
+
             # Rank models by performance
             model_scores = []
             for name in model_names:
                 test_acc = model_results[name].confidence_intervals.get('test_accuracy', {}).get('mean', 0.0)
                 stability = model_results[name].stability_score
                 overfitting_prob = model_results[name].overfitting_probability
-                
+
                 # Composite score considering performance, stability, and overfitting
                 composite_score = test_acc * stability * (1 - overfitting_prob)
-                
+
                 model_scores.append({
                     'model_name': name,
                     'test_accuracy': test_acc,
@@ -619,19 +617,19 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                     'overfitting_probability': overfitting_prob,
                     'composite_score': composite_score
                 })
-            
+
             # Sort by composite score
             model_scores.sort(key=lambda x: x['composite_score'], reverse=True)
-            
+
             # Determine best model
             best_model = model_scores[0]['model_name'] if model_scores else None
-            
+
             # Count significant wins for each model
             win_counts = {name: 0 for name in model_names}
             for comparison in pairwise_comparisons:
                 if comparison['significant'] and comparison['mean_difference'] > 0:
                     win_counts[comparison['model1']] += 1
-            
+
             # Generate summary statistics
             summary_stats = {
                 'total_comparisons': len(pairwise_comparisons),
@@ -641,11 +639,11 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                 'model_rankings': model_scores,
                 'win_counts': win_counts
             }
-            
+
             logger.info(f"✅ Comprehensive comparison completed")
             logger.info(f"   → Best model: {best_model}")
             logger.info(f"   → Significant comparisons: {summary_stats['significant_comparisons']}/{summary_stats['total_comparisons']}")
-            
+
             return {
                 'model_results': model_results,
                 'significance_matrix': significance_matrix,
@@ -654,7 +652,7 @@ class EnhancedBootstrapConfidenceIntervalAnalyzer:
                 'best_model': best_model,
                 'significance_level': significance_level
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Comprehensive model comparison failed: {e}")
             return {

@@ -20,7 +20,6 @@ from src.utils.ml_common.utils.base_safeguards import MLTrainingSafeguards
 
 logger = get_system_logger().getChild('ModelValidation')
 
-
 class ModelValidationStep:
     """
     Enhanced Model Validation Step for comprehensive model evaluation with error detection.
@@ -30,11 +29,11 @@ class ModelValidationStep:
         """Initialize the enhanced model validation step."""
         self.config = config or {}
         self.logger = logger.getChild('ModelValidationStep')
-        
+
         # Enhanced error detection and monitoring
         self.safeguards = MLTrainingSafeguards(self.config.get('safeguards', {}))
         self.validation_history = []
-        
+
         # Validation configuration
         self.validation_thresholds = self.config.get('validation_thresholds', {
             'min_accuracy': 0.6,
@@ -43,7 +42,7 @@ class ModelValidationStep:
             'min_f1_score': 0.5,
             'max_validation_time': 300  # seconds
         })
-        
+
         self.logger.info("🔍 Enhanced Model Validation Step initialized with monitoring capabilities")
 
     def validate_model_performance(self, metrics: Dict[str, float], model_id: str) -> Dict[str, Any]:
@@ -56,7 +55,7 @@ class ModelValidationStep:
                 'risk_level': 'low',
                 'validation_score': 0.0
             }
-            
+
             # Check accuracy threshold
             accuracy = metrics.get('accuracy', 0)
             if accuracy < self.validation_thresholds['min_accuracy']:
@@ -64,7 +63,7 @@ class ModelValidationStep:
                 validation_result['recommendations'].append("Consider retraining with more data or different features")
                 validation_result['risk_level'] = 'high'
                 validation_result['is_valid'] = False
-            
+
             # Check precision threshold
             precision = metrics.get('precision', 0)
             if precision < self.validation_thresholds['min_precision']:
@@ -72,7 +71,7 @@ class ModelValidationStep:
                 validation_result['recommendations'].append("Review feature selection and class balance")
                 if validation_result['risk_level'] == 'low':
                     validation_result['risk_level'] = 'medium'
-            
+
             # Check recall threshold
             recall = metrics.get('recall', 0)
             if recall < self.validation_thresholds['min_recall']:
@@ -80,7 +79,7 @@ class ModelValidationStep:
                 validation_result['recommendations'].append("Check for class imbalance and model bias")
                 if validation_result['risk_level'] == 'low':
                     validation_result['risk_level'] = 'medium'
-            
+
             # Check F1 score threshold
             f1 = metrics.get('f1_score', 0)
             if f1 < self.validation_thresholds['min_f1_score']:
@@ -88,18 +87,18 @@ class ModelValidationStep:
                 validation_result['recommendations'].append("Balance precision and recall optimization")
                 if validation_result['risk_level'] == 'low':
                     validation_result['risk_level'] = 'medium'
-            
+
             # Calculate validation score
             validation_result['validation_score'] = (accuracy + precision + recall + f1) / 4
-            
+
             # Log validation result
             if validation_result['is_valid']:
                 self.logger.info(f"✅ Model {model_id} validation passed (score: {validation_result['validation_score']:.3f})")
             else:
                 self.logger.warning(f"⚠️ Model {model_id} validation failed: {validation_result['issues']}")
-            
+
             return validation_result
-            
+
         except Exception as e:
             error_context = {
                 'component': 'model_validation',
@@ -117,7 +116,7 @@ class ModelValidationStep:
                 'validation_score': 0.0
             }
 
-    def track_validation_metrics(self, model_id: str, metrics: Dict[str, float], 
+    def track_validation_metrics(self, model_id: str, metrics: Dict[str, float],
                                validation_result: Dict[str, Any]):
         """Track validation metrics over time for trend analysis."""
         try:
@@ -128,15 +127,15 @@ class ModelValidationStep:
                 'validation_result': validation_result.copy(),
                 'validation_score': validation_result.get('validation_score', 0)
             }
-            
+
             self.validation_history.append(tracking_record)
-            
+
             # Keep only recent history (last 100 validations)
             if len(self.validation_history) > 100:
                 self.validation_history = self.validation_history[-100:]
-            
+
             self.logger.debug(f"📊 Validation metrics tracked for {model_id}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to track validation metrics: {e}")
 
@@ -145,12 +144,12 @@ class ModelValidationStep:
         try:
             if not self.validation_history:
                 return {'validation_summary': 'no_data'}
-            
+
             # Calculate statistics
             total_validations = len(self.validation_history)
             successful_validations = sum(1 for v in self.validation_history if v['validation_result']['is_valid'])
             failed_validations = total_validations - successful_validations
-            
+
             # Calculate average metrics
             avg_metrics = defaultdict(float)
             for validation in self.validation_history:
@@ -158,14 +157,14 @@ class ModelValidationStep:
                     avg_metrics[metric] += value
             for metric in avg_metrics:
                 avg_metrics[metric] /= total_validations
-            
+
             # Calculate trend
             recent_validations = self.validation_history[-10:] if len(self.validation_history) >= 10 else self.validation_history
             recent_success_rate = sum(1 for v in recent_validations if v['validation_result']['is_valid']) / len(recent_validations)
-            
+
             # Get error summary from safeguards
             error_summary = self.safeguards.get_error_summary()
-            
+
             return {
                 'validation_summary': {
                     'total_validations': total_validations,
@@ -178,7 +177,7 @@ class ModelValidationStep:
                 'error_summary': error_summary,
                 'recent_validations': recent_validations
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get validation summary: {e}")
             return {'error': str(e)}
@@ -192,12 +191,12 @@ class ModelValidationStep:
                 'recommendations': [],
                 'risk_level': 'low'
             }
-            
+
             # Check validation success rate
             if self.validation_history:
                 recent_validations = self.validation_history[-20:] if len(self.validation_history) >= 20 else self.validation_history
                 success_rate = sum(1 for v in recent_validations if v['validation_result']['is_valid']) / len(recent_validations)
-                
+
                 if success_rate < 0.7:
                     health_status['issues'].append(f"Low validation success rate: {success_rate:.2%}")
                     health_status['recommendations'].append("Review model training pipeline and data quality")
@@ -207,22 +206,22 @@ class ModelValidationStep:
                     health_status['recommendations'].append("Monitor validation trends closely")
                     if health_status['risk_level'] == 'low':
                         health_status['risk_level'] = 'medium'
-            
+
             # Check for performance degradation
             if len(self.validation_history) >= 10:
                 recent_scores = [v['validation_score'] for v in self.validation_history[-10:]]
                 older_scores = [v['validation_score'] for v in self.validation_history[-20:-10]] if len(self.validation_history) >= 20 else []
-                
+
                 if older_scores:
                     recent_avg = sum(recent_scores) / len(recent_scores)
                     older_avg = sum(older_scores) / len(older_scores)
-                    
+
                     if recent_avg < older_avg - 0.1:  # 10% degradation
                         health_status['issues'].append(f"Performance degradation detected: {recent_avg:.3f} vs {older_avg:.3f}")
                         health_status['recommendations'].append("Investigate recent model changes and data drift")
                         if health_status['risk_level'] == 'low':
                             health_status['risk_level'] = 'medium'
-            
+
             # Check error rates
             error_summary = self.safeguards.get_error_summary()
             if error_summary['recent_errors_1h'] > 5:
@@ -230,15 +229,15 @@ class ModelValidationStep:
                 health_status['recommendations'].append("Check validation pipeline stability")
                 if health_status['risk_level'] == 'low':
                     health_status['risk_level'] = 'medium'
-            
+
             # Determine overall health
             if health_status['risk_level'] == 'high':
                 health_status['overall_health'] = 'poor'
             elif health_status['risk_level'] == 'medium':
                 health_status['overall_health'] = 'fair'
-            
+
             return health_status
-            
+
         except Exception as e:
             self.logger.error(f"❌ Validation health check failed: {e}")
             return {
@@ -454,7 +453,7 @@ class ModelValidationStep:
                             # Load the actual model (implementation depends on model type)
                             import joblib
                             model = joblib.load(model_path)
-                            
+
                             # Make predictions with the actual model
                             if hasattr(model, 'predict'):
                                 predictions = model.predict(X)
@@ -538,7 +537,7 @@ class ModelValidationStep:
                     if model_path and Path(model_path).exists():
                         from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
                         model = joblib.load(model_path)
-                        
+
                         if hasattr(model, 'predict'):
                             unified = unified_perform_cv(model, X, y, strategy='standard', cv_folds=5, scoring='accuracy')
                             scores = np.array(unified.get('scores', []) or [])
@@ -549,7 +548,7 @@ class ModelValidationStep:
                 except Exception as cv_error:
                     self.logger.error(f"❌ Cross-validation failed for {model_name}: {cv_error}")
                     raise RuntimeError(f"Cross-validation failed for {model_name}: {cv_error}") from cv_error
-                
+
                 cv_results[model_name] = {
                     'cv_scores': scores.tolist() if scores.size else [],
                     'mean_score': float(np.mean(scores)) if scores.size else 0.0,
@@ -581,7 +580,7 @@ class ModelValidationStep:
                     model_path = model_info.get('path')
                     if model_path and Path(model_path).exists():
                         model = joblib.load(model_path)
-                        
+
                         # Extract feature importance based on model type
                         if hasattr(model, 'feature_importances_'):
                             importance_scores = model.feature_importances_
@@ -594,7 +593,7 @@ class ModelValidationStep:
                             # Use uniform importance as fallback
                             n_features = len(feature_cols)
                             importance_scores = np.ones(n_features) / n_features
-                        
+
                         # Normalize importance scores
                         if len(importance_scores) == len(feature_cols):
                             importance_scores = importance_scores / np.sum(importance_scores)
@@ -692,4 +691,3 @@ class ModelValidationStep:
             recommendations = ["❌ Unable to generate recommendations due to validation errors"]
 
         return recommendations
-

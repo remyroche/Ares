@@ -32,9 +32,7 @@ try:
 except Exception:  # pragma: no cover - environment dependent
     SKLEARN_AVAILABLE = False
 
-
 LOGGER = logging.getLogger("MLCommon.UnifiedCV")
-
 
 def _is_classification_target(y: np.ndarray) -> bool:
     if not SKLEARN_AVAILABLE:
@@ -54,7 +52,6 @@ def _is_classification_target(y: np.ndarray) -> bool:
         except Exception:
             return False
 
-
 @dataclass
 class UnifiedCVResult:
     scores: Optional[List[float]] = None
@@ -67,7 +64,6 @@ class UnifiedCVResult:
     mean_scores: Optional[Dict[str, float]] = None
     std_scores: Optional[Dict[str, float]] = None
     train_scores: Optional[Dict[str, float]] = None
-
 
 class UnifiedCrossValidator:
     """Central cross-validation helper with standard, temporal and nested CV."""
@@ -210,7 +206,6 @@ class UnifiedCrossValidator:
             LOGGER.error(f"Nested CV failed: {e}")
             return 0.0
 
-
 # Convenience functions
 def perform_cross_validation(
     model: Any,
@@ -236,7 +231,6 @@ def perform_cross_validation(
         'cv_folds': result.folds,
     }
 
-
 def temporal_cross_validation(
     model: Any,
     X: np.ndarray,
@@ -257,7 +251,6 @@ def temporal_cross_validation(
         temporal_test_size=test_size,
         scoring=scoring,
     )
-
 
 def nested_cross_validation(
     model: Any,
@@ -281,7 +274,6 @@ def nested_cross_validation(
         stratified=stratified,
     )
 
-
 # Backward-compatibility aliases for legacy imports
 from .cv import PurgedSplitConfig as PurgedKFold  # type: ignore
 TemporalCrossValidator = UnifiedCrossValidator  # type: ignore
@@ -296,4 +288,3 @@ __all__ = [
     "TemporalCrossValidator",
     "PurgedKFold",
 ]
-

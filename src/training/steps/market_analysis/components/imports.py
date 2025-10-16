@@ -60,7 +60,7 @@ except ImportError as e:
     # Fallback functions
     def tprint(message: str, level: str = "INFO") -> None:
         print(f"[{level}] {message}")
-    
+
     tprint_info = lambda msg: tprint(msg, "INFO")
     tprint_warning = lambda msg: tprint(msg, "WARNING")
     tprint_error = lambda msg: tprint(msg, "ERROR")
@@ -89,18 +89,18 @@ except ImportError as e:
             if not finite_mask.all():
                 raise ValueError(f"Non-finite values found in {name}")
         return data
-    
+
     def validate_numeric_array(data: Any, name: str = "data") -> Any:
         if not isinstance(data, np.ndarray):
             data = np.asarray(data)
         return validate_finite(data, name)
-    
+
     def safe_mean(data: np.ndarray, axis: Optional[int] = None) -> float:
         return np.mean(data, axis=axis)
-    
+
     def safe_std(data: np.ndarray, axis: Optional[int] = None) -> float:
         return np.std(data, axis=axis)
-    
+
     def safe_divide(a: float, b: float, default: float = 0.0) -> float:
         return a / b if b != 0 else default
 
@@ -125,10 +125,10 @@ except ImportError as e:
         if PSUTIL_AVAILABLE:
             return psutil.Process().memory_info().rss
         return 0.0
-    
+
     def memory_checkpoint(operation_name: str):
         return contextmanager(lambda: (yield))
-    
+
     def safe_json_dump(data: Any, file_path: Union[str, Path], **kwargs) -> bool:
         try:
             with open(file_path, 'w') as f:
@@ -155,7 +155,7 @@ except ImportError as e:
     # Fallback functions
     def safe_matrix_multiply(a: np.ndarray, b: np.ndarray) -> np.ndarray:
         return np.dot(a, b)
-    
+
     def batch_matrix_multiply(matrices: List[np.ndarray]) -> List[np.ndarray]:
         return [np.dot(m, m.T) for m in matrices]
 
@@ -241,32 +241,32 @@ except ImportError as e:
     # Fallback classes and functions
     class FeatureConfig:
         def __init__(self, **kwargs): pass
-    
+
     class ConfigValidator:
         def __init__(self, verbose: bool = False): pass
         def validate_config(self, config): pass
-    
+
     class BaseConfig:
         def __post_init__(self): pass
-    
+
     def get_logger(name: str):
         return None
-    
+
     def log_execution(func): return func
-    
+
     def log_performance(func): return func
-    
+
     class LoggingContext:
         def __init__(self, name: str, operation: str, verbose: bool = False): pass
         def __enter__(self): return self
         def __exit__(self, exc_type, exc_val, exc_tb): pass
-    
+
     class MetricsCalculator:
         def __init__(self, verbose: bool = False): pass
-    
+
     class CharacteristicsGenerator:
         def __init__(self, verbose: bool = False): pass
-    
+
     def prepare_market_features(data, config, verbose=False):
         frame = pd.DataFrame(np.random.randn(len(data), 10))
         metadata = {
@@ -275,14 +275,13 @@ except ImportError as e:
             'dropped_columns': {},
         }
         return frame, metadata
-    
+
     def create_regime_characteristics(data, labels, verbose=False):
         return {}
 
-
 class ImportManager:
     """Centralized import management with availability checking."""
-    
+
     def __init__(self):
         """Initialize import manager."""
         self.availability = {
@@ -297,37 +296,34 @@ class ImportManager:
             'ml_common': ML_COMMON_AVAILABLE,
             'shared_utils': SHARED_UTILS_AVAILABLE
         }
-    
+
     def is_available(self, module: str) -> bool:
         """Check if a module is available."""
         return self.availability.get(module, False)
-    
+
     def get_availability_report(self) -> Dict[str, bool]:
         """Get availability report for all modules."""
         return self.availability.copy()
-    
+
     def get_missing_modules(self) -> List[str]:
         """Get list of missing modules."""
         return [module for module, available in self.availability.items() if not available]
-    
+
     def get_available_modules(self) -> List[str]:
         """Get list of available modules."""
         return [module for module, available in self.availability.items() if available]
 
-
 # Global import manager instance
 import_manager = ImportManager()
-
 
 def get_import_manager() -> ImportManager:
     """Get the global import manager instance."""
     return import_manager
 
-
 def check_dependencies() -> Dict[str, Any]:
     """Check all dependencies and return status report."""
     manager = get_import_manager()
-    
+
     report = {
         'availability': manager.get_availability_report(),
         'missing_modules': manager.get_missing_modules(),
@@ -338,19 +334,18 @@ def check_dependencies() -> Dict[str, Any]:
             'math_validation': manager.is_available('math_validation')
         }
     }
-    
-    return report
 
+    return report
 
 def log_import_status() -> None:
     """Log import status for debugging."""
     report = check_dependencies()
-    
+
     tprint_info("Import Status Report:")
     tprint_structured(report)
-    
+
     if report['missing_modules']:
         tprint_warning(f"Missing modules: {report['missing_modules']}")
-    
+
     if not all(report['critical_modules'].values()):
         tprint_error("Critical modules missing - some functionality may be limited")

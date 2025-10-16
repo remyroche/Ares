@@ -38,7 +38,6 @@ from src.utils.math_validation import (
     validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
 )
 
-
 @dataclass
 class FeaturePreparationResult:
     """Result from feature preparation."""
@@ -48,7 +47,6 @@ class FeaturePreparationResult:
     dropped_features: List[str]
     preparation_time: float
     metadata: Dict[str, Any]
-
 
 class FeatureService:
     """
@@ -176,7 +174,7 @@ class FeatureService:
             final_count = final_features.shape[1]
             reduction_rate = (original_count - final_count) / original_count
             self.performance_metrics["feature_reduction_rate"] = reduction_rate
-            
+
             # Log comprehensive feature preparation summary
             tprint(f"📊 Feature Preparation Summary:", "INFO")
             tprint(f"  📈 Original features: {original_count} → Final features: {final_count}", "INFO")
@@ -193,7 +191,7 @@ class FeatureService:
                 if self._get_embedding_method() == "PCA":
                     # Create PCA component names with variance information
                     if hasattr(self, 'pca') and self.pca is not None:
-                        feature_names = [f"PC{i+1}_var{self.pca.explained_variance_ratio_[i]:.3f}" 
+                        feature_names = [f"PC{i+1}_var{self.pca.explained_variance_ratio_[i]:.3f}"
                                        for i in range(final_features.shape[1])]
                     else:
                         feature_names = [f"PC{i+1}" for i in range(final_features.shape[1])]
@@ -201,7 +199,7 @@ class FeatureService:
                     feature_names = [f"UMAP_dim{i+1}" for i in range(final_features.shape[1])]
                 else:
                     feature_names = [f"embedding_{i+1}" for i in range(final_features.shape[1])]
-            
+
             result = FeaturePreparationResult(
                 features=final_features,
                 feature_names=feature_names,
@@ -398,7 +396,7 @@ class FeatureService:
             n_features = features.shape[1]
             n_samples = features.shape[0]
             target_features = getattr(config, 'target_features', min(20, n_features - 1))
-            
+
             # Log embedding configuration
             tprint(f"  📊 Input: {n_samples} samples × {n_features} features", "DEBUG")
             tprint(f"  🎯 Target: {target_features} components", "DEBUG")
@@ -509,31 +507,31 @@ class FeatureService:
 
             # Fit and transform
             reduced_features = self.pca.fit_transform(features)
-            
+
             tprint(f"  ✅ PCA fitting completed", "DEBUG")
 
             # Log PCA results and analysis
             explained_variance_ratio = self.pca.explained_variance_ratio_
             cumulative_variance = np.cumsum(explained_variance_ratio)
             total_variance_explained = cumulative_variance[-1]
-            
+
             tprint(f"📈 PCA Reduction Results:", "INFO")
             tprint(f"  📊 Original features: {n_features} → Reduced features: {reduced_features.shape[1]}", "INFO")
             tprint(f"  📉 Total variance explained: {total_variance_explained:.4f} ({total_variance_explained*100:.2f}%)", "INFO")
             tprint(f"  📊 Feature reduction: {((n_features - reduced_features.shape[1]) / n_features * 100):.1f}%", "INFO")
-            
+
             # Log component-wise variance explained with feature contributions
             tprint(f"🔍 Component Analysis:", "DEBUG")
             for i, (var_ratio, cum_var) in enumerate(zip(explained_variance_ratio, cumulative_variance)):
                 feature_name = f"PC{i+1}_var{var_ratio:.3f}"
                 tprint(f"  {feature_name}: {var_ratio:.4f} ({var_ratio*100:.2f}%) | Cumulative: {cum_var:.4f} ({cum_var*100:.2f}%)", "DEBUG")
-                
+
                 # Analyze which original features contribute most to this component
                 if hasattr(self.pca, 'components_') and feature_names and len(feature_names) > 0:
                     component_loadings = self.pca.components_[i]
                     # Get top contributing features (absolute values)
                     top_features_idx = np.argsort(np.abs(component_loadings))[-5:][::-1]  # Top 5
-                    
+
                     tprint(f"    🎯 Top contributing features:", "DEBUG")
                     for j, feat_idx in enumerate(top_features_idx):
                         if feat_idx < len(feature_names):
@@ -542,14 +540,14 @@ class FeatureService:
                             # Categorize feature type
                             feat_type = self._categorize_feature(feat_name)
                             tprint(f"      {j+1}. {feat_name} ({feat_type}): {loading:.4f}", "DEBUG")
-            
+
             # Log top components that explain most variance
             top_components = np.argsort(explained_variance_ratio)[::-1][:5]
             tprint(f"🏆 Top 5 Components by Variance:", "DEBUG")
             for i, comp_idx in enumerate(top_components):
                 feature_name = f"PC{comp_idx+1}_var{explained_variance_ratio[comp_idx]:.3f}"
                 tprint(f"  {i+1}. {feature_name}: {explained_variance_ratio[comp_idx]:.4f} ({explained_variance_ratio[comp_idx]*100:.2f}%)", "DEBUG")
-            
+
             # Analyze feature type composition for top components
             tprint(f"📊 PCA Component Feature Analysis:", "INFO")
             for i in range(min(3, reduced_features.shape[1])):  # Analyze top 3 components
@@ -562,36 +560,36 @@ class FeatureService:
                             feat_name = feature_names[j]
                             feat_type = self._categorize_feature(feat_name)
                             feature_contributions.append((feat_name, feat_type, abs(loading)))
-                    
+
                     # Sort by contribution strength
                     feature_contributions.sort(key=lambda x: x[2], reverse=True)
-                    
+
                     # Count feature types
                     type_counts = {}
                     for _, feat_type, _ in feature_contributions:
                         type_counts[feat_type] = type_counts.get(feat_type, 0) + 1
-                    
+
                     # Show composition
                     component_name = f"PC{i+1}_var{explained_variance_ratio[i]:.3f}"
                     tprint(f"  🎯 {component_name} composition:", "INFO")
                     for feat_type, count in sorted(type_counts.items(), key=lambda x: x[1], reverse=True):
                         percentage = (count / len(feature_contributions)) * 100
                         tprint(f"    {feat_type}: {count} features ({percentage:.1f}%)", "INFO")
-            
+
             # Log data quality metrics
             reduced_mean = np.mean(reduced_features, axis=0)
             reduced_std = np.std(reduced_features, axis=0)
             tprint(f"📊 Reduced Feature Statistics:", "DEBUG")
             tprint(f"  Mean range: [{np.min(reduced_mean):.4f}, {np.max(reduced_mean):.4f}]", "DEBUG")
             tprint(f"  Std range: [{np.min(reduced_std):.4f}, {np.max(reduced_std):.4f}]", "DEBUG")
-            
+
             # Check for potential issues
             if total_variance_explained < 0.8:
                 tprint(f"⚠️ Low variance explained ({total_variance_explained:.2f}%) - consider more components", "WARNING")
-            
+
             if np.any(np.isnan(reduced_features)):
                 tprint(f"❌ NaN values detected in reduced features!", "ERROR")
-            
+
             if np.any(np.isinf(reduced_features)):
                 tprint(f"❌ Infinite values detected in reduced features!", "ERROR")
 
@@ -663,39 +661,39 @@ class FeatureService:
     def _categorize_feature(self, feature_name: str) -> str:
         """Categorize a feature by its name to identify type (volatility, momentum, trend, etc.)."""
         feature_name_lower = feature_name.lower()
-        
+
         # Volatility indicators
         if any(term in feature_name_lower for term in ['vol', 'volatility', 'atr', 'std', 'dev', 'range', 'bb', 'bollinger']):
             return "VOLATILITY"
-        
+
         # Momentum indicators
         elif any(term in feature_name_lower for term in ['rsi', 'momentum', 'roc', 'rate_of_change', 'stoch', 'stochastic', 'williams', 'cci']):
             return "MOMENTUM"
-        
+
         # Trend indicators
         elif any(term in feature_name_lower for term in ['ma', 'moving_average', 'ema', 'sma', 'trend', 'macd', 'adx', 'dmi', 'aroon']):
             return "TREND"
-        
+
         # Volume indicators
         elif any(term in feature_name_lower for term in ['volume', 'vol', 'obv', 'ad', 'accumulation', 'distribution', 'mfi', 'money_flow']):
             return "VOLUME"
-        
+
         # Price-based features
         elif any(term in feature_name_lower for term in ['price', 'close', 'open', 'high', 'low', 'return', 'change', 'pct']):
             return "PRICE"
-        
+
         # Statistical features
         elif any(term in feature_name_lower for term in ['skew', 'kurt', 'stat', 'corr', 'correlation', 'beta', 'alpha']):
             return "STATISTICAL"
-        
+
         # Regime features
         elif any(term in feature_name_lower for term in ['regime', 'state', 'phase', 'cycle']):
             return "REGIME"
-        
+
         # Technical patterns
         elif any(term in feature_name_lower for term in ['pattern', 'signal', 'crossover', 'breakout', 'support', 'resistance']):
             return "PATTERN"
-        
+
         # Default category
         else:
             return "OTHER"

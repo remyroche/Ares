@@ -22,17 +22,17 @@ import gc
 
 class OptimizationMixin:
     """Mixin class that provides optimization capabilities for feature generators."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
+
         # Initialize optimization settings
         self.enable_memory_optimization = getattr(self, 'enable_memory_optimization', True)
         self.enable_data_compression = getattr(self, 'enable_data_compression', True)
         self.enable_chunked_processing = getattr(self, 'enable_chunked_processing', True)
         self.chunk_size = getattr(self, 'chunk_size', 10000)
         self.memory_threshold_mb = getattr(self, 'memory_threshold_mb', 100)
-        
+
         # Performance tracking
         self.optimization_stats = {
             'memory_optimizations': 0,
@@ -41,63 +41,63 @@ class OptimizationMixin:
             'total_optimization_time': 0.0,
             'memory_saved_mb': 0.0
         }
-        
+
         # Setup logger
         self.logger = logging.getLogger(self.__class__.__name__)
-    
+
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize DataFrame for efficient processing.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame
         """
         start_time = time.time()
-        
+
         if not self.enable_memory_optimization:
             return data
-        
+
         try:
             # Check memory usage
             memory_usage_mb = data.memory_usage(deep=True).sum() / (1024**2)
-            
+
             if memory_usage_mb > self.memory_threshold_mb:
                 self.logger.debug(f"Optimizing DataFrame: {memory_usage_mb:.2f}MB > {self.memory_threshold_mb}MB")
-                
+
                 # Optimize dtypes
                 optimized_data = self._optimize_dtypes(data)
-                
+
                 # Compress data if enabled
                 if self.enable_data_compression:
                     optimized_data = self._compress_data(optimized_data)
-                
+
                 # Update stats
                 self.optimization_stats['memory_optimizations'] += 1
                 memory_saved = memory_usage_mb - (optimized_data.memory_usage(deep=True).sum() / (1024**2))
                 self.optimization_stats['memory_saved_mb'] += memory_saved
-                
+
                 self.logger.debug(f"Memory optimization saved {memory_saved:.2f}MB")
-                
+
                 return optimized_data
             else:
                 return data
-                
+
         except Exception as e:
             self.logger.warning(f"DataFrame optimization failed: {e}")
             return data
         finally:
             self.optimization_stats['total_optimization_time'] += time.time() - start_time
-    
+
     def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame dtypes for memory efficiency."""
         optimized_data = data.copy()
-        
+
         for column in optimized_data.columns:
             col_data = optimized_data[column]
-            
+
             if col_data.dtype == 'object':
                 # Try to convert to numeric
                 try:
@@ -108,7 +108,7 @@ class OptimizationMixin:
                     except (ValueError, TypeError):
                         # Keep as object if conversion fails
                         pass
-            
+
             elif col_data.dtype == 'int64':
                 # Downcast integers
                 if col_data.min() >= np.iinfo(np.int8).min and col_data.max() <= np.iinfo(np.int8).max:
@@ -117,100 +117,100 @@ class OptimizationMixin:
                     optimized_data[column] = col_data.astype(np.int16)
                 elif col_data.min() >= np.iinfo(np.int32).min and col_data.max() <= np.iinfo(np.int32).max:
                     optimized_data[column] = col_data.astype(np.int32)
-            
+
             elif col_data.dtype == 'float64':
                 # Downcast floats
                 if col_data.min() >= np.finfo(np.float32).min and col_data.max() <= np.finfo(np.float32).max:
                     optimized_data[column] = col_data.astype(np.float32)
-        
+
         return optimized_data
-    
+
     def _compress_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Compress DataFrame data for memory efficiency."""
         if not self.enable_data_compression:
             return data
-        
+
         try:
             # Use pandas compression for categorical data
             compressed_data = data.copy()
-            
+
             for column in compressed_data.columns:
                 if compressed_data[column].dtype == 'object':
                     # Convert to category if beneficial
                     if compressed_data[column].nunique() / len(compressed_data) < 0.5:
                         compressed_data[column] = compressed_data[column].astype('category')
-            
+
             self.optimization_stats['data_compressions'] += 1
             return compressed_data
-            
+
         except Exception as e:
             self.logger.warning(f"Data compression failed: {e}")
             return data
-    
-    def chunked_processing(self, data: pd.DataFrame, func: callable, 
+
+    def chunked_processing(self, data: pd.DataFrame, func: callable,
                           chunk_size: Optional[int] = None, **kwargs) -> pd.DataFrame:
         """
         Process DataFrame in chunks for memory efficiency.
-        
+
         Args:
             data: Input DataFrame
             func: Function to apply to each chunk
             chunk_size: Size of each chunk (uses default if None)
             **kwargs: Additional arguments for func
-            
+
         Returns:
             Processed DataFrame
         """
         if not self.enable_chunked_processing:
             return func(data, **kwargs)
-        
+
         chunk_size = chunk_size or self.chunk_size
-        
+
         if len(data) <= chunk_size:
             return func(data, **kwargs)
-        
+
         try:
             results = []
-            
+
             for i in range(0, len(data), chunk_size):
                 chunk = data.iloc[i:i + chunk_size]
                 chunk_result = func(chunk, **kwargs)
                 results.append(chunk_result)
-                
+
                 # Force garbage collection for large chunks
                 if i % (chunk_size * 5) == 0:
                     gc.collect()
-            
+
             self.optimization_stats['chunked_operations'] += 1
-            
+
             if results:
                 return pd.concat(results, ignore_index=False)
             else:
                 return data
-                
+
         except Exception as e:
             self.logger.warning(f"Chunked processing failed: {e}")
             return func(data, **kwargs)
-    
+
     def optimize_memory_usage(self) -> None:
         """Optimize memory usage by forcing garbage collection."""
         if self.enable_memory_optimization:
             gc.collect()
-    
+
     def get_optimization_stats(self) -> Dict[str, Any]:
         """Get optimization statistics."""
         stats = self.optimization_stats.copy()
-        
+
         if stats['total_optimization_time'] > 0:
             stats['average_optimization_time'] = (
-                stats['total_optimization_time'] / 
+                stats['total_optimization_time'] /
                 (stats['memory_optimizations'] + stats['data_compressions'] + stats['chunked_operations'])
             )
         else:
             stats['average_optimization_time'] = 0
-        
+
         return stats
-    
+
     def reset_optimization_stats(self) -> None:
         """Reset optimization statistics."""
         self.optimization_stats = {

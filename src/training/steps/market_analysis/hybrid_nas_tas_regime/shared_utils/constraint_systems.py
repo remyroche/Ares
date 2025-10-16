@@ -15,19 +15,17 @@ import time
 from datetime import datetime
 import psutil
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class ConstraintSeverity(Enum):
     """Severity levels for constraint violations."""
     ERROR = "error"  # Invalid architecture
     WARNING = "warning"  # Suboptimal but valid
     INFO = "info"  # Informational constraint
-
 
 class ConstraintType(Enum):
     """Types of architectural constraints."""
@@ -42,7 +40,6 @@ class ConstraintType(Enum):
     NUMERICAL_STABILITY = "numerical_stability"
     PRACTICALITY = "practicality"
 
-
 @dataclass
 class ConstraintViolation:
     """Information about a constraint violation."""
@@ -53,7 +50,6 @@ class ConstraintViolation:
     threshold: float
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-
 @dataclass
 class ConstraintValidationResult:
     """Result of constraint validation."""
@@ -63,7 +59,6 @@ class ConstraintValidationResult:
     info: List[ConstraintViolation]
     validation_time: float
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class ArchitectureConstraints:
@@ -123,7 +118,6 @@ class ArchitectureConstraints:
     enforce_reproducibility: bool = True
     allow_stochastic_layers: bool = True
 
-
 class BaseConstraintValidator:
     """Base class for constraint validators."""
 
@@ -139,14 +133,14 @@ class BaseConstraintValidator:
         try:
             violations = []
             is_valid = True
-            
+
             # Check all constraint types
             for constraint_type in ConstraintType:
                 violation = self.check_single_constraint(architecture, constraint_type)
                 if violation is not None:
                     violations.append(violation)
                     is_valid = False
-            
+
             # Calculate overall score
             if len(violations) == 0:
                 score = 1.0
@@ -155,7 +149,7 @@ class BaseConstraintValidator:
                 total_severity = sum(v.severity for v in violations)
                 max_severity = len(violations) * 1.0  # Maximum possible severity
                 score = max(0.0, 1.0 - (total_severity / max_severity))
-            
+
             return ConstraintValidationResult(
                 is_valid=is_valid,
                 score=score,
@@ -163,7 +157,7 @@ class BaseConstraintValidator:
                 total_constraints=len(ConstraintType),
                 passed_constraints=len(ConstraintType) - len(violations)
             )
-            
+
         except Exception as e:
             tprint_error(f"Error validating architecture: {e}")
             tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
@@ -219,7 +213,7 @@ class BaseConstraintValidator:
                     severity=0.5,
                     suggested_fix="Check constraint type definition"
                 )
-                
+
         except Exception as e:
             tprint_error(f"Error checking constraint {constraint_type}: {e}")
             tprint_debug(f"Error details: {type(e).__name__}: {str(e)}")
@@ -253,9 +247,9 @@ class BaseConstraintValidator:
                 },
                 'is_initialized': self.is_initialized
             }
-            
+
             return summary
-            
+
         except Exception as e:
             tprint(f"⚠️ [CONSTRAINT] Error getting constraint summary: {e}", color="yellow")
             return {
@@ -283,7 +277,6 @@ class BaseConstraintValidator:
                 'memory_available_gb': 6,
                 'gpu_available': False
             }
-
 
 class NeuralConstraintValidator(BaseConstraintValidator):
     """Constraint validator for neural architectures."""
@@ -564,7 +557,6 @@ class NeuralConstraintValidator(BaseConstraintValidator):
 
         return None
 
-
 class TreeConstraintValidator(BaseConstraintValidator):
     """Constraint validator for tree architectures."""
 
@@ -758,7 +750,6 @@ class TreeConstraintValidator(BaseConstraintValidator):
 
         return None
 
-
 class UnifiedConstraintValidator:
     """Unified constraint validator that handles both neural and tree architectures."""
 
@@ -856,16 +847,13 @@ class UnifiedConstraintValidator:
         self.logger.info(f"Filtered {len(architectures)} architectures to {len(valid_architectures)} valid ones")
         return valid_architectures, results
 
-
 def create_neural_constraint_validator(config: Dict[str, Any]) -> NeuralConstraintValidator:
     """Create a neural constraint validator."""
     return NeuralConstraintValidator(config)
 
-
 def create_tree_constraint_validator(config: Dict[str, Any]) -> TreeConstraintValidator:
     """Create a tree constraint validator."""
     return TreeConstraintValidator(config)
-
 
 def create_unified_constraint_validator(config: Dict[str, Any]) -> UnifiedConstraintValidator:
     """Create a unified constraint validator."""

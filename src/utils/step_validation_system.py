@@ -22,12 +22,12 @@ class StepValidationSystem:
     def validate_step_output(self, step_name: str, output: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate step output against defined rules.
-        
+
         Args:
             step_name: Name of the step
             output: Step output data
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Validation results
         """
@@ -108,11 +108,11 @@ class StepValidationSystem:
     def validate_step_input(self, step_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Validate step input to ensure it meets requirements.
-        
+
         Args:
             step_name: Name of the step
             input_data: Input data for the step
-            
+
         Returns:
             Validation results
         """
@@ -139,12 +139,12 @@ class StepValidationSystem:
     def apply_data_fixes(self, step_name: str, data: pd.DataFrame, validation_result: Dict[str, Any]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
         Apply data fixes based on validation results.
-        
+
         Args:
             step_name: Name of the step
             data: DataFrame to fix
             validation_result: Validation results
-            
+
         Returns:
             Tuple of (fixed_data, fix_report)
         """

@@ -20,7 +20,7 @@ performance monitoring, and quality assessment.
 # TODO: Update __all__ when replacement reporter is found
 # __all__ = [
 #     "Step03ExecutionReporter",
-#     "Step03ExecutionReport", 
+#     "Step03ExecutionReport",
 #     "FunctionCallSummary",
 #     "PerformanceMetrics",
 #     "ErrorAnalysis",

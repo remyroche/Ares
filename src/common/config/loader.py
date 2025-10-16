@@ -15,11 +15,9 @@ from typing import Any, Dict, Mapping, MutableMapping, Optional, Type, TypeVar, 
 
 import yaml
 
-
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
 
 def to_serializable_dict(obj: Any) -> Dict[str, Any]:
     """Convert a config-like object to a serializable dictionary.
@@ -50,7 +48,6 @@ def to_serializable_dict(obj: Any) -> Dict[str, Any]:
 
     raise TypeError(f"Unsupported object type for serialization: {type(obj)!r}")
 
-
 def instantiate_from_dict(target_cls: Type[T], data: Mapping[str, Any]) -> T:
     """Instantiate target class from a dictionary with graceful fallbacks.
 
@@ -73,7 +70,6 @@ def instantiate_from_dict(target_cls: Type[T], data: Mapping[str, Any]) -> T:
 
     return target_cls(**dict(data))  # type: ignore[misc]
 
-
 def _read_file(filepath: Union[str, Path]) -> Dict[str, Any]:
     path = Path(filepath)
     if not path.exists():
@@ -88,7 +84,6 @@ def _read_file(filepath: Union[str, Path]) -> Dict[str, Any]:
             return yaml.safe_load(f) or {}
 
     raise ValueError(f"Unsupported configuration file format: {suffix}")
-
 
 def _write_file(data: Mapping[str, Any], filepath: Union[str, Path]) -> None:
     path = Path(filepath)
@@ -107,12 +102,10 @@ def _write_file(data: Mapping[str, Any], filepath: Union[str, Path]) -> None:
 
     raise ValueError(f"Unsupported configuration file format: {suffix}")
 
-
 def save_to_file(obj: Any, filepath: Union[str, Path]) -> None:
     """Serialize a config-like object and write it to YAML or JSON file."""
     data = to_serializable_dict(obj)
     _write_file(data, filepath)
-
 
 def load_from_file(filepath: Union[str, Path], target_cls: Optional[Type[T]] = None) -> Union[T, Dict[str, Any]]:
     """Load config data from YAML/JSON and optionally instantiate a target class.
@@ -123,7 +116,6 @@ def load_from_file(filepath: Union[str, Path], target_cls: Optional[Type[T]] = N
     if target_cls is None:
         return data
     return instantiate_from_dict(target_cls, data)
-
 
 def merge_dicts(base: MutableMapping[str, Any], override: Mapping[str, Any]) -> Dict[str, Any]:
     """Recursively merge two dicts and return a new merged dict."""
@@ -138,4 +130,3 @@ def merge_dicts(base: MutableMapping[str, Any], override: Mapping[str, Any]) -> 
         else:
             result[key] = value
     return result
-

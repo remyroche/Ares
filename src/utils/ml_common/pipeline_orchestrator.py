@@ -36,7 +36,6 @@ from src.utils.common_utilities import safe_dataframe_operation
 
 logger = logging.getLogger(__name__)
 
-
 class PipelineStatus(Enum):
     """Pipeline execution status."""
     PENDING = "pending"
@@ -45,7 +44,6 @@ class PipelineStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
-
 class StepStatus(Enum):
     """Pipeline step status."""
     PENDING = "pending"
@@ -53,7 +51,6 @@ class StepStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
-
 
 @dataclass
 class PipelineStep:
@@ -72,7 +69,6 @@ class PipelineStep:
     execution_time: Optional[float] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
-
 
 @dataclass
 class PipelineExecution:
@@ -95,7 +91,6 @@ class PipelineExecution:
         if self.errors is None:
             self.errors = []
 
-
 class MLPipelineOrchestrator:
     """Comprehensive ML pipeline orchestration system."""
 
@@ -104,7 +99,7 @@ class MLPipelineOrchestrator:
         self.logger = logger.getChild('PipelineOrchestrator')
         self.logger.info("🚀 Initializing MLPipelineOrchestrator...")
         start_time = time.time()
-        
+
         self.config = config or {}
         self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
@@ -114,7 +109,7 @@ class MLPipelineOrchestrator:
         self.default_timeout = self.config.get('default_timeout', 3600)
         self.retry_failed_steps = self.config.get('retry_failed_steps', True)
         self.enable_monitoring = self.config.get('enable_monitoring', True)
-        
+
         self.logger.info(f"📊 Max workers: {self.max_workers}")
         self.logger.info(f"📊 Parallel execution: {self.enable_parallel}")
         self.logger.info(f"📊 Default timeout: {self.default_timeout}s")
@@ -130,7 +125,7 @@ class MLPipelineOrchestrator:
         self.monitoring_queue = queue.Queue()
         self.monitoring_thread = None
         self.logger.debug("✅ Monitoring system initialized")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ MLPipelineOrchestrator initialized in {init_time:.3f}s")
 

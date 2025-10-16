@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 from .core.decorators import handles_errors
+from typing import Dict, List, Optional, Union, Any, Tuple
 '\nEnhanced Scenario-Based Predictor for Tactician\n\nImplements advanced probabilistic scenario analysis with:\n- All step07 technical indicators\n- 15-minute look-ahead period\n- Fractal scenario definitions (linear progression)\n- Full step17 optimization for all parameters\n- Complete migration from existing system\n'
 import logging
 from datetime import datetime

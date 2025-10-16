@@ -23,10 +23,10 @@ class RealDataLoader:
     Real data loader that ensures we never use synthetic/mock data.
     It attempts to load real data from various sources and downloads if necessary.
     """
-    
+
     def __init__(self, data_dir: str = 'data/training'):
         """Initialize the real data loader.
-        
+
         Args:
             data_dir: Base directory for data storage
         """
@@ -35,7 +35,7 @@ class RealDataLoader:
         self.unified_loader = UnifiedDataLoader()
         self.data_downloader = UnifiedDataDownloader(data_dir)
         self.data_utils = UnifiedDataUtils()
-        
+
     async def load_market_data(
         self,
         symbol: str = 'ETHUSDT',
@@ -47,7 +47,7 @@ class RealDataLoader:
     ) -> pd.DataFrame:
         """
         Load real market data, downloading if necessary.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
@@ -55,7 +55,7 @@ class RealDataLoader:
             start_date: Start date (YYYY-MM-DD)
             end_date: End date (YYYY-MM-DD)
             force_download: Force download even if data exists
-            
+
         Returns:
             DataFrame with real market data
         """
@@ -67,28 +67,28 @@ class RealDataLoader:
                 if existing_data is not None and len(existing_data) > 0:
                     self.logger.info(f"✅ Loaded existing data: {len(existing_data)} rows")
                     return existing_data
-            
+
             # If no existing data or force download, download new data
             self.logger.info(f"📥 Downloading real market data: {symbol}/{exchange}/{timeframe}")
             download_success = await self._download_real_data(symbol, exchange, timeframe, start_date, end_date)
-            
+
             if download_success:
                 # Try to load the newly downloaded data
                 downloaded_data = await self._load_existing_data(symbol, exchange, timeframe, start_date, end_date)
                 if downloaded_data is not None and len(downloaded_data) > 0:
                     self.logger.info(f"✅ Successfully loaded downloaded data: {len(downloaded_data)} rows")
                     return downloaded_data
-            
+
             # If all else fails, raise an error instead of using synthetic data
             raise RuntimeError(
                 f"❌ Failed to load real market data for {symbol}/{exchange}/{timeframe}. "
                 "No synthetic data will be used. Please check your data sources and network connection."
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error loading real market data: {e}")
             raise
-    
+
     async def _load_existing_data(
         self,
         symbol: str,
@@ -108,10 +108,10 @@ class RealDataLoader:
                 start_date=start_date,
                 end_date=end_date
             )
-            
+
             if data is not None and len(data) > 0:
                 return data
-            
+
             # Try consolidated klines
             consolidated_path = self.data_dir / 'consolidated' / f'klines_{exchange}_{symbol}_{timeframe}.parquet'
             if consolidated_path.exists():
@@ -119,7 +119,7 @@ class RealDataLoader:
                 data = pd.read_parquet(consolidated_path)
                 if len(data) > 0:
                     return data
-            
+
             # Try individual klines files
             klines_dir = self.data_dir / 'klines' / exchange / symbol / timeframe
             if klines_dir.exists():
@@ -130,13 +130,13 @@ class RealDataLoader:
                     data = pd.read_parquet(latest_file)
                     if len(data) > 0:
                         return data
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.debug(f"Could not load existing data: {e}")
             return None
-    
+
     async def _download_real_data(
         self,
         symbol: str,
@@ -152,9 +152,9 @@ class RealDataLoader:
                 start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
             if not end_date:
                 end_date = datetime.now().strftime('%Y-%m-%d')
-            
+
             self.logger.info(f"📥 Downloading data from {start_date} to {end_date}")
-            
+
             # Use the unified data downloader
             success = await self.data_downloader.download_klines_data(
                 symbol=symbol,
@@ -163,18 +163,18 @@ class RealDataLoader:
                 start_date=start_date,
                 end_date=end_date
             )
-            
+
             if success:
                 self.logger.info("✅ Data download completed successfully")
                 return True
             else:
                 self.logger.error("❌ Data download failed")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error downloading data: {e}")
             return False
-    
+
     def process_and_validate_data(
         self,
         data: pd.DataFrame,
@@ -184,13 +184,13 @@ class RealDataLoader:
     ) -> pd.DataFrame:
         """
         Process and validate the loaded data using unified data utils.
-        
+
         Args:
             data: Raw data DataFrame
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Timeframe
-            
+
         Returns:
             Processed and validated DataFrame
         """
@@ -208,10 +208,10 @@ class RealDataLoader:
                 exchange=exchange,
                 timeframe=timeframe
             )
-            
+
             self.logger.info(f"✅ Data processing completed: {processing_report['steps_completed']}")
             return processed_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error processing data: {e}")
             # Return original data if processing fails

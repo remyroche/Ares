@@ -32,7 +32,7 @@ class DataQualityMetrics:
 class DataCollectionStep(BasePipelineStep, IDataStep):
     """
     Migrated data collection step that replaces step01_data_collection.py.
-    
+
     This step handles data collection from various sources including:
     - Exchange APIs (Binance, Coinbase, Kraken)
     - File sources (CSV, Parquet, JSON)
@@ -75,7 +75,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
     async def load_data(self, source: str, **kwargs) -> pd.DataFrame:
         """Load data from specified source."""
         source_type = self.config.parameters.get('source_type', 'file')
-        
+
         if source_type == 'exchange':
             return await self._load_from_exchange(source, **kwargs)
         elif source_type == 'file':
@@ -90,7 +90,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         symbol = kwargs.get('symbol', self.config.parameters.get('symbol'))
         timeframe = kwargs.get('timeframe', self.config.parameters.get('timeframe', '1h'))
         lookback_days = kwargs.get('lookback_days', self.config.parameters.get('lookback_days', 30))
-        
+
         # Get exchange data source
         try:
             data_source = ExchangeDataSourceFactory.create_exchange(exchange_name)
@@ -100,29 +100,29 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         # Calculate date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days = lookback_days)
-        
+
         self.logger.info(f"Loading data from {exchange_name} for {symbol} ({timeframe}) from {start_date} to {end_date}")
-        
+
         # Fetch data
         data = await data_source.fetch_data(symbol, start_date, end_date)
-        
+
         # Add metadata
         data.attrs['exchange'] = exchange_name
         data.attrs['symbol'] = symbol
         data.attrs['timeframe'] = timeframe
         data.attrs['collection_time'] = datetime.now()
-        
+
         return data
 
     async def _load_from_file(self, file_path: str, **kwargs) -> pd.DataFrame:
         """Load data from file."""
         file_path = Path(file_path)
-        
+
         if not file_path.exists():
             raise FileNotFoundError(f"Data file not found: {file_path}")
-        
+
         self.logger.info(f"Loading data from file: {file_path}")
-        
+
         # Load based on file extension
         if file_path.suffix.lower() == '.parquet':
             data = pd.read_parquet(file_path)
@@ -132,11 +132,11 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
             data = pd.read_json(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_path.suffix}")
-        
+
         # Add metadata
         data.attrs['source_file'] = str(file_path)
         data.attrs['collection_time'] = datetime.now()
-        
+
         return data
 
     async def _load_from_database(self, connection_string: str, **kwargs) -> pd.DataFrame:
@@ -146,23 +146,23 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
             from sqlalchemy import create_engine, text
         except ImportError:
             raise ImportError("sqlalchemy is required for database loading. Install with: pip install sqlalchemy")
-        
+
         try:
             # Create database engine
             engine = create_engine(connection_string)
-            
+
             # Get query parameters
             table_name = kwargs.get('table_name', self.config.parameters.get('table_name'))
             query = kwargs.get('query', self.config.parameters.get('query'))
             symbol = kwargs.get('symbol', self.config.parameters.get('symbol'))
             start_date = kwargs.get('start_date', self.config.parameters.get('start_date'))
             end_date = kwargs.get('end_date', self.config.parameters.get('end_date'))
-            
+
             if not table_name and not query:
                 raise ValueError("Either table_name or query must be specified for database loading")
-            
+
             self.logger.info(f"Loading data from database: {connection_string}")
-            
+
             # Build query
             if query:
                 # Use custom query
@@ -172,29 +172,29 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                     query = query.format(start_date=start_date)
                 if '{end_date}' in query and end_date:
                     query = query.format(end_date=end_date)
-                
+
                 sql_query = text(query)
             else:
                 # Build query from table name and filters
                 sql_query = f"SELECT * FROM {table_name}"
                 conditions = []
-                
+
                 if symbol:
                     conditions.append(f"symbol = '{symbol}'")
                 if start_date:
                     conditions.append(f"timestamp >= '{start_date}'")
                 if end_date:
                     conditions.append(f"timestamp <= '{end_date}'")
-                
+
                 if conditions:
                     sql_query += " WHERE " + " AND ".join(conditions)
-                
+
                 sql_query = text(sql_query)
-            
+
             # Execute query and load data
             with engine.connect() as connection:
                 data = pd.read_sql(sql_query, connection)
-            
+
             # Ensure timestamp index
             if 'timestamp' in data.columns:
                 data = data.set_index('timestamp')
@@ -202,19 +202,19 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 data = data.set_index('time')
             elif 'date' in data.columns:
                 data = data.set_index('date')
-            
+
             # Sort by index
             if not data.index.is_monotonic_increasing:
                 data = data.sort_index()
-            
+
             # Add metadata
             data.attrs['source_database'] = connection_string
             data.attrs['collection_time'] = datetime.now()
             data.attrs['query'] = str(sql_query)
-            
+
             self.logger.info(f"Successfully loaded {len(data)} rows from database")
             return data
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load data from database: {e}")
             raise ValueError(f"Database loading failed: {e}")
@@ -222,29 +222,29 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
     async def validate_data(self, data: pd.DataFrame) -> bool:
         """Validate loaded data meets requirements."""
         required_columns = self.config.parameters.get('required_columns', [])
-        
+
         # Check required columns
         missing_columns = set(required_columns) - set(data.columns)
         if missing_columns:
             self.add_warning(f'Missing required columns: {missing_columns}')
             return False
-        
+
         # Check for null values
         null_counts = data[required_columns].isnull().sum()
         max_null_percentage = self.config.parameters.get('max_null_percentage', 5.0)
-        
+
         for col, null_count in null_counts.items():
             null_percentage = (null_count / len(data)) * 100
             if null_percentage > max_null_percentage:
                 self.add_warning(f'Column {col} has {null_percentage:.2f}% null values (max: {max_null_percentage}%)')
                 return False
-        
+
         # Check minimum rows
         min_rows = self.config.parameters.get('min_rows', 100)
         if len(data) < min_rows:
             self.add_warning(f'Insufficient data: {len(data)} rows (min: {min_rows})')
             return False
-        
+
         # Check data types for price columns
         price_columns = ['open', 'high', 'low', 'close']
         for col in price_columns:
@@ -252,12 +252,12 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 if not pd.api.types.is_numeric_dtype(data[col]):
                     self.add_warning(f'Column {col} is not numeric')
                     return False
-                
+
                 # Check for negative prices
                 if (data[col] <= 0).any():
                     self.add_warning(f'Column {col} contains non-positive values')
                     return False
-        
+
         return True
 
     async def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -267,50 +267,50 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         data = data.drop_duplicates()
         if len(data) < initial_rows:
             self.add_metric('duplicates_removed', initial_rows - len(data))
-        
+
         # Sort by index (usually timestamp)
         if not data.index.is_monotonic_increasing:
             data = data.sort_index()
             self.add_metric('data_sorted', True)
-        
+
         # Handle missing values
         if data.isnull().any().any():
             # Forward fill for price data, backward fill for volume
             price_columns = ['open', 'high', 'low', 'close']
             volume_columns = ['volume']
-            
+
             for col in price_columns:
                 if col in data.columns:
                     data[col] = data[col].fillna(method='ffill')
-            
+
             for col in volume_columns:
                 if col in data.columns:
                     data[col] = data[col].fillna(method='bfill')
-            
+
             self.add_metric('missing_values_handled', True)
-        
+
         # Add basic technical indicators if requested
         if self.config.parameters.get('add_basic_indicators', False):
             data = self._add_basic_indicators(data)
-        
+
         return data
 
     def _add_basic_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add basic technical indicators."""
         if 'close' not in data.columns:
             return data
-        
+
         # Simple Moving Averages
         for period in [5, 10, 20, 50]:
             data[f'sma_{period}'] = data['close'].rolling(window = period).mean()
-        
+
         # Price change
         data['price_change'] = data['close'].pct_change()
-        
+
         # Volume change
         if 'volume' in data.columns:
             data['volume_change'] = data['volume'].pct_change()
-        
+
         self.add_metric('basic_indicators_added', True)
         return data
 
@@ -323,11 +323,11 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
             duplicate_rows = data.duplicated().sum(),
             memory_usage_mb = data.memory_usage(deep = True).sum() / 1024 / 1024
         )
-        
+
         # Date range
         if hasattr(data.index, 'min') and hasattr(data.index, 'max'):
             metrics.date_range = (data.index.min(), data.index.max())
-        
+
         # Price range
         price_columns = ['open', 'high', 'low', 'close']
         existing_price_columns = [col for col in price_columns if col in data.columns]
@@ -335,7 +335,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
             min_price = data[existing_price_columns].min().min()
             max_price = data[existing_price_columns].max().max()
             metrics.price_range = (min_price, max_price)
-        
+
         # Volume statistics
         if 'volume' in data.columns:
             metrics.volume_stats = {
@@ -345,7 +345,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
                 'max': data['volume'].max(),
                 'median': data['volume'].median()
             }
-        
+
         return metrics
 
     async def _execute_impl(self, **kwargs) -> Dict[str, Any]:
@@ -353,34 +353,34 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
         source = kwargs.get('source', self.config.parameters.get('source'))
         if not source:
             raise ValueError("Data source not specified")
-        
+
         # Load data
         data = await self.load_data(source, **kwargs)
-        
+
         # Validate data
         if not await self.validate_data(data):
             raise ValueError('Data validation failed')
-        
+
         # Preprocess data
         data = await self.preprocess_data(data)
-        
+
         # Get quality metrics
         quality_metrics = self.get_data_quality_metrics(data)
-        
+
         # Add metrics to step result
         self.add_metric('total_rows', quality_metrics.total_rows)
         self.add_metric('total_columns', quality_metrics.total_columns)
         self.add_metric('null_percentage', quality_metrics.null_percentage)
         self.add_metric('duplicate_rows', quality_metrics.duplicate_rows)
         self.add_metric('memory_usage_mb', quality_metrics.memory_usage_mb)
-        
+
         # Save snapshot if requested
         if self.config.parameters.get('save_snapshot', False):
             snapshot_path = Path(f'data/snapshots/{self.name}_{int(time.time())}.parquet')
             snapshot_path.parent.mkdir(parents = True, exist_ok = True)
             data.to_parquet(snapshot_path)
             self.add_artifact('data_snapshot', snapshot_path)
-        
+
         return {
             'data': data,
             'metadata': {
@@ -395,7 +395,7 @@ class DataCollectionStep(BasePipelineStep, IDataStep):
 class DataConverterStep(BasePipelineStep, IDataStep):
     """
     Migrated data converter step that replaces step01_5_data_converter.py.
-    
+
     This step converts data from various formats to a unified format.
     """
 
@@ -438,7 +438,7 @@ class DataConverterStep(BasePipelineStep, IDataStep):
         if data is None or data.empty:
             self.add_warning("No data provided for conversion")
             return False
-        
+
         return True
 
     async def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -448,19 +448,19 @@ class DataConverterStep(BasePipelineStep, IDataStep):
         if column_mapping:
             data = data.rename(columns = column_mapping)
             self.add_metric('columns_renamed', len(column_mapping))
-        
+
         # Ensure required columns exist
         required_columns = self.config.parameters.get('required_columns', [])
         missing_columns = set(required_columns) - set(data.columns)
         if missing_columns:
             raise ValueError(f"Missing required columns after conversion: {missing_columns}")
-        
+
         # Standardize data types
         data_types = self.config.parameters.get('data_types', {})
         for col, dtype in data_types.items():
             if col in data.columns:
                 data[col] = data[col].astype(dtype)
-        
+
         return data
 
     def get_data_quality_metrics(self, data: pd.DataFrame) -> DataQualityMetrics:
@@ -478,18 +478,18 @@ class DataConverterStep(BasePipelineStep, IDataStep):
         data = kwargs.get('data')
         if data is None:
             raise ValueError("No data provided for conversion")
-        
+
         # Load and validate
         data = await self.load_data("", data = data)
         if not await self.validate_data(data):
             raise ValueError('Data validation failed')
-        
+
         # Convert and preprocess
         converted_data = await self.preprocess_data(data)
-        
+
         # Get quality metrics
         quality_metrics = self.get_data_quality_metrics(converted_data)
-        
+
         # Add conversion metadata
         conversion_metadata = {
             'original_shape': data.shape,
@@ -497,13 +497,13 @@ class DataConverterStep(BasePipelineStep, IDataStep):
             'columns_mapped': self.config.parameters.get('column_mapping', {}),
             'conversion_time': datetime.now().isoformat()
         }
-        
+
         # Add metrics
         self.add_metric('original_rows', data.shape[0])
         self.add_metric('converted_rows', converted_data.shape[0])
         self.add_metric('original_columns', data.shape[1])
         self.add_metric('converted_columns', converted_data.shape[1])
-        
+
         return {
             'data': converted_data,
             'conversion_metadata': conversion_metadata,
@@ -540,7 +540,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 StepFactory.register_step('data_collection', DataCollectionStep)
@@ -548,16 +548,16 @@ StepFactory.register_step('data_converter', DataConverterStep)
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -576,8 +576,8 @@ StepFactory.register_step('data_converter', DataConverterStep)
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -594,13 +594,13 @@ StepFactory.register_step('data_converter', DataConverterStep)
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

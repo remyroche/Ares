@@ -49,11 +49,11 @@ def safe_convert_dtypes(df: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.D
 def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Perform comprehensive analysis of NaN values in the dataset.
-    
+
     Args:
         data: DataFrame or numpy array to analyze
         feature_names: Optional list of feature names for numpy arrays
-        
+
     Returns:
         Dictionary with detailed NaN analysis results
     """
@@ -65,43 +65,43 @@ def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_n
             df = pd.DataFrame(data, columns=feature_names)
         else:
             df = data.copy()
-        
+
         # Basic NaN statistics
         total_cells = df.size
         total_nans = df.isnull().sum().sum()
         nan_percentage = (total_nans / total_cells) * 100
-        
+
         # Feature-wise NaN analysis
         feature_nan_counts = df.isnull().sum()
         feature_nan_percentages = (feature_nan_counts / len(df)) * 100
-        
+
         # Features with most NaN values
         features_with_nans = feature_nan_counts[feature_nan_counts > 0].sort_values(ascending=False)
         top_nan_features = features_with_nans.head(10).to_dict()
-        
+
         # Row-wise NaN analysis
         row_nan_counts = df.isnull().sum(axis=1)
         rows_with_nans = (row_nan_counts > 0).sum()
         rows_with_all_nans = (row_nan_counts == df.shape[1]).sum()
-        
+
         # Rows with most NaN values
         rows_with_most_nans = row_nan_counts[row_nan_counts > 0].sort_values(ascending=False)
         top_nan_rows = rows_with_most_nans.head(10).to_dict()
-        
+
         # Complete rows (no NaN values)
         complete_rows = (row_nan_counts == 0).sum()
         complete_row_percentage = (complete_rows / len(df)) * 100
-        
+
         # Complete features (no NaN values)
         complete_features = (feature_nan_counts == 0).sum()
         complete_feature_percentage = (complete_features / df.shape[1]) * 100
-        
+
         # NaN patterns analysis
         nan_patterns = {}
         for threshold in [0.1, 0.25, 0.5, 0.75, 0.9]:
             features_above_threshold = (feature_nan_percentages >= threshold * 100).sum()
             nan_patterns[f"features_with_{int(threshold*100)}%_or_more_nans"] = features_above_threshold
-        
+
         # Correlation between NaN patterns
         nan_matrix = df.isnull().astype(int)
         if nan_matrix.shape[1] > 1:
@@ -119,7 +119,7 @@ def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_n
                         })
         else:
             similar_nan_patterns = []
-        
+
         return {
             'total_cells': total_cells,
             'total_nans': int(total_nans),
@@ -140,7 +140,7 @@ def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_n
             'feature_nan_percentages': feature_nan_percentages.to_dict(),
             'row_nan_counts': row_nan_counts.to_dict()
         }
-        
+
     except Exception as e:
         logger.error(f"Error analyzing NaN values: {e}")
         return {
@@ -152,63 +152,63 @@ def analyze_nan_values_detailed(data: Union[pd.DataFrame, np.ndarray], feature_n
 def format_nan_analysis_report(analysis_results: Dict[str, Any], prefix: str = "") -> str:
     """
     Format detailed NaN analysis results into a readable report.
-    
+
     Args:
         analysis_results: Results from analyze_nan_values_detailed
         prefix: Optional prefix for log messages
-        
+
     Returns:
         Formatted report string
     """
     try:
         if 'error' in analysis_results:
             return f"{prefix}❌ Error in NaN analysis: {analysis_results['error']}"
-        
+
         report_lines = []
         report_lines.append(f"{prefix}📊 NaN Analysis Summary:")
         report_lines.append(f"{prefix}  • Total cells: {analysis_results['total_cells']:,}")
         report_lines.append(f"{prefix}  • Total NaN values: {analysis_results['total_nans']:,}")
         report_lines.append(f"{prefix}  • NaN percentage: {analysis_results['nan_percentage']:.2f}%")
         report_lines.append(f"{prefix}  • Dataset shape: {analysis_results['total_rows']} rows × {analysis_results['total_features']} features")
-        
+
         report_lines.append(f"\n{prefix}📈 Row Analysis:")
         report_lines.append(f"{prefix}  • Rows with NaN values: {analysis_results['rows_with_nans']:,} ({analysis_results['rows_with_nans']/analysis_results['total_rows']*100:.1f}%)")
         report_lines.append(f"{prefix}  • Complete rows (no NaN): {analysis_results['complete_rows']:,} ({analysis_results['complete_row_percentage']:.1f}%)")
         report_lines.append(f"{prefix}  • Rows with all NaN values: {analysis_results['rows_with_all_nans']:,}")
-        
+
         report_lines.append(f"\n{prefix}🔍 Feature Analysis:")
         report_lines.append(f"{prefix}  • Features with NaN values: {analysis_results['features_with_nans']:,} ({analysis_results['features_with_nans']/analysis_results['total_features']*100:.1f}%)")
         report_lines.append(f"{prefix}  • Complete features (no NaN): {analysis_results['complete_features']:,} ({analysis_results['complete_feature_percentage']:.1f}%)")
-        
+
         # Top problematic features
         if analysis_results['top_nan_features']:
             report_lines.append(f"\n{prefix}⚠️ Top Features with Most NaN Values:")
             for feature, count in list(analysis_results['top_nan_features'].items())[:5]:
                 percentage = (count / analysis_results['total_rows']) * 100
                 report_lines.append(f"{prefix}  • {feature}: {count:,} NaN values ({percentage:.1f}%)")
-        
+
         # Top problematic rows
         if analysis_results['top_nan_rows']:
             report_lines.append(f"\n{prefix}⚠️ Rows with Most NaN Values:")
             for row_idx, count in list(analysis_results['top_nan_rows'].items())[:5]:
                 percentage = (count / analysis_results['total_features']) * 100
                 report_lines.append(f"{prefix}  • Row {row_idx}: {count:,} NaN values ({percentage:.1f}%)")
-        
+
         # NaN patterns
         if analysis_results['nan_patterns']:
             report_lines.append(f"\n{prefix}📊 NaN Distribution Patterns:")
             for pattern, count in analysis_results['nan_patterns'].items():
                 if count > 0:
                     report_lines.append(f"{prefix}  • {pattern}: {count} features")
-        
+
         # Similar NaN patterns
         if analysis_results['similar_nan_patterns']:
             report_lines.append(f"\n{prefix}🔗 Features with Similar NaN Patterns:")
             for pattern in analysis_results['similar_nan_patterns'][:3]:
                 report_lines.append(f"{prefix}  • {pattern['feature1']} ↔ {pattern['feature2']}: {pattern['correlation']:.3f} correlation")
-        
+
         return "\n".join(report_lines)
-        
+
     except Exception as e:
         logger.error(f"Error formatting NaN analysis report: {e}")
         return f"{prefix}❌ Error formatting NaN analysis report: {e}"
@@ -364,22 +364,21 @@ def create_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
             'summary_stats': create_summary_statistics(df),
             'issues': []
         }
-        
+
         # Check for common data quality issues
         if report['quality_metrics']['missing_percentage'] > 50:
             report['issues'].append("High percentage of missing values")
-        
+
         if report['quality_metrics']['duplicate_percentage'] > 10:
             report['issues'].append("High percentage of duplicate rows")
-        
+
         if len(report['basic_info']['numeric_columns']) == 0:
             report['issues'].append("No numeric columns found")
-        
+
         return report
     except Exception as e:
         logger.error(f"Error creating data quality report: {e}")
         return {}
-
 
 class CommonUtilities:
     """Common utilities class for shared functionality."""
@@ -437,26 +436,26 @@ class CommonUtilities:
         """Join paths using os.path.join."""
         import os
         return os.path.join(*paths)
-    
+
     def file_exists(self, path):
         """Check if file exists."""
         return os.path.isfile(path)
-    
+
     def directory_exists(self, path):
         """Check if directory exists."""
         return os.path.isdir(path)
-    
+
     def glob_files(self, pattern):
         """Glob files matching pattern."""
         return list(Path().glob(pattern))
-    
+
     def get_file_size(self, path):
         """Get file size in bytes."""
         try:
             return os.path.getsize(path)
         except OSError:
             return 0
-    
+
     def get_file_extension(self, path):
         """Get file extension."""
         return Path(path).suffix

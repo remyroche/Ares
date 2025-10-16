@@ -60,11 +60,10 @@ class AresLauncherFeatureLookbackOptimizer:
         """Placeholder method."""
         return None
 
-
 class AdvancedDataLoader:
     """
     Advanced data loader for unified pipeline.
-    
+
     Provides comprehensive data loading, caching, and management capabilities
     similar to FeatureLookbackOptimizationComponent.
     """
@@ -132,21 +131,21 @@ class AdvancedDataLoader:
                              force_refresh: bool = False) -> pd.DataFrame:
         """
         Load market data for the unified pipeline.
-        
+
         Args:
             data: Optional pre-loaded data
             pipeline_state: Pipeline state with configuration
             force_refresh: Whether to force refresh cached data
-            
+
         Returns:
             Loaded market data as DataFrame
         """
         tprint_debug("📥 Starting market data loading")
-        
+
         # If data is already provided, validate and process it properly
         if data is not None and not data.empty:
             tprint_info(f"📊 Provided data detected: {data.shape[0]} rows, {data.shape[1]} columns")
-            
+
             # Validate provided data
             if not self._validate_provided_data(data):
                 tprint_warning("⚠️ Provided data validation failed, falling back to fresh data loading")
@@ -194,18 +193,18 @@ class AdvancedDataLoader:
                                pipeline_state: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Load labeling data for supervised learning.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Timeframe
             pipeline_state: Pipeline state
-            
+
         Returns:
             Labeling data dictionary or None
         """
         tprint_debug(f"📊 Loading labeling data for {symbol} on {exchange} ({timeframe})")
-        
+
         # Try to load from pipeline state first
         if pipeline_state:
             labeling_data = pipeline_state.get('labeling_results')
@@ -234,17 +233,17 @@ class AdvancedDataLoader:
                                                force_refresh: bool = False) -> List[str]:
         """
         Generate features for optimization using feature bank integration.
-        
+
         Args:
             market_data: Market data DataFrame
             pipeline_state: Pipeline state
             force_refresh: Whether to force refresh feature generation
-            
+
         Returns:
             List of generated feature column names
         """
         tprint_debug("🏦 Starting feature generation for optimization")
-        
+
         if not self.feature_cache:
             tprint_warning("⚠️ Feature cache not available, using basic feature generation")
             return self._generate_basic_features(market_data)
@@ -252,7 +251,7 @@ class AdvancedDataLoader:
         # Create cache key for features
         config = self._extract_data_config(pipeline_state)
         cache_key = self._create_feature_cache_key(market_data, config)
-        
+
         # Try to load from cache first
         if not force_refresh:
             try:
@@ -266,7 +265,7 @@ class AdvancedDataLoader:
         # Generate features using feature bank integration
         try:
             from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.feature_bank_integration import FeatureBankIntegration
-            
+
             feature_bank_config = {
                 'enable_feature_bank': True,
                 'enable_caching': True,
@@ -279,28 +278,28 @@ class AdvancedDataLoader:
                 'enable_parallel_processing': True,
                 'max_workers': 4
             }
-            
+
             feature_bank = FeatureBankIntegration(feature_bank_config)
             feature_result = feature_bank.generate_features_for_optimization(
                 market_data, force_refresh=force_refresh
             )
-            
+
             if feature_result.success:
                 feature_columns = list(feature_result.feature_data.columns)
                 tprint_success(f"✅ Generated {len(feature_columns)} features using feature bank")
-                
+
                 # Cache the features
                 try:
                     self.feature_cache.set(cache_key, feature_columns)
                     tprint_debug("✅ Cached generated features")
                 except Exception as e:
                     tprint_warning(f"⚠️ Feature caching failed: {e}")
-                
+
                 return feature_columns
             else:
                 tprint_error(f"❌ Feature bank generation failed: {feature_result.error_message}")
                 return self._generate_basic_features(market_data)
-                
+
         except ImportError:
             tprint_warning("⚠️ FeatureBankIntegration not available, using basic features")
             return self._generate_basic_features(market_data)
@@ -312,30 +311,30 @@ class AdvancedDataLoader:
                                     labeling_data: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
         """
         Prepare data for optimization by merging market data with labels using enhanced utilities.
-        
+
         Args:
             market_data: Market data DataFrame
             labeling_data: Optional labeling data dictionary
-            
+
         Returns:
             Prepared optimization data
         """
         tprint_debug("🧰 Preparing data for optimization with enhanced utilities")
-        
+
         # Validate input data using utilities
         if not validate_dataframe_columns(market_data, ['close']):
             tprint_warning("⚠️ Market data missing required columns")
-        
+
         optimization_data = market_data.copy()
-        
+
         # Perform data quality analysis
         tprint_debug("📊 Analyzing data quality before optimization")
         nan_analysis = analyze_nan_values_detailed(optimization_data)
         quality_metrics = calculate_data_quality_metrics(optimization_data)
-        
+
         # Log data quality report
         tprint_debug(format_nan_analysis_report(nan_analysis, "  "))
-        
+
         # Add labeling data if available using enhanced merge operations
         if labeling_data and isinstance(labeling_data, dict):
             labels_df = labeling_data.get('labeled_data')
@@ -345,13 +344,13 @@ class AdvancedDataLoader:
                     optimization_data, merge_stats = self._enhanced_label_merge(
                         optimization_data, labels_df
                     )
-                    
+
                     if merge_stats['success']:
                         tprint_success(f"✅ Merged {merge_stats['columns_added']} label columns "
                                      f"({merge_stats['rows_merged']} rows)")
                     else:
                         tprint_warning(f"⚠️ Label merging failed: {merge_stats['error']}")
-                        
+
                 except Exception as e:
                     tprint_warning(f"⚠️ Label merging failed: {e}")
             else:
@@ -363,13 +362,13 @@ class AdvancedDataLoader:
         final_quality = calculate_data_quality_metrics(optimization_data)
         tprint_success(f"✅ Prepared optimization data: {optimization_data.shape}")
         tprint_success(f"📊 Final data quality: {final_quality.get('missing_percentage', 0):.1f}% missing, {final_quality.get('duplicate_percentage', 0):.1f}% duplicates")
-        
+
         return optimization_data
 
     def _extract_data_config(self, pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Extract data configuration from pipeline state."""
         config = self.data_loading_config.copy()
-        
+
         if pipeline_state:
             config.update({
                 'symbol': pipeline_state.get('symbol', config['default_symbol']),
@@ -378,24 +377,24 @@ class AdvancedDataLoader:
                 'lookback_days': pipeline_state.get('lookback_days', 30),
                 'execution_mode': pipeline_state.get('execution_mode', 'full')
             })
-        
+
         return config
 
     async def _load_from_cache(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Load data from cache."""
         if not self.feature_cache:
             return None
-        
+
         cache_key = f"market_data_{config['symbol']}_{config['exchange']}_{config['timeframe']}"
-        
+
         try:
             start_time = time.time()
             cached_data = self.feature_cache.get(cache_key)
             load_time = time.time() - start_time
-            
+
             self.cache_metrics['load_times'].append(load_time)
             self.cache_metrics['hits'] += 1
-            
+
             return cached_data
         except Exception as e:
             tprint_warning(f"⚠️ Cache load failed: {e}")
@@ -406,17 +405,17 @@ class AdvancedDataLoader:
         """Save data to cache."""
         if not self.feature_cache:
             return
-        
+
         cache_key = f"market_data_{config['symbol']}_{config['exchange']}_{config['timeframe']}"
-        
+
         try:
             start_time = time.time()
             self.feature_cache.set(cache_key, data)
             save_time = time.time() - start_time
-            
+
             self.cache_metrics['save_times'].append(save_time)
             self.cache_metrics['writes'] += 1
-            
+
             tprint_debug(f"✅ Cached data with key: {cache_key}")
         except Exception as e:
             tprint_warning(f"⚠️ Cache save failed: {e}")
@@ -425,7 +424,7 @@ class AdvancedDataLoader:
         """Load data using ares launcher integration."""
         if not self.ares_integration:
             return None
-        
+
         try:
             # Create pipeline state for ares integration
             ares_pipeline_state = {
@@ -435,14 +434,14 @@ class AdvancedDataLoader:
                 'lookback_days': config['lookback_days'],
                 'execution_mode': config['execution_mode']
             }
-            
+
             # Load data
             market_data = await self.ares_integration.load_data_for_optimization(
                 config['symbol'],
                 config['timeframe'],
                 ares_pipeline_state
             )
-            
+
             return market_data
         except Exception as e:
             tprint_warning(f"⚠️ Ares integration data loading failed: {e}")
@@ -451,27 +450,27 @@ class AdvancedDataLoader:
     def _generate_synthetic_data(self, config: Dict[str, Any]) -> pd.DataFrame:
         """Generate synthetic market data for testing."""
         tprint_debug("🔧 Generating synthetic market data")
-        
+
         # Generate date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days=config['lookback_days'])
         date_range = pd.date_range(start=start_date, end=end_date, freq=config['timeframe'])
-        
+
         # Generate synthetic OHLCV data with proper seed management
         # Note: This should be called with a seed manager in production
         np.random.seed(42)  # For reproducibility
         n_periods = len(date_range)
-        
+
         # Generate price series with random walk
         base_price = 100.0
         returns = np.random.normal(0, 0.02, n_periods)  # 2% daily volatility
         prices = [base_price]
-        
+
         for ret in returns[1:]:
             prices.append(prices[-1] * (1 + ret))
-        
+
         prices = np.array(prices)
-        
+
         # Generate OHLCV
         data = {
             'open': prices * (1 + np.random.normal(0, 0.001, n_periods)),
@@ -480,19 +479,19 @@ class AdvancedDataLoader:
             'close': prices,
             'volume': np.random.uniform(1000, 10000, n_periods)
         }
-        
+
         df = pd.DataFrame(data, index=date_range)
-        
+
         # Ensure high >= max(open, close) and low <= min(open, close)
         df['high'] = np.maximum(df['high'], np.maximum(df['open'], df['close']))
         df['low'] = np.minimum(df['low'], np.minimum(df['open'], df['close']))
-        
+
         return df
 
     def _generate_synthetic_labels(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Generate synthetic labeling data."""
         tprint_debug("🔧 Generating synthetic labeling data")
-        
+
         # Create synthetic labels
         synthetic_labels = {
             'labeled_data': pd.DataFrame({
@@ -509,15 +508,15 @@ class AdvancedDataLoader:
                 'synthetic': True
             }
         }
-        
+
         return synthetic_labels
 
     def _generate_basic_features(self, market_data: pd.DataFrame) -> List[str]:
         """Generate basic features as fallback."""
         tprint_debug("🔧 Generating basic features")
-        
+
         feature_columns = []
-        
+
         # Price-based features
         if 'close' in market_data.columns:
             market_data['sma_5'] = market_data['close'].rolling(5).mean()
@@ -525,26 +524,26 @@ class AdvancedDataLoader:
             market_data['rsi_14'] = self._calculate_rsi(market_data['close'], 14)
             market_data['bb_upper'] = market_data['close'].rolling(20).mean() + 2 * market_data['close'].rolling(20).std()
             market_data['bb_lower'] = market_data['close'].rolling(20).mean() - 2 * market_data['close'].rolling(20).std()
-            
+
             feature_columns.extend(['sma_5', 'sma_20', 'rsi_14', 'bb_upper', 'bb_lower'])
-        
+
         # Volume-based features
         if 'volume' in market_data.columns:
             market_data['volume_sma_10'] = market_data['volume'].rolling(10).mean()
             market_data['volume_ratio'] = market_data['volume'] / market_data['volume_sma_10']
-            
+
             feature_columns.extend(['volume_sma_10', 'volume_ratio'])
-        
+
         # Volatility features
         if 'close' in market_data.columns:
             market_data['volatility_10'] = market_data['close'].pct_change().rolling(10).std()
             market_data['volatility_20'] = market_data['close'].pct_change().rolling(20).std()
-            
+
             feature_columns.extend(['volatility_10', 'volatility_20'])
-        
+
         # Remove NaN values
         market_data[feature_columns] = market_data[feature_columns].fillna(method='bfill')
-        
+
         tprint_success(f"✅ Generated {len(feature_columns)} basic features")
         return feature_columns
 
@@ -565,20 +564,20 @@ class AdvancedDataLoader:
     def get_cache_metrics(self) -> Dict[str, Any]:
         """Get cache performance metrics."""
         metrics = self.cache_metrics.copy()
-        
+
         if metrics['load_times']:
             metrics['avg_load_time'] = np.mean(metrics['load_times'])
         else:
             metrics['avg_load_time'] = 0.0
-            
+
         if metrics['save_times']:
             metrics['avg_save_time'] = np.mean(metrics['save_times'])
         else:
             metrics['avg_save_time'] = 0.0
-        
+
         total_operations = metrics['hits'] + metrics['misses']
         metrics['hit_rate'] = metrics['hits'] / total_operations if total_operations > 0 else 0.0
-        
+
         return metrics
 
     def reset_cache_metrics(self):
@@ -592,12 +591,12 @@ class AdvancedDataLoader:
             'save_times': []
         }
 
-    async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str, 
+    async def store_klines_data(self, data: pd.DataFrame, symbol: str, exchange: str,
                                interval: str, batch_id: Optional[str] = None,
                                metadata: Optional[Dict[str, Any]] = None) -> bool:
         """
         Store klines data using KlinesParquetManager for efficient storage.
-        
+
         Args:
             data: Klines DataFrame with OHLCV data
             symbol: Trading symbol (e.g., "ETHUSDT")
@@ -605,32 +604,32 @@ class AdvancedDataLoader:
             interval: Data interval (e.g., "1m")
             batch_id: Optional batch identifier
             metadata: Additional metadata to store
-            
+
         Returns:
             True if storage was successful, False otherwise
         """
         try:
             tprint_debug(f"📦 Storing klines data for {symbol} on {exchange} ({interval})")
-            
+
             # Validate data format
             if not self._validate_klines_data(data):
                 tprint_error("❌ Invalid klines data format")
                 return False
-            
+
             # Store using KlinesParquetManager
             success = self.klines_manager.store_klines(
                 data, symbol, exchange, interval, batch_id, metadata
             )
-            
+
             if success:
                 self.stats['klines_stores'] += 1
                 tprint_success(f"✅ Stored {len(data)} klines records for {symbol}")
             else:
                 self.stats['errors'] += 1
                 tprint_error(f"❌ Failed to store klines data for {symbol}")
-            
+
             return success
-            
+
         except Exception as e:
             self.stats['errors'] += 1
             tprint_error(f"❌ Error storing klines data: {e}")
@@ -642,7 +641,7 @@ class AdvancedDataLoader:
                               batch_id: Optional[str] = None) -> pd.DataFrame:
         """
         Load klines data using KlinesParquetManager.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
@@ -650,26 +649,26 @@ class AdvancedDataLoader:
             start_time: Optional start time filter
             end_time: Optional end time filter
             batch_id: Optional specific batch to load
-            
+
         Returns:
             DataFrame containing klines data
         """
         try:
             tprint_debug(f"📥 Loading klines data for {symbol} on {exchange} ({interval})")
-            
+
             # Load using KlinesParquetManager
             data = self.klines_manager.load_klines(
                 symbol, exchange, interval, start_time, end_time, batch_id
             )
-            
+
             if not data.empty:
                 self.stats['klines_loads'] += 1
                 tprint_success(f"✅ Loaded {len(data)} klines records for {symbol}")
             else:
                 tprint_warning(f"⚠️ No klines data found for {symbol}")
-            
+
             return data
-            
+
         except Exception as e:
             self.stats['errors'] += 1
             tprint_error(f"❌ Error loading klines data: {e}")
@@ -678,47 +677,47 @@ class AdvancedDataLoader:
     def _validate_klines_data(self, data: pd.DataFrame) -> bool:
         """Validate klines data format."""
         required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-        
+
         if data is None or data.empty:
             return False
-        
+
         # Check for required columns
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             tprint_error(f"❌ Missing required columns: {missing_columns}")
             return False
-        
+
         # Check for valid OHLCV data
         ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in ohlcv_columns:
             if not pd.api.types.is_numeric_dtype(data[col]):
                 tprint_error(f"❌ Column {col} is not numeric")
                 return False
-            
+
             if data[col].isnull().any():
                 tprint_warning(f"⚠️ Column {col} contains null values")
-        
+
         # Check OHLC relationships
         if not (data['high'] >= data['low']).all():
             tprint_error("❌ High prices must be >= low prices")
             return False
-        
+
         if not (data['high'] >= data['open']).all():
             tprint_error("❌ High prices must be >= open prices")
             return False
-        
+
         if not (data['high'] >= data['close']).all():
             tprint_error("❌ High prices must be >= close prices")
             return False
-        
+
         if not (data['low'] <= data['open']).all():
             tprint_error("❌ Low prices must be <= open prices")
             return False
-        
+
         if not (data['low'] <= data['close']).all():
             tprint_error("❌ Low prices must be <= close prices")
             return False
-        
+
         return True
 
     def get_klines_storage_stats(self) -> Dict[str, Any]:
@@ -741,37 +740,37 @@ class AdvancedDataLoader:
                                 interval: str, append_mode: bool = True) -> bool:
         """
         Update existing klines data.
-        
+
         Args:
             data: New klines data
             symbol: Trading symbol
             exchange: Exchange name
             interval: Data interval
             append_mode: If True, append to existing data; if False, replace
-            
+
         Returns:
             True if update was successful, False otherwise
         """
         try:
             tprint_debug(f"🔄 Updating klines data for {symbol} on {exchange} ({interval})")
-            
+
             # Validate data format
             if not self._validate_klines_data(data):
                 tprint_error("❌ Invalid klines data format")
                 return False
-            
+
             # Update using KlinesParquetManager
             success = self.klines_manager.update_klines(
                 data, symbol, exchange, interval, append_mode
             )
-            
+
             if success:
                 tprint_success(f"✅ Updated klines data for {symbol}")
             else:
                 tprint_error(f"❌ Failed to update klines data for {symbol}")
-            
+
             return success
-            
+
         except Exception as e:
             self.stats['errors'] += 1
             tprint_error(f"❌ Error updating klines data: {e}")
@@ -785,36 +784,36 @@ class AdvancedDataLoader:
             if data.empty:
                 tprint_warning("⚠️ Provided data is empty")
                 return False
-            
+
             # Check for required columns
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 tprint_warning(f"⚠️ Provided data missing required columns: {missing_columns}")
                 return False
-            
+
             # Check for numeric data types
             for col in required_columns:
                 if not pd.api.types.is_numeric_dtype(data[col]):
                     tprint_warning(f"⚠️ Column {col} is not numeric in provided data")
                     return False
-            
+
             # Check for reasonable data ranges
             if (data['high'] < data['low']).any():
                 tprint_warning("⚠️ Invalid OHLC data: high < low detected")
                 return False
-            
+
             if (data['high'] < data['open']).any() or (data['high'] < data['close']).any():
                 tprint_warning("⚠️ Invalid OHLC data: high < open/close detected")
                 return False
-            
+
             if (data['low'] > data['open']).any() or (data['low'] > data['close']).any():
                 tprint_warning("⚠️ Invalid OHLC data: low > open/close detected")
                 return False
-            
+
             tprint_success("✅ Provided data validation passed")
             return True
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Data validation error: {e}")
             return False
@@ -842,27 +841,27 @@ class AdvancedDataLoader:
             if quality_metrics.get('missing_percentage', 0) > 5.0:
                 tprint_info("🧹 Applying basic data cleaning to provided data")
                 processed_data = processed_data.dropna(subset=required_columns)
-            
+
             # Ensure proper data types
             for col in ['open', 'high', 'low', 'close', 'volume']:
                 if col in processed_data.columns:
                     processed_data[col] = pd.to_numeric(processed_data[col], errors='coerce')
-            
+
             # Remove any remaining NaN values
             processed_data = processed_data.dropna()
-            
+
             if processed_data.empty:
                 tprint_warning("⚠️ All data removed during cleaning")
                 return None
-            
+
             tprint_success(f"✅ Processed provided data: {processed_data.shape}")
             return processed_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Error processing provided data: {e}")
             return None
 
-    def _enhanced_label_merge(self, market_data: pd.DataFrame, 
+    def _enhanced_label_merge(self, market_data: pd.DataFrame,
                             labels_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Enhanced label merging with better index handling and data preservation."""
         merge_stats = {
@@ -873,51 +872,51 @@ class AdvancedDataLoader:
             'index_strategy': 'unknown',
             'error': None
         }
-        
+
         try:
             # Strategy 1: Try exact index match first
             common_index = market_data.index.intersection(labels_df.index)
             if len(common_index) > 0:
                 merge_stats['index_strategy'] = 'exact_match'
                 merge_stats['rows_merged'] = len(common_index)
-                
+
                 # Use the common index
                 merged_data = market_data.loc[common_index].copy()
                 labels_to_merge = labels_df.loc[common_index]
-                
+
                 # Add label columns
                 for col in labels_to_merge.columns:
                     if col not in merged_data.columns:
                         merged_data[col] = labels_to_merge[col]
                         merge_stats['columns_added'] += 1
-                
+
                 merge_stats['success'] = True
                 tprint_success(f"✅ Exact index match: {len(common_index)} rows merged")
                 return merged_data, merge_stats
-            
+
             # Strategy 2: Try time-based alignment if both have datetime indices
-            if (isinstance(market_data.index, pd.DatetimeIndex) and 
+            if (isinstance(market_data.index, pd.DatetimeIndex) and
                 isinstance(labels_df.index, pd.DatetimeIndex)):
-                
+
                 merge_stats['index_strategy'] = 'time_alignment'
-                
+
                 # Find overlapping time range
                 market_start, market_end = market_data.index.min(), market_data.index.max()
                 labels_start, labels_end = labels_df.index.min(), labels_df.index.max()
-                
+
                 overlap_start = max(market_start, labels_start)
                 overlap_end = min(market_end, labels_end)
-                
+
                 if overlap_start < overlap_end:
                     # Filter to overlapping time range
-                    market_filtered = market_data[(market_data.index >= overlap_start) & 
+                    market_filtered = market_data[(market_data.index >= overlap_start) &
                                                 (market_data.index <= overlap_end)]
-                    labels_filtered = labels_df[(labels_df.index >= overlap_start) & 
+                    labels_filtered = labels_df[(labels_df.index >= overlap_start) &
                                              (labels_df.index <= overlap_end)]
-                    
+
                     # Use nearest time alignment
                     merged_data = market_filtered.copy()
-                    
+
                     for col in labels_filtered.columns:
                         if col not in merged_data.columns:
                             # Use forward fill for time alignment
@@ -926,32 +925,32 @@ class AdvancedDataLoader:
                             )
                             merged_data[col] = aligned_labels
                             merge_stats['columns_added'] += 1
-                    
+
                     merge_stats['rows_merged'] = len(merged_data)
                     merge_stats['success'] = True
                     tprint_success(f"✅ Time alignment: {len(merged_data)} rows merged")
                     return merged_data, merge_stats
-            
+
             # Strategy 3: Try positional alignment as last resort
             if len(market_data) == len(labels_df):
                 merge_stats['index_strategy'] = 'positional'
                 merge_stats['rows_merged'] = len(market_data)
-                
+
                 merged_data = market_data.copy()
                 for col in labels_df.columns:
                     if col not in merged_data.columns:
                         merged_data[col] = labels_df[col].values
                         merge_stats['columns_added'] += 1
-                
+
                 merge_stats['success'] = True
                 tprint_warning("⚠️ Using positional alignment - verify data correctness")
                 return merged_data, merge_stats
-            
+
             # If all strategies fail
             merge_stats['error'] = "No compatible alignment strategy found"
             tprint_warning("⚠️ No compatible alignment strategy found for label merging")
             return market_data, merge_stats
-            
+
         except Exception as e:
             merge_stats['error'] = str(e)
             tprint_error(f"❌ Enhanced label merge failed: {e}")

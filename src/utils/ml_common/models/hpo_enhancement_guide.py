@@ -31,7 +31,6 @@ from enum import Enum
 
 logger = logging.getLogger(__name__)
 
-
 class RegimeType(Enum):
     """Market regime types for adaptive HPO."""
     HIGH_VOLATILITY = "high_volatility"
@@ -40,7 +39,6 @@ class RegimeType(Enum):
     RANGING = "ranging"
     BREAKOUT = "breakout"
     CONSOLIDATION = "consolidation"
-
 
 @dataclass
 class RegimeCharacteristics:
@@ -103,7 +101,6 @@ class RegimeCharacteristics:
             })
 
         return adjustments
-
 
 class AdaptiveHPOStrategy:
     """Adaptive HPO strategy based on regime characteristics."""
@@ -293,7 +290,6 @@ class AdaptiveHPOStrategy:
 
         return adaptive_params
 
-
 # Enhanced CV Strategies for Per-Regime Training
 class EnhancedCVStrategies:
     """Enhanced cross-validation strategies for per-regime training."""
@@ -353,7 +349,6 @@ class EnhancedCVStrategies:
             splits.append((train_indices, test_indices))
 
         return splits
-
 
 # Multi-Objective HPO Enhancement
 class MultiObjectiveHPO:
@@ -416,7 +411,6 @@ class MultiObjectiveHPO:
         # Combine into efficiency score (lower time and memory = higher efficiency)
         efficiency = 1.0 / (1.0 + training_time * memory_usage / 1000)
         return efficiency
-
 
 # Integration with Your Existing HPO System
 def enhance_existing_hpo_integration():
@@ -527,7 +521,6 @@ enhanced_hpo_config = {
 
     return integration_code
 
-
 # Usage Examples
 def usage_examples():
     """Usage examples for enhanced HPO."""
@@ -548,7 +541,6 @@ adaptive_space = adaptive_hpo.get_adaptive_search_space(regime_char)
 # Optimize for specific regime
 best_params = adaptive_hpo.optimize_for_regime(X, y, regime_labels, model_factory, 'high_volatility')
 
-
 # 2. Enhanced CV Usage
 from src.utils.ml_common.models.hpo_enhancement_guide import EnhancedCVStrategies
 
@@ -564,7 +556,6 @@ expanding_splits = cv_strategies.expanding_window_cv(
     regime_data, min_train_size=50, test_size=20
 )
 
-
 # 3. Multi-Objective HPO Usage
 from src.utils.ml_common.models.hpo_enhancement_guide import MultiObjectiveHPO
 
@@ -577,7 +568,6 @@ objective_scores = multi_hpo.evaluate_multi_objective(model, X_test, y_test)
 print(f"Accuracy: {objective_scores['accuracy']}")
 print(f"Robustness: {objective_scores['robustness']}")
 print(f"Efficiency: {objective_scores['efficiency']}")
-
 
 # 4. Integration with Your Existing Training Loop
 def enhanced_training_loop(X, y, regime_labels, model_factory):
@@ -613,7 +603,6 @@ def enhanced_training_loop(X, y, regime_labels, model_factory):
 """
 
     return examples
-
 
 # Benefits Summary
 def enhancement_benefits():
@@ -685,7 +674,6 @@ def enhancement_benefits():
 """
 
     return benefits
-
 
 if __name__ == "__main__":
     print("🔧 Enhanced HPO Guide for Existing Per-Regime Training")

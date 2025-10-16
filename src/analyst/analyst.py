@@ -151,7 +151,7 @@ class Analyst:
         self.model_manager: ModelManager | None = None
         self.selected_model: str | None = None
         self.model_cache: dict[str, Any] = {}
-        
+
         # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
@@ -235,7 +235,7 @@ class Analyst:
 
         # Initialize live trading utilities
         await self._initialize_live_trading_utilities()
-        
+
         # Initialize performance monitoring
         await self._initialize_performance_monitoring()
 
@@ -365,7 +365,7 @@ class Analyst:
     async def _initialize_liquidation_risk_model(self) -> None:
         """Initialize Liquidation Risk Model."""
         try:
-            
+
             self.liquidation_risk_model = await setup_liquidation_risk_model(
                 self.config,
             )
@@ -405,7 +405,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
             )
             self.liquidation_risk_model = None
@@ -578,7 +578,7 @@ except ImportError:
                 symbol = analysis_input.get("symbol", "UNKNOWN")
                 exchange = analysis_input.get("exchange", "UNKNOWN")
                 timeframe = analysis_input.get("timeframe", "1h")
-                
+
                 # Get location info from fractal classifier if available
                 regime_info = {}
                 if self.regime_classifier and features_df is not None:
@@ -587,7 +587,7 @@ except ImportError:
                     except Exception as e:
                         self.logger.warning(f"Failed to get location info: {e}")
                         regime_info = {"regime": "UNKNOWN", "confidence": 0.0}
-                
+
                 enhanced_predictions = await self.supervisor.get_analyst_predictions(
                     features_df, regime_info, symbol, exchange, timeframe
                 )
@@ -682,20 +682,20 @@ except ImportError:
             vol = float(self._vectorbt_rolling_operation(returns, "std", 20).iloc[-1] or 0.0)
         else:
             vol = 0.01
-        
+
         # Define default target ladder (percent values as strings)
         targets = [f"{x/10:.1f}%" for x in range(1, 21)]  # 0.1% .. 2.0%
-        
+
         # Simple mapping: higher vol => higher chance to hit further targets, but cap at 1
         def prob_for(level_str: str) -> float:
             level = float(level_str.replace("%", "")) / 100.0
             base = min(1.0, max(0.05, (vol * 5) / max(level, 1e-6)))
             return float(np.clip(base, 0.0, 1.0))
-        
+
         # Create fallback predictions in the same format as ML predictor
         price_target_confidences = {t: prob_for(t) for t in targets}
         adversarial_confidences = {t: prob_for(t) for t in targets}
-        
+
         # Create a mock ML prediction result for extraction
         mock_ml_predictions = {
             "price_target_confidences": price_target_confidences,
@@ -710,7 +710,7 @@ except ImportError:
             "model_status": "fallback",
             "timestamp": datetime.now().isoformat()
         }
-        
+
         # Use the extraction method for consistent formatting
         return self._extract_price_target_probabilities(mock_ml_predictions)
 
@@ -721,10 +721,10 @@ except ImportError:
         """
         Extract and consolidate price target probabilities from ML predictions.
         Implements triple barrier logic and ensures all probabilities sum to 1.
-        
+
         Args:
             ml_predictions: ML prediction results from confidence predictor
-            
+
         Returns:
             dict: Consolidated probability outputs with triple barrier analysis
         """
@@ -737,18 +737,18 @@ except ImportError:
                     "triple_barrier_analysis": {},
                     "summary": {"status": "no_predictions"}
                 }
-            
+
             # Extract price target confidences
             price_target_confidences = ml_predictions.get("price_target_confidences", {})
             adversarial_confidences = ml_predictions.get("adversarial_confidences", {})
             directional_analysis = ml_predictions.get("directional_analysis", {})
-            
+
             # Normalize probabilities to ensure they sum to 1
             normalized_probabilities = self._normalize_probabilities(
-                price_target_confidences, 
+                price_target_confidences,
                 adversarial_confidences
             )
-            
+
             # Convert to probability format expected by the system
             price_target_probabilities = {}
             for target, confidence in normalized_probabilities["upside"].items():
@@ -756,7 +756,7 @@ except ImportError:
                     "probability": float(confidence),
                     "confidence_level": "high" if confidence > 0.7 else "medium" if confidence > 0.4 else "low"
                 }
-            
+
             # Convert adversarial confidences to risk probabilities
             adversarial_risk_probabilities = {}
             for target, confidence in normalized_probabilities["downside"].items():
@@ -764,13 +764,13 @@ except ImportError:
                     "risk_probability": float(confidence),
                     "risk_level": "high" if confidence > 0.6 else "medium" if confidence > 0.3 else "low"
                 }
-            
+
             # Calculate triple barrier analysis
             triple_barrier_analysis = self._calculate_triple_barrier_analysis(
                 normalized_probabilities["upside"],
                 normalized_probabilities["downside"]
             )
-            
+
             # Extract directional analysis with normalized probabilities
             directional_summary = {
                 "bullish_probability": directional_analysis.get("bullish", 0.0),
@@ -779,11 +779,11 @@ except ImportError:
                 "primary_direction": directional_analysis.get("primary_direction", "neutral"),
                 "confidence": directional_analysis.get("confidence", 0.0)
             }
-            
+
             # Find best targets
             best_upside = max(normalized_probabilities["upside"].items(), key=lambda x: x[1]) if normalized_probabilities["upside"] else (None, 0.0)
             best_downside = max(normalized_probabilities["downside"].items(), key=lambda x: x[1]) if normalized_probabilities["downside"] else (None, 0.0)
-            
+
             summary = {
                 "status": "success",
                 "model_status": ml_predictions.get("model_status", "unknown"),
@@ -802,7 +802,7 @@ except ImportError:
                 "confidence_threshold_met": triple_barrier_analysis.get("threshold_met", False),
                 "timestamp": ml_predictions.get("timestamp", datetime.now().isoformat())
             }
-            
+
             return {
                 "price_target_probabilities": price_target_probabilities,
                 "adversarial_risk_probabilities": adversarial_risk_probabilities,
@@ -810,7 +810,7 @@ except ImportError:
                 "triple_barrier_analysis": triple_barrier_analysis,
                 "summary": summary
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error extracting price target probabilities: {e}")
             return {
@@ -828,11 +828,11 @@ except ImportError:
     ) -> dict[str, dict[str, float]]:
         """
         Normalize probabilities to ensure they sum to 1 across both directions.
-        
+
         Args:
             price_target_confidences: Upside price target confidences
             adversarial_confidences: Downside risk confidences
-            
+
         Returns:
             dict: Normalized probabilities for upside and downside
         """
@@ -841,19 +841,19 @@ except ImportError:
             all_probabilities = {}
             all_probabilities.update(price_target_confidences)
             all_probabilities.update(adversarial_confidences)
-            
+
             if not all_probabilities:
                 return {"upside": {}, "downside": {}}
-            
+
             # Calculate total probability
             total_prob = sum(all_probabilities.values())
-            
+
             if total_prob <= 0:
                 # If no probabilities, distribute equally
                 n_targets = len(price_target_confidences)
                 n_risks = len(adversarial_confidences)
                 total_items = n_targets + n_risks
-                
+
                 if total_items > 0:
                     equal_prob = 1.0 / total_items
                     normalized_upside = {k: equal_prob for k in price_target_confidences.keys()}
@@ -865,12 +865,12 @@ except ImportError:
                 # Normalize to sum to 1
                 normalized_upside = {k: v / total_prob for k, v in price_target_confidences.items()}
                 normalized_downside = {k: v / total_prob for k, v in adversarial_confidences.items()}
-            
+
             return {
                 "upside": normalized_upside,
                 "downside": normalized_downside
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error normalizing probabilities: {e}")
             return {"upside": {}, "downside": {}}
@@ -882,11 +882,11 @@ except ImportError:
     ) -> dict[str, Any]:
         """
         Calculate triple barrier analysis for green light decision.
-        
+
         Args:
             upside_probabilities: Normalized upside probabilities
             downside_probabilities: Normalized downside probabilities
-            
+
         Returns:
             dict: Triple barrier analysis results
         """
@@ -894,16 +894,16 @@ except ImportError:
             # Convert upper barrier to percentage string for comparison
             upper_barrier_pct = f"{self.profit_take_multiplier * 100:.1f}%"
             lower_barrier_pct = f"{self.stop_loss_multiplier * 100:.1f}%"
-            
+
             # Calculate cumulative confidence for upper barrier and above
             cumulative_upper_confidence = 0.0
             upper_barrier_targets = []
-            
+
             for target, prob in upside_probabilities.items():
                 # Convert target string to float for comparison
                 target_value = float(target.replace("%", ""))
                 upper_barrier_value = self.profit_take_multiplier * 100
-                
+
                 if target_value >= upper_barrier_value:
                     cumulative_upper_confidence += prob
                     upper_barrier_targets.append({
@@ -911,16 +911,16 @@ except ImportError:
                         "probability": prob,
                         "contribution": prob
                     })
-            
+
             # Calculate cumulative confidence for lower barrier and below (adversarial)
             cumulative_lower_confidence = 0.0
             lower_barrier_targets = []
-            
+
             for target, prob in downside_probabilities.items():
                 # Convert target string to float for comparison
                 target_value = float(target.replace("%", ""))
                 lower_barrier_value = self.stop_loss_multiplier * 100
-                
+
                 if target_value >= lower_barrier_value:
                     cumulative_lower_confidence += prob
                     lower_barrier_targets.append({
@@ -928,10 +928,10 @@ except ImportError:
                         "probability": prob,
                         "contribution": prob
                     })
-            
+
             # Determine if confidence threshold is met
             threshold_met = cumulative_upper_confidence >= self.confidence_threshold
-            
+
             # Directional decision logic
             # Compare upside vs downside confidence to determine direction
             upside_advantage = cumulative_upper_confidence - cumulative_lower_confidence
@@ -1001,7 +1001,7 @@ except ImportError:
                 "lower_barrier_targets": lower_barrier_targets,
                 "decision_reasoning": decision_reasoning
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating triple barrier analysis: {e}")
             return {
@@ -1422,18 +1422,18 @@ except ImportError:
             self.logger.warning("Regime classifier not available")
             tprint("⚠️ Regime classifier not available")
             return {"regime": "UNKNOWN", "confidence": 0.0}
-        
+
         # Start performance monitoring
         if self.performance_monitor:
             self.performance_monitor.start_timer("regime_analysis")
-        
+
         self.logger.info("Starting regime analysis...")
         tprint("Starting regime analysis...")
-        
+
         try:
             # Get fractal location classification
             location_result = await self.regime_classifier.classify_location(features_df)
-            
+
             # Convert to regime info format expected by supervisor
             # Note: Actual regime is determined by HMM in training pipeline
             regime_info = {
@@ -1445,26 +1445,26 @@ except ImportError:
                 "nearby_levels": location_result.get("nearby_levels", []),
                 "fractal_analysis": location_result.get("fractal_analysis", {})
             }
-            
+
             # End performance monitoring
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("regime_analysis")
                 self.logger.info(f"Regime analysis completed in {execution_time:.3f}s")
                 tprint(f"Regime analysis completed in {execution_time:.3f}s")
-            
+
             self.logger.info(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
             tprint(f"✅ Regime analysis completed: {regime_info.get('regime', 'UNKNOWN')}")
             return regime_info
-            
+
         except Exception as e:
             error_msg = f"Error in fractal location analysis: {e}"
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            
+
             # End performance monitoring even on error
             if self.performance_monitor:
                 self.performance_monitor.end_timer("regime_analysis")
-            
+
             return {"regime": "UNKNOWN", "confidence": 0.0}
 
     @handle_errors_with_tracking(
@@ -1475,7 +1475,7 @@ except ImportError:
     async def load_analyst_model(self) -> bool:
         """
         Load the single analyst model trained on various market conditions.
-        
+
         Returns:
             bool: True if model loading successful
         """
@@ -1484,14 +1484,14 @@ except ImportError:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return False
-        
+
         try:
             # Use the single analyst model trained on various market conditions
             model_name = "analyst_market_analysis_model"
-            
+
             self.logger.info(f"Loading analyst model for live trading: {model_name}")
             tprint(f"Loading analyst model for live trading: {model_name}")
-            
+
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
@@ -1499,7 +1499,7 @@ except ImportError:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
             # Load and cache the model
             model = await self.model_manager.load_model(model_name)
             if model:
@@ -1513,7 +1513,7 @@ except ImportError:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
         except Exception as e:
             error_msg = f"Error loading analyst model: {e}"
             self.logger.error(error_msg)
@@ -1529,11 +1529,11 @@ except ImportError:
     async def get_model_prediction(self, data: pd.DataFrame, model_name: str = None) -> dict[str, Any]:
         """
         Get prediction from selected pre-trained model for live trading.
-        
+
         Args:
             data: Input data for prediction
             model_name: Specific model to use (defaults to selected model)
-            
+
         Returns:
             dict: Model prediction results
         """
@@ -1542,22 +1542,22 @@ except ImportError:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return {"error": error_msg}
-        
+
         model_name = model_name or self.selected_model
         if not model_name:
             error_msg = "No model selected for prediction"
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return {"error": error_msg}
-        
+
         try:
             # Start performance monitoring
             if self.performance_monitor:
                 self.performance_monitor.start_timer("model_prediction")
-            
+
             self.logger.info(f"Getting prediction from model: {model_name}")
             tprint(f"Getting prediction from model: {model_name}")
-            
+
             # Get model from cache or load it
             model = self.model_cache.get(model_name)
             if not model:
@@ -1569,29 +1569,29 @@ except ImportError:
                     self.logger.error(error_msg)
                     tprint(f"❌ {error_msg}")
                     return {"error": error_msg}
-            
+
             # Get prediction
             prediction = await self.model_manager.get_prediction(model, data)
-            
+
             # End performance monitoring
             if self.performance_monitor:
                 execution_time = self.performance_monitor.end_timer("model_prediction")
                 self.logger.info(f"Model prediction completed in {execution_time:.3f}s")
                 tprint(f"Model prediction completed in {execution_time:.3f}s")
-            
+
             self.logger.info(f"✅ Prediction obtained from model: {model_name}")
             tprint(f"✅ Prediction obtained from model: {model_name}")
             return prediction
-            
+
         except Exception as e:
             error_msg = f"Error getting prediction from model {model_name}: {e}"
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
-            
+
             # End performance monitoring even on error
             if self.performance_monitor:
                 self.performance_monitor.end_timer("model_prediction")
-            
+
             return {"error": error_msg}
 
     @handles_errors(
@@ -1618,7 +1618,7 @@ except ImportError:
             if self.regime_classifier and market_data is not None:
                 # Use fractal location classifier
                 location_result = await self.regime_classifier.classify_location(market_data)
-                
+
                 # Format results for compatibility
                 regime_results = {
                     "regime": "LOCATION_BASED",  # Actual regime comes from HMM
@@ -1635,7 +1635,7 @@ except ImportError:
                         "fractal_locations": location_result.get("fractal_locations", {})
                     }
                 }
-                
+
                 # Add location features for ML models
                 if hasattr(self.regime_classifier, 'get_location_features'):
                     location_features = self.regime_classifier.get_location_features(location_result)
@@ -1762,24 +1762,24 @@ except ImportError:
         try:
             self.logger.info("Initializing live trading utilities...")
             tprint("Initializing live trading utilities...")
-            
+
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
             tprint("✅ Model Manager initialized")
-            
+
             # Load the single analyst model
             success = await self.load_analyst_model()
             if not success:
                 self.logger.warning("⚠️ Failed to load analyst model during initialization")
                 tprint("⚠️ Failed to load analyst model during initialization")
-            
+
             # Initialize model cache
             self.model_cache = {}
             self.prediction_cache = {}
             self.logger.info("✅ Model and prediction caches initialized")
             tprint("✅ Model and prediction caches initialized")
-            
+
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing live trading utilities: {e}")
@@ -1795,15 +1795,15 @@ except ImportError:
         """Initialize performance monitoring."""
         try:
             self.logger.info("Initializing performance monitoring...")
-            
+
             # Initialize Performance Monitor
             self.performance_monitor = PerformanceMonitor()
             self.logger.info("✅ Performance Monitor initialized")
-            
+
             # Enable global monitoring
             self.global_monitor.enable()
             self.logger.info("✅ Global monitoring enabled")
-            
+
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing performance monitoring: {e}")
@@ -1818,30 +1818,30 @@ except ImportError:
     async def validate_trading_data(self, data: pd.DataFrame) -> dict[str, Any]:
         """
         Validate live trading data for real-time analysis.
-        
+
         Args:
             data: Live trading data to validate
-            
+
         Returns:
             dict: Validation results
         """
         try:
             self.logger.info("Validating live trading data...")
             tprint("Validating live trading data...")
-            
+
             validation_results = {
                 "is_valid": True,
                 "errors": [],
                 "warnings": []
             }
-            
+
             # Check for required columns
             required_columns = ["timestamp", "price", "volume"]
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 validation_results["is_valid"] = False
                 validation_results["errors"].append(f"Missing required columns: {missing_columns}")
-            
+
             # Check for recent data (within last 5 minutes)
             if "timestamp" in data.columns and not data.empty:
                 latest_timestamp = data["timestamp"].max()
@@ -1849,7 +1849,7 @@ except ImportError:
                 time_diff = (current_time - latest_timestamp).total_seconds()
                 if time_diff > 300:  # 5 minutes
                     validation_results["warnings"].append(f"Data is {time_diff:.0f} seconds old")
-            
+
             # Check for valid price data
             if "price" in data.columns:
                 if data["price"].isna().any():
@@ -1858,11 +1858,11 @@ except ImportError:
                 if (data["price"] <= 0).any():
                     validation_results["is_valid"] = False
                     validation_results["errors"].append("Price data contains non-positive values")
-            
+
             self.logger.info(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             tprint(f"✅ Live trading data validation completed: {'PASS' if validation_results['is_valid'] else 'FAIL'}")
             return validation_results
-            
+
         except Exception as e:
             error_msg = f"Error validating live trading data: {e}"
             self.logger.error(error_msg)
@@ -1877,11 +1877,11 @@ except ImportError:
     async def coordinate_with_hmm_regime(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
         Coordinate model usage based on HMM regime detection.
-        
+
         Args:
             hmm_regime: Detected HMM regime (e.g., "bull_market", "bear_market", "sideways")
             regime_confidence: Confidence in the regime detection
-            
+
         Returns:
             dict: Coordination results and regime-specific parameters
         """
@@ -1890,11 +1890,11 @@ except ImportError:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return {"error": error_msg}
-        
+
         try:
             self.logger.info(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             tprint(f"Coordinating with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
-            
+
             # Get the single model (trained on various market conditions)
             model = self.model_cache.get(self.selected_model)
             if not model:
@@ -1902,7 +1902,7 @@ except ImportError:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return {"error": error_msg}
-            
+
             # Configure regime-specific parameters for the same model
             regime_config = {
                 "hmm_regime": hmm_regime,
@@ -1910,15 +1910,15 @@ except ImportError:
                 "model_name": self.selected_model,
                 "regime_parameters": {}
             }
-            
+
             # Set regime-specific parameters based on HMM regime (15-25 regimes)
             # Parameters are optimized during training in final_parameters_optimization.py
             regime_config["regime_parameters"] = self._get_optimized_regime_parameters(hmm_regime, regime_confidence)
-            
+
             self.logger.info(f"✅ HMM regime coordination completed: {hmm_regime}")
             tprint(f"✅ HMM regime coordination completed: {hmm_regime}")
             return regime_config
-            
+
         except Exception as e:
             error_msg = f"Error coordinating with HMM regime: {e}"
             self.logger.error(error_msg)
@@ -1928,11 +1928,11 @@ except ImportError:
     def _get_optimized_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
         Get optimized regime-specific parameters from training optimization.
-        
+
         Args:
             hmm_regime: Detected HMM regime (15-25 possible regimes)
             regime_confidence: Confidence in regime detection
-            
+
         Returns:
             dict: Optimized parameters for the regime
         """
@@ -1940,11 +1940,11 @@ except ImportError:
             # Load optimized parameters from training (final_parameters_optimization.py)
             # These parameters are optimized during training and stored in the model artifacts
             optimized_params = self._load_optimized_parameters_for_regime(hmm_regime)
-            
+
             if optimized_params:
                 # Apply confidence-based adjustments
                 confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
-                
+
                 adjusted_params = {}
                 for param_name, param_value in optimized_params.items():
                     if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
@@ -1955,12 +1955,12 @@ except ImportError:
                         adjusted_params[param_name] = param_value * confidence_adjustment
                     else:
                         adjusted_params[param_name] = param_value
-                
+
                 return adjusted_params
             else:
                 # Fallback to default parameters if optimization not available
                 return self._get_default_regime_parameters(hmm_regime, regime_confidence)
-                
+
         except Exception as e:
             self.logger.error(f"Error getting optimized regime parameters: {e}")
             return self._get_default_regime_parameters(hmm_regime, regime_confidence)
@@ -1968,10 +1968,10 @@ except ImportError:
     def _load_optimized_parameters_for_regime(self, hmm_regime: str) -> dict[str, Any] | None:
         """
         Load optimized parameters for a specific regime from training artifacts.
-        
+
         Args:
             hmm_regime: HMM regime identifier
-            
+
         Returns:
             dict: Optimized parameters or None if not found
         """
@@ -1979,15 +1979,15 @@ except ImportError:
             # This would load from the optimized parameters saved during training
             # The parameters are optimized in final_parameters_optimization.py
             # and stored in model artifacts
-            
+
             # For now, return None to use fallback parameters
             # In production, this would load from:
             # - Model artifacts
             # - Optimization results from final_parameters_optimization.py
             # - Regime-specific parameter files
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Error loading optimized parameters for regime {hmm_regime}: {e}")
             return None
@@ -1995,11 +1995,11 @@ except ImportError:
     def _get_default_regime_parameters(self, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
         Get default regime parameters as fallback.
-        
+
         Args:
             hmm_regime: HMM regime identifier
             regime_confidence: Confidence in regime detection
-            
+
         Returns:
             dict: Default parameters for the regime
         """
@@ -2010,10 +2010,10 @@ except ImportError:
             "volatility_adjustment": 1.0,
             "analyst_confidence_threshold": 0.7
         }
-        
+
         # Apply confidence-based adjustments
         confidence_adjustment = 0.8 + (regime_confidence * 0.4)
-        
+
         adjusted_params = {}
         for param_name, param_value in base_params.items():
             if param_name in ["confidence_threshold", "analyst_confidence_threshold"]:
@@ -2022,7 +2022,7 @@ except ImportError:
                 adjusted_params[param_name] = param_value * confidence_adjustment
             else:
                 adjusted_params[param_name] = param_value
-        
+
         return adjusted_params
 
     @handle_errors_with_tracking(

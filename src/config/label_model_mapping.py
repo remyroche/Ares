@@ -1,8 +1,8 @@
-from typing import Any
 from catboost import CatBoostClassifier
 from hmmlearn.hmm import GaussianHMM
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, SGDClassifier
+from typing import Any
 import numpy as np
 import pandas as pd
 

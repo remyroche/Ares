@@ -28,7 +28,7 @@ def create_flask_error_handler() -> Any:
                 'status_code': error.status_code,
                 'details': getattr(error, 'details', {})
             })
-            
+
             response_data = error.to_dict()
             return (jsonify(response_data), error.status_code)
         except Exception as e:
@@ -62,7 +62,7 @@ def create_fastapi_exception_handler() -> Any:
                 'details': getattr(error, 'details', {}),
                 'request_path': getattr(request, 'url', {}).path if hasattr(request, 'url') else 'unknown'
             })
-            
+
             response_data = error.to_dict()
             return JSONResponse(status_code=error.status_code, content=response_data)
         except Exception as e:

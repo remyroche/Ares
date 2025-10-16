@@ -17,60 +17,59 @@ from ..nas_regime.core.perfect_nas_config import PerfectNASConfig
 
 logger = logging.getLogger(__name__)
 
-
 class NASModelSelector:
     """
     NAS-specific model selector that integrates with the Perfect NAS Regime System.
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  nas_config: PerfectNASConfig,
                  selector_config: Optional[ModelSelectorConfig] = None):
         """Initialize NAS model selector."""
         tprint("🚀 [NAS_INTEGRATION] Initializing NAS Model Selector", color="cyan", bold=True)
         self.nas_config = nas_config
         self.selector_config = selector_config or ModelSelectorConfig()
-        
+
         # Initialize components
         tprint("🧠 [NAS_INTEGRATION] Initializing NAS detector", color="yellow")
         self.nas_detector = PerfectNASRegimeDetector(nas_config)
         tprint("🔧 [NAS_INTEGRATION] Initializing model selector", color="yellow")
         self.model_selector = DataDrivenModelSelector(self.selector_config)
-        
+
         # NAS-specific model registry
         tprint("📊 [NAS_INTEGRATION] Setting up NAS model registry", color="blue")
         self.nas_models = {
             'neural_ode': 'Neural ODE Regime Detector',
-            'vision_transformer': 'Vision Transformer Regime Detector', 
+            'vision_transformer': 'Vision Transformer Regime Detector',
             'neural_state_space': 'Neural State Space Model',
             'hybrid_architecture': 'Hybrid Regime Architecture',
             'few_shot_learner': 'Few-Shot Regime Learner',
             'continual_learner': 'Continual Learning Model',
             'uncertainty_estimator': 'Uncertainty Estimator'
         }
-        
+
         self.logger = logging.getLogger(self.__class__.__name__)
         tprint(f"✅ [NAS_INTEGRATION] NAS Model Selector initialized with {len(self.nas_models)} models", color="green")
         self.logger.info("✅ NAS Model Selector initialized")
-    
+
     def detect_regimes_and_select_models(self,
                                        market_data: Union[pd.DataFrame, np.ndarray],
                                        timestamps: Optional[np.ndarray] = None,
                                        available_models: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Detect regimes and select optimal models for each regime.
-        
+
         Args:
             market_data: Market data (OHLCV)
             timestamps: Optional timestamps
             available_models: List of available NAS models
-            
+
         Returns:
             Dictionary with regime detection and model selection results
         """
         try:
             start_time = time.time()
-            
+
             # Step 1: Detect regimes using NAS
             self.logger.info("🔍 Detecting regimes using NAS system...")
             nas_result = self.nas_detector.detect_regimes(
@@ -79,38 +78,38 @@ class NASModelSelector:
                 optimize_architecture=True,
                 enable_meta_learning=True
             )
-            
+
             if not nas_result.success:
                 raise ValueError(f"NAS regime detection failed: {nas_result.error_message}")
-            
+
             # Step 2: Get available models
             if available_models is None:
                 available_models = list(self.nas_models.keys())
-            
+
             # Step 3: Select models for each detected regime
             regime_model_selections = {}
             unique_regimes = np.unique(nas_result.regime_predictions)
-            
+
             for regime_id in unique_regimes:
                 self.logger.info(f"🎯 Selecting models for regime {regime_id}...")
-                
+
                 # Get regime-specific data
                 regime_mask = nas_result.regime_predictions == regime_id
                 regime_data = market_data[regime_mask] if hasattr(market_data, '__getitem__') else market_data[regime_mask]
-                
+
                 # Select best model for this regime
                 selected_model, ensemble_weights = self.model_selector.select_model_for_regime(
                     regime_id=int(regime_id),
                     available_models=available_models
                 )
-                
+
                 # Get ensemble weights if enabled
                 if self.selector_config.enable_ensemble:
                     ensemble_weights = self.model_selector.get_ensemble_weights(
                         regime_id=int(regime_id),
                         available_models=available_models
                     )
-                
+
                 regime_model_selections[regime_id] = {
                     'selected_model': selected_model,
                     'ensemble_weights': ensemble_weights,
@@ -119,9 +118,9 @@ class NASModelSelector:
                     ),
                     'regime_confidence': nas_result.regime_stability_scores[regime_mask].mean() if len(nas_result.regime_stability_scores) > 0 else 0.5
                 }
-            
+
             execution_time = time.time() - start_time
-            
+
             # Create comprehensive result
             result = {
                 'success': True,
@@ -137,13 +136,13 @@ class NASModelSelector:
                     'timestamp': datetime.now().isoformat()
                 }
             }
-            
+
             self.logger.info(f"✅ NAS regime detection and model selection completed in {execution_time:.2f}s")
             self.logger.info(f"   Regimes detected: {len(unique_regimes)}")
             self.logger.info(f"   Models available: {len(available_models)}")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ NAS regime detection and model selection failed: {e}")
             return {
@@ -151,7 +150,7 @@ class NASModelSelector:
                 'error_message': str(e),
                 'execution_time': time.time() - start_time if 'start_time' in locals() else 0.0
             }
-    
+
     def update_model_performance(self,
                                regime_id: int,
                                model_name: str,
@@ -161,7 +160,7 @@ class NASModelSelector:
                                regime_characteristics: Optional[Dict[str, Any]] = None):
         """
         Update model performance for a specific regime.
-        
+
         Args:
             regime_id: ID of the market regime
             model_name: Name of the NAS model
@@ -180,25 +179,25 @@ class NASModelSelector:
                 execution_time=execution_time,
                 regime_characteristics=regime_characteristics
             )
-            
+
             self.logger.info(f"Updated performance for NAS model {model_name} in regime {regime_id}: "
                            f"F1={metrics.f1_score:.3f}, Accuracy={metrics.accuracy:.3f}")
-            
+
             return metrics
-            
+
         except Exception as e:
             self.logger.error(f"Failed to update NAS model performance: {e}")
             raise
-    
+
     def get_regime_insights(self, regime_id: int) -> Dict[str, Any]:
         """Get insights about model performance in a specific regime."""
         return self.model_selector.get_regime_insights(regime_id)
-    
+
     def get_optimal_model_for_regime(self, regime_id: int) -> Tuple[str, Dict[str, float]]:
         """Get the optimal model for a specific regime."""
         available_models = list(self.nas_models.keys())
         return self.model_selector.select_model_for_regime(regime_id, available_models)
-    
+
     def _extract_regime_characteristics(self,
                                       regime_data: np.ndarray,
                                       nas_result,
@@ -214,33 +213,33 @@ class NASModelSelector:
                 'complexity_score': 0.0,  # Would need to calculate complexity
                 'nas_confidence': 0.0
             }
-            
+
             # Add NAS-specific characteristics
             if hasattr(nas_result, 'economic_significance_scores'):
                 regime_mask = nas_result.regime_predictions == regime_id
                 if len(nas_result.economic_significance_scores) > 0:
                     characteristics['economic_significance'] = np.mean(nas_result.economic_significance_scores[regime_mask])
-            
+
             if hasattr(nas_result, 'trading_viability_scores'):
                 regime_mask = nas_result.regime_predictions == regime_id
                 if len(nas_result.trading_viability_scores) > 0:
                     characteristics['trading_viability'] = np.mean(nas_result.trading_viability_scores[regime_mask])
-            
+
             if hasattr(nas_result, 'regime_stability_scores'):
                 regime_mask = nas_result.regime_predictions == regime_id
                 if len(nas_result.regime_stability_scores) > 0:
                     characteristics['stability_score'] = np.mean(nas_result.regime_stability_scores[regime_mask])
-            
+
             return characteristics
-            
+
         except Exception as e:
             self.logger.error(f"Failed to extract regime characteristics: {e}")
             return {'regime_id': regime_id, 'error': str(e)}
-    
+
     def save_mappings(self):
         """Save current model mappings."""
         self.model_selector.save_mappings()
-    
+
     def get_system_summary(self) -> Dict[str, Any]:
         """Get summary of the NAS model selection system."""
         summary = self.model_selector.get_system_summary()

@@ -13,7 +13,7 @@ from enum import Enum
 # Import utility modules
 from src.utils.common_utilities import (
     CommonUtilities, safe_dataframe_operation, validate_dataframe_columns,
-    analyze_nan_values_detailed, format_nan_analysis_report, 
+    analyze_nan_values_detailed, format_nan_analysis_report,
     calculate_data_quality_metrics, create_data_quality_report,
     safe_convert_dtypes, safe_merge_dataframes, safe_drop_columns,
     safe_rename_columns, get_dataframe_info, safe_filter_dataframe
@@ -56,7 +56,6 @@ except ImportError:
 import numpy as np
 import pandas as pd
 
-
 class ValidationLevel(Enum):
     """Validation severity levels."""
     CRITICAL = "critical"
@@ -65,14 +64,12 @@ class ValidationLevel(Enum):
     LOW = "low"
     INFO = "info"
 
-
 class ValidationStatus(Enum):
     """Validation result status."""
     PASSED = "passed"
     FAILED = "failed"
     WARNING = "warning"
     SKIPPED = "skipped"
-
 
 @dataclass
 class ValidationRule:
@@ -85,7 +82,6 @@ class ValidationRule:
     auto_fix: bool = False
     fix_func: Optional[callable] = None
 
-
 @dataclass
 class ValidationResult:
     """Result of a validation check."""
@@ -96,7 +92,6 @@ class ValidationResult:
     details: Optional[Dict[str, Any]] = None
     auto_fixed: bool = False
     fix_applied: Optional[str] = None
-
 
 @dataclass
 class ValidationSummary:
@@ -111,11 +106,10 @@ class ValidationSummary:
     quality_score: float
     recommendations: List[str]
 
-
 class AdvancedInputValidator:
     """
     Advanced input validation framework for unified pipeline.
-    
+
     Provides comprehensive validation for data quality, optimization parameters,
     and pipeline state with automatic fixing capabilities.
     """
@@ -193,46 +187,46 @@ class AdvancedInputValidator:
                 required=True
             )
         ]
-        
+
         return rules
 
-    def validate_data(self, data: pd.DataFrame, 
+    def validate_data(self, data: pd.DataFrame,
                      required_columns: Optional[List[str]] = None,
                      lookback_range: Optional[Tuple[int, int]] = None,
                      target_columns: Optional[List[str]] = None) -> Tuple[bool, ValidationSummary, pd.DataFrame]:
         """
         Validate data comprehensively using enhanced utilities.
-        
+
         Args:
             data: DataFrame to validate
             required_columns: List of required column names
             lookback_range: Tuple of (min_lookback, max_lookback)
             target_columns: List of target column names
-            
+
         Returns:
             Tuple of (is_valid, validation_summary, cleaned_data)
         """
         tprint_debug("🔍 Starting comprehensive data validation with enhanced utilities")
-        
+
         if data is None or not isinstance(data, pd.DataFrame):
             return False, self._create_failed_summary("Data is None or not a DataFrame"), pd.DataFrame()
-        
+
         if data.empty:
             return False, self._create_failed_summary("DataFrame is empty"), data
-        
+
         # Store original data for potential fixes
         cleaned_data = data.copy()
         validation_results = []
-        
+
         # Enhanced data quality analysis using utilities
         tprint_debug("📊 Performing comprehensive data quality analysis")
         nan_analysis = analyze_nan_values_detailed(cleaned_data)
         quality_metrics = calculate_data_quality_metrics(cleaned_data)
         quality_report = create_data_quality_report(cleaned_data)
-        
+
         # Log detailed analysis
         tprint_debug(format_nan_analysis_report(nan_analysis, "  "))
-        
+
         # Apply validation rules with enhanced utilities
         for rule in self.validation_rules:
             try:
@@ -244,7 +238,7 @@ class AdvancedInputValidator:
                     'quality_metrics': quality_metrics
                 })
                 validation_results.append(result)
-                
+
                 # Apply auto-fix if available and needed
                 if result.status == ValidationStatus.FAILED and rule.auto_fix and rule.fix_func:
                     try:
@@ -255,7 +249,7 @@ class AdvancedInputValidator:
                         tprint_debug(f"✅ Auto-fixed validation issue: {rule.name}")
                     except Exception as fix_error:
                         tprint_warning(f"⚠️ Auto-fix failed for {rule.name}: {fix_error}")
-                        
+
             except Exception as e:
                 tprint_error(f"❌ Validation rule {rule.name} failed: {e}")
                 validation_results.append(ValidationResult(
@@ -264,35 +258,35 @@ class AdvancedInputValidator:
                     level=rule.level,
                     message=f"Validation rule failed: {str(e)}"
                 ))
-        
+
         # Create validation summary with enhanced metrics
         summary = self._create_validation_summary(validation_results)
         summary.quality_score = quality_metrics.get('quality_score', summary.quality_score)
-        
+
         # Determine overall validity
         is_valid = summary.overall_status in [ValidationStatus.PASSED, ValidationStatus.WARNING]
-        
+
         if is_valid:
             tprint_success(f"✅ Data validation passed (quality score: {summary.quality_score:.2f})")
             tprint_success(f"📊 Data quality: {quality_metrics.get('missing_percentage', 0):.1f}% missing, {quality_metrics.get('duplicate_percentage', 0):.1f}% duplicates")
         else:
             tprint_error(f"❌ Data validation failed: {summary.recommendations}")
-        
+
         return is_valid, summary, cleaned_data
 
-    def _apply_validation_rule(self, rule: ValidationRule, data: pd.DataFrame, 
+    def _apply_validation_rule(self, rule: ValidationRule, data: pd.DataFrame,
                               context: Dict[str, Any]) -> ValidationResult:
         """Apply a single validation rule."""
         try:
             is_valid, message, details = rule.validator_func(data, context)
-            
+
             if is_valid:
                 status = ValidationStatus.PASSED
             elif rule.required:
                 status = ValidationStatus.FAILED
             else:
                 status = ValidationStatus.WARNING
-                
+
             return ValidationResult(
                 rule_name=rule.name,
                 status=status,
@@ -300,7 +294,7 @@ class AdvancedInputValidator:
                 message=message,
                 details=details
             )
-            
+
         except Exception as e:
             return ValidationResult(
                 rule_name=rule.name,
@@ -318,10 +312,10 @@ class AdvancedInputValidator:
     def _validate_required_columns(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate that required columns are present using utility function."""
         required_columns = context.get('required_columns', ['open', 'high', 'low', 'close', 'volume'])
-        
+
         # Use utility function for validation
         is_valid = validate_dataframe_columns(data, required_columns)
-        
+
         if is_valid:
             return True, "All required columns present", {"required_columns": required_columns}
         else:
@@ -338,17 +332,17 @@ class AdvancedInputValidator:
                     pd.to_numeric(data[col], errors='raise')
                 except (ValueError, TypeError):
                     invalid_types.append(col)
-        
+
         if invalid_types:
             return False, f"Invalid data types in columns: {invalid_types}", {"invalid_columns": invalid_types}
-        
+
         return True, "All data types are valid", {"data_types": {col: str(dtype) for col, dtype in data.dtypes.items()}}
 
     def _validate_no_infinite_values(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate no infinite values using math validation utilities."""
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         infinite_cols = []
-        
+
         for col in numeric_cols:
             try:
                 # Use math validation to check for infinite values
@@ -356,32 +350,32 @@ class AdvancedInputValidator:
             except ValueError as e:
                 if "non-finite values" in str(e):
                     infinite_cols.append(col)
-        
+
         if infinite_cols:
             return False, f"Infinite values found in columns: {infinite_cols}", {"infinite_columns": infinite_cols}
-        
+
         return True, "No infinite values found", {"checked_columns": list(numeric_cols)}
 
     def _validate_no_nan_values(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate no NaN values."""
         nan_cols = data.columns[data.isnull().any()].tolist()
-        
+
         if nan_cols:
             return False, f"NaN values found in columns: {nan_cols}", {"nan_columns": nan_cols}
-        
+
         return True, "No NaN values found", {"checked_columns": list(data.columns)}
 
     def _validate_sufficient_data_length(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate sufficient data length for optimization."""
         lookback_range = context.get('lookback_range', (5, 100))
         min_lookback, max_lookback = lookback_range
-        
+
         if len(data) < max_lookback:
             return False, f"Insufficient data: {len(data)} rows < {max_lookback} required", {
                 "data_length": len(data),
                 "required_length": max_lookback
             }
-        
+
         return True, f"Sufficient data length: {len(data)} rows", {
             "data_length": len(data),
             "min_required": max_lookback
@@ -392,40 +386,40 @@ class AdvancedInputValidator:
         target_columns = context.get('target_columns', [])
         if not target_columns:
             return True, "No target columns required", {}
-        
+
         missing_targets = [col for col in target_columns if col not in data.columns]
         if missing_targets:
             return False, f"Missing target columns: {missing_targets}", {"missing_targets": missing_targets}
-        
+
         return True, "All target columns present", {"target_columns": target_columns}
 
     def _validate_feature_columns(self, data: pd.DataFrame, context: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
         """Validate feature columns are valid."""
         feature_cols = [col for col in data.columns if not any(pattern in col.lower() for pattern in ['target', 'label', 'confidence'])]
-        
+
         if len(feature_cols) == 0:
             return False, "No feature columns found", {"feature_count": 0}
-        
+
         return True, f"Found {len(feature_cols)} feature columns", {"feature_count": len(feature_cols)}
 
     def _fix_infinite_values(self, data: pd.DataFrame, details: Dict[str, Any]) -> pd.DataFrame:
         """Fix infinite values by replacing with NaN."""
         infinite_cols = details.get('infinite_columns', [])
         fixed_data = data.copy()
-        
+
         for col in infinite_cols:
             fixed_data[col] = fixed_data[col].replace([np.inf, -np.inf], np.nan)
-        
+
         return fixed_data
 
     def _fix_nan_values(self, data: pd.DataFrame, details: Dict[str, Any]) -> pd.DataFrame:
         """Fix NaN values by forward filling."""
         nan_cols = details.get('nan_columns', [])
         fixed_data = data.copy()
-        
+
         for col in nan_cols:
             fixed_data[col] = fixed_data[col].fillna(method='ffill').fillna(method='bfill')
-        
+
         return fixed_data
 
     def _create_validation_summary(self, results: List[ValidationResult]) -> ValidationSummary:
@@ -436,7 +430,7 @@ class AdvancedInputValidator:
         warnings = sum(1 for r in results if r.status == ValidationStatus.WARNING)
         skipped = sum(1 for r in results if r.status == ValidationStatus.SKIPPED)
         critical_failures = sum(1 for r in results if r.status == ValidationStatus.FAILED and r.level == ValidationLevel.CRITICAL)
-        
+
         # Determine overall status
         if critical_failures > 0:
             overall_status = ValidationStatus.FAILED
@@ -444,10 +438,10 @@ class AdvancedInputValidator:
             overall_status = ValidationStatus.WARNING
         else:
             overall_status = ValidationStatus.PASSED
-        
+
         # Calculate quality score
         quality_score = (passed + warnings * 0.5) / total_rules if total_rules > 0 else 0.0
-        
+
         # Generate recommendations
         recommendations = []
         for result in results:
@@ -455,7 +449,7 @@ class AdvancedInputValidator:
                 recommendations.append(f"Fix {result.rule_name}: {result.message}")
             elif result.status == ValidationStatus.WARNING:
                 recommendations.append(f"Consider fixing {result.rule_name}: {result.message}")
-        
+
         return ValidationSummary(
             total_rules=total_rules,
             passed=passed,

@@ -1,11 +1,10 @@
-import asyncio
 from typing import Any, Dict, List, Optional
+import asyncio
 
 from .trade_gate import GlobalTradeGate
 from .cross_asset_config import CrossAssetConfig
 from ..execution.trading_orchestrator import create_trading_orchestrator, TradingOrchestrator
 from .consolidated_reporting import generate_consolidated_report, generate_live_portfolio_dashboard
-
 
 class CrossAssetTradingManager:
     """
@@ -67,7 +66,6 @@ class CrossAssetTradingManager:
     async def generate_live_portfolio_dashboard(self) -> Dict[str, Any]:
         return await generate_live_portfolio_dashboard()
 
-
 async def start_cross_asset_trading(
     symbols: List[str],
     trading_mode: str = "paper",
@@ -89,4 +87,3 @@ async def start_cross_asset_trading(
     manager = CrossAssetTradingManager(cfg)
     await manager.start()
     return manager
-

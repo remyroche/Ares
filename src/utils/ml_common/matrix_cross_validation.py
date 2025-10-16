@@ -38,7 +38,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class MatrixCrossValidator:
     """
     Matrix-based cross-validation with vectorized operations and GPU acceleration.
@@ -97,14 +96,14 @@ class MatrixCrossValidator:
         """Configure VectorBT global settings for optimal performance."""
         if not VECTORBT_AVAILABLE:
             return
-        
+
         # Configure VectorBT for optimal performance
         vbt.settings.array_wrapper['freq'] = '1min'
-        
+
         # Enable parallel processing if available
         if hasattr(vbt.settings, 'parallel'):
             vbt.settings.parallel['threading'] = True
-        
+
         logger.info("🚀 VectorBT configured for cross-validation optimization")
 
     def cross_validate(self, X: Union[np.ndarray, pd.DataFrame],
@@ -438,7 +437,7 @@ class MatrixCrossValidator:
             'r2': r2
         }
 
-    def _calculate_vectorbt_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
+    def _calculate_vectorbt_metrics(self, y_true: np.ndarray, y_pred: np.ndarray,
                                    X_val: np.ndarray) -> Dict[str, float]:
         """Calculate metrics using VectorBT for portfolio-based evaluation."""
         if not VECTORBT_AVAILABLE:
@@ -447,10 +446,10 @@ class MatrixCrossValidator:
         try:
             # Convert predictions to trading signals
             signals = self._predictions_to_signals(y_pred)
-            
+
             # Create synthetic price data from features (simplified approach)
             prices = self._create_synthetic_prices(X_val, y_true)
-            
+
             # Use VectorBT for portfolio evaluation
             portfolio = vbt.Portfolio.from_signals(
                 prices, signals,
@@ -459,10 +458,10 @@ class MatrixCrossValidator:
                 slippage=0.0005,
                 freq='1min'
             )
-            
+
             # Calculate comprehensive metrics
             stats = portfolio.stats()
-            
+
             # Extract key metrics
             metrics = {
                 'r2': self._calculate_r2_score(y_true, y_pred),
@@ -480,9 +479,9 @@ class MatrixCrossValidator:
                 'sortino_ratio': stats.get('Sortino Ratio', 0),
                 'calmar_ratio': stats.get('Calmar Ratio', 0)
             }
-            
+
             return metrics
-            
+
         except Exception as e:
             logger.warning(f"⚠️ VectorBT metrics calculation failed: {e}, falling back to standard metrics")
             return self._calculate_fold_metrics(y_true, y_pred)
@@ -492,14 +491,14 @@ class MatrixCrossValidator:
         # Simple threshold-based signal generation
         # This can be customized based on the specific use case
         signals = np.zeros_like(predictions)
-        
+
         # Use quantiles for signal generation
         upper_threshold = np.percentile(predictions, 75)
         lower_threshold = np.percentile(predictions, 25)
-        
+
         signals[predictions > upper_threshold] = 1  # Buy signal
         signals[predictions < lower_threshold] = -1  # Sell signal
-        
+
         return signals
 
     def _create_synthetic_prices(self, X_val: np.ndarray, y_true: np.ndarray) -> np.ndarray:
@@ -509,14 +508,14 @@ class MatrixCrossValidator:
             base_prices = X_val[:, 0] * 100  # Scale to reasonable price levels
         else:
             base_prices = np.ones(len(y_true)) * 100
-        
+
         # Add some noise to make it more realistic
         noise = np.random.normal(0, 0.01, len(base_prices))
         prices = base_prices * (1 + noise)
-        
+
         # Ensure prices are positive
         prices = np.maximum(prices, 1.0)
-        
+
         return prices.reshape(-1, 1)  # Reshape for VectorBT
 
     def _calculate_r2_score(self, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -585,7 +584,6 @@ class MatrixCrossValidator:
         """Get performance statistics."""
         return self.performance_stats.copy()
 
-
 def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
                          y: Union[np.ndarray, pd.Series],
                          model_class: Any,
@@ -635,7 +633,6 @@ def matrix_cross_validate(X: Union[np.ndarray, pd.DataFrame],
         return validator.cross_validate(
             X, y, model_class, model_params
         )
-
 
 # Example usage and benchmarking functions
 def benchmark_cross_validation():
@@ -719,7 +716,6 @@ def benchmark_cross_validation():
         'vectorbt_scores': vectorbt_results['fold_scores'],
         'vectorbt_metrics': vectorbt_results.get('fold_metrics', [])
     }
-
 
 if __name__ == "__main__":
     # Run benchmark when executed directly

@@ -101,23 +101,23 @@ class UnifiedDataLoader:
         self.config = config or {}
         self.logger = system_logger.getChild('UnifiedDataLoader')
         self.expected_schema = {
-            'timestamp': 'int64', 
-            'open': 'float64', 
-            'high': 'float64', 
-            'low': 'float64', 
-            'close': 'float64', 
-            'volume': 'float64', 
-            'exchange': 'string', 
-            'symbol': 'string', 
-            'timeframe': 'string', 
-            'year': 'int16', 
-            'month': 'int8', 
+            'timestamp': 'int64',
+            'open': 'float64',
+            'high': 'float64',
+            'low': 'float64',
+            'close': 'float64',
+            'volume': 'float64',
+            'exchange': 'string',
+            'symbol': 'string',
+            'timeframe': 'string',
+            'year': 'int16',
+            'month': 'int8',
             'day': 'int8'
         }
         self.optional_columns = {
-            'trade_volume': 'float64', 
-            'trade_count': 'int64', 
-            'avg_price': 'float64', 
+            'trade_volume': 'float64',
+            'trade_count': 'int64',
+            'avg_price': 'float64',
             'min_price': 'float64',
             'max_price': 'float64',
             'volume_ratio': 'float64'
@@ -129,13 +129,13 @@ class UnifiedDataLoader:
     @validate_file_size(max_size_mb = 100)
     @traced(span_name='UnifiedDataLoader.load_unified_data')
     async def load_unified_data(
-        self, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str, 
-        data_dir: str = 'historical_data', 
-        start_date: Optional[str] = None, 
-        end_date: Optional[str] = None, 
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str = 'historical_data',
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
         columns: Optional[List[str]] = None
     ) -> Optional[pd.DataFrame]:
         """Load unified data created by step1_5 with comprehensive validation.
@@ -161,7 +161,7 @@ class UnifiedDataLoader:
 
             # Construct data path
             data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
-            
+
             if not data_path.exists():
                 self.logger.error(f"Data path does not exist: {data_path}")
                 return None
@@ -213,11 +213,11 @@ class UnifiedDataLoader:
                 data = safe_read_parquet(file_path, columns = columns)
             else:
                 data = safe_read_parquet(file_path)
-            
+
             if data is None or len(data) == 0:
                 self.logger.error(f"No data loaded from {file_path}")
                 return None
-            
+
             # Convert timestamp index to column if it exists
             if data.index.name == 'timestamp' or (hasattr(data.index, 'name') and data.index.name == 'timestamp'):
                 data = data.reset_index()
@@ -227,13 +227,13 @@ class UnifiedDataLoader:
                 data = data.reset_index()
                 data = data.rename(columns={'index': 'timestamp'})
                 self.logger.info("Converted datetime index to timestamp column")
-            
+
             if len(data) > self.max_rows:
                 self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
                 data = data.head(self.max_rows)
-            
+
             return data
-            
+
         except Exception as e:
             self.logger.exception(f"Error loading file {file_path}: {e}")
             return None
@@ -256,7 +256,7 @@ class UnifiedDataLoader:
             if start_date:
                 start_dt = pd.to_datetime(start_date)
                 data = data[data['timestamp'] >= start_dt]
-            
+
             if end_date:
                 end_dt = pd.to_datetime(end_date)
                 data = data[data['timestamp'] <= end_dt]
@@ -282,12 +282,12 @@ class UnifiedDataLoader:
         """
         try:
             data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
-            
+
             if not data_path.exists():
                 return {'exists': False, 'error': f'Path does not exist: {data_path}'}
 
             parquet_files = list_parquet_files(data_path)
-            
+
             if not parquet_files:
                 return {'exists': False, 'error': 'No parquet files found'}
 
@@ -329,7 +329,7 @@ class UnifiedDataLoader:
             # Check for required columns
             required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             missing_columns = [col for col in required_columns if col not in data.columns]
-            
+
             if missing_columns:
                 validation_results['passed'] = False
                 validation_results['issues'].append(f'Missing required columns: {missing_columns}')
@@ -351,7 +351,7 @@ class UnifiedDataLoader:
             for idx, row in data.iterrows():
                 if not (row['low'] <= row['open'] <= row['high'] and row['low'] <= row['close'] <= row['high']):
                     ohlc_errors += 1
-            
+
             if ohlc_errors > 0:
                 validation_results['warnings'].append(f'Found {ohlc_errors} OHLC consistency errors')
 
@@ -379,16 +379,16 @@ class UnifiedDataLoader:
 if __name__ == "__main__":
     async def main():
         loader = UnifiedDataLoader()
-        
+
         # Get data info
         info = await loader.get_data_info("ETHUSDT", "BINANCE", "1m")
         tprint(f"Data info: {info}")
-        
+
         # Load data
         data = await loader.load_unified_data("ETHUSDT", "BINANCE", "1m")
         if data is not None:
             tprint(f"Loaded data shape: {data.shape}")
-            
+
             # Validate quality
             quality = await loader.validate_data_quality(data)
             tprint(f"Quality validation: {quality}")

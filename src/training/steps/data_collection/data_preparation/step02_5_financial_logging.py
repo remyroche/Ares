@@ -14,11 +14,11 @@ from src.utils.logger import get_logger
 
 # Required utility modules
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, safe_read_parquet, 
+    safe_json_load, safe_json_dump, safe_read_parquet,
     ensure_directory, create_fallback_logger
 )
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_positive, 
+    safe_divide, safe_log, safe_sqrt, validate_positive,
     validate_range, MathValidationError
 )
 from src.utils.parquet_utils import ParquetUtils
@@ -26,13 +26,13 @@ from src.utils.parquet_utils import ParquetUtils
 # Core decorators and errors
 from src.core.decorators import handles_errors, error_boundary, converts_errors
 from src.core.errors import (
-    AppError, ValidationError, DataIntegrityError, 
+    AppError, ValidationError, DataIntegrityError,
     NotFoundError, BusinessRuleError
 )
 
 # Financial logging imports
 from src.utils.financial_metrics_logger import (
-    get_financial_metrics_logger, 
+    get_financial_metrics_logger,
     financial_metrics_context,
     get_smart_financial_metrics_logger,
     log_financial_metric_with_regime_awareness
@@ -61,31 +61,31 @@ logger = get_logger('Step025Financiallogging')
 
 class Step025FinancialloggingFinancialLogger:
     """Independent financial metrics logger for Step02.5_5 with enhanced regime logging."""
-    
+
     def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         self.symbol = symbol
         self.exchange = exchange
         self.timeframe = timeframe
         self.enable_enhanced_logging = enable_enhanced_logging
-        
+
         # Use smart logger that automatically chooses enhanced or base logger
         self.financial_logger = get_smart_financial_metrics_logger(use_enhanced=enable_enhanced_logging)
-        
+
         # Store enhanced logger separately if available
         if ENHANCED_LOGGING_AVAILABLE and enable_enhanced_logging:
             self.enhanced_logger = get_enhanced_financial_metrics_logger()
         else:
             self.enhanced_logger = None
-    
+
     def log_step_execution(self, *args, data: Optional[pd.DataFrame] = None, **kwargs) -> bool:
         """
         Log comprehensive financial metrics for Step02.5_5 execution with enhanced regime validation.
-        
+
         Args:
             *args: Step execution arguments
             data: DataFrame for regime validation (optional)
             **kwargs: Additional keyword arguments
-            
+
         Returns:
             True if logging succeeded, False if fail-fast conditions triggered
         """
@@ -99,7 +99,7 @@ class Step025FinancialloggingFinancialLogger:
         except Exception as e:
             logger.error(f"Failed to log financial metrics: {e}")
             return False
-    
+
     def _log_with_enhanced_regime_validation(self, *args, data: pd.DataFrame, **kwargs) -> bool:
         """Log with enhanced regime validation and fail-fast checks."""
         try:
@@ -113,43 +113,43 @@ class Step025FinancialloggingFinancialLogger:
                     data=data,
                     regime_column='composite_cluster_id'
                 )
-                
+
                 if not validation_success:
                     logger.error("🚨 Regime validation failed for Step02.5_5")
                     return False
-            
+
             # Log step start
             self.financial_logger.log_step_start("Step02.5_5", self.symbol, self.exchange, self.timeframe)
-            
+
             # Log all financial metrics with regime awareness
             success = self._log_financial_metrics_with_regime_awareness(*args, data=data, **kwargs)
-            
+
             # Log file paths
             self._log_created_file_paths()
-            
+
             # Log step end
             self.financial_logger.log_step_end(
-                "Step02.5_5", 
-                self.symbol, 
-                self.exchange, 
-                self.timeframe, 
+                "Step02.5_5",
+                self.symbol,
+                self.exchange,
+                self.timeframe,
                 success=success
             )
-            
+
             return success
-            
+
         except Exception as e:
             self.financial_logger.log_step_end(
-                "Step02.5_5", 
-                self.symbol, 
-                self.exchange, 
-                self.timeframe, 
-                success=False, 
+                "Step02.5_5",
+                self.symbol,
+                self.exchange,
+                self.timeframe,
+                success=False,
                 error_message=str(e)
             )
             logger.error(f"Enhanced regime validation logging failed: {e}")
             return False
-    
+
     def _log_with_standard_method(self, *args, **kwargs) -> bool:
         """Log using standard method (fallback)."""
         with financial_metrics_context(
@@ -160,27 +160,27 @@ class Step025FinancialloggingFinancialLogger:
         ):
             try:
                 self.financial_logger.log_step_start("Step02.5_5", self.symbol, self.exchange, self.timeframe)
-                
+
                 # Log all financial metrics
                 self._log_financial_metrics_from_results(*args, **kwargs)
-                
+
                 # Log file paths
                 self._log_created_file_paths()
-                
+
                 self.financial_logger.log_step_end("Step02.5_5", self.symbol, self.exchange, self.timeframe, success=True)
-                
+
                 return True
-                
+
             except Exception as e:
                 self.financial_logger.log_step_end("Step02.5_5", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
                 logger.error(f"Failed to log financial metrics: {e}")
                 return False
-    
+
     def _log_financial_metrics_with_regime_awareness(self, *args, data: pd.DataFrame, **kwargs) -> bool:
         """Log financial metrics with enhanced regime awareness and fail-fast validation."""
         try:
             success = True
-            
+
             # Log step success with regime awareness
             success &= log_financial_metric_with_regime_awareness(
                 symbol=self.symbol,
@@ -192,7 +192,7 @@ class Step025FinancialloggingFinancialLogger:
                 step_name="Step02.5_5",
                 data=data
             )
-            
+
             # Log execution time with regime awareness
             success &= log_financial_metric_with_regime_awareness(
                 symbol=self.symbol,
@@ -204,19 +204,19 @@ class Step025FinancialloggingFinancialLogger:
                 step_name="Step02.5_5",
                 data=data
             )
-            
+
             # Log regime-specific metrics if enhanced logger is available
             if self.enhanced_logger and data is not None and 'composite_cluster_id' in data.columns:
                 regime_data = data['composite_cluster_id'].dropna()
                 regime_counts = regime_data.value_counts()
-                
+
                 regime_metrics = {}
                 for regime_id, count in regime_counts.items():
                     regime_metrics[str(regime_id)] = {
                         'sample_count': float(count),
                         'regime_processed': 1.0
                     }
-                
+
                 # Use enhanced logger for per-regime metrics
                 success &= self.enhanced_logger.log_per_regime_metrics(
                     symbol=self.symbol,
@@ -226,13 +226,13 @@ class Step025FinancialloggingFinancialLogger:
                     regime_metrics=regime_metrics,
                     data=data
                 )
-            
+
             return success
-            
+
         except Exception as e:
             logger.error(f"Failed to log financial metrics with regime awareness: {e}")
             return False
-    
+
     def _log_financial_metrics_from_results(self, *args, **kwargs) -> None:
         """Log key financial metrics directly from step results (fallback method)."""
         try:
@@ -249,7 +249,7 @@ class Step025FinancialloggingFinancialLogger:
             )
         except Exception as e:
             logger.error(f"Failed to log financial metrics from results: {e}")
-    
+
     def _log_created_file_paths(self) -> None:
         """Log file paths that were created during this step."""
         try:
@@ -272,10 +272,10 @@ class Step025FinancialloggingFinancialLogger:
 # Enhanced Step025Financiallogging Financial Logger with Regime-Aware Decorator Support
 class EnhancedStep025FinancialloggingFinancialLogger(Step025FinancialloggingFinancialLogger):
     """Enhanced Step025Financiallogging Financial Logger with automatic regime-aware logging decorator support."""
-    
+
     def __init__(self, symbol: str, exchange: str, timeframe: str, enable_enhanced_logging: bool = True):
         super().__init__(symbol, exchange, timeframe, enable_enhanced_logging)
-        
+
         # Import regime-aware decorator if available
         try:
             from src.utils.regime_aware_financial_logging_decorator import (
@@ -287,7 +287,7 @@ class EnhancedStep025FinancialloggingFinancialLogger(Step025FinancialloggingFina
             self.decorator_available = True
         except ImportError:
             self.decorator_available = False
-    
+
     def get_decorated_execute_method(self, original_execute_method):
         """Get the execute method decorated with regime-aware logging."""
         if self.decorator_available:
@@ -303,14 +303,14 @@ class EnhancedStep025FinancialloggingFinancialLogger(Step025FinancialloggingFina
             return original_execute_method
 class Step02_5FinancialLogger:
     """Independent financial metrics logger for Step02_5 S/R Optimization."""
-    
+
     def __init__(self, symbol: str, exchange: str, timeframe: str):
         self.symbol = symbol
         self.exchange = exchange
         self.timeframe = timeframe
         self.financial_logger = get_financial_metrics_logger()
-    
-    def log_step_execution(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any], 
+
+    def log_step_execution(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any],
                           execution_data: Dict[str, Any], data: Optional[pd.DataFrame]) -> None:
         """Log comprehensive financial metrics for Step02_5 execution."""
         with financial_metrics_context(
@@ -321,25 +321,25 @@ class Step02_5FinancialLogger:
         ):
             try:
                 self.financial_logger.log_step_start("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe)
-                
+
                 # Log all financial metrics
                 self._log_financial_metrics_from_results(sr_levels, ml_results, execution_data, data)
-                
+
                 # Log file paths
                 self._log_created_file_paths()
-                
+
                 self.financial_logger.log_step_end("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe, success=True)
-                
+
             except Exception as e:
                 self.financial_logger.log_step_end("Step02_5_SR_Optimization", self.symbol, self.exchange, self.timeframe, success=False, error_message=str(e))
                 logger.error(f"Failed to log financial metrics: {e}")
-    
+
     def _log_financial_metrics_from_results(self, sr_levels: Dict[str, Any], ml_results: Dict[str, Any], execution_data: Dict[str, Any], data: Optional[pd.DataFrame]) -> None:
         """Log key financial metrics directly from step results."""
         try:
             # Note: Data quality and performance metrics are logged in regular system logs
             # Financial metrics logger focuses only on financial/trading metrics
-            
+
             # Log comprehensive ML model performance metrics (financial relevance)
             if ml_results:
                 # Basic performance metrics
@@ -352,7 +352,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -362,7 +362,7 @@ class Step02_5FinancialLogger:
                     metric_type="risk",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -372,7 +372,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 # Additional ML metrics
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
@@ -383,7 +383,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -393,7 +393,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -403,7 +403,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -413,7 +413,7 @@ class Step02_5FinancialLogger:
                     metric_type="performance",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 # Log feature importance
                 feature_importance = ml_results.get('feature_importance', {})
                 if feature_importance:
@@ -428,7 +428,7 @@ class Step02_5FinancialLogger:
                             step_name="Step02_5_SR_Optimization",
                             additional_data={'feature_name': feature_name}
                         )
-                
+
                 # Log SHAP values if available
                 shap_values = ml_results.get('shap_values', {})
                 if shap_values:
@@ -443,7 +443,7 @@ class Step02_5FinancialLogger:
                             step_name="Step02_5_SR_Optimization",
                             additional_data={'feature_name': feature_name}
                         )
-                
+
                 # Log cross-validation scores
                 cv_scores = ml_results.get('cross_validation_scores', [])
                 if cv_scores:
@@ -457,7 +457,7 @@ class Step02_5FinancialLogger:
                             metric_type="performance",
                             step_name="Step02_5_SR_Optimization"
                         )
-                    
+
                     # Log CV statistics
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
@@ -468,7 +468,7 @@ class Step02_5FinancialLogger:
                         metric_type="performance",
                         step_name="Step02_5_SR_Optimization"
                     )
-                    
+
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
                         exchange=self.exchange,
@@ -478,7 +478,7 @@ class Step02_5FinancialLogger:
                         metric_type="performance",
                         step_name="Step02_5_SR_Optimization"
                     )
-                
+
                 # Log confusion matrix if available
                 confusion_matrix = ml_results.get('confusion_matrix', {})
                 if confusion_matrix:
@@ -492,7 +492,7 @@ class Step02_5FinancialLogger:
                             metric_type="performance",
                             step_name="Step02_5_SR_Optimization"
                         )
-                
+
                 # Log hyperparameters if available
                 hyperparameters = ml_results.get('hyperparameters', {})
                 if hyperparameters:
@@ -522,7 +522,7 @@ class Step02_5FinancialLogger:
                                 step_name="Step02_5_SR_Optimization",
                                 additional_data={param_name: str(param_value)}
                             )
-            
+
             # Log clustering details if available (financial relevance)
             clustering_results = ml_results.get('clustering_results', {})
             if clustering_results:
@@ -536,7 +536,7 @@ class Step02_5FinancialLogger:
                     metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -546,7 +546,7 @@ class Step02_5FinancialLogger:
                     metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -556,7 +556,7 @@ class Step02_5FinancialLogger:
                     metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 self.financial_logger.log_financial_metric(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -566,7 +566,7 @@ class Step02_5FinancialLogger:
                     metric_type="trading",
                     step_name="Step02_5_SR_Optimization"
                 )
-                
+
                 # Log cluster sizes
                 cluster_sizes = clustering_results.get('cluster_sizes', [])
                 if cluster_sizes:
@@ -580,7 +580,7 @@ class Step02_5FinancialLogger:
                             metric_type="clustering",
                             step_name="Step02_5_SR_Optimization"
                         )
-                
+
                 # Log cluster centers if available
                 cluster_centers = clustering_results.get('cluster_centers', [])
                 if cluster_centers:
@@ -596,7 +596,7 @@ class Step02_5FinancialLogger:
                                     metric_type="clustering",
                                     step_name="Step02_5_SR_Optimization"
                                 )
-                
+
                 # Log explained variance ratio if available
                 explained_variance = clustering_results.get('explained_variance_ratio', 0.0)
                 if explained_variance:
@@ -609,7 +609,7 @@ class Step02_5FinancialLogger:
                         metric_type="quality",
                         step_name="Step02_5_SR_Optimization"
                     )
-                
+
                 # Log feature reduction efficiency if available
                 feature_reduction_efficiency = clustering_results.get('feature_reduction_efficiency', 0.0)
                 if feature_reduction_efficiency:
@@ -622,12 +622,12 @@ class Step02_5FinancialLogger:
                         metric_type="quality",
                         step_name="Step02_5_SR_Optimization"
                     )
-            
+
             # Log detailed S/R level metrics
             if sr_levels:
                 support_levels = sr_levels.get('support_levels', [])
                 resistance_levels = sr_levels.get('resistance_levels', [])
-                
+
                 # Log individual support levels with detailed characteristics
                 if support_levels:
                     support_strengths = [level.get('strength', 0) for level in support_levels]
@@ -640,7 +640,7 @@ class Step02_5FinancialLogger:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
-                    
+
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
                         exchange=self.exchange,
@@ -650,7 +650,7 @@ class Step02_5FinancialLogger:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
-                    
+
                     # Log each support level individually with detailed characteristics
                     for i, level in enumerate(support_levels):
                         level_data = {
@@ -667,7 +667,7 @@ class Step02_5FinancialLogger:
                             'volume_confirmation': level.get('volume_confirmation', False),
                             'fractal_strength': level.get('fractal_strength', 0.0)
                         }
-                        
+
                         self.financial_logger.log_financial_metric(
                             symbol=self.symbol,
                             exchange=self.exchange,
@@ -678,7 +678,7 @@ class Step02_5FinancialLogger:
                             step_name="Step02_5_SR_Optimization",
                             additional_data=level_data
                         )
-                
+
                 # Log individual resistance levels with detailed characteristics
                 if resistance_levels:
                     resistance_strengths = [level.get('strength', 0) for level in resistance_levels]
@@ -691,7 +691,7 @@ class Step02_5FinancialLogger:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
-                    
+
                     self.financial_logger.log_financial_metric(
                         symbol=self.symbol,
                         exchange=self.exchange,
@@ -701,7 +701,7 @@ class Step02_5FinancialLogger:
                         metric_type="technical",
                         step_name="Step02_5_SR_Optimization"
                     )
-                    
+
                     # Log each resistance level individually with detailed characteristics
                     for i, level in enumerate(resistance_levels):
                         level_data = {
@@ -718,7 +718,7 @@ class Step02_5FinancialLogger:
                             'volume_confirmation': level.get('volume_confirmation', False),
                             'fractal_strength': level.get('fractal_strength', 0.0)
                         }
-                        
+
                         self.financial_logger.log_financial_metric(
                             symbol=self.symbol,
                             exchange=self.exchange,
@@ -729,10 +729,10 @@ class Step02_5FinancialLogger:
                             step_name="Step02_5_SR_Optimization",
                             additional_data=level_data
                         )
-            
+
             # Note: Data quality and execution performance metrics are logged in regular system logs
             # Financial metrics logger focuses only on financial/trading metrics
-            
+
             # Log comprehensive trading performance
             if sr_levels and ml_results:
                 # Estimate trading performance based on S/R levels and ML results
@@ -762,7 +762,7 @@ class Step02_5FinancialLogger:
                         'ml_f1_score': ml_results.get('f1_score', 0.0)
                     }
                 }
-                
+
                 self.financial_logger.log_trading_performance(
                     symbol=self.symbol,
                     exchange=self.exchange,
@@ -770,10 +770,10 @@ class Step02_5FinancialLogger:
                     step_name="Step02_5_SR_Optimization",
                     **estimated_performance
                 )
-            
+
         except Exception as e:
             logger.error(f"Failed to log financial metrics from results: {e}")
-    
+
     def _log_created_file_paths(self) -> None:
         """Log file paths that were created during this step."""
         try:

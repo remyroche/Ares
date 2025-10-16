@@ -105,7 +105,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class FeatureBankConfig:
     """Configuration for feature bank integration."""
@@ -120,7 +119,6 @@ class FeatureBankConfig:
     enable_parallel_processing: bool = True
     max_workers: int = 4
 
-
 @dataclass
 class FeatureGenerationResult:
     """Result of feature generation."""
@@ -134,11 +132,10 @@ class FeatureGenerationResult:
     error_message: Optional[str] = None
     metadata: Dict[str, Any] = None
 
-
 class FeatureBankIntegration:
     """
     Feature Bank Integration for UnifiedDataDrivenPipeline.
-    
+
     This class integrates the sophisticated feature generation system
     from FeatureLookbackOptimizationComponent, providing:
     - Feature Bank system with 200+ features
@@ -147,15 +144,15 @@ class FeatureBankIntegration:
     - Advanced caching and serialization
     - Memory-efficient operations
     """
-    
+
     def __init__(self, config: Optional[FeatureBankConfig] = None):
         """Initialize the feature bank integration."""
         self.config = config or FeatureBankConfig()
-        
+
         # Initialize components
         self._initialize_components()
         self._initialize_enhanced_utilities()
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_generations': 0,
@@ -167,13 +164,13 @@ class FeatureBankIntegration:
             'features_generated': 0,
             'memory_usage_mb': 0.0
         }
-        
+
         tprint_success("✅ Feature Bank Integration initialized")
-    
+
     def _initialize_components(self):
         """Initialize all feature bank components."""
         tprint_debug("Initializing feature bank integration components")
-        
+
         # Initialize feature bank
         if FEATURE_BANK_AVAILABLE:
             self.feature_bank = FeatureBank()
@@ -181,7 +178,7 @@ class FeatureBankIntegration:
         else:
             self.feature_bank = None
             tprint_warning("⚠️ Feature Bank not available, using fallback implementations")
-        
+
         # Initialize multi-horizon profit labeler
         if MULTI_HORIZON_AVAILABLE:
             self.multi_horizon_labeler = MultiHorizonProfitLabeler()
@@ -189,7 +186,7 @@ class FeatureBankIntegration:
         else:
             self.multi_horizon_labeler = None
             tprint_warning("⚠️ Multi-horizon profit labeler not available")
-        
+
         # Initialize caching
         if CACHING_AVAILABLE:
             self.feature_cache = FeatureCacheService()
@@ -203,7 +200,7 @@ class FeatureBankIntegration:
             self.json_serializer = None
             self.pickle_serializer = None
             tprint_warning("⚠️ Caching not available")
-        
+
         # Initialize matrix operations
         if MATRIX_OPS_AVAILABLE:
             self.matrix_ops = get_unified_matrix_operations()
@@ -215,11 +212,11 @@ class FeatureBankIntegration:
             self.vectorized_core = None
             self.batch_processor = None
             tprint_warning("⚠️ Matrix operations not available")
-    
+
     def _initialize_enhanced_utilities(self):
         """Initialize enhanced utilities from feature_generation and features_common."""
         tprint_debug("Initializing enhanced utilities")
-        
+
         # Initialize enhanced feature generation utilities
         if ENHANCED_FEATURE_GENERATION_AVAILABLE:
             try:
@@ -242,7 +239,7 @@ class FeatureBankIntegration:
             self.cross_timeframe_pipeline = None
             self.fractional_diff_pipeline = None
             self.enhanced_matrix_ops = None
-        
+
         # Initialize features common utilities
         if FEATURES_COMMON_AVAILABLE:
             try:
@@ -271,7 +268,7 @@ class FeatureBankIntegration:
             self.scaler_factory = None
             self.optimized_scaler = None
             self.batch_scaler = None
-    
+
     def generate_features_for_optimization(
         self,
         data: pd.DataFrame,
@@ -280,19 +277,19 @@ class FeatureBankIntegration:
     ) -> FeatureGenerationResult:
         """
         Generate features using the feature bank system with caching support.
-        
+
         This is the core feature generation method from FeatureLookbackOptimizationComponent.
         """
         tprint_info("🏦 Starting feature generation with Feature Bank system")
         tprint_debug(f"📊 Data shape: {data.shape}, Force refresh: {force_refresh}")
-        
+
         start_time = time.time()
-        
+
         try:
             # Check cache first
             cache_key = self._resolve_cache_key(data, pipeline_state)
             cached_features = None
-            
+
             if self.config.enable_caching and cache_key and not force_refresh:
                 cached_features = self._load_cached_features(cache_key)
                 if cached_features is not None:
@@ -307,11 +304,11 @@ class FeatureBankIntegration:
                         success=True,
                         metadata={'cache_key': cache_key}
                     )
-            
+
             # Generate features using feature bank
             tprint_debug("🔧 Generating features using Feature Bank system")
             feature_data = self._generate_features_with_bank(data, pipeline_state)
-            
+
             if feature_data is None or feature_data.empty:
                 tprint_error("❌ Feature generation failed")
                 return FeatureGenerationResult(
@@ -324,18 +321,18 @@ class FeatureBankIntegration:
                     success=False,
                     error_message="Feature generation failed"
                 )
-            
+
             # Apply feature selection and filtering
             tprint_debug("🔍 Applying feature selection and filtering")
             filtered_features = self._apply_feature_filtering(feature_data, data)
-            
+
             # Cache the results
             if self.config.enable_caching and cache_key:
                 self._cache_features(cache_key, filtered_features)
-            
+
             generation_time = time.time() - start_time
             memory_usage = self._calculate_memory_usage(filtered_features)
-            
+
             # Update performance stats
             self.performance_stats.update({
                 'total_generations': 1,
@@ -345,9 +342,9 @@ class FeatureBankIntegration:
                 'memory_usage_mb': memory_usage,
                 'cache_misses': 1
             })
-            
+
             tprint_success(f"✅ Generated {len(filtered_features.columns)} features in {generation_time:.3f}s")
-            
+
             return FeatureGenerationResult(
                 feature_names=filtered_features.columns.tolist(),
                 feature_data=filtered_features,
@@ -362,7 +359,7 @@ class FeatureBankIntegration:
                     'filtered_features': len(filtered_features.columns)
                 }
             )
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
             return FeatureGenerationResult(
@@ -375,7 +372,7 @@ class FeatureBankIntegration:
                 success=False,
                 error_message=str(e)
             )
-    
+
     def _generate_features_with_bank(
         self,
         data: pd.DataFrame,
@@ -390,7 +387,7 @@ class FeatureBankIntegration:
                     enhanced_features = self.enhanced_feature_engineering.generate_features(data)
                     if enhanced_features is not None and not enhanced_features.empty:
                         tprint_success(f"✅ Generated {len(enhanced_features.columns)} features using enhanced feature engineering")
-                        
+
                         # Apply feature validation if available
                         if ENHANCED_FEATURE_GENERATION_AVAILABLE:
                             try:
@@ -400,11 +397,11 @@ class FeatureBankIntegration:
                                     tprint_success("✅ Features validated successfully")
                             except Exception as e:
                                 tprint_warning(f"⚠️ Feature validation failed: {e}")
-                        
+
                         return enhanced_features
                 except Exception as e:
                     tprint_warning(f"⚠️ Enhanced feature engineering failed: {e}")
-            
+
             # Try cross-timeframe analysis if available
             if ENHANCED_FEATURE_GENERATION_AVAILABLE and self.cross_timeframe_pipeline:
                 tprint_debug("🔧 Using cross-timeframe analysis")
@@ -415,28 +412,28 @@ class FeatureBankIntegration:
                         return cross_timeframe_features
                 except Exception as e:
                     tprint_warning(f"⚠️ Cross-timeframe analysis failed: {e}")
-            
+
             # Fallback to Feature Bank system
             if not FEATURE_BANK_AVAILABLE or not self.feature_bank:
                 tprint_error("❌ Feature Bank not available - this is required for feature generation")
                 return None
-            
+
             # Standardize column names to lowercase for consistent feature generation
             data_for_features = data.copy()
             data_for_features.columns = data_for_features.columns.str.lower()
             tprint_debug(f"📊 Standardized column names: {list(data_for_features.columns)[:10]}...")
-            
+
             # Generate features using Feature Bank
             tprint_debug("🏦 Generating features with Feature Bank system")
             feature_data = self.feature_bank.generate_features(data_for_features)
-            
+
             if feature_data is None or feature_data.empty:
                 tprint_error("❌ Feature Bank returned empty features - this is not expected")
                 return None
-            
+
             # Align with original data index
             feature_data = feature_data.reindex(data.index)
-            
+
             # Apply enhanced matrix operations if available
             if ENHANCED_FEATURE_GENERATION_AVAILABLE and self.enhanced_matrix_ops:
                 try:
@@ -446,7 +443,7 @@ class FeatureBankIntegration:
                     tprint_warning(f"⚠️ Enhanced matrix operations failed: {e}")
             elif self.config.enable_memory_optimization and MATRIX_OPS_AVAILABLE:
                 feature_data = optimize_dataframe(feature_data)
-            
+
             # Apply feature validation if available
             if ENHANCED_FEATURE_GENERATION_AVAILABLE:
                 try:
@@ -456,15 +453,14 @@ class FeatureBankIntegration:
                         tprint_success("✅ Features validated successfully")
                 except Exception as e:
                     tprint_warning(f"⚠️ Feature validation failed: {e}")
-            
+
             tprint_success(f"✅ Generated {len(feature_data.columns)} features using Feature Bank")
             return feature_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
             return None
-    
-    
+
     def _apply_feature_filtering(
         self,
         feature_data: pd.DataFrame,
@@ -473,14 +469,14 @@ class FeatureBankIntegration:
         """Apply feature filtering and selection."""
         try:
             tprint_debug("🔍 Applying feature filtering")
-            
+
             # Remove features with too much missing data
             missing_threshold = 0.5
             valid_features = feature_data.columns[
                 feature_data.isnull().mean() < missing_threshold
             ]
             filtered_data = feature_data[valid_features]
-            
+
             # Remove features with low variance
             if self.config.min_variance > 0:
                 variance_threshold = self.config.min_variance
@@ -488,22 +484,22 @@ class FeatureBankIntegration:
                     filtered_data.var() > variance_threshold
                 ]
                 filtered_data = filtered_data[high_variance_features]
-            
+
             # Remove highly correlated features
             if self.config.max_correlation_threshold < 1.0:
                 filtered_data = self._remove_highly_correlated_features(
                     filtered_data, self.config.max_correlation_threshold
                 )
-            
+
             # No artificial limit on number of features - let the Feature Bank generate all available features
-            
+
             tprint_success(f"✅ Filtered to {len(filtered_data.columns)} features")
             return filtered_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Feature filtering failed: {e}")
             return feature_data
-    
+
     def _remove_highly_correlated_features(
         self,
         data: pd.DataFrame,
@@ -513,28 +509,28 @@ class FeatureBankIntegration:
         try:
             if len(data.columns) <= 1:
                 return data
-            
+
             # Calculate correlation matrix
             corr_matrix = data.corr().abs()
-            
+
             # Find pairs of highly correlated features
             upper_tri = corr_matrix.where(
                 np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
             )
-            
+
             # Find features to drop
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
-            
+
             # Drop highly correlated features
             filtered_data = data.drop(columns=to_drop)
-            
+
             tprint_debug(f"🔍 Removed {len(to_drop)} highly correlated features")
             return filtered_data
-            
+
         except Exception as e:
             tprint_error(f"❌ Correlation filtering failed: {e}")
             return data
-    
+
     def _resolve_cache_key(
         self,
         data: pd.DataFrame,
@@ -544,48 +540,48 @@ class FeatureBankIntegration:
         try:
             if not self.config.enable_caching:
                 return None
-            
+
             # Create cache key based on data characteristics
             data_hash = hash(str(data.shape) + str(data.columns.tolist()))
             state_hash = hash(str(pipeline_state)) if pipeline_state else 0
-            
+
             cache_key = f"feature_bank_{data_hash}_{state_hash}"
             return cache_key
-            
+
         except Exception as e:
             tprint_debug(f"Cache key resolution failed: {e}")
             return None
-    
+
     def _load_cached_features(self, cache_key: str) -> Optional[pd.DataFrame]:
         """Load cached features."""
         try:
             if not CACHING_AVAILABLE or not self.feature_cache:
                 return None
-            
+
             cached_features = self.feature_cache.load(cache_key)
             if cached_features is not None and not cached_features.empty:
                 self.performance_stats['cache_hits'] += 1
                 return cached_features
-            
+
             self.performance_stats['cache_misses'] += 1
             return None
-            
+
         except Exception as e:
             tprint_debug(f"Cache load failed: {e}")
             return None
-    
+
     def _cache_features(self, cache_key: str, features: pd.DataFrame):
         """Cache features."""
         try:
             if not CACHING_AVAILABLE or not self.feature_cache:
                 return
-            
+
             self.feature_cache.save(cache_key, features)
             tprint_debug(f"💾 Cached features with key: {cache_key}")
-            
+
         except Exception as e:
             tprint_debug(f"Cache save failed: {e}")
-    
+
     def _calculate_memory_usage(self, data: pd.DataFrame) -> float:
         """Calculate memory usage of DataFrame in MB."""
         try:
@@ -593,8 +589,7 @@ class FeatureBankIntegration:
             return float(memory_usage)
         except:
             return 0.0
-    
-    
+
     def generate_multi_horizon_targets(
         self,
         data: pd.DataFrame,
@@ -605,26 +600,26 @@ class FeatureBankIntegration:
             if not MULTI_HORIZON_AVAILABLE or not self.multi_horizon_labeler:
                 tprint_warning("⚠️ Multi-horizon profit labeler not available")
                 return None
-            
+
             if config is None:
                 config = MultiHorizonConfig()
-            
+
             tprint_debug("🎯 Generating multi-horizon profit targets")
             targets = self.multi_horizon_labeler.generate_targets(data, config)
-            
+
             if targets is not None:
                 tprint_success(f"✅ Generated {len(targets.columns)} multi-horizon targets")
-            
+
             return targets
-            
+
         except Exception as e:
             tprint_error(f"❌ Multi-horizon target generation failed: {e}")
             return None
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
-    
+
     def reset_stats(self):
         """Reset performance statistics."""
         self.performance_stats = {
@@ -637,7 +632,6 @@ class FeatureBankIntegration:
             'features_generated': 0,
             'memory_usage_mb': 0.0
         }
-
 
 def create_feature_bank_integration(config: Optional[FeatureBankConfig] = None) -> FeatureBankIntegration:
     """Create a feature bank integration with default configuration."""

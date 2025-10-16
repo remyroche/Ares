@@ -31,14 +31,14 @@ import numpy as np
 def _safe_load_model(filepath: Path, logger: logging.Logger) -> Any:
     """
     Safely load a model file with security checks.
-    
+
     Args:
         filepath: Path to the model file
         logger: Logger instance for warnings
-        
+
     Returns:
         Loaded model data
-        
+
     Raises:
         ValueError: If file is not from a trusted source
     """

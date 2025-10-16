@@ -26,10 +26,10 @@ class ValidatorOrchestrator:
         self.logger = system_logger.getChild('ValidatorOrchestrator')
         self.validators = {}
         self.validation_results = {}
-        
+
         # Setup graceful imports
         graceful_handler.setup_graceful_imports()
-        
+
         # Initialize metrics only if not already initialized
         try:
             self.metrics = PrometheusMetrics()
@@ -91,11 +91,11 @@ class ValidatorOrchestrator:
             error_msg = f'Import error for {step_name}: {str(e)}'
             self.logger.error(f'❌ {error_msg}')
             error_result = {
-                'step_name': step_name, 
-                'validation_passed': False, 
+                'step_name': step_name,
+                'validation_passed': False,
                 'error': error_msg,
                 'error_type': 'ImportError',
-                'duration': duration, 
+                'duration': duration,
                 'timestamp': time.time()
             }
             self.validation_results[step_name] = error_result
@@ -110,11 +110,11 @@ class ValidatorOrchestrator:
             error_msg = f'Attribute error for {step_name}: {str(e)}'
             self.logger.error(f'❌ {error_msg}')
             error_result = {
-                'step_name': step_name, 
-                'validation_passed': False, 
+                'step_name': step_name,
+                'validation_passed': False,
                 'error': error_msg,
                 'error_type': 'AttributeError',
-                'duration': duration, 
+                'duration': duration,
                 'timestamp': time.time()
             }
             self.validation_results[step_name] = error_result
@@ -129,11 +129,11 @@ class ValidatorOrchestrator:
             error_msg = f'Unexpected error for {step_name}: {str(e)}'
             self.logger.exception(f'❌ {error_msg}')
             error_result = {
-                'step_name': step_name, 
-                'validation_passed': False, 
+                'step_name': step_name,
+                'validation_passed': False,
                 'error': error_msg,
                 'error_type': type(e).__name__,
-                'duration': duration, 
+                'duration': duration,
                 'timestamp': time.time()
             }
             self.validation_results[step_name] = error_result
@@ -264,7 +264,7 @@ class ValidatorOrchestrator:
         validator_mapping = {
             # Standardized naming convention using step0X format
             'step01_data_collection': 'unified_data_collection_validator',
-            'step01_5_data_converter': 'step01_5_data_converter_validator', 
+            'step01_5_data_converter': 'step01_5_data_converter_validator',
             'step02_data_reading': 'step02_data_reading_validator',
             'step02_5_sr_optimization': 'step02_5_sr_optimization_validator',
             'step04_regime_data_splitting': 'regime_data_splitting.validator',
@@ -291,7 +291,7 @@ class ValidatorOrchestrator:
             'step21_saving': 'step21_saving_validator',
             # Legacy support for old naming conventions (deprecated)
             'step1_data_collection': 'unified_data_collection_validator',
-            'step1_5_data_converter': 'step01_5_data_converter_validator', 
+            'step1_5_data_converter': 'step01_5_data_converter_validator',
             'step2_data_reading': 'step02_data_reading_validator',
             'step2_5_sr_optimization': 'step02_5_sr_optimization_validator',
             'step3_hmm_regime_discovery': 'step03_hmm_regime_discovery_validator',

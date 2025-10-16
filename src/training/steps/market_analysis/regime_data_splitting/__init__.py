@@ -81,7 +81,7 @@ __all__ = [
     'NasTasRegimeDataSplitting',
     'RegimeDataSplittingStep',
     'HMMRegimeTagger',
-    
+
     # Data classes
     'RegimeSplittingStatus',
     'RegimeSplittingMetrics',
@@ -89,14 +89,14 @@ __all__ = [
     'RegimeDataResult',
     'StepResult',
     'StepResultStatus',
-    
+
     # Validator classes
     'Step4RegimeDataSplittingValidator',
-    
+
     # Functions
     'execute_nas_tas_regime_data_splitting',
     'run_validator',
-    
+
     # Validation utilities
     'StandardizedValidator',
     'ValidationResult',
@@ -104,7 +104,7 @@ __all__ = [
     'get_validator',
     'validate_training_input',
     'validate_pipeline_state',
-    
+
     # Configuration utilities
     'RegimeDataSplittingConfig',
     'PathManager',

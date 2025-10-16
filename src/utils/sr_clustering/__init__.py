@@ -51,7 +51,7 @@ logger.info("🎉 SR Clustering module initialization completed successfully")
 
 __all__ = [
     'SRBacktestingEngine',
-    'BacktestConfig', 
+    'BacktestConfig',
     'SRLevel',
     'BacktestResult',
     'get_backtesting_engine',

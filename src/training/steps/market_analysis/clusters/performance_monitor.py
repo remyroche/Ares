@@ -93,7 +93,6 @@ try:
 except ImportError:
     NVML_AVAILABLE = False
 
-
 class PerformanceMonitor:
     """Comprehensive performance monitoring system for clustering operations."""
 
@@ -671,7 +670,6 @@ class PerformanceMonitor:
 
         except Exception as e:
             self.logger.error(f"Failed to log performance report: {e}")
-
 
 def performance_monitor(monitor: 'PerformanceMonitor'):
     """Decorator for performance monitoring."""

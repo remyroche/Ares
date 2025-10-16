@@ -60,7 +60,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class InteractionTemplate:
     """Template for generating interactions."""
@@ -73,7 +72,6 @@ class InteractionTemplate:
     priority: int
     metadata: Dict[str, Any]
 
-
 @dataclass
 class GeneratedInteraction:
     """Generated interaction feature."""
@@ -85,39 +83,37 @@ class GeneratedInteraction:
     utility_score: float
     metadata: Dict[str, Any]
 
-
 @dataclass
 class TemplateConfig:
     """Configuration for template-based interaction generation."""
-    
+
     # Budget allocation
     total_budget: int = 30
     core_budget: int = 15
     htf_aware_budget: int = 15
-    
+
     # Quality thresholds
     min_utility_score: float = 0.1
     max_correlation_threshold: float = 0.95
-    
+
     # Performance settings
     enable_vectorbt: bool = True
     enable_parallel: bool = True
     memory_efficient: bool = True
-    
+
     # Template settings
     enable_core_templates: bool = True
     enable_htf_templates: bool = True
     enable_interaction_heredity: bool = True
 
-
 class CoreInteractionTemplates:
     """Core 15 interaction templates (theory-first)."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.templates = self._create_core_templates()
         tprint_info(f"Initialized core interaction templates | count={len(self.templates)}")
-    
+
     def _create_core_templates(self) -> List[InteractionTemplate]:
         """Create core interaction templates."""
         templates = [
@@ -132,7 +128,7 @@ class CoreInteractionTemplates:
                 priority=1,
                 metadata={"description": "Price-volatility interaction"}
             ),
-            
+
             # Momentum-Mean Reversion interactions
             InteractionTemplate(
                 name="momentum_meanrev_interaction",
@@ -144,7 +140,7 @@ class CoreInteractionTemplates:
                 priority=1,
                 metadata={"description": "Momentum-mean reversion interaction"}
             ),
-            
+
             # Liquidity-Price interactions
             InteractionTemplate(
                 name="liquidity_price_interaction",
@@ -156,7 +152,7 @@ class CoreInteractionTemplates:
                 priority=1,
                 metadata={"description": "Liquidity-price interaction"}
             ),
-            
+
             # Volatility-Volume interactions
             InteractionTemplate(
                 name="vol_volume_interaction",
@@ -168,7 +164,7 @@ class CoreInteractionTemplates:
                 priority=1,
                 metadata={"description": "Volatility-volume interaction"}
             ),
-            
+
             # Time-of-day interactions
             InteractionTemplate(
                 name="tod_interaction",
@@ -180,7 +176,7 @@ class CoreInteractionTemplates:
                 priority=2,
                 metadata={"description": "Time-of-day interaction"}
             ),
-            
+
             # Cross-sectional interactions
             InteractionTemplate(
                 name="cross_sectional_interaction",
@@ -192,7 +188,7 @@ class CoreInteractionTemplates:
                 priority=2,
                 metadata={"description": "Cross-sectional interaction"}
             ),
-            
+
             # Regime interactions
             InteractionTemplate(
                 name="regime_interaction",
@@ -204,7 +200,7 @@ class CoreInteractionTemplates:
                 priority=2,
                 metadata={"description": "Regime interaction"}
             ),
-            
+
             # Lag interactions
             InteractionTemplate(
                 name="lag_interaction",
@@ -216,7 +212,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Lag interaction"}
             ),
-            
+
             # Polynomial interactions
             InteractionTemplate(
                 name="polynomial_interaction",
@@ -228,7 +224,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Polynomial interaction"}
             ),
-            
+
             # Ratio interactions
             InteractionTemplate(
                 name="ratio_interaction",
@@ -240,7 +236,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Ratio interaction"}
             ),
-            
+
             # Difference interactions
             InteractionTemplate(
                 name="difference_interaction",
@@ -252,7 +248,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Difference interaction"}
             ),
-            
+
             # Product interactions
             InteractionTemplate(
                 name="product_interaction",
@@ -264,7 +260,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Product interaction"}
             ),
-            
+
             # Conditional interactions
             InteractionTemplate(
                 name="conditional_interaction",
@@ -276,7 +272,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Conditional interaction"}
             ),
-            
+
             # Rolling interactions
             InteractionTemplate(
                 name="rolling_interaction",
@@ -288,7 +284,7 @@ class CoreInteractionTemplates:
                 priority=3,
                 metadata={"description": "Rolling interaction"}
             ),
-            
+
             # Z-score interactions
             InteractionTemplate(
                 name="zscore_interaction",
@@ -301,18 +297,17 @@ class CoreInteractionTemplates:
                 metadata={"description": "Z-score interaction"}
             )
         ]
-        
-        return templates
 
+        return templates
 
 class HTFAwareTemplates:
     """HTF-aware interaction templates."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.templates = self._create_htf_aware_templates()
         tprint_info(f"Initialized HTF-aware templates | count={len(self.templates)}")
-    
+
     def _create_htf_aware_templates(self) -> List[InteractionTemplate]:
         """Create HTF-aware interaction templates."""
         templates = [
@@ -327,7 +322,7 @@ class HTFAwareTemplates:
                 priority=1,
                 metadata={"description": "HTF trend × base liquidity interaction"}
             ),
-            
+
             # HTF vol × base signal strength
             InteractionTemplate(
                 name="htf_vol_signal_interaction",
@@ -339,7 +334,7 @@ class HTFAwareTemplates:
                 priority=1,
                 metadata={"description": "HTF volatility × base signal interaction"}
             ),
-            
+
             # HTF momentum conflict
             InteractionTemplate(
                 name="htf_momentum_conflict_interaction",
@@ -351,7 +346,7 @@ class HTFAwareTemplates:
                 priority=1,
                 metadata={"description": "HTF momentum conflict interaction"}
             ),
-            
+
             # HTF regime × base feature
             InteractionTemplate(
                 name="htf_regime_base_interaction",
@@ -363,7 +358,7 @@ class HTFAwareTemplates:
                 priority=2,
                 metadata={"description": "HTF regime × base feature interaction"}
             ),
-            
+
             # HTF anchor × base deviation
             InteractionTemplate(
                 name="htf_anchor_deviation_interaction",
@@ -376,27 +371,26 @@ class HTFAwareTemplates:
                 metadata={"description": "HTF anchor × base deviation interaction"}
             )
         ]
-        
-        return templates
 
+        return templates
 
 class TemplateInteractionGenerator:
     """Template-based interaction generator with VectorBT optimization."""
-    
+
     def __init__(self, config: Optional[TemplateConfig] = None):
         """
         Initialize the template interaction generator.
-        
+
         Args:
             config: Configuration for template generation
         """
         self.config = config or TemplateConfig()
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize template systems
         self.core_templates = CoreInteractionTemplates()
         self.htf_aware_templates = HTFAwareTemplates()
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_generations': 0,
@@ -407,40 +401,40 @@ class TemplateInteractionGenerator:
             'pandas_fallbacks': 0,
             'interactions_generated': 0
         }
-        
+
         tprint_info("🎯 Template Interaction Generator initialized")
         tprint_debug(f"📊 Core templates: {len(self.core_templates.templates)}")
         tprint_debug(f"📊 HTF templates: {len(self.htf_aware_templates.templates)}")
         tprint_debug(f"📊 VectorBT available: {VECTORBT_AVAILABLE}")
-    
+
     def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
                             base_features: Union[pd.DataFrame, Dict[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
         Generate interactions from templates using VectorBT optimization.
-        
+
         Args:
             materialized_htfs: Materialized HTF features
             base_features: Base features
             targets: Target variables
-            
+
         Returns:
             List of generated interactions
         """
         start_time = time.time()
-        
+
         def _generate_interactions():
             tprint_info("🎯 Starting template-based interaction generation...")
-            
+
             # Normalize base features
             normalized_base_features = self._normalize_base_features(base_features)
             tprint_debug(f"📊 Normalized base features: {len(normalized_base_features)}")
-            
+
             # Determine budget allocation
             budget_allocation = self._determine_budget_allocation(materialized_htfs)
             tprint_debug(f"📊 Budget allocation: {budget_allocation}")
-            
+
             # Generate core interactions
             core_interactions = []
             if self.config.enable_core_templates:
@@ -449,7 +443,7 @@ class TemplateInteractionGenerator:
                     normalized_base_features, targets, budget_allocation['core']
                 )
                 tprint_success(f"✅ Generated {len(core_interactions)} core interactions")
-            
+
             # Generate HTF-aware interactions
             htf_interactions = []
             if self.config.enable_htf_templates:
@@ -458,17 +452,17 @@ class TemplateInteractionGenerator:
                     materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
                 )
                 tprint_success(f"✅ Generated {len(htf_interactions)} HTF interactions")
-            
+
             # Combine all interactions
             all_interactions = core_interactions + htf_interactions
-            
+
             # Apply interaction heredity if enabled
             if self.config.enable_interaction_heredity:
                 all_interactions = self._apply_interaction_heredity(all_interactions)
-            
+
             # Apply VectorBT-based feature selection
             selected_interactions = self._apply_vectorbt_feature_selection(all_interactions, targets)
-            
+
             # Update performance stats
             generation_time = time.time() - start_time
             self.performance_stats.update({
@@ -477,13 +471,13 @@ class TemplateInteractionGenerator:
                 'total_generation_time': generation_time,
                 'interactions_generated': len(selected_interactions)
             })
-            
+
             tprint_success(f"✅ Template interaction generation completed in {generation_time:.3f}s")
             tprint_info(f"📊 Total interactions: {len(selected_interactions)}")
             tprint_info(f"📊 Core: {len(core_interactions)}, HTF: {len(htf_interactions)}")
-            
+
             return selected_interactions
-        
+
         # Execute with error handling
         try:
             return _generate_interactions()
@@ -491,14 +485,14 @@ class TemplateInteractionGenerator:
             tprint_error(f"❌ Template interaction generation failed: {e}")
             self.performance_stats['failed_generations'] += 1
             return []
-    
+
     def _normalize_base_features(self, base_features: Union[pd.DataFrame, Dict[str, pd.Series], None]) -> Dict[str, pd.Series]:
         """Convert supported base feature structures into a column-keyed mapping."""
         normalized = {}
-        
+
         if base_features is None:
             return normalized
-        
+
         if isinstance(base_features, pd.DataFrame):
             for column in base_features.columns:
                 series = base_features[column]
@@ -508,22 +502,22 @@ class TemplateInteractionGenerator:
             for name, series in base_features.items():
                 if isinstance(series, pd.Series):
                     normalized[name] = series
-        
+
         return normalized
-    
+
     def _determine_budget_allocation(self, materialized_htfs: Dict[str, Any]) -> Dict[str, int]:
         """Determine budget allocation for different interaction types."""
         # Base budget
         total_budget = self.config.total_budget
-        
+
         # Calculate HTF performance
         htf_utilities = []
         for feature_name, feature in materialized_htfs.items():
             if hasattr(feature, 'utility_score'):
                 htf_utilities.append(feature.utility_score)
-        
+
         avg_htf_utility = np.mean(htf_utilities) if htf_utilities else 0.0
-        
+
         # Allocate budget based on HTF performance
         if avg_htf_utility > 0.1:  # Top-quartile performance
             core_budget = self.config.core_budget
@@ -532,70 +526,70 @@ class TemplateInteractionGenerator:
             # Standard allocation
             core_budget = min(self.config.core_budget + 5, total_budget)
             htf_aware_budget = min(self.config.htf_aware_budget - 5, total_budget - core_budget)
-        
+
         return {
             'core': core_budget,
             'htf_aware': htf_aware_budget
         }
-    
-    def _generate_core_interactions_vectorbt(self, 
-                                           base_features: Dict[str, pd.Series], 
-                                           targets: Optional[pd.Series], 
+
+    def _generate_core_interactions_vectorbt(self,
+                                           base_features: Dict[str, pd.Series],
+                                           targets: Optional[pd.Series],
                                            budget: int) -> List[GeneratedInteraction]:
         """Generate core interactions using VectorBT optimization."""
         interactions = []
-        
+
         if not VECTORBT_AVAILABLE:
             tprint_warning("VectorBT not available, using fallback method")
             return self._generate_core_interactions_fallback(base_features, targets, budget)
-        
+
         try:
             # Group features by type
             feature_groups = self._group_features_by_type(base_features)
-            
+
             # Generate interactions for each template
             for template in self.core_templates.templates[:budget]:
                 template_interactions = self._generate_template_interactions_vectorbt(
                     template, feature_groups, targets
                 )
                 interactions.extend(template_interactions)
-                
+
         except Exception as e:
             tprint_error(f"VectorBT core interactions failed: {e}, using fallback")
             return self._generate_core_interactions_fallback(base_features, targets, budget)
-        
+
         return interactions
-    
-    def _generate_htf_interactions_vectorbt(self, 
+
+    def _generate_htf_interactions_vectorbt(self,
                                           materialized_htfs: Dict[str, Any],
                                           base_features: Dict[str, pd.Series],
                                           targets: Optional[pd.Series],
                                           budget: int) -> List[GeneratedInteraction]:
         """Generate HTF-aware interactions using VectorBT optimization."""
         interactions = []
-        
+
         if not VECTORBT_AVAILABLE:
             tprint_warning("VectorBT not available, using fallback method")
             return self._generate_htf_interactions_fallback(materialized_htfs, base_features, targets, budget)
-        
+
         try:
             # Group HTF features by type
             htf_groups = self._group_htf_features_by_type(materialized_htfs)
             base_groups = self._group_features_by_type(base_features)
-            
+
             # Generate interactions for each template
             for template in self.htf_aware_templates.templates[:budget]:
                 template_interactions = self._generate_htf_template_interactions_vectorbt(
                     template, htf_groups, base_groups, targets
                 )
                 interactions.extend(template_interactions)
-                
+
         except Exception as e:
             tprint_error(f"VectorBT HTF interactions failed: {e}, using fallback")
             return self._generate_htf_interactions_fallback(materialized_htfs, base_features, targets, budget)
-        
+
         return interactions
-    
+
     def _group_features_by_type(self, features: Dict[str, pd.Series]) -> Dict[str, List[str]]:
         """Group features by type."""
         groups = {
@@ -608,7 +602,7 @@ class TemplateInteractionGenerator:
             'tod_indicator': [],
             'regime_indicator': []
         }
-        
+
         for name, series in features.items():
             name_lower = name.lower()
             if any(x in name_lower for x in ['price', 'close', 'open', 'high', 'low']):
@@ -627,9 +621,9 @@ class TemplateInteractionGenerator:
                 groups['tod_indicator'].append(name)
             elif any(x in name_lower for x in ['regime', 'vol_regime']):
                 groups['regime_indicator'].append(name)
-        
+
         return groups
-    
+
     def _group_htf_features_by_type(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:
         """Group HTF features by type."""
         groups = {
@@ -639,11 +633,11 @@ class TemplateInteractionGenerator:
             'htf_anchor_feature': [],
             'htf_regime_feature': []
         }
-        
+
         for name, feature in materialized_htfs.items():
             family = getattr(feature, 'family', 'unknown') or 'unknown'
             name_lower = name.lower()
-            
+
             if any(x in name_lower for x in ['trend', 'ema', 'sma']):
                 groups['htf_trend_feature'].append(name)
             elif any(x in name_lower for x in ['vol', 'sigma', 'rv', 'var']):
@@ -654,29 +648,29 @@ class TemplateInteractionGenerator:
                 groups['htf_anchor_feature'].append(name)
             elif any(x in name_lower for x in ['regime', 'state']):
                 groups['htf_regime_feature'].append(name)
-        
+
         return groups
-    
-    def _generate_template_interactions_vectorbt(self, 
+
+    def _generate_template_interactions_vectorbt(self,
                                                template: InteractionTemplate,
                                                feature_groups: Dict[str, List[str]],
                                                targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
         """Generate interactions from a template using VectorBT optimization."""
         interactions = []
-        
+
         try:
             # Get feature combinations for this template
             feature_combinations = self._get_feature_combinations(template, feature_groups)
-            
+
             for combination in feature_combinations:
                 try:
                     # Generate interaction using VectorBT
                     interaction_series = self._calculate_interaction_vectorbt(template, combination)
-                    
+
                     if interaction_series is not None and self._is_valid_interaction(interaction_series):
                         # Calculate utility score
                         utility_score = self._calculate_utility_score(interaction_series, targets)
-                        
+
                         if utility_score >= self.config.min_utility_score:
                             # Create interaction object
                             interaction = GeneratedInteraction(
@@ -692,27 +686,27 @@ class TemplateInteractionGenerator:
                                     'vectorbt_optimized': True
                                 }
                             )
-                            
+
                             interactions.append(interaction)
-                            
+
                 except Exception as e:
                     tprint_debug(f"Template interaction generation failed: {e}")
                     continue
-                    
+
         except Exception as e:
             tprint_warning(f"Template {template.name} failed: {e}")
-        
+
         return interactions
-    
-    def _get_feature_combinations(self, 
+
+    def _get_feature_combinations(self,
                                  template: InteractionTemplate,
                                  feature_groups: Dict[str, List[str]]) -> List[Dict[str, Any]]:
         """Get feature combinations for a template."""
         combinations = []
-        
+
         # Get required feature lists
         required_lists = [feature_groups.get(req, []) for req in template.required_features]
-        
+
         # Generate Cartesian product
         for combo in product(*required_lists):
             combination = dict(zip(template.required_features, combo))
@@ -721,120 +715,120 @@ class TemplateInteractionGenerator:
                 'features': list(combo),
                 'combination': combination
             })
-        
+
         return combinations[:template.max_instances]
-    
-    def _calculate_interaction_vectorbt(self, 
+
+    def _calculate_interaction_vectorbt(self,
                                       template: InteractionTemplate,
                                       combination: Dict[str, Any]) -> Optional[pd.Series]:
         """Calculate interaction using VectorBT optimization."""
         try:
             # This is a simplified implementation
             # In practice, you'd evaluate the formula with actual feature data
-            
+
             # For now, create a dummy interaction series
             # In real implementation, you'd calculate based on the template formula
             dummy_series = pd.Series(np.random.randn(1000), name=f"{template.name}_{combination['name']}")
-            
+
             return dummy_series
-            
+
         except Exception as e:
             tprint_debug(f"VectorBT interaction calculation failed: {e}")
             return None
-    
+
     def _is_valid_interaction(self, series: pd.Series) -> bool:
         """Check if an interaction series is valid."""
         if series is None or series.empty:
             return False
-        
+
         # Check for all NaN values
         if series.isna().all():
             return False
-        
+
         # Check for infinite values
         if np.isinf(series).any():
             return False
-        
+
         # Check for constant values (no variance)
         if series.nunique() <= 1:
             return False
-        
+
         return True
-    
+
     def _calculate_utility_score(self, interaction_series: pd.Series, targets: Optional[pd.Series]) -> float:
         """Calculate utility score for an interaction."""
         try:
             if targets is None:
                 # Use variance as utility score
                 return float(interaction_series.var())
-            
+
             # Calculate correlation with targets
             correlation = interaction_series.corr(targets)
             if pd.isna(correlation):
                 return 0.0
-            
+
             # Use absolute correlation as utility score
             return abs(correlation)
-            
+
         except Exception as e:
             tprint_debug(f"Utility score calculation failed: {e}")
             return 0.0
-    
+
     def _apply_interaction_heredity(self, interactions: List[GeneratedInteraction]) -> List[GeneratedInteraction]:
         """Apply interaction heredity (keep ≥1 parent if interaction survives)."""
         # For now, return all interactions
         # In practice, you'd implement heredity rules
         return interactions
-    
-    def _apply_vectorbt_feature_selection(self, 
+
+    def _apply_vectorbt_feature_selection(self,
                                         interactions: List[GeneratedInteraction],
                                         targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
         """Apply VectorBT-based feature selection."""
         if not interactions:
             return interactions
-        
+
         try:
             # Sort by utility score
             interactions.sort(key=lambda x: x.utility_score, reverse=True)
-            
+
             # Select top interactions
             max_interactions = min(len(interactions), self.config.total_budget)
             selected = interactions[:max_interactions]
-            
+
             # Apply additional VectorBT-based filtering
             if VECTORBT_AVAILABLE and targets is not None:
                 selected = self._filter_correlated_interactions(selected, targets)
-            
+
             return selected
-            
+
         except Exception as e:
             tprint_warning(f"VectorBT feature selection failed: {e}, returning all interactions")
             return interactions
-    
-    def _filter_correlated_interactions(self, 
+
+    def _filter_correlated_interactions(self,
                                       interactions: List[GeneratedInteraction],
                                       targets: pd.Series) -> List[GeneratedInteraction]:
         """Filter highly correlated interactions."""
         if len(interactions) <= 1:
             return interactions
-        
+
         try:
             # Create DataFrame of interaction features
             interaction_df = pd.DataFrame({
-                interaction.name: interaction.feature_series 
+                interaction.name: interaction.feature_series
                 for interaction in interactions
             })
-            
+
             # Calculate correlation matrix
             corr_matrix = interaction_df.corr()
-            
+
             # Find highly correlated pairs
             high_corr_pairs = []
             for i in range(len(corr_matrix.columns)):
                 for j in range(i+1, len(corr_matrix.columns)):
                     if abs(corr_matrix.iloc[i, j]) > self.config.max_correlation_threshold:
                         high_corr_pairs.append((i, j))
-            
+
             # Remove one from each highly correlated pair (keep the one with higher utility)
             to_remove = set()
             for i, j in high_corr_pairs:
@@ -842,39 +836,39 @@ class TemplateInteractionGenerator:
                     to_remove.add(j)
                 else:
                     to_remove.add(i)
-            
+
             # Filter out highly correlated interactions
             filtered_interactions = [
                 interaction for i, interaction in enumerate(interactions)
                 if i not in to_remove
             ]
-            
+
             return filtered_interactions
-            
+
         except Exception as e:
             tprint_warning(f"Correlation filtering failed: {e}")
             return interactions
-    
+
     # Fallback methods for when VectorBT is not available
-    def _generate_core_interactions_fallback(self, 
-                                           base_features: Dict[str, pd.Series], 
-                                           targets: Optional[pd.Series], 
+    def _generate_core_interactions_fallback(self,
+                                           base_features: Dict[str, pd.Series],
+                                           targets: Optional[pd.Series],
                                            budget: int) -> List[GeneratedInteraction]:
         """Fallback method for core interactions when VectorBT is not available."""
         # Simplified fallback implementation
         interactions = []
-        
+
         # Generate basic product interactions
         feature_names = list(base_features.keys())
         for i, feat1 in enumerate(feature_names):
             for feat2 in feature_names[i+1:]:
                 if len(interactions) >= budget:
                     break
-                
+
                 try:
                     product = base_features[feat1] * base_features[feat2]
                     utility_score = self._calculate_utility_score(product, targets)
-                    
+
                     if utility_score >= self.config.min_utility_score:
                         interaction = GeneratedInteraction(
                             name=f"product_{feat1}_{feat2}",
@@ -886,13 +880,13 @@ class TemplateInteractionGenerator:
                             metadata={'fallback': True}
                         )
                         interactions.append(interaction)
-                        
+
                 except Exception as e:
                     continue
-        
+
         return interactions
-    
-    def _generate_htf_interactions_fallback(self, 
+
+    def _generate_htf_interactions_fallback(self,
                                           materialized_htfs: Dict[str, Any],
                                           base_features: Dict[str, pd.Series],
                                           targets: Optional[pd.Series],
@@ -900,21 +894,21 @@ class TemplateInteractionGenerator:
         """Fallback method for HTF interactions when VectorBT is not available."""
         # Simplified fallback implementation
         interactions = []
-        
+
         # Generate basic HTF interactions
         htf_names = list(materialized_htfs.keys())
         base_names = list(base_features.keys())
-        
+
         for htf_name in htf_names:
             for base_name in base_names:
                 if len(interactions) >= budget:
                     break
-                
+
                 try:
                     # Create dummy HTF interaction
                     dummy_series = pd.Series(np.random.randn(1000), name=f"htf_{htf_name}_{base_name}")
                     utility_score = self._calculate_utility_score(dummy_series, targets)
-                    
+
                     if utility_score >= self.config.min_utility_score:
                         interaction = GeneratedInteraction(
                             name=f"htf_{htf_name}_{base_name}",
@@ -926,22 +920,20 @@ class TemplateInteractionGenerator:
                             metadata={'fallback': True}
                         )
                         interactions.append(interaction)
-                        
+
                 except Exception as e:
                     continue
-        
+
         return interactions
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
-
 
 # Convenience functions
 def create_template_interaction_generator(config: Optional[TemplateConfig] = None) -> TemplateInteractionGenerator:
     """Create a template interaction generator with default configuration."""
     return TemplateInteractionGenerator(config)
-
 
 def generate_template_interactions(materialized_htfs: Dict[str, Any],
                                  base_features: Union[pd.DataFrame, Dict[str, pd.Series], None],
@@ -949,19 +941,18 @@ def generate_template_interactions(materialized_htfs: Dict[str, Any],
                                  config: Optional[TemplateConfig] = None) -> List[GeneratedInteraction]:
     """
     Convenience function to generate template-based interactions.
-    
+
     Args:
         materialized_htfs: Materialized HTF features
         base_features: Base features
         targets: Target variables
         config: Optional configuration
-        
+
     Returns:
         List of generated interactions
     """
     generator = create_template_interaction_generator(config)
     return generator.generate_interactions(materialized_htfs, base_features, targets)
-
 
 # Export main classes and functions
 __all__ = [

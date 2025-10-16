@@ -10,7 +10,7 @@ This module provides highly optimized cross timeframe analysis leveraging:
 - Memory-efficient operations
 
 Key Features:
-- M1-optimized processing with 
+- M1-optimized processing with
 - Advanced feature selection with regime awareness
 - Comprehensive data quality validation
 - Intelligent caching and memory management
@@ -102,7 +102,7 @@ except ImportError:
 # ML Commons
 try:
     from src.utils.ml_common import (
-        DataQualityUtilities, FeatureSelectionFramework, 
+        DataQualityUtilities, FeatureSelectionFramework,
         CrossValidationUtilities
     )
     ML_COMMONS_AVAILABLE = True
@@ -138,7 +138,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 logger = system_logger.getChild('OptimizedCrossTimeframeAnalysis')
@@ -149,34 +149,34 @@ class OptimizedCrossTimeframeConfig:
     # Timeframe configuration
     timeframes: List[str] = field(default_factory=lambda: ['1m', '5m', '15m', '30m'])
     base_timeframe: str = '1m'
-    
+
     # Feature engineering
     interaction_features: List[str] = field(default_factory=lambda: [
         'correlation', 'momentum', 'volatility', 'volume', 'microstructure',
         'order_flow', 'momentum_divergence', 'volatility_spillover'
     ])
     lookback_periods: List[int] = field(default_factory=lambda: [3, 5, 10, 15, 20, 30])
-    
+
     # Analysis parameters
     correlation_threshold: float = 0.6
     min_observations: int = 50
     max_correlations: int = 30
-    
+
     # Hardware optimization
     enable_m1_optimizations: bool = True
     enable_gpu_acceleration: bool = True
     memory_limit_gb: float = 8.0
     max_workers: int = 4
-    
+
     # Advanced feature selection
     enable_advanced_feature_selection: bool = True
     feature_selection_method: str = 'mutual_info'
     redundancy_threshold: float = 0.8
-    
+
     # Data quality
     enable_data_quality_validation: bool = True
     quality_thresholds: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Caching
     enable_caching: bool = True
     cache_ttl_seconds: int = 3600
@@ -199,26 +199,26 @@ class OptimizedCrossTimeframeAnalysis:
     """
     Optimized Cross Timeframe Analysis with M1 hardware acceleration and advanced feature selection.
     """
-    
+
     def __init__(self, config: Optional[OptimizedCrossTimeframeConfig] = None):
         """Initialize optimized cross timeframe analysis."""
         self.config = config or OptimizedCrossTimeframeConfig()
         self.logger = logger.getChild('OptimizedCrossTimeframeAnalysis')
-        
+
         # Initialize hardware optimizers
         self._init_hardware_optimizers()
-        
+
         # Initialize feature selection
         self._init_feature_selection()
-        
+
         # Initialize utilities
         self._init_utilities()
-        
+
         # Initialize caching
         self._init_caching()
-        
+
         self.logger.info("✅ Optimized Cross Timeframe Analysis initialized")
-    
+
     def _init_hardware_optimizers(self):
         """Initialize hardware optimization components."""
         if HARDWARE_OPTIMIZATIONS_AVAILABLE and self.config.enable_m1_optimizations:
@@ -226,7 +226,7 @@ class OptimizedCrossTimeframeAnalysis:
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
                 self.gpu_manager = get_m1_gpu_manager()
-                
+
                 self.logger.info("✅ Hardware optimizers initialized")
             except Exception as e:
                 self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
@@ -237,7 +237,7 @@ class OptimizedCrossTimeframeAnalysis:
             self.memory_optimizer = None
             self.cpu_optimizer = None
             self.gpu_manager = None
-    
+
     def _init_feature_selection(self):
         """Initialize advanced feature selection components."""
         if FEATURE_SELECTION_AVAILABLE and self.config.enable_advanced_feature_selection:
@@ -251,7 +251,7 @@ class OptimizedCrossTimeframeAnalysis:
                     'feature_selection_method': self.config.feature_selection_method,
                     'redundancy_threshold': self.config.redundancy_threshold
                 }
-                
+
                 self.feature_selector = Step08AdvancedFeatureSelection(feature_config)
                 self.logger.info("✅ Advanced feature selection initialized")
             except Exception as e:
@@ -259,7 +259,7 @@ class OptimizedCrossTimeframeAnalysis:
                 self.feature_selector = None
         else:
             self.feature_selector = None
-    
+
     def _init_utilities(self):
         """Initialize utility components."""
         if UTILITIES_AVAILABLE:
@@ -270,7 +270,7 @@ class OptimizedCrossTimeframeAnalysis:
                 self.parquet_utils = ParquetUtils()
                 self.json_serializer = JSONSerializer()
                 self.parquet_serializer = ParquetSerializer()
-                
+
                 self.logger.info("✅ Utility components initialized")
             except Exception as e:
                 self.logger.warning(f"⚠️ Utility initialization failed: {e}")
@@ -287,7 +287,7 @@ class OptimizedCrossTimeframeAnalysis:
             self.parquet_utils = None
             self.json_serializer = None
             self.parquet_serializer = None
-    
+
     def _init_caching(self):
         """Initialize caching system."""
         if UTILITIES_AVAILABLE and self.config.enable_caching:
@@ -299,7 +299,7 @@ class OptimizedCrossTimeframeAnalysis:
                 self.cache = None
         else:
             self.cache = None
-    
+
     async def analyze_cross_timeframes(
         self,
         data_dir: str,
@@ -309,23 +309,23 @@ class OptimizedCrossTimeframeAnalysis:
     ) -> OptimizedCrossTimeframeResult:
         """
         Perform optimized cross timeframe analysis.
-        
+
         Args:
             data_dir: Data directory path
             symbol: Trading symbol
             exchange: Exchange name
             timeframes: List of timeframes to analyze (optional)
-            
+
         Returns:
             OptimizedCrossTimeframeResult with comprehensive analysis results
         """
         start_time = time.time()
-        
+
         if timeframes is None:
             timeframes = self.config.timeframes
-        
+
         self.logger.info(f"⏰ Starting optimized cross timeframe analysis for {symbol} on {exchange} ({timeframes})")
-        
+
         try:
             # Check cache first
             cache_key = f"cross_timeframe_{symbol}_{exchange}_{'_'.join(timeframes)}"
@@ -334,18 +334,18 @@ class OptimizedCrossTimeframeAnalysis:
                 if cached_result:
                     self.logger.info("✅ Using cached cross timeframe analysis result")
                     return cached_result
-            
+
             # Memory checkpoint
             if self.memory_optimizer:
                 with self.memory_optimizer.memory_checkpoint("cross_timeframe_analysis_start"):
                     result = await self._perform_analysis(data_dir, symbol, exchange, timeframes)
             else:
                 result = await self._perform_analysis(data_dir, symbol, exchange, timeframes)
-            
+
             # Cache result
             if self.cache:
                 await self.cache.set(cache_key, result)
-            
+
             # Performance metrics
             execution_time = time.time() - start_time
             result.performance_metrics = {
@@ -356,14 +356,14 @@ class OptimizedCrossTimeframeAnalysis:
                 'gpu_acceleration_used': self.gpu_manager is not None,
                 'advanced_feature_selection_used': self.feature_selector is not None
             }
-            
+
             self.logger.info(f"✅ Optimized cross timeframe analysis completed in {execution_time:.2f}s")
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Optimized cross timeframe analysis failed: {e}")
             raise
-    
+
     async def _perform_analysis(
         self,
         data_dir: str,
@@ -372,30 +372,30 @@ class OptimizedCrossTimeframeAnalysis:
         timeframes: List[str]
     ) -> OptimizedCrossTimeframeResult:
         """Perform the actual analysis with optimizations."""
-        
+
         # Load and validate data
         timeframe_data = await self._load_and_validate_data(data_dir, symbol, exchange, timeframes)
-        
+
         # Align timeframes with optimization
         aligned_data = await self._align_timeframes_optimized(timeframe_data)
-        
+
         # Engineer features with hardware acceleration
         cross_timeframe_features = await self._engineer_features_optimized(aligned_data)
-        
+
         # Advanced feature selection
         selected_features = await self._perform_advanced_feature_selection(cross_timeframe_features)
-        
+
         # Calculate metrics with parallel processing
         interaction_metrics = await self._calculate_interaction_metrics_optimized(aligned_data)
         timeframe_correlations = await self._calculate_timeframe_correlations_optimized(aligned_data)
         feature_importance = await self._calculate_feature_importance_optimized(cross_timeframe_features)
-        
+
         # Financial and risk metrics
         financial_metrics, risk_metrics = await self._calculate_financial_risk_metrics(cross_timeframe_features)
-        
+
         # Quality report
         quality_report = await self._generate_quality_report(timeframe_data, cross_timeframe_features)
-        
+
         # Analysis metadata
         analysis_metadata = {
             'timeframes_analyzed': timeframes,
@@ -411,7 +411,7 @@ class OptimizedCrossTimeframeAnalysis:
                 'caching': self.cache is not None
             }
         }
-        
+
         return OptimizedCrossTimeframeResult(
             cross_timeframe_features=cross_timeframe_features,
             selected_features=selected_features,
@@ -425,16 +425,16 @@ class OptimizedCrossTimeframeAnalysis:
         )
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -453,8 +453,8 @@ class OptimizedCrossTimeframeAnalysis:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

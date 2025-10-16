@@ -1,9 +1,9 @@
-from typing import List
 from typing import Any
 from typing import Dict
-import pandas as pd
+from typing import List
 from typing import Optional
 import numpy as np
+import pandas as pd
 'Tactician model explainer for SHAP and LIME integration.\n\nThis module provides explainability for Tactician ML models, enabling\ntraceability of trading decisions back to individual factors.\n'
 from .explainability.base_explainer import BaseExplainer, ExplanationResult
 import logging

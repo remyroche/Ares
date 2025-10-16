@@ -18,12 +18,11 @@ from pathlib import Path
 import pickle
 import os
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 logger = logging.getLogger(__name__)
-
 
 class EncodingType(Enum):
     """Types of architecture encoding."""
@@ -38,7 +37,6 @@ class EncodingType(Enum):
     RECURSIVE = "recursive"
     HYBRID = "hybrid"
 
-
 class EncodingFormat(Enum):
     """Format for encoded architectures."""
     VECTOR = "vector"
@@ -47,7 +45,6 @@ class EncodingFormat(Enum):
     DICT = "dict"
     JSON = "json"
     BYTES = "bytes"
-
 
 @dataclass
 class EncodingResult:
@@ -59,7 +56,6 @@ class EncodingResult:
     encoding_time: float = 0.0
     compression_ratio: float = 1.0
 
-
 @dataclass
 class DecodingResult:
     """Result of architecture decoding."""
@@ -67,7 +63,6 @@ class DecodingResult:
     decoding_time: float = 0.0
     confidence: float = 1.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class BaseArchitectureEncoder:
     """Base class for architecture encoders."""
@@ -83,16 +78,16 @@ class BaseArchitectureEncoder:
         try:
             # Extract architecture features
             features = self._extract_architecture_features(architecture)
-            
+
             # Create encoding based on architecture type
             if hasattr(architecture, 'architecture_type'):
                 arch_type = architecture.architecture_type
             else:
                 arch_type = 'unknown'
-            
+
             # Generate encoding
             encoding = self._generate_encoding(features, arch_type)
-            
+
             # Create encoding result
             result = EncodingResult(
                 encoding=encoding,
@@ -105,9 +100,9 @@ class BaseArchitectureEncoder:
                     'timestamp': time.time()
                 }
             )
-            
+
             return result
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error encoding architecture: {e}", color="yellow")
             # Return empty encoding
@@ -129,7 +124,7 @@ class BaseArchitectureEncoder:
                     success=False,
                     error="Invalid encoding"
                 )
-            
+
             # Decode based on encoding type
             if encoding_type == EncodingType.ARCHITECTURE:
                 architecture = self._decode_architecture(encoding)
@@ -141,7 +136,7 @@ class BaseArchitectureEncoder:
                     success=False,
                     error=f"Unsupported encoding type: {encoding_type}"
                 )
-            
+
             # Create decoding result
             result = DecodingResult(
                 architecture=architecture,
@@ -153,9 +148,9 @@ class BaseArchitectureEncoder:
                     'timestamp': time.time()
                 }
             )
-            
+
             return result
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error decoding architecture: {e}", color="yellow")
             return DecodingResult(
@@ -169,10 +164,10 @@ class BaseArchitectureEncoder:
         try:
             # Extract architecture features
             features = self._extract_architecture_features(architecture)
-            
+
             # Calculate encoding size based on features
             size = 0
-            
+
             # Add size for each feature
             for key, value in features.items():
                 if isinstance(value, (int, float)):
@@ -183,9 +178,9 @@ class BaseArchitectureEncoder:
                     size += len(value)
                 elif isinstance(value, dict):
                     size += len(value)
-            
+
             return max(1, size)  # Minimum size of 1
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error getting encoding size: {e}", color="yellow")
             return 1  # Default size
@@ -196,33 +191,33 @@ class BaseArchitectureEncoder:
             # Check if encoding is not None
             if encoding is None:
                 return False
-            
+
             # Check if encoding is a list or array
             if not isinstance(encoding, (list, tuple, np.ndarray)):
                 return False
-            
+
             # Check if encoding has minimum size
             if len(encoding) == 0:
                 return False
-            
+
             # Check if encoding contains valid values
             for value in encoding:
                 if not isinstance(value, (int, float, str)):
                     return False
                 if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
                     return False
-            
+
             return True
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error validating encoding: {e}", color="yellow")
             return False
-    
+
     def _extract_architecture_features(self, architecture: Any) -> Dict[str, Any]:
         """Extract features from an architecture."""
         try:
             features = {}
-            
+
             # Get basic architecture properties
             if hasattr(architecture, 'depth'):
                 features['depth'] = architecture.depth
@@ -230,57 +225,57 @@ class BaseArchitectureEncoder:
                 features['depth'] = len(architecture.layers)
             else:
                 features['depth'] = 1
-            
+
             if hasattr(architecture, 'width'):
                 features['width'] = architecture.width
             elif hasattr(architecture, 'hidden_size'):
                 features['width'] = architecture.hidden_size
             else:
                 features['width'] = 64
-            
+
             if hasattr(architecture, 'activation'):
                 features['activation'] = str(architecture.activation)
             else:
                 features['activation'] = 'relu'
-            
+
             if hasattr(architecture, 'optimizer'):
                 features['optimizer'] = str(architecture.optimizer)
             else:
                 features['optimizer'] = 'adam'
-            
+
             if hasattr(architecture, 'learning_rate'):
                 features['learning_rate'] = architecture.learning_rate
             else:
                 features['learning_rate'] = 0.001
-            
+
             if hasattr(architecture, 'batch_size'):
                 features['batch_size'] = architecture.batch_size
             else:
                 features['batch_size'] = 32
-            
+
             if hasattr(architecture, 'dropout'):
                 features['dropout'] = architecture.dropout
             else:
                 features['dropout'] = 0.0
-            
+
             if hasattr(architecture, 'regularization'):
                 features['regularization'] = architecture.regularization
             else:
                 features['regularization'] = 0.0
-            
+
             if hasattr(architecture, 'architecture_type'):
                 features['architecture_type'] = str(architecture.architecture_type)
             else:
                 features['architecture_type'] = 'unknown'
-            
+
             # Get parameter count if available
             if hasattr(architecture, 'parameters'):
                 features['num_parameters'] = sum(p.numel() for p in architecture.parameters())
             else:
                 features['num_parameters'] = 0
-            
+
             return features
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error extracting features: {e}", color="yellow")
             return {
@@ -295,12 +290,12 @@ class BaseArchitectureEncoder:
                 'architecture_type': 'unknown',
                 'num_parameters': 0
             }
-    
+
     def _generate_encoding(self, features: Dict[str, Any], arch_type: str) -> List[float]:
         """Generate encoding from features."""
         try:
             encoding = []
-            
+
             # Add numerical features
             encoding.append(features.get('depth', 1))
             encoding.append(features.get('width', 64))
@@ -309,7 +304,7 @@ class BaseArchitectureEncoder:
             encoding.append(features.get('dropout', 0.0))
             encoding.append(features.get('regularization', 0.0))
             encoding.append(features.get('num_parameters', 0))
-            
+
             # Add categorical features as one-hot encoded
             activation = features.get('activation', 'relu')
             if activation == 'relu':
@@ -318,7 +313,7 @@ class BaseArchitectureEncoder:
                 encoding.extend([0, 1, 0])
             else:
                 encoding.extend([0, 0, 1])
-            
+
             optimizer = features.get('optimizer', 'adam')
             if optimizer == 'adam':
                 encoding.extend([1, 0, 0])
@@ -326,7 +321,7 @@ class BaseArchitectureEncoder:
                 encoding.extend([0, 1, 0])
             else:
                 encoding.extend([0, 0, 1])
-            
+
             # Add architecture type encoding
             if arch_type == 'neural':
                 encoding.extend([1, 0, 0])
@@ -334,20 +329,20 @@ class BaseArchitectureEncoder:
                 encoding.extend([0, 1, 0])
             else:
                 encoding.extend([0, 0, 1])
-            
+
             return encoding
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error generating encoding: {e}", color="yellow")
             return [1, 64, 0.001, 32, 0.0, 0.0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0]
-    
+
     def _decode_architecture(self, encoding: List[float]) -> Dict[str, Any]:
         """Decode architecture from encoding."""
         try:
             if len(encoding) < 16:
                 # Not enough values in encoding
                 return self._create_default_architecture()
-            
+
             # Decode numerical features
             architecture = {
                 'depth': int(encoding[0]),
@@ -358,7 +353,7 @@ class BaseArchitectureEncoder:
                 'regularization': float(encoding[5]),
                 'num_parameters': int(encoding[6])
             }
-            
+
             # Decode categorical features
             activation_encoding = encoding[7:10]
             if activation_encoding[0] > 0.5:
@@ -367,7 +362,7 @@ class BaseArchitectureEncoder:
                 architecture['activation'] = 'sigmoid'
             else:
                 architecture['activation'] = 'tanh'
-            
+
             optimizer_encoding = encoding[10:13]
             if optimizer_encoding[0] > 0.5:
                 architecture['optimizer'] = 'adam'
@@ -375,7 +370,7 @@ class BaseArchitectureEncoder:
                 architecture['optimizer'] = 'sgd'
             else:
                 architecture['optimizer'] = 'rmsprop'
-            
+
             arch_type_encoding = encoding[13:16]
             if arch_type_encoding[0] > 0.5:
                 architecture['architecture_type'] = 'neural'
@@ -383,24 +378,24 @@ class BaseArchitectureEncoder:
                 architecture['architecture_type'] = 'tree'
             else:
                 architecture['architecture_type'] = 'hybrid'
-            
+
             return architecture
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error decoding architecture: {e}", color="yellow")
             return self._create_default_architecture()
-    
+
     def _decode_features(self, encoding: List[float]) -> Dict[str, Any]:
         """Decode features from encoding."""
         try:
             # This is a simplified implementation
             # In practice, this would decode specific features
             return self._decode_architecture(encoding)
-            
+
         except Exception as e:
             tprint(f"⚠️ [ENCODER] Error decoding features: {e}", color="yellow")
             return self._create_default_architecture()
-    
+
     def _create_default_architecture(self) -> Dict[str, Any]:
         """Create a default architecture."""
         return {
@@ -415,7 +410,6 @@ class BaseArchitectureEncoder:
             'architecture_type': 'neural',
             'num_parameters': 0
         }
-
 
 class NeuralArchitectureEncoder(BaseArchitectureEncoder):
     """Encoder for neural architectures."""
@@ -641,10 +635,10 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
         # Simple one-hot decoding implementation
         if len(encoding) == 0:
             return {'layers': []}
-        
+
         # Find the index with maximum value (assuming one-hot encoding)
         max_idx = np.argmax(encoding)
-        
+
         # Create a simple architecture based on the index
         architecture = {
             'layers': [{
@@ -653,7 +647,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 'dropout': 0.0
             }]
         }
-        
+
         return architecture
 
     def _adjacency_matrix_decode(self, encoding: Dict[str, Any]) -> Any:
@@ -661,11 +655,11 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
         # Simple adjacency matrix decoding implementation
         if 'adjacency_matrix' not in encoding:
             return {'layers': []}
-        
+
         matrix = encoding['adjacency_matrix']
         if len(matrix) == 0:
             return {'layers': []}
-        
+
         # Create layers based on adjacency matrix
         layers = []
         for i in range(len(matrix)):
@@ -675,7 +669,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 'dropout': 0.0
             }
             layers.append(layer)
-        
+
         return {'layers': layers}
 
     def _path_decode(self, encoding: str) -> Any:
@@ -683,13 +677,13 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
         # Simple path decoding implementation
         if not encoding:
             return {'layers': []}
-        
+
         # Parse path encoding (assuming format like "32-64-128")
         try:
             widths = [int(x) for x in encoding.split('-')]
         except ValueError:
             widths = [32, 64]  # Default fallback
-        
+
         # Create layers based on path
         layers = []
         for width in widths:
@@ -699,7 +693,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 'dropout': 0.0
             }
             layers.append(layer)
-        
+
         return {'layers': layers}
 
     def _hybrid_decode(self, encoding: Dict[str, Any]) -> Any:
@@ -707,10 +701,10 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
         # Simple hybrid decoding implementation
         if not encoding:
             return {'layers': []}
-        
+
         # Try to extract information from hybrid encoding
         layers = []
-        
+
         # Check for layer information
         if 'layers' in encoding:
             layers = encoding['layers']
@@ -731,7 +725,7 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 'activation': 'relu',
                 'dropout': 0.0
             }]
-        
+
         return {'layers': layers}
 
     def validate_encoding(self, encoding: Any, encoding_type: EncodingType) -> bool:
@@ -749,7 +743,6 @@ class NeuralArchitectureEncoder(BaseArchitectureEncoder):
                 return False
         except:
             return False
-
 
 class TreeArchitectureEncoder(BaseArchitectureEncoder):
     """Encoder for tree architectures."""
@@ -924,10 +917,10 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
         # Simple one-hot decoding implementation for tree architecture
         if len(encoding) == 0:
             return {'trees': []}
-        
+
         # Find the index with maximum value (assuming one-hot encoding)
         max_idx = np.argmax(encoding)
-        
+
         # Create a simple tree architecture based on the index
         tree_architecture = {
             'trees': [{
@@ -936,7 +929,7 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 'tree_type': 'decision_tree'
             }]
         }
-        
+
         return tree_architecture
 
     def _recursive_decode(self, encoding: Dict[str, Any]) -> Any:
@@ -944,16 +937,16 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
         # Simple recursive decoding implementation
         if 'trees' not in encoding:
             return {'trees': []}
-        
+
         trees = encoding['trees']
         if not trees:
             return {'trees': []}
-        
+
         # Create tree architecture from recursive encoding
         tree_architecture = {
             'trees': []
         }
-        
+
         for tree_info in trees:
             tree = {
                 'depth': tree_info.get('depth', 3),
@@ -961,7 +954,7 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 'tree_type': tree_info.get('tree_type', 'decision_tree')
             }
             tree_architecture['trees'].append(tree)
-        
+
         return tree_architecture
 
     def _hybrid_decode(self, encoding: Dict[str, Any]) -> Any:
@@ -969,10 +962,10 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
         # Simple hybrid decoding implementation for tree architecture
         if not encoding:
             return {'trees': []}
-        
+
         # Try to extract tree information from hybrid encoding
         trees = []
-        
+
         # Check for tree information
         if 'trees' in encoding:
             trees = encoding['trees']
@@ -993,7 +986,7 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 'nodes': 8,
                 'tree_type': 'decision_tree'
             }]
-        
+
         return {'trees': trees}
 
     def validate_encoding(self, encoding: Any, encoding_type: EncodingType) -> bool:
@@ -1009,7 +1002,6 @@ class TreeArchitectureEncoder(BaseArchitectureEncoder):
                 return False
         except:
             return False
-
 
 class UnifiedArchitectureEncoder:
     """Unified encoder that handles both neural and tree architectures."""
@@ -1107,16 +1099,13 @@ class UnifiedArchitectureEncoder:
             self.logger.error(f"❌ Failed to load architecture encoding: {e}")
             raise
 
-
 def create_neural_architecture_encoder(config: Dict[str, Any]) -> NeuralArchitectureEncoder:
     """Create a neural architecture encoder."""
     return NeuralArchitectureEncoder(config)
 
-
 def create_tree_architecture_encoder(config: Dict[str, Any]) -> TreeArchitectureEncoder:
     """Create a tree architecture encoder."""
     return TreeArchitectureEncoder(config)
-
 
 def create_unified_architecture_encoder(config: Dict[str, Any]) -> UnifiedArchitectureEncoder:
     """Create a unified architecture encoder."""

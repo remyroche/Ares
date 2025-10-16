@@ -46,7 +46,7 @@ def _initialize_default_bank():
 
 __all__ = [
     "FeatureBank",
-    "FeatureGenerator", 
+    "FeatureGenerator",
     "FeatureCategory",
     "FeatureRegistry",
     "VectorizedFeatureGenerator",

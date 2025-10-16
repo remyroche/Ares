@@ -6,7 +6,6 @@ import argparse
 from src.training.steps.market_analysis.regime_analysis import RegimeAnalysisService
 from src.utils.tprint import tprint
 
-
 def main() -> int:
     """Parse arguments and trigger the regime analysis workflow."""
     parser = argparse.ArgumentParser(description="Analyze regime distribution and metrics")
@@ -38,7 +37,6 @@ def main() -> int:
         tprint(f"❌ Analysis failed: {exc}", "ERROR")
         return 1
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

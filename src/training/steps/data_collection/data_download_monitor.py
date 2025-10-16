@@ -39,13 +39,13 @@ logger = system_logger.getChild("DataDownloadMonitor")
 
 class DataDownloadMonitor:
     """Comprehensive monitor for data download operations."""
-    
+
     @log_important_calls
     def __init__(self, data_cache_path: str = "data_cache", monitor_file: str = "download_monitor.json"):
         self.data_cache_path = Path(data_cache_path)
         self.monitor_file = Path(monitor_file)
         self.logger = logger.getChild('DataDownloadMonitor')
-        
+
         # Initialize monitoring data
         self.monitoring_data = {
             'sessions': {},
@@ -69,23 +69,23 @@ class DataDownloadMonitor:
             'alerts': [],
             'created_at': datetime.now().isoformat()
         }
-        
+
         # Load existing monitoring data
         self._load_monitoring_data()
-        
+
         # Current session tracking
         self.current_session = None
         self.session_start_time = None
-        
+
         self.logger.info("✅ Data Download Monitor initialized")
-    
+
     @handles_errors(context="start_session")
     @log_all_calls
     def start_session(
-        self, 
-        session_id: str, 
-        symbol: str, 
-        exchange: str, 
+        self,
+        session_id: str,
+        symbol: str,
+        exchange: str,
         data_type: str,
         timeframe: str = "1m",
         start_date: Optional[datetime] = None,
@@ -93,7 +93,7 @@ class DataDownloadMonitor:
     ) -> Dict[str, Any]:
         """
         Start monitoring a new download session.
-        
+
         Args:
             session_id: Unique session identifier
             symbol: Trading symbol
@@ -102,14 +102,14 @@ class DataDownloadMonitor:
             timeframe: Timeframe for the data
             start_date: Start date for download
             end_date: End date for download
-            
+
         Returns:
             Session information dictionary
         """
         try:
             self.session_start_time = time.time()
             self.current_session = session_id
-            
+
             session_info = {
                 'session_id': session_id,
                 'symbol': symbol,
@@ -135,13 +135,13 @@ class DataDownloadMonitor:
                     'quality_score': 0.0
                 }
             }
-            
+
             self.monitoring_data['sessions'][session_id] = session_info
             self.monitoring_data['statistics']['total_sessions'] += 1
-            
+
             self.logger.info(f"🚀 Started monitoring session {session_id}: {exchange}_{symbol}_{data_type}_{timeframe}")
             return session_info
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error starting session {session_id}: {e}")
             return {
@@ -149,14 +149,14 @@ class DataDownloadMonitor:
                 'error': str(e),
                 'status': 'failed'
             }
-    
+
     @handles_errors(context="update_batch_progress")
     @log_all_calls
     def update_batch_progress(
-        self, 
-        session_id: str, 
-        batch_number: int, 
-        batch_success: bool, 
+        self,
+        session_id: str,
+        batch_number: int,
+        batch_success: bool,
         rows_downloaded: int = 0,
         batch_duration: float = 0.0,
         file_path: Optional[str] = None,
@@ -164,7 +164,7 @@ class DataDownloadMonitor:
     ) -> Dict[str, Any]:
         """
         Update progress for a batch within a session.
-        
+
         Args:
             session_id: Session identifier
             batch_number: Batch number
@@ -173,7 +173,7 @@ class DataDownloadMonitor:
             batch_duration: Duration of the batch in seconds
             file_path: Path to the created file
             error_message: Error message if batch failed
-            
+
         Returns:
             Updated batch information
         """
@@ -181,9 +181,9 @@ class DataDownloadMonitor:
             if session_id not in self.monitoring_data['sessions']:
                 self.logger.warning(f"⚠️ Session {session_id} not found in monitoring data")
                 return {'error': 'Session not found'}
-            
+
             session = self.monitoring_data['sessions'][session_id]
-            
+
             batch_info = {
                 'batch_number': batch_number,
                 'success': batch_success,
@@ -193,10 +193,10 @@ class DataDownloadMonitor:
                 'timestamp': datetime.now().isoformat(),
                 'error_message': error_message
             }
-            
+
             session['batches'].append(batch_info)
             session['total_batches'] += 1
-            
+
             if batch_success:
                 session['successful_batches'] += 1
                 session['total_rows'] += rows_downloaded
@@ -210,33 +210,33 @@ class DataDownloadMonitor:
                         'error': error_message,
                         'timestamp': datetime.now().isoformat()
                     })
-            
+
             # Update performance metrics
             self._update_session_metrics(session)
-            
+
             self.logger.info(f"📊 Updated batch {batch_number} for session {session_id}: {rows_downloaded} rows, {batch_duration:.2f}s")
             return batch_info
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error updating batch progress: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="end_session")
     @log_all_calls
     def end_session(
-        self, 
-        session_id: str, 
+        self,
+        session_id: str,
         final_status: str = 'completed',
         final_error: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         End a monitoring session.
-        
+
         Args:
             session_id: Session identifier
             final_status: Final status ('completed', 'failed', 'cancelled')
             final_error: Final error message if session failed
-            
+
         Returns:
             Final session summary
         """
@@ -244,56 +244,56 @@ class DataDownloadMonitor:
             if session_id not in self.monitoring_data['sessions']:
                 self.logger.warning(f"⚠️ Session {session_id} not found in monitoring data")
                 return {'error': 'Session not found'}
-            
+
             session = self.monitoring_data['sessions'][session_id]
             session['status'] = final_status
             session['end_time'] = datetime.now().isoformat()
-            
+
             if self.session_start_time:
                 session['total_duration_seconds'] = time.time() - self.session_start_time
-            
+
             # Update global statistics
             self._update_global_statistics(session, final_status)
-            
+
             # Generate session summary
             summary = self._generate_session_summary(session)
-            
+
             # Save monitoring data
             self._save_monitoring_data()
-            
+
             self.logger.info(f"🏁 Ended session {session_id}: {final_status}, {session['total_rows']} rows, {session['total_files_created']} files")
-            
+
             # Clear current session
             if self.current_session == session_id:
                 self.current_session = None
                 self.session_start_time = None
-            
+
             return summary
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error ending session {session_id}: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="add_alert")
     @log_all_calls
     def add_alert(
-        self, 
-        alert_type: str, 
-        message: str, 
+        self,
+        alert_type: str,
+        message: str,
         severity: str = 'warning',
         session_id: Optional[str] = None,
         batch_number: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Add an alert to the monitoring system.
-        
+
         Args:
             alert_type: Type of alert ('error', 'warning', 'info', 'success')
             message: Alert message
             severity: Alert severity ('low', 'medium', 'high', 'critical')
             session_id: Associated session ID
             batch_number: Associated batch number
-            
+
         Returns:
             Alert information
         """
@@ -307,20 +307,20 @@ class DataDownloadMonitor:
                 'batch_number': batch_number,
                 'timestamp': datetime.now().isoformat()
             }
-            
+
             self.monitoring_data['alerts'].append(alert)
-            
+
             # Keep only last 1000 alerts
             if len(self.monitoring_data['alerts']) > 1000:
                 self.monitoring_data['alerts'] = self.monitoring_data['alerts'][-1000:]
-            
+
             self.logger.info(f"🚨 Alert added: {alert_type} - {message}")
             return alert
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error adding alert: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="get_session_status")
     @log_all_calls
     def get_session_status(self, session_id: str) -> Dict[str, Any]:
@@ -328,9 +328,9 @@ class DataDownloadMonitor:
         try:
             if session_id not in self.monitoring_data['sessions']:
                 return {'error': 'Session not found'}
-            
+
             session = self.monitoring_data['sessions'][session_id]
-            
+
             # Calculate current progress
             progress = {
                 'session_id': session_id,
@@ -344,10 +344,10 @@ class DataDownloadMonitor:
                 'current_duration': 0.0,
                 'estimated_completion': None
             }
-            
+
             if session['status'] == 'running' and self.session_start_time:
                 progress['current_duration'] = time.time() - self.session_start_time
-                
+
                 # Estimate completion if we have some data
                 if session['total_batches'] > 0 and session['successful_batches'] > 0:
                     avg_batch_time = progress['current_duration'] / session['total_batches']
@@ -356,33 +356,33 @@ class DataDownloadMonitor:
                     progress['estimated_completion'] = datetime.fromtimestamp(
                         time.time() + estimated_remaining
                     ).isoformat()
-            
+
             return progress
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error getting session status: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="get_monitoring_summary")
     @log_all_calls
     def get_monitoring_summary(self) -> Dict[str, Any]:
         """Get comprehensive monitoring summary."""
         try:
             stats = self.monitoring_data['statistics']
-            
+
             # Calculate additional metrics
             success_rate = (
                 stats['successful_sessions'] / max(stats['total_sessions'], 1) * 100
             )
-            
+
             avg_rows_per_session = (
                 stats['total_rows_downloaded'] / max(stats['successful_sessions'], 1)
             )
-            
+
             # Recent activity (last 24 hours)
             recent_sessions = []
             cutoff_time = datetime.now() - timedelta(hours=24)
-            
+
             for session_id, session in self.monitoring_data['sessions'].items():
                 session_start = datetime.fromisoformat(session['start_time'])
                 if session_start > cutoff_time:
@@ -395,7 +395,7 @@ class DataDownloadMonitor:
                         'total_rows': session['total_rows'],
                         'start_time': session['start_time']
                     })
-            
+
             # Recent alerts
             recent_alerts = []
             for alert in self.monitoring_data['alerts'][-10:]:  # Last 10 alerts
@@ -405,7 +405,7 @@ class DataDownloadMonitor:
                     'severity': alert['severity'],
                     'timestamp': alert['timestamp']
                 })
-            
+
             summary = {
                 'overview': {
                     'total_sessions': stats['total_sessions'],
@@ -429,29 +429,29 @@ class DataDownloadMonitor:
                 'current_session': self.current_session,
                 'last_updated': datetime.now().isoformat()
             }
-            
+
             return summary
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error getting monitoring summary: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="export_monitoring_data")
     @log_all_calls
     def export_monitoring_data(
-        self, 
+        self,
         export_path: Optional[str] = None,
         include_sessions: bool = True,
         include_alerts: bool = True
     ) -> Dict[str, Any]:
         """
         Export monitoring data to a file.
-        
+
         Args:
             export_path: Path to export file (default: auto-generated)
             include_sessions: Whether to include session data
             include_alerts: Whether to include alert data
-            
+
         Returns:
             Export information
         """
@@ -459,7 +459,7 @@ class DataDownloadMonitor:
             if export_path is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 export_path = f"download_monitor_export_{timestamp}.json"
-            
+
             export_data = {
                 'export_info': {
                     'exported_at': datetime.now().isoformat(),
@@ -470,16 +470,16 @@ class DataDownloadMonitor:
                 'statistics': self.monitoring_data['statistics'],
                 'performance_metrics': self.monitoring_data['performance_metrics']
             }
-            
+
             if include_sessions:
                 export_data['sessions'] = self.monitoring_data['sessions']
-            
+
             if include_alerts:
                 export_data['alerts'] = self.monitoring_data['alerts']
-            
+
             # Save export file
             success = safe_json_dump(export_data, export_path, indent=2)
-            
+
             if success:
                 self.logger.info(f"📁 Exported monitoring data to {export_path}")
                 return {
@@ -494,68 +494,68 @@ class DataDownloadMonitor:
                     'success': False,
                     'error': 'Failed to save export file'
                 }
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error exporting monitoring data: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="update_session_metrics")
     def _update_session_metrics(self, session: Dict[str, Any]) -> None:
         """Update performance metrics for a session."""
         try:
             if not session['batches']:
                 return
-            
+
             # Calculate download speed
             total_rows = session['total_rows']
             if self.session_start_time:
                 total_time = time.time() - self.session_start_time
                 if total_time > 0:
                     session['performance_metrics']['download_speed_rows_per_second'] = total_rows / total_time
-            
+
             # Calculate average batch time
             successful_batches = [b for b in session['batches'] if b['success']]
             if successful_batches:
                 avg_batch_time = sum(b['duration_seconds'] for b in successful_batches) / len(successful_batches)
                 session['performance_metrics']['average_batch_time'] = avg_batch_time
-            
+
             # Update quality score (simplified calculation)
             success_rate = session['successful_batches'] / max(session['total_batches'], 1)
             session['performance_metrics']['quality_score'] = success_rate * 100
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating session metrics: {e}")
-    
+
     @handles_errors(context="update_global_statistics")
     def _update_global_statistics(self, session: Dict[str, Any], final_status: str) -> None:
         """Update global statistics based on session results."""
         try:
             stats = self.monitoring_data['statistics']
-            
+
             if final_status == 'completed':
                 stats['successful_sessions'] += 1
             else:
                 stats['failed_sessions'] += 1
-            
+
             stats['total_downloads'] += 1
             stats['total_rows_downloaded'] += session['total_rows']
             stats['total_files_created'] += session['total_files_created']
-            
+
             # Update averages
             if stats['successful_sessions'] > 0:
                 stats['average_rows_per_session'] = stats['total_rows_downloaded'] / stats['successful_sessions']
-            
+
             if session.get('total_duration_seconds'):
                 # Update average download time
                 total_time = stats['average_download_time'] * (stats['total_downloads'] - 1)
                 total_time += session['total_duration_seconds']
                 stats['average_download_time'] = total_time / stats['total_downloads']
-            
+
             stats['last_updated'] = datetime.now().isoformat()
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error updating global statistics: {e}")
-    
+
     @handles_errors(context="generate_session_summary")
     def _generate_session_summary(self, session: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a comprehensive summary for a session."""
@@ -581,13 +581,13 @@ class DataDownloadMonitor:
                 'end_time': session.get('end_time'),
                 'summary_generated_at': datetime.now().isoformat()
             }
-            
+
             return summary
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error generating session summary: {e}")
             return {'error': str(e)}
-    
+
     @handles_errors(context="load_monitoring_data")
     def _load_monitoring_data(self) -> None:
         """Load existing monitoring data from file."""
@@ -599,10 +599,10 @@ class DataDownloadMonitor:
                     self.logger.info(f"📖 Loaded monitoring data from {self.monitor_file}")
             else:
                 self.logger.info("📝 No existing monitoring data found, starting fresh")
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error loading monitoring data: {e}")
-    
+
     @handles_errors(context="save_monitoring_data")
     def _save_monitoring_data(self) -> None:
         """Save monitoring data to file."""
@@ -612,7 +612,7 @@ class DataDownloadMonitor:
                 self.logger.debug(f"💾 Saved monitoring data to {self.monitor_file}")
             else:
                 self.logger.warning("⚠️ Failed to save monitoring data")
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error saving monitoring data: {e}")
 
@@ -622,9 +622,9 @@ download_monitor = DataDownloadMonitor()
 # Convenience functions
 @handles_errors()
 def start_download_session(
-    session_id: str, 
-    symbol: str, 
-    exchange: str, 
+    session_id: str,
+    symbol: str,
+    exchange: str,
     data_type: str,
     **kwargs
 ) -> Dict[str, Any]:
@@ -633,9 +633,9 @@ def start_download_session(
 
 @handles_errors()
 def update_download_progress(
-    session_id: str, 
-    batch_number: int, 
-    batch_success: bool, 
+    session_id: str,
+    batch_number: int,
+    batch_success: bool,
     **kwargs
 ) -> Dict[str, Any]:
     """Convenience function to update download progress."""
@@ -643,7 +643,7 @@ def update_download_progress(
 
 @handles_errors()
 def end_download_session(
-    session_id: str, 
+    session_id: str,
     final_status: str = 'completed',
     **kwargs
 ) -> Dict[str, Any]:
@@ -665,7 +665,7 @@ if __name__ == "__main__":
     async def test_monitor():
         logger.info("🎯 Testing Data Download Monitor")
         logger.info("=" * 80)
-        
+
         # Start a test session
         session = start_download_session(
             session_id="test_session_001",
@@ -674,9 +674,9 @@ if __name__ == "__main__":
             data_type="klines",
             timeframe="1m"
         )
-        
+
         logger.info(f"✅ Started session: {session['session_id']}")
-        
+
         # Simulate some batch updates
         for i in range(3):
             update_download_progress(
@@ -688,18 +688,18 @@ if __name__ == "__main__":
                 file_path=f"batch_{i+1}.parquet"
             )
             await asyncio.sleep(0.1)
-        
+
         # End the session
         summary = end_download_session(session['session_id'], 'completed')
-        
+
         logger.info(f"✅ Session completed: {summary['total_rows']} rows in {summary['duration_seconds']:.2f}s")
-        
+
         # Get monitoring summary
         dashboard = get_monitoring_dashboard()
         logger.info(f"📊 Dashboard: {dashboard['overview']['total_sessions']} sessions, {dashboard['overview']['success_rate']:.1f}% success rate")
-        
+
         logger.info("=" * 80)
         logger.info("🎉 Data Download Monitor tests completed!")
         logger.info("=" * 80)
-    
+
     asyncio.run(test_monitor())

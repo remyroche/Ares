@@ -17,12 +17,10 @@ from .logging import get_correlation_id
 
 import uuid
 
-
 # Context variable for current trace
 current_trace_var: ContextVar[Optional["TraceContext"]] = ContextVar(
     "current_trace", default = None
 )
-
 
 class SpanKind(Enum):
     """Types of spans in distributed tracing."""
@@ -33,14 +31,12 @@ class SpanKind(Enum):
     PRODUCER = "producer"
     CONSUMER = "consumer"
 
-
 class SpanStatus(Enum):
     """Status of a span."""
 
     UNSET = "unset"
     OK = "ok"
     ERROR = "error"
-
 
 @dataclass
 class Span:
@@ -83,7 +79,6 @@ class Span:
             return (self.end_time - self.start_time) * 1000
         return None
 
-
 @dataclass
 class TraceContext:
     """Context for a complete trace."""
@@ -118,20 +113,16 @@ class TraceContext:
         self.spans.append(span)
         return span
 
-
 # Simple in-memory trace storage (replace with real backend in production)
 _trace_storage: dict[str, TraceContext] = {}
-
 
 def get_current_trace() -> TraceContext | None:
     """Get the current trace context."""
     return current_trace_var.get()
 
-
 def set_current_trace(trace: TraceContext) -> None:
     """Set the current trace context."""
     current_trace_var.set(trace)
-
 
 def create_trace(trace_id: str | None = None) -> TraceContext:
     """Create a new trace context."""
@@ -142,7 +133,6 @@ def create_trace(trace_id: str | None = None) -> TraceContext:
     trace = TraceContext(trace_id = trace_id)
     _trace_storage[trace_id] = trace
     return trace
-
 
 def traced(
     *,
@@ -276,7 +266,6 @@ def traced(
         f"traced({span_name or 'auto'})", sync_handler, async_handler
     )
 
-
 def span_event(name: str, attributes: dict[str, Any] = None) -> None:
     """
     Add an event to the current span.
@@ -299,7 +288,6 @@ def span_event(name: str, attributes: dict[str, Any] = None) -> None:
         # Add event to the most recent span
         current_span = trace.spans[-1]
         current_span.add_event(name, attributes)
-
 
 def span_attribute(key: str, value: Any) -> None:
     """
@@ -324,7 +312,6 @@ def span_attribute(key: str, value: Any) -> None:
         # Add attribute to the most recent span
         current_span = trace.spans[-1]
         current_span.set_attribute(key, value)
-
 
 def trace_method(
     cls: type = None,
@@ -364,7 +351,6 @@ def trace_method(
     if cls is None:
         return decorator
     return decorator(cls)
-
 
 def get_trace_summary(trace_id: str) -> dict[str, Any] | None:
     """

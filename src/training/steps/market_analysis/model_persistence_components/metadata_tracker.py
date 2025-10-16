@@ -21,7 +21,7 @@ class MetadataTracker:
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the metadata tracker.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -35,13 +35,13 @@ class MetadataTracker:
     @handles_errors(exceptions=(Exception,), default_return={}, context='metadata creation')
     async def create_metadata(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], saved_artifacts: Dict[str, Any], version_info: Dict[str, Any]) -> Dict[str, Any]:
         """Create comprehensive metadata for a training run.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Complete pipeline state
             saved_artifacts: Saved artifact paths
             version_info: Version information
-            
+
         Returns:
             Comprehensive metadata dictionary
         """
@@ -194,10 +194,10 @@ class MetadataTracker:
     @handles_errors(exceptions=(Exception,), default_return={}, context='metadata validation')
     async def validate_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Validate metadata integrity.
-        
+
         Args:
             metadata: Metadata to validate
-            
+
         Returns:
             Validation results
         """

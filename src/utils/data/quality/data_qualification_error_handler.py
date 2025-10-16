@@ -104,14 +104,14 @@ class CircuitBreakerConfig:
 
 class CircuitBreaker:
     """Circuit breaker implementation for failing services."""
-    
+
     def __init__(self, config: CircuitBreakerConfig):
         self.config = config
         self.failure_count = 0
         self.last_failure_time = None
         self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
         self.logger = logger.getChild('CircuitBreaker')
-    
+
     def call(self, func: Callable, *args, **kwargs):
         """Execute function with circuit breaker protection."""
         if self.state == "OPEN":
@@ -120,7 +120,7 @@ class CircuitBreaker:
                 self.logger.info("Circuit breaker transitioning to HALF_OPEN")
             else:
                 raise Exception("Circuit breaker is OPEN")
-        
+
         try:
             result = func(*args, **kwargs)
             self._on_success()
@@ -128,25 +128,25 @@ class CircuitBreaker:
         except self.config.expected_exception as e:
             self._on_failure()
             raise e
-    
+
     def _should_attempt_reset(self) -> bool:
         """Check if circuit breaker should attempt reset."""
         if self.last_failure_time is None:
             return True
         return time.time() - self.last_failure_time >= self.config.recovery_timeout
-    
+
     def _on_success(self):
         """Handle successful execution."""
         if self.state == "HALF_OPEN":
             self.failure_count = 0
             self.state = "CLOSED"
             self.logger.info("Circuit breaker reset to CLOSED")
-    
+
     def _on_failure(self):
         """Handle failed execution."""
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         if self.failure_count >= self.config.failure_threshold:
             self.state = "OPEN"
             self.logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
@@ -154,10 +154,10 @@ class CircuitBreaker:
 class DataQualificationErrorHandler:
     """
     Centralized error handler for data qualification pipeline.
-    
+
     Provides comprehensive error handling with automatic recovery,
     fallback mechanisms, and detailed error tracking.
-    
+
     Example:
         >>> handler = DataQualificationErrorHandler()
         >>> result = handler.handle_utility_failure(
@@ -167,11 +167,11 @@ class DataQualificationErrorHandler:
         ...     fallback_func=get_legacy_utilities
         ... )
     """
-    
+
     def __init__(self, enable_circuit_breaker: bool = True, log_errors: bool = True):
         """
         Initialize the error handler.
-        
+
         Args:
             enable_circuit_breaker: Whether to enable circuit breaker pattern
             log_errors: Whether to log errors
@@ -183,13 +183,13 @@ class DataQualificationErrorHandler:
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
         self.fallback_registry: Dict[str, Callable] = {}
         self.retry_configs: Dict[str, RetryConfig] = {}
-        
+
         # Initialize default retry configurations
         self._initialize_default_retry_configs()
-        
+
         if self.log_errors:
             self.logger.info("🚀 Data Qualification Error Handler initialized")
-    
+
     def _initialize_default_retry_configs(self):
         """Initialize default retry configurations for different error types."""
         self.retry_configs = {
@@ -224,21 +224,21 @@ class DataQualificationErrorHandler:
                 retry_on_exceptions=(ValueError, RuntimeError, ArithmeticError)
             )
         }
-    
+
     def classify_error(self, error: Exception, context: ErrorContext) -> Tuple[ErrorCategory, ErrorSeverity]:
         """
         Classify error by category and severity.
-        
+
         Args:
             error: The exception to classify
             context: Error context information
-            
+
         Returns:
             Tuple of (ErrorCategory, ErrorSeverity)
         """
         error_type = type(error)
         error_message = str(error).lower()
-        
+
         # Classification logic
         if isinstance(error, (ImportError, ModuleNotFoundError)):
             category = ErrorCategory.IMPORT_ERROR
@@ -267,54 +267,54 @@ class DataQualificationErrorHandler:
         else:
             category = ErrorCategory.UNKNOWN_ERROR
             severity = ErrorSeverity.MEDIUM
-        
+
         # Adjust severity based on context
         if context.step_name in ["sr_optimization", "hmm_regime_discovery"]:
             if severity == ErrorSeverity.MEDIUM:
                 severity = ErrorSeverity.HIGH
-        
+
         return category, severity
-    
+
     def determine_recovery_strategy(
-        self, 
-        category: ErrorCategory, 
+        self,
+        category: ErrorCategory,
         severity: ErrorSeverity,
         retry_count: int
     ) -> RecoveryStrategy:
         """
         Determine the appropriate recovery strategy.
-        
+
         Args:
             category: Error category
             severity: Error severity
             retry_count: Number of retries already attempted
-            
+
         Returns:
             RecoveryStrategy to use
         """
         # Critical errors should abort
         if severity == ErrorSeverity.CRITICAL:
             return RecoveryStrategy.ABORT
-        
+
         # Import errors should use fallback
         if category == ErrorCategory.IMPORT_ERROR:
             return RecoveryStrategy.FALLBACK
-        
+
         # Network errors should retry with circuit breaker
         if category == ErrorCategory.NETWORK_ERROR:
             return RecoveryStrategy.CIRCUIT_BREAKER
-        
+
         # Memory errors should skip or abort
         if category == ErrorCategory.MEMORY_ERROR:
             return RecoveryStrategy.SKIP if retry_count < 2 else RecoveryStrategy.ABORT
-        
+
         # Configuration errors should abort
         if category == ErrorCategory.CONFIGURATION_ERROR:
             return RecoveryStrategy.ABORT
-        
+
         # Default to retry for other errors
         return RecoveryStrategy.RETRY
-    
+
     def handle_utility_failure(
         self,
         step_name: str,
@@ -325,17 +325,17 @@ class DataQualificationErrorHandler:
     ) -> Any:
         """
         Handle utility failure with appropriate recovery strategy.
-        
+
         Args:
             step_name: Name of the step where error occurred
             utility_name: Name of the utility that failed
             error: The exception that occurred
             fallback_func: Optional fallback function
             context: Optional error context
-            
+
         Returns:
             Result from fallback function or raises exception
-            
+
         Example:
             >>> handler = DataQualificationErrorHandler()
             >>> result = handler.handle_utility_failure(
@@ -347,10 +347,10 @@ class DataQualificationErrorHandler:
         """
         if context is None:
             context = ErrorContext(step_name=step_name, operation=f"utility_{utility_name}")
-        
+
         # Classify error
         category, severity = self.classify_error(error, context)
-        
+
         # Create error info
         error_info = ErrorInfo(
             error=error,
@@ -361,18 +361,18 @@ class DataQualificationErrorHandler:
             error_message=str(error),
             stack_trace=traceback.format_exc()
         )
-        
+
         # Determine recovery strategy
         recovery_strategy = self.determine_recovery_strategy(category, severity, 0)
         error_info.recovery_strategy = recovery_strategy
-        
+
         # Log error
         if self.log_errors:
             self._log_error(error_info)
-        
+
         # Store error info
         self.error_history.append(error_info)
-        
+
         # Execute recovery strategy
         try:
             if recovery_strategy == RecoveryStrategy.FALLBACK:
@@ -388,16 +388,16 @@ class DataQualificationErrorHandler:
         except Exception as recovery_error:
             self.logger.error(f"Recovery failed for {utility_name}: {recovery_error}")
             raise error  # Re-raise original error
-    
+
     def _execute_fallback(self, utility_name: str, fallback_func: Optional[Callable], error_info: ErrorInfo) -> Any:
         """Execute fallback strategy."""
         if fallback_func is None:
             fallback_func = self.fallback_registry.get(utility_name)
-        
+
         if fallback_func is None:
             self.logger.error(f"No fallback available for {utility_name}")
             raise error_info.error
-        
+
         try:
             self.logger.warning(f"Using fallback for {utility_name}")
             result = fallback_func()
@@ -407,30 +407,30 @@ class DataQualificationErrorHandler:
         except Exception as e:
             self.logger.error(f"Fallback failed for {utility_name}: {e}")
             raise error_info.error
-    
+
     def _execute_retry(self, utility_name: str, fallback_func: Optional[Callable], error_info: ErrorInfo) -> Any:
         """Execute retry strategy."""
         retry_config = self.retry_configs.get(error_info.category.value)
         if retry_config is None:
             retry_config = RetryConfig()
-        
+
         for attempt in range(retry_config.max_retries):
             try:
                 if attempt > 0:
                     delay = self._calculate_retry_delay(attempt, retry_config)
                     self.logger.info(f"Retrying {utility_name} in {delay:.2f}s (attempt {attempt + 1})")
                     time.sleep(delay)
-                
+
                 # Try the original operation or fallback
                 if fallback_func and attempt > 0:
                     result = fallback_func()
                 else:
                     raise error_info.error  # Re-raise to simulate retry
-                
+
                 error_info.retry_count = attempt + 1
                 error_info.recovery_successful = True
                 return result
-                
+
             except retry_config.retry_on_exceptions as e:
                 if attempt == retry_config.max_retries - 1:
                     self.logger.error(f"Retry failed for {utility_name} after {retry_config.max_retries} attempts")
@@ -439,55 +439,55 @@ class DataQualificationErrorHandler:
             except Exception as e:
                 self.logger.error(f"Unexpected error during retry for {utility_name}: {e}")
                 raise error_info.error
-    
+
     def _execute_circuit_breaker(self, utility_name: str, fallback_func: Optional[Callable], error_info: ErrorInfo) -> Any:
         """Execute circuit breaker strategy."""
         if not self.enable_circuit_breaker:
             return self._execute_retry(utility_name, fallback_func, error_info)
-        
+
         # Get or create circuit breaker
         if utility_name not in self.circuit_breakers:
             config = CircuitBreakerConfig()
             self.circuit_breakers[utility_name] = CircuitBreaker(config)
-        
+
         circuit_breaker = self.circuit_breakers[utility_name]
-        
+
         try:
             if fallback_func:
                 result = circuit_breaker.call(fallback_func)
             else:
                 raise error_info.error
-            
+
             error_info.recovery_successful = True
             return result
         except Exception as e:
             self.logger.error(f"Circuit breaker failed for {utility_name}: {e}")
             raise error_info.error
-    
+
     def _execute_skip(self, utility_name: str, error_info: ErrorInfo) -> Any:
         """Execute skip strategy."""
         self.logger.warning(f"Skipping {utility_name} due to error")
         error_info.recovery_successful = True
         return None
-    
+
     def _execute_abort(self, error_info: ErrorInfo) -> Any:
         """Execute abort strategy."""
         self.logger.error(f"Aborting due to critical error: {error_info.error_message}")
         raise error_info.error
-    
+
     def _calculate_retry_delay(self, attempt: int, config: RetryConfig) -> float:
         """Calculate retry delay with exponential backoff and jitter."""
         delay = min(
             config.base_delay * (config.exponential_base ** attempt),
             config.max_delay
         )
-        
+
         if config.jitter:
             import random
             delay *= (0.5 + random.random() * 0.5)  # Add 0-50% jitter
-        
+
         return delay
-    
+
     def _log_error(self, error_info: ErrorInfo):
         """Log error information."""
         log_message = (
@@ -495,7 +495,7 @@ class DataQualificationErrorHandler:
             f"{error_info.category.value} ({error_info.severity.value}) - "
             f"{error_info.error_message}"
         )
-        
+
         if error_info.severity == ErrorSeverity.CRITICAL:
             self.logger.critical(log_message)
         elif error_info.severity == ErrorSeverity.HIGH:
@@ -504,42 +504,42 @@ class DataQualificationErrorHandler:
             self.logger.warning(log_message)
         else:
             self.logger.info(log_message)
-    
+
     def register_fallback(self, utility_name: str, fallback_func: Callable):
         """Register a fallback function for a utility."""
         self.fallback_registry[utility_name] = fallback_func
         self.logger.info(f"Registered fallback for {utility_name}")
-    
+
     def get_error_statistics(self) -> Dict[str, Any]:
         """Get error statistics and analytics."""
         if not self.error_history:
             return {"total_errors": 0}
-        
+
         total_errors = len(self.error_history)
         errors_by_category = {}
         errors_by_severity = {}
         errors_by_step = {}
         recovery_success_rate = 0
-        
+
         for error_info in self.error_history:
             # Count by category
             category = error_info.category.value
             errors_by_category[category] = errors_by_category.get(category, 0) + 1
-            
+
             # Count by severity
             severity = error_info.severity.value
             errors_by_severity[severity] = errors_by_severity.get(severity, 0) + 1
-            
+
             # Count by step
             step = error_info.context.step_name
             errors_by_step[step] = errors_by_step.get(step, 0) + 1
-            
+
             # Calculate recovery success rate
             if error_info.recovery_successful:
                 recovery_success_rate += 1
-        
+
         recovery_success_rate = recovery_success_rate / total_errors if total_errors > 0 else 0
-        
+
         return {
             "total_errors": total_errors,
             "errors_by_category": errors_by_category,
@@ -554,12 +554,12 @@ class DataQualificationErrorHandler:
                 for name, cb in self.circuit_breakers.items()
             }
         }
-    
+
     def clear_error_history(self):
         """Clear error history."""
         self.error_history.clear()
         self.logger.info("Error history cleared")
-    
+
     def export_error_report(self, file_path: str):
         """Export error report to file."""
         report = {
@@ -581,10 +581,10 @@ class DataQualificationErrorHandler:
                 for error_info in self.error_history
             ]
         }
-        
+
         with open(file_path, 'w') as f:
             json.dump(report, f, indent=2)
-        
+
         self.logger.info(f"Error report exported to {file_path}")
 
 # Decorators for error handling
@@ -596,7 +596,7 @@ def handle_errors(
 ):
     """
     Decorator for automatic error handling.
-    
+
     Args:
         exceptions: Tuple of exception types to catch
         fallback_func: Optional fallback function
@@ -607,7 +607,7 @@ def handle_errors(
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             error_handler = DataQualificationErrorHandler()
-            
+
             for attempt in range(retry_count + 1):
                 try:
                     return func(*args, **kwargs)
@@ -619,12 +619,12 @@ def handle_errors(
                             except Exception as fallback_error:
                                 logger.error(f"Fallback failed: {fallback_error}")
                         raise e
-                    
+
                     logger.warning(f"Attempt {attempt + 1} failed: {e}")
                     time.sleep(0.5 * (2 ** attempt))  # Exponential backoff
-            
+
             return None
-        
+
         return wrapper
     return decorator
 
@@ -635,7 +635,7 @@ def with_error_recovery(
 ):
     """
     Decorator for error recovery with fallback.
-    
+
     Args:
         step_name: Name of the step
         utility_name: Name of the utility
@@ -645,7 +645,7 @@ def with_error_recovery(
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             error_handler = DataQualificationErrorHandler()
-            
+
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -655,7 +655,7 @@ def with_error_recovery(
                     error=e,
                     fallback_func=fallback_func
                 )
-        
+
         return wrapper
     return decorator
 
@@ -663,7 +663,7 @@ def with_error_recovery(
 def error_context(step_name: str, operation: str, **kwargs):
     """
     Context manager for error handling with context.
-    
+
     Args:
         step_name: Name of the step
         operation: Name of the operation
@@ -674,13 +674,13 @@ def error_context(step_name: str, operation: str, **kwargs):
         operation=operation,
         additional_data=kwargs
     )
-    
+
     try:
         yield context
     except Exception as e:
         error_handler = DataQualificationErrorHandler()
         category, severity = error_handler.classify_error(e, context)
-        
+
         error_info = ErrorInfo(
             error=e,
             category=category,
@@ -690,10 +690,10 @@ def error_context(step_name: str, operation: str, **kwargs):
             error_message=str(e),
             stack_trace=traceback.format_exc()
         )
-        
+
         error_handler._log_error(error_info)
         error_handler.error_history.append(error_info)
-        
+
         raise e
 
 # Global error handler instance

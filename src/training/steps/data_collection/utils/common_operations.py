@@ -30,7 +30,7 @@ def safe_json_load(file_path: str, default: Any = None) -> Any:
         Parsed JSON data or default value if loading fails
     """
     logger.info(f'📁 Loading JSON file: {file_path}')
-    
+
     try:
         if not os.path.exists(file_path):
             logger.warning(f"⚠️ JSON file not found: {file_path}")
@@ -77,12 +77,12 @@ def safe_json_save(data: Any, file_path: str, indent: int = 2) -> bool:
     """
     logger.info(f'💾 Saving JSON data to: {file_path}')
     logger.info(f'📊 Data type: {type(data)}')
-    
+
     if isinstance(data, dict):
         logger.info(f'📊 Dictionary keys: {list(data.keys())}')
     elif isinstance(data, list):
         logger.info(f'📊 List length: {len(data)}')
-    
+
     try:
         # Ensure directory exists
         dir_path = os.path.dirname(file_path)
@@ -128,7 +128,7 @@ def validate_data_directory(data_dir: str, required_subdirs: List[str] = None) -
     """
     logger.info(f'🔍 Validating data directory: {data_dir}')
     logger.info(f'📊 Required subdirectories: {required_subdirs or "None"}')
-    
+
     result = {
         'valid': True,
         'exists': False,
@@ -213,7 +213,7 @@ def validate_data_directory(data_dir: str, required_subdirs: List[str] = None) -
         logger.info(f'   📊 Writable: {result["writable"]}')
         logger.info(f'   📊 Missing subdirs: {len(result["missing_subdirs"])}')
         logger.info(f'   📊 Issues: {len(result["issues"])}')
-        
+
         if result['valid']:
             logger.info('✅ Directory validation passed')
         else:
@@ -240,7 +240,7 @@ def ensure_directory_exists(directory_path: str) -> bool:
         True if directory exists or was created successfully, False otherwise
     """
     logger.info(f'📁 Ensuring directory exists: {directory_path}')
-    
+
     try:
         # Check if directory already exists
         if os.path.exists(directory_path):
@@ -250,11 +250,11 @@ def ensure_directory_exists(directory_path: str) -> bool:
             else:
                 logger.error(f'❌ Path exists but is not a directory: {directory_path}')
                 return False
-        
+
         # Create directory
         logger.info(f'🔧 Creating directory: {directory_path}')
         Path(directory_path).mkdir(parents=True, exist_ok=True)
-        
+
         # Verify creation
         if os.path.exists(directory_path) and os.path.isdir(directory_path):
             logger.info(f'✅ Directory created successfully: {directory_path}')
@@ -262,7 +262,7 @@ def ensure_directory_exists(directory_path: str) -> bool:
         else:
             logger.error(f'❌ Directory creation failed: {directory_path}')
             return False
-            
+
     except PermissionError as e:
         logger.error(f"❌ Permission denied creating directory {directory_path}: {e}")
         return False
@@ -281,7 +281,7 @@ def get_file_size_mb(file_path: str) -> Optional[float]:
         File size in MB, or None if file doesn't exist or can't be accessed
     """
     logger.info(f'📊 Getting file size: {file_path}')
-    
+
     try:
         if not os.path.exists(file_path):
             logger.warning(f'⚠️ File does not exist: {file_path}')
@@ -289,7 +289,7 @@ def get_file_size_mb(file_path: str) -> Optional[float]:
 
         size_bytes = os.path.getsize(file_path)
         size_mb = size_bytes / (1024 * 1024)
-        
+
         logger.info(f'📊 File size: {size_bytes:,} bytes ({size_mb:.2f} MB)')
         return size_mb
 

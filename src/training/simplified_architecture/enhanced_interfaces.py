@@ -23,7 +23,6 @@ from pathlib import Path
 
 import psutil
 
-
 T = TypeVar('T')
 DataType = Union[pd.DataFrame, np.ndarray, Dict[str, Any]]
 
@@ -129,7 +128,7 @@ class StepConfig:
 class IPipelineStep(ABC):
     """
     Enhanced base interface for all pipeline steps.
-    
+
     This interface ensures consistency and provides comprehensive functionality
     for all pipeline components.
     """
@@ -163,7 +162,7 @@ class IPipelineStep(ABC):
     async def validate_inputs(self, **kwargs) -> bool:
         """
         Validate input parameters before execution.
-        
+
         Returns:
             True if inputs are valid, False otherwise
         """
@@ -172,7 +171,7 @@ class IPipelineStep(ABC):
     async def execute(self, **kwargs) -> StepResult:
         """
         Execute the step logic.
-        
+
         Returns:
             StepResult containing output data and metadata
         """
@@ -306,7 +305,7 @@ class IOptimizationStep(IPipelineStep):
 class BasePipelineStep(IPipelineStep):
     """
     Enhanced base implementation of IPipelineStep with comprehensive functionality.
-    
+
     Concrete steps should inherit from this class and implement the abstract methods.
     """
 
@@ -368,7 +367,7 @@ class BasePipelineStep(IPipelineStep):
     async def execute(self, **kwargs) -> StepResult:
         """
         Enhanced execution wrapper with comprehensive error handling and metrics.
-        
+
         Subclasses should implement _execute_impl instead of this method.
         """
         execution_id = f"{self.name}_{int(time.time())}_{self._execution_count}"
@@ -435,7 +434,7 @@ class BasePipelineStep(IPipelineStep):
     async def _execute_impl(self, **kwargs) -> Any:
         """
         Actual implementation of step logic.
-        
+
         Subclasses must implement this method.
         """
 
@@ -482,7 +481,7 @@ class BasePipelineStep(IPipelineStep):
         """Check if all dependencies are available."""
         if not self.di_container:
             return True
-        
+
         for dep in self.config.dependencies:
             try:
                 self.di_container.get(dep)
@@ -530,7 +529,7 @@ class StepFactory:
         """Get information about a registered step type."""
         if name not in cls._step_registry:
             return None
-        
+
         step_class = cls._step_registry[name]
         return {
             'name': name,
@@ -567,12 +566,12 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
         if missing_columns:
             self.add_warning(f'Missing columns: {missing_columns}')
             return False
-        
+
         null_counts = data[required_columns].isnull().sum()
         if null_counts.any():
             self.add_warning(f'Null values found: {null_counts[null_counts > 0].to_dict()}')
             return False
-        
+
         return True
 
     async def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -582,7 +581,7 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
         data = data.drop_duplicates()
         if len(data) < initial_rows:
             self.add_metric('duplicates_removed', initial_rows - len(data))
-        
+
         return data
 
     def get_data_quality_metrics(self, data: pd.DataFrame) -> Dict[str, Any]:
@@ -600,20 +599,20 @@ class SimpleDataStep(BasePipelineStep, IDataStep):
         data = await self.load_data(source, **kwargs)
         if not await self.validate_data(data):
             raise ValueError('Data validation failed')
-        
+
         data = await self.preprocess_data(data)
-        
+
         if self.config.parameters.get('save_snapshot', False):
             snapshot_path = Path(f'data/snapshots/{self.name}_{int(time.time())}.parquet')
             snapshot_path.parent.mkdir(parents = True, exist_ok = True)
             data.to_parquet(snapshot_path)
             self.add_artifact('data_snapshot', snapshot_path)
-        
+
         # Add quality metrics
         quality_metrics = self.get_data_quality_metrics(data)
         for key, value in quality_metrics.items():
             self.add_metric(f'quality_{key}', value)
-        
+
         return data
 
 # Register example steps

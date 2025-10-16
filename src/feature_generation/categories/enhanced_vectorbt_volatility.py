@@ -7,7 +7,6 @@ This module provides enhanced volatility feature generation using VectorBT optim
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
-
 @dataclass
 class VolatilityConfig:
     """Configuration for volatility generators."""
@@ -19,7 +18,6 @@ class VolatilityConfig:
     def __post_init__(self):
         if self.std_devs is None:
             self.std_devs = [1.0, 1.5, 2.0, 2.5, 3.0]
-
 
 class EnhancedVectorBTVolatilityGenerator:
     """Enhanced VectorBT-based volatility generator."""
@@ -34,7 +32,6 @@ class EnhancedVectorBTVolatilityGenerator:
             'enhanced_volatility_features': [],
             'config': self.config
         }
-
 
 def create_enhanced_volatility_generators(
     periods: List[int] = None,
@@ -55,7 +52,6 @@ def create_enhanced_volatility_generators(
         generators.append(EnhancedVectorBTVolatilityGenerator(config))
 
     return generators
-
 
 def create_default_enhanced_volatility_generators() -> List[EnhancedVectorBTVolatilityGenerator]:
     """Create default enhanced volatility generators."""

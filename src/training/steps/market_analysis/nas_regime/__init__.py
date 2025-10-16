@@ -32,10 +32,10 @@ __description__ = "Fully standalone NAS regime detection system with no external
 
 __all__ = [
     'PerfectNASConfig',
-    'PerfectNASRegimeDetector', 
+    'PerfectNASRegimeDetector',
     'HybridRegimeArchitecture',
     'NeuralODE',
-    'VisionTransformer', 
+    'VisionTransformer',
     'NeuralStateSpaceModel',
     'ContinuousTimeRegimeDetector',
     'TransformerRegimeDetector',

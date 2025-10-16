@@ -24,7 +24,6 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 
-
 # Enhanced imports with comprehensive error handling
 try:
     from src.utils.logger import system_logger
@@ -74,7 +73,7 @@ try:
 except ImportError:
     MODEL_PERSISTENCE_AVAILABLE = False
 
-# Import data cleaning utilities  
+# Import data cleaning utilities
 try:
     from src.utils.data.quality.data_cleaning import (
         DataCleaner, CleaningConfig, MissingValueStrategy, OutlierStrategy
@@ -184,7 +183,6 @@ except ImportError as e:
     RegularizationConfig = None
     TrainingIntegrationConfig = None
 
-
 # Import vectorized training manager for enhanced capabilities
 try:
     from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
@@ -200,55 +198,54 @@ except Exception as e:
     print("❌ System logger is required for proper logging. Please check logger configuration.")
     raise RuntimeError(f"CRITICAL: Failed to initialize system logger: {e}") from e
 
-
 @dataclass
 class TacticianTrainingConfig(PerRegimeTrainingConfig):
     """
     Configuration for Tactician models training with specific parameters.
-    
+
     Extends PerRegimeTrainingConfig with tactician-specific settings for:
     - Entry timing optimization
     - Confidence-aware ensemble training
     - Analyst signal integration
     """
-    
+
     # Tactician-specific configuration
     enable_entry_timing_optimization: bool = True
     entry_timing_range: float = 0.004  # 0-0.4% range for entry timing
     expected_movement: float = 0.004  # Expected movement threshold
-    
+
     # Entry timing objectives and penalties
     entry_timing_objectives: Dict[str, Any] = None
     early_entry_penalty_weight: float = 1.0
     late_entry_penalty_weight: float = 1.0
     optimal_entry_reward_weight: float = 2.0
-    
+
     # Confidence-aware ensemble settings (always enabled for Tactician)
     enable_confidence_aware_ensemble: bool = True
     confidence_threshold: float = 0.5
     confidence_weighting_method: str = "exponential"  # "linear", "exponential", "sigmoid"
-    
+
     # Analyst integration settings
     require_analyst_signals: bool = True
     use_analyst_confidence_scores: bool = True
     analyst_signal_types: List[str] = None  # ["directional", "magnitude", "timing"]
-    
+
     # Advanced tactician features
     enable_microstructure_features: bool = True
     enable_regime_transition_handling: bool = False
     enable_multi_horizon_prediction: bool = False
     multi_horizon_windows: List[int] = None  # [1, 2, 5, 10] minutes
-    
+
     # Random Survival Forest specific settings
     enable_survival_analysis: bool = True
     survival_horizons: List[int] = None  # [1, 2, 5, 10] minutes
     survival_horizon_weights: List[float] = None  # [0.4, 0.3, 0.2, 0.1]
     latency_constraint: float = 2.0  # seconds
-    
+
     def __post_init__(self):
         """Initialize default values for complex fields."""
         super().__post_init__() if hasattr(super(), '__post_init__') else None
-        
+
         if self.entry_timing_objectives is None:
             self.entry_timing_objectives = {
                 'minimize_early_entry_penalty': True,
@@ -256,19 +253,18 @@ class TacticianTrainingConfig(PerRegimeTrainingConfig):
                 'maximize_optimal_entry_reward': True,
                 'minimize_adverse_movement': True
             }
-        
+
         if self.analyst_signal_types is None:
             self.analyst_signal_types = ["directional", "magnitude"]
-        
+
         if self.multi_horizon_windows is None:
             self.multi_horizon_windows = [1, 2, 5, 10]
-        
+
         if self.survival_horizons is None:
             self.survival_horizons = [1, 2, 5, 10]
-        
+
         if self.survival_horizon_weights is None:
             self.survival_horizon_weights = [0.4, 0.3, 0.2, 0.1]
-
 
 class TrainingPhase(Enum):
     """Training phases for progress tracking."""
@@ -280,7 +276,6 @@ class TrainingPhase(Enum):
     EVALUATION = "evaluation"
     MODEL_SAVING = "model_saving"
     FINALIZATION = "finalization"
-
 
 @dataclass
 class TrainingMetrics:
@@ -297,7 +292,7 @@ class TrainingMetrics:
     memory_usage_mb: float = 0.0
     success: bool = False
     error_message: Optional[str] = None
-    
+
     @property
     def duration(self) -> float:
         """Get phase duration in seconds."""
@@ -305,15 +300,14 @@ class TrainingMetrics:
             return time.time() - self.start_time
         return self.end_time - self.start_time
 
-
 class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     """
     Enhanced Tactician Models Training Step with comprehensive error handling and reporting.
-    
+
     The Tactician operates on 1m timeframe and is trained on:
     1. Only periods where the Analyst gives a green light
     2. Using the Analyst's model outputs as input features
-    
+
     ENHANCED FEATURES:
     - Comprehensive input validation and data quality checks
     - Detailed progress tracking with phase-based metrics
@@ -321,7 +315,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     - Optimized vectorization with intelligent fallback
     - Structured logging with performance monitoring
     """
-    
+
     def __init__(self, config: Optional[TacticianTrainingConfig] = None, enable_vectorization: bool = True):
         """
         Initialize enhanced Tactician models training step with comprehensive error handling and utility integration.
@@ -334,7 +328,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         self.overall_start_time = time.time()
         self.phase_start_time = time.time()
         self.training_metrics: Dict[TrainingPhase, TrainingMetrics] = {}
-        
+
         # Set default configuration
         if config is None:
             config = TacticianTrainingConfig(
@@ -362,77 +356,77 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         try:
             # Initialize training metrics for initialization phase
             self._start_phase(TrainingPhase.INITIALIZATION)
-            
+
             # Initialize parent class
             super().__init__(config)
             self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
-            
+
             # Vectorization support
             self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
             self.vectorization_fallback_used = False
-            
+
             # Validate configuration (consolidated)
             self._validate_config_consolidated(config)
-            
+
             # Initialize components (consolidated)
             self._initialize_components_consolidated()
-            
+
             # Initialize enhanced training utilities if available
             if ENHANCED_TRAINING_AVAILABLE:
                 self._initialize_enhanced_training_utilities()
-            
+
             init_time = time.time() - self.overall_start_time
             tprint_success(f"✅ Initialization complete in {init_time:.2f}s")
-            
+
             self._complete_phase(TrainingPhase.INITIALIZATION, success=True)
-            
+
         except Exception as e:
             tprint_error(f"❌ Initialization failed: {e}")
             raise
-    
+
     def _validate_config_consolidated(self, config: PerRegimeTrainingConfig) -> None:
         """Consolidated configuration validation using common utilities."""
         try:
             if not config.model_types or len(config.model_types) == 0:
                 raise ValueError("At least one model type required")
-            
+
             if config.enable_hpo:
                 validate_positive(config.hpo_n_trials, "hpo_n_trials")
                 validate_positive(config.hpo_timeout_seconds, "hpo_timeout_seconds")
-            
+
             validate_positive(config.min_samples_per_regime, "min_samples_per_regime")
-            
+
             if config.save_models and config.model_save_path:
                 ensure_directory(config.model_save_path)
-            
+
             tprint_success("✅ Configuration validation passed")
         except Exception as e:
             tprint_error(f"❌ Configuration validation failed: {e}")
             raise
-    
+
     def _initialize_components_consolidated(self):
         """Consolidated initialization of all components."""
         with tprint_timer("Component initialization"):
             # Hardware optimizers
             self._initialize_hardware_optimizers()
-            
+
             # Utility integrations
             self._initialize_utility_integrations()
-            
+
             # Data cleaner
             if DATA_CLEANING_AVAILABLE:
                 self.data_cleaner = self._initialize_data_cleaner()
-            
+
             # Model persistence
             if MODEL_PERSISTENCE_AVAILABLE:
                 self.model_persistence = self._initialize_model_persistence()
-            
+
             # Model cache
             if MODEL_PERSISTENCE_AVAILABLE:
                 self.model_cache = self._initialize_model_cache()
-            
+
             tprint_success("✅ All components initialized")
-    
+
     def _initialize_data_cleaner(self) -> Optional[Any]:
         """Initialize data cleaner."""
         try:
@@ -446,7 +440,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             tprint_warning(f"⚠️ Data cleaner unavailable: {e}")
             return None
-    
+
     def _initialize_model_persistence(self) -> Optional[Any]:
         """Initialize model persistence."""
         try:
@@ -460,7 +454,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             tprint_warning(f"⚠️ Model persistence unavailable: {e}")
             return None
-    
+
     def _initialize_model_cache(self) -> Optional[Any]:
         """Initialize model cache."""
         try:
@@ -474,7 +468,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception as e:
             tprint_warning(f"⚠️ Model cache unavailable: {e}")
             return None
-    
+
     def _initialize_enhanced_training_utilities(self):
         """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
         try:
@@ -489,10 +483,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 enable_walk_forward=True,  # Enable for Tactician
                 model_type='auto'
             )
-            
+
             # Initialize training enhancer
             self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
-            
+
             # Store enhanced utilities
             self.enhanced_training_utils = {
                 'EnhancedTrainingUtils': EnhancedTrainingUtils,
@@ -503,15 +497,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'TrainingStepEnhancer': TrainingStepEnhancer,
                 'TrainingIntegrationConfig': TrainingIntegrationConfig
             }
-            
+
             tprint_success("✅ Enhanced training utilities initialized successfully")
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
             self.enhanced_training_config = None
             self.training_enhancer = None
             self.enhanced_training_utils = {}
-    
+
     def _create_model_instance(self, model_type: str):
         """Create model instance based on model type."""
         try:
@@ -566,12 +560,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Failed to create model instance for {model_type}: {e}")
             # Fallback to RandomForest
             return RandomForestRegressor(n_estimators=100, random_state=42)
-    
+
     def _create_random_survival_forest_model(self):
         """Create Random Survival Forest model for tactician timing prediction."""
         try:
             from .random_survival_forest_tactician import RandomSurvivalForestTactician, SurvivalAnalysisConfig
-            
+
             # Create configuration optimized for tactician timing
             config = SurvivalAnalysisConfig(
                 n_estimators=200,
@@ -591,9 +585,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 enable_analyst_features=True,
                 enable_microstructure_features=True
             )
-            
+
             return RandomSurvivalForestTactician(config)
-            
+
         except ImportError as e:
             self.logger.error(f"❌ Random Survival Forest not available: {e}")
             # Fallback to RandomForest
@@ -604,7 +598,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Fallback to RandomForest
             from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
-    
+
     def _optimize_hyperparameters_with_bayesian_tpe(
         self,
         model_type: str,
@@ -616,7 +610,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     ) -> Dict[str, Any]:
         """
         Optimize hyperparameters using Bayesian TPE with staged optimization (coarse grid -> fine grid -> TPE).
-        
+
         Args:
             model_type: Type of model to optimize
             X: Training features
@@ -624,16 +618,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             search_space: Hyperparameter search space
             n_trials: Number of optimization trials
             timeout: Timeout in seconds
-            
+
         Returns:
             Dictionary containing best parameters and optimization results
         """
         tprint_info(f"🔍 Starting Bayesian TPE hyperparameter optimization for {model_type}...")
-        
+
         if not BAYESIAN_TPE_AVAILABLE:
             tprint_warning("⚠️ Bayesian TPE optimizer not available, skipping HPO")
             return {'best_params': {}, 'optimization_skipped': True}
-        
+
         try:
             # Create optimization configuration
             opt_config = OptimizationConfig(
@@ -652,18 +646,18 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 early_stopping_patience=15,
                 seed=42
             )
-            
+
             # Define objective function for optimization
             def objective(params: Dict[str, Any]) -> float:
                 """Objective function for hyperparameter optimization."""
                 try:
                     # Create model with these parameters
                     model = self._create_model_instance(model_type)
-                    
+
                     # Set parameters
                     if hasattr(model, 'set_params'):
                         model.set_params(**params)
-                    
+
                     # Perform cross-validation
                     from sklearn.model_selection import cross_val_score
                     scores = cross_val_score(
@@ -672,24 +666,24 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         scoring='neg_mean_squared_error',
                         n_jobs=-1
                     )
-                    
+
                     # Return negative MSE (higher is better)
                     return -np.mean(scores)
-                    
+
                 except Exception as e:
                     tprint_warning(f"⚠️ Objective evaluation failed: {e}")
                     return -np.inf
-            
+
             # Create and run optimizer
             optimizer = BayesianTPEOptimizer(search_space, opt_config)
             result = optimizer.optimize(objective)
-            
+
             if result.success:
                 tprint_success(f"✅ Bayesian TPE optimization completed successfully")
                 tprint_info(f"📊 Best score: {result.best_value:.6f}")
                 tprint_info(f"📊 Total trials: {result.n_trials}")
                 tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
-                
+
                 return {
                     'best_params': result.best_params,
                     'best_score': result.best_value,
@@ -701,22 +695,22 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             else:
                 tprint_warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
                 return {'best_params': {}, 'success': False, 'error': result.error_message}
-                
+
         except Exception as e:
             tprint_error(f"❌ Bayesian TPE optimization error: {e}")
             return {'best_params': {}, 'success': False, 'error': str(e)}
-    
+
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Start tracking a training phase with structured logging."""
         self.training_metrics[phase] = TrainingMetrics(
             phase=phase,
             start_time=time.time()
         )
-        
+
         # Log phase start with structured format
         self._log_phase_start(phase, context)
-    
-    def _complete_phase(self, phase: TrainingPhase, success: bool = True, 
+
+    def _complete_phase(self, phase: TrainingPhase, success: bool = True,
                        error_message: Optional[str] = None, **kwargs) -> None:
         """Complete a training phase with metrics and structured logging."""
         if phase in self.training_metrics:
@@ -724,14 +718,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             metrics.end_time = time.time()
             metrics.success = success
             metrics.error_message = error_message
-            
+
             # Update metrics with provided values
             for key, value in kwargs.items():
                 if hasattr(metrics, key):
                     setattr(metrics, key, value)
-            
+
             duration = metrics.duration
-            
+
             # Prepare metrics for structured logging
             phase_metrics = {
                 'duration': duration,
@@ -742,10 +736,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'errors_encountered': metrics.errors_encountered,
                 'memory_usage_mb': metrics.memory_usage_mb
             }
-            
+
             # Log phase completion with structured format
             self._log_phase_complete(phase, success, duration, phase_metrics)
-            
+
             if not success and error_message:
                 self._log_structured_event(
                     event_type="phase_error",
@@ -753,38 +747,38 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     message=f"Phase failed: {error_message}",
                     level="error"
                 )
-    
+
     def _validate_configuration(self, config: PerRegimeTrainingConfig) -> None:
         """Validate configuration - delegates to consolidated method."""
         try:
             self._validate_config_consolidated(config)
-            
+
             # Tactician-specific critical validation
             if config.min_samples_per_regime < 100:
                 error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-                
+
             # Validate HPO settings - CRITICAL: Fast fail on invalid config
             if config.enable_hpo and config.hpo_n_trials < 10:
                 error_msg = f"CRITICAL: Very low HPO trials: {config.hpo_n_trials} (minimum: 10)"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             tprint_success("✅ Configuration validation passed")
-            
+
         except Exception as e:
             tprint_error(f"❌ Configuration validation failed: {e}")
             raise
-    
+
     def _initialize_hardware_optimizers(self) -> None:
         """Initialize hardware optimizers with graceful fallback for non-M1 systems."""
         try:
             tprint_info("🧠 Initializing hardware optimizers...")
-            
+
             # Flag to track if M1 optimizers are available
             self.m1_optimizers_available = False
-            
+
             try:
                 # Try to initialize M1 GPU manager
                 self.m1_gpu_manager = get_m1_gpu_manager()
@@ -797,7 +791,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             except Exception as e:
                 tprint_warning(f"⚠️ M1 GPU manager initialization failed: {e} (graceful fallback)")
                 self.m1_gpu_manager = None
-            
+
             try:
                 # Try to initialize M1 memory optimizer
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
@@ -810,7 +804,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             except Exception as e:
                 tprint_warning(f"⚠️ M1 memory optimizer initialization failed: {e} (graceful fallback)")
                 self.m1_memory_optimizer = None
-            
+
             try:
                 # Try to initialize M1 CPU optimizer
                 self.m1_cpu_optimizer = get_m1_cpu_optimizer()
@@ -823,7 +817,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             except Exception as e:
                 tprint_warning(f"⚠️ M1 CPU optimizer initialization failed: {e} (graceful fallback)")
                 self.m1_cpu_optimizer = None
-            
+
             # Try to integrate with M1 optimizers if any are available
             if self.m1_optimizers_available:
                 try:
@@ -836,12 +830,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 except Exception as e:
                     tprint_warning(f"⚠️ M1 optimizers integration failed: {e} (graceful fallback)")
                     self.m1_optimizers_available = False
-            
+
             if self.m1_optimizers_available:
                 tprint_success("✅ Hardware optimizers initialization completed with M1 acceleration")
             else:
                 tprint_info("ℹ️ Hardware optimizers initialization completed (standard CPU mode)")
-            
+
         except Exception as e:
             # Even if all optimizers fail, continue with standard CPU mode
             tprint_warning(f"⚠️ Hardware optimizer initialization encountered errors: {e} (continuing with standard CPU mode)")
@@ -849,12 +843,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.m1_memory_optimizer = None
             self.m1_cpu_optimizer = None
             self.m1_optimizers_available = False
-    
+
     def _initialize_utility_integrations(self) -> None:
         """Initialize utility integrations - All utilities are required."""
         try:
             tprint_info("🔧 Initializing utility integrations...")
-            
+
             # All utilities are already loaded at import time with fast fail
             tprint_success("✅ All utility integrations verified and available")
             tprint_success("✅ Common utilities available")
@@ -863,19 +857,19 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_success("✅ Matrix operations utilities available")
             tprint_success("✅ ML common utilities available")
             tprint_success("✅ Enhanced tprint logging available")
-            
+
             tprint_success("✅ Utility integrations initialization completed")
-            
+
         except Exception as e:
             error_msg = f"CRITICAL: Utility integration initialization failed: {e}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
-    
+
     def _log_utility_integration_status(self) -> None:
         """Log comprehensive utility integration status."""
         try:
             tprint_info("📊 Utility Integration Status:")
-            
+
             for utility, status in self.utility_integration_status.items():
                 if status == 'available':
                     tprint_success(f"  ✅ {utility}: {status}")
@@ -885,30 +879,30 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     tprint_error(f"  ❌ {utility}: {status}")
                 else:
                     tprint_info(f"  ℹ️ {utility}: {status}")
-            
+
             # Log initialization errors if any
             if self.initialization_errors:
                 tprint_error("❌ Initialization errors encountered:")
                 for error in self.initialization_errors:
                     tprint_error(f"  - {error}")
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to log utility integration status: {e}")
-    
+
     def _handle_initialization_error(self, error: Exception) -> None:
         """Handle initialization errors with detailed reporting."""
         error_msg = f"Initialization failed: {str(error)}"
         tprint_error(f"❌ {error_msg}")
         tprint_error(f"❌ Traceback: {traceback.format_exc()}")
-        
+
         # Log utility integration status even on failure
         if hasattr(self, 'utility_integration_status'):
             self._log_utility_integration_status()
-        
+
         if TrainingPhase.INITIALIZATION in self.training_metrics:
             self._complete_phase(TrainingPhase.INITIALIZATION, success=False, error_message=error_msg)
-    
-    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, 
+
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray,
                            regime_labels: np.ndarray) -> Dict[str, Any]:
         """Comprehensive input data validation with detailed reporting and utility integration."""
         validation_results = {
@@ -919,38 +913,38 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'regime_analysis': {},
             'utility_validation': {}
         }
-        
+
         try:
             tprint_info("🔍 Starting comprehensive input data validation...")
-            
+
             # CRITICAL: Fast fail on data shape mismatches
             tprint_debug("Validating data shapes...")
             if X.shape[0] != y.shape[0]:
                 error_msg = f"CRITICAL: Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             if X.shape[0] != regime_labels.shape[0]:
                 error_msg = f"CRITICAL: Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             # CRITICAL: Fast fail on empty data
             if X.shape[0] == 0:
                 error_msg = "CRITICAL: No samples provided in input data"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             if X.shape[1] == 0:
                 error_msg = "CRITICAL: No features provided in input data"
                 tprint_error(f"❌ {error_msg}")
                 raise ValueError(error_msg)
-            
+
             tprint_success(f"✅ Basic shape validation passed: {X.shape[0]} samples, {X.shape[1]} features")
-            
+
             # Enhanced data quality analysis using utility functions
             data_quality = {}
-            
+
             # Validate features quality with math validation utilities
             tprint_debug("Validating features quality...")
             feature_quality = self._validate_data_quality_enhanced(X, "features", max_nan_percentage=10.0, max_inf_percentage=1.0)
@@ -962,7 +956,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 tprint_error("❌ Feature quality validation failed")
             else:
                 tprint_success("✅ Feature quality validation passed")
-            
+
             # Validate targets quality with stricter thresholds
             tprint_debug("Validating targets quality...")
             target_quality = self._validate_data_quality_enhanced(y, "targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
@@ -974,17 +968,17 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 tprint_error("❌ Target quality validation failed")
             else:
                 tprint_success("✅ Target quality validation passed")
-            
+
             # Enhanced regime distribution analysis
             tprint_debug("Analyzing regime distribution...")
             unique_regimes = np.unique(regime_labels)
             regime_counts = np.bincount(regime_labels)
             min_regime_size = np.min(regime_counts)
             max_regime_size = np.max(regime_counts)
-            
+
             # Use math validation utilities for safe calculations
             regime_balance = safe_divide(min_regime_size, max_regime_size, 0.0)
-            
+
             regime_analysis = {
                 'unique_regimes_count': len(unique_regimes),
                 'min_regime_size': min_regime_size,
@@ -992,19 +986,19 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'regime_balance': regime_balance,
                 'regime_distribution': dict(zip(unique_regimes, regime_counts))
             }
-            
+
             validation_results['regime_analysis'] = regime_analysis
             validation_results['data_quality_metrics'] = data_quality
-            
+
             # Check regime sufficiency with enhanced validation
             insufficient_regimes = regime_counts < self.config.min_samples_per_regime
             insufficient_count = np.sum(insufficient_regimes)
-            
+
             if insufficient_count > 0:
                 warning_msg = f"{insufficient_count} regimes have fewer than {self.config.min_samples_per_regime} samples"
                 validation_results['warnings'].append(warning_msg)
                 tprint_warning(f"⚠️ {warning_msg}")
-                
+
                 # Check if too many regimes are insufficient (fast fail condition)
                 if insufficient_count > len(unique_regimes) * 0.5:
                     error_msg = f"Critical: {insufficient_count}/{len(unique_regimes)} regimes have insufficient data"
@@ -1012,36 +1006,36 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     validation_results['is_valid'] = False
                     tprint_error(f"❌ {error_msg}")
                     raise ValueError(error_msg)  # Fast fail on critical errors
-            
+
             # Utility integration validation
             utility_validation = self._validate_utility_integrations()
             validation_results['utility_validation'] = utility_validation
-            
+
             # Log comprehensive validation results with tprint
             tprint_info(f"📊 Data validation summary: {X.shape[0]} samples, {X.shape[1]} features, {len(unique_regimes)} regimes")
             tprint_info(f"📊 Regime balance: {regime_balance:.3f} (min={min_regime_size}, max={max_regime_size})")
-            
+
             if validation_results['warnings']:
                 tprint_warning(f"⚠️ {len(validation_results['warnings'])} warnings found:")
                 for warning in validation_results['warnings']:
                     tprint_warning(f"  - {warning}")
-            
+
             if validation_results['errors']:
                 tprint_error(f"❌ {len(validation_results['errors'])} errors found:")
                 for error in validation_results['errors']:
                     tprint_error(f"  - {error}")
                 raise ValueError(f"Data validation failed: {'; '.join(validation_results['errors'])}")
-            
+
             tprint_success("✅ Comprehensive input data validation completed successfully")
             return validation_results
-            
+
         except Exception as e:
             validation_results['is_valid'] = False
             validation_results['errors'].append(str(e))
             tprint_error(f"❌ Data validation failed: {e}")
             tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             raise
-    
+
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
@@ -1050,9 +1044,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             return process.memory_info().rss / 1024 / 1024
         except ImportError:
             return 0.0
-    
-    def _validate_data_quality_enhanced(self, data: np.ndarray, data_name: str, 
-                                       max_nan_percentage: float = 10.0, 
+
+    def _validate_data_quality_enhanced(self, data: np.ndarray, data_name: str,
+                                       max_nan_percentage: float = 10.0,
                                        max_inf_percentage: float = 1.0) -> Dict[str, Any]:
         """Enhanced data quality validation with utility integration and comprehensive error handling."""
         quality_metrics = {
@@ -1066,18 +1060,18 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'utility_validation': {},
             'statistical_metrics': {}
         }
-        
+
         try:
             tprint_debug(f"Validating {data_name} quality...")
-            
+
             # Check for NaN values with enhanced reporting
             nan_count = np.sum(np.isnan(data))
             if nan_count > 0:
                 nan_percentage = safe_divide(nan_count * 100, data.size, 0.0)
-                
+
                 quality_metrics['nan_count'] = nan_count
                 quality_metrics['nan_percentage'] = nan_percentage
-                
+
                 if nan_percentage > max_nan_percentage:
                     error_msg = f"{data_name} contains {nan_percentage:.2f}% NaN values (threshold: {max_nan_percentage}%)"
                     quality_metrics['errors'].append(error_msg)
@@ -1089,15 +1083,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     tprint_warning(f"⚠️ {warning_msg}")
             else:
                 tprint_debug(f"✅ {data_name}: No NaN values found")
-            
+
             # Check for infinite values with enhanced reporting
             inf_count = np.sum(np.isinf(data))
             if inf_count > 0:
                 inf_percentage = safe_divide(inf_count * 100, data.size, 0.0)
-                
+
                 quality_metrics['inf_count'] = inf_count
                 quality_metrics['inf_percentage'] = inf_percentage
-                
+
                 if inf_percentage > max_inf_percentage:
                     error_msg = f"{data_name} contains {inf_percentage:.2f}% infinite values (threshold: {max_inf_percentage}%)"
                     quality_metrics['errors'].append(error_msg)
@@ -1109,7 +1103,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     tprint_warning(f"⚠️ {warning_msg}")
             else:
                 tprint_debug(f"✅ {data_name}: No infinite values found")
-            
+
             # Enhanced statistical validation using math validation utilities
             try:
                 # Validate finite values
@@ -1120,13 +1114,13 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     std_val = np.std(finite_data)
                     min_val = np.min(finite_data)
                     max_val = np.max(finite_data)
-                    
+
                     # Validate statistical properties
                     validate_finite(mean_val, f"{data_name}_mean")
                     validate_finite(std_val, f"{data_name}_std")
                     validate_finite(min_val, f"{data_name}_min")
                     validate_finite(max_val, f"{data_name}_max")
-                    
+
                     quality_metrics['statistical_metrics'] = {
                         'mean': mean_val,
                         'std': std_val,
@@ -1135,18 +1129,18 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'finite_count': len(finite_data),
                         'total_count': data.size
                     }
-                    
+
                     tprint_debug(f"✅ {data_name}: Statistical validation passed")
                 else:
                     warning_msg = f"{data_name}: No finite values found for statistical analysis"
                     quality_metrics['warnings'].append(warning_msg)
                     tprint_warning(f"⚠️ {warning_msg}")
-                    
+
             except Exception as e:
                 warning_msg = f"Statistical validation failed for {data_name}: {e}"
                 quality_metrics['warnings'].append(warning_msg)
                 tprint_warning(f"⚠️ {warning_msg}")
-            
+
             # Matrix operations validation
             try:
                 matrix_validation = validate_matrix_properties(data)
@@ -1156,7 +1150,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 warning_msg = f"Matrix operations validation failed for {data_name}: {e}"
                 quality_metrics['warnings'].append(warning_msg)
                 tprint_warning(f"⚠️ {warning_msg}")
-            
+
             # Data utilities validation
             if data_name == "features":
                 try:
@@ -1170,14 +1164,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     warning_msg = f"Data quality metrics calculation failed for {data_name}: {e}"
                     quality_metrics['warnings'].append(warning_msg)
                     tprint_warning(f"⚠️ {warning_msg}")
-            
+
             if quality_metrics['is_valid']:
                 tprint_success(f"✅ {data_name} quality validation passed")
             else:
                 tprint_error(f"❌ {data_name} quality validation failed")
-            
+
             return quality_metrics
-            
+
         except Exception as e:
             quality_metrics['is_valid'] = False
             error_msg = f"Failed to validate {data_name}: {e}"
@@ -1185,7 +1179,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             tprint_error(f"❌ {error_msg}")
             tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             return quality_metrics
-    
+
     def _validate_utility_integrations(self) -> Dict[str, Any]:
         """Validate utility integrations and their availability."""
         utility_validation = {
@@ -1198,33 +1192,33 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'ml_common_available': ML_COMMON_AVAILABLE,
             'vectorized_training_available': VECTORIZED_TRAINING_AVAILABLE
         }
-        
+
         try:
             tprint_debug("Validating utility integrations...")
-            
+
             # Count available utilities
             available_count = sum(1 for available in utility_validation.values() if available)
             total_count = len(utility_validation)
             availability_rate = safe_divide(available_count * 100, total_count, 0.0)
-            
+
             utility_validation['available_count'] = available_count
             utility_validation['total_count'] = total_count
             utility_validation['availability_rate'] = availability_rate
-            
+
             if availability_rate >= 80:
                 tprint_success(f"✅ Utility integration validation passed: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
             elif availability_rate >= 60:
                 tprint_warning(f"⚠️ Utility integration validation warning: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
             else:
                 tprint_error(f"❌ Utility integration validation failed: {available_count}/{total_count} utilities available ({availability_rate:.1f}%)")
-            
+
             return utility_validation
-            
+
         except Exception as e:
             tprint_error(f"❌ Utility integration validation failed: {e}")
             utility_validation['validation_error'] = str(e)
             return utility_validation
-    
+
     def _validate_array_shapes(self, arrays: Dict[str, np.ndarray], expected_samples: int) -> Dict[str, Any]:
         """Validate that all arrays have consistent sample counts."""
         validation_results = {
@@ -1232,7 +1226,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'errors': [],
             'shape_info': {}
         }
-        
+
         try:
             for name, array in arrays.items():
                 if array.shape[0] != expected_samples:
@@ -1241,20 +1235,20 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     validation_results['is_valid'] = False
                 else:
                     validation_results['shape_info'][name] = array.shape
-            
+
             if not validation_results['is_valid']:
                 raise ValueError(f"Shape validation failed: {'; '.join(validation_results['errors'])}")
-            
+
             return validation_results
-            
+
         except Exception as e:
             validation_results['is_valid'] = False
             validation_results['errors'].append(str(e))
             return validation_results
-    
-    def _comprehensive_validation_check(self, 
-                                      X: np.ndarray, 
-                                      y: np.ndarray, 
+
+    def _comprehensive_validation_check(self,
+                                      X: np.ndarray,
+                                      y: np.ndarray,
                                       regime_labels: np.ndarray,
                                       phase_name: str,
                                       additional_arrays: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, Any]:
@@ -1267,7 +1261,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'metrics': {},
             'recommendations': []
         }
-        
+
         try:
             # Basic shape validation
             arrays_to_validate = {
@@ -1275,34 +1269,34 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'targets': y,
                 'regime_labels': regime_labels
             }
-            
+
             if additional_arrays:
                 arrays_to_validate.update(additional_arrays)
-            
+
             shape_validation = self._validate_array_shapes(arrays_to_validate, X.shape[0])
             if not shape_validation['is_valid']:
                 validation_summary['errors'].extend(shape_validation['errors'])
                 validation_summary['is_valid'] = False
-            
+
             # Data quality validation
             feature_quality = self._validate_data_quality(X, f"{phase_name}_features", max_nan_percentage=10.0, max_inf_percentage=1.0)
             target_quality = self._validate_data_quality(y, f"{phase_name}_targets", max_nan_percentage=5.0, max_inf_percentage=1.0)
-            
+
             validation_summary['warnings'].extend(feature_quality['warnings'])
             validation_summary['warnings'].extend(target_quality['warnings'])
             validation_summary['errors'].extend(feature_quality['errors'])
             validation_summary['errors'].extend(target_quality['errors'])
-            
+
             if not feature_quality['is_valid'] or not target_quality['is_valid']:
                 validation_summary['is_valid'] = False
-            
+
             # Regime analysis
             unique_regimes = np.unique(regime_labels)
             regime_counts = np.bincount(regime_labels)
             min_regime_size = np.min(regime_counts)
             max_regime_size = np.max(regime_counts)
             regime_balance = min_regime_size / max_regime_size if max_regime_size > 0 else 0
-            
+
             validation_summary['metrics'] = {
                 'samples': X.shape[0],
                 'features': X.shape[1],
@@ -1313,20 +1307,20 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'feature_nan_percentage': feature_quality['nan_percentage'],
                 'target_nan_percentage': target_quality['nan_percentage']
             }
-            
+
             # Generate recommendations
             if regime_balance < 0.1:
                 validation_summary['recommendations'].append("Very low regime balance - consider data augmentation")
-            
+
             if feature_quality['nan_percentage'] > 5:
                 validation_summary['recommendations'].append("High NaN percentage in features - consider imputation")
-            
+
             if target_quality['nan_percentage'] > 2:
                 validation_summary['recommendations'].append("High NaN percentage in targets - review data pipeline")
-            
+
             if min_regime_size < self.config.min_samples_per_regime:
                 validation_summary['recommendations'].append("Some regimes have insufficient samples - consider reducing min_samples_per_regime")
-            
+
             # Log validation results
             if validation_summary['is_valid']:
                 self.logger.info(f"✅ {phase_name} validation passed")
@@ -1334,25 +1328,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger.error(f"❌ {phase_name} validation failed")
                 for error in validation_summary['errors']:
                     self.logger.error(f"❌ {error}")
-            
+
             if validation_summary['warnings']:
                 for warning in validation_summary['warnings']:
                     self.logger.warning(f"⚠️ {warning}")
-            
+
             if validation_summary['recommendations']:
                 for recommendation in validation_summary['recommendations']:
                     self.logger.info(f"💡 {recommendation}")
-            
+
             return validation_summary
-            
+
         except Exception as e:
             validation_summary['is_valid'] = False
             validation_summary['errors'].append(f"Validation check failed: {e}")
             self.logger.error(f"❌ {phase_name} validation check failed: {e}")
             return validation_summary
-    
-    def _log_structured_event(self, event_type: str, phase: str, message: str, 
-                             metrics: Optional[Dict[str, Any]] = None, 
+
+    def _log_structured_event(self, event_type: str, phase: str, message: str,
+                             metrics: Optional[Dict[str, Any]] = None,
                              level: str = "info") -> None:
         """Log structured events with consistent formatting."""
         try:
@@ -1363,15 +1357,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'timestamp': time.time(),
                 'memory_mb': self._get_memory_usage()
             }
-            
+
             if metrics:
                 log_data['metrics'] = metrics
-            
+
             # Format structured log message
             structured_msg = f"[{event_type.upper()}] {phase}: {message}"
             if metrics:
                 structured_msg += f" | Metrics: {metrics}"
-            
+
             # Log with appropriate level
             if level == "error":
                 self.logger.error(structured_msg)
@@ -1381,10 +1375,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger.debug(structured_msg)
             else:
                 self.logger.info(structured_msg)
-                
+
         except Exception as e:
             self.logger.error(f"Failed to log structured event: {e}")
-    
+
     def _log_phase_start(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Log phase start with context."""
         self._log_structured_event(
@@ -1394,16 +1388,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             metrics=context,
             level="info"
         )
-    
-    def _log_phase_complete(self, phase: TrainingPhase, success: bool, 
+
+    def _log_phase_complete(self, phase: TrainingPhase, success: bool,
                            duration: float, metrics: Optional[Dict[str, Any]] = None) -> None:
         """Log phase completion with results."""
         event_type = "phase_success" if success else "phase_failure"
         message = f"Completed {phase.value} phase in {duration:.2f}s"
-        
+
         if not success:
             message += " (FAILED)"
-        
+
         self._log_structured_event(
             event_type=event_type,
             phase=phase.value,
@@ -1411,7 +1405,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             metrics=metrics,
             level="error" if not success else "info"
         )
-    
+
     def _log_data_quality_issue(self, issue_type: str, details: Dict[str, Any]) -> None:
         """Log data quality issues with structured format."""
         self._log_structured_event(
@@ -1421,7 +1415,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             metrics=details,
             level="warning"
         )
-    
+
     def _log_performance_metric(self, metric_name: str, value: float, unit: str = "") -> None:
         """Log performance metrics with structured format."""
         self._log_structured_event(
@@ -1431,7 +1425,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             metrics={metric_name: f"{value:.2f}{unit}"},
             level="info"
         )
-    
+
     def execute(
         self,
         X: np.ndarray,
@@ -1451,7 +1445,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     ) -> Dict[str, Any]:
         """
         Execute enhanced Tactician models training step with comprehensive error handling and utility integration.
-        
+
         Args:
             X: Input features (1m timeframe with cross-timeframe features)
             y: Target values (tactician outputs - timing decisions)
@@ -1466,7 +1460,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             analyst_ensemble_outputs: Analyst ensemble model outputs
             analyst_confidence_scores: Confidence scores from Analyst for sample weighting
             analyst_directional_info: Additional directional analysis from Analyst
-            
+
         Returns:
             Dictionary containing training results and metadata with comprehensive reporting
         """
@@ -1481,9 +1475,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'has_hmm_features': hmm_regime_features is not None,
                 'has_analyst_models': all_analyst_models_outputs is not None
             })
-            
+
             self.overall_start_time = time.time()
-            
+
             # Phase 1: Data Validation with comprehensive error handling
             validation_context = {
                 'samples': X.shape[0] if X is not None else 0,
@@ -1491,28 +1485,28 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'regimes': len(np.unique(regime_labels)) if regime_labels is not None else 0
             }
             self._start_phase(TrainingPhase.DATA_VALIDATION, validation_context)
-            
+
             try:
                 with tprint_timer("Data Validation"):
                     validation_results = self._validate_input_data(X, y, regime_labels)
-                
+
                 # Log data quality issues with enhanced reporting
                 if validation_results.get('warnings'):
                     tprint_warning(f"⚠️ {len(validation_results['warnings'])} data quality warnings found")
                     for warning in validation_results['warnings']:
                         self._log_data_quality_issue("warning", {'message': warning})
-                
+
                 if validation_results.get('errors'):
                     tprint_error(f"❌ {len(validation_results['errors'])} data quality errors found")
                     for error in validation_results['errors']:
                         self._log_data_quality_issue("error", {'message': error})
-                
+
                 # Log utility integration status
                 if validation_results.get('utility_validation'):
                     utility_status = validation_results['utility_validation']
                     tprint_info(f"📊 Utility integration status: {utility_status.get('available_count', 0)}/{utility_status.get('total_count', 0)} utilities available")
-                
-                self._complete_phase(TrainingPhase.DATA_VALIDATION, success=True, 
+
+                self._complete_phase(TrainingPhase.DATA_VALIDATION, success=True,
                                    samples_processed=X.shape[0], features_count=X.shape[1],
                                    warnings_issued=len(validation_results.get('warnings', [])),
                                    errors_encountered=len(validation_results.get('errors', [])))
@@ -1520,7 +1514,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self._complete_phase(TrainingPhase.DATA_VALIDATION, success=False, error_message=str(e))
                 tprint_error(f"❌ Data validation phase failed: {e}")
                 raise
-            
+
             # Phase 2: Feature Preparation with enhanced error handling
             feature_context = {
                 'original_samples': X.shape[0],
@@ -1531,28 +1525,27 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'has_analyst_ensemble': analyst_ensemble_outputs is not None
             }
             self._start_phase(TrainingPhase.FEATURE_PREPARATION, feature_context)
-            
+
             try:
                 with tprint_timer("Feature Preparation"):
                   X, y, regime_labels, feature_names, preparation_metrics = self._prepare_features(
-                      X, y, regime_labels, feature_names, hmm_states, 
-                      analyst_signals, analyst_model_outputs, hmm_regime_features, 
+                      X, y, regime_labels, feature_names, hmm_states,
+                      analyst_signals, analyst_model_outputs, hmm_regime_features,
                       all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
                   )
 
-                
                 # Log feature preparation metrics with enhanced reporting
                 if preparation_metrics.get('green_light_filtering'):
                     gl_filtering = preparation_metrics['green_light_filtering']
                     green_light_rate = gl_filtering.get('green_light_rate', 0) * 100
                     tprint_info(f"📊 Green light filtering: {green_light_rate:.2f}% of samples retained")
                     self._log_performance_metric("green_light_rate", green_light_rate, "%")
-                
+
                 # Log feature combination results
                 if preparation_metrics.get('feature_combinations'):
                     feature_combinations = preparation_metrics['feature_combinations']
                     tprint_info(f"📊 Feature combinations: {feature_combinations}")
-                
+
                 self._complete_phase(TrainingPhase.FEATURE_PREPARATION, success=True,
                                    samples_processed=X.shape[0], features_count=X.shape[1],
                                    warnings_issued=len(preparation_metrics.get('warnings', [])),
@@ -1561,7 +1554,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self._complete_phase(TrainingPhase.FEATURE_PREPARATION, success=False, error_message=str(e))
                 tprint_error(f"❌ Feature preparation phase failed: {e}")
                 raise
-            
+
             # Phase 3: Model Training with enhanced error handling
             self._start_phase(TrainingPhase.MODEL_TRAINING)
             try:
@@ -1573,10 +1566,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         hmm_regime_features, all_analyst_models_outputs,
                         hmm_model_outputs, analyst_ensemble_outputs
                     )
-                
+
                 models_trained = len(results.get('models', {}))
                 tprint_success(f"✅ Model training completed: {models_trained} models trained")
-                
+
                 self._complete_phase(TrainingPhase.MODEL_TRAINING, success=True,
                                    models_trained=models_trained,
                                    memory_usage_mb=self._get_memory_usage())
@@ -1584,21 +1577,21 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self._complete_phase(TrainingPhase.MODEL_TRAINING, success=False, error_message=str(e))
                 tprint_error(f"❌ Model training phase failed: {e}")
                 raise
-            
+
             # Phase 4: Finalization with enhanced error handling
             self._start_phase(TrainingPhase.FINALIZATION)
             try:
                 with tprint_timer("Results Finalization"):
                     results = self._finalize_results_enhanced(results, analyst_signals)
-                
+
                 total_time = time.time() - self.overall_start_time
                 tprint_performance("Total Tactician Training", total_time)
-                
+
                 self._complete_phase(TrainingPhase.FINALIZATION, success=True)
-                
+
                 # Generate comprehensive training report
                 self._generate_training_report_enhanced(total_time)
-                
+
                 # Log final success
                 tprint_success("🎉 Enhanced Tactician models training completed successfully!")
                 tprint_structured({
@@ -1609,20 +1602,20 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'final_features': X.shape[1],
                     'success': True
                 })
-                
+
                 # Generate thorough outcome file with datetime stamp
                 try:
                     from datetime import datetime
                     from pathlib import Path
                     import json
-                    
+
                     outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                     outcomes_dir = Path('outcomes')
                     outcomes_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     outcome_filename = f"tactician_model_training_outcome_{outcome_timestamp}.json"
                     outcome_path = outcomes_dir / outcome_filename
-                    
+
                     # Extract comprehensive training statistics
                     models_trained_dict = results.get('models', {})
                     model_stats = {
@@ -1630,12 +1623,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'model_names': list(models_trained_dict.keys()),
                         'per_model_details': {}
                     }
-                    
+
                     for model_name, model_info in models_trained_dict.items():
                         if isinstance(model_info, dict):
                             # Extract comprehensive ML metrics
                             ml_metrics = {}
-                            
+
                             # Classification metrics
                             if 'accuracy' in model_info:
                                 ml_metrics['accuracy'] = float(model_info['accuracy']) if model_info['accuracy'] is not None else None
@@ -1651,7 +1644,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 ml_metrics['f1_score'] = float(model_info['f1_score']) if model_info['f1_score'] is not None else None
                             if 'average_precision' in model_info:
                                 ml_metrics['average_precision'] = float(model_info['average_precision']) if model_info['average_precision'] is not None else None
-                            
+
                             # Regression metrics
                             if 'mse' in model_info:
                                 ml_metrics['mse'] = float(model_info['mse']) if model_info['mse'] is not None else None
@@ -1661,7 +1654,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 ml_metrics['mae'] = float(model_info['mae']) if model_info['mae'] is not None else None
                             if 'r2_score' in model_info:
                                 ml_metrics['r2_score'] = float(model_info['r2_score']) if model_info['r2_score'] is not None else None
-                            
+
                             # Trading-specific metrics
                             if 'sharpe_ratio' in model_info:
                                 ml_metrics['sharpe_ratio'] = float(model_info['sharpe_ratio']) if model_info['sharpe_ratio'] is not None else None
@@ -1673,7 +1666,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 ml_metrics['max_drawdown'] = float(model_info['max_drawdown']) if model_info['max_drawdown'] is not None else None
                             if 'sortino_ratio' in model_info:
                                 ml_metrics['sortino_ratio'] = float(model_info['sortino_ratio']) if model_info['sortino_ratio'] is not None else None
-                            
+
                             # CV scores
                             cv_scores = {}
                             if 'cv_scores' in model_info and model_info['cv_scores'] is not None:
@@ -1686,7 +1679,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                         'max': float(np.max(cv_scores_list)),
                                         'scores': [float(s) for s in cv_scores_list],
                                     }
-                            
+
                             # Confusion matrix if available
                             confusion_matrix_data = {}
                             if 'confusion_matrix' in model_info and model_info['confusion_matrix'] is not None:
@@ -1696,7 +1689,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                         'matrix': cm.tolist(),
                                         'shape': list(cm.shape),
                                     }
-                            
+
                             model_stats['per_model_details'][model_name] = {
                                 'model_type': model_info.get('model_type', 'unknown'),
                                 'training_score': float(model_info.get('train_score', 0.0)) if model_info.get('train_score') is not None else None,
@@ -1708,7 +1701,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 'cv_scores': cv_scores,
                                 'confusion_matrix': confusion_matrix_data,
                             }
-                    
+
                     # Calculate aggregate metrics across all models
                     aggregate_metrics = {
                         'avg_training_score': 0.0,
@@ -1722,7 +1715,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'best_model': None,
                         'worst_model': None,
                     }
-                    
+
                     valid_train_scores = []
                     valid_val_scores = []
                     valid_test_scores = []
@@ -1731,7 +1724,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     valid_precisions = []
                     valid_recalls = []
                     valid_f1_scores = []
-                    
+
                     for model_name, details in model_stats['per_model_details'].items():
                         if details['training_score'] is not None:
                             valid_train_scores.append((model_name, details['training_score']))
@@ -1739,7 +1732,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             valid_val_scores.append((model_name, details['validation_score']))
                         if details['test_score'] is not None:
                             valid_test_scores.append((model_name, details['test_score']))
-                        
+
                         ml_metrics = details.get('ml_metrics', {})
                         if ml_metrics.get('accuracy') is not None:
                             valid_accuracies.append(ml_metrics['accuracy'])
@@ -1751,7 +1744,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             valid_recalls.append(ml_metrics['recall'])
                         if ml_metrics.get('f1_score') is not None:
                             valid_f1_scores.append(ml_metrics['f1_score'])
-                    
+
                     if valid_train_scores:
                         aggregate_metrics['avg_training_score'] = float(np.mean([s for _, s in valid_train_scores]))
                         aggregate_metrics['best_model'] = max(valid_train_scores, key=lambda x: x[1])[0]
@@ -1773,7 +1766,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     if valid_f1_scores:
                         aggregate_metrics['avg_f1_score'] = float(np.mean(valid_f1_scores))
                         aggregate_metrics['std_f1_score'] = float(np.std(valid_f1_scores))
-                    
+
                     # Performance metrics breakdown
                     phase_metrics = {}
                     for phase_name, phase_data in self.phase_metrics.items():
@@ -1783,7 +1776,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             'samples_processed': phase_data.get('samples_processed', 0),
                             'errors': phase_data.get('errors', []),
                         }
-                    
+
                     performance_metrics = {
                         'total_execution_time_seconds': total_time,
                         'models_per_second': len(models_trained_dict) / max(0.001, total_time),
@@ -1792,7 +1785,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'final_features': int(X.shape[1]),
                         'aggregate_ml_metrics': aggregate_metrics,
                     }
-                    
+
                     # Training configuration details
                     training_config = {
                         'timeframe': getattr(self.config, 'timeframe', '15m'),
@@ -1805,7 +1798,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'enable_entry_timing_optimization': getattr(self.config, 'enable_entry_timing_optimization', False),
                         'confidence_aware_ensemble_enabled': True,  # Always enabled for Tactician
                     }
-                    
+
                     # Data quality and validation
                     data_quality = {
                         'input_samples': results.get('input_samples', X.shape[0]),
@@ -1818,7 +1811,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'analyst_signals_used': analyst_signals is not None,
                         'analyst_directional_info_used': analyst_directional_info is not None,
                     }
-                    
+
                     # Warnings and issues
                     warnings_and_issues = {
                         'overfitting_warnings': results.get('overfitting_warnings', []),
@@ -1826,7 +1819,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'data_quality_warnings': results.get('data_quality_warnings', []),
                         'total_warnings': len(results.get('overfitting_warnings', [])) + len(results.get('lookahead_warnings', [])),
                     }
-                    
+
                     # Entry timing optimization results if applicable
                     entry_timing_stats = {}
                     if 'entry_timing_optimization' in results:
@@ -1834,7 +1827,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             'enabled': True,
                             'results': results.get('entry_timing_optimization', {}),
                         }
-                    
+
                     # Create comprehensive outcome report
                     outcome_data = {
                         'component': 'tactician_model_training',
@@ -1855,25 +1848,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         'enhanced_training_metadata': results.get('enhanced_training_metadata', {}),
                         'status': 'success'
                     }
-                    
+
                     # Save outcome file
                     with open(outcome_path, 'w') as f:
                         json.dump(outcome_data, f, indent=2, default=str)
-                    
+
                     tprint_success(f"📄 Outcome file saved: {outcome_filename}")
                     results['outcome_file'] = str(outcome_path)
-                    
+
                 except Exception as outcome_error:
                     tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
                     # Don't fail training if outcome file generation fails
-                
+
                 return results
-                
+
             except Exception as e:
                 self._complete_phase(TrainingPhase.FINALIZATION, success=False, error_message=str(e))
                 tprint_error(f"❌ Finalization phase failed: {e}")
                 raise
-                
+
         except Exception as e:
             tprint_error(f"❌ Enhanced Tactician training failed: {e}")
             tprint_error(f"❌ Traceback: {traceback.format_exc()}")
@@ -1883,7 +1876,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'success': False
             })
             return self._create_error_result(str(e))
-    
+
     def _prepare_features_enhanced(
         self,
         X: np.ndarray,
@@ -1902,7 +1895,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             analyst_signals, analyst_model_outputs, hmm_regime_features,
             all_analyst_models_outputs
         )
-    
+
     def _execute_training_enhanced(
         self,
         X: np.ndarray,
@@ -1918,15 +1911,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             X, y, regime_labels, feature_names, hmm_states,
             analyst_confidence_scores, analyst_directional_info
         )
-    
+
     def _finalize_results_enhanced(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
         """Enhanced results finalization with comprehensive error handling and utility integration."""
         return self._finalize_results(results, analyst_signals)
-    
+
     def _generate_training_report_enhanced(self, total_time: float) -> None:
         """Enhanced training report generation with comprehensive error handling and utility integration."""
         return self._generate_training_report(total_time)
-    
+
     def _prepare_features(
         self,
         X: np.ndarray,
@@ -1952,7 +1945,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'warnings': [],
             'errors': []
         }
-        
+
         try:
             # Filter data to only include periods where Analyst gives directional signals
             if analyst_signals is not None:
@@ -1993,118 +1986,118 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     warning_msg = f"Very low directional signal rate: {directional_rate:.2%}"
                     preparation_metrics['warnings'].append(warning_msg)
                     self.logger.warning(f"⚠️ {warning_msg}")
-                
+
                 # Apply filtering with validation
                 X_filtered = X[directional_mask]
                 y_filtered = y[directional_mask]
                 regime_labels_filtered = regime_labels[directional_mask]
-                
+
                 # Validate filtered data shapes
                 if X_filtered.shape[0] != directional_count:
                     error_msg = f"Filtered data shape mismatch: expected {directional_count}, got {X_filtered.shape[0]}"
                     preparation_metrics['errors'].append(error_msg)
                     raise ValueError(error_msg)
-                
+
                 X, y, regime_labels = X_filtered, y_filtered, regime_labels_filtered
-                
+
                 if hmm_states is not None:
                     hmm_states = hmm_states[directional_mask]
                     if hmm_states.shape[0] != directional_count:
                         error_msg = f"HMM states filtering mismatch: expected {directional_count}, got {hmm_states.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-            
+
             # Combine all features: base features + HMM regime features + HMM model outputs + all analyst model outputs + analyst ensemble outputs
             additional_features = []
             additional_feature_names = []
             feature_combination_details = {}
-            
+
             # Add HMM regime features if provided
             if hmm_regime_features is not None:
                 try:
                     if analyst_signals is not None:
                         hmm_regime_features = hmm_regime_features[directional_mask]
-                    
+
                     # Validate HMM features shape
                     if hmm_regime_features.shape[0] != X.shape[0]:
                         error_msg = f"HMM regime features shape mismatch: expected {X.shape[0]}, got {hmm_regime_features.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-                    
+
                     # Check for NaN/Inf in HMM features
                     hmm_nan_count = np.sum(np.isnan(hmm_regime_features))
                     hmm_inf_count = np.sum(np.isinf(hmm_regime_features))
-                    
+
                     if hmm_nan_count > 0:
                         warning_msg = f"HMM features contain {hmm_nan_count} NaN values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     if hmm_inf_count > 0:
                         warning_msg = f"HMM features contain {hmm_inf_count} infinite values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     additional_features.append(hmm_regime_features)
                     additional_feature_names.extend([f"hmm_regime_{i}" for i in range(hmm_regime_features.shape[1])])
-                    
+
                     feature_combination_details['hmm_regime_features'] = {
                         'count': hmm_regime_features.shape[1],
                         'nan_count': hmm_nan_count,
                         'inf_count': hmm_inf_count
                     }
-                    
+
                     self.logger.info(f"📊 Added {hmm_regime_features.shape[1]} HMM regime features")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to add HMM regime features: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
-            
+
             # Add HMM model outputs if provided
             if hmm_model_outputs is not None:
                 try:
                     if analyst_signals is not None:
                         hmm_model_outputs = hmm_model_outputs[directional_mask]
-                    
+
                     # Validate HMM model outputs shape
                     if hmm_model_outputs.shape[0] != X.shape[0]:
                         error_msg = f"HMM model outputs shape mismatch: expected {X.shape[0]}, got {hmm_model_outputs.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-                    
+
                     # Check for NaN/Inf in HMM model outputs
                     hmm_outputs_nan_count = np.sum(np.isnan(hmm_model_outputs))
                     hmm_outputs_inf_count = np.sum(np.isinf(hmm_model_outputs))
-                    
+
                     if hmm_outputs_nan_count > 0:
                         warning_msg = f"HMM model outputs contain {hmm_outputs_nan_count} NaN values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     if hmm_outputs_inf_count > 0:
                         warning_msg = f"HMM model outputs contain {hmm_outputs_inf_count} infinite values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     additional_features.append(hmm_model_outputs)
                     additional_feature_names.extend([f"hmm_model_{i}" for i in range(hmm_model_outputs.shape[1])])
-                    
+
                     feature_combination_details['hmm_model_outputs'] = {
                         'count': hmm_model_outputs.shape[1],
                         'nan_count': hmm_outputs_nan_count,
                         'inf_count': hmm_outputs_inf_count
                     }
-                    
+
                     self.logger.info(f"📊 Added {hmm_model_outputs.shape[1]} HMM model outputs")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to add HMM model outputs: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
-            
+
             # Add all individual analyst model outputs if provided
             if all_analyst_models_outputs is not None:
                 analyst_features_added = 0
@@ -2112,130 +2105,130 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     try:
                         if analyst_signals is not None:
                             model_outputs = model_outputs[directional_mask]
-                        
+
                         # Validate model outputs shape
                         if model_outputs.shape[0] != X.shape[0]:
                             error_msg = f"Analyst model {model_name} output shape mismatch: expected {X.shape[0]}, got {model_outputs.shape[0]}"
                             preparation_metrics['errors'].append(error_msg)
                             raise ValueError(error_msg)
-                        
+
                         # Check for NaN/Inf in model outputs
                         model_nan_count = np.sum(np.isnan(model_outputs))
                         model_inf_count = np.sum(np.isinf(model_outputs))
-                        
+
                         if model_nan_count > 0:
                             warning_msg = f"Analyst model {model_name} outputs contain {model_nan_count} NaN values"
                             preparation_metrics['warnings'].append(warning_msg)
                             self.logger.warning(f"⚠️ {warning_msg}")
-                        
+
                         if model_inf_count > 0:
                             warning_msg = f"Analyst model {model_name} outputs contain {model_inf_count} infinite values"
                             preparation_metrics['warnings'].append(warning_msg)
                             self.logger.warning(f"⚠️ {warning_msg}")
-                        
+
                         additional_features.append(model_outputs)
                         additional_feature_names.extend([f"analyst_{model_name}_{i}" for i in range(model_outputs.shape[1])])
                         analyst_features_added += model_outputs.shape[1]
-                        
+
                     except Exception as e:
                         error_msg = f"Failed to add analyst model {model_name} outputs: {e}"
                         preparation_metrics['errors'].append(error_msg)
                         self.logger.error(f"❌ {error_msg}")
                         raise
-                
+
                 feature_combination_details['analyst_models'] = {
                     'model_count': len(all_analyst_models_outputs),
                     'total_features': analyst_features_added
                 }
-                
+
                 self.logger.info(f"📊 Added outputs from {len(all_analyst_models_outputs)} analyst models ({analyst_features_added} features)")
-            
+
             # Add analyst ensemble outputs if provided
             if analyst_ensemble_outputs is not None:
                 try:
                     if analyst_signals is not None:
                         analyst_ensemble_outputs = analyst_ensemble_outputs[directional_mask]
-                    
+
                     # Validate analyst ensemble outputs shape
                     if analyst_ensemble_outputs.shape[0] != X.shape[0]:
                         error_msg = f"Analyst ensemble outputs shape mismatch: expected {X.shape[0]}, got {analyst_ensemble_outputs.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-                    
+
                     # Check for NaN/Inf in analyst ensemble outputs
                     ensemble_nan_count = np.sum(np.isnan(analyst_ensemble_outputs))
                     ensemble_inf_count = np.sum(np.isinf(analyst_ensemble_outputs))
-                    
+
                     if ensemble_nan_count > 0:
                         warning_msg = f"Analyst ensemble outputs contain {ensemble_nan_count} NaN values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     if ensemble_inf_count > 0:
                         warning_msg = f"Analyst ensemble outputs contain {ensemble_inf_count} infinite values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     additional_features.append(analyst_ensemble_outputs)
                     additional_feature_names.extend([f"analyst_ensemble_{i}" for i in range(analyst_ensemble_outputs.shape[1])])
-                    
+
                     feature_combination_details['analyst_ensemble_outputs'] = {
                         'count': analyst_ensemble_outputs.shape[1],
                         'nan_count': ensemble_nan_count,
                         'inf_count': ensemble_inf_count
                     }
-                    
+
                     self.logger.info(f"📊 Added {analyst_ensemble_outputs.shape[1]} analyst ensemble outputs")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to add analyst ensemble outputs: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
-            
+
             # Add legacy analyst model outputs for backward compatibility
             if analyst_model_outputs is not None:
                 try:
                     if analyst_signals is not None:
                         analyst_model_outputs = analyst_model_outputs[directional_mask]
-                    
+
                     # Validate legacy outputs shape
                     if analyst_model_outputs.shape[0] != X.shape[0]:
                         error_msg = f"Legacy analyst outputs shape mismatch: expected {X.shape[0]}, got {analyst_model_outputs.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-                    
+
                     # Check for NaN/Inf in legacy outputs
                     legacy_nan_count = np.sum(np.isnan(analyst_model_outputs))
                     legacy_inf_count = np.sum(np.isinf(analyst_model_outputs))
-                    
+
                     if legacy_nan_count > 0:
                         warning_msg = f"Legacy analyst outputs contain {legacy_nan_count} NaN values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     if legacy_inf_count > 0:
                         warning_msg = f"Legacy analyst outputs contain {legacy_inf_count} infinite values"
                         preparation_metrics['warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                     additional_features.append(analyst_model_outputs)
                     additional_feature_names.extend([f"analyst_legacy_{i}" for i in range(analyst_model_outputs.shape[1])])
-                    
+
                     feature_combination_details['analyst_legacy'] = {
                         'count': analyst_model_outputs.shape[1],
                         'nan_count': legacy_nan_count,
                         'inf_count': legacy_inf_count
                     }
-                    
+
                     self.logger.info(f"📊 Added {analyst_model_outputs.shape[1]} legacy analyst outputs")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to add legacy analyst outputs: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
-            
+
             # Concatenate all additional features with validation
             if additional_features:
                 try:
@@ -2245,57 +2238,57 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                             error_msg = f"Feature array {i} shape mismatch: expected {X.shape[0]}, got {feature_array.shape[0]}"
                             preparation_metrics['errors'].append(error_msg)
                             raise ValueError(error_msg)
-                    
+
                     X_combined = np.column_stack([X] + additional_features)
-                    
+
                     # Validate combined features
                     if X_combined.shape[0] != X.shape[0]:
                         error_msg = f"Combined features sample count mismatch: expected {X.shape[0]}, got {X_combined.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
-                    
+
                     X = X_combined
-                    
+
                     # Update feature names
                     if feature_names is not None:
                         feature_names = feature_names + additional_feature_names
                     else:
                         feature_names = [f"feature_{i}" for i in range(X.shape[1])]
-                    
+
                     preparation_metrics['feature_combinations'] = feature_combination_details
                     self.logger.info(f"📊 Total features: {X.shape[1]} (base + HMM regime + HMM model + all analyst models + analyst ensemble)")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to combine features: {e}"
                     preparation_metrics['errors'].append(error_msg)
                     self.logger.error(f"❌ {error_msg}")
                     raise
-            
+
             # Final validation
             preparation_metrics['final_samples'] = X.shape[0]
             preparation_metrics['final_features'] = X.shape[1]
-            
+
             # Check for final data quality issues
             final_nan_count = np.sum(np.isnan(X))
             final_inf_count = np.sum(np.isinf(X))
-            
+
             if final_nan_count > 0:
                 warning_msg = f"Final feature matrix contains {final_nan_count} NaN values"
                 preparation_metrics['warnings'].append(warning_msg)
                 self.logger.warning(f"⚠️ {warning_msg}")
-            
+
             if final_inf_count > 0:
                 warning_msg = f"Final feature matrix contains {final_inf_count} infinite values"
                 preparation_metrics['warnings'].append(warning_msg)
                 self.logger.warning(f"⚠️ {warning_msg}")
-            
+
             return X, y, regime_labels, feature_names, preparation_metrics
-            
+
         except Exception as e:
             preparation_metrics['errors'].append(str(e))
             self.logger.error(f"❌ Feature preparation failed: {e}")
             raise
-    
+
     def _execute_training(
         self,
         X: np.ndarray,
@@ -2323,16 +2316,16 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             'warnings': [],
             'performance_metrics': {}
         }
-        
+
         try:
             # Pre-training validation
             self._validate_training_inputs(X, y, regime_labels, feature_names, hmm_states)
-            
+
             # Enhanced training with overfitting prevention and lookahead bias detection
             if ENHANCED_TRAINING_AVAILABLE and hasattr(self, 'training_enhancer'):
                 self.logger.info("🚀 Using ENHANCED tactician models training with overfitting prevention")
                 training_metrics['enhanced_training_attempted'] = True
-                
+
                 try:
                     # Validate temporal data for lookahead bias
                     if timestamps is not None:
@@ -2346,7 +2339,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         if not is_valid:
                             self.logger.error("❌ Temporal data validation failed")
                             raise ValueError("Lookahead bias detected in temporal data")
-                    
+
                     # Use enhanced training with temporal integrity and confidence weighting
                     enhanced_start_time = time.time()
                     results = self._execute_enhanced_tactician_training(
@@ -2355,28 +2348,28 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs,
                         analyst_confidence_scores, analyst_directional_info
                     )
-                    
+
                     enhanced_duration = time.time() - enhanced_start_time
                     training_metrics['performance_metrics']['enhanced_training_duration'] = enhanced_duration
                     training_metrics['enhanced_training_successful'] = True
                     training_metrics['training_method'] = 'enhanced'
                     self.logger.info(f"✅ ENHANCED tactician training completed successfully in {enhanced_duration:.2f}s")
                     return results
-                    
+
                 except Exception as e:
                     error_msg = f"ENHANCED tactician training failed: {e}"
                     training_metrics['warnings'].append(error_msg)
                     training_metrics['fallback_used'] = True
                     self.logger.warning(f"⚠️ {error_msg}, falling back to vectorized method")
-            
+
             # VECTORIZED: Use ultra-fast vectorized training by default
             self.logger.info("🚀 Using VECTORIZED tactician models training")
             training_metrics['vectorization_attempted'] = True
-            
+
             if self.enable_vectorization:
                 try:
                     vectorization_start_time = time.time()
-                    
+
                     results = super().execute_vectorized(
                         X=X,
                         y=y,
@@ -2388,10 +2381,10 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         exchange=None,
                         timeframe=self.config.timeframe
                     )
-                    
+
                     vectorization_duration = time.time() - vectorization_start_time
                     training_metrics['performance_metrics']['vectorization_duration'] = vectorization_duration
-                    
+
                     if results.get('vectorized', False):
                         training_metrics['vectorization_successful'] = True
                         training_metrics['training_method'] = 'vectorized'
@@ -2402,7 +2395,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         training_metrics['warnings'].append(warning_msg)
                         training_metrics['fallback_used'] = True
                         self.logger.warning(f"⚠️ {warning_msg}")
-                        
+
                 except Exception as e:
                     error_msg = f"VECTORIZED tactician training failed: {e}"
                     training_metrics['warnings'].append(error_msg)
@@ -2411,11 +2404,11 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             else:
                 training_metrics['fallback_used'] = True
                 self.logger.info("🔄 Vectorization disabled, using standard training")
-            
+
             # Fallback to standard training
             self.logger.info("🔄 Using standard tactician models training")
             standard_start_time = time.time()
-            
+
             results = super().execute(
                 X=X,
                 y=y,
@@ -2427,34 +2420,34 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 exchange=None,
                 timeframe=self.config.timeframe
             )
-            
+
             standard_duration = time.time() - standard_start_time
             training_metrics['performance_metrics']['standard_training_duration'] = standard_duration
             training_metrics['training_method'] = 'standard'
-            
+
             self.logger.info(f"✅ Standard tactician training completed in {standard_duration:.2f}s")
-            
+
             # Add training metrics to results
             results['training_execution_metrics'] = training_metrics
-            
+
             # Add entry timing optimization if enabled
             if hasattr(self.config, 'enable_entry_timing_optimization') and self.config.enable_entry_timing_optimization:
                 self.logger.info("🔄 Applying entry timing optimization for 0-0.4% range...")
                 entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
                 results.update(entry_timing_results)
-            
+
             # NOTE: Ensemble training is handled by tactician_ensemble_training.py
             # Individual model training is complete - ensemble training is a separate step
             tprint_info("✅ Individual model training complete. Ensemble training handled separately by tactician_ensemble_training.py")
-            
+
             return results
-            
+
         except Exception as e:
             training_metrics['errors'].append(str(e))
             self.logger.error(f"❌ Training execution failed: {e}")
             self.logger.error(f"❌ Training metrics: {training_metrics}")
             raise
-    
+
     def _execute_enhanced_tactician_training(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray,
                                            feature_names: Optional[List[str]], hmm_states: Optional[np.ndarray],
                                            timestamps: Optional[np.ndarray], analyst_signals: Optional[np.ndarray],
@@ -2466,7 +2459,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         """Execute enhanced tactician training with overfitting prevention and lookahead bias detection."""
         try:
             self.logger.info("🚀 Executing enhanced tactician training with overfitting prevention")
-            
+
             # Filter for Analyst directional signals with confidence weighting
             if analyst_signals is not None:
                 self.logger.info("🔍 Filtering for Analyst directional signals...")
@@ -2512,7 +2505,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 X_filtered, y_filtered, regime_labels_filtered, timestamps_filtered = X, y, regime_labels, timestamps
                 confidence_scores_filtered = None
                 self.logger.warning("⚠️ No Analyst directional signals provided, using all data")
-            
+
             # Get unique regimes
             unique_regimes = np.unique(regime_labels_filtered)
             results = {
@@ -2523,7 +2516,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'ensemble_diversity': None,
                 'walk_forward_validation': None
             }
-            
+
             # Train models for each regime with enhanced utilities and confidence weighting
             for regime in unique_regimes:
                 regime_mask = regime_labels_filtered == regime
@@ -2547,7 +2540,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     try:
                         # Create model instance
                         model = self._create_model_instance(model_type)
-                        
+
                         # Special handling for Random Survival Forest
                         if model_type == "RandomSurvivalForest":
                             model = self._create_random_survival_forest_model()
@@ -2561,7 +2554,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         if model_type == "RandomSurvivalForest":
                             # Random Survival Forest has its own training method with HPO
                             trained_model = model.fit(
-                                X_regime, y_regime, 
+                                X_regime, y_regime,
                                 feature_names=feature_names,
                                 analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
                                 hmm_regime_probs=None,  # TODO: Extract from hmm_regime_features if available
@@ -2578,58 +2571,58 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 X_regime, y_regime, model, timestamps_regime, f"tactician_{model_type}_regime_{regime}",
                                 sample_weights=confidence_regime
                             )
-                        
+
                         regime_models[model_type] = {
                             'model': trained_model,
                             'metadata': metadata
                         }
-                        
+
                         # Check for overfitting warnings
                         if metadata.get('overfitting_detected', False):
                             results['overfitting_warnings'].append(f"Overfitting detected in {model_type} for regime {regime}")
-                        
+
                     except Exception as e:
                         self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
                         continue
-                
+
                 results['models'][regime] = regime_models
-            
+
             # Calculate ensemble diversity if multiple models
             if len(self.config.model_types) > 1:
                 self.logger.info("📊 Calculating tactician ensemble diversity...")
                 for regime in unique_regimes:
                     if regime in results['models']:
-                        models_list = [results['models'][regime][mt]['model'] for mt in self.config.model_types 
+                        models_list = [results['models'][regime][mt]['model'] for mt in self.config.model_types
                                      if mt in results['models'][regime]]
                         if len(models_list) > 1:
                             diversity_metrics = self.training_enhancer.enhanced_utils.calculate_ensemble_diversity(
-                                models_list, X_filtered[regime_labels_filtered == regime], 
+                                models_list, X_filtered[regime_labels_filtered == regime],
                                 y_filtered[regime_labels_filtered == regime]
                             )
                             results['ensemble_diversity'] = diversity_metrics
-                            
+
                             if diversity_metrics.get('diversity_score', 0) < 0.1:
                                 self.logger.warning(f"⚠️ Low tactician ensemble diversity for regime {regime}")
                             else:
                                 self.logger.info(f"✅ Good tactician ensemble diversity for regime {regime}")
-            
+
             # Perform walk-forward validation if enabled
             if len(results['models']) > 0:
                 self.logger.info("🚶 Performing walk-forward validation for tactician...")
                 first_regime = list(results['models'].keys())[0]
                 first_model = list(results['models'][first_regime].values())[0]['model']
-                
+
                 wfv_results = self.training_enhancer.enhanced_utils.perform_walk_forward_validation(
                     first_model, X_filtered, y_filtered,
                     initial_train_size=1000, test_size=100, step_size=50
                 )
                 results['walk_forward_validation'] = wfv_results
-                
+
                 if wfv_results.get('performance_trend', {}).get('trend') == 'declining':
                     self.logger.warning("⚠️ Declining performance trend detected in tactician walk-forward validation")
                 else:
                     self.logger.info("✅ Stable performance trend in tactician walk-forward validation")
-            
+
             # Add enhanced training metadata
             results['enhanced_training_metadata'] = {
                 'overfitting_prevention_enabled': True,
@@ -2641,14 +2634,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'walk_forward_validation_enabled': True,
                 'total_warnings': len(results['overfitting_warnings'])
             }
-            
+
             self.logger.info("✅ Enhanced tactician training completed successfully")
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced tactician training failed: {e}")
             raise
-    
+
     def _validate_training_inputs(
         self,
         X: np.ndarray,
@@ -2662,44 +2655,44 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             # Check data shapes
             if X.shape[0] != y.shape[0]:
                 raise ValueError(f"Feature and target sample counts don't match: {X.shape[0]} vs {y.shape[0]}")
-            
+
             if X.shape[0] != regime_labels.shape[0]:
                 raise ValueError(f"Feature and regime label sample counts don't match: {X.shape[0]} vs {regime_labels.shape[0]}")
-            
+
             if hmm_states is not None and hmm_states.shape[0] != X.shape[0]:
                 raise ValueError(f"HMM states sample count mismatch: expected {X.shape[0]}, got {hmm_states.shape[0]}")
-            
+
             # Check feature names consistency
             if feature_names is not None and len(feature_names) != X.shape[1]:
                 raise ValueError(f"Feature names count mismatch: expected {X.shape[1]}, got {len(feature_names)}")
-            
+
             # Check for critical data quality issues
             if np.any(np.isnan(X)):
                 nan_percentage = (np.sum(np.isnan(X)) / X.size) * 100
                 if nan_percentage > 5:  # More than 5% NaN
                     raise ValueError(f"Critical: {nan_percentage:.2f}% of features are NaN")
-            
+
             if np.any(np.isnan(y)):
                 nan_percentage = (np.sum(np.isnan(y)) / y.size) * 100
                 if nan_percentage > 2:  # More than 2% NaN in targets
                     raise ValueError(f"Critical: {nan_percentage:.2f}% of targets are NaN")
-            
+
             # Check regime distribution
             unique_regimes = np.unique(regime_labels)
             regime_counts = np.bincount(regime_labels)
             min_regime_size = np.min(regime_counts)
-            
+
             if min_regime_size < self.config.min_samples_per_regime:
                 insufficient_regimes = np.sum(regime_counts < self.config.min_samples_per_regime)
                 if insufficient_regimes > len(unique_regimes) * 0.5:
                     raise ValueError(f"Critical: {insufficient_regimes}/{len(unique_regimes)} regimes have insufficient data")
-            
+
             self.logger.info("✅ Training input validation passed")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Training input validation failed: {e}")
             raise
-    
+
     def _apply_entry_timing_optimization(self,
                                       X: np.ndarray,
                                       y: np.ndarray,
@@ -2708,31 +2701,31 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         """Apply entry timing optimization for 0-0.4% range."""
         try:
             from .tactician_directional_optimization import EntryTimingTacticianOptimizer
-            
+
             # Initialize entry timing optimizer
             entry_timing_optimizer = EntryTimingTacticianOptimizer(self.config)
-            
+
             # Get entry timing range from config
             entry_timing_range = getattr(self.config, 'entry_timing_range', 0.004)  # 0-0.4% range
-            
+
             # Filter targets for entry timing range (0-0.4%)
             entry_timing_mask = np.abs(y) <= entry_timing_range
             X_entry_timing = X[entry_timing_mask]
             y_entry_timing = y[entry_timing_mask]
-            
+
             self.logger.info(f"📊 Entry timing filtering: {len(y_entry_timing)}/{len(y)} samples (≤{entry_timing_range:.1%} range)")
-            
+
             if len(y_entry_timing) < 100:  # Need minimum samples for optimization
                 self.logger.warning("⚠️ Insufficient entry timing samples for optimization")
                 return {}
-            
+
             # Apply entry timing optimization
             entry_timing_result = entry_timing_optimizer.optimize_tactician_entry_timing(
                 X=X_entry_timing, y=y_entry_timing, regime_labels=np.zeros(len(y_entry_timing)),
                 feature_names=feature_names, hmm_states=None,
                 max_trials=getattr(self.config, 'hpo_n_trials', 100) // 2  # Half trials for entry timing
             )
-            
+
             # Create entry timing optimization results
             entry_timing_results = {
                 'entry_timing_optimization': {
@@ -2753,20 +2746,20 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'composite_score': entry_timing_result.composite_score
                 }
             }
-            
+
             self.logger.info(f"✅ Entry timing optimization completed for 0-0.3% range")
             self.logger.info(f"   Early entry penalty: {entry_timing_result.directional_accuracy:.4f}")
             self.logger.info(f"   Late entry penalty: {entry_timing_result.adverse_movement_minimization:.4f}")
             self.logger.info(f"   Optimal entry reward: {entry_timing_result.directional_profit_efficiency:.4f}")
             self.logger.info(f"   Entry timing efficiency: {entry_timing_result.risk_adjusted_performance:.4f}")
             self.logger.info(f"   Composite score: {entry_timing_result.composite_score:.4f}")
-            
+
             return entry_timing_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Entry timing optimization failed: {e}")
             return {}
-    
+
     # ============================================================================
     # ENSEMBLE TRAINING REMOVED - Use Dedicated Module
     # ============================================================================
@@ -2782,14 +2775,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
     # For ensemble training, use:
     #   from .tactician_ensemble_training import TacticianEnsembleTrainingStep
     # ============================================================================
-    
+
     def _finalize_results(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
         """Finalize results with tactician-specific metadata and comprehensive reporting."""
         try:
             # Add tactician-specific post-processing if needed
             if 'error' not in results:
                 results = self._add_tactician_specific_metadata(results, analyst_signals)
-            
+
             # Add training metrics to results
             results['training_metrics'] = {
                 phase.value: {
@@ -2803,20 +2796,20 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 }
                 for phase, metrics in self.training_metrics.items()
             }
-            
+
             # Add vectorization information
             results['vectorization_info'] = {
                 'vectorization_enabled': self.enable_vectorization,
                 'vectorization_fallback_used': self.vectorization_fallback_used,
                 'vectorized_training_available': VECTORIZED_TRAINING_AVAILABLE
             }
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Results finalization failed: {e}")
             return results
-    
+
     def _create_error_result(self, error_message: str) -> Dict[str, Any]:
         """Create error result with comprehensive error information."""
         return {
@@ -2836,46 +2829,46 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'vectorized_training_available': VECTORIZED_TRAINING_AVAILABLE
             }
         }
-    
+
     def _generate_training_report(self, total_time: float) -> None:
         """Generate comprehensive training report with actionable insights."""
         try:
             self.logger.info("📊 " + "="*80)
             self.logger.info("📊 ENHANCED TACTICIAN TRAINING REPORT")
             self.logger.info("📊 " + "="*80)
-            
+
             # Overall statistics
             self.logger.info(f"📊 Total training time: {total_time:.2f}s")
             self.logger.info(f"📊 Vectorization enabled: {self.enable_vectorization}")
             self.logger.info(f"📊 Vectorization fallback used: {self.vectorization_fallback_used}")
-            
+
             # Calculate efficiency metrics
             total_warnings = sum(len(metrics.warnings_issued) for metrics in self.training_metrics.values())
             total_errors = sum(len(metrics.errors_encountered) for metrics in self.training_metrics.values())
             total_samples = sum(metrics.samples_processed for metrics in self.training_metrics.values())
             total_features = sum(metrics.features_count for metrics in self.training_metrics.values())
-            
+
             self.logger.info(f"📊 Total samples processed: {total_samples:,}")
             self.logger.info(f"📊 Total features: {total_features}")
             self.logger.info(f"📊 Total warnings: {total_warnings}")
             self.logger.info(f"📊 Total errors: {total_errors}")
-            
+
             # Performance efficiency
             if total_samples > 0:
                 samples_per_second = total_samples / total_time
                 self.logger.info(f"📊 Processing rate: {samples_per_second:,.0f} samples/second")
-            
+
             # Phase-by-phase breakdown with detailed metrics
             self.logger.info("📊 " + "-"*60)
             self.logger.info("📊 PHASE BREAKDOWN:")
             self.logger.info("📊 " + "-"*60)
-            
+
             for phase, metrics in self.training_metrics.items():
                 status = "✅" if metrics.success else "❌"
                 efficiency = f"({metrics.samples_processed/1000:.1f}k samples)" if metrics.samples_processed > 0 else ""
-                
+
                 self.logger.info(f"📊   {status} {phase.value.upper()}: {metrics.duration:.2f}s {efficiency}")
-                
+
                 # Detailed phase metrics
                 if metrics.samples_processed > 0:
                     self.logger.info(f"📊     └─ Samples: {metrics.samples_processed:,}")
@@ -2889,15 +2882,15 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     self.logger.info(f"📊     └─ Errors: {metrics.errors_encountered}")
                 if metrics.memory_usage_mb > 0:
                     self.logger.info(f"📊     └─ Memory: {metrics.memory_usage_mb:.1f} MB")
-                
+
                 if not metrics.success and metrics.error_message:
                     self.logger.info(f"📊     └─ ❌ Error: {metrics.error_message}")
-            
+
             # Data quality summary
             self.logger.info("📊 " + "-"*60)
             self.logger.info("📊 DATA QUALITY SUMMARY:")
             self.logger.info("📊 " + "-"*60)
-            
+
             # Analyze data validation results if available
             if TrainingPhase.DATA_VALIDATION in self.training_metrics:
                 data_phase = self.training_metrics[TrainingPhase.DATA_VALIDATION]
@@ -2905,7 +2898,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     self.logger.info("📊   ✅ Data validation passed")
                 else:
                     self.logger.info("📊   ❌ Data validation failed")
-            
+
             # Analyze feature preparation results if available
             if TrainingPhase.FEATURE_PREPARATION in self.training_metrics:
                 feature_phase = self.training_metrics[TrainingPhase.FEATURE_PREPARATION]
@@ -2913,12 +2906,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     self.logger.info("📊   ✅ Feature preparation completed")
                 else:
                     self.logger.info("📊   ❌ Feature preparation failed")
-            
+
             # Training method analysis
             self.logger.info("📊 " + "-"*60)
             self.logger.info("📊 TRAINING METHOD ANALYSIS:")
             self.logger.info("📊 " + "-"*60)
-            
+
             if self.enable_vectorization:
                 if self.vectorization_fallback_used:
                     self.logger.info("📊   ⚠️ Vectorization attempted but fallback used")
@@ -2928,25 +2921,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     self.logger.info("📊   🚀 Optimal performance achieved")
             else:
                 self.logger.info("📊   ℹ️ Standard training used (vectorization disabled)")
-            
+
             # Memory usage analysis
             current_memory = self._get_memory_usage()
             self.logger.info("📊 " + "-"*60)
             self.logger.info("📊 MEMORY USAGE:")
             self.logger.info("📊 " + "-"*60)
             self.logger.info(f"📊 Current memory usage: {current_memory:.1f} MB")
-            
+
             if current_memory > 1000:  # More than 1GB
                 self.logger.info("📊   ⚠️ High memory usage detected")
                 self.logger.info("📊   💡 Consider reducing batch size or using data streaming")
             elif current_memory < 100:  # Less than 100MB
                 self.logger.info("📊   ✅ Low memory usage - efficient processing")
-            
+
             # Recommendations
             self.logger.info("📊 " + "-"*60)
             self.logger.info("📊 RECOMMENDATIONS:")
             self.logger.info("📊 " + "-"*60)
-            
+
             if total_warnings > 5:
                 self.logger.info("📊   ⚠️ High warning count - review data quality")
             if total_errors > 0:
@@ -2955,22 +2948,22 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger.info("📊   🔧 Vectorization fallback used - investigate vectorization issues")
             if total_time > 3600:  # More than 1 hour
                 self.logger.info("📊   ⏱️ Long training time - consider optimizing hyperparameters")
-            
+
             # Success indicators
             if total_errors == 0 and total_warnings < 3:
                 self.logger.info("📊   ✅ Training completed successfully with minimal issues")
-            
+
             self.logger.info("📊 " + "="*80)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to generate training report: {e}")
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
-    
+
     def cleanup_resources(self) -> None:
         """Clean up hardware optimizers and other resources with graceful error handling."""
         try:
             tprint_info("🧹 Cleaning up resources...")
-            
+
             # Clean up M1 optimizers if they were initialized
             if hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available:
                 try:
@@ -2983,7 +2976,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     tprint_warning(f"⚠️ M1 optimizer cleanup failed: {e} (non-critical)")
             else:
                 tprint_debug("M1 optimizers not initialized, skipping cleanup")
-            
+
             # Clean up hardware resources if they exist
             if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
                 try:
@@ -2991,27 +2984,27 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     # Add specific cleanup if needed
                 except Exception as e:
                     tprint_warning(f"⚠️ M1 GPU manager cleanup warning: {e}")
-            
+
             if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
                 try:
                     tprint_debug("Cleaning up M1 memory optimizer...")
                     # Add specific cleanup if needed
                 except Exception as e:
                     tprint_warning(f"⚠️ M1 memory optimizer cleanup warning: {e}")
-            
+
             if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
                 try:
                     tprint_debug("Cleaning up M1 CPU optimizer...")
                     # Add specific cleanup if needed
                 except Exception as e:
                     tprint_warning(f"⚠️ M1 CPU optimizer cleanup warning: {e}")
-            
+
             tprint_success("✅ Resource cleanup completed")
-            
+
         except Exception as e:
             # Log but don't raise - cleanup failures should not crash the program
             tprint_warning(f"⚠️ Resource cleanup encountered errors: {e} (non-critical)")
-    
+
     def __del__(self):
         """Destructor to ensure cleanup on object deletion."""
         try:
@@ -3019,25 +3012,25 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except Exception:
             # Silently handle cleanup errors in destructor
             pass
-    
+
     def _add_tactician_specific_metadata(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray] = None) -> Dict[str, Any]:
         """
         Add tactician-specific metadata to results with enhanced reporting.
-        
+
         Args:
             results: Training results
             analyst_signals: Analyst green light signals for analysis
-            
+
         Returns:
             Enhanced results with tactician-specific metadata
         """
         try:
             tprint_debug("Adding tactician-specific metadata...")
-            
+
             # Add tactician-specific analysis
             if 'regime_analysis' in results:
                 regime_analysis = results['regime_analysis']
-                
+
                 # Calculate tactician-specific metrics with safe math operations
                 tactician_metrics = {
                     'total_regimes': len(regime_analysis.get('unique_regimes', [])),
@@ -3047,7 +3040,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'timeframe': self.config.timeframe,
                     'model_types': self.config.model_types
                 }
-                
+
                 # Add analyst signal analysis if available with safe calculations
                 if analyst_signals is not None:
                     try:
@@ -3060,39 +3053,39 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                         tprint_debug(f"Analyst signal analysis: {green_light_rate:.3f} green light rate")
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to analyze analyst signals: {e}")
-                
+
                 results['tactician_metrics'] = tactician_metrics
                 tprint_debug("✅ Tactician metrics added")
-            
+
             # Add model performance summary with enhanced error handling
             if 'evaluation_results' in results:
                 try:
                     evaluation_results = results['evaluation_results']
-                    
+
                     # Calculate best performing model per regime
                     best_models = {}
                     for regime, regime_metrics in evaluation_results.items():
                         if isinstance(regime_metrics, dict) and 'error' not in regime_metrics:
                             best_model = None
                             best_r2 = -np.inf
-                            
+
                             for model_name, metrics in regime_metrics.items():
                                 if isinstance(metrics, dict) and 'r2' in metrics:
                                     if metrics['r2'] > best_r2:
                                         best_r2 = metrics['r2']
                                         best_model = model_name
-                            
+
                             if best_model:
                                 best_models[regime] = {
                                     'model': best_model,
                                     'r2_score': best_r2
                                 }
-                    
+
                     results['best_models_per_regime'] = best_models
                     tprint_debug(f"✅ Best models per regime: {len(best_models)} regimes")
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to calculate best models per regime: {e}")
-            
+
             # Add timing-specific analysis
             timing_analysis = {
                 'base_timeframe': self.config.timeframe,
@@ -3102,18 +3095,17 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'utility_integration_status': self.utility_integration_status
             }
             results['timing_analysis'] = timing_analysis
-            
+
             # Add utility integration status to results
             results['utility_integration_status'] = self.utility_integration_status
-            
+
             tprint_success("✅ Tactician-specific metadata added successfully")
             return results
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to add tactician-specific metadata: {e}")
             tprint_error(f"❌ Traceback: {traceback.format_exc()}")
             return results
-
 
 # Enhanced convenience functions with better error handling
 def create_tactician_models_training_step_refactored(
@@ -3122,14 +3114,14 @@ def create_tactician_models_training_step_refactored(
 ) -> TacticianModelsTrainingStepRefactored:
     """
     Create enhanced Tactician models training step with comprehensive error handling.
-    
+
     Args:
         config: Per-regime training configuration
         enable_vectorization: Whether to enable vectorized training
-        
+
     Returns:
         Enhanced Tactician models training step
-        
+
     Raises:
         Exception: If initialization fails
     """
@@ -3138,7 +3130,6 @@ def create_tactician_models_training_step_refactored(
     except Exception as e:
         logger.error(f"❌ Failed to create tactician training step: {e}")
         raise
-
 
 def execute_tactician_models_training_refactored(
     X: np.ndarray,
@@ -3157,7 +3148,7 @@ def execute_tactician_models_training_refactored(
 ) -> Dict[str, Any]:
     """
     Execute enhanced Tactician models training step with comprehensive error handling.
-    
+
     Args:
         X: Input features
         y: Target values
@@ -3172,31 +3163,30 @@ def execute_tactician_models_training_refactored(
         hmm_model_outputs: HMM model outputs (predictions, probabilities, etc.)
         analyst_ensemble_outputs: Analyst ensemble model outputs
         enable_vectorization: Whether to enable vectorized training
-        
+
     Returns:
         Dictionary containing training results and metadata
-        
+
     Raises:
         Exception: If training fails
     """
     try:
         step = create_tactician_models_training_step_refactored(config, enable_vectorization)
         return step.execute(
-            X, y, regime_labels, feature_names, hmm_states, 
-            analyst_signals, analyst_model_outputs, hmm_regime_features, 
+            X, y, regime_labels, feature_names, hmm_states,
+            analyst_signals, analyst_model_outputs, hmm_regime_features,
             all_analyst_models_outputs, hmm_model_outputs, analyst_ensemble_outputs
         )
     except Exception as e:
         logger.error(f"❌ Failed to execute tactician training: {e}")
         raise
 
-
 # Enhanced example usage and comparison
 if __name__ == "__main__":
     # Example of how to use the enhanced version
     print("Enhanced Tactician Models Training Step")
     print("=" * 50)
-    
+
     # Create configuration with enhanced settings
     config = TacticianTrainingConfig(
         model_name="tactician_models",
@@ -3213,20 +3203,20 @@ if __name__ == "__main__":
         meta_model="ElasticNetCV",
         ensemble_name="tactician_ensemble"
     )
-    
+
     # Create enhanced training step
     try:
         training_step = create_tactician_models_training_step_refactored(config)
-        
+
         print(f"✅ Created enhanced tactician training step with {len(config.model_types)} model types")
         print(f"📊 HPO enabled: {config.enable_hpo}")
         print(f"💾 Save models: {config.save_models}")
         print(f"📁 Save path: {config.model_save_path}")
         print(f"⏰ Base timeframe: {config.timeframe}")
-        
+
         # The actual training would be called with:
         # results = training_step.execute(X, y, regime_labels, feature_names, hmm_states, analyst_signals, analyst_model_outputs)
-        
+
         print("\n🎯 Enhanced Tactician Module Features:")
         print("- Comprehensive error handling with detailed failure reporting")
         print("- Enhanced progress tracking with phase-based metrics")
@@ -3234,20 +3224,20 @@ if __name__ == "__main__":
         print("- Optimized vectorization with intelligent fallback")
         print("- Structured logging with performance monitoring")
         print("- Health monitoring throughout training process")
-        
+
         print("\n🔄 Integration with Analyst:")
         print("- Receives green light signals from Analyst")
         print("- Uses Analyst predictions as additional features")
         print("- Focuses on timing rather than trade decision")
         print("- Operates on higher frequency (1m vs 5m)")
-        
+
         print("\n📊 Enhanced Reporting Features:")
         print("- Phase-by-phase progress tracking")
         print("- Comprehensive training metrics")
         print("- Memory usage monitoring")
         print("- Vectorization status reporting")
         print("- Detailed error reporting with stack traces")
-        
+
     except Exception as e:
         print(f"❌ Failed to create enhanced tactician training step: {e}")
         print("This demonstrates the enhanced error handling capabilities")

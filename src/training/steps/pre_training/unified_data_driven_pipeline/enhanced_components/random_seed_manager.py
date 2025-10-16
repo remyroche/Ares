@@ -23,35 +23,34 @@ except ImportError:
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-
 class RandomSeedManager:
     """
     Comprehensive random seed management for reproducible results.
-    
+
     Manages seeds for all random number generators used in the pipeline
     including Python's random, NumPy, and other libraries.
     """
-    
+
     def __init__(self, base_seed: int = 42, config: Optional[Dict[str, Any]] = None):
         """Initialize the random seed manager."""
         self.base_seed = base_seed
         self.config = config or {}
         self.logger = logging.getLogger(__name__)
-        
+
         # Seed tracking
         self.seed_history = []
         self.current_seed = base_seed
         self.seed_offset = 0
-        
+
         # Configuration
         self.enable_reproducibility = self.config.get('enable_reproducibility', True)
         self.seed_increment = self.config.get('seed_increment', 1)
         self.track_seed_usage = self.config.get('track_seed_usage', True)
-        
+
         # Initialize with base seed
         if self.enable_reproducibility:
             self.set_global_seed(base_seed)
-        
+
         tprint_success(f"✅ RandomSeedManager initialized with base seed: {base_seed}")
 
     def set_global_seed(self, seed: int) -> None:
@@ -59,24 +58,24 @@ class RandomSeedManager:
         if not self.enable_reproducibility:
             tprint_warning("⚠️ Reproducibility disabled, skipping seed setting")
             return
-        
+
         try:
             # Set Python's random seed
             random.seed(seed)
-            
+
             # Set NumPy's random seed
             np.random.seed(seed)
-            
+
             # Set pandas random seed (if available)
             if hasattr(pd, 'set_option'):
                 pd.set_option('mode.chained_assignment', None)
-            
+
             # Set environment variable for other libraries
             os.environ['PYTHONHASHSEED'] = str(seed)
-            
+
             # Update current seed
             self.current_seed = seed
-            
+
             # Track seed usage
             if self.track_seed_usage:
                 self.seed_history.append({
@@ -84,9 +83,9 @@ class RandomSeedManager:
                     'operation': 'global_set',
                     'timestamp': pd.Timestamp.now()
                 })
-            
+
             tprint_success(f"✅ Global seed set to: {seed}")
-            
+
         except Exception as e:
             tprint_error(f"❌ Error setting global seed: {e}")
 
@@ -94,11 +93,11 @@ class RandomSeedManager:
         """Get the next seed in sequence for a specific operation."""
         if not self.enable_reproducibility:
             return None
-        
+
         # Calculate next seed
         next_seed = self.base_seed + self.seed_offset
         self.seed_offset += self.seed_increment
-        
+
         # Track seed usage
         if self.track_seed_usage:
             self.seed_history.append({
@@ -106,7 +105,7 @@ class RandomSeedManager:
                 'operation': operation,
                 'timestamp': pd.Timestamp.now()
             })
-        
+
         tprint_debug(f"🔢 Generated seed {next_seed} for operation: {operation}")
         return next_seed
 
@@ -114,15 +113,15 @@ class RandomSeedManager:
         """Set seed for a specific operation."""
         if not self.enable_reproducibility:
             return None
-        
+
         if seed is None:
             seed = self.get_next_seed(operation)
-        
+
         try:
             # Set seeds for the operation
             random.seed(seed)
             np.random.seed(seed)
-            
+
             # Track seed usage
             if self.track_seed_usage:
                 self.seed_history.append({
@@ -130,10 +129,10 @@ class RandomSeedManager:
                     'operation': operation,
                     'timestamp': pd.Timestamp.now()
                 })
-            
+
             tprint_debug(f"🔢 Set seed {seed} for operation: {operation}")
             return seed
-            
+
         except Exception as e:
             tprint_error(f"❌ Error setting seed for operation {operation}: {e}")
             return None
@@ -142,40 +141,40 @@ class RandomSeedManager:
         """Context manager for setting seed for a specific operation."""
         if not self.enable_reproducibility:
             return self._noop_context()
-        
+
         if seed is None:
             seed = self.get_next_seed(operation)
-        
+
         return self._SeedContext(operation, seed)
 
     class _SeedContext:
         """Context manager for temporary seed setting."""
-        
+
         def __init__(self, operation: str, seed: int):
             self.operation = operation
             self.seed = seed
             self.original_random_state = None
             self.original_numpy_state = None
-        
+
         def __enter__(self):
             # Save current random states
             self.original_random_state = random.getstate()
             self.original_numpy_state = np.random.get_state()
-            
+
             # Set new seed
             random.seed(self.seed)
             np.random.seed(self.seed)
-            
+
             tprint_debug(f"🔢 Entered seed context: {self.operation} (seed: {self.seed})")
             return self
-        
+
         def __exit__(self, exc_type, exc_val, exc_tb):
             # Restore original random states
             if self.original_random_state:
                 random.setstate(self.original_random_state)
             if self.original_numpy_state:
                 np.random.set_state(self.original_numpy_state)
-            
+
             tprint_debug(f"🔢 Exited seed context: {self.operation}")
 
     def _noop_context(self):
@@ -184,10 +183,10 @@ class RandomSeedManager:
 
     class _NoOpContext:
         """No-op context manager."""
-        
+
         def __enter__(self):
             return self
-        
+
         def __exit__(self, exc_type, exc_val, exc_tb):
             pass
 
@@ -195,10 +194,10 @@ class RandomSeedManager:
         """Set seed for specific libraries."""
         if not self.enable_reproducibility:
             return None
-        
+
         if seed is None:
             seed = self.get_next_seed(f"{library}_seed")
-        
+
         try:
             if library.lower() == 'numpy':
                 np.random.seed(seed)
@@ -228,10 +227,10 @@ class RandomSeedManager:
             else:
                 tprint_warning(f"⚠️ Unknown library: {library}")
                 return None
-            
+
             tprint_success(f"✅ Set {library} seed to: {seed}")
             return seed
-            
+
         except Exception as e:
             tprint_error(f"❌ Error setting {library} seed: {e}")
             return None
@@ -247,15 +246,15 @@ class RandomSeedManager:
             'seed_usage_by_operation': {},
             'recent_operations': []
         }
-        
+
         # Count seeds by operation
         for entry in self.seed_history:
             operation = entry['operation']
             summary['seed_usage_by_operation'][operation] = summary['seed_usage_by_operation'].get(operation, 0) + 1
-        
+
         # Get recent operations (last 10)
         summary['recent_operations'] = self.seed_history[-10:] if self.seed_history else []
-        
+
         return summary
 
     def reset_to_base_seed(self) -> None:
@@ -292,8 +291,8 @@ class RandomSeedManager:
         self.current_seed = state.get('current_seed', self.base_seed)
         self.seed_offset = state.get('seed_offset', 0)
         self.seed_history = state.get('seed_history', [])
-        
+
         # Set the current seed
         self.set_global_seed(self.current_seed)
-        
+
         tprint_success("✅ Seed state imported successfully")

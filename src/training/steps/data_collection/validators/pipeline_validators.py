@@ -4,7 +4,6 @@ from src.utils.tprint import tprint
 import numpy as np
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
 
-
 """
 Comprehensive Pipeline Validators for Data Collection
 
@@ -56,12 +55,12 @@ class ValidationReport:
 
 class DataCollectionValidator:
     """Comprehensive validator for data collection pipeline steps."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.validation_reports: List[ValidationReport] = []
-        
+
     @monitor_step_execution(step_name="data_collection_validation")
     @ensure_data_integrity
     async def validate_step1_data_collection(
@@ -74,7 +73,7 @@ class DataCollectionValidator:
         """Validate Step 1: Data Collection."""
         start_time = time.time()
         step_name = "step1_data_collection"
-        
+
         try:
             self.logger.info('🔍 Starting Step 1 data collection validation...')
             self.logger.info(f'📊 Validation parameters:')
@@ -82,7 +81,7 @@ class DataCollectionValidator:
             self.logger.info(f'   📊 Exchange: {exchange}')
             self.logger.info(f'   📁 Data directory: {data_dir}')
             self.logger.info(f'   📋 Additional kwargs: {list(kwargs.keys()) if kwargs else "None"}')
-            
+
             # Check if data directory exists
             self.logger.info('🔍 1. Checking data directory existence...')
             data_path = Path(data_dir)
@@ -98,9 +97,9 @@ class DataCollectionValidator:
                     warnings=[],
                     errors=[f"Data directory not found: {data_dir}"]
                 )
-            
+
             self.logger.info('✅ Data directory exists')
-            
+
             # Check for required data files
             self.logger.info('🔍 2. Checking for required data files...')
             required_files = [
@@ -108,12 +107,12 @@ class DataCollectionValidator:
                 f"klines_{exchange}_{symbol}_1m.parquet",
                 f"volume_{exchange}_{symbol}_consolidated.parquet"
             ]
-            
+
             self.logger.info(f'📋 Required files: {required_files}')
-            
+
             missing_files = []
             existing_files = []
-            
+
             for file_name in required_files:
                 file_path = data_path / file_name
                 if file_path.exists():
@@ -122,31 +121,31 @@ class DataCollectionValidator:
                 else:
                     missing_files.append(file_name)
                     self.logger.warning(f'⚠️ Missing: {file_name}')
-            
+
             self.logger.info(f'📊 File check summary:')
             self.logger.info(f'   📈 Existing files: {len(existing_files)}/{len(required_files)}')
             self.logger.info(f'   ⚠️ Missing files: {len(missing_files)}')
-            
+
             # Validate file sizes and basic structure
             self.logger.info('🔍 3. Validating file sizes and structure...')
             file_validations = {}
             warnings = []
             errors = []
-            
+
             for i, file_path in enumerate(existing_files, 1):
                 self.logger.info(f'📊 {i}. Validating file: {Path(file_path).name}')
-                
+
                 try:
                     file_size = Path(file_path).stat().st_size
                     self.logger.info(f'   📊 File size: {file_size:,} bytes ({file_size/1024:.1f} KB)')
-                    
+
                     if file_size == 0:
                         self.logger.error(f'   ❌ Empty file: {file_path}')
                         errors.append(f"Empty file: {file_path}")
                     elif file_size < 1024:  # Less than 1KB
                         self.logger.warning(f'   ⚠️ Very small file: {file_path} ({file_size} bytes)')
                         warnings.append(f"Very small file: {file_path} ({file_size} bytes)")
-                    
+
                     # Try to read the file to check structure
                     if file_path.endswith('.parquet'):
                         self.logger.info(f'   🔍 Reading parquet file structure...')
@@ -158,12 +157,12 @@ class DataCollectionValidator:
                                 "size_bytes": file_size,
                                 "readable": True
                             }
-                            
+
                             self.logger.info(f'   📊 DataFrame info:')
                             self.logger.info(f'      📈 Rows: {len(df):,}')
                             self.logger.info(f'      📊 Columns: {len(df.columns)}')
                             self.logger.info(f'      📋 Column names: {list(df.columns)}')
-                            
+
                             # Basic data quality checks
                             if len(df) == 0:
                                 self.logger.error(f'   ❌ Empty DataFrame in {file_path}')
@@ -173,7 +172,7 @@ class DataCollectionValidator:
                                 warnings.append(f"Very few rows in {file_path}: {len(df)}")
                             else:
                                 self.logger.info(f'   ✅ DataFrame has sufficient data: {len(df):,} rows')
-                                
+
                         except Exception as e:
                             self.logger.error(f'   ❌ Cannot read parquet file {file_path}: {e}')
                             errors.append(f"Cannot read parquet file {file_path}: {e}")
@@ -181,11 +180,11 @@ class DataCollectionValidator:
                                 "readable": False,
                                 "error": str(e)
                             }
-                            
+
                 except Exception as e:
                     self.logger.error(f'   ❌ Cannot access file {file_path}: {e}')
                     errors.append(f"Cannot access file {file_path}: {e}")
-            
+
             # Determine validation result
             self.logger.info('🔍 4. Determining validation result...')
             if errors:
@@ -205,7 +204,7 @@ class DataCollectionValidator:
                 result = ValidationResult.PASSED
                 message = "Data collection validation passed successfully"
                 self.logger.info('✅ Validation PASSED: All checks successful')
-            
+
             execution_time = time.time() - start_time
             self.logger.info(f'📊 Validation summary:')
             self.logger.info(f'   📊 Result: {result.value}')
@@ -213,7 +212,7 @@ class DataCollectionValidator:
             self.logger.info(f'   📊 Files found: {len(existing_files)}/{len(required_files)}')
             self.logger.info(f'   📊 Warnings: {len(warnings)}')
             self.logger.info(f'   📊 Errors: {len(errors)}')
-            
+
             report = ValidationReport(
                 step_name = step_name,
                 result = result,
@@ -233,10 +232,10 @@ class DataCollectionValidator:
                 warnings = warnings,
                 errors = errors
             )
-            
+
             self.validation_reports.append(report)
             return report
-            
+
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
@@ -249,7 +248,7 @@ class DataCollectionValidator:
                 warnings=[],
                 errors=[str(e)]
             )
-    
+
     @monitor_step_execution(step_name="data_converter_validation")
     @validate_data_quality(
         validation_level = ValidationLevel.WARNING,
@@ -270,14 +269,14 @@ class DataCollectionValidator:
         """Validate Step 1.5: Data Converter."""
         start_time = time.time()
         step_name = "step1_5_data_converter"
-        
+
         try:
             self.logger.info(f"🔍 Validating {step_name} for {symbol} on {exchange}")
-            
+
             # Check for converted data files
             data_path = Path(data_dir)
             converted_file = data_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
-            
+
             if not converted_file.exists():
                 return ValidationReport(
                     step_name = step_name,
@@ -289,58 +288,58 @@ class DataCollectionValidator:
                     warnings=[],
                     errors=[f"Converted file not found: {converted_file}"]
                 )
-            
+
             # Validate converted data structure and quality
             try:
                 df = standardized_parquet_handler.read_parquet_standardized(converted_file)
-                
+
                 # Check required columns
                 required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                 missing_columns = set(required_columns) - set(df.columns)
-                
+
                 warnings = []
                 errors = []
-                
+
                 if missing_columns:
                     errors.append(f"Missing required columns: {missing_columns}")
-                
+
                 # Check data types
                 type_issues = []
                 if 'timestamp' in df.columns:
                     if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
                         type_issues.append("timestamp column should be datetime type")
-                
+
                 numeric_columns = ['open', 'high', 'low', 'close', 'volume']
                 for col in numeric_columns:
                     if col in df.columns:
                         if not pd.api.types.is_numeric_dtype(df[col]):
                             type_issues.append(f"{col} column should be numeric type")
-                
+
                 if type_issues:
                     warnings.extend(type_issues)
-                
+
                 # Check OHLC integrity
                 ohlc_issues = []
                 if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
                     invalid_high = df['high'] < df[['open', 'close']].max(axis = 1)
                     if invalid_high.any():
                         ohlc_issues.append(f"Found {invalid_high.sum()} rows where high < max(open, close)")
-                    
+
                     invalid_low = df['low'] > df[['open', 'close']].min(axis = 1)
                     if invalid_low.any():
                         ohlc_issues.append(f"Found {invalid_low.sum()} rows where low > min(open, close)")
-                    
+
                     invalid_hl = df['high'] < df['low']
                     if invalid_hl.any():
                         ohlc_issues.append(f"Found {invalid_hl.sum()} rows where high < low")
-                
+
                 if ohlc_issues:
                     errors.extend(ohlc_issues)
-                
+
                 # Check for duplicates
                 if df.duplicated().any():
                     warnings.append(f"Found {df.duplicated().sum()} duplicate rows")
-                
+
                 # Check timestamp continuity
                 if 'timestamp' in df.columns:
                     df_sorted = df.sort_values('timestamp')
@@ -350,13 +349,13 @@ class DataCollectionValidator:
                         irregular_intervals = time_diffs[time_diffs != expected_interval]
                         if len(irregular_intervals) > 0:
                             warnings.append(f"Found {len(irregular_intervals)} irregular time intervals")
-                
+
                 # Check for missing values
                 null_counts = df.isnull().sum()
                 high_null_cols = null_counts[null_counts > len(df) * 0.05]  # More than 5% nulls
                 if not high_null_cols.empty:
                     warnings.append(f"Columns with high null ratios: {high_null_cols.to_dict()}")
-                
+
                 # Determine result
                 if errors:
                     result = ValidationResult.FAILED
@@ -367,7 +366,7 @@ class DataCollectionValidator:
                 else:
                     result = ValidationResult.PASSED
                     message = "Data converter validation passed successfully"
-                
+
                 report = ValidationReport(
                     step_name = step_name,
                     result = result,
@@ -392,10 +391,10 @@ class DataCollectionValidator:
                     warnings = warnings,
                     errors = errors
                 )
-                
+
                 self.validation_reports.append(report)
                 return report
-                
+
             except Exception as e:
                 return ValidationReport(
                     step_name = step_name,
@@ -407,7 +406,7 @@ class DataCollectionValidator:
                     warnings=[],
                     errors=[str(e)]
                 )
-        
+
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
@@ -420,7 +419,7 @@ class DataCollectionValidator:
                 warnings=[],
                 errors=[str(e)]
             )
-    
+
     @monitor_step_execution(step_name="data_reading_validation")
     @validate_klines_data_quality(
         required_columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'],
@@ -436,47 +435,47 @@ class DataCollectionValidator:
         """Validate Step 2: Data Reading."""
         start_time = time.time()
         step_name = "step2_data_reading"
-        
+
         try:
             self.logger.info(f"🔍 Validating {step_name} for {symbol} on {exchange}")
-            
+
             # Check for processed data files
             data_path = Path(data_dir)
             processed_files = [
                 f"aggtrades_{exchange}_{symbol}_consolidated.parquet",
                 f"klines_{exchange}_{symbol}_1m.parquet"
             ]
-            
+
             validation_results = {}
             all_warnings = []
             all_errors = []
-            
+
             for file_name in processed_files:
                 file_path = data_path / file_name
-                
+
                 if not file_path.exists():
                     all_errors.append(f"Required file not found: {file_name}")
                     continue
-                
+
                 try:
                     df = standardized_parquet_handler.read_parquet_standardized(file_path)
-                    
+
                     # Basic structure validation
                     if len(df) == 0:
                         all_errors.append(f"Empty file: {file_name}")
                         continue
-                    
+
                     # Check for required columns
                     required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
                     missing_columns = set(required_columns) - set(df.columns)
-                    
+
                     if missing_columns:
                         all_errors.append(f"Missing columns in {file_name}: {missing_columns}")
                         continue
-                    
+
                     # Data quality checks
                     quality_issues = []
-                    
+
                     # Check for negative prices
                     price_columns = ['open', 'high', 'low', 'close']
                     for col in price_columns:
@@ -484,33 +483,33 @@ class DataCollectionValidator:
                             negative_prices = (df[col] <= 0).sum()
                             if negative_prices > 0:
                                 quality_issues.append(f"Found {negative_prices} negative/zero prices in {col}")
-                    
+
                     # Check for negative volume
                     if 'volume' in df.columns:
                         negative_volume = (df['volume'] < 0).sum()
                         if negative_volume > 0:
                             quality_issues.append(f"Found {negative_volume} negative volumes")
-                    
+
                     # Check for extreme price movements
                     if all(col in df.columns for col in ['open', 'close']):
                         price_changes = abs(df['close'] - df['open']) / df['open']
                         extreme_moves = (price_changes > 0.5).sum()  # More than 50% change
                         if extreme_moves > 0:
                             quality_issues.append(f"Found {extreme_moves} extreme price movements (>50%)")
-                    
+
                     validation_results[file_name] = {
                         "rows": len(df),
                         "columns": list(df.columns),
                         "quality_issues": quality_issues,
                         "file_size": file_path.stat().st_size
                     }
-                    
+
                     if quality_issues:
                         all_warnings.extend([f"{file_name}: {issue}" for issue in quality_issues])
-                
+
                 except Exception as e:
                     all_errors.append(f"Cannot read {file_name}: {e}")
-            
+
             # Determine overall result
             if all_errors:
                 result = ValidationResult.FAILED
@@ -521,7 +520,7 @@ class DataCollectionValidator:
             else:
                 result = ValidationResult.PASSED
                 message = "Data reading validation passed successfully"
-            
+
             report = ValidationReport(
                 step_name = step_name,
                 result = result,
@@ -538,10 +537,10 @@ class DataCollectionValidator:
                 warnings = all_warnings,
                 errors = all_errors
             )
-            
+
             self.validation_reports.append(report)
             return report
-            
+
         except Exception as e:
             self.logger.exception(f"Error validating {step_name}: {e}")
             return ValidationReport(
@@ -554,20 +553,20 @@ class DataCollectionValidator:
                 warnings=[],
                 errors=[str(e)]
             )
-    
+
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validation reports."""
         if not self.validation_reports:
             return {"message": "No validation reports available"}
-        
+
         total_reports = len(self.validation_reports)
         passed = sum(1 for r in self.validation_reports if r.result == ValidationResult.PASSED)
         failed = sum(1 for r in self.validation_reports if r.result == ValidationResult.FAILED)
         warnings = sum(1 for r in self.validation_reports if r.result == ValidationResult.WARNING)
-        
+
         total_warnings = sum(len(r.warnings) for r in self.validation_reports)
         total_errors = sum(len(r.errors) for r in self.validation_reports)
-        
+
         return {
             "total_reports": total_reports,
             "passed": passed,
@@ -588,11 +587,11 @@ class DataCollectionValidator:
                 for r in self.validation_reports
             ]
         }
-    
+
     def print_validation_report(self) -> None:
         """Print a formatted validation report."""
         summary = self.get_validation_summary()
-        
+
         tprint("\n" + "="*80)
         tprint("📊 DATA COLLECTION PIPELINE VALIDATION REPORT")
         tprint("="*80)
@@ -604,7 +603,7 @@ class DataCollectionValidator:
         tprint(f"Total Warnings: {summary['total_warnings']}")
         tprint(f"Total Errors: {summary['total_errors']}")
         tprint("="*80)
-        
+
         for report in self.validation_reports:
             status_icon = {
                 ValidationResult.PASSED: "✅",
@@ -612,32 +611,32 @@ class DataCollectionValidator:
                 ValidationResult.WARNING: "⚠️",
                 ValidationResult.SKIPPED: "⏭️"
             }[report.result]
-            
+
             tprint(f"\n{status_icon} {report.step_name}")
             tprint(f"   Result: {report.result.value}")
             tprint(f"   Message: {report.message}")
             tprint(f"   Execution Time: {report.execution_time:.3f}s")
-            
+
             if report.warnings:
                 tprint(f"   Warnings ({len(report.warnings)}):")
                 for warning in report.warnings:
                     tprint(f"     • {warning}")
-            
+
             if report.errors:
                 tprint(f"   Errors ({len(report.errors)}):")
                 for error in report.errors:
                     tprint(f"     • {error}")
-        
+
         tprint("="*80)
 
 class PipelineStepValidator:
     """Validator for individual pipeline steps with comprehensive checks."""
-    
+
     def __init__(self, step_name: str, config: Dict[str, Any]):
         self.step_name = step_name
         self.config = config
         self.logger = logging.getLogger(f"{__name__}.{step_name}")
-    
+
     @monitor_step_execution(step_name="pipeline_step_validation")
     async def validate_step_prerequisites(
         self,
@@ -648,19 +647,19 @@ class PipelineStepValidator:
     ) -> ValidationReport:
         """Validate prerequisites for a pipeline step."""
         start_time = time.time()
-        
+
         try:
             # Check if previous steps have been completed
             # This would be implemented based on the specific step requirements
             prerequisites_met = await self._check_prerequisites(symbol, exchange, data_dir)
-            
+
             if prerequisites_met:
                 result = ValidationResult.PASSED
                 message = f"Prerequisites validated for {self.step_name}"
             else:
                 result = ValidationResult.FAILED
                 message = f"Prerequisites not met for {self.step_name}"
-            
+
             return ValidationReport(
                 step_name = f"{self.step_name}_prerequisites",
                 result = result,
@@ -671,7 +670,7 @@ class PipelineStepValidator:
                 warnings=[],
                 errors=[]
             )
-            
+
         except Exception as e:
             self.logger.exception(f"Error validating prerequisites for {self.step_name}: {e}")
             return ValidationReport(
@@ -684,7 +683,7 @@ class PipelineStepValidator:
                 warnings=[],
                 errors=[str(e)]
             )
-    
+
     async def _check_prerequisites(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Check if prerequisites are met for the step."""
         # This would be implemented based on specific step requirements
@@ -694,7 +693,7 @@ class PipelineStepValidator:
 # Export main classes
 __all__ = [
     'ValidationResult',
-    'ValidationReport', 
+    'ValidationReport',
     'DataCollectionValidator',
     'PipelineStepValidator'
 ]

@@ -9,14 +9,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-
 def _safe_array(data: np.ndarray) -> np.ndarray:
     """Convert input to a 2D numpy float array."""
     array = np.asarray(data, dtype=float)
     if array.ndim == 1:
         array = array.reshape(-1, 1)
     return array
-
 
 def filter_embedding_features(
     parent_features: np.ndarray,

@@ -21,7 +21,7 @@ Usage:
         get_batch_matrix_processor,
         get_enhanced_matrix_operations
     )
-    
+
     # Get unified operations instance
 """
 
@@ -127,44 +127,44 @@ try:
         correlation_matrix_gpu,
         eigendecomposition_gpu,
         svd_gpu,
-        
+
         # Vectorized operations
         optimize_dataframe,
         vectorized_rolling_features,
         matrix_correlation_analysis,
         parallel_feature_engineering,
-        
+
         # Batch operations
         batch_matrix_multiply,
         batch_feature_transformation,
         batch_correlation_analysis,
-        
+
         # Sparse matrix operations
         sparse_matrix_multiply,
         sparse_svd,
         sparse_eigen,
         create_sparse_matrix,
         sparse_solve,
-        
+
         # Pipeline operations
         create_ml_pipeline,
         execute_ml_pipeline,
         optimize_pipeline_config,
         get_pipeline_executor,
-        
+
         # Optimization utilities
         optimize_batch_size,
         record_batch_performance,
         get_batch_optimization_stats,
-        
+
         # Backwards compatibility
         m1_matrix_multiply,
-        
+
         # Safe operations
         safe_matrix_operations,
         validate_matrix_properties,
         optimize_matrix_computations,
-        
+
         # Trading indicators
         compute_trading_indicators,
         compute_moving_averages,
@@ -174,13 +174,13 @@ try:
         compute_trend_indicators,
         compute_oscillator_indicators,
         compute_pattern_indicators,
-        
+
         # Hardware optimization
         get_hardware_performance_report,
         optimize_matrix_operation_with_hardware,
         cleanup_hardware_resources,
         get_processing_performance_stats,
-        
+
     )
     CONVENIENCE_FUNCTIONS_AVAILABLE = True
 except ImportError as e:
@@ -384,7 +384,7 @@ if VECTORIZED_CORE_AVAILABLE:
         "compute_trend_indicators",
         "compute_oscillator_indicators",
         "compute_pattern_indicators",
-        
+
         # Hardware optimization
         "get_hardware_performance_report",
         "optimize_matrix_operation_with_hardware",

@@ -32,11 +32,11 @@ class PerformanceMetrics:
 
 class PerformanceMonitor:
     """Performance monitoring and profiling utility."""
-    
+
     def __init__(self, max_history: int = 1000):
         """
         Initialize performance monitor.
-        
+
         Args:
             max_history: Maximum number of metrics to keep in history
         """
@@ -52,12 +52,12 @@ class PerformanceMonitor:
             'success_count': 0
         })
         self._lock = threading.Lock()
-    
+
     def record_metrics(self, metrics: PerformanceMetrics) -> None:
         """Record performance metrics."""
         with self._lock:
             self.metrics_history.append(metrics)
-            
+
             # Update function statistics
             stats = self.function_stats[metrics.function_name]
             stats['call_count'] += 1
@@ -65,44 +65,44 @@ class PerformanceMonitor:
             stats['min_time'] = min(stats['min_time'], metrics.execution_time)
             stats['max_time'] = max(stats['max_time'], metrics.execution_time)
             stats['avg_time'] = stats['total_time'] / stats['call_count']
-            
+
             if metrics.success:
                 stats['success_count'] += 1
             else:
                 stats['error_count'] += 1
-    
+
     def get_function_stats(self, function_name: Optional[str] = None) -> Dict[str, Any]:
         """Get performance statistics for a function or all functions."""
         with self._lock:
             if function_name:
                 return self.function_stats.get(function_name, {})
             return dict(self.function_stats)
-    
+
     def get_recent_metrics(self, count: int = 100) -> List[PerformanceMetrics]:
         """Get recent performance metrics."""
         with self._lock:
             return list(self.metrics_history)[-count:]
-    
+
     def clear_history(self) -> None:
         """Clear performance history."""
         with self._lock:
             self.metrics_history.clear()
             self.function_stats.clear()
-    
+
     def get_summary(self) -> Dict[str, Any]:
         """Get performance summary."""
         with self._lock:
             if not self.metrics_history:
                 return {}
-            
+
             recent_metrics = list(self.metrics_history)
             total_calls = len(recent_metrics)
             successful_calls = sum(1 for m in recent_metrics if m.success)
-            
+
             execution_times = [m.execution_time for m in recent_metrics]
             memory_usage = [m.memory_usage for m in recent_metrics]
             cpu_usage = [m.cpu_usage for m in recent_metrics]
-            
+
             return {
                 'total_calls': total_calls,
                 'successful_calls': successful_calls,
@@ -150,31 +150,31 @@ def get_cpu_usage() -> float:
 def timer(name: str = "operation") -> Generator[Dict[str, Any], None, None]:
     """
     Context manager for timing operations.
-    
+
     Args:
         name: Name of the operation being timed
-        
+
     Yields:
         Dictionary with timing information
     """
     start_time = time.time()
     start_memory = get_memory_usage()
     start_cpu = get_cpu_usage()
-    
+
     timing_info = {
         'name': name,
         'start_time': start_time,
         'start_memory': start_memory,
         'start_cpu': start_cpu
     }
-    
+
     try:
         yield timing_info
     finally:
         end_time = time.time()
         end_memory = get_memory_usage()
         end_cpu = get_cpu_usage()
-        
+
         timing_info.update({
             'end_time': end_time,
             'end_memory': end_memory,
@@ -183,18 +183,18 @@ def timer(name: str = "operation") -> Generator[Dict[str, Any], None, None]:
             'memory_delta': end_memory - start_memory,
             'cpu_delta': end_cpu - start_cpu
         })
-        
+
         logger.debug(f"Operation '{name}' took {timing_info['execution_time']:.4f}s")
 
-def profile_function(monitor: Optional[PerformanceMonitor] = None, 
+def profile_function(monitor: Optional[PerformanceMonitor] = None,
                     log_result: bool = False) -> Callable:
     """
     Decorator to profile function performance.
-    
+
     Args:
         monitor: Performance monitor instance (uses global if None)
         log_result: Whether to log the result
-        
+
     Returns:
         Decorated function
     """
@@ -205,11 +205,11 @@ def profile_function(monitor: Optional[PerformanceMonitor] = None,
             start_time = time.time()
             start_memory = get_memory_usage()
             start_cpu = get_cpu_usage()
-            
+
             success = True
             error_message = None
             result = None
-            
+
             try:
                 result = func(*args, **kwargs)
                 if log_result:
@@ -223,7 +223,7 @@ def profile_function(monitor: Optional[PerformanceMonitor] = None,
                 end_time = time.time()
                 end_memory = get_memory_usage()
                 end_cpu = get_cpu_usage()
-                
+
                 metrics = PerformanceMetrics(
                     function_name=func.__name__,
                     execution_time=end_time - start_time,
@@ -235,25 +235,25 @@ def profile_function(monitor: Optional[PerformanceMonitor] = None,
                     success=success,
                     error_message=error_message
                 )
-                
+
                 perf_monitor.record_metrics(metrics)
-        
+
         return wrapper
     return decorator
 
 class MemoryProfiler:
     """Memory usage profiler."""
-    
+
     def __init__(self):
         self.snapshots: List[Dict[str, Any]] = []
-    
+
     def take_snapshot(self, name: str) -> Dict[str, Any]:
         """Take a memory snapshot."""
         try:
             process = psutil.Process()
             memory_info = process.memory_info()
             memory_percent = process.memory_percent()
-            
+
             snapshot = {
                 'name': name,
                 'timestamp': time.time(),
@@ -263,24 +263,24 @@ class MemoryProfiler:
                 'rss_mb': memory_info.rss / 1024 / 1024,
                 'vms_mb': memory_info.vms / 1024 / 1024
             }
-            
+
             self.snapshots.append(snapshot)
             return snapshot
-            
+
         except Exception as e:
             logger.error(f"Failed to take memory snapshot: {e}")
             return {}
-    
+
     def get_memory_growth(self) -> List[Dict[str, Any]]:
         """Get memory growth between snapshots."""
         if len(self.snapshots) < 2:
             return []
-        
+
         growth = []
         for i in range(1, len(self.snapshots)):
             prev = self.snapshots[i-1]
             curr = self.snapshots[i]
-            
+
             growth.append({
                 'from': prev['name'],
                 'to': curr['name'],
@@ -290,20 +290,20 @@ class MemoryProfiler:
                 'vms_growth_mb': (curr['vms'] - prev['vms']) / 1024 / 1024,
                 'time_delta': curr['timestamp'] - prev['timestamp']
             })
-        
+
         return growth
-    
+
     def clear_snapshots(self) -> None:
         """Clear all snapshots."""
         self.snapshots.clear()
 
 class SystemMonitor:
     """System resource monitoring."""
-    
+
     def __init__(self, interval: float = 1.0):
         """
         Initialize system monitor.
-        
+
         Args:
             interval: Monitoring interval in seconds
         """
@@ -312,54 +312,54 @@ class SystemMonitor:
         self.monitor_thread: Optional[threading.Thread] = None
         self.metrics: List[Dict[str, Any]] = []
         self._stop_event = threading.Event()
-    
+
     def start_monitoring(self) -> None:
         """Start system monitoring."""
         if self.monitoring:
             return
-        
+
         self.monitoring = True
         self._stop_event.clear()
         self.monitor_thread = threading.Thread(target=self._monitor_loop)
         self.monitor_thread.start()
         logger.info("System monitoring started")
-    
+
     def stop_monitoring(self) -> None:
         """Stop system monitoring."""
         if not self.monitoring:
             return
-        
+
         self.monitoring = False
         self._stop_event.set()
-        
+
         if self.monitor_thread:
             self.monitor_thread.join()
-        
+
         logger.info("System monitoring stopped")
-    
+
     def _monitor_loop(self) -> None:
         """Main monitoring loop."""
         while not self._stop_event.is_set():
             try:
                 metrics = self._collect_metrics()
                 self.metrics.append(metrics)
-                
+
                 # Keep only recent metrics (last 1000)
                 if len(self.metrics) > 1000:
                     self.metrics = self.metrics[-1000:]
-                
+
             except Exception as e:
                 logger.error(f"Error in monitoring loop: {e}")
-            
+
             self._stop_event.wait(self.interval)
-    
+
     def _collect_metrics(self) -> Dict[str, Any]:
         """Collect system metrics."""
         try:
             cpu_percent = psutil.cpu_percent()
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
-            
+
             return {
                 'timestamp': time.time(),
                 'cpu_percent': cpu_percent,
@@ -380,19 +380,19 @@ class SystemMonitor:
         except Exception as e:
             logger.error(f"Failed to collect system metrics: {e}")
             return {'timestamp': time.time(), 'error': str(e)}
-    
+
     def get_current_metrics(self) -> Dict[str, Any]:
         """Get current system metrics."""
         return self._collect_metrics()
-    
+
     def get_metrics_summary(self) -> Dict[str, Any]:
         """Get summary of collected metrics."""
         if not self.metrics:
             return {}
-        
+
         cpu_values = [m.get('cpu_percent', 0) for m in self.metrics if 'cpu_percent' in m]
         memory_values = [m.get('memory', {}).get('percent', 0) for m in self.metrics if 'memory' in m]
-        
+
         return {
             'total_samples': len(self.metrics),
             'cpu': {
@@ -415,16 +415,16 @@ def time_function(func: Callable) -> Callable:
 def benchmark_function(func: Callable, iterations: int = 100) -> Dict[str, Any]:
     """
     Benchmark a function by running it multiple times.
-    
+
     Args:
         func: Function to benchmark
         iterations: Number of iterations
-        
+
     Returns:
         Benchmark results
     """
     times = []
-    
+
     for _ in range(iterations):
         start_time = time.time()
         try:
@@ -432,10 +432,10 @@ def benchmark_function(func: Callable, iterations: int = 100) -> Dict[str, Any]:
             times.append(time.time() - start_time)
         except Exception as e:
             logger.error(f"Benchmark iteration failed: {e}")
-    
+
     if not times:
         return {'error': 'No successful iterations'}
-    
+
     return {
         'iterations': len(times),
         'total_time': sum(times),
@@ -541,20 +541,20 @@ def memory_monitor(func: Callable) -> Callable:
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start_memory = get_memory_usage()
-        
+
         try:
             result = func(*args, **kwargs)
             end_memory = get_memory_usage()
             memory_delta = end_memory - start_memory
-            
+
             logger.debug(f"Function {func.__name__} memory usage: {memory_delta:.2f}MB (start: {start_memory:.2f}MB, end: {end_memory:.2f}MB)")
-            
+
             return result
-            
+
         except Exception as e:
             end_memory = get_memory_usage()
             memory_delta = end_memory - start_memory
-            
+
             logger.error(f"Function {func.__name__} failed with memory usage: {memory_delta:.2f}MB: {e}")
             raise
 

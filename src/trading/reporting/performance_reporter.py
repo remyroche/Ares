@@ -25,7 +25,7 @@ logger = system_logger.getChild('PerformanceReporter')
 class PerformanceReporter:
     """
     Comprehensive performance reporting system for trading operations.
-    
+
     Generates detailed reports with:
     - Trade-by-trade analysis
     - ML model performance breakdown
@@ -34,19 +34,19 @@ class PerformanceReporter:
     - Regime performance analysis
     - Execution quality metrics
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = logger.getChild('PerformanceReporter')
-        
+
         # Report configuration
         self.report_directory = Path(self.config.get('report_directory', 'trading_reports'))
         self.enable_html_reports = self.config.get('enable_html_reports', True)
         self.enable_detailed_analysis = self.config.get('enable_detailed_analysis', True)
-        
+
         # Ensure report directory exists
         self.report_directory.mkdir(parents=True, exist_ok=True)
-    
+
     @trading_error_handler(
         error_types=(Exception,),
         severity=TradingErrorSeverity.LOW,
@@ -60,22 +60,22 @@ class PerformanceReporter:
     ) -> Dict[str, Any]:
         """
         Generate comprehensive trading performance report.
-        
+
         Args:
             trades: List of detailed trade metrics
             session_metrics: Session-level metrics
             report_name: Name for the report
-            
+
         Returns:
             Comprehensive report dictionary
         """
         try:
             tprint_info(f"📊 Generating comprehensive trading report: {report_name}")
-            
+
             if not trades:
                 tprint_warning("⚠️ No trades provided for report generation")
                 return {'error': 'No trades available'}
-            
+
             # Generate report sections
             report = {
                 'report_metadata': await self._generate_report_metadata(report_name),
@@ -88,18 +88,18 @@ class PerformanceReporter:
                 'execution_analysis': await self._generate_execution_analysis(trades),
                 'detailed_trades': [trade.to_dict() for trade in trades]
             }
-            
+
             # Export report
             await self._export_report(report, report_name)
-            
+
             tprint_success(f"✅ Generated comprehensive report with {len(trades)} trades")
-            
+
             return report
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate comprehensive report: {e}")
             return {'error': str(e)}
-    
+
     async def _generate_report_metadata(self, report_name: str) -> Dict[str, Any]:
         """Generate report metadata."""
         return {
@@ -109,7 +109,7 @@ class PerformanceReporter:
             'generator': 'PerformanceReporter',
             'report_type': 'comprehensive_trading_analysis'
         }
-    
+
     async def _generate_executive_summary(
         self,
         trades: List[DetailedTradeMetrics],
@@ -121,31 +121,31 @@ class PerformanceReporter:
             total_trades = len(trades)
             winning_trades = len([t for t in trades if t.pnl_absolute and t.pnl_absolute > 0])
             losing_trades = len([t for t in trades if t.pnl_absolute and t.pnl_absolute < 0])
-            
+
             # PnL analysis
             total_pnl = sum(t.pnl_absolute for t in trades if t.pnl_absolute is not None)
             pnl_values = [t.pnl_absolute for t in trades if t.pnl_absolute is not None]
-            
+
             # Performance metrics
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
             avg_win = np.mean([t.pnl_absolute for t in trades if t.pnl_absolute and t.pnl_absolute > 0]) if winning_trades > 0 else 0.0
             avg_loss = np.mean([t.pnl_absolute for t in trades if t.pnl_absolute and t.pnl_absolute < 0]) if losing_trades > 0 else 0.0
             profit_factor = abs(avg_win * winning_trades / (avg_loss * losing_trades)) if avg_loss != 0 and losing_trades > 0 else 0.0
-            
+
             # Risk metrics
             sharpe_ratio = calculate_sharpe_ratio(pnl_values) if len(pnl_values) > 1 else 0.0
             max_drawdown_pct, _, _ = calculate_max_drawdown(np.cumsum(pnl_values)) if pnl_values else (0.0, 0, 0)
-            
+
             # Model usage summary
             model_usage = {}
             for trade in trades:
                 for model_id in trade.models_used.keys():
                     model_usage[model_id] = model_usage.get(model_id, 0) + 1
-            
+
             # Confidence analysis
             confidence_scores = [t.signal_confidence for t in trades if t.signal_confidence > 0]
             avg_confidence = np.mean(confidence_scores) if confidence_scores else 0.0
-            
+
             summary = {
                 'performance_overview': {
                     'total_trades': total_trades,
@@ -175,13 +175,13 @@ class PerformanceReporter:
                     'duration_hours': (max(t.timestamp for t in trades) - min(t.timestamp for t in trades)).total_seconds() / 3600 if len(trades) > 1 else 0.0
                 }
             }
-            
+
             return summary
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate executive summary: {e}")
             return {}
-    
+
     async def _generate_trade_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate detailed trade-by-trade analysis."""
         try:
@@ -189,18 +189,18 @@ class PerformanceReporter:
             action_distribution = {}
             for trade in trades:
                 action_distribution[trade.action] = action_distribution.get(trade.action, 0) + 1
-            
+
             # Trade distribution by symbol
             symbol_distribution = {}
             for trade in trades:
                 symbol_distribution[trade.symbol] = symbol_distribution.get(trade.symbol, 0) + 1
-            
+
             # Performance by action
             performance_by_action = {}
             for action in action_distribution.keys():
                 action_trades = [t for t in trades if t.action == action]
                 action_pnl = [t.pnl_absolute for t in action_trades if t.pnl_absolute is not None]
-                
+
                 if action_pnl:
                     performance_by_action[action] = {
                         'trade_count': len(action_trades),
@@ -210,13 +210,13 @@ class PerformanceReporter:
                         'best_trade': max(action_pnl),
                         'worst_trade': min(action_pnl)
                     }
-            
+
             # Timing analysis
             timing_analysis = await self._analyze_trade_timing(trades)
-            
+
             # Size analysis
             size_analysis = await self._analyze_position_sizes(trades)
-            
+
             return {
                 'trade_distribution': {
                     'by_action': action_distribution,
@@ -227,39 +227,39 @@ class PerformanceReporter:
                 'position_size_analysis': size_analysis,
                 'trade_quality_metrics': await self._calculate_trade_quality_metrics(trades)
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate trade analysis: {e}")
             return {}
-    
+
     async def _generate_model_performance_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate ML model performance analysis."""
         try:
             model_performance = {}
-            
+
             # Collect all models used
             all_models = set()
             for trade in trades:
                 all_models.update(trade.models_used.keys())
-            
+
             # Analyze each model
             for model_id in all_models:
                 model_trades = [t for t in trades if model_id in t.models_used]
-                
+
                 if model_trades:
                     # Basic performance
                     model_pnl = [t.pnl_absolute for t in model_trades if t.pnl_absolute is not None]
                     model_confidences = [t.model_confidences.get(model_id, 0.0) for t in model_trades]
                     model_weights = [t.model_weights.get(model_id, 0.0) for t in model_trades]
-                    
+
                     # Model accuracy (correlation between confidence and success)
                     successful_trades = [t for t in model_trades if t.pnl_absolute and t.pnl_absolute > 0]
                     accuracy = len(successful_trades) / len(model_trades) if model_trades else 0.0
-                    
+
                     # Confidence analysis
                     high_confidence_trades = [t for t in model_trades if t.model_confidences.get(model_id, 0.0) > 0.7]
                     high_conf_success_rate = len([t for t in high_confidence_trades if t.pnl_absolute and t.pnl_absolute > 0]) / len(high_confidence_trades) if high_confidence_trades else 0.0
-                    
+
                     model_performance[model_id] = {
                         'usage_count': len(model_trades),
                         'total_pnl': sum(model_pnl),
@@ -270,39 +270,39 @@ class PerformanceReporter:
                         'high_confidence_success_rate': high_conf_success_rate,
                         'confidence_pnl_correlation': np.corrcoef(model_confidences, model_pnl)[0,1] if len(model_confidences) > 1 and len(model_pnl) > 1 else 0.0
                     }
-            
+
             # Model comparison
             model_comparison = await self._compare_model_performance(model_performance)
-            
+
             return {
                 'individual_model_performance': model_performance,
                 'model_comparison': model_comparison,
                 'ensemble_analysis': await self._analyze_ensemble_performance(trades)
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate model performance analysis: {e}")
             return {}
-    
+
     async def _generate_explainability_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate SHAP/LIME explainability analysis."""
         try:
             # Feature importance analysis
             all_features = set()
             feature_importance_by_model = {}
-            
+
             for trade in trades:
                 # Collect SHAP explanations
                 for model_id, shap_values in trade.shap_explanations.items():
                     if model_id not in feature_importance_by_model:
                         feature_importance_by_model[model_id] = {}
-                    
+
                     for feature, importance in shap_values.items():
                         all_features.add(feature)
                         if feature not in feature_importance_by_model[model_id]:
                             feature_importance_by_model[model_id][feature] = []
                         feature_importance_by_model[model_id][feature].append(abs(importance))
-            
+
             # Calculate average feature importance
             avg_feature_importance = {}
             for model_id, features in feature_importance_by_model.items():
@@ -310,7 +310,7 @@ class PerformanceReporter:
                     feature: np.mean(importances)
                     for feature, importances in features.items()
                 }
-            
+
             # Overall feature importance (across all models)
             overall_feature_importance = {}
             for feature in all_features:
@@ -318,16 +318,16 @@ class PerformanceReporter:
                 for model_id in feature_importance_by_model:
                     if feature in feature_importance_by_model[model_id]:
                         importances.extend(feature_importance_by_model[model_id][feature])
-                
+
                 if importances:
                     overall_feature_importance[feature] = np.mean(importances)
-            
+
             # Top features
             top_features = sorted(overall_feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]
-            
+
             # Model agreement analysis
             model_agreement = await self._analyze_model_agreement(trades)
-            
+
             return {
                 'feature_importance_by_model': avg_feature_importance,
                 'overall_feature_importance': overall_feature_importance,
@@ -341,11 +341,11 @@ class PerformanceReporter:
                     'lime_coverage': len([t for t in trades if t.lime_explanations]) / len(trades) if trades else 0.0
                 }
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate explainability analysis: {e}")
             return {}
-    
+
     async def _generate_risk_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate comprehensive risk analysis."""
         try:
@@ -353,30 +353,30 @@ class PerformanceReporter:
             portfolio_risks = [t.portfolio_risk for t in trades if t.portfolio_risk > 0]
             var_95_values = [t.var_95 for t in trades if t.var_95 > 0]
             volatility_estimates = [t.volatility_estimate for t in trades if t.volatility_estimate > 0]
-            
+
             # Position size analysis
             position_sizes = [t.position_size for t in trades if t.position_size > 0]
             leverages = [t.leverage for t in trades if t.leverage > 0]
-            
+
             # Risk-adjusted performance
             risk_adjusted_returns = []
             for trade in trades:
                 if trade.pnl_percentage and trade.portfolio_risk and trade.portfolio_risk > 0:
                     risk_adjusted_return = trade.pnl_percentage / trade.portfolio_risk
                     risk_adjusted_returns.append(risk_adjusted_return)
-            
+
             # Drawdown analysis
             pnl_series = [t.pnl_absolute for t in trades if t.pnl_absolute is not None]
             if pnl_series:
                 cumulative_pnl = np.cumsum(pnl_series)
                 max_dd, dd_start, dd_end = calculate_max_drawdown(cumulative_pnl)
-                
+
                 # Drawdown periods
                 drawdown_periods = await self._identify_drawdown_periods(cumulative_pnl)
             else:
                 max_dd = 0.0
                 drawdown_periods = []
-            
+
             return {
                 'risk_metrics_summary': {
                     'avg_portfolio_risk': np.mean(portfolio_risks) if portfolio_risks else 0.0,
@@ -400,16 +400,16 @@ class PerformanceReporter:
                     'avg_drawdown_duration': np.mean([p['duration'] for p in drawdown_periods]) if drawdown_periods else 0.0
                 }
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate risk analysis: {e}")
             return {}
-    
+
     async def _generate_regime_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate regime-based performance analysis."""
         try:
             regime_performance = {}
-            
+
             # Group trades by regime
             for trade in trades:
                 regime = trade.regime_type
@@ -422,36 +422,36 @@ class PerformanceReporter:
                         'avg_confidence': 0.0,
                         'avg_regime_confidence': 0.0
                     }
-                
+
                 regime_performance[regime]['trades'].append(trade)
-                
+
                 if trade.pnl_absolute is not None:
                     regime_performance[regime]['total_pnl'] += trade.pnl_absolute
                     if trade.pnl_absolute > 0:
                         regime_performance[regime]['winning_trades'] += 1
                     else:
                         regime_performance[regime]['losing_trades'] += 1
-            
+
             # Calculate regime statistics
             for regime, data in regime_performance.items():
                 trades_in_regime = data['trades']
                 total_trades = len(trades_in_regime)
-                
+
                 if total_trades > 0:
                     data['trade_count'] = total_trades
                     data['win_rate'] = data['winning_trades'] / total_trades
                     data['avg_confidence'] = np.mean([t.signal_confidence for t in trades_in_regime])
                     data['avg_regime_confidence'] = np.mean([t.regime_confidence for t in trades_in_regime])
                     data['avg_pnl_per_trade'] = data['total_pnl'] / total_trades
-                    
+
                     # Remove trade objects for JSON serialization
                     del data['trades']
-            
+
             # Best and worst performing regimes
             regime_pnl = {regime: data['total_pnl'] for regime, data in regime_performance.items()}
             best_regime = max(regime_pnl.items(), key=lambda x: x[1]) if regime_pnl else None
             worst_regime = min(regime_pnl.items(), key=lambda x: x[1]) if regime_pnl else None
-            
+
             return {
                 'regime_performance': regime_performance,
                 'regime_summary': {
@@ -461,11 +461,11 @@ class PerformanceReporter:
                     'regime_distribution': {regime: data['trade_count'] for regime, data in regime_performance.items()}
                 }
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate regime analysis: {e}")
             return {}
-    
+
     async def _generate_execution_analysis(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Generate execution quality analysis."""
         try:
@@ -475,15 +475,15 @@ class PerformanceReporter:
             commissions = [t.commission for t in trades if t.commission is not None]
             execution_qualities = [t.execution_quality for t in trades if t.execution_quality > 0]
             timing_qualities = [t.timing_quality for t in trades if t.timing_quality > 0]
-            
+
             # Execution success analysis
             successful_executions = len([t for t in trades if t.execution_quality > 0.8])
             execution_success_rate = successful_executions / len(trades) if trades else 0.0
-            
+
             # Cost analysis
             total_commissions = sum(commissions) if commissions else 0.0
             total_slippage_cost = sum(slippages) if slippages else 0.0
-            
+
             return {
                 'execution_metrics': {
                     'avg_execution_time_ms': np.mean(execution_times) if execution_times else 0.0,
@@ -505,25 +505,25 @@ class PerformanceReporter:
                     'avg_slippage_per_trade': total_slippage_cost / len(trades) if trades else 0.0
                 }
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate execution analysis: {e}")
             return {}
-    
+
     async def _analyze_trade_timing(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Analyze trade timing patterns."""
         try:
             # Time distribution analysis
             hour_distribution = {}
             day_distribution = {}
-            
+
             for trade in trades:
                 hour = trade.timestamp.hour
                 day = trade.timestamp.strftime('%A')
-                
+
                 hour_distribution[hour] = hour_distribution.get(hour, 0) + 1
                 day_distribution[day] = day_distribution.get(day, 0) + 1
-            
+
             # Performance by time
             performance_by_hour = {}
             for hour in range(24):
@@ -535,7 +535,7 @@ class PerformanceReporter:
                         'total_pnl': sum(hour_pnl) if hour_pnl else 0.0,
                         'avg_pnl': np.mean(hour_pnl) if hour_pnl else 0.0
                     }
-            
+
             return {
                 'time_distribution': {
                     'by_hour': hour_distribution,
@@ -544,19 +544,19 @@ class PerformanceReporter:
                 'performance_by_hour': performance_by_hour,
                 'best_trading_hours': sorted(performance_by_hour.items(), key=lambda x: x[1]['avg_pnl'], reverse=True)[:3]
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to analyze trade timing: {e}")
             return {}
-    
+
     async def _analyze_position_sizes(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Analyze position sizing patterns and performance."""
         try:
             position_sizes = [t.position_size for t in trades if t.position_size > 0]
-            
+
             if not position_sizes:
                 return {'message': 'No position size data available'}
-            
+
             # Size distribution
             size_percentiles = {
                 'min': min(position_sizes),
@@ -567,21 +567,21 @@ class PerformanceReporter:
                 'p75': np.percentile(position_sizes, 75),
                 'std': np.std(position_sizes)
             }
-            
+
             # Performance by size quartiles
             q1 = np.percentile(position_sizes, 25)
             q2 = np.percentile(position_sizes, 50)
             q3 = np.percentile(position_sizes, 75)
-            
+
             size_performance = {}
             for quartile, (min_size, max_size) in enumerate([
                 (0, q1), (q1, q2), (q2, q3), (q3, float('inf'))
             ], 1):
                 quartile_trades = [
-                    t for t in trades 
+                    t for t in trades
                     if min_size <= t.position_size < max_size
                 ]
-                
+
                 if quartile_trades:
                     quartile_pnl = [t.pnl_absolute for t in quartile_trades if t.pnl_absolute is not None]
                     size_performance[f'quartile_{quartile}'] = {
@@ -591,118 +591,118 @@ class PerformanceReporter:
                         'avg_pnl': np.mean(quartile_pnl) if quartile_pnl else 0.0,
                         'win_rate': len([p for p in quartile_pnl if p > 0]) / len(quartile_pnl) if quartile_pnl else 0.0
                     }
-            
+
             return {
                 'size_distribution': size_percentiles,
                 'performance_by_size_quartile': size_performance,
                 'optimal_size_analysis': await self._find_optimal_position_sizes(trades)
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to analyze position sizes: {e}")
             return {}
-    
+
     async def _find_optimal_position_sizes(self, trades: List[DetailedTradeMetrics]) -> Dict[str, Any]:
         """Find optimal position sizes based on historical performance."""
         try:
             # Group trades by confidence levels and analyze optimal sizes
             confidence_ranges = [(0.0, 0.5), (0.5, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
-            
+
             optimal_sizes = {}
             for i, (min_conf, max_conf) in enumerate(confidence_ranges):
                 range_trades = [
-                    t for t in trades 
+                    t for t in trades
                     if min_conf <= t.signal_confidence < max_conf and t.pnl_absolute is not None
                 ]
-                
+
                 if range_trades:
                     # Find size that maximizes risk-adjusted returns
                     best_size = 0.0
                     best_performance = -float('inf')
-                    
+
                     for trade in range_trades:
                         if trade.position_size > 0 and trade.portfolio_risk > 0:
                             risk_adjusted_return = trade.pnl_percentage / trade.portfolio_risk
                             if risk_adjusted_return > best_performance:
                                 best_performance = risk_adjusted_return
                                 best_size = trade.position_size
-                    
+
                     optimal_sizes[f'confidence_{min_conf}_{max_conf}'] = {
                         'optimal_size': best_size,
                         'performance': best_performance,
                         'trade_count': len(range_trades)
                     }
-            
+
             return optimal_sizes
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to find optimal position sizes: {e}")
             return {}
-    
+
     async def _export_report(self, report: Dict[str, Any], report_name: str):
         """Export comprehensive report to files."""
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
+
             # Export JSON report
             json_file = self.report_directory / f"{report_name}_{timestamp}.json"
             with open(json_file, 'w') as f:
                 json.dump(report, f, indent=2, default=str)
-            
+
             tprint_success(f"✅ Exported JSON report to {json_file}")
-            
+
             # Export CSV summary
             csv_file = self.report_directory / f"{report_name}_summary_{timestamp}.csv"
             summary_data = self._extract_summary_for_csv(report)
             summary_df = pd.DataFrame([summary_data])
             summary_df.to_csv(csv_file, index=False)
-            
+
             tprint_success(f"✅ Exported CSV summary to {csv_file}")
-            
+
             # Export HTML report if enabled
             if self.enable_html_reports:
                 await self._generate_html_report(report, report_name, timestamp)
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to export report: {e}")
-    
+
     def _extract_summary_for_csv(self, report: Dict[str, Any]) -> Dict[str, Any]:
         """Extract key metrics for CSV export."""
         try:
             summary = {}
-            
+
             # Executive summary metrics
             if 'executive_summary' in report:
                 exec_summary = report['executive_summary']
                 if 'performance_overview' in exec_summary:
                     for key, value in exec_summary['performance_overview'].items():
                         summary[f'performance_{key}'] = value
-                
+
                 if 'key_metrics' in exec_summary:
                     for key, value in exec_summary['key_metrics'].items():
                         summary[f'metric_{key}'] = value
-            
+
             # Risk analysis metrics
             if 'risk_analysis' in report and 'risk_metrics_summary' in report['risk_analysis']:
                 for key, value in report['risk_analysis']['risk_metrics_summary'].items():
                     summary[f'risk_{key}'] = value
-            
+
             # Model performance summary
             if 'model_performance' in report and 'individual_model_performance' in report['model_performance']:
                 model_perf = report['model_performance']['individual_model_performance']
                 for model_id, metrics in model_perf.items():
                     for metric_name, value in metrics.items():
                         summary[f'model_{model_id}_{metric_name}'] = value
-            
+
             # Add timestamp
             summary['report_timestamp'] = datetime.now().isoformat()
-            
+
             return summary
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to extract summary for CSV: {e}")
             return {}
-    
+
     async def _generate_html_report(self, report: Dict[str, Any], report_name: str, timestamp: str):
         """Generate HTML report with visualizations."""
         try:
@@ -732,59 +732,59 @@ class PerformanceReporter:
                     <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
                 </div>
             """
-            
+
             # Add executive summary
             if 'executive_summary' in report:
                 html_content += self._generate_html_executive_summary(report['executive_summary'])
-            
+
             # Add model performance
             if 'model_performance' in report:
                 html_content += self._generate_html_model_performance(report['model_performance'])
-            
+
             # Add regime analysis
             if 'regime_analysis' in report:
                 html_content += self._generate_html_regime_analysis(report['regime_analysis'])
-            
+
             html_content += """
             </body>
             </html>
             """
-            
+
             # Save HTML file
             html_file = self.report_directory / f"{report_name}_{timestamp}.html"
             with open(html_file, 'w') as f:
                 f.write(html_content)
-            
+
             tprint_success(f"✅ Generated HTML report: {html_file}")
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to generate HTML report: {e}")
-    
+
     def _generate_html_executive_summary(self, summary: Dict[str, Any]) -> str:
         """Generate HTML for executive summary."""
         html = '<div class="section"><h2>Executive Summary</h2>'
-        
+
         if 'performance_overview' in summary:
             perf = summary['performance_overview']
             html += '<div class="metrics">'
-            
+
             for key, value in perf.items():
                 css_class = 'positive' if 'pnl' in key.lower() and value > 0 else 'negative' if 'pnl' in key.lower() and value < 0 else 'neutral'
                 formatted_value = f"{value:.4f}" if isinstance(value, float) else str(value)
                 html += f'<div class="metric {css_class}"><strong>{key.replace("_", " ").title()}:</strong> {formatted_value}</div>'
-            
+
             html += '</div>'
-        
+
         html += '</div>'
         return html
-    
+
     def _generate_html_model_performance(self, model_perf: Dict[str, Any]) -> str:
         """Generate HTML for model performance."""
         html = '<div class="section"><h2>Model Performance Analysis</h2>'
-        
+
         if 'individual_model_performance' in model_perf:
             html += '<table><tr><th>Model ID</th><th>Usage Count</th><th>Total PnL</th><th>Accuracy</th><th>Avg Confidence</th></tr>'
-            
+
             for model_id, metrics in model_perf['individual_model_performance'].items():
                 html += f"""
                 <tr>
@@ -795,19 +795,19 @@ class PerformanceReporter:
                     <td>{metrics.get('avg_confidence', 0):.2%}</td>
                 </tr>
                 """
-            
+
             html += '</table>'
-        
+
         html += '</div>'
         return html
-    
+
     def _generate_html_regime_analysis(self, regime_analysis: Dict[str, Any]) -> str:
         """Generate HTML for regime analysis."""
         html = '<div class="section"><h2>Regime Performance Analysis</h2>'
-        
+
         if 'regime_performance' in regime_analysis:
             html += '<table><tr><th>Regime</th><th>Trade Count</th><th>Win Rate</th><th>Total PnL</th><th>Avg PnL</th></tr>'
-            
+
             for regime, metrics in regime_analysis['regime_performance'].items():
                 html += f"""
                 <tr>
@@ -818,9 +818,9 @@ class PerformanceReporter:
                     <td class="{'positive' if metrics.get('avg_pnl_per_trade', 0) > 0 else 'negative'}">{metrics.get('avg_pnl_per_trade', 0):.4f}</td>
                 </tr>
                 """
-            
+
             html += '</table>'
-        
+
         html += '</div>'
         return html
 

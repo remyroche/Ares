@@ -48,7 +48,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 from ..logger import system_logger
@@ -61,19 +61,19 @@ class TradingMLConfig:
     # Model types
     classification_model: str = 'random_forest'  # 'random_forest', 'logistic_regression', 'gradient_boosting'
     regression_model: str = 'ridge'  # 'ridge', 'elastic_net', 'random_forest'
-    
+
     # Feature engineering
     include_sr_quality: bool = True
     include_momentum: bool = True
     include_volatility: bool = True
     include_volume: bool = True
     include_market_regime: bool = True
-    
+
     # Trading parameters
     quality_threshold: float = 0.7  # Minimum SR quality for trading
     confidence_threshold: float = 0.8  # Minimum confidence for trading
     prediction_horizon: int = 30  # Days ahead to predict
-    
+
     # Model training
     test_size: float = 0.2
     random_state: int = 42
@@ -97,37 +97,37 @@ class TradingSignal:
 
 class TradingMLIntegration:
     """Integrates SR quality prediction with trading ML models."""
-    
+
     def __init__(self, config: Optional[TradingMLConfig] = None):
         self.config = config or TradingMLConfig()
         self.logger = system_logger.getChild('TradingMLIntegration')
-        
+
         self.logger.info("Initializing TradingMLIntegration")
         self.logger.info(f"Configuration: classification_model={self.config.classification_model}, regression_model={self.config.regression_model}")
         self.logger.info(f"Quality threshold: {self.config.quality_threshold}, confidence threshold: {self.config.confidence_threshold}")
         self.logger.info(f"Feature settings: sr_quality={self.config.include_sr_quality}, momentum={self.config.include_momentum}, volatility={self.config.include_volatility}")
-        
+
         # Core components
         self.predictive_engine: Optional[PredictiveSREngine] = None
         self.backtesting_engine: Optional[SRBacktestingEngine] = None
-        
+
         # ML Models
         self.classification_model: Optional[Any] = None
         self.regression_model: Optional[Any] = None
         self.feature_scaler: Optional[StandardScaler] = None
         self.label_encoder: Optional[LabelEncoder] = None
-        
+
         # Training data
         self.training_data: pd.DataFrame = pd.DataFrame()
         self.feature_importance: Dict[str, float] = {}
         self.model_performance: Dict[str, float] = {}
-        
+
         # Trading signals
         self.trading_signals: List[TradingSignal] = []
-        
+
         self.logger.info("✅ TradingMLIntegration initialization completed")
-        
-    def prepare_enhanced_training_data(self, market_data: pd.DataFrame, 
+
+    def prepare_enhanced_training_data(self, market_data: pd.DataFrame,
                                      sr_levels: List[SRLevel],
                                      historical_performance: pd.DataFrame) -> pd.DataFrame:
         """Prepare enhanced training data with SR quality predictions."""
@@ -135,7 +135,7 @@ class TradingMLIntegration:
             self.logger.info(f"🚀 Preparing enhanced training data with {len(sr_levels)} SR levels")
             self.logger.info(f"Market data shape: {market_data.shape}")
             self.logger.info(f"Historical performance shape: {historical_performance.shape}")
-            
+
             # Step 1: Get SR quality predictions
             if not self.predictive_engine:
                 self.logger.info("🔧 Initializing predictive engine")
@@ -147,24 +147,24 @@ class TradingMLIntegration:
                     include_volume_features=True
                 )
                 self.predictive_engine = get_predictive_sr_engine(predictive_config)
-                
+
                 # Train the predictive engine
                 self.logger.info("🎯 Training predictive engine")
                 training_result = self.predictive_engine.train_predictive_model(
                     market_data, sr_levels, optimize_weights=True
                 )
-                
+
                 if training_result.get('status') != 'success':
                     self.logger.error("❌ Failed to train predictive engine")
                     raise ValueError("Failed to train predictive engine")
                 else:
                     self.logger.info("✅ Predictive engine training completed successfully")
-            
+
             # Step 2: Get SR quality predictions for each level
             self.logger.info(f"🔮 Generating SR quality predictions for {len(sr_levels)} levels")
             sr_quality_predictions = []
             successful_predictions = 0
-            
+
             for i, sr_level in enumerate(sr_levels):
                 try:
                     prediction = self.predictive_engine.predict_sr_quality(
@@ -180,106 +180,106 @@ class TradingMLIntegration:
                         'market_context': prediction.market_context
                     })
                     successful_predictions += 1
-                    
+
                     if i % 10 == 0:  # Log progress every 10 predictions
                         self.logger.debug(f"Generated predictions for {i+1}/{len(sr_levels)} levels")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"Failed to predict quality for {sr_level.price}: {e}")
                     continue
-            
+
             self.logger.info(f"✅ Generated {successful_predictions}/{len(sr_levels)} SR quality predictions")
-            
+
             # Step 3: Create enhanced training dataset
             self.logger.info("🔧 Creating enhanced training dataset")
             enhanced_data = []
             matched_samples = 0
             skipped_samples = 0
-            
+
             for i, row in historical_performance.iterrows():
                 # Find corresponding SR quality prediction
                 sr_quality_data = None
                 for sr_pred in sr_quality_predictions:
-                    if (sr_pred['symbol'] == row.get('symbol', '') and 
+                    if (sr_pred['symbol'] == row.get('symbol', '') and
                         abs(sr_pred['price'] - row.get('price', 0)) < 0.01):
                         sr_quality_data = sr_pred
                         break
-                
+
                 if sr_quality_data is None:
                     skipped_samples += 1
                     continue  # Skip if no SR quality data
-                
+
                 # Extract market features
                 market_features = self._extract_market_features(row, market_data)
-                
+
                 # Create enhanced training sample
                 enhanced_sample = {
                     # Target variables (what we want to predict)
                     'future_return': row.get('future_return', 0.0),
                     'trade_success': 1 if row.get('future_return', 0) > 0 else 0,
                     'risk_level': row.get('risk_level', 0.0),
-                    
+
                     # Enhanced SR features (from weight optimization)
                     'sr_quality': sr_quality_data['sr_quality'],
                     'sr_confidence': sr_quality_data['sr_confidence'],
                     'sr_level_type': sr_quality_data['level_type'],
-                    
+
                     # Market context features
                     'momentum_score': market_features.get('momentum_score', 0.0),
                     'volatility_score': market_features.get('volatility_score', 0.0),
                     'volume_score': market_features.get('volume_score', 0.0),
                     'market_regime': market_features.get('market_regime', 'neutral'),
-                    
+
                     # Combined features
                     'sr_momentum_interaction': sr_quality_data['sr_quality'] * market_features.get('momentum_score', 0.0),
                     'sr_volatility_interaction': sr_quality_data['sr_quality'] * market_features.get('volatility_score', 0.0),
                     'sr_volume_interaction': sr_quality_data['sr_quality'] * market_features.get('volume_score', 0.0),
-                    
+
                     # Time features
                     'time_of_day': row.get('time_of_day', 12),
                     'day_of_week': row.get('day_of_week', 0),
                     'month': row.get('month', 1),
-                    
+
                     # Additional context
                     'symbol': row.get('symbol', ''),
                     'timestamp': row.get('timestamp', datetime.now())
                 }
-                
+
                 enhanced_data.append(enhanced_sample)
                 matched_samples += 1
-                
+
                 if i % 100 == 0:  # Log progress every 100 samples
                     self.logger.debug(f"Processed {i+1}/{len(historical_performance)} samples")
-            
+
             # Convert to DataFrame
             enhanced_df = pd.DataFrame(enhanced_data)
-            
+
             self.logger.info(f"✅ Created enhanced training dataset with {len(enhanced_df)} samples")
             self.logger.info(f"Matched samples: {matched_samples}, Skipped samples: {skipped_samples}")
             self.logger.info(f"Features: {list(enhanced_df.columns)}")
-            
+
             if len(enhanced_df) > 0:
                 self.logger.info(f"Dataset statistics:")
                 self.logger.info(f"  - SR quality range: {enhanced_df['sr_quality'].min():.3f} to {enhanced_df['sr_quality'].max():.3f}")
                 self.logger.info(f"  - Future return range: {enhanced_df['future_return'].min():.3f} to {enhanced_df['future_return'].max():.3f}")
                 self.logger.info(f"  - Trade success rate: {enhanced_df['trade_success'].mean():.3f}")
-            
+
             return enhanced_df
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare enhanced training data: {e}")
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return pd.DataFrame()
-    
+
     def _extract_market_features(self, row: pd.Series, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Extract market features for a given row."""
         try:
             timestamp = row.get('timestamp', datetime.now())
-            
+
             # Find corresponding market data
             market_row = market_data[market_data['date'] <= timestamp].iloc[-1] if len(market_data) > 0 else None
-            
+
             if market_row is None:
                 self.logger.debug(f"No market data found for timestamp {timestamp}")
                 return {
@@ -288,28 +288,28 @@ class TradingMLIntegration:
                     'volume_score': 0.0,
                     'market_regime': 'neutral'
                 }
-            
+
             # Calculate momentum score
             momentum_score = self._calculate_momentum_score(market_data, timestamp)
-            
+
             # Calculate volatility score
             volatility_score = self._calculate_volatility_score(market_data, timestamp)
-            
+
             # Calculate volume score
             volume_score = self._calculate_volume_score(market_data, timestamp)
-            
+
             # Determine market regime
             market_regime = self._determine_market_regime(momentum_score, volatility_score, volume_score)
-            
+
             self.logger.debug(f"Market features: momentum={momentum_score:.3f}, volatility={volatility_score:.3f}, volume={volume_score:.3f}, regime={market_regime}")
-            
+
             return {
                 'momentum_score': momentum_score,
                 'volatility_score': volatility_score,
                 'volume_score': volume_score,
                 'market_regime': market_regime
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Market feature extraction failed: {e}")
             return {
@@ -318,82 +318,82 @@ class TradingMLIntegration:
                 'volume_score': 0.0,
                 'market_regime': 'neutral'
             }
-    
+
     def _calculate_momentum_score(self, market_data: pd.DataFrame, timestamp: datetime) -> float:
         """Calculate momentum score."""
         try:
             # Get recent data
             recent_data = market_data[market_data['date'] <= timestamp].tail(20)
-            
+
             if len(recent_data) < 10:
                 return 0.0
-            
+
             # Calculate price momentum
             price_change = (recent_data['close'].iloc[-1] / recent_data['close'].iloc[0] - 1) * 100
-            
+
             # Calculate moving average momentum
             sma_short = recent_data['close'].rolling(5).mean()
             sma_long = recent_data['close'].rolling(15).mean()
             ma_momentum = (sma_short.iloc[-1] / sma_long.iloc[-1] - 1) * 100
-            
+
             # Combine momentum indicators
             momentum_score = (price_change + ma_momentum) / 2
-            
+
             # Normalize to 0-1 range
             return np.clip(momentum_score / 10, -1, 1)  # Assume 10% is max momentum
-            
+
         except Exception as e:
             self.logger.warning(f"Momentum calculation failed: {e}")
             return 0.0
-    
+
     def _calculate_volatility_score(self, market_data: pd.DataFrame, timestamp: datetime) -> float:
         """Calculate volatility score."""
         try:
             # Get recent data
             recent_data = market_data[market_data['date'] <= timestamp].tail(20)
-            
+
             if len(recent_data) < 10:
                 return 0.0
-            
+
             # Calculate returns
             returns = recent_data['close'].pct_change().dropna()
-            
+
             # Calculate volatility
             volatility = returns.std() * np.sqrt(252)  # Annualized
-            
+
             # Normalize to 0-1 range (assume 50% is max volatility)
             volatility_score = np.clip(volatility / 0.5, 0, 1)
-            
+
             return volatility_score
-            
+
         except Exception as e:
             self.logger.warning(f"Volatility calculation failed: {e}")
             return 0.0
-    
+
     def _calculate_volume_score(self, market_data: pd.DataFrame, timestamp: datetime) -> float:
         """Calculate volume score."""
         try:
             # Get recent data
             recent_data = market_data[market_data['date'] <= timestamp].tail(20)
-            
+
             if len(recent_data) < 10 or 'volume' not in recent_data.columns:
                 return 0.0
-            
+
             # Calculate volume trend
             recent_volume = recent_data['volume'].tail(5).mean()
             historical_volume = recent_data['volume'].mean()
-            
+
             volume_ratio = recent_volume / historical_volume if historical_volume > 0 else 1.0
-            
+
             # Normalize to 0-1 range
             volume_score = np.clip(volume_ratio, 0, 2) / 2  # Assume 2x is max volume
-            
+
             return volume_score
-            
+
         except Exception as e:
             self.logger.warning(f"Volume calculation failed: {e}")
             return 0.0
-    
+
     def _determine_market_regime(self, momentum: float, volatility: float, volume: float) -> str:
         """Determine market regime based on features."""
         try:
@@ -411,30 +411,30 @@ class TradingMLIntegration:
                 return 'high_volume'
             else:
                 return 'neutral'
-                
+
         except Exception as e:
             self.logger.warning(f"Market regime determination failed: {e}")
             return 'neutral'
-    
+
     def train_trading_models(self, enhanced_data: pd.DataFrame) -> Dict[str, Any]:
         """Train ML models for trading decisions using enhanced data."""
         try:
             if len(enhanced_data) == 0:
                 self.logger.warning("No enhanced data provided for training")
                 return {'status': 'no_data'}
-            
+
             self.logger.info(f"🚀 Training trading models with {len(enhanced_data)} enhanced samples")
             self.logger.info(f"Data shape: {enhanced_data.shape}")
-            
+
             # Prepare features and targets
             feature_columns = [
-                'sr_quality', 'sr_confidence', 'momentum_score', 'volatility_score', 
-                'volume_score', 'sr_momentum_interaction', 'sr_volatility_interaction', 
+                'sr_quality', 'sr_confidence', 'momentum_score', 'volatility_score',
+                'volume_score', 'sr_momentum_interaction', 'sr_volatility_interaction',
                 'sr_volume_interaction', 'time_of_day', 'day_of_week', 'month'
             ]
-            
+
             self.logger.info(f"Base feature columns: {len(feature_columns)} features")
-            
+
             # Add market regime as encoded feature
             if 'market_regime' in enhanced_data.columns:
                 self.logger.info("Encoding market regime feature")
@@ -442,49 +442,49 @@ class TradingMLIntegration:
                 enhanced_data['market_regime_encoded'] = self.label_encoder.fit_transform(enhanced_data['market_regime'])
                 feature_columns.append('market_regime_encoded')
                 self.logger.info(f"Market regime classes: {list(self.label_encoder.classes_)}")
-            
+
             X = enhanced_data[feature_columns].fillna(0)
             y_classification = enhanced_data['trade_success']
             y_regression = enhanced_data['future_return']
-            
+
             self.logger.info(f"Feature matrix shape: {X.shape}")
             self.logger.info(f"Classification target distribution: {y_classification.value_counts().to_dict()}")
             self.logger.info(f"Regression target statistics: mean={y_regression.mean():.3f}, std={y_regression.std():.3f}")
-            
+
             # Scale features
             self.logger.info("Scaling features")
             self.feature_scaler = StandardScaler()
             X_scaled = self.feature_scaler.fit_transform(X)
-            
+
             # Split data
             self.logger.info(f"Splitting data with test_size={self.config.test_size}")
             X_train, X_test, y_train_class, y_test_class = train_test_split(
-                X_scaled, y_classification, test_size=self.config.test_size, 
+                X_scaled, y_classification, test_size=self.config.test_size,
                 random_state=self.config.random_state, stratify=y_classification
             )
-            
+
             _, _, y_train_reg, y_test_reg = train_test_split(
-                X_scaled, y_regression, test_size=self.config.test_size, 
+                X_scaled, y_regression, test_size=self.config.test_size,
                 random_state=self.config.random_state
             )
-            
+
             self.logger.info(f"Training set size: {X_train.shape[0]}, Test set size: {X_test.shape[0]}")
-            
+
             # Train classification model
             self.logger.info("🎯 Training classification model")
             classification_result = self._train_classification_model(X_train, y_train_class, X_test, y_test_class)
-            
+
             # Train regression model
             self.logger.info("📈 Training regression model")
             regression_result = self._train_regression_model(X_train, y_train_reg, X_test, y_test_reg)
-            
+
             # Store training data
             self.training_data = enhanced_data
-            
+
             # Calculate feature importance
             self.logger.info("📊 Calculating feature importance")
             self._calculate_feature_importance(X.columns)
-            
+
             training_result = {
                 'status': 'success',
                 'training_samples': len(enhanced_data),
@@ -492,7 +492,7 @@ class TradingMLIntegration:
                 'regression_performance': regression_result,
                 'feature_importance': self.feature_importance
             }
-            
+
             self.logger.info(f"✅ Trading models trained successfully")
             self.logger.info(f"Classification accuracy: {classification_result.get('accuracy', 0.0):.3f}")
             self.logger.info(f"Classification precision: {classification_result.get('precision', 0.0):.3f}")
@@ -500,21 +500,21 @@ class TradingMLIntegration:
             self.logger.info(f"Classification F1: {classification_result.get('f1_score', 0.0):.3f}")
             self.logger.info(f"Regression R²: {regression_result.get('r2_score', 0.0):.3f}")
             self.logger.info(f"Regression MSE: {regression_result.get('mse', 0.0):.3f}")
-            
+
             return training_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trading model training failed: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'status': 'failed', 'error': str(e)}
-    
-    def _train_classification_model(self, X_train: np.ndarray, y_train: np.ndarray, 
+
+    def _train_classification_model(self, X_train: np.ndarray, y_train: np.ndarray,
                                   X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, float]:
         """Train classification model for trade success prediction."""
         try:
             self.logger.info(f"Training {self.config.classification_model} classification model")
             self.logger.info(f"Training data: {X_train.shape}, Test data: {X_test.shape}")
-            
+
             if self.config.classification_model == 'random_forest':
                 self.logger.info("Using RandomForestClassifier with 100 estimators, max_depth=10")
                 model = RandomForestClassifier(
@@ -538,17 +538,17 @@ class TradingMLIntegration:
             else:
                 self.logger.warning(f"Unknown classification model: {self.config.classification_model}, using RandomForest")
                 model = RandomForestClassifier(random_state=self.config.random_state)
-            
+
             # Train model
             self.logger.info("Fitting classification model")
             model.fit(X_train, y_train)
             self.classification_model = model
-            
+
             # Make predictions
             self.logger.info("Making predictions on test set")
             y_pred = model.predict(X_test)
             y_pred_proba = model.predict_proba(X_test)[:, 1]
-            
+
             # Calculate metrics
             self.logger.info("Calculating classification metrics")
             accuracy = accuracy_score(y_test, y_pred)
@@ -556,15 +556,15 @@ class TradingMLIntegration:
             recall = recall_score(y_test, y_pred)
             f1 = f1_score(y_test, y_pred)
             roc_auc = roc_auc_score(y_test, y_pred_proba)
-            
+
             self.logger.info(f"Classification metrics: accuracy={accuracy:.3f}, precision={precision:.3f}, recall={recall:.3f}, f1={f1:.3f}, roc_auc={roc_auc:.3f}")
-            
+
             # Cross-validation
             self.logger.info(f"Performing {self.config.cross_validation_folds}-fold cross-validation")
             cv_scores = cross_val_score(model, X_train, y_train, cv=self.config.cross_validation_folds)
-            
+
             self.logger.info(f"Cross-validation scores: mean={cv_scores.mean():.3f}, std={cv_scores.std():.3f}")
-            
+
             return {
                 'accuracy': accuracy,
                 'precision': precision,
@@ -574,19 +574,19 @@ class TradingMLIntegration:
                 'cv_mean': cv_scores.mean(),
                 'cv_std': cv_scores.std()
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Classification model training failed: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
-    
-    def _train_regression_model(self, X_train: np.ndarray, y_train: np.ndarray, 
+
+    def _train_regression_model(self, X_train: np.ndarray, y_train: np.ndarray,
                               X_test: np.ndarray, y_test: np.ndarray) -> Dict[str, float]:
         """Train regression model for return prediction."""
         try:
             self.logger.info(f"Training {self.config.regression_model} regression model")
             self.logger.info(f"Training data: {X_train.shape}, Test data: {X_test.shape}")
-            
+
             if self.config.regression_model == 'ridge':
                 self.logger.info("Using Ridge regression with alpha=1.0")
                 model = Ridge(alpha=1.0)
@@ -603,16 +603,16 @@ class TradingMLIntegration:
             else:
                 self.logger.warning(f"Unknown regression model: {self.config.regression_model}, using Ridge")
                 model = Ridge(alpha=1.0)
-            
+
             # Train model
             self.logger.info("Fitting regression model")
             model.fit(X_train, y_train)
             self.regression_model = model
-            
+
             # Make predictions
             self.logger.info("Making predictions on test set")
             y_pred = model.predict(X_test)
-            
+
             # Calculate metrics
             from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
             r2 = r2_score(y_test, y_pred)
@@ -624,9 +624,9 @@ class TradingMLIntegration:
             # Cross-validation
             self.logger.info(f"Performing {self.config.cross_validation_folds}-fold cross-validation")
             cv_scores = cross_val_score(model, X_train, y_train, cv=self.config.cross_validation_folds)
-            
+
             self.logger.info(f"Cross-validation scores: mean={cv_scores.mean():.3f}, std={cv_scores.std():.3f}")
-            
+
             return {
                 'r2_score': r2,
                 'mse': mse,
@@ -634,18 +634,18 @@ class TradingMLIntegration:
                 'cv_mean': cv_scores.mean(),
                 'cv_std': cv_scores.std()
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Regression model training failed: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {}
-    
+
     def _calculate_feature_importance(self, feature_names: List[str]) -> None:
         """Calculate feature importance from trained models."""
         try:
             self.logger.info("📊 Calculating feature importance from trained models")
             importance_dict = {}
-            
+
             # Classification model importance
             if self.classification_model and hasattr(self.classification_model, 'feature_importances_'):
                 self.logger.info("Extracting classification model feature importance")
@@ -656,7 +656,7 @@ class TradingMLIntegration:
                 self.logger.info(f"Classification model has {len(class_importance)} feature importances")
             else:
                 self.logger.warning("Classification model does not support feature importance")
-            
+
             # Regression model importance
             if self.regression_model and hasattr(self.regression_model, 'feature_importances_'):
                 self.logger.info("Extracting regression model feature importance")
@@ -667,9 +667,9 @@ class TradingMLIntegration:
                 self.logger.info(f"Regression model has {len(reg_importance)} feature importances")
             else:
                 self.logger.warning("Regression model does not support feature importance")
-            
+
             self.feature_importance = importance_dict
-            
+
             if importance_dict:
                 # Log top 5 most important features
                 sorted_importance = sorted(importance_dict.items(), key=lambda x: x[1], reverse=True)
@@ -678,29 +678,29 @@ class TradingMLIntegration:
                     self.logger.info(f"  {feature}: {importance:.3f}")
             else:
                 self.logger.warning("No feature importance calculated")
-            
+
         except Exception as e:
             self.logger.warning(f"Feature importance calculation failed: {e}")
-    
-    def generate_trading_signals(self, current_market_data: pd.DataFrame, 
+
+    def generate_trading_signals(self, current_market_data: pd.DataFrame,
                                current_sr_levels: List[SRLevel]) -> List[TradingSignal]:
         """Generate trading signals using trained models."""
         try:
             if self.classification_model is None or self.regression_model is None:
                 self.logger.error("Models not trained. Call train_trading_models first.")
                 raise ValueError("Models not trained. Call train_trading_models first.")
-            
+
             self.logger.info(f"🚀 Generating trading signals for {len(current_sr_levels)} SR levels")
             self.logger.info(f"Quality threshold: {self.config.quality_threshold}, Confidence threshold: {self.config.confidence_threshold}")
-            
+
             signals = []
             skipped_low_quality = 0
             skipped_low_confidence = 0
-            
+
             for i, sr_level in enumerate(current_sr_levels):
                 try:
                     self.logger.debug(f"Processing SR level {i+1}/{len(current_sr_levels)}: price={sr_level.price}, type={sr_level.level_type}")
-                    
+
                     # Get SR quality prediction
                     if self.predictive_engine:
                         sr_prediction = self.predictive_engine.predict_sr_quality(
@@ -713,22 +713,22 @@ class TradingMLIntegration:
                         sr_quality = 0.5  # Default
                         sr_confidence = 0.5
                         self.logger.debug("Using default SR quality and confidence values")
-                    
+
                     # Skip if quality/confidence too low
                     if sr_quality < self.config.quality_threshold:
                         skipped_low_quality += 1
                         self.logger.debug(f"Skipping level {sr_level.price}: quality {sr_quality:.3f} < threshold {self.config.quality_threshold}")
                         continue
-                    
+
                     if sr_confidence < self.config.confidence_threshold:
                         skipped_low_confidence += 1
                         self.logger.debug(f"Skipping level {sr_level.price}: confidence {sr_confidence:.3f} < threshold {self.config.confidence_threshold}")
                         continue
-                    
+
                     # Extract market features
                     market_features = self._extract_current_market_features(current_market_data)
                     self.logger.debug(f"Market features: momentum={market_features['momentum_score']:.3f}, volatility={market_features['volatility_score']:.3f}, volume={market_features['volume_score']:.3f}")
-                    
+
                     # Prepare feature vector
                     features = np.array([
                         sr_quality,
@@ -744,16 +744,16 @@ class TradingMLIntegration:
                         datetime.now().month,
                         self.label_encoder.transform([market_features['market_regime']])[0] if self.label_encoder else 0
                     ]).reshape(1, -1)
-                    
+
                     # Scale features
                     features_scaled = self.feature_scaler.transform(features)
-                    
+
                     # Make predictions
                     trade_success_prob = self.classification_model.predict_proba(features_scaled)[0, 1]
                     expected_return = self.regression_model.predict(features_scaled)[0]
-                    
+
                     self.logger.debug(f"Predictions: success_prob={trade_success_prob:.3f}, expected_return={expected_return:.3f}")
-                    
+
                     # Determine signal type
                     if trade_success_prob > 0.7 and expected_return > 0.02:
                         signal_type = 'buy'
@@ -761,9 +761,9 @@ class TradingMLIntegration:
                         signal_type = 'sell'
                     else:
                         signal_type = 'hold'
-                    
+
                     self.logger.debug(f"Signal type: {signal_type}")
-                    
+
                     # Create trading signal
                     signal = TradingSignal(
                         symbol=sr_level.symbol,
@@ -779,40 +779,40 @@ class TradingMLIntegration:
                         risk_score=1.0 - sr_confidence,
                         timestamp=datetime.now()
                     )
-                    
+
                     signals.append(signal)
                     self.logger.debug(f"Generated {signal_type} signal for {sr_level.price} with confidence {trade_success_prob:.3f}")
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Failed to generate signal for {sr_level.price}: {e}")
                     continue
-            
+
             # Sort by confidence
             signals.sort(key=lambda x: x.confidence, reverse=True)
-            
+
             self.trading_signals = signals
-            
+
             # Log signal statistics
             buy_signals = sum(1 for s in signals if s.signal_type == 'buy')
             sell_signals = sum(1 for s in signals if s.signal_type == 'sell')
             hold_signals = sum(1 for s in signals if s.signal_type == 'hold')
-            
+
             self.logger.info(f"✅ Generated {len(signals)} trading signals")
             self.logger.info(f"Signal breakdown: {buy_signals} buy, {sell_signals} sell, {hold_signals} hold")
             self.logger.info(f"Skipped: {skipped_low_quality} low quality, {skipped_low_confidence} low confidence")
-            
+
             if signals:
                 avg_confidence = np.mean([s.confidence for s in signals])
                 avg_expected_return = np.mean([s.expected_return for s in signals])
                 self.logger.info(f"Average confidence: {avg_confidence:.3f}, Average expected return: {avg_expected_return:.3f}")
-            
+
             return signals
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trading signal generation failed: {e}")
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
-    
+
     def _extract_current_market_features(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Extract current market features."""
         try:
@@ -823,23 +823,23 @@ class TradingMLIntegration:
                     'volume_score': 0.0,
                     'market_regime': 'neutral'
                 }
-            
+
             # Use most recent data
             recent_data = market_data.tail(20)
-            
+
             # Calculate features
             momentum_score = self._calculate_momentum_score(market_data, datetime.now())
             volatility_score = self._calculate_volatility_score(market_data, datetime.now())
             volume_score = self._calculate_volume_score(market_data, datetime.now())
             market_regime = self._determine_market_regime(momentum_score, volatility_score, volume_score)
-            
+
             return {
                 'momentum_score': momentum_score,
                 'volatility_score': volatility_score,
                 'volume_score': volume_score,
                 'market_regime': market_regime
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Current market feature extraction failed: {e}")
             return {
@@ -848,7 +848,7 @@ class TradingMLIntegration:
                 'volume_score': 0.0,
                 'market_regime': 'neutral'
             }
-    
+
     def get_trading_summary(self) -> Dict[str, Any]:
         """Get summary of trading model performance and signals."""
         return {
@@ -868,16 +868,16 @@ def get_trading_ml_integration(config: Optional[TradingMLConfig] = None) -> Trad
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -896,8 +896,8 @@ def get_trading_ml_integration(config: Optional[TradingMLConfig] = None) -> Trad
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -914,13 +914,13 @@ def get_trading_ml_integration(config: Optional[TradingMLConfig] = None) -> Trad
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

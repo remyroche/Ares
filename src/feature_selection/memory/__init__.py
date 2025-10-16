@@ -14,7 +14,7 @@ from .memory_efficient_selector import (
 
 __all__ = [
     'MemoryEfficientFeatureSelector',
-    'ChunkedFeatureProcessor', 
+    'ChunkedFeatureProcessor',
     'SparseFeatureSelector',
     'create_memory_efficient_selector'
 ]

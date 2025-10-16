@@ -34,7 +34,6 @@ PositionSide = Literal["long", "short", "neutral"]
 TradeAction = Literal["open_long", "open_short", "close_long", "close_short", "hold"]
 RiskLevel = Literal["very_low", "low", "medium", "high", "very_high"]
 
-
 class OrderRequest(TypedDict):
     """Type-safe order request."""
 
@@ -47,7 +46,6 @@ class OrderRequest(TypedDict):
     time_in_force: Literal["GTC", "IOC", "FOK"] | None
     reduce_only: bool | None
     leverage: LeverageMultiplier | None
-
 
 class TradeDecision(TypedDict):
     """Type-safe trade decision."""
@@ -64,7 +62,6 @@ class TradeDecision(TypedDict):
     risk_score: RiskScore
     reasoning: str
 
-
 class PositionRisk(TypedDict):
     """Type-safe position risk assessment."""
 
@@ -78,7 +75,6 @@ class PositionRisk(TypedDict):
     days_held: int
     risk_level: RiskLevel
 
-
 class RiskParameters(TypedDict):
     """Type-safe risk management parameters."""
 
@@ -91,7 +87,6 @@ class RiskParameters(TypedDict):
     position_correlation_limit: float
     var_limit: float  # Value at Risk
 
-
 class TradingSignal(TypedDict):
     """Type-safe trading signal."""
 
@@ -103,7 +98,6 @@ class TradingSignal(TypedDict):
     confidence: ConfidenceLevel
     time_horizon: Literal["scalp", "short_term", "medium_term", "long_term"]
     source: str  # e.g., "analyst", "ml_model", "technical_indicator"
-
 
 class PerformanceMetrics(TypedDict):
     """Type-safe performance metrics."""
@@ -120,7 +114,6 @@ class PerformanceMetrics(TypedDict):
     winning_trades: int
     losing_trades: int
 
-
 class PortfolioState(TypedDict):
     """Type-safe portfolio state."""
 
@@ -133,7 +126,6 @@ class PortfolioState(TypedDict):
     open_orders: list[OrderRequest]
     daily_pnl: float
     performance: PerformanceMetrics
-
 
 class BacktestResult(TypedDict):
     """Type-safe backtest result."""

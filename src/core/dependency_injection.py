@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import TypeVar, Any, Callable
 from datetime import datetime
 from src.interfaces import IAnalyst, IStrategist, ISupervisor, ITactician
 from src.utils.logger import system_logger
+from typing import TypeVar, Any, Callable
 import logging
 import time
 
@@ -100,10 +100,10 @@ class DependencyContainer:
             if service_name in self._resolution_stack:
                 circular_path = " -> ".join([str(s) for s in self._resolution_stack] + [str(service_name)])
                 raise ValueError(f"Circular dependency detected: {circular_path}")
-            
+
             # Add to resolution stack
             self._resolution_stack.append(service_name)
-            
+
             try:
                 if service_name in self._instances:
                     return self._instances[service_name]
@@ -128,7 +128,7 @@ class DependencyContainer:
             finally:
                 # Remove from resolution stack
                 self._resolution_stack.pop()
-                
+
         except Exception as e:
             self.logger.exception(f"Failed to resolve service '{getattr(service_name, '__name__', service_name)}': {e}")
             # Clean up resolution stack on error
@@ -184,7 +184,7 @@ class DependencyContainer:
         """Get health status of a service."""
         health = self._service_health.get(service_name, {})
         service_reg = self._services.get(service_name)
-        
+
         if service_reg:
             health.update({
                 'registered': True,
@@ -198,7 +198,7 @@ class DependencyContainer:
                 'registered': False,
                 'error': 'Service not registered'
             })
-        
+
         return health
 
     def get_all_service_health(self) -> dict[str, dict[str, Any]]:
@@ -212,13 +212,13 @@ class DependencyContainer:
         """Update health status of a service."""
         if service_name not in self._service_health:
             self._service_health[service_name] = {}
-        
+
         self._service_health[service_name].update({
             'status': status,
             'last_updated': datetime.now().isoformat(),
             'details': details or {}
         })
-        
+
         self.logger.debug(f"Updated health for {service_name}: {status}")
 
     def check_service_health(self, service_name: Any) -> bool:

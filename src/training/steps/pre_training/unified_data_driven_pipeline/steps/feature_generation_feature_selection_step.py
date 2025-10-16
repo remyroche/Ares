@@ -30,7 +30,7 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 @dataclass
 class FeatureSelectionResult:
     """Result of feature selection step."""
-    
+
     success: bool
     selected_features: pd.DataFrame
     selection_metadata: Dict[str, Any]
@@ -38,15 +38,14 @@ class FeatureSelectionResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-
 class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
     """Feature selection step that calls the consolidated pipeline."""
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
     super().__init__(config or ComponentConfig())
         """Initialize the feature selection step."""
         self.logger = logging.getLogger(__name__)
-    
+
     async def execute(self,
                      data: pd.DataFrame,
                      targets: pd.Series,
@@ -60,9 +59,9 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                      exchange: str = "binance",
                      custom_overrides: Optional[Dict[str, Any]] = None) -> FeatureSelectionResult:
         """Execute feature selection step using consolidated pipeline."""
-        
+
         self.logger.info("🎯 Starting feature selection step using consolidated pipeline")
-        
+
         try:
             # Call the consolidated pipeline runner
             result = await run_feature_selection_step(
@@ -78,7 +77,7 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 exchange=exchange,
                 custom_overrides=custom_overrides
             )
-            
+
             # Convert result to FeatureSelectionResult
             selection_result = FeatureSelectionResult(
                 success=result['success'],
@@ -88,14 +87,14 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 artifacts=result.get('artifacts', {}),
                 error_message=result.get('error_message')
             )
-            
+
             if selection_result.success:
                 self.logger.info(f"✅ Feature selection completed successfully with {len(selection_result.selected_features.columns)} selected features")
             else:
                 self.logger.error(f"❌ Feature selection failed: {selection_result.error_message}")
-            
+
             return selection_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature selection step failed with exception: {e}")
             return FeatureSelectionResult(
@@ -106,7 +105,6 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 artifacts={},
                 error_message=str(e)
             )
-
 
 # Command handler for ares_launcher integration
 async def handle_feature_generation_feature_selection_step(
@@ -123,7 +121,7 @@ async def handle_feature_generation_feature_selection_step(
 ) -> FeatureSelectionResult:
     """
     Handle feature generation feature selection step command.
-    
+
     Args:
         symbol: Trading symbol (default: "ETHUSDT")
         timeframe: Timeframe (default: "15m")
@@ -135,7 +133,7 @@ async def handle_feature_generation_feature_selection_step(
         exchange: Exchange (default: "binance")
         custom_overrides: Custom configuration overrides (optional)
         **kwargs: Additional arguments
-        
+
     Returns:
         FeatureSelectionResult with selection results
     """
@@ -147,15 +145,15 @@ async def handle_feature_generation_feature_selection_step(
         'close': np.random.randn(1000).cumsum() + 100,
         'volume': np.random.randint(1000, 10000, 1000)
     })
-    
+
     # Generate targets using the labeling system
     from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import ConsolidatedPipelineRunner
     runner = ConsolidatedPipelineRunner()
     targets = runner._generate_targets(sample_data, symbol, timeframe, direction)
-    
+
     # Create step instance and execute
     step = FeatureGenerationFeatureSelectionStep()
-    
+
     return await step.execute(
         data=sample_data,
         targets=targets,
@@ -170,7 +168,6 @@ async def handle_feature_generation_feature_selection_step(
         custom_overrides=custom_overrides
     )
 
-
     # Required utility methods for BasePreTrainingComponent
     def safe_dataframe_operation(self, operation_func, *args, **kwargs):
         """Safe dataframe operation wrapper."""
@@ -184,7 +181,6 @@ async def handle_feature_generation_feature_selection_step(
         """Optimize dataframe for matrix operations."""
         return optimize_dataframe(df)
 
-
 # Register component with factory
 def _register_feature_generation_feature_selection_step():
     """Register the FeatureGenerationFeatureSelectionStep component with the factory."""
@@ -197,7 +193,6 @@ def _register_feature_generation_feature_selection_step():
     except ImportError:
         # Component factory not available, skip registration
         pass
-
 
 # Register the component when module is imported
 _register_feature_generation_feature_selection_step()

@@ -47,7 +47,6 @@ from src.core.errors import (
 
 logger = logging.getLogger(__name__)
 
-
 class EnsembleType(Enum):
     """Types of ensemble methods."""
     VOTING = "voting"
@@ -59,13 +58,11 @@ class EnsembleType(Enum):
     DYNAMIC_WEIGHTING = "dynamic_weighting"
     MULTI_OUTPUT_STACKING = "multi_output_stacking"
 
-
 class VotingStrategy(Enum):
     """Voting strategies for ensemble."""
     HARD = "hard"
     SOFT = "soft"
     WEIGHTED = "weighted"
-
 
 @dataclass
 class ModelMetadata:
@@ -83,56 +80,54 @@ class ModelMetadata:
     is_active: bool = True
     weight: float = 1.0
 
-
 @dataclass
 class EnsembleConfig:
     """Configuration for ensemble manager."""
     # Basic configuration
     ensemble_name: str
     output_dir: str
-    
+
     # Ensemble type and strategy
     ensemble_type: EnsembleType = EnsembleType.VOTING
     voting_strategy: VotingStrategy = VotingStrategy.SOFT
-    
+
     # Model selection
     max_models: int = 10
     min_models: int = 2
     model_selection_criteria: str = "performance"  # performance, diversity, stability
-    
+
     # Training configuration
     enable_cross_validation: bool = True
     cv_folds: int = 5
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
-    
+
     # Weight optimization
     enable_weight_optimization: bool = True
     weight_optimization_method: str = "performance_based"  # performance_based, diversity_based, stability_based
     weight_update_frequency: int = 100  # Update weights every N predictions
-    
+
     # M1 optimization settings
     enable_gpu_acceleration: bool = True
     enable_memory_optimization: bool = True
     enable_parallel_processing: bool = True
     memory_limit_gb: float = 8.0
     max_workers: Optional[int] = None
-    
+
     # Performance settings
     enable_caching: bool = True
     cache_size_mb: int = 100
     enable_profiling: bool = False
-    
+
     # Validation settings
     validation_split: float = 0.2
     test_split: float = 0.1
     enable_online_learning: bool = False
-    
+
     # Output settings
     save_models: bool = True
     save_predictions: bool = True
     generate_reports: bool = True
-
 
 @dataclass
 class EnsembleResults:
@@ -142,43 +137,42 @@ class EnsembleResults:
     ensemble_type: EnsembleType
     created_at: datetime
     total_duration: float
-    
+
     # Model information
     model_count: int
     active_models: int
     model_metadata: List[ModelMetadata] = field(default_factory=list)
-    
+
     # Performance metrics
     ensemble_performance: Dict[str, float] = field(default_factory=dict)
     individual_model_performance: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    
+
     # Ensemble characteristics
     diversity_score: float = 0.0
     stability_score: float = 0.0
     confidence_scores: np.ndarray = field(default_factory=lambda: np.array([]))
-    
+
     # Predictions
     predictions: np.ndarray = field(default_factory=lambda: np.array([]))
     prediction_probabilities: np.ndarray = field(default_factory=lambda: np.array([]))
-    
+
     # Metadata
     config: EnsembleConfig = field(default_factory=EnsembleConfig)
     execution_time: float = 0.0
     memory_usage_mb: float = 0.0
     optimization_used: List[str] = field(default_factory=list)
 
-
 class EnsembleManager:
     """Comprehensive ensemble manager with M1 optimizations."""
-    
+
     def __init__(self, config: EnsembleConfig):
         """Initialize ensemble manager."""
         self.logger = logger.getChild('EnsembleManager')
         self.logger.info(f"🚀 Initializing EnsembleManager for {config.ensemble_name}...")
         start_time = time.time()
-        
+
         self.config = config
-        
+
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
         self.m1_gpu = get_m1_memory_optimizer() if config.enable_gpu_acceleration else None
@@ -186,29 +180,29 @@ class EnsembleManager:
             memory_limit_gb=config.memory_limit_gb
         ) if config.enable_memory_optimization else None
         self.m1_cpu = get_memory_manager() if config.enable_parallel_processing else None
-        
+
         self.logger.debug("✅ M1 optimizers initialized")
-        
+
         # Initialize utilities
         self.logger.debug("🔧 Initializing utilities...")
         self.parquet_utils = get_parquet_utils()
         self.logger.debug("✅ Utilities initialized")
-        
+
         # Ensemble state
         self.models: Dict[str, ModelMetadata] = {}
         self.ensemble_model: Optional[Any] = None
         self.ensemble_weights: Optional[np.ndarray] = None
         self.prediction_count = 0
-        
+
         # Performance tracking
         self.performance_history: List[Dict[str, float]] = []
         self.weight_history: List[np.ndarray] = []
-        
+
         # Ensure output directory exists
         self.logger.debug(f"🔧 Ensuring output directory exists: {config.output_dir}")
         ensure_directory(config.output_dir)
         self.logger.debug("✅ Output directory ready")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ EnsembleManager initialized for {config.ensemble_name} in {init_time:.3f}s")
         self.logger.info(f"⚡ GPU acceleration: {config.enable_gpu_acceleration}")
@@ -217,19 +211,19 @@ class EnsembleManager:
         self.logger.info(f"🎯 Ensemble type: {config.ensemble_type.value}")
         self.logger.info(f"📊 Max models: {config.max_models}, Min models: {config.min_models}")
         self.logger.info(f"💾 Output directory: {config.output_dir}")
-    
+
     async def add_model(
-        self, 
-        model_name: str, 
-        model: Any, 
+        self,
+        model_name: str,
+        model: Any,
         performance_metrics: Optional[Dict[str, float]] = None,
         **kwargs
     ) -> bool:
         """Add a model to the ensemble."""
-        
+
         self.logger.info(f"🔄 Adding model {model_name} to ensemble...")
         start_time = time.time()
-        
+
         try:
             # Validate model
             self.logger.debug(f"🔍 Validating model {model_name}...")
@@ -237,12 +231,12 @@ class EnsembleManager:
                 self.logger.error(f"❌ Model {model_name} validation failed")
                 return False
             self.logger.debug(f"✅ Model {model_name} validation passed")
-            
+
             # Check if we have space for more models
             if len(self.models) >= self.config.max_models:
                 self.logger.warning(f"⚠️ Ensemble at capacity ({len(self.models)}/{self.config.max_models}), removing worst model...")
                 await self._remove_worst_model()
-            
+
             # Create model metadata
             self.logger.debug(f"📊 Creating metadata for model {model_name}...")
             metadata = ModelMetadata(
@@ -253,25 +247,25 @@ class EnsembleManager:
                 created_at=datetime.now(),
                 last_updated=datetime.now()
             )
-            
+
             # Calculate initial weight based on performance
             if performance_metrics:
                 metadata.weight = self._calculate_initial_weight(performance_metrics)
                 self.logger.debug(f"⚖️ Initial weight calculated: {metadata.weight:.4f}")
             else:
                 self.logger.debug("⚖️ No performance metrics provided, using default weight")
-            
+
             # Add to ensemble
             self.models[model_name] = metadata
-            
+
             add_time = time.time() - start_time
             self.logger.info(f"✅ Model {model_name} added to ensemble in {add_time:.3f}s")
             self.logger.info(f"📊 Current ensemble size: {len(self.models)}")
             self.logger.info(f"🎯 Model type: {metadata.model_type}")
             self.logger.info(f"⚖️ Model weight: {metadata.weight:.4f}")
-            
+
             return True
-            
+
         except Exception as e:
             add_time = time.time() - start_time
             self.logger.error(f"❌ Failed to add model {model_name} after {add_time:.3f}s: {e}")
@@ -279,35 +273,35 @@ class EnsembleManager:
             self.logger.error(f"📊 Performance metrics: {performance_metrics}")
             self.logger.warning("⚠️ Model addition failed - ensemble may be incomplete")
             return False
-    
+
     async def create_ensemble(
-        self, 
-        X_train: pd.DataFrame, 
+        self,
+        X_train: pd.DataFrame,
         y_train: pd.Series,
         X_val: Optional[pd.DataFrame] = None,
         y_val: Optional[pd.Series] = None,
         **kwargs
     ) -> EnsembleResults:
         """Create ensemble from available models."""
-        
+
         self.logger.info("🚀 Creating ensemble...")
         start_time = time.time()
-        
+
         self.logger.info(f"📊 Training data shape: {X_train.shape}")
         self.logger.info(f"📊 Target data shape: {y_train.shape}")
         if X_val is not None:
             self.logger.info(f"📊 Validation data shape: {X_val.shape}")
         if y_val is not None:
             self.logger.info(f"📊 Validation target shape: {y_val.shape}")
-        
+
         # Validate inputs
         self.logger.debug(f"🔍 Validating ensemble creation requirements...")
         if len(self.models) < self.config.min_models:
             self.logger.error(f"❌ Insufficient models: {len(self.models)} < {self.config.min_models}")
             raise ValidationError(f"Insufficient models: {len(self.models)} < {self.config.min_models}")
-        
+
         self.logger.info(f"✅ Model count validation passed: {len(self.models)} models available")
-        
+
         # Memory optimization context
         if self.m1_memory:
             self.logger.debug("🧠 Using memory optimization context...")
@@ -316,47 +310,47 @@ class EnsembleManager:
         else:
             self.logger.debug("🧠 No memory optimization available, proceeding normally...")
             results = await self._create_ensemble_internal(X_train, y_train, X_val, y_val, **kwargs)
-        
+
         execution_time = time.time() - start_time
         results.execution_time = execution_time
-        
+
         # Log memory usage
         if self.m1_memory:
             results.memory_usage_mb = self.m1_memory.get_current_memory_usage_mb()
             self.logger.info(f"🧠 Memory usage: {results.memory_usage_mb:.1f} MB")
-        
+
         self.logger.info(f"✅ Ensemble created in {execution_time:.2f}s")
         self.logger.info(f"📊 Ensemble performance: {results.ensemble_performance}")
         self.logger.info(f"🎯 Model count: {results.model_count}")
         self.logger.info(f"📈 Diversity score: {results.diversity_score:.4f}")
         self.logger.info(f"🔒 Stability score: {results.stability_score:.4f}")
-        
+
         return results
-    
+
     async def _create_ensemble_internal(
-        self, 
-        X_train: pd.DataFrame, 
+        self,
+        X_train: pd.DataFrame,
         y_train: pd.Series,
         X_val: Optional[pd.DataFrame],
         y_val: Optional[pd.Series],
         **kwargs
     ) -> EnsembleResults:
         """Internal ensemble creation logic."""
-        
+
         self.logger.debug("🔄 Starting internal ensemble creation...")
         internal_start_time = time.time()
-        
+
         # Select best models
         self.logger.debug("🔍 Selecting best models for ensemble...")
         selection_start_time = time.time()
         selected_models = await self._select_best_models()
         selection_time = time.time() - selection_start_time
         self.logger.info(f"✅ Model selection completed in {selection_time:.3f}s: {len(selected_models)} models selected")
-        
+
         # Create ensemble based on type
         self.logger.info(f"🔄 Creating {self.config.ensemble_type.value} ensemble...")
         creation_start_time = time.time()
-        
+
         if self.config.ensemble_type == EnsembleType.VOTING:
             ensemble_model = await self._create_voting_ensemble(selected_models)
         elif self.config.ensemble_type == EnsembleType.STACKING:
@@ -370,10 +364,10 @@ class EnsembleManager:
         else:
             self.logger.error(f"❌ Unsupported ensemble type: {self.config.ensemble_type}")
             raise ValueError(f"Unsupported ensemble type: {self.config.ensemble_type}")
-        
+
         creation_time = time.time() - creation_start_time
         self.logger.info(f"✅ Ensemble model created in {creation_time:.3f}s")
-        
+
         # Train ensemble
         if hasattr(ensemble_model, 'fit'):
             self.logger.info("🔄 Training ensemble model...")
@@ -383,14 +377,14 @@ class EnsembleManager:
             self.logger.info(f"✅ Ensemble training completed in {training_time:.3f}s")
         else:
             self.logger.debug("ℹ️ Ensemble model does not require training")
-        
+
         # Evaluate ensemble
         self.logger.debug("🔍 Evaluating ensemble performance...")
         eval_start_time = time.time()
         ensemble_performance = await self._evaluate_ensemble(ensemble_model, X_val, y_val)
         eval_time = time.time() - eval_start_time
         self.logger.info(f"✅ Ensemble evaluation completed in {eval_time:.3f}s")
-        
+
         # Calculate ensemble characteristics
         self.logger.debug("📊 Calculating ensemble characteristics...")
         char_start_time = time.time()
@@ -398,7 +392,7 @@ class EnsembleManager:
         stability_score = await self._calculate_stability_score(selected_models, X_train, y_train)
         char_time = time.time() - char_start_time
         self.logger.info(f"✅ Characteristic calculation completed in {char_time:.3f}s")
-        
+
         # Create results
         self.logger.debug("📊 Creating ensemble results...")
         results = EnsembleResults(
@@ -416,26 +410,26 @@ class EnsembleManager:
             config=self.config,
             optimization_used=self._get_optimization_used()
         )
-        
+
         # Store ensemble model
         self.ensemble_model = ensemble_model
-        
+
         internal_time = time.time() - internal_start_time
         self.logger.info(f"✅ Internal ensemble creation completed in {internal_time:.3f}s")
-        
+
         return results
-    
+
     async def _select_best_models(self) -> Dict[str, ModelMetadata]:
         """Select best models for ensemble."""
-        
+
         self.logger.debug(f"🔍 Selecting best models from {len(self.models)} available models...")
         self.logger.debug(f"📊 Selection criteria: {self.config.model_selection_criteria}")
         self.logger.debug(f"📊 Max models allowed: {self.config.max_models}")
-        
+
         if len(self.models) <= self.config.max_models:
             self.logger.info(f"✅ All {len(self.models)} models selected (within limit)")
             return self.models.copy()
-        
+
         # Sort models by performance
         self.logger.debug("🔄 Sorting models by selection criteria...")
         if self.config.model_selection_criteria == "performance":
@@ -461,16 +455,16 @@ class EnsembleManager:
                 key=lambda x: x[1].performance_metrics.get('accuracy', 0.0),
                 reverse=True
             )
-        
+
         # Select top models
         selected = dict(sorted_models[:self.config.max_models])
-        
+
         # Log selection details
         self.logger.info(f"📊 Selected {len(selected)} models for ensemble")
         for i, (name, metadata) in enumerate(sorted_models[:self.config.max_models]):
             accuracy = metadata.performance_metrics.get('accuracy', 0.0)
             self.logger.debug(f"   {i+1}. {name}: accuracy={accuracy:.4f}, weight={metadata.weight:.4f}")
-        
+
         # Log excluded models
         if len(sorted_models) > self.config.max_models:
             excluded_count = len(sorted_models) - self.config.max_models
@@ -478,27 +472,27 @@ class EnsembleManager:
             for i, (name, metadata) in enumerate(sorted_models[self.config.max_models:]):
                 accuracy = metadata.performance_metrics.get('accuracy', 0.0)
                 self.logger.debug(f"   Excluded {i+1}. {name}: accuracy={accuracy:.4f}")
-        
+
         return selected
-    
+
     async def _create_voting_ensemble(self, models: Dict[str, ModelMetadata]) -> Any:
         """Create voting ensemble."""
-        
+
         self.logger.debug("🔄 Creating voting ensemble...")
         start_time = time.time()
-        
+
         from sklearn.ensemble import VotingClassifier, VotingRegressor
-        
+
         # Determine if classification or regression
         self.logger.debug("🔍 Determining task type...")
         is_classification = self._is_classification_task(models)
         self.logger.info(f"📊 Task type: {'Classification' if is_classification else 'Regression'}")
-        
+
         # Prepare estimators
         self.logger.debug("🔧 Preparing estimators...")
         estimators = [(name, meta.model_object) for name, meta in models.items()]
         self.logger.debug(f"📊 Prepared {len(estimators)} estimators")
-        
+
         # Create voting ensemble
         self.logger.debug("🔄 Creating voting ensemble object...")
         if is_classification:
@@ -515,32 +509,32 @@ class EnsembleManager:
                 estimators=estimators,
                 n_jobs=-1
             )
-        
+
         creation_time = time.time() - start_time
         self.logger.info(f"✅ Created voting ensemble with {len(estimators)} models in {creation_time:.3f}s")
         self.logger.info(f"🎯 Ensemble type: {type(ensemble).__name__}")
-        
+
         return ensemble
-    
+
     async def _create_stacking_ensemble(self, models: Dict[str, ModelMetadata], X_train: pd.DataFrame, y_train: pd.Series) -> Any:
         """Create stacking ensemble."""
-        
+
         self.logger.debug("🔄 Creating stacking ensemble...")
         start_time = time.time()
-        
+
         from sklearn.ensemble import StackingClassifier, StackingRegressor
         from sklearn.linear_model import LogisticRegression, LinearRegression
-        
+
         # Determine if classification or regression
         self.logger.debug("🔍 Determining task type...")
         is_classification = self._is_classification_task(models)
         self.logger.info(f"📊 Task type: {'Classification' if is_classification else 'Regression'}")
-        
+
         # Prepare base estimators
         self.logger.debug("🔧 Preparing base estimators...")
         base_estimators = [(name, meta.model_object) for name, meta in models.items()]
         self.logger.debug(f"📊 Prepared {len(base_estimators)} base estimators")
-        
+
         # Create meta-learner
         self.logger.debug("🔧 Creating meta-learner...")
         if is_classification:
@@ -562,27 +556,26 @@ class EnsembleManager:
                 cv=self.config.cv_folds,
                 n_jobs=-1
             )
-        
+
         creation_time = time.time() - start_time
         self.logger.info(f"✅ Created stacking ensemble with {len(base_estimators)} base models in {creation_time:.3f}s")
         self.logger.info(f"🎯 Ensemble type: {type(ensemble).__name__}")
         self.logger.info(f"📊 CV folds: {self.config.cv_folds}")
         self.logger.info(f"🎯 Meta-learner: {type(meta_learner).__name__}")
-        
+
         return ensemble
-    
+
     async def _create_blending_ensemble(self, models: Dict[str, ModelMetadata], X_train: pd.DataFrame, y_train: pd.Series, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Any:
         """Create blending ensemble."""
-        
+
         self.logger.debug("🔄 Creating blending ensemble...")
         start_time = time.time()
-        
-        
+
         # Determine if classification or regression
         self.logger.debug("🔍 Determining task type...")
         is_classification = self._is_classification_task(models)
         self.logger.info(f"📊 Task type: {'Classification' if is_classification else 'Regression'}")
-        
+
         # Create blending ensemble class
         self.logger.debug("🔧 Creating BlendingEnsemble class...")
         class BlendingEnsemble:
@@ -591,36 +584,36 @@ class EnsembleManager:
                 self.meta_learner = meta_learner
                 self.is_classification = is_classification
                 self.is_fitted = False
-            
+
             def fit(self, X, y):
                 # Train base models
                 for name, model in self.base_models.items():
                     model.fit(X, y)
-                
+
                 # Generate meta-features
                 meta_features = self._generate_meta_features(X)
-                
+
                 # Train meta-learner
                 self.meta_learner.fit(meta_features, y)
                 self.is_fitted = True
-            
+
             def predict(self, X):
                 if not self.is_fitted:
                     raise ValueError("Ensemble not fitted")
-                
+
                 meta_features = self._generate_meta_features(X)
                 return self.meta_learner.predict(meta_features)
-            
+
             def predict_proba(self, X):
                 if not self.is_fitted:
                     raise ValueError("Ensemble not fitted")
-                
+
                 meta_features = self._generate_meta_features(X)
                 if hasattr(self.meta_learner, 'predict_proba'):
                     return self.meta_learner.predict_proba(meta_features)
                 else:
                     return None
-            
+
             def _generate_meta_features(self, X):
                 meta_features = []
                 for name, model in self.base_models.items():
@@ -630,9 +623,9 @@ class EnsembleManager:
                     else:
                         pred = model.predict(X).reshape(-1, 1)
                         meta_features.append(pred)
-                
+
                 return np.hstack(meta_features)
-        
+
         # Create meta-learner
         self.logger.debug("🔧 Creating meta-learner...")
         if is_classification:
@@ -641,7 +634,7 @@ class EnsembleManager:
         else:
             meta_learner = LinearRegression()
             self.logger.debug("📊 Using LinearRegression as meta-learner")
-        
+
         # Create blending ensemble
         self.logger.debug("🔧 Creating blending ensemble object...")
         ensemble = BlendingEnsemble(
@@ -649,90 +642,90 @@ class EnsembleManager:
             meta_learner=meta_learner,
             is_classification=is_classification
         )
-        
+
         creation_time = time.time() - start_time
         self.logger.info(f"✅ Created blending ensemble with {len(models)} base models in {creation_time:.3f}s")
         self.logger.info(f"🎯 Ensemble type: BlendingEnsemble")
         self.logger.info(f"🎯 Meta-learner: {type(meta_learner).__name__}")
-        
+
         return ensemble
-    
+
     async def _create_weighted_average_ensemble(self, models: Dict[str, ModelMetadata]) -> Any:
         """Create weighted average ensemble."""
-        
+
         self.logger.debug("🔄 Creating weighted average ensemble...")
         start_time = time.time()
-        
+
         self.logger.debug("🔧 Creating WeightedAverageEnsemble class...")
         class WeightedAverageEnsemble:
             def __init__(self, models, weights):
                 self.models = models
                 self.weights = weights
                 self.is_fitted = False
-            
+
             def fit(self, X, y):
                 # Train all models
                 for model in self.models.values():
                     model.fit(X, y)
                 self.is_fitted = True
-            
+
             def predict(self, X):
                 if not self.is_fitted:
                     raise ValueError("Ensemble not fitted")
-                
+
                 predictions = []
                 for model, weight in zip(self.models.values(), self.weights):
                     pred = model.predict(X) * weight
                     predictions.append(pred)
-                
+
                 return np.sum(predictions, axis=0)
-            
+
             def predict_proba(self, X):
                 if not self.is_fitted:
                     raise ValueError("Ensemble not fitted")
-                
+
                 predictions = []
                 for model, weight in zip(self.models.values(), self.weights):
                     if hasattr(model, 'predict_proba'):
                         pred = model.predict_proba(X) * weight
                         predictions.append(pred)
-                
+
                 if predictions:
                     return np.sum(predictions, axis=0)
                 else:
                     return None
-        
+
         # Calculate weights based on performance
         self.logger.debug("⚖️ Calculating model weights...")
         weights = np.array([meta.weight for meta in models.values()])
         weights = weights / weights.sum()  # Normalize weights
-        
+
         self.logger.debug(f"📊 Model weights: {weights}")
         self.logger.debug(f"📊 Weight sum: {weights.sum():.6f}")
-        
+
         ensemble = WeightedAverageEnsemble(
             models={name: meta.model_object for name, meta in models.items()},
             weights=weights
         )
-        
+
         creation_time = time.time() - start_time
         self.logger.info(f"✅ Created weighted average ensemble with {len(models)} models in {creation_time:.3f}s")
         self.logger.info(f"🎯 Ensemble type: WeightedAverageEnsemble")
         self.logger.info(f"⚖️ Weight range: {weights.min():.4f} - {weights.max():.4f}")
-        
+
         return ensemble
-    
+
     async def _create_multi_output_stacking_ensemble(self, models: Dict[str, ModelMetadata], X_train: pd.DataFrame, y_train: pd.Series) -> Any:
         """Create multi-output stacking ensemble."""
-        
+
         self.logger.debug("🔄 Creating multi-output stacking ensemble...")
         start_time = time.time()
-        
+
         try:
             # Import multi-output stacking components
             from ..models.multi_output_models import MultiOutputStackingModel, MultiOutputConfig
             from .stacking_ensemble_manager import StackingEnsembleManager, StackingEnsembleConfig
-            
+
             # Determine output configuration based on target shape
             if len(y_train.shape) == 2 and y_train.shape[1] > 1:
                 n_outputs = y_train.shape[1]
@@ -740,7 +733,7 @@ class EnsembleManager:
             else:
                 n_outputs = 1
                 output_names = ["output_1"]
-            
+
             # Create multi-output configuration
             multi_output_config = MultiOutputConfig(
                 model_name=f"{self.config.ensemble_name}_multi_output",
@@ -752,41 +745,41 @@ class EnsembleManager:
                 enable_parallel_processing=self.config.enable_parallel_processing,
                 memory_limit_gb=self.config.memory_limit_gb
             )
-            
+
             # Create multi-output stacking model
             ensemble = MultiOutputStackingModel(multi_output_config)
-            
+
             creation_time = time.time() - start_time
             self.logger.info(f"✅ Created multi-output stacking ensemble with {n_outputs} outputs in {creation_time:.3f}s")
             self.logger.info(f"🎯 Ensemble type: MultiOutputStackingModel")
             self.logger.info(f"📊 Outputs: {output_names}")
-            
+
             return ensemble
-            
+
         except Exception as e:
             creation_time = time.time() - start_time
             self.logger.error(f"❌ Failed to create multi-output stacking ensemble after {creation_time:.3f}s: {e}")
             self.logger.warning("⚠️ Multi-output stacking ensemble creation failed - ensemble may not be available")
             raise
-    
+
     async def _evaluate_ensemble(self, ensemble_model: Any, X_val: Optional[pd.DataFrame], y_val: Optional[pd.Series]) -> Dict[str, float]:
         """Evaluate ensemble performance."""
-        
+
         self.logger.debug("🔍 Evaluating ensemble performance...")
         start_time = time.time()
-        
+
         if X_val is None or y_val is None:
             self.logger.warning("⚠️ No validation data provided, skipping evaluation")
             return {}
-        
+
         self.logger.debug(f"📊 Validation data shape: {X_val.shape}")
         self.logger.debug(f"📊 Validation target shape: {y_val.shape}")
-        
+
         try:
             # Make predictions
             self.logger.debug("🔄 Making predictions...")
             pred_start_time = time.time()
-            
+
             if hasattr(ensemble_model, 'predict_proba'):
                 y_pred_proba = ensemble_model.predict_proba(X_val)
                 y_pred = np.argmax(y_pred_proba, axis=1)
@@ -795,23 +788,23 @@ class EnsembleManager:
                 y_pred = ensemble_model.predict(X_val)
                 y_pred_proba = None
                 self.logger.debug("📊 Using predict for predictions")
-            
+
             pred_time = time.time() - pred_start_time
             self.logger.debug(f"✅ Predictions completed in {pred_time:.3f}s")
-            
+
             # Calculate metrics
             self.logger.debug("📊 Calculating performance metrics...")
             from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
-            
+
             metrics = {
                 'accuracy': accuracy_score(y_val, y_pred),
                 'precision': precision_score(y_val, y_pred, average='weighted', zero_division=0),
                 'recall': recall_score(y_val, y_pred, average='weighted', zero_division=0),
                 'f1_score': f1_score(y_val, y_pred, average='weighted', zero_division=0)
             }
-            
+
             self.logger.debug(f"📊 Basic metrics calculated: {metrics}")
-            
+
             # Add ROC AUC if available
             if y_pred_proba is not None and len(np.unique(y_val)) == 2:
                 try:
@@ -819,29 +812,29 @@ class EnsembleManager:
                     self.logger.debug(f"📊 ROC AUC calculated: {metrics['roc_auc']:.4f}")
                 except Exception as e:
                     self.logger.debug(f"⚠️ ROC AUC calculation failed: {e}")
-            
+
             eval_time = time.time() - start_time
             self.logger.info(f"✅ Ensemble evaluation completed in {eval_time:.3f}s")
             self.logger.info(f"📊 Performance metrics: {metrics}")
-            
+
             return metrics
-            
+
         except Exception as e:
             eval_time = time.time() - start_time
             self.logger.error(f"❌ Error evaluating ensemble after {eval_time:.3f}s: {e}")
             self.logger.warning("⚠️ Ensemble evaluation failed - returning empty metrics")
             return {'error': str(e)}
-    
+
     async def _calculate_diversity_score(self, models: Dict[str, ModelMetadata], X: pd.DataFrame) -> float:
         """Calculate diversity score of models."""
-        
+
         self.logger.debug("🔍 Calculating diversity score...")
         start_time = time.time()
-        
+
         if len(models) < 2:
             self.logger.debug("⚠️ Insufficient models for diversity calculation (need at least 2)")
             return 0.0
-        
+
         try:
             # Get predictions from all models
             self.logger.debug("🔄 Getting predictions from all models...")
@@ -853,11 +846,11 @@ class EnsembleManager:
                     self.logger.debug(f"📊 Got predictions from {name}: shape {pred.shape}")
                 else:
                     self.logger.warning(f"⚠️ Model {name} does not have predict method")
-            
+
             if len(predictions) < 2:
                 self.logger.warning("⚠️ Insufficient predictions for diversity calculation")
                 return 0.0
-            
+
             # Calculate pairwise disagreement
             self.logger.debug("🔄 Calculating pairwise disagreements...")
             disagreements = []
@@ -866,56 +859,56 @@ class EnsembleManager:
                     disagreement = np.mean(predictions[i] != predictions[j])
                     disagreements.append(disagreement)
                     self.logger.debug(f"📊 Disagreement between models {i} and {j}: {disagreement:.4f}")
-            
+
             # Diversity score is average disagreement
             diversity_score = np.mean(disagreements) if disagreements else 0.0
-            
+
             calc_time = time.time() - start_time
             self.logger.info(f"✅ Diversity score calculated in {calc_time:.3f}s: {diversity_score:.4f}")
             self.logger.info(f"📊 Pairwise disagreements: {len(disagreements)} comparisons")
-            
+
             return diversity_score
-            
+
         except Exception as e:
             calc_time = time.time() - start_time
             self.logger.error(f"❌ Error calculating diversity score after {calc_time:.3f}s: {e}")
             self.logger.warning("⚠️ Diversity score calculation failed - returning zero diversity")
             return 0.0
-    
+
     async def _calculate_stability_score(self, models: Dict[str, ModelMetadata], X: pd.DataFrame, y: pd.Series) -> float:
         """Calculate stability score of models."""
-        
+
         self.logger.debug("🔍 Calculating stability score...")
         start_time = time.time()
-        
+
         try:
             # Use cross-validation to measure stability
             from sklearn.model_selection import KFold
-            
+
             stability_scores = []
             for name, meta in models.items():
                 self.logger.debug(f"🔄 Calculating stability for model {name}...")
-                
+
                 if hasattr(meta.model_object, 'predict'):
                     kf = KFold(n_splits=3, shuffle=True, random_state=42)
                     fold_predictions = []
-                    
+
                     for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X)):
                         self.logger.debug(f"📊 Processing fold {fold_idx + 1}/3 for {name}...")
-                        
+
                         X_train_fold = X.iloc[train_idx]
                         y_train_fold = y.iloc[train_idx]
                         X_val_fold = X.iloc[val_idx]
-                        
+
                         # Train model on fold
                         model_copy = type(meta.model_object)(**meta.model_object.get_params())
                         model_copy.fit(X_train_fold, y_train_fold)
-                        
+
                         # Make predictions
                         pred = model_copy.predict(X_val_fold)
                         fold_predictions.append(pred)
                         self.logger.debug(f"📊 Fold {fold_idx + 1} predictions: shape {pred.shape}")
-                    
+
                     # Calculate stability as inverse of variance across folds
                     if len(fold_predictions) > 1:
                         stability = 1.0 / (1.0 + np.var(fold_predictions))
@@ -925,26 +918,26 @@ class EnsembleManager:
                         self.logger.warning(f"⚠️ Insufficient folds for stability calculation for {name}")
                 else:
                     self.logger.warning(f"⚠️ Model {name} does not have predict method")
-            
+
             final_stability = np.mean(stability_scores) if stability_scores else 0.0
-            
+
             calc_time = time.time() - start_time
             self.logger.info(f"✅ Stability score calculated in {calc_time:.3f}s: {final_stability:.4f}")
             self.logger.info(f"📊 Individual stability scores: {stability_scores}")
-            
+
             return final_stability
-            
+
         except Exception as e:
             calc_time = time.time() - start_time
             self.logger.error(f"❌ Error calculating stability score after {calc_time:.3f}s: {e}")
             self.logger.warning("⚠️ Stability score calculation failed - returning zero stability")
             return 0.0
-    
+
     def _validate_model(self, model: Any) -> bool:
         """Validate model has required methods."""
-        
+
         self.logger.debug(f"🔍 Validating model: {type(model).__name__}")
-        
+
         required_methods = ['fit', 'predict']
         for method in required_methods:
             if not hasattr(model, method) or not callable(getattr(model, method)):
@@ -953,32 +946,32 @@ class EnsembleManager:
                 return False
             else:
                 self.logger.debug(f"✅ Model has required method: {method}")
-        
+
         self.logger.debug("✅ Model validation passed")
         return True
-    
+
     def _is_classification_task(self, models: Dict[str, ModelMetadata]) -> bool:
         """Determine if this is a classification task."""
-        
+
         self.logger.debug("🔍 Determining task type from model types...")
-        
+
         # Check model types
         classification_models = ['RandomForestClassifier', 'LogisticRegression', 'SVC', 'GradientBoostingClassifier']
-        
+
         for name, meta in models.items():
             self.logger.debug(f"📊 Checking model {name}: {meta.model_type}")
             if any(cls in meta.model_type for cls in classification_models):
                 self.logger.debug(f"✅ Classification task detected from model {name}")
                 return True
-        
+
         self.logger.debug("📊 No classification models found, assuming regression task")
         return False
-    
+
     def _calculate_initial_weight(self, performance_metrics: Dict[str, float]) -> float:
         """Calculate initial weight based on performance metrics."""
-        
+
         self.logger.debug(f"⚖️ Calculating initial weight from metrics: {performance_metrics}")
-        
+
         # Use accuracy as primary metric, fallback to other metrics
         if 'accuracy' in performance_metrics:
             weight = performance_metrics['accuracy']
@@ -992,27 +985,27 @@ class EnsembleManager:
         else:
             weight = 0.5  # Default weight
             self.logger.debug(f"⚖️ Using default weight: {weight:.4f}")
-        
+
         self.logger.debug(f"✅ Initial weight calculated: {weight:.4f}")
         return weight
-    
+
     async def _remove_worst_model(self) -> None:
         """Remove the worst performing model."""
-        
+
         if not self.models:
             return
-        
+
         # Find worst model
         worst_model = min(
             self.models.items(),
             key=lambda x: x[1].performance_metrics.get('accuracy', 0.0)
         )
-        
+
         model_name = worst_model[0]
         del self.models[model_name]
-        
+
         self.logger.info(f"🗑️ Removed worst model: {model_name}")
-    
+
     def _get_optimization_used(self) -> List[str]:
         """Get list of optimizations used."""
         self.logger.debug("🔍 Getting list of optimizations used...")
@@ -1128,14 +1121,14 @@ class EnsembleManager:
         )
 
         return ensemble
-    
+
     @traced(span_name='predict')
     async def predict(self, X: pd.DataFrame) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Make predictions using ensemble."""
-        
+
         if self.ensemble_model is None:
             raise ValueError("Ensemble not created yet")
-        
+
         try:
             # Make predictions
             if hasattr(self.ensemble_model, 'predict_proba'):
@@ -1144,38 +1137,38 @@ class EnsembleManager:
             else:
                 y_pred = self.ensemble_model.predict(X)
                 y_pred_proba = None
-            
+
             # Update prediction count
             self.prediction_count += 1
-            
+
             # Update weights if needed
-            if (self.config.enable_weight_optimization and 
+            if (self.config.enable_weight_optimization and
                 self.prediction_count % self.config.weight_update_frequency == 0):
                 await self._update_weights()
-            
+
             return y_pred, y_pred_proba
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error making predictions: {e}")
             self.logger.warning("⚠️ Prediction failed - ensemble predictions may be incomplete")
             raise
-    
+
     async def _update_weights(self) -> None:
         """Update model weights based on recent performance."""
-        
+
         # This is a simplified implementation
         # In practice, you would track recent performance and update weights accordingly
-        
+
         for meta in self.models.values():
             # Update weight based on recent performance (simplified)
             if meta.performance_metrics:
                 meta.weight = self._calculate_initial_weight(meta.performance_metrics)
-        
+
         self.logger.info("🔄 Updated model weights")
-    
+
     async def save_ensemble(self, file_path: str) -> None:
         """Save ensemble to disk."""
-        
+
         try:
             ensemble_data = {
                 'ensemble_model': self.ensemble_model,
@@ -1184,31 +1177,31 @@ class EnsembleManager:
                 'performance_history': self.performance_history,
                 'weight_history': self.weight_history
             }
-            
+
             with open(file_path, 'wb') as f:
                 pickle.dump(ensemble_data, f)
-            
+
             self.logger.info(f"💾 Ensemble saved to {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error saving ensemble: {e}")
             self.logger.warning("⚠️ Ensemble save failed - ensemble data may not be persisted")
             raise
-    
+
     async def load_ensemble(self, file_path: str) -> None:
         """Load ensemble from disk."""
-        
+
         try:
             with open(file_path, 'rb') as f:
                 ensemble_data = pickle.load(f)
-            
+
             self.ensemble_model = ensemble_data['ensemble_model']
             self.models = ensemble_data['models']
             self.performance_history = ensemble_data.get('performance_history', [])
             self.weight_history = ensemble_data.get('weight_history', [])
-            
+
             self.logger.info(f"📂 Ensemble loaded from {file_path}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error loading ensemble: {e}")
             self.logger.warning("⚠️ Ensemble load failed - ensemble may not be restored from disk")

@@ -18,15 +18,14 @@ from src.utils.tprint import (
 from ..shared_utils import get_logger
 from .step1_feature_preparation import ClusteringContext
 
-
 class InitialClusteringStep:
     """Step 2: Initial clustering and regime assignment extraction."""
-    
+
     def __init__(self, verbose: bool = True):
         """Initialize the initial clustering step."""
         self.verbose = verbose
         self.logger = get_logger('InitialClusteringStep')
-        
+
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Execute initial clustering step."""
         try:
@@ -39,7 +38,7 @@ class InitialClusteringStep:
             tprint(f"✅ DEBUG: Regime assignments extracted - TAS: {len(tas_assignments)}, NAS: {len(nas_assignments)}", "DEBUG")
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
-            
+
             # Initialize basic clustering with optimal K
             tprint("🔍 DEBUG: About to determine optimal K", "DEBUG")
             optimal_k = await self._determine_optimal_k(context, config)
@@ -53,17 +52,17 @@ class InitialClusteringStep:
             )
             tprint(f"✅ DEBUG: Initial clustering completed - assignments shape: {initial_assignments.shape}", "DEBUG")
             context.initial_assignments = initial_assignments
-            
+
             tprint("Step 2: Initial clustering completed successfully", "SUCCESS")
             return context
-            
+
         except Exception as e:
             tprint(f"Step 2: Initial clustering failed: {e}", "ERROR")
             raise ValueError(f"Initial clustering failed: {e}")
-    
+
     async def _extract_regime_assignments(
-        self, 
-        context: ClusteringContext, 
+        self,
+        context: ClusteringContext,
         config: Any
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from pipeline state or previous outcomes."""
@@ -71,20 +70,20 @@ class InitialClusteringStep:
             # For now, create dummy assignments based on features
             # In the full implementation, this would extract from pipeline state
             n_samples = context.optimized_features.shape[0]
-            
+
             # Create dummy TAS assignments (trend-following)
             tas_assignments = np.random.randint(0, 3, n_samples)
-            
+
             # Create dummy NAS assignments (mean-reverting)
             nas_assignments = np.random.randint(0, 3, n_samples)
-            
+
             tprint(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
             return tas_assignments, nas_assignments
-            
+
         except Exception as e:
             tprint(f"Regime assignment extraction failed: {e}", "ERROR")
             raise
-    
+
     async def _determine_optimal_k(self, context: ClusteringContext, config: Any) -> int:
         """Determine optimal number of clusters using BIC and stability analysis."""
         try:
@@ -118,7 +117,7 @@ class InitialClusteringStep:
                 except Exception as e:
                     tprint(f"BIC calculation failed for k={k}: {e}", "WARNING")
                     bic_scores.append(float('inf'))
-            
+
             # More robust BIC score validation
             if bic_scores and len(bic_scores) > 0:
                 try:
@@ -136,38 +135,38 @@ class InitialClusteringStep:
             else:
                 optimal_k = default_k
                 tprint(f"Using default optimal K: {optimal_k}", "INFO")
-            
+
             return optimal_k
-            
+
         except Exception as e:
             tprint(f"Optimal K determination failed: {e}", "ERROR")
             return getattr(config, 'n_regimes', 6)
-    
+
     async def _perform_initial_clustering(
-        self, 
-        features: np.ndarray, 
+        self,
+        features: np.ndarray,
         k: int
     ) -> np.ndarray:
         """Perform initial clustering using K-means."""
         try:
             tprint(f"Performing initial clustering with K={k}...", "INFO")
-            
+
             # Use K-means for initial clustering
             kmeans = KMeans(
-                n_clusters=k, 
-                random_state=42, 
+                n_clusters=k,
+                random_state=42,
                 n_init=10,
                 max_iter=300
             )
             assignments = kmeans.fit_predict(features)
-            
+
             tprint(f"Initial clustering completed: {len(np.unique(assignments))} clusters", "SUCCESS")
             return assignments
-            
+
         except Exception as e:
             tprint(f"Initial clustering failed: {e}", "ERROR")
             raise
-    
+
     def _validate_assignments(self, assignments: np.ndarray, expected_length: int) -> bool:
         """Validate assignment array."""
         try:

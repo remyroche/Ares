@@ -51,7 +51,7 @@ class ServiceRegistrationError(Exception):
 class EnhancedDIContainer:
     """
     Enhanced Dependency Injection Container for managing pipeline services.
-    
+
     Features:
     - Explicit service registration with lifecycle management
     - Singleton, transient, and scoped lifetimes
@@ -109,13 +109,13 @@ class EnhancedDIContainer:
     def get(self, name: str) -> Any:
         """
         Resolve and return a service instance.
-        
+
         Args:
             name: Service identifier
-            
+
         Returns:
             Service instance
-            
+
         Raises:
             ServiceNotFoundError: If service not registered
             CircularDependencyError: If circular dependencies detected
@@ -260,7 +260,7 @@ class ServiceLocator:
 def inject(**dependencies) -> None:
     """
     Decorator to automatically inject dependencies into a class.
-    
+
     Usage:
         @inject(logger='logger', validator='validator')
         class MyService:
@@ -356,10 +356,10 @@ class DataValidator(IDataValidator):
 def create_pipeline_container(config: dict) -> DIContainer:
     """
     Create and configure DI container for ML pipeline.
-    
+
     Args:
         config: Pipeline configuration dictionary
-        
+
     Returns:
         Configured DIContainer
     """

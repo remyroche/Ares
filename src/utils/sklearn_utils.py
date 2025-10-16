@@ -33,4 +33,3 @@ from sklearn.linear_model import LogisticRegression  # noqa: F401
 
 # Utils
 from sklearn.utils.class_weight import compute_sample_weight  # noqa: F401
-

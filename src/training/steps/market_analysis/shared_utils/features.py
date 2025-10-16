@@ -27,7 +27,7 @@ class FeatureConfig:
     """Configuration for feature preparation."""
     # Feature categories to include
     feature_categories: List[str] = None
-    
+
     # Lookback periods for various features
     returns_lookback: int = 1
     volatility_lookback: int = 20
@@ -36,7 +36,7 @@ class FeatureConfig:
     volume_lookback: int = 10
     momentum_lookback: int = 14
     entropy_lookback: int = 20
-    
+
     # Feature processing options
     use_standardized_features: bool = True
     drop_highly_correlated: bool = True
@@ -50,11 +50,11 @@ class FeatureConfig:
     max_noise_ratio: Optional[float] = None
     min_stability: Optional[float] = None
     min_feature_importance: Optional[float] = None
-    
+
     # Data validation
     handle_missing_values: bool = True
     min_observations: int = 100
-    
+
     def __post_init__(self):
         thresholds = get_regime_feature_thresholds()
         filter_thresholds = thresholds.get('filter_thresholds', {})
@@ -124,46 +124,46 @@ def prepare_market_features(
 
     """
     Prepare comprehensive market features for regime detection and clustering.
-    
+
     This function uses the feature generation system to create comprehensive
     features from all specified categories, providing much richer feature sets
     than the basic implementation.
-    
+
     Args:
         market_data: Market data DataFrame with OHLCV columns
         feature_config: Configuration for feature preparation
         verbose: Whether to enable verbose logging
-        
+
     Returns:
         Tuple containing the processed feature DataFrame and associated metadata.
-        
+
     Raises:
         ValueError: If market data is invalid or insufficient
     """
     if feature_config is None:
         feature_config = FeatureConfig()
-    
+
     feature_prep_start = time.time()
     initial_memory = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-    
+
     if verbose:
         tprint("🔧 [SHARED_FEATURES] ===== COMPREHENSIVE FEATURE PREPARATION =====", color="blue", bold=True)
         tprint_debug(f"📊 [SHARED_FEATURES] Market data shape: {market_data.shape}")
         tprint_debug(f"📊 [SHARED_FEATURES] Available columns: {list(market_data.columns)}")
         tprint_debug(f"📊 [SHARED_FEATURES] Feature categories: {feature_config.feature_categories}")
-    
+
     try:
         # Validate input data
         if market_data is None or market_data.empty:
             if verbose:
                 tprint_error("❌ [SHARED_FEATURES] Market data is None or empty")
             raise ValueError("Market data is None or empty")
-        
+
         if len(market_data) < feature_config.min_observations:
             if verbose:
                 tprint_error(f"❌ [SHARED_FEATURES] Insufficient data: {len(market_data)} < {feature_config.min_observations}")
             raise ValueError(f"Insufficient data: {len(market_data)} < {feature_config.min_observations}")
-        
+
         # Check for required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in market_data.columns]
@@ -171,24 +171,24 @@ def prepare_market_features(
             if verbose:
                 tprint_error(f"❌ [SHARED_FEATURES] Missing required columns: {missing_columns}")
             raise ValueError(f"Missing required columns: {missing_columns}")
-        
+
         if verbose:
             tprint_debug(f"✅ [SHARED_FEATURES] Data validation passed")
-        
+
         # Use balanced feature extractor for comprehensive features
         if verbose:
             tprint_debug("🚀 [SHARED_FEATURES] Using balanced feature extractor for comprehensive features")
-        
+
         try:
             # Use regime-focused feature generation instead of balanced extractor
             from src.feature_generation.categories.regime_feature_integration import (
                 generate_regime_features, RegimeFeatureConfig
             )
-            
+
             # Create regime-focused configuration
             # Check if regime categories are in the feature config, default to True if not specified
             has_regime_categories = any('regime_' in cat for cat in feature_config.feature_categories)
-            
+
             regime_config = RegimeFeatureConfig(
                 include_volatility_regime='regime_volatility' in feature_config.feature_categories if has_regime_categories else True,
                 include_volume_regime='regime_volume' in feature_config.feature_categories if has_regime_categories else True,
@@ -203,11 +203,11 @@ def prepare_market_features(
                 max_features_per_category=50,    # Increased from 30 to 50
                 total_max_features=110          # Target 90-110 features for optimal regime detection
             )
-            
+
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Extracting regime-focused features for categories: {feature_config.feature_categories}")
                 tprint("🎯 [REGIME_FEATURES] Using RegimeFeatureIntegration targeting 90-110 regime-specific features", color="cyan", bold=True)
-            
+
             # Generate regime-focused features
             features_dict, summary = generate_regime_features(
                 data=market_data,
@@ -316,17 +316,17 @@ def prepare_market_features(
                 'original_row_count': int(features_df.shape[0]),
                 'operations': [],
             }
-            
+
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Generated {len(features_df.columns)} features")
                 tprint_debug(f"📊 [SHARED_FEATURES] Feature columns: {list(features_df.columns)}")
-            
+
         except Exception as e:
             error_msg = f"❌ [SHARED_FEATURES] Regime feature generation failed: {e} - fast failing as requested"
             if verbose:
                 tprint_error(error_msg)
             raise ValueError(error_msg) from e
-        
+
         metadata: Dict[str, Any] = {
             'columns': {col: {} for col in features_df.columns},
             'filters': {},
@@ -360,10 +360,10 @@ def prepare_market_features(
             # Enhanced NaN analysis and handling
             initial_nan_count = np.isnan(features_array).sum()
             initial_nan_pct = initial_nan_count / (features_array.size) * 100
-            
+
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Enhanced NaN handling: {initial_nan_count:,} NaN values ({initial_nan_pct:.2f}%)")
-            
+
             # Enhanced NaN handling with regime-aware imputation
             features_df = _enhanced_nan_handling(features_df, verbose=verbose)
             features_array = features_df.values
@@ -421,7 +421,7 @@ def prepare_market_features(
             metadata['dropped_columns']['quality'] = list(quality_dropped.keys())
             if verbose:
                 tprint_debug("🔧 [SHARED_FEATURES] Removing highly correlated features")
-            
+
             # Ensure arrays are aligned before correlation analysis
             if features_array.shape[1] != features_df.shape[1]:
                 if verbose:
@@ -430,23 +430,23 @@ def prepare_market_features(
                 min_cols = min(features_array.shape[1], features_df.shape[1])
                 features_array = features_array[:, :min_cols]
                 features_df = features_df.iloc[:, :min_cols]
-            
+
             # Calculate correlation matrix
             corr_matrix = np.corrcoef(features_array.T)
-            
+
             # Find highly correlated pairs
             high_corr_pairs = []
             for i in range(len(corr_matrix)):
                 for j in range(i+1, len(corr_matrix)):
                     if abs(corr_matrix[i, j]) > 0.95:  # High correlation threshold
                         high_corr_pairs.append((i, j))
-            
+
             # Remove one feature from each highly correlated pair
             features_to_remove = set()
             for i, j in high_corr_pairs:
                 if i not in features_to_remove:
                     features_to_remove.add(j)
-            
+
             # Remove highly correlated features
             if features_to_remove:
                 keep_indices = [i for i in range(features_array.shape[1]) if i not in features_to_remove]
@@ -454,7 +454,7 @@ def prepare_market_features(
                 max_cols_array = features_array.shape[1]
                 max_cols_df = features_df.shape[1]
                 keep_indices = [i for i in keep_indices if i < max_cols_array and i < max_cols_df]
-                
+
                 if keep_indices:
                     features_array = features_array[:, keep_indices]
                     features_df = features_df.iloc[:, keep_indices]
@@ -495,15 +495,15 @@ def prepare_market_features(
                 tprint_debug("🔧 [SHARED_FEATURES] Scaling features with MinMaxScaler")
 
             from sklearn.preprocessing import MinMaxScaler
-            
+
             # Scale features
             scaler = MinMaxScaler()
             features_scaled = scaler.fit_transform(features_df)
             features_df = pd.DataFrame(features_scaled, columns=features_df.columns, index=features_df.index)
-            
+
             if verbose:
                 tprint_debug("✅ [SHARED_FEATURES] Features scaled successfully")
-        
+
         # Create result
         result = FeaturePreparationResult(
             features=features_df,
@@ -511,12 +511,12 @@ def prepare_market_features(
             metadata=stage_metadata,
             success=True
         )
-        
+
         if verbose:
             tprint_success(f"✅ [SHARED_FEATURES] Feature preparation completed: {len(features_df.columns)} features, {len(features_df)} observations")
-        
+
         return result
-        
+
     except Exception as e:
         if verbose:
             tprint_error(f"❌ [SHARED_FEATURES] Feature preparation failed: {e}")
@@ -549,55 +549,55 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureConfig, verbose: bool = False) -> pd.DataFrame:
     """
     Generate basic features as fallback when comprehensive feature generation fails.
-    
+
     Args:
         market_data: Market data DataFrame
         feature_config: Feature configuration
         verbose: Whether to enable verbose logging
-        
+
     Returns:
         DataFrame with basic features
     """
     if verbose:
         tprint_debug("🔧 [SHARED_FEATURES] Generating basic features as fallback")
-    
+
     features_dict = {}
-    
+
     # Always generate basic features regardless of categories
     if verbose:
         tprint_debug("📈 [SHARED_FEATURES] Calculating basic returns")
     features_dict['returns'] = market_data['close'].pct_change(feature_config.returns_lookback)
-    
+
     if verbose:
         tprint_debug("📊 [SHARED_FEATURES] Calculating basic volatility")
     returns = market_data['close'].pct_change()
     features_dict['volatility'] = returns.rolling(window=feature_config.volatility_lookback).std()
-    
+
     if verbose:
         tprint_debug("📈 [SHARED_FEATURES] Calculating basic moving averages")
     ma_short = market_data['close'].rolling(window=feature_config.ma_short_lookback).mean()
     ma_long = market_data['close'].rolling(window=feature_config.ma_long_lookback).mean()
     features_dict['ma_ratio'] = ma_short / ma_long
     features_dict['ma_spread'] = (ma_short - ma_long) / ma_long
-    
+
     if verbose:
         tprint_debug("📊 [SHARED_FEATURES] Calculating basic volume features")
     volume_ma = market_data['volume'].rolling(window=feature_config.volume_lookback).mean()
     features_dict['volume_ratio'] = market_data['volume'] / volume_ma
     features_dict['volume_change'] = market_data['volume'].pct_change()
-    
+
     if verbose:
         tprint_debug("📊 [SHARED_FEATURES] Calculating basic price action features")
     features_dict['hl_spread'] = (market_data['high'] - market_data['low']) / market_data['close']
     features_dict['oc_spread'] = (market_data['close'] - market_data['open']) / market_data['open']
     features_dict['body_size'] = abs(market_data['close'] - market_data['open']) / (market_data['high'] - market_data['low'])
-    
+
     if verbose:
         tprint_debug("🚀 [SHARED_FEATURES] Calculating basic momentum indicators")
     # RSI-like momentum
@@ -606,21 +606,21 @@ def _generate_basic_features(market_data: pd.DataFrame, feature_config: FeatureC
     negative_returns = (-returns.where(returns < 0, 0)).rolling(window=feature_config.momentum_lookback).mean()
     features_dict['momentum'] = positive_returns / (positive_returns + negative_returns)
     features_dict['price_momentum'] = market_data['close'].pct_change(feature_config.momentum_lookback)
-    
+
     if verbose:
         tprint_debug("🔍 [SHARED_FEATURES] Calculating basic entropy features")
     # Simple entropy measure based on price changes
     returns = market_data['close'].pct_change()
     returns_abs = abs(returns)
     features_dict['entropy'] = returns_abs.rolling(window=feature_config.entropy_lookback).std()
-    
+
     # Convert to DataFrame
     features_df = pd.DataFrame(features_dict, index=market_data.index)
-    
+
     if verbose:
         tprint_debug(f"📊 [SHARED_FEATURES] Basic features DataFrame shape: {features_df.shape}")
         tprint_debug(f"📊 [SHARED_FEATURES] Feature columns: {list(features_df.columns)}")
-    
+
     return features_df
 
 def detect_data_leakage(features: np.ndarray, targets: np.ndarray, threshold: float = 0.95) -> Dict[str, Any]:
@@ -678,11 +678,11 @@ def detect_data_leakage(features: np.ndarray, targets: np.ndarray, threshold: fl
 def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = None) -> bool:
     """
     Validate feature array quality.
-    
+
     Args:
         features: Feature array to validate
         expected_shape: Expected shape (n_samples, n_features)
-        
+
     Returns:
         True if features are valid, False otherwise
     """
@@ -690,45 +690,45 @@ def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = No
         # Check if features is None or empty
         if features is None or features.size == 0:
             return False
-        
+
         # Check shape if provided
         if expected_shape is not None:
             if features.shape != expected_shape:
                 return False
-        
+
         # Check for NaN or Inf values
         if np.isnan(features).any() or np.isinf(features).any():
             return False
-        
+
         # Check for constant features (all same value)
         if np.all(features == features[0]):
             return False
-        
+
         return True
-        
+
     except Exception:
         return False
 
 def _enhanced_nan_handling(features_df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     """
     Enhanced NaN handling with regime-aware imputation strategies.
-    
+
     Args:
         features_df: DataFrame with potential NaN values
         verbose: Whether to enable verbose logging
-        
+
     Returns:
         DataFrame with enhanced NaN handling
     """
     if verbose:
         tprint("🔧 [SHARED_FEATURES] Applying enhanced NaN handling...")
-    
+
     # Strategy 1: Forward fill for time series continuity
     features_df = features_df.fillna(method='ffill')
-    
+
     # Strategy 2: Backward fill for remaining NaNs
     features_df = features_df.fillna(method='bfill')
-    
+
     # Strategy 3: Regime-aware imputation for remaining NaNs
     for col in features_df.columns:
         if features_df[col].isna().any():
@@ -739,35 +739,35 @@ def _enhanced_nan_handling(features_df: pd.DataFrame, verbose: bool = False) -> 
             else:
                 # Fallback to 0 for completely missing columns
                 features_df[col] = features_df[col].fillna(0.0)
-    
+
     if verbose:
         remaining_nans = features_df.isnull().sum().sum()
         tprint(f"✅ [SHARED_FEATURES] Enhanced NaN handling completed: {remaining_nans} NaNs remaining")
-    
+
     return features_df
 
 def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
     """
     Analyze NaN patterns in features for better handling strategies.
-    
+
     Args:
         features_df: DataFrame to analyze
-        
+
     Returns:
         Dictionary with NaN analysis results
     """
     total_cells = features_df.size
     total_nans = features_df.isnull().sum().sum()
     nan_percentage = (total_nans / total_cells) * 100
-    
+
     # Analyze by feature
     feature_nan_counts = features_df.isnull().sum()
     features_with_nans = feature_nan_counts[feature_nan_counts > 0]
-    
+
     # Analyze by row
     row_nan_counts = features_df.isnull().sum(axis=1)
     rows_with_nans = row_nan_counts[row_nan_counts > 0]
-    
+
     return {
         'total_nans': int(total_nans),
         'nan_percentage': float(nan_percentage),
@@ -779,16 +779,16 @@ def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -807,8 +807,8 @@ def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -825,13 +825,13 @@ def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

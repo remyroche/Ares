@@ -9,7 +9,6 @@ import pandas as pd
 
 _DEFAULT_OHLCV_COLUMNS: List[str] = ["open", "high", "low", "close", "volume"]
 
-
 def ensure_ohlcv_dataframe(
     frame: Any,
     required_columns: Optional[Iterable[str]] = None,

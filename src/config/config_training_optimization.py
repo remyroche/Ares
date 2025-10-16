@@ -9,7 +9,6 @@ These parameters can be optimized in step12.
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class TrainingOptimizationConfig:
     """Optimizable training optimization parameters from other steps."""
@@ -52,11 +51,9 @@ class TrainingOptimizationConfig:
     monitor_interval: float = 30.0
     failure_threshold: int = 3
 
-
 def get_training_optimization_config() -> TrainingOptimizationConfig:
     """Get training optimization configuration."""
     return TrainingOptimizationConfig()
-
 
 def get_training_optimization_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for training optimization."""

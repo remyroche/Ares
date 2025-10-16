@@ -149,25 +149,23 @@ except ImportError as e:
 
 from src.training.steps.pre_training.components import ComponentFactory, ComponentConfig
 
-
 class SignalDirection(Enum):
     """Signal direction enumeration."""
     LONG = "long"
     SHORT = "short"
     COMBINED = "combined"
 
-
 @dataclass
 class OrchestratorConfig:
     """Configuration for Tactician pre-ML orchestrator."""
     # Timeframe configuration
     timeframe: str = "15m"  # Tactician uses 15m timeframe
-    
+
     # Signal processing parameters
     min_analyst_confidence: float = 0.6  # Minimum confidence threshold for analyst signals
     confidence_threshold: float = 0.6  # Alias for min_analyst_confidence
     subsequent_minutes: int = 45  # Minutes to include after signal for training window
-    
+
     # Direction configuration
     direction_mode: str = "both"  # Options: "both", "long_only", "short_only"
     separate_directional_features: bool = True  # Train separate models for long/short
@@ -176,7 +174,7 @@ class OrchestratorConfig:
         'short': 'short_',
         'combined': 'combined_'
     })
-    
+
     # Feature processing parameters (for PRE_TRAINING pipeline)
     max_lookback_periods: int = 20
     max_interaction_features: int = 100
@@ -217,19 +215,17 @@ class OrchestratorConfig:
     enable_interactive_generation: bool = True  # Interactive feature generation (replaces PID)
     enable_horizon_labeling: bool = True
     enable_feature_selection: bool = True
-    
+
     # Data quality and validation
     enable_data_validation: bool = True
     enable_lookahead_protection: bool = True
     enable_quality_gates: bool = True
     min_quality_score: float = 0.7
-    
+
     # Memory and performance
     enable_memory_optimization: bool = True
     batch_size: int = 10000  # Process data in batches for memory efficiency
     enable_progress_tracking: bool = True
-
-
 
 @dataclass
 class FeatureSelectionConfig:
@@ -245,7 +241,6 @@ class FeatureSelectionConfig:
     save_analysis: bool
     verbose: bool
 
-
 @dataclass
 class OrchestratorResult:
     """Result of Tactician pre-ML orchestration."""
@@ -254,25 +249,25 @@ class OrchestratorResult:
     long_signals: Optional[pd.DataFrame] = None
     short_signals: Optional[pd.DataFrame] = None
     combined_signals: Optional[pd.DataFrame] = None
-    
+
     # Feature processing results
     optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
     long_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
     short_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
-    
+
     # Interactive feature results
     long_pid_features: Optional[Any] = None  # InteractiveFeatureResult
     short_pid_features: Optional[Any] = None
     long_interactive_features: Optional[Any] = None  # Alias for long_pid_features
     short_interactive_features: Optional[Any] = None  # Alias for short_pid_features
-    
+
     # Targets
     labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
     long_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
     short_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
     long_targets: Dict[str, np.ndarray] = field(default_factory=dict)
     short_targets: Dict[str, np.ndarray] = field(default_factory=dict)
-    
+
     # Selected features
     selected_features: List[str] = field(default_factory=list)
     long_selected_features: List[str] = field(default_factory=list)
@@ -291,7 +286,7 @@ class OrchestratorResult:
     analyst_signals_count: int = 0
     long_signals_count: int = 0
     short_signals_count: int = 0
-    
+
     # Quality metrics
     data_quality_score: float = 0.0
     long_data_quality_score: float = 0.0
@@ -300,11 +295,11 @@ class OrchestratorResult:
     short_missing_values_ratio: float = 0.0
     long_outlier_ratio: float = 0.0
     short_outlier_ratio: float = 0.0
-    
+
     # Confidence metrics
     average_long_confidence: float = 0.0
     average_short_confidence: float = 0.0
-    
+
     # Status tracking
     signal_separation_completed: bool = False
     feature_optimization_completed: bool = False
@@ -313,7 +308,7 @@ class OrchestratorResult:
     horizon_labeling_completed: bool = False
     feature_selection_completed: bool = False
     success: bool = False
-    
+
     # Execution metrics
     execution_time: float = 0.0
     optimization_time: float = 0.0
@@ -323,11 +318,11 @@ class OrchestratorResult:
     preparation_time: float = 0.0
     memory_usage_mb: float = 0.0
     cpu_usage_percent: float = 0.0
-    
+
     # Feature generation status
     feature_generation_status: str = "pending"
     error_message: Optional[str] = None
-    
+
     # Configuration flags
     lookback_optimization_enabled: bool = False
     pid_feature_generation_enabled: bool = False
@@ -335,10 +330,10 @@ class OrchestratorResult:
     horizon_labeling_enabled: bool = False
     feature_selection_enabled: bool = False
     intermediate_results_saved: bool = False
-    
+
     # Comprehensive reporting
     comprehensive_report: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Evaluation metrics (populated later in training)
     long_training_accuracy: float = 0.0
     short_training_accuracy: float = 0.0
@@ -366,7 +361,6 @@ class OrchestratorResult:
     short_monthly_pnl: Dict[str, float] = field(default_factory=dict)
     evaluation_completed: bool = False
 
-
 class TacticianPreMLOrchestrator:
     """
     Tactician Pre-ML Training Orchestrator.
@@ -378,7 +372,7 @@ class TacticianPreMLOrchestrator:
     4. Applying multi-horizon profit labeling
     5. Selecting final features
     6. Including Analyst predictions as additional features
-    
+
     Uses the same PRE_TRAINING pipeline as Analyst, but on 15m timeframe.
     No filtering or confidence thresholds applied.
     """
@@ -451,7 +445,7 @@ class TacticianPreMLOrchestrator:
         """Initialize the Tactician pre-ML orchestrator."""
         try:
             tprint_info("🚀 Initializing TacticianPreMLOrchestrator...")
-            
+
             self.config = config or OrchestratorConfig()
             self.logger = system_logger.getChild('TacticianPreMLOrchestrator')
 
@@ -473,7 +467,7 @@ class TacticianPreMLOrchestrator:
         except Exception as e:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
             raise
-    
+
     def _initialize_hardware_optimizers_consolidated(self) -> None:
         """Initialize hardware optimizers (consolidated method)."""
         if COMMON_OPS_AVAILABLE and self.config.enable_memory_optimization:
@@ -481,7 +475,7 @@ class TacticianPreMLOrchestrator:
                 self.gpu_manager = get_m1_gpu_manager()
                 self.memory_optimizer = get_m1_memory_optimizer()
                 self.cpu_optimizer = get_m1_cpu_optimizer()
-                
+
                 available = sum(1 for x in [self.gpu_manager, self.memory_optimizer, self.cpu_optimizer] if x is not None)
                 tprint_success(f"✅ Hardware optimizers: {available}/3 available")
             except Exception as e:
@@ -495,7 +489,7 @@ class TacticianPreMLOrchestrator:
             self.cpu_optimizer = None
             if self.config.enable_memory_optimization:
                 tprint_warning("⚠️ Memory optimization requested but utilities not available")
-    
+
     def _initialize_validators_consolidated(self) -> None:
         """Initialize validators (consolidated method)."""
         # Data validators
@@ -547,7 +541,7 @@ class TacticianPreMLOrchestrator:
                 tprint_warning(f"⚠️ Quality validator init failed: {e}")
         else:
             self.quality_validator = None
-    
+
     def _log_initialization_summary(self) -> None:
         """Log comprehensive initialization summary."""
         tprint_info(f"📊 Configuration:")
@@ -560,37 +554,37 @@ class TacticianPreMLOrchestrator:
         tprint_info(f"  • Lookahead protection: {self.config.enable_lookahead_protection}")
         tprint_info(f"  • Quality gates: {self.config.enable_quality_gates}")
         tprint_info(f"  • Output directory: {self.config.output_directory}")
-    
+
     def _init_factory_component(
-        self, 
-        alias: str, 
-        enabled: bool, 
-        available: bool, 
+        self,
+        alias: str,
+        enabled: bool,
+        available: bool,
         display_name: str
     ) -> Optional[Any]:
         """
         Consolidated helper for initializing factory components.
-        
+
         Args:
             alias: Component alias in COMPONENT_FACTORY_KEYS
             enabled: Whether component is enabled in config
             available: Whether component dependencies are available
             display_name: Display name for logging
-            
+
         Returns:
             Initialized component or None
         """
         if not enabled:
             return None
-        
+
         if not available:
             tprint_warning(f"⚠️ {display_name} requested but not available")
             return None
-        
+
         if not self.factory_component_status.get(alias, False):
             self._log_factory_unavailable(alias)
             return None
-        
+
         try:
             component_key = self.COMPONENT_FACTORY_KEYS.get(alias)
             component_config = self.factory_component_configs.get(alias)
@@ -617,7 +611,7 @@ class TacticianPreMLOrchestrator:
         #     "Feature lookback optimization"
         # )
         self.feature_optimizer = None
-        
+
         self.interactive_generator = self._init_factory_component(
             'interactive_generation',
             self.config.enable_interactive_generation,
@@ -744,12 +738,12 @@ class TacticianPreMLOrchestrator:
     ) -> Dict[str, Any]:
         """
         Comprehensive validation of input data using available utilities.
-        
+
         Args:
             analyst_signals: DataFrame with analyst signals
             market_data: Raw market data
             feature_names: List of feature names
-            
+
         Returns:
             Dictionary with validation results
         """
@@ -760,37 +754,37 @@ class TacticianPreMLOrchestrator:
             'warnings': [],
             'quality_score': 1.0
         }
-        
+
         try:
             # Basic DataFrame validation
             if not validate_dataframe(analyst_signals):
                 validation_result['valid'] = False
                 validation_result['errors'].append("Invalid analyst signals DataFrame")
                 return validation_result
-                
+
             if not validate_dataframe(market_data):
                 validation_result['valid'] = False
                 validation_result['errors'].append("Invalid market data DataFrame")
                 return validation_result
-            
+
             # Check required columns
             required_signal_cols = ['timestamp']
             if not validate_dataframe_columns(analyst_signals, required_signal_cols):
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Missing required columns in analyst signals: {required_signal_cols}")
-            
+
             required_market_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
             if not validate_dataframe_columns(market_data, required_market_cols):
                 validation_result['valid'] = False
                 validation_result['errors'].append(f"Missing required columns in market data: {required_market_cols}")
-            
+
             # Validate timestamps are sorted
             if not analyst_signals['timestamp'].is_monotonic_increasing:
                 validation_result['warnings'].append("Analyst signals timestamps not sorted")
-                
+
             if not market_data['timestamp'].is_monotonic_increasing:
                 validation_result['warnings'].append("Market data timestamps not sorted")
-            
+
             # Check for NaN values using utility
             if COMMON_OPS_AVAILABLE:
                 nan_analysis = analyze_nan_values_detailed(market_data, feature_names if feature_names else None)
@@ -799,7 +793,7 @@ class TacticianPreMLOrchestrator:
                         f"High NaN percentage in market data: {nan_analysis['total_nan_percentage']:.2f}%"
                     )
                     validation_result['quality_score'] *= 0.9
-            
+
             # Use data validator if available
             if self.data_validator:
                 validator_result = self.data_validator.validate_input_data(
@@ -810,7 +804,7 @@ class TacticianPreMLOrchestrator:
                     validation_result['valid'] = False
                     validation_result['errors'].extend(validator_result['errors'])
                 validation_result['warnings'].extend(validator_result['warnings'])
-            
+
             # Use quality validator if available and enabled
             if self.quality_validator and self.config.enable_quality_gates:
                 tprint_info("📊 Running comprehensive quality validation...")
@@ -819,12 +813,12 @@ class TacticianPreMLOrchestrator:
                     context="tactician_pre_ml_input"
                 )
                 validation_result['quality_score'] = quality_result.get('overall_score', 1.0)
-                
+
                 if validation_result['quality_score'] < self.config.min_quality_score:
                     validation_result['warnings'].append(
                         f"Data quality score {validation_result['quality_score']:.3f} below threshold {self.config.min_quality_score}"
                     )
-            
+
             # Lookahead protection - validate temporal ordering
             if self.lookahead_protection:
                 tprint_info("🛡️ Validating temporal ordering for lookahead protection...")
@@ -836,19 +830,19 @@ class TacticianPreMLOrchestrator:
                         validation_result['warnings'].append("Temporal ordering validation failed")
                 except Exception as e:
                     tprint_warning(f"⚠️ Lookahead validation error: {e}")
-            
+
             # Check data size
             min_samples = 100
             if len(market_data) < min_samples:
                 validation_result['warnings'].append(
                     f"Low sample count: {len(market_data)} < {min_samples}"
                 )
-            
+
             if len(analyst_signals) < 10:
                 validation_result['warnings'].append(
                     f"Very few analyst signals: {len(analyst_signals)}"
                 )
-            
+
             # Log validation summary
             if validation_result['valid']:
                 tprint_success(f"✅ Input data validation passed (quality: {validation_result['quality_score']:.3f})")
@@ -860,23 +854,23 @@ class TacticianPreMLOrchestrator:
                 tprint_error("❌ Input data validation failed:")
                 for error in validation_result['errors']:
                     tprint_error(f"  • {error}")
-                    
+
         except Exception as e:
             tprint_error(f"❌ Error during input validation: {e}")
             validation_result['valid'] = False
             validation_result['errors'].append(f"Validation error: {str(e)}")
-        
+
         return validation_result
 
     def _check_memory_and_cleanup(self) -> None:
         """Check memory usage and perform cleanup if needed."""
         self._operation_count += 1
-        
+
         if self.memory_optimizer and self._operation_count % 50 == 0:
             try:
                 current_usage = self.memory_optimizer.get_current_memory_usage()
                 tprint_debug(f"📊 Current memory usage: {current_usage:.2f} GB")
-                
+
                 if current_usage > self.config.memory_limit_gb * 0.8:
                     tprint_warning(f"⚠️ High memory usage: {current_usage:.2f} GB, performing cleanup...")
                     self.memory_optimizer.cleanup_memory()
@@ -923,10 +917,10 @@ class TacticianPreMLOrchestrator:
                 validation_result = self._validate_input_data(
                     analyst_signals, market_data, feature_names
                 )
-                
+
                 if not validation_result['valid']:
                     raise ValueError(f"Input validation failed: {validation_result['errors']}")
-                
+
                 result.data_quality_score = validation_result['quality_score']
                 tprint_success(f"✅ Input validation passed (quality: {validation_result['quality_score']:.3f})")
             else:
@@ -958,7 +952,7 @@ class TacticianPreMLOrchestrator:
 
             tprint_success(f"✅ Signal tagging completed: {signal_separation_result['long_tagged_count']} long, {signal_separation_result['short_tagged_count']} short tagged samples")
             tprint_info(f"🔄 Using tagging approach - full lookback periods preserved for indicator calculations")
-            
+
             # Memory check after signal separation
             self._check_memory_and_cleanup()
 
@@ -1154,18 +1148,18 @@ class TacticianPreMLOrchestrator:
                     # Include lookback window before signal for feature calculation
                     lookback_window = timedelta(minutes=self.config.max_lookback_periods * 5)  # 5min per period
                     window_start = signal_timestamp - lookback_window
-                    
+
                     # Create window mask: from lookback_start to target_end (not beyond)
                     window_mask = (
                         (tagged_market_data['timestamp'] >= window_start) &
                         (tagged_market_data['timestamp'] <= target_end_time)
                     )
-                    
+
                     # Determine signal direction from available columns
                     signal_direction = self._determine_signal_direction(row, signal_columns)
                     direction_str = 'long' if signal_direction == SignalDirection.LONG else \
                                   'short' if signal_direction == SignalDirection.SHORT else 'combined'
-                    
+
                     # Handle overlapping signals: only update if new signal has higher confidence
                     # or if no previous signal at this timestamp
                     existing_mask = window_mask & (tagged_market_data['analyst_signal_time'].notna())
@@ -1177,7 +1171,7 @@ class TacticianPreMLOrchestrator:
                             continue
                         else:
                             tprint_debug(f"🔄 Replacing overlapping signal at {signal_timestamp} - higher confidence ({confidence:.3f} vs {existing_confidence:.3f})")
-                    
+
                     # Tag window with signal metadata (only within defined window, prevents data leakage)
                     tagged_market_data.loc[window_mask, 'analyst_signal_time'] = signal_timestamp
                     tagged_market_data.loc[window_mask, 'analyst_confidence'] = confidence
@@ -1344,12 +1338,12 @@ class TacticianPreMLOrchestrator:
 
             # Combine scores with weights
             quality_score = (
-                completeness * 0.35 + 
-                sample_count_score * 0.30 + 
+                completeness * 0.35 +
+                sample_count_score * 0.30 +
                 continuity_score * 0.20 +
                 inf_score * 0.15
             )
-            
+
             validated_score = validate_finite(quality_score, "data_quality")
             tprint_debug(f"📊 Calculated quality score: {validated_score:.3f} (completeness: {completeness:.3f}, samples: {sample_count_score:.3f}, continuity: {continuity_score:.3f})")
             return validated_score
@@ -1443,10 +1437,10 @@ class TacticianPreMLOrchestrator:
                         max_lookback=self.config.max_lookback_periods,
                         direction=signal_type
                     )
-                    
+
                     optimal_lookbacks = optimization_result.get('optimal_lookbacks', {})
                     tprint_success(f"✅ Lookback optimization for {signal_type} completed: {len(optimal_lookbacks)} features optimized")
-                    
+
                     return {
                         'success': True,
                         'optimal_lookbacks': optimal_lookbacks,
@@ -1456,11 +1450,11 @@ class TacticianPreMLOrchestrator:
                     }
                 except Exception as opt_error:
                     tprint_warning(f"⚠️ Optimizer call failed: {opt_error}, using fallback heuristics")
-            
+
             # Fallback: Intelligent heuristics based on feature categories
             tprint_info(f"📊 Using heuristic-based lookback optimization for {signal_type}")
             optimal_lookbacks = {}
-            
+
             # Enhanced category-based lookbacks
             base_lookbacks = {
                 'price': 20,
@@ -1475,10 +1469,10 @@ class TacticianPreMLOrchestrator:
 
             for feature in feature_names:
                 feature_lower = feature.lower()
-                
+
                 # Determine category with priority order
                 category = 'price'  # Default
-                
+
                 if 'hmm' in feature_lower or 'regime' in feature_lower:
                     category = 'hmm'
                 elif 'analyst' in feature_lower:
@@ -1605,7 +1599,7 @@ class TacticianPreMLOrchestrator:
         """Generate interactive features for a specific signal type using actual generator."""
         try:
             tprint_info(f"🎯 Generating interactive features for {signal_type} signals...")
-            
+
             # Prepare target based on actual signal strength if available
             if 'analyst_confidence' in signal_data.columns:
                 # Use actual analyst confidence as signal strength
@@ -1619,26 +1613,26 @@ class TacticianPreMLOrchestrator:
                 # Fallback to uniform targets
                 target_values = np.ones(len(signal_data))
                 tprint_warning("⚠️ No signal strength available, using uniform targets")
-            
+
             # Validate target values
             target_values = np.clip(target_values, 0, 1)  # Ensure [0, 1] range
             target_values = np.nan_to_num(target_values, nan=0.5)  # Replace NaN with neutral value
-            
+
             # Create target dictionary with actual signal strength
             target_dict = {
                 signal_type: target_values,
                 'combined': target_values
             }
-            
+
             # Prepare feature data - ensure we have the right columns
             available_features = [f for f in feature_names if f in signal_data.columns]
             if len(available_features) < len(feature_names):
                 missing = set(feature_names) - set(available_features)
                 tprint_warning(f"⚠️ Missing {len(missing)} features: {list(missing)[:5]}...")
-            
+
             if not available_features:
                 raise ValueError(f"No available features in signal data for {signal_type}")
-            
+
             tprint_debug(f"Using {len(available_features)} features for generation")
 
             # Call interactive feature generator
@@ -1653,15 +1647,15 @@ class TacticianPreMLOrchestrator:
                         enable_parallel=self.config.enable_parallel_processing,
                         memory_limit_gb=self.config.memory_limit_gb
                     )
-                    
+
                     # Validate result
                     if interactive_result and hasattr(interactive_result, 'total_features_generated'):
                         tprint_success(f"✅ Generated {interactive_result.total_features_generated} interactive features for {signal_type}")
                     else:
                         tprint_warning(f"⚠️ Interactive generator returned unexpected result type")
-                    
+
                     return interactive_result
-                    
+
                 except Exception as gen_error:
                     tprint_error(f"❌ Interactive generator call failed: {gen_error}")
                     tprint_error(f"Traceback: {traceback.format_exc()}")
@@ -1776,8 +1770,8 @@ class TacticianPreMLOrchestrator:
                 'model_integration_metrics': {
                     'hmm_features_included': len([f for f in safe_get(result, 'long_selected_features', []) if 'hmm' in f.lower()]),
                     'analyst_features_included': len([f for f in safe_get(result, 'long_selected_features', []) if 'analyst' in f.lower()]),
-                    'technical_features_included': len([f for f in safe_get(result, 'long_selected_features', []) 
-                                                       if f not in ['hmm_regime_0_prob', 'hmm_regime_1_prob', 'hmm_regime_2_prob', 
+                    'technical_features_included': len([f for f in safe_get(result, 'long_selected_features', [])
+                                                       if f not in ['hmm_regime_0_prob', 'hmm_regime_1_prob', 'hmm_regime_2_prob',
                                                                    'analyst_action', 'analyst_confidence']]),
                     'long_features_with_hmm': safe_len(result, 'long_selected_features'),
                     'short_features_with_hmm': safe_len(result, 'short_selected_features'),
@@ -2104,7 +2098,7 @@ class TacticianPreMLOrchestrator:
                                     suffixes=('', '_market')
                                 )
                                 tprint_debug("📊 Merged price data from market_data")
-                    
+
                     # Call actual horizon labeler
                     labeling_result = await self.horizon_labeler.label_multi_horizon(
                         data=signal_data,
@@ -2113,57 +2107,57 @@ class TacticianPreMLOrchestrator:
                         time_horizons=self.config.time_horizons,
                         enable_quality_scoring=True
                     )
-                    
+
                     labeled_targets = labeling_result.get('labeled_targets', {})
-                    
+
                     # Log quality metrics if available
                     if 'quality_metrics' in labeling_result:
                         quality = labeling_result['quality_metrics']
                         tprint_debug(f"📊 Labeling quality: {quality.get('overall_score', 0.0):.3f}")
-                    
+
                     tprint_success(f"✅ Horizon labeling for {signal_type}: {len(labeled_targets)} target sets generated")
                     return labeled_targets
-                    
+
                 except Exception as label_error:
                     tprint_warning(f"⚠️ Horizon labeler call failed: {label_error}, using fallback")
-            
+
             # Fallback: Create targets based on forward returns
             tprint_info(f"📊 Using fallback profit labeling for {signal_type}")
             labeled_targets = {}
-            
+
             # Ensure we have required price columns
             if 'close' not in signal_data.columns:
                 tprint_error("❌ No close price column available for labeling")
                 return {}
-            
+
             # Calculate forward returns for each horizon
             for horizon_name, horizon_periods in self.config.time_horizons.items():
                 for target_name, target_pct in self.config.profit_targets.items():
                     # Calculate forward returns
                     future_prices = signal_data['close'].shift(-horizon_periods)
                     current_prices = signal_data['close']
-                    
+
                     if signal_type == 'long':
                         # Long: profit when price goes up
                         returns = (future_prices - current_prices) / current_prices
                     else:
                         # Short: profit when price goes down
                         returns = (current_prices - future_prices) / current_prices
-                    
+
                     # Create binary target: 1 if return >= target, 0 otherwise
                     target_values = (returns >= target_pct).astype(float)
-                    
+
                     # Handle NaN values (end of data)
                     target_values = target_values.fillna(0).values
-                    
+
                     # Store with descriptive key
                     key = f"{signal_type}_{target_name}_{horizon_name}"
                     labeled_targets[key] = target_values
-                    
+
                     # Log statistics
                     hit_rate = target_values.mean()
                     tprint_debug(f"📊 {key}: hit_rate={hit_rate:.3f} (target={target_pct:.3f})")
-            
+
             tprint_success(f"✅ Fallback labeling for {signal_type}: {len(labeled_targets)} target sets")
             return labeled_targets
 
@@ -2258,7 +2252,7 @@ class TacticianPreMLOrchestrator:
             # Apply proper feature selection with configured feature limit
             importance_scores = pid_features.feature_importance_scores
             target_features = self.config.max_features  # Use configured max features
-            
+
             tprint_info(f"🔍 FEATURE SELECTION: Starting with {len(available_features)} features, target: {target_features}")
 
             # Sort features by importance and select top features
@@ -2268,11 +2262,11 @@ class TacticianPreMLOrchestrator:
                     key=lambda x: x[1],
                     reverse=True
                 )
-                
+
                 # Select top N features based on config
                 selected_features = [f[0] for f in sorted_features[:target_features]]
                 tprint_info(f"🎯 SELECTED: {len(selected_features)} features from {len(available_features)} available")
-                
+
                 # Log top 10 features by importance
                 if len(sorted_features) > 0:
                     tprint_debug("📊 Top 10 features by importance:")
@@ -2384,12 +2378,12 @@ class TacticianPreMLOrchestrator:
         """Prepare training data for a specific signal type with index alignment validation."""
         try:
             tprint_info(f"📚 Preparing training data for {signal_type}...")
-            
+
             # Validate signal_data has an index
             if signal_data.empty:
                 tprint_warning(f"⚠️ Empty signal_data for {signal_type}")
                 return pd.DataFrame()
-            
+
             # Create training DataFrame with validated index
             training_df = pd.DataFrame(index=signal_data.index)
             tprint_debug(f"Created training_df with {len(training_df)} rows")
@@ -2399,7 +2393,7 @@ class TacticianPreMLOrchestrator:
             for feature_name in selected_features:
                 if feature_name in pid_features.combined_features:
                     feature_values = pid_features.combined_features[feature_name]
-                    
+
                     # Validate feature length matches training_df
                     if len(feature_values) == len(training_df):
                         training_df[feature_name] = feature_values
@@ -2422,7 +2416,7 @@ class TacticianPreMLOrchestrator:
                         tprint_warning(f"⚠️ Feature {feature_name} truncated from {len(feature_values)} to {len(training_df)}")
                 else:
                     tprint_debug(f"⚠️ Feature {feature_name} not found in interactive features")
-            
+
             tprint_debug(f"Added {features_added}/{len(selected_features)} features")
 
             # Add target variables for different horizons with validation
@@ -2448,12 +2442,12 @@ class TacticianPreMLOrchestrator:
                     training_df[f'target_{horizon}'] = target_values[:len(training_df)]
                     targets_added += 1
                     tprint_warning(f"⚠️ Target {horizon} truncated from {len(target_values)} to {len(training_df)}")
-            
+
             tprint_debug(f"Added {targets_added}/{len(targets)} targets")
 
             # Add metadata columns with validation
             training_df['signal_type'] = signal_type
-            
+
             # FIXED: Validate timestamp index alignment before assignment
             if 'timestamp' in signal_data.columns:
                 if len(signal_data['timestamp']) == len(training_df):
@@ -2466,7 +2460,7 @@ class TacticianPreMLOrchestrator:
             else:
                 training_df['timestamp'] = pd.NaT
                 tprint_debug("⚠️ No timestamp column in signal_data")
-            
+
             # Add analyst confidence with validation
             if 'analyst_confidence' in signal_data.columns:
                 if len(signal_data['analyst_confidence']) == len(training_df):
@@ -2487,17 +2481,17 @@ class TacticianPreMLOrchestrator:
             else:
                 training_df['sample_weight'] = 1.0
                 tprint_debug("Using uniform sample weights")
-            
+
             # Validate final training_df
             n_samples = len(training_df)
             n_features = len([c for c in training_df.columns if c not in ['timestamp', 'signal_type', 'sample_weight'] and not c.startswith('target_')])
             n_targets = len([c for c in training_df.columns if c.startswith('target_')])
-            
+
             # Check for excessive NaN values
             nan_ratio = training_df.isnull().sum().sum() / (training_df.shape[0] * training_df.shape[1])
             if nan_ratio > 0.5:
                 tprint_warning(f"⚠️ High NaN ratio in training data: {nan_ratio:.2%}")
-            
+
             tprint_success(f"✅ Training data prepared for {signal_type}: {n_samples} samples, {n_features} features, {n_targets} targets (NaN ratio: {nan_ratio:.2%})")
             return training_df
 
@@ -2663,7 +2657,7 @@ class TacticianPreMLOrchestrator:
         """Cleanup resources and memory."""
         try:
             tprint_info("🧹 Cleaning up orchestrator resources...")
-            
+
             # Cleanup hardware optimizers
             if COMMON_OPS_AVAILABLE and self.memory_optimizer:
                 try:
@@ -2671,7 +2665,7 @@ class TacticianPreMLOrchestrator:
                     tprint_success("✅ Hardware optimizers cleaned up")
                 except Exception as e:
                     tprint_warning(f"⚠️ Error cleaning up hardware optimizers: {e}")
-            
+
             # Clear component references
             self.feature_optimizer = None
             self.interactive_generator = None
@@ -2680,13 +2674,13 @@ class TacticianPreMLOrchestrator:
             self.data_validator = None
             self.lookahead_protection = None
             self.quality_validator = None
-            
+
             # Force garbage collection
             import gc
             gc.collect()
-            
+
             tprint_success("✅ Orchestrator cleanup completed")
-            
+
         except Exception as e:
             tprint_error(f"❌ Error during cleanup: {e}")
 

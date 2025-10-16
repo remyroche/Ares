@@ -28,13 +28,13 @@ except ImportError:
     class BaseStep:
         def __init__(self, config):
             self.config = config
-        
+
         async def execute(self, data):
             pass
-        
+
         def validate_config(self):
             pass
-        
+
         def get_status(self):
             return {}
 
@@ -56,7 +56,7 @@ from src.utils.common_operations import (
 # Core decorators and errors
 from src.core.decorators import handles_errors, error_boundary, converts_errors
 from src.core.errors import (
-    AppError, ValidationError, DataIntegrityError, 
+    AppError, ValidationError, DataIntegrityError,
     NotFoundError, BusinessRuleError
 )
 
@@ -66,7 +66,7 @@ from src.utils.monitoring_utils import (
     global_monitor, function_tracker, logging_patterns
 )
 from src.utils.comprehensive_function_logger import (
-    log_step_functions, log_important_calls, log_all_calls, 
+    log_step_functions, log_important_calls, log_all_calls,
     log_internal_call, log_step_progress, log_data_operation
 )
 
@@ -80,7 +80,7 @@ try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.hardware.m1_memory_optimizer import optimize_memory, get_memory_usage
     from src.utils.hardware.m1_optimizations import M1Optimizer
-    
+
     # Create wrapper functions for compatibility
     def integrate_with_m1_optimizers():
         """Integrate with M1 optimizers."""
@@ -89,7 +89,7 @@ try:
             gpu_manager = get_m1_gpu_manager()
             cpu_optimizer = m1_cpu_optimizer()
             memory_optimizer = M1Optimizer()
-            
+
             return {
                 'gpu_manager': True,
                 'cpu_optimizer': True,
@@ -104,21 +104,21 @@ try:
                 'memory_optimizer': False,
                 'integration_status': 'failed'
             }
-    
+
     def cleanup_m1_optimizers():
         """Cleanup M1 optimizers."""
         pass
-    
+
     def memory_checkpoint(checkpoint_name: str):
         """Memory checkpoint context manager."""
         optimizer = M1Optimizer()
         return optimizer.memory_checkpoint(checkpoint_name)
-    
+
     def gpu_context():
         """GPU context manager."""
         gpu_manager = get_m1_gpu_manager()
         return gpu_manager.get_gpu_context()
-    
+
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as m1_cpu_optimizer
 
     # Initialize M1 integration through common operations
@@ -180,7 +180,6 @@ def validate_dataframe(df):
 # Import standardized math validation utilities
 from src.utils.math_validation import validate_finite, safe_divide
 
-
 class SRDetectionStep(BaseStep):
     """SR Detection Stage: Detect Support/Resistance levels using Enhanced SR Detection."""
 
@@ -191,8 +190,8 @@ class SRDetectionStep(BaseStep):
         self.logger = system_logger.getChild('SRDetectionStep')
         self.standards = PipelineStandards(self.logger)
         self.sr_optimization_config = config.get('sr_optimization', {
-            'min_touches': 2, 
-            'tolerance_pct': 0.5, 
+            'min_touches': 2,
+            'tolerance_pct': 0.5,
             'lookback_periods': 100
         })
 
@@ -201,15 +200,15 @@ class SRDetectionStep(BaseStep):
         if training_mode == '1' or config.get('training_mode') == 'light':
             self.sr_optimization_config['lookback_periods'] = 10
             self.logger.info('💡 LIGHT mode: Adjusted lookback_periods to 10 (was 100)')
-        
+
         # Configurable proximity threshold for SR classification
         self.proximity_threshold = config.get('sr_optimization', {}).get('proximity_threshold', 0.002)  # Default 0.2%
-        
+
         # Min/max SR ratio configuration
         self.min_sr_ratio = config.get('sr_optimization', {}).get('min_sr_ratio', 0.15)  # Default 15% minimum SR ratio
         self.max_sr_ratio = config.get('sr_optimization', {}).get('max_sr_ratio', 0.30)  # Default 30% maximum SR ratio
         self.sr_ratio_adjustment_attempts = config.get('sr_optimization', {}).get('sr_ratio_adjustment_attempts', 5)  # Max adjustment attempts
-        
+
         # Initialize automatic memory management
         try:
             from src.utils.hardware.memory_optimization import get_memory_manager, MemoryContext as memory_context
@@ -241,7 +240,7 @@ class SRDetectionStep(BaseStep):
 
             # Detect SR levels
             sr_levels = self._detect_sr_levels(data)
-            
+
             execution_time = time.time() - start_time
             self.logger.info(f'✅ SR Detection completed in {execution_time:.2f} seconds')
 
@@ -308,7 +307,7 @@ class SRDetectionStep(BaseStep):
                 raise RuntimeError("Enhanced SR Detector not available for initial detection.")
 
             self.logger.info('✅ Enhanced SR Detector is available, proceeding with detection...')
-            
+
             # Create basic SR detector for initial detection
             sr_config = {
                 'min_touches': getattr(self, 'min_touches', 2),
@@ -318,7 +317,7 @@ class SRDetectionStep(BaseStep):
                 'use_parallel': getattr(self, 'enable_parallel_processing', False),
                 'disable_dbscan_clustering': True,  # DISABLE DBSCAN clustering - using new logic
             }
-            
+
             self.logger.info(f'🔧 SR Detection Configuration:')
             self.logger.info(f'   • Min touches: {sr_config["min_touches"]}')
             self.logger.info(f'   • Tolerance %: {sr_config["tolerance_pct"]}%')
@@ -326,19 +325,19 @@ class SRDetectionStep(BaseStep):
             self.logger.info(f'   • Memory efficient: {sr_config["memory_efficient"]}')
             self.logger.info(f'   • Parallel processing: {sr_config["use_parallel"]}')
             self.logger.info(f'   • DBSCAN clustering: {"DISABLED" if sr_config.get("disable_dbscan_clustering", False) else "ENABLED"}')
-            
+
             self.logger.info('🎯 Creating Enhanced SR Detector...')
             detector_creation_start = time.time()
             detector = EnhancedSRDetector(sr_config)
             detector_creation_time = time.time() - detector_creation_start
             self.logger.info(f'✅ Enhanced SR Detector created in {detector_creation_time:.2f} seconds')
-            
+
             self.logger.info('🔍 Starting basic SR level detection...')
             basic_detection_start = time.time()
             basic_sr_levels = detector.detect_sr_levels(clean_data)
             basic_detection_time = time.time() - basic_detection_start
             self.logger.info(f'✅ Basic SR level detection completed in {basic_detection_time:.2f} seconds')
-            
+
             # Convert to list format for further processing
             self.logger.info('🔄 Converting basic SR levels to list format...')
             if isinstance(basic_sr_levels, dict):
@@ -364,14 +363,14 @@ class SRDetectionStep(BaseStep):
             if not all_levels:
                 self.logger.error('❌ No basic SR levels detected.')
                 raise RuntimeError("No basic SR levels detected.")
-            
+
             self.logger.info(f'✅ Total basic SR levels detected: {len(all_levels)}')
-            
+
             # Convert levels to dict format for consistency
             self.logger.info('🔄 Converting SR levels to dictionary format...')
             levels_dict = []
             conversion_start = time.time()
-            
+
             for i, level in enumerate(all_levels):
                 if hasattr(level, 'price'):
                     # If no touch times available, assume no touches occurred
@@ -387,15 +386,15 @@ class SRDetectionStep(BaseStep):
                         'last_touch': getattr(level, 'last_touch_time', datetime.now()) if has_touch_times else datetime.now()
                     }
                     levels_dict.append(level_dict)
-                    
+
                     # Log every 10th level for progress tracking
                     if (i + 1) % 10 == 0 or i == len(all_levels) - 1:
                         self.logger.info(f'   📊 Converted {i + 1}/{len(all_levels)} levels ({(i + 1)/len(all_levels)*100:.1f}%)')
-            
+
             conversion_time = time.time() - conversion_start
             self.logger.info(f'✅ Level conversion completed in {conversion_time:.2f} seconds')
             self.logger.info(f'📊 Converted {len(levels_dict)} levels to dictionary format')
-            
+
             # Separate support and resistance levels
             support_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'support']
             resistance_levels = [level for level in levels_dict if level.get('level_type', '').lower() == 'resistance']
@@ -403,7 +402,7 @@ class SRDetectionStep(BaseStep):
             # Also separate the original SRLevel objects for compatibility
             support_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'support']
             resistance_srlevels = [level for level in all_levels if hasattr(level, 'type') and getattr(level, 'type', '').lower() == 'resistance']
-            
+
             # Filter out levels with zero touches (theoretical levels never touched by price)
             original_count = len(levels_dict)
             levels_dict = [level for level in levels_dict if level.get('touch_count', 0) > 0]
@@ -444,48 +443,48 @@ class SRDetectionStep(BaseStep):
     def _validate_price_data_quality(self, data: pd.DataFrame) -> pd.DataFrame:
         """Validate and clean price data for SR detection with comprehensive checks."""
         self.logger.info('🔍 Starting comprehensive price data quality validation...')
-        
+
         # Check for required OHLCV columns
         required_cols = ['open', 'high', 'low', 'close', 'volume']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
             raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
-        
+
         # Create a copy to avoid modifying original data
         clean_data = data.copy()
         initial_rows = len(clean_data)
-        
+
         # Remove rows with NaN values in critical columns
         clean_data = clean_data.dropna(subset=required_cols)
         removed_nan_rows = initial_rows - len(clean_data)
-        
+
         if removed_nan_rows > 0:
             self.logger.info(f'🧹 Removed {removed_nan_rows} rows with NaN values in OHLCV columns')
-        
+
         # Validate price relationships (high >= low, etc.)
         invalid_high_low = clean_data['high'] < clean_data['low']
         invalid_high_open = clean_data['high'] < clean_data['open']
         invalid_high_close = clean_data['high'] < clean_data['close']
         invalid_low_open = clean_data['low'] > clean_data['open']
         invalid_low_close = clean_data['low'] > clean_data['close']
-        
+
         # Check for non-positive prices
         invalid_open_close = (clean_data['open'] <= 0) | (clean_data['close'] <= 0)
         invalid_high_low_positive = (clean_data['high'] <= 0) | (clean_data['low'] <= 0)
         invalid_volume = clean_data['volume'] < 0
-        
+
         # Check for extreme outliers (prices > 10x median)
         extreme_outliers = pd.Series(False, index=clean_data.index)
         for col in ['open', 'high', 'low', 'close']:
             median_price = clean_data[col].median()
             if median_price > 0:
                 extreme_outliers |= (clean_data[col] > median_price * 10)
-        
+
         # Check for duplicate timestamps if timestamp column exists
         duplicate_timestamps = pd.Series(False, index=clean_data.index)
         if 'timestamp' in clean_data.columns:
             duplicate_timestamps = clean_data['timestamp'].duplicated()
-        
+
         # Combine all invalid conditions
         invalid_rows = (
             invalid_high_low | invalid_high_open | invalid_high_close |
@@ -493,7 +492,7 @@ class SRDetectionStep(BaseStep):
             invalid_high_low_positive | invalid_volume | extreme_outliers |
             duplicate_timestamps
         )
-        
+
         if invalid_rows.any():
             invalid_count = invalid_rows.sum()
             self.logger.warning(f'⚠️ Found {invalid_count} rows with invalid data:')
@@ -505,22 +504,22 @@ class SRDetectionStep(BaseStep):
             self.logger.warning(f'   • Extreme outliers: {extreme_outliers.sum()}')
             if 'timestamp' in clean_data.columns:
                 self.logger.warning(f'   • Duplicate timestamps: {duplicate_timestamps.sum()}')
-            
+
             clean_data = clean_data[~invalid_rows]
-        
+
         final_rows = len(clean_data)
         total_removed = initial_rows - final_rows
-        
+
         if total_removed > 0:
             self.logger.info(f'✅ Data validation completed: {total_removed} rows removed ({total_removed/initial_rows*100:.1f}%)')
             self.logger.info(f'📊 Final dataset: {final_rows:,} rows')
         else:
             self.logger.info('✅ Data validation completed: No rows removed')
-        
+
         # Final validation - ensure we have enough data
         if final_rows < 10:
             raise ValueError(f"Insufficient data after validation: {final_rows} rows (minimum 10 required)")
-        
+
         return clean_data
 
     def validate_config(self) -> None:

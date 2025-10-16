@@ -24,7 +24,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class LearningCurveAnalysisResult:
     """Structured learning curve analysis results."""
@@ -47,7 +46,6 @@ class LearningCurveAnalysisResult:
     test_score: Optional[float] = None
     anomalies: List[Dict[str, Any]] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
-
 
 class EnhancedLearningCurveAnalyzer:
     """Enhanced learning curve analyzer integrated with ml_common infrastructure."""

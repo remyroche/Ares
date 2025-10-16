@@ -66,20 +66,20 @@ class HardwareConfig:
     max_memory_gb: float = 8.0
     memory_warning_threshold: float = 0.75
     memory_critical_threshold: float = 0.90
-    
+
     # GPU settings
     enable_gpu: bool = True
     gpu_memory_fraction: float = 0.8
-    
+
     # CPU settings
     max_cpu_cores: Optional[int] = None
     use_performance_cores: bool = True
-    
+
     # Optimization settings
     auto_optimize_dtypes: bool = True
     auto_chunk_large_data: bool = True
     chunk_size_threshold: int = 100000  # rows
-    
+
     # Monitoring settings
     enable_performance_monitoring: bool = True
     log_performance_metrics: bool = True
@@ -89,14 +89,14 @@ class HardwareOptimizedMatrixProcessor:
     Hardware-optimized matrix processor that automatically detects
     and utilizes available hardware for optimal performance.
     """
-    
+
     def __init__(self, config: Optional[HardwareConfig] = None):
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('HardwareOptimizedMatrixProcessor')
-        
+
         # Initialize hardware managers
         self._initialize_hardware_managers()
-        
+
         # Performance tracking
         self.performance_metrics = {
             'operations_count': 0,
@@ -105,10 +105,10 @@ class HardwareOptimizedMatrixProcessor:
             'gpu_usage': [],
             'cpu_usage': []
         }
-        
+
         self.logger.info("🚀 Hardware-Optimized Matrix Processor initialized")
         self._log_hardware_info()
-    
+
     def _initialize_hardware_managers(self):
         """Initialize all available hardware managers."""
         if not HARDWARE_TOOLS_AVAILABLE:
@@ -118,7 +118,7 @@ class HardwareOptimizedMatrixProcessor:
             self.cpu_optimizer = None
             self.memory_monitor = None
             return
-        
+
         # Initialize GPU manager
         if self.config.enable_gpu and get_m1_gpu_manager:
             try:
@@ -132,7 +132,7 @@ class HardwareOptimizedMatrixProcessor:
                 self.gpu_manager = None
         else:
             self.gpu_manager = None
-        
+
         # Initialize memory optimizer
         try:
             self.memory_optimizer = M1MemoryOptimizer(
@@ -142,7 +142,7 @@ class HardwareOptimizedMatrixProcessor:
         except Exception as e:
             self.logger.warning(f"⚠️ Memory optimizer initialization failed: {e}")
             self.memory_optimizer = None
-        
+
         # Initialize CPU optimizer
         try:
             self.cpu_optimizer = M1CPUOptimizer()
@@ -150,7 +150,7 @@ class HardwareOptimizedMatrixProcessor:
         except Exception as e:
             self.logger.warning(f"⚠️ CPU optimizer initialization failed: {e}")
             self.cpu_optimizer = None
-        
+
         # Initialize memory monitor
         try:
             memory_config = MemoryConfig(
@@ -163,52 +163,52 @@ class HardwareOptimizedMatrixProcessor:
         except Exception as e:
             self.logger.warning(f"⚠️ Memory monitor initialization failed: {e}")
             self.memory_monitor = None
-    
+
     def _log_hardware_info(self):
         """Log available hardware information."""
         if self.gpu_manager:
             gpu_info = self.gpu_manager.get_gpu_info()
             self.logger.info(f"🖥️ GPU Info: {gpu_info}")
-        
+
         if self.cpu_optimizer:
             cpu_info = self.cpu_optimizer.get_cpu_info()
             self.logger.info(f"💻 CPU Info: {cpu_info}")
-        
+
         if self.memory_monitor:
             memory_stats = self.memory_monitor.get_memory_stats()
             self.logger.info(f"🧠 Memory Stats: {memory_stats}")
-    
+
     @contextmanager
     def performance_context(self, operation_name: str):
         """Context manager for performance monitoring."""
         start_time = time.time()
         start_memory = self.memory_monitor.get_usage_mb() if self.memory_monitor else 0
-        
+
         try:
             yield
         finally:
             end_time = time.time()
             end_memory = self.memory_monitor.get_usage_mb() if self.memory_monitor else 0
-            
+
             execution_time = end_time - start_time
             memory_delta = end_memory - start_memory
-            
+
             # Update performance metrics
             self.performance_metrics['operations_count'] += 1
             self.performance_metrics['total_time'] += execution_time
             self.performance_metrics['memory_usage'].append(memory_delta)
-            
+
             if self.config.log_performance_metrics:
                 self.logger.info(
                     f"📊 {operation_name}: {execution_time:.3f}s, "
                     f"Memory: {memory_delta:+.1f}MB"
                 )
-    
+
     def optimize_data_for_processing(self, data: Union['np.ndarray', 'pd.DataFrame']) -> Union['np.ndarray', 'pd.DataFrame']:
         """Optimize data for processing based on available hardware."""
         if not HARDWARE_TOOLS_AVAILABLE:
             return data
-        
+
         with self.performance_context("data_optimization"):
             # Memory optimization
             if self.memory_optimizer and hasattr(data, 'dtype'):
@@ -216,27 +216,27 @@ class HardwareOptimizedMatrixProcessor:
                     data = self.memory_optimizer.optimize_dataframe(data)
                 elif isinstance(data, np.ndarray):
                     data = self.memory_optimizer.optimize_dataframe_memory(data)
-            
+
             # GPU optimization
             if self.gpu_manager and self.gpu_manager.is_m1 and isinstance(data, np.ndarray):
                 data = self.gpu_manager.optimize_tensor_operations(data)
-            
+
             # Data type optimization
             if self.config.auto_optimize_dtypes and optimize_dataframe_dtypes and isinstance(data, pd.DataFrame):
                 data = optimize_dataframe_dtypes(data)
-            
+
             return data
-    
+
     def chunk_data_if_needed(self, data: Union['np.ndarray', 'pd.DataFrame']) -> List[Union['np.ndarray', 'pd.DataFrame']]:
         """Chunk data if it's too large for available memory."""
         if not self.config.auto_chunk_large_data:
             return [data]
-        
+
         # Check if data needs chunking
         if isinstance(data, pd.DataFrame):
             if len(data) <= self.config.chunk_size_threshold:
                 return [data]
-            
+
             # Use memory monitor to determine optimal chunk size
             if self.memory_monitor:
                 available_memory_mb = self.memory_monitor.get_memory_stats().get('available_mb', 1000)
@@ -247,7 +247,7 @@ class HardwareOptimizedMatrixProcessor:
                 )
             else:
                 estimated_chunk_size = self.config.chunk_size_threshold
-            
+
             if chunk_dataframe:
                 return chunk_dataframe(data, estimated_chunk_size, self.memory_monitor)
             else:
@@ -256,20 +256,20 @@ class HardwareOptimizedMatrixProcessor:
                 for i in range(0, len(data), estimated_chunk_size):
                     chunks.append(data.iloc[i:i + estimated_chunk_size])
                 return chunks
-        
+
         elif isinstance(data, np.ndarray):
             if len(data) <= self.config.chunk_size_threshold:
                 return [data]
-            
+
             # Simple chunking for numpy arrays
             chunks = []
             for i in range(0, len(data), self.config.chunk_size_threshold):
                 chunks.append(data[i:i + self.config.chunk_size_threshold])
             return chunks
-        
+
         return [data]
-    
-    def process_with_hardware_optimization(self, 
+
+    def process_with_hardware_optimization(self,
                                          data: Union['np.ndarray', 'pd.DataFrame'],
                                          operation_func: Callable,
                                          *args, **kwargs) -> Any:
@@ -277,10 +277,10 @@ class HardwareOptimizedMatrixProcessor:
         with self.performance_context(f"hardware_optimized_{operation_func.__name__}"):
             # Optimize data
             optimized_data = self.optimize_data_for_processing(data)
-            
+
             # Check if chunking is needed
             chunks = self.chunk_data_if_needed(optimized_data)
-            
+
             if len(chunks) == 1:
                 # Single chunk - process directly
                 return operation_func(chunks[0], *args, **kwargs)
@@ -290,22 +290,22 @@ class HardwareOptimizedMatrixProcessor:
                     return self._process_chunks_parallel(chunks, operation_func, *args, **kwargs)
                 else:
                     return self._process_chunks_sequential(chunks, operation_func, *args, **kwargs)
-    
-    def _process_chunks_parallel(self, 
+
+    def _process_chunks_parallel(self,
                                chunks: List[Union['np.ndarray', 'pd.DataFrame']],
                                operation_func: Callable,
                                *args, **kwargs) -> Any:
         """Process chunks in parallel using CPU optimizer."""
         if not self.cpu_optimizer:
             return self._process_chunks_sequential(chunks, operation_func, *args, **kwargs)
-        
+
         def process_chunk(chunk):
             return operation_func(chunk, *args, **kwargs)
-        
+
         # Use M1-optimized thread pool
         with self.cpu_optimizer.create_optimized_thread_pool() as executor:
             results = list(executor.map(process_chunk, chunks))
-        
+
         # Combine results
         if isinstance(chunks[0], pd.DataFrame):
             return pd.concat(results, ignore_index=True)
@@ -313,8 +313,8 @@ class HardwareOptimizedMatrixProcessor:
             return np.concatenate(results, axis=0)
         else:
             return results
-    
-    def _process_chunks_sequential(self, 
+
+    def _process_chunks_sequential(self,
                                  chunks: List[Union['np.ndarray', 'pd.DataFrame']],
                                  operation_func: Callable,
                                  *args, **kwargs) -> Any:
@@ -323,11 +323,11 @@ class HardwareOptimizedMatrixProcessor:
         for chunk in chunks:
             result = operation_func(chunk, *args, **kwargs)
             results.append(result)
-            
+
             # Trigger garbage collection if memory pressure
             if self.memory_monitor and self.memory_monitor.should_trigger_gc():
                 self.memory_monitor.trigger_gc()
-        
+
         # Combine results
         if isinstance(chunks[0], pd.DataFrame):
             return pd.concat(results, ignore_index=True)
@@ -335,7 +335,7 @@ class HardwareOptimizedMatrixProcessor:
             return np.concatenate(results, axis=0)
         else:
             return results
-    
+
     def get_performance_report(self) -> Dict[str, Any]:
         """Get comprehensive performance report."""
         report = {
@@ -343,7 +343,7 @@ class HardwareOptimizedMatrixProcessor:
             'performance_metrics': self.performance_metrics.copy(),
             'optimization_recommendations': []
         }
-        
+
         # Hardware info
         if self.gpu_manager:
             report['hardware_info']['gpu'] = self.gpu_manager.get_gpu_info()
@@ -351,12 +351,12 @@ class HardwareOptimizedMatrixProcessor:
             report['hardware_info']['cpu'] = self.cpu_optimizer.get_cpu_info()
         if self.memory_monitor:
             report['hardware_info']['memory'] = self.memory_monitor.get_memory_stats()
-        
+
         # Performance metrics
         if self.performance_metrics['operations_count'] > 0:
             avg_time = self.performance_metrics['total_time'] / self.performance_metrics['operations_count']
             report['performance_metrics']['average_operation_time'] = avg_time
-        
+
         # Optimization recommendations
         if self.performance_metrics['memory_usage']:
             avg_memory_usage = sum(self.performance_metrics['memory_usage']) / len(self.performance_metrics['memory_usage'])
@@ -364,16 +364,16 @@ class HardwareOptimizedMatrixProcessor:
                 report['optimization_recommendations'].append(
                     "Consider reducing chunk size or enabling more aggressive memory optimization"
                 )
-        
+
         return report
-    
+
     def optimized_standard_scaling(self, data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
         """
         Perform hardware-optimized standard scaling (z-score normalization).
-        
+
         Args:
             data: Input data as numpy array or pandas DataFrame
-            
+
         Returns:
             Standardized data as numpy array
         """
@@ -382,7 +382,7 @@ class HardwareOptimizedMatrixProcessor:
             if isinstance(data, dict):
                 self.logger.error(f"❌ Hardware-optimized processing failed: Expected DataFrame or array but got dict")
                 return np.array([])  # Return empty array as fallback
-            
+
             if not isinstance(data, (pd.DataFrame, np.ndarray)):
                 self.logger.error(f"❌ Hardware-optimized processing failed: Expected DataFrame or array but got {type(data)}")
                 try:
@@ -394,70 +394,70 @@ class HardwareOptimizedMatrixProcessor:
                 data_array = data.values.astype(np.float32)
             else:
                 data_array = np.array(data, dtype=np.float32)
-            
+
             # Check for invalid values
             if np.any(np.isnan(data_array)) or np.any(np.isinf(data_array)):
                 self.logger.warning("⚠️ Input data contains NaN or infinite values, cleaning...")
                 data_array = np.nan_to_num(data_array, nan=0.0, posinf=0.0, neginf=0.0)
-            
+
             # Use hardware-optimized operations if available
             if self.gpu_manager and self.gpu_manager.is_m1 and TORCH_AVAILABLE:
                 # GPU-accelerated scaling using PyTorch
                 try:
                     # Convert to tensor
                     tensor_data = torch.from_numpy(data_array)
-                    
+
                     # Move to GPU if available
                     if torch.backends.mps.is_available():
                         tensor_data = tensor_data.to('mps')
-                    
+
                     # Compute mean and std
                     mean = torch.mean(tensor_data, dim=0, keepdim=True)
                     std = torch.std(tensor_data, dim=0, keepdim=True)
-                    
+
                     # Avoid division by zero
                     std = torch.where(std == 0, torch.ones_like(std), std)
-                    
+
                     # Standardize
                     scaled_tensor = (tensor_data - mean) / std
-                    
+
                     # Convert back to numpy
                     scaled_data = scaled_tensor.cpu().numpy()
-                    
+
                     self.logger.info("✅ GPU-accelerated standard scaling completed")
                     return scaled_data
-                    
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ GPU scaling failed, falling back to CPU: {e}")
-            
+
             # CPU-based scaling (fallback or primary)
             try:
                 # Compute mean and standard deviation
                 mean = np.mean(data_array, axis=0, keepdims=True)
                 std = np.std(data_array, axis=0, keepdims=True)
-                
+
                 # Avoid division by zero
                 std = np.where(std == 0, 1.0, std)
-                
+
                 # Standardize
                 scaled_data = (data_array - mean) / std
-                
+
                 self.logger.info("✅ CPU-based standard scaling completed")
                 return scaled_data
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Standard scaling failed: {e}")
                 # Return original data as fallback
                 return data_array
-    
+
     def cleanup(self):
         """Cleanup resources and stop monitoring."""
         if self.memory_optimizer:
             self.memory_optimizer.stop_monitoring()
-        
+
         if self.memory_monitor:
             self.memory_monitor.trigger_gc()
-        
+
         self.logger.info("🧹 Hardware optimization cleanup completed")
 
 # Global instance
@@ -476,7 +476,7 @@ def hardware_optimized(operation_name: str = None):
         def wrapper(*args, **kwargs):
             processor = get_hardware_optimized_processor()
             operation = operation_name or func.__name__
-            
+
             # Extract data from args (assuming first argument is data)
             if args:
                 data = args[0]
@@ -484,7 +484,7 @@ def hardware_optimized(operation_name: str = None):
             else:
                 data = None
                 remaining_args = args
-            
+
             if data is not None:
                 return processor.process_with_hardware_optimization(
                     data, func, *remaining_args, **kwargs
@@ -492,12 +492,12 @@ def hardware_optimized(operation_name: str = None):
             else:
                 # No data to optimize, just run the function
                 return func(*args, **kwargs)
-        
+
         return wrapper
     return decorator
 
 # Convenience functions for common operations
-def optimize_matrix_operation(data: Union['np.ndarray', 'pd.DataFrame'], 
+def optimize_matrix_operation(data: Union['np.ndarray', 'pd.DataFrame'],
                             operation_func: Callable,
                             *args, **kwargs) -> Any:
     """Optimize a matrix operation using available hardware."""

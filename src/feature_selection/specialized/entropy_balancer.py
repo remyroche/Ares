@@ -11,7 +11,6 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class EntropyBalancerConfig:
     """Configuration for entropy stability filtering."""
@@ -24,7 +23,6 @@ class EntropyBalancerConfig:
     use_time_index: bool = True
     normalize_entropy: bool = True
 
-
 @dataclass
 class EntropyFilterResult:
     """Result of entropy stability filtering."""
@@ -34,7 +32,6 @@ class EntropyFilterResult:
     entropy_history: Dict[str, List[float]] = field(default_factory=dict)
     entropy_variance: Dict[str, float] = field(default_factory=dict)
     stability_scores: Dict[str, float] = field(default_factory=dict)
-
 
 class EntropyStabilityFilter:
     """Evaluate and filter features based on entropy stability across time slices."""

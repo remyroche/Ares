@@ -49,25 +49,25 @@ class TradingModeMonitoringIntegration:
         """
         try:
             self.logger.info('🔍 Initializing Trading Mode Monitoring Integration...')
-            
+
             # Get environment settings
             env_settings = get_environment_settings()
-            
+
             # Get trading mode from environment
             self.trading_mode = os.environ.get('TRADING_MODE', env_settings.trading_environment).upper()
-            
+
             # Get monitoring configuration
             self.monitoring_config = env_settings.get_enhanced_monitoring_config()
-            
+
             # Check if monitoring is enabled
             if not self.monitoring_config.get('enable_enhanced_monitoring', True):
                 self.logger.info('⚠️ Enhanced monitoring is disabled in configuration')
                 return True
-            
+
             # Initialize enhanced monitoring orchestrator
             self.enhanced_monitoring = EnhancedMonitoringOrchestrator()
             await self.enhanced_monitoring.initialize()
-            
+
             if self.enhanced_monitoring:
                 self.is_initialized = True
                 self.logger.info('✅ Trading Mode Monitoring Integration initialized successfully')
@@ -80,7 +80,7 @@ class TradingModeMonitoringIntegration:
             else:
                 self.logger.warning('⚠️ Failed to initialize Enhanced Monitoring Orchestrator')
                 return False
-                
+
         except Exception as e:
             self.logger.exception(f'❌ Trading Mode Monitoring Integration initialization failed: {e}')
             return False
@@ -108,7 +108,7 @@ class TradingModeMonitoringIntegration:
 
             # Use provided trading mode or default
             mode = trading_mode or self.trading_mode
-            
+
             # Enhance trade data with monitoring context
             enhanced_trade_data = {
                 **trade_data,
@@ -123,9 +123,9 @@ class TradingModeMonitoringIntegration:
 
             # Record the trade decision
             await self.enhanced_monitoring.record_comprehensive_trade_decision(enhanced_trade_data)
-            
+
             self.logger.info(f'📊 Trade decision recorded for {mode} mode')
-            
+
         except Exception as e:
             self.logger.exception(f'Error recording trade decision: {e}')
 
@@ -154,9 +154,9 @@ class TradingModeMonitoringIntegration:
                 model_id or 'default_model',
                 performance_data
             )
-            
+
             self.logger.info(f'📈 Performance metrics updated for model: {model_id or "default_model"}')
-            
+
         except Exception as e:
             self.logger.exception(f'Error updating performance metrics: {e}')
 
@@ -185,9 +185,9 @@ class TradingModeMonitoringIntegration:
                 ensemble_id or 'default_ensemble',
                 ensemble_data
             )
-            
+
             self.logger.info(f'🎯 Ensemble performance updated for: {ensemble_id or "default_ensemble"}')
-            
+
         except Exception as e:
             self.logger.exception(f'Error updating ensemble performance: {e}')
 
@@ -231,14 +231,14 @@ class TradingModeMonitoringIntegration:
             'monitoring_enabled': self.is_monitoring_enabled(),
             'monitoring_config': self.monitoring_config
         }
-        
+
         if self.enhanced_monitoring:
             try:
                 monitoring_status = self.enhanced_monitoring.get_system_status()
                 status['enhanced_monitoring_status'] = monitoring_status
             except Exception as e:
                 status['enhanced_monitoring_status'] = {'error': str(e)}
-        
+
         return status
 
     @handles_errors(
@@ -249,14 +249,14 @@ class TradingModeMonitoringIntegration:
         """Stop the trading mode monitoring integration."""
         try:
             self.logger.info('🛑 Stopping Trading Mode Monitoring Integration...')
-            
+
             if self.enhanced_monitoring:
                 await self.enhanced_monitoring.stop()
                 self.logger.info('🔍 Enhanced monitoring stopped')
-            
+
             self.is_initialized = False
             self.logger.info('✅ Trading Mode Monitoring Integration stopped successfully')
-            
+
         except Exception as e:
             self.logger.exception(f'Error stopping trading mode monitoring integration: {e}')
 
@@ -271,11 +271,11 @@ async def get_trading_mode_monitoring() -> TradingModeMonitoringIntegration:
         TradingModeMonitoringIntegration: Global monitoring instance
     """
     global _trading_mode_monitoring
-    
+
     if _trading_mode_monitoring is None:
         _trading_mode_monitoring = TradingModeMonitoringIntegration()
         await _trading_mode_monitoring.initialize()
-    
+
     return _trading_mode_monitoring
 
 async def record_trade_decision_auto(trade_data: Dict[str, Any]) -> None:

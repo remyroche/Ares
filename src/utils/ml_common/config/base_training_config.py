@@ -7,46 +7,45 @@ Common configuration patterns shared across all training modules.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-
 @dataclass
 class BaseTrainingConfig:
     """Base configuration for all training steps with common functionality."""
-    
+
     # Basic configuration
     model_name: str = "base_model"
     timeframe: str = "5m"
-    
+
     # HPO configuration
     enable_hpo: bool = True
     hpo_n_trials: int = 100
     hpo_timeout_seconds: int = 3600
     hpo_cv_folds: int = 5
-    
+
     # Model saving
     save_models: bool = True
     model_save_path: str = "./models"
     save_format: str = "joblib"  # joblib, pickle, h5
-    
+
     # Evaluation configuration
     enable_evaluation: bool = True
     evaluation_metrics: List[str] = field(default_factory=lambda: [
         "mse", "mae", "r2", "mape", "smape"
     ])
-    
+
     # Overfitting prevention
     enable_overfitting_prevention: bool = True
     overfitting_threshold: float = 0.1
-    
+
     # Enhanced training utilities
     enable_enhanced_training: bool = True
     enable_early_stopping: bool = True
     early_stopping_patience: int = 10
     early_stopping_min_delta: float = 0.001
-    
+
     # Lookahead bias detection
     enable_lookahead_bias_detection: bool = True
     lookahead_bias_strict_mode: bool = True
-    
+
     # Enhanced regularization
     enable_enhanced_regularization: bool = True
     l1_alpha: float = 0.01
@@ -56,24 +55,24 @@ class BaseTrainingConfig:
     min_samples_split: int = 10
     min_samples_leaf: int = 5
     max_features: str = 'sqrt'  # 'sqrt', 'log2', None, or float
-    
+
     # Temporal validation
     enable_temporal_validation: bool = True
     enable_purged_cv: bool = True
     cv_purge_pct: float = 0.01  # 1% of data purged between train/test
     cv_gap: int = 0  # Additional gap between train/test
-    
+
     # Walk-forward validation
     enable_walk_forward_validation: bool = False
     wfv_initial_train_size: int = 1000
     wfv_test_size: int = 100
     wfv_step_size: int = 50
     wfv_expanding_window: bool = True
-    
+
     # Ensemble diversity monitoring
     enable_ensemble_diversity: bool = False
     diversity_threshold: float = 0.1
-    
+
     # Universal validation settings (from main branch)
     enable_validation: bool = True
     enable_overfitting_detection: bool = True
@@ -84,34 +83,33 @@ class BaseTrainingConfig:
     save_validation_reports: bool = True
     validation_report_directory: str = "reports/validation"
     enable_validation_logging: bool = True
-    
+
     # Training configuration
     validation_split: float = 0.2
     test_split: float = 0.1
     enable_cross_validation: bool = True
     cv_folds: int = 5
-    
+
     # Data augmentation
     enable_data_augmentation: bool = True
     augmentation_method: str = "smote"  # smote, adasyn
     augmentation_ratio: float = 1.0
-    
-    # Regime configuration  
+
+    # Regime configuration
     min_samples_per_regime: int = 500  # 🔧 Reduced from 1000 to 500 for better regime coverage
     enable_regime_merging: bool = True
     regime_merge_threshold: int = 300  # 🔧 Reduced from 500 to 300 to align with new min_samples
 
-
 @dataclass
 class PerRegimeTrainingConfig(BaseTrainingConfig):
     """Configuration for per-regime training steps."""
-    
+
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
-        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor", 
+        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor",
         "ExtraTreesRegressor", "BayesianRuleLists"
     ])
-    
+
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'TCN': {
@@ -171,7 +169,6 @@ class PerRegimeTrainingConfig(BaseTrainingConfig):
         }
     })
 
-
 @dataclass
 class EnsembleTrainingConfig(BaseTrainingConfig):
     """Configuration for ensemble training steps."""
@@ -187,10 +184,10 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 
     # Enable meta model comparison
     compare_meta_models: bool = True
-    
+
     # Intensity configuration (for scaling training parameters)
     intensity_percentage: float = 1.0
-    
+
     # Meta model HPO search spaces for different models
     meta_model_hpo_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'XGBoostClassifier': {
@@ -223,7 +220,7 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
             'dropout': {'type': 'float', 'low': 0.1, 'high': 0.5}
         }
     })
-    
+
     # Legacy HPO space for backward compatibility
     meta_model_hpo_space: Dict[str, Any] = field(default_factory=lambda: {
         'n_estimators': {'type': 'int', 'low': 50, 'high': 300},
@@ -231,33 +228,32 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
         'learning_rate': {'type': 'float', 'low': 0.01, 'high': 0.3}
     })
 
-
 @dataclass
 class TacticianTrainingConfig(BaseTrainingConfig):
     """Configuration for Tactician training steps."""
-    
+
     # Model types to train
     model_types: List[str] = field(default_factory=lambda: [
         "XGBoost_custom", "RandomForest", "CatBoostRegressor", "ElasticNet", "RandomSurvivalForest"
     ])
-    
+
     # Analyst integration
     analyst_model_path: str = "./models/analyst_ensemble"
     analyst_output_names: List[str] = field(default_factory=lambda: [
         "signal_strength", "confidence", "risk_score", "regime_label"
     ])
     analyst_threshold: float = 0.6
-    
+
     # Single model training (not per-regime)
     use_single_model: bool = True
     single_model_name: str = "tactician_unified_model"
-    
+
     # Ensemble training (always enabled for Tactician)
     enable_ensemble_training: bool = True  # Always True for Tactician
     ensemble_method: str = "stacking"  # stacking, voting, blending
     meta_model: str = "LightGBM"  # Use LightGBM as meta-learner
     ensemble_name: str = "tactician_ensemble"
-    
+
     # Entry timing optimization (focus on optimal entry within 0-0.5% range)
     enable_entry_timing_optimization: bool = True
     entry_timing_objectives: Dict[str, str] = field(default_factory=lambda: {
@@ -270,7 +266,7 @@ class TacticianTrainingConfig(BaseTrainingConfig):
     })
     entry_timing_range: float = 0.005  # 0-0.5% range for entry timing optimization
     expected_movement: float = 0.01  # Expected 1% movement in the right direction
-    
+
     # Model-specific HPO search spaces
     hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'XGBoost_custom': {
@@ -314,16 +310,15 @@ class TacticianTrainingConfig(BaseTrainingConfig):
         }
     })
 
-
 @dataclass
 class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
     """Configuration for regime meta-model training with enhanced meta-features."""
-    
+
     # Meta-model configuration
     meta_model_types: List[str] = field(default_factory=lambda: [
         "LightGBMClassifier", "XGBoostClassifier", "CatBoostClassifier"
     ])
-    
+
     # Meta-features configuration
     enable_meta_features: bool = True
     meta_feature_types: Dict[str, bool] = field(default_factory=lambda: {
@@ -347,7 +342,7 @@ class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
         'cohens_kappa': True,
         'diversity_metrics': True
     })
-    
+
     # Meta-feature parameters
     meta_feature_params: Dict[str, Any] = field(default_factory=lambda: {
         'temporal_window': 5,  # Short windows: 3-8 bars
@@ -358,7 +353,7 @@ class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
         'diversity_window': 50,  # Rolling window for diversity metrics
         'max_meta_features': 10  # Use 2-5 of the most important
     })
-    
+
     # LightGBM meta-model specific configuration
     lightgbm_meta_config: Dict[str, Any] = field(default_factory=lambda: {
         'objective': 'multiclass',
@@ -383,7 +378,7 @@ class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
             'n_estimators': 400
         }
     })
-    
+
     # Advanced meta-model features
     advanced_features: Dict[str, Any] = field(default_factory=lambda: {
         'enable_uncertainty_quantification': True,
@@ -400,7 +395,7 @@ class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
         'calibration_method': 'platt_scaling',  # platt_scaling, isotonic_regression
         'calibration_window': 200
     })
-    
+
     # HPO configuration for meta-models
     meta_model_hpo_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
         'LightGBMClassifier': {
@@ -416,7 +411,6 @@ class RegimeMetaModelTrainingConfig(BaseTrainingConfig):
         }
     })
 
-
 @dataclass
 class HMMTrainingConfig(BaseTrainingConfig):
     """Configuration for HMM training steps."""
@@ -430,12 +424,12 @@ class HMMTrainingConfig(BaseTrainingConfig):
     model_training: Optional[Dict[str, Any]] = None
     validation: Optional[Dict[str, Any]] = None
     optimization: Optional[Dict[str, Any]] = None
-    
+
     # Model types
     model_types: List[str] = field(default_factory=lambda: [
         "logistic_regression", "lightgbm", "random_forest"
     ])
-    
+
     # HPO configuration
     hpo_trials: int = 100
     enable_multi_objective: bool = True

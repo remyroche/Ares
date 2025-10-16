@@ -9,7 +9,6 @@ from typing import Literal, TypedDict
 
 from .base_types import Interval, Percentage, Symbol
 
-
 class DatabaseConfig(TypedDict, total = False):
     """Type-safe database configuration."""
 
@@ -23,7 +22,6 @@ class DatabaseConfig(TypedDict, total = False):
     connection_timeout: int | None
     max_connections: int | None
 
-
 class ExchangeConfig(TypedDict, total = False):
     """Type-safe exchange configuration."""
 
@@ -36,7 +34,6 @@ class ExchangeConfig(TypedDict, total = False):
     rate_limit: int | None
     timeout: int | None
     max_retries: int | None
-
 
 class TradingConfig(TypedDict, total = False):
     """Type-safe trading configuration."""
@@ -52,7 +49,6 @@ class TradingConfig(TypedDict, total = False):
     enable_trailing_stop: bool
     paper_trading: bool
 
-
 class MLConfig(TypedDict, total = False):
     """Type-safe ML configuration."""
 
@@ -64,7 +60,6 @@ class MLConfig(TypedDict, total = False):
     validation_split: Percentage
     early_stopping_rounds: int | None
     max_iterations: int | None
-
 
 class MonitoringConfig(TypedDict, total = False):
     """Type-safe monitoring configuration."""
@@ -78,7 +73,6 @@ class MonitoringConfig(TypedDict, total = False):
     log_file_path: str | None
     max_log_file_size: int | None
 
-
 class SystemConfig(TypedDict, total = False):
     """Type-safe system configuration."""
 
@@ -88,7 +82,6 @@ class SystemConfig(TypedDict, total = False):
     memory_limit_mb: int | None
     enable_profiling: bool
     data_cache_size_mb: int | None
-
 
 class TrainingConfig(TypedDict, total = False):
     """Type-safe training configuration."""
@@ -113,9 +106,7 @@ class TrainingConfig(TypedDict, total = False):
         int | float | str | bool | dict[str, int | float | str],
     ]
 
-
 # Main configuration type
-
 
 class ConfigDict(TypedDict, total = False):
     """Complete type-safe configuration dictionary."""

@@ -48,7 +48,6 @@ from ..shared_utils import (
     get_logger
 )
 
-
 @dataclass
 class ClusteringContext:
     """Context for clustering operations."""
@@ -80,20 +79,19 @@ class ClusteringContext:
     fusion_metadata: Dict[str, Any] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
 
-
 class FeaturePreparationStep:
     """Step 1: Feature preparation and optimization."""
-    
+
     def __init__(self, verbose: bool = True):
         """Initialize the feature preparation step."""
         self.verbose = verbose
         self.logger = get_logger('FeaturePreparationStep')
-        
+
     async def execute(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Execute feature preparation step."""
         try:
             tprint("Step 1: Starting feature preparation and optimization...", "INFO")
-            
+
             # Step 1a: Add regime-discriminative features to market data (BEFORE feature extraction)
             use_cv_enhancement = getattr(config, 'use_cv_enhancement', True)  # Default: enabled
             if use_cv_enhancement and CV_ENHANCEMENT_AVAILABLE:
@@ -105,7 +103,7 @@ class FeaturePreparationStep:
                     )
                 except Exception as e:
                     tprint(f"⚠️ CV enhancement failed, continuing without it: {e}", "WARNING")
-            
+
             # Step 1b: Use shared utilities for feature preparation
             feature_result = await self._prepare_features_using_shared_utils(
                 context.market_data, config
@@ -116,10 +114,10 @@ class FeaturePreparationStep:
 
             # Step 1d: Apply regime-specific feature optimization (PCA, etc.)
             context = await self._optimize_features(context, config)
-            
+
             tprint("Step 1: Feature preparation completed successfully", "SUCCESS")
             return context
-            
+
         except Exception as e:
             tprint(f"Step 1: Feature preparation failed: {e}", "ERROR")
             raise ValueError(f"Feature preparation failed: {e}")
@@ -217,10 +215,10 @@ class FeaturePreparationStep:
         })
 
         return context
-    
+
     async def _prepare_features_using_shared_utils(
-        self, 
-        market_data: pd.DataFrame, 
+        self,
+        market_data: pd.DataFrame,
         config: Any
     ) -> FeaturePreparationResult:
         """Prepare features using shared utilities."""
@@ -228,15 +226,15 @@ class FeaturePreparationStep:
             # Use shared feature configuration
             feature_config = FeatureConfig(
                 feature_categories=getattr(config, 'feature_categories', [
-                    'regime_volatility', 
-                    'regime_volume', 
-                    'regime_structural_trend', 
+                    'regime_volatility',
+                    'regime_volume',
+                    'regime_structural_trend',
                     'regime_statistical'
                 ]),
                 use_standardized_features=getattr(config, 'use_standardized_features', True),
                 drop_highly_correlated=True
             )
-            
+
             # Prepare features using shared utilities
             feature_result = prepare_market_features(
                 market_data=market_data,
@@ -248,11 +246,11 @@ class FeaturePreparationStep:
             tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
 
             return feature_result
-            
+
         except Exception as e:
             tprint(f"Shared feature preparation failed: {e}", "ERROR")
             raise
-    
+
     async def _optimize_features(self, context: ClusteringContext, config: Any) -> ClusteringContext:
         """Optimize features using data-driven dimensionality reduction."""
         try:
@@ -281,24 +279,24 @@ class FeaturePreparationStep:
                 try:
                     # Auto-detect categories from feature names
                     categories = create_feature_categories_from_names(feature_names)
-                    
+
                     if categories:
                         # Create and fit transformer
                         pca_transformer = WeightedCategoryPCA(categories_config=categories)
                         features_pca = pca_transformer.fit_transform(features_scaled, feature_names)
-                        
+
                         # Get transformed feature names and summary
                         transformed_names = pca_transformer.get_feature_names_out()
                         component_summary = pca_transformer.get_component_summary()
-                        
+
                         # Validate features
                         features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
-                        
+
                         # Update context
                         context.optimized_features = features_final
                         context.optimized_feature_names = transformed_names
                         context.dropped_feature_names = context.dropped_feature_names or []
-                        
+
                         # Create PCA loading scores from variance explained
                         pca_loading_scores = {}
                         for cat_name, cat_info in component_summary.items():
@@ -307,13 +305,13 @@ class FeaturePreparationStep:
                                 comp_name = f"{cat_name}_pc{i+1}"
                                 # Score = variance explained * category weight
                                 pca_loading_scores[comp_name] = float(var_explained * cat_weight)
-                        
+
                         context.pca_loading_scores = pca_loading_scores
                         if context.feature_scores:
                             context.feature_scores = pca_loading_scores
-                        
+
                         tprint(f"✅ Weighted Category PCA Success: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
-                        
+
                         # Save transformer for later use (test-time transformation)
                         try:
                             import os
@@ -321,14 +319,14 @@ class FeaturePreparationStep:
                             pca_transformer.save('models/pca/weighted_category_pca.pkl')
                         except Exception as save_err:
                             tprint(f"⚠️ Could not save PCA transformer: {save_err}", "WARNING")
-                        
+
                         self._safe_memory_cleanup([features_scaled, features_pca])
                         return context
                     else:
                         tprint("⚠️ No feature categories detected, falling back to standard PCA", "WARNING")
                 except Exception as pca_err:
                     tprint(f"⚠️ Weighted Category PCA failed: {pca_err}, falling back to standard PCA", "WARNING")
-            
+
             if context.original_features.shape[1] < 2:
                 tprint_warning("⚠️ Fewer than two features available after pruning - skipping PCA")
                 tprint(f"🔍 DEBUG: Insufficient features for PCA - only {context.original_features.shape[1]} features available", "WARNING")
@@ -355,19 +353,19 @@ class FeaturePreparationStep:
             if umap_features is not None:
                 tprint("Using UMAP reduction instead of PCA", "INFO")
                 features_final = self._validate_feature_quality_minimal(umap_features, context.market_data)
-                
+
                 # Create meaningful UMAP feature names
                 umap_feature_names = [f"UMAP_dim{i+1}" for i in range(features_final.shape[1])]
-                
+
                 context.optimized_features = features_final
                 context.optimized_feature_names = umap_feature_names
                 context.dropped_feature_names = context.dropped_feature_names or []
                 context.pca_loading_scores = {umap_feature_names[i]: 1.0 for i in range(features_final.shape[1])}
                 if context.feature_scores:
                     context.feature_scores = {umap_feature_names[i]: 1.0 for i in range(features_final.shape[1])}
-                
+
                 tprint(f"UMAP feature optimization: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
-                
+
                 self._safe_memory_cleanup([features_scaled, umap_features])
                 return context
 
@@ -489,16 +487,16 @@ class FeaturePreparationStep:
                 context.pca_loading_scores = {comp_names[i]: float(comp_scores[i]) for i in range(len(comp_names))}
                 tprint(f"📈 Group PCA: RET={int(np.sum(returns_mask))}->{allocated[0]}, VOL={int(np.sum(volatility_mask))}->{allocated[1]}, VLM={int(np.sum(volume_mask))}->{allocated[2]}", "INFO")
                 tprint(f"  📊 Final features: {features_final.shape[1]}", "INFO")
-            
+
             if context.feature_scores:
                 context.feature_scores = {n: float(context.pca_loading_scores.get(n, 1.0)) for n in context.optimized_feature_names}
-            
+
             self._safe_memory_cleanup([features_scaled])
 
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
             raise ValueError(f"Feature optimization failed: {e}")
-        
+
         return context
 
     def _try_umap_reduction(self, features: np.ndarray, target_features: int = 20) -> Optional[np.ndarray]:
@@ -506,7 +504,7 @@ class FeaturePreparationStep:
         try:
             if umap is None or not hasattr(umap, 'UMAP'):
                 return None
-                
+
             reducer = umap.UMAP(
                 n_components=target_features,
                 random_state=42,
@@ -524,39 +522,39 @@ class FeaturePreparationStep:
     def _categorize_feature(self, feature_name: str) -> str:
         """Categorize a feature by its name to identify type (volatility, momentum, trend, etc.)."""
         feature_name_lower = feature_name.lower()
-        
+
         # Volatility indicators
         if any(term in feature_name_lower for term in ['vol', 'volatility', 'atr', 'std', 'dev', 'range', 'bb', 'bollinger']):
             return "VOLATILITY"
-        
+
         # Momentum indicators
         elif any(term in feature_name_lower for term in ['rsi', 'momentum', 'roc', 'rate_of_change', 'stoch', 'stochastic', 'williams', 'cci']):
             return "MOMENTUM"
-        
+
         # Trend indicators
         elif any(term in feature_name_lower for term in ['ma', 'moving_average', 'ema', 'sma', 'trend', 'macd', 'adx', 'dmi', 'aroon']):
             return "TREND"
-        
+
         # Volume indicators
         elif any(term in feature_name_lower for term in ['volume', 'vol', 'obv', 'ad', 'accumulation', 'distribution', 'mfi', 'money_flow']):
             return "VOLUME"
-        
+
         # Price-based features
         elif any(term in feature_name_lower for term in ['price', 'close', 'open', 'high', 'low', 'return', 'change', 'pct']):
             return "PRICE"
-        
+
         # Statistical features
         elif any(term in feature_name_lower for term in ['skew', 'kurt', 'stat', 'corr', 'correlation', 'beta', 'alpha']):
             return "STATISTICAL"
-        
+
         # Regime features
         elif any(term in feature_name_lower for term in ['regime', 'state', 'phase', 'cycle']):
             return "REGIME"
-        
+
         # Technical patterns
         elif any(term in feature_name_lower for term in ['pattern', 'signal', 'crossover', 'breakout', 'support', 'resistance']):
             return "PATTERN"
-        
+
         # Default category
         else:
             return "OTHER"
@@ -569,19 +567,19 @@ class FeaturePreparationStep:
                 raise ValueError("No samples in features")
             if features.shape[1] == 0:
                 raise ValueError("No features available")
-            
+
             # Check for NaN values
             if np.any(np.isnan(features)):
                 tprint_warning("⚠️ NaN values detected in features, filling with zeros")
                 features = np.nan_to_num(features, nan=0.0)
-            
+
             # Check for infinite values
             if np.any(np.isinf(features)):
                 tprint_warning("⚠️ Infinite values detected in features, clipping")
                 features = np.clip(features, -1e6, 1e6)
-            
+
             return features
-            
+
         except Exception as e:
             tprint(f"Feature validation failed: {e}", "ERROR")
             raise

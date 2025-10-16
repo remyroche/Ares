@@ -380,7 +380,7 @@ class ModelPerformanceMonitor:
         """
         try:
             from scipy import stats
-            
+
             # Calculate prediction errors
             errors = predictions - actual_values
 

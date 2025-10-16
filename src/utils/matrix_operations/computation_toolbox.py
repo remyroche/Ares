@@ -55,16 +55,16 @@ class ComputationConfig:
     enable_gpu: bool = True
     enable_parallel: bool = True
     max_memory_gb: float = 8.0
-    
+
     # Optimization settings
     auto_optimize_dtypes: bool = True
     auto_chunk_large_data: bool = True
     chunk_size_threshold: int = 100000
-    
+
     # Monitoring settings
     enable_performance_monitoring: bool = True
     log_performance_metrics: bool = True
-    
+
     # Trading indicators settings
     default_indicator_config: Optional[Dict[str, Any]] = None
 
@@ -73,19 +73,19 @@ class ComputationToolbox:
     Comprehensive computation toolbox that provides out-of-the-box
     optimized computations for various data processing tasks.
     """
-    
+
     def __init__(self, config: Optional[ComputationConfig] = None):
         self.config = config or ComputationConfig()
         self.logger = logger.getChild('ComputationToolbox')
-        
+
         # Initialize hardware processor
         self._initialize_hardware_processor()
-        
+
         # Performance tracking
         self.performance_history = []
-        
+
         self.logger.info("🛠️ Computation Toolbox initialized")
-    
+
     def _initialize_hardware_processor(self):
         """Initialize hardware-optimized processor."""
         if HARDWARE_INTEGRATION_AVAILABLE and get_hardware_optimized_processor:
@@ -99,7 +99,7 @@ class ComputationToolbox:
                     enable_performance_monitoring=self.config.enable_performance_monitoring,
                     log_performance_metrics=self.config.log_performance_metrics
                 )
-                
+
                 self.hardware_processor = get_hardware_optimized_processor(hardware_config)
                 self.hardware_optimization_enabled = True
                 self.logger.info("✅ Hardware optimization enabled")
@@ -111,100 +111,100 @@ class ComputationToolbox:
             self.hardware_processor = None
             self.hardware_optimization_enabled = False
             self.logger.info("ℹ️ Hardware optimization not available")
-    
-    def compute_trading_indicators(self, data: 'pd.DataFrame', 
+
+    def compute_trading_indicators(self, data: 'pd.DataFrame',
                                  config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
         """
         Compute comprehensive trading indicators with hardware optimization.
-        
+
         Args:
             data: DataFrame with OHLCV data
             config: Configuration for indicators
-            
+
         Returns:
             DataFrame with computed indicators
         """
         if not PANDAS_AVAILABLE:
             raise ImportError("Pandas is required for trading indicators computation")
-        
+
         start_time = time.time()
-        
+
         try:
             # Import vectorized core
             from .vectorized_core import get_vectorized_processing_core
-            
+
             core = get_vectorized_processing_core()
             result = core.compute_trading_indicators(data, config)
-            
+
             # Track performance
             execution_time = time.time() - start_time
             self._track_performance("trading_indicators", execution_time, len(data))
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trading indicators computation failed: {e}")
             raise
-    
-    def matrix_multiply(self, a: 'np.ndarray', b: 'np.ndarray', 
+
+    def matrix_multiply(self, a: 'np.ndarray', b: 'np.ndarray',
                        use_gpu: bool = True) -> 'np.ndarray':
         """
         Optimized matrix multiplication with hardware acceleration.
-        
+
         Args:
             a: First matrix
             b: Second matrix
             use_gpu: Whether to use GPU acceleration
-            
+
         Returns:
             Result matrix
         """
         if not NUMPY_AVAILABLE:
             raise ImportError("NumPy is required for matrix operations")
-        
+
         start_time = time.time()
-        
+
         try:
             if self.hardware_optimization_enabled and use_gpu:
                 # Use hardware-optimized matrix multiplication
                 def multiply_func(x, y):
                     return np.dot(x, y)
-                
+
                 result = self.hardware_processor.process_with_hardware_optimization(
                     a, multiply_func, b
                 )
             else:
                 # Standard matrix multiplication
                 result = np.dot(a, b)
-            
+
             # Track performance
             execution_time = time.time() - start_time
             self._track_performance("matrix_multiply", execution_time, a.size)
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Matrix multiplication failed: {e}")
             raise
-    
+
     def correlation_analysis(self, data: Union['np.ndarray', 'pd.DataFrame'],
                            method: str = 'pearson') -> Tuple['np.ndarray', Optional['pd.DataFrame']]:
         """
         Optimized correlation analysis with hardware acceleration.
-        
+
         Args:
             data: Input data
             method: Correlation method ('pearson', 'spearman', 'kendall')
-            
+
         Returns:
             Tuple of (correlation_matrix, feature_importance)
         """
         start_time = time.time()
-        
+
         try:
             if self.hardware_optimization_enabled:
                 # Use hardware-optimized correlation analysis
-                
+
                 core = get_vectorized_processing_core()
                 if isinstance(data, pd.DataFrame):
                     corr_matrix, feature_importance = core.matrix_correlation_analysis(data, method)
@@ -220,35 +220,35 @@ class ComputationToolbox:
                 else:
                     corr_matrix = np.corrcoef(data.T)
                     feature_importance = None
-            
+
             # Track performance
             execution_time = time.time() - start_time
             self._track_performance("correlation_analysis", execution_time, data.size if hasattr(data, 'size') else len(data))
-            
+
             return corr_matrix, feature_importance
-            
+
         except Exception as e:
             self.logger.error(f"❌ Correlation analysis failed: {e}")
             raise
-    
+
     def batch_process(self, data: Union['np.ndarray', 'pd.DataFrame'],
                      operation_func: Callable,
                      batch_size: Optional[int] = None,
                      *args, **kwargs) -> Any:
         """
         Process data in optimized batches with hardware acceleration.
-        
+
         Args:
             data: Input data
             operation_func: Function to apply to each batch
             batch_size: Size of each batch (auto-determined if None)
             *args, **kwargs: Additional arguments for operation_func
-            
+
         Returns:
             Processed result
         """
         start_time = time.time()
-        
+
         try:
             if self.hardware_optimization_enabled:
                 # Use hardware-optimized batch processing
@@ -259,14 +259,14 @@ class ComputationToolbox:
                 # Standard batch processing
                 if batch_size is None:
                     batch_size = self.config.chunk_size_threshold
-                
+
                 if isinstance(data, pd.DataFrame):
                     results = []
                     for i in range(0, len(data), batch_size):
                         batch = data.iloc[i:i + batch_size]
                         result = operation_func(batch, *args, **kwargs)
                         results.append(result)
-                    
+
                     if isinstance(results[0], pd.DataFrame):
                         result = pd.concat(results, ignore_index=True)
                     else:
@@ -277,34 +277,34 @@ class ComputationToolbox:
                         batch = data[i:i + batch_size]
                         result = operation_func(batch, *args, **kwargs)
                         results.append(result)
-                    
+
                     result = np.concatenate(results, axis=0)
-            
+
             # Track performance
             execution_time = time.time() - start_time
             self._track_performance("batch_process", execution_time, data.size if hasattr(data, 'size') else len(data))
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Batch processing failed: {e}")
             raise
-    
+
     def optimize_dataframe(self, data: 'pd.DataFrame') -> 'pd.DataFrame':
         """
         Optimize DataFrame for processing with hardware acceleration.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame
         """
         if not PANDAS_AVAILABLE:
             raise ImportError("Pandas is required for DataFrame optimization")
-        
+
         start_time = time.time()
-        
+
         try:
             if self.hardware_optimization_enabled:
                 # Use hardware-optimized DataFrame optimization
@@ -312,7 +312,7 @@ class ComputationToolbox:
             else:
                 # Standard optimization
                 optimized_data = data.copy()
-                
+
                 # Optimize dtypes
                 if self.config.auto_optimize_dtypes:
                     for col in optimized_data.select_dtypes(include=['int64']).columns:
@@ -330,21 +330,21 @@ class ComputationToolbox:
                                 optimized_data[col] = optimized_data[col].astype('int16')
                             elif optimized_data[col].min() > -2147483648 and optimized_data[col].max() < 2147483647:
                                 optimized_data[col] = optimized_data[col].astype('int32')
-                
+
                 # Optimize float dtypes
                 for col in optimized_data.select_dtypes(include=['float64']).columns:
                     optimized_data[col] = optimized_data[col].astype('float32')
-            
+
             # Track performance
             execution_time = time.time() - start_time
             self._track_performance("optimize_dataframe", execution_time, len(data))
-            
+
             return optimized_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ DataFrame optimization failed: {e}")
             raise
-    
+
     def _track_performance(self, operation: str, execution_time: float, data_size: int):
         """Track performance metrics."""
         if self.config.enable_performance_monitoring:
@@ -355,16 +355,16 @@ class ComputationToolbox:
                 'timestamp': time.time(),
                 'hardware_optimization_enabled': self.hardware_optimization_enabled
             }
-            
+
             self.performance_history.append(performance_record)
-            
+
             if self.config.log_performance_metrics:
                 self.logger.info(
                     f"📊 {operation}: {execution_time:.3f}s, "
                     f"Data size: {data_size:,}, "
                     f"Hardware optimization: {self.hardware_optimization_enabled}"
                 )
-    
+
     def get_performance_report(self) -> Dict[str, Any]:
         """Get comprehensive performance report."""
         report = {
@@ -380,13 +380,13 @@ class ComputationToolbox:
             'performance_history': self.performance_history.copy(),
             'summary': {}
         }
-        
+
         # Calculate summary statistics
         if self.performance_history:
             total_operations = len(self.performance_history)
             total_time = sum(record['execution_time'] for record in self.performance_history)
             avg_time = total_time / total_operations
-            
+
             # Group by operation
             operation_stats = {}
             for record in self.performance_history:
@@ -398,36 +398,36 @@ class ComputationToolbox:
                         'avg_time': 0.0,
                         'data_sizes': []
                     }
-                
+
                 operation_stats[op]['count'] += 1
                 operation_stats[op]['total_time'] += record['execution_time']
                 operation_stats[op]['data_sizes'].append(record['data_size'])
-            
+
             # Calculate averages
             for op in operation_stats:
                 stats = operation_stats[op]
                 stats['avg_time'] = stats['total_time'] / stats['count']
                 stats['avg_data_size'] = sum(stats['data_sizes']) / len(stats['data_sizes'])
                 del stats['data_sizes']  # Remove raw data sizes
-            
+
             report['summary'] = {
                 'total_operations': total_operations,
                 'total_time': total_time,
                 'average_time': avg_time,
                 'operation_stats': operation_stats
             }
-        
+
         # Add hardware performance report if available
         if self.hardware_optimization_enabled and self.hardware_processor:
             report['hardware_performance'] = self.hardware_processor.get_performance_report()
-        
+
         return report
-    
+
     def cleanup(self):
         """Cleanup resources."""
         if self.hardware_optimization_enabled and self.hardware_processor:
             self.hardware_processor.cleanup()
-        
+
         self.logger.info("🧹 Computation Toolbox cleanup completed")
 
 # Global instance
@@ -441,13 +441,13 @@ def get_computation_toolbox(config: Optional[ComputationConfig] = None) -> Compu
     return _computation_toolbox
 
 # Convenience functions for easy access
-def compute_trading_indicators_optimized(data: 'pd.DataFrame', 
+def compute_trading_indicators_optimized(data: 'pd.DataFrame',
                                        config: Optional[Dict[str, Any]] = None) -> 'pd.DataFrame':
     """Compute trading indicators with full hardware optimization."""
     toolbox = get_computation_toolbox()
     return toolbox.compute_trading_indicators(data, config)
 
-def matrix_multiply_optimized(a: 'np.ndarray', b: 'np.ndarray', 
+def matrix_multiply_optimized(a: 'np.ndarray', b: 'np.ndarray',
                             use_gpu: bool = True) -> 'np.ndarray':
     """Optimized matrix multiplication with hardware acceleration."""
     toolbox = get_computation_toolbox()

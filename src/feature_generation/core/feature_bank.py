@@ -41,7 +41,7 @@ class FeatureBankConfig:
     state_cache_dir: str = "data_cache/feature_states"
     state_cache_namespace: str = "feature_bank"
     state_cache_ttl_seconds: Optional[int] = None
-    
+
     # Auto-optimization settings (enabled by default for better performance)
     enable_auto_optimization: bool = True
     default_optimization_level: str = "balanced"  # "conservative", "balanced", "aggressive"
@@ -58,11 +58,11 @@ class FeatureBank:
     """
 
     VERSION = "2024.09"
-    
+
     def __init__(self, config: Optional[FeatureBankConfig] = None):
         """
         Initialize the feature bank.
-        
+
         Args:
             config: Feature bank configuration
         """
@@ -71,10 +71,10 @@ class FeatureBank:
 
         # Initialize feature registry
         self.registry = FeatureRegistry()
-        
+
         # Initialize generator factory
         self.generator_factory = GeneratorFactory()
-        
+
         # Initialize auto-optimization configuration (enabled by default)
         if self.config.enable_auto_optimization:
             if self.config.auto_optimization_config is None:
@@ -83,7 +83,7 @@ class FeatureBank:
             tprint("✅ Auto-optimization enabled for FeatureBank (default)")
         else:
             tprint("ℹ️ Auto-optimization disabled for FeatureBank (explicitly disabled)")
-        
+
         # Initialize matrix operations if enabled
         self.matrix_ops = None
         self.matrix_accelerator = None
@@ -106,7 +106,7 @@ class FeatureBank:
                 self.logger.debug("✅ Enhanced matrix accelerator enabled")
             except ImportError:
                 self.logger.warning("⚠️ Enhanced matrix accelerator not available")
-        
+
         # Initialize lookback optimizer if enabled
         self.lookback_optimizer = None
         if self.config.enable_lookback_optimization:
@@ -116,7 +116,7 @@ class FeatureBank:
                 self.logger.info("✅ Lookback optimization enabled")
             except ImportError:
                 self.logger.warning("⚠️ Lookback optimization not available")
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_generations': 0,
@@ -138,7 +138,7 @@ class FeatureBank:
             'exclude_features': self._get_config_value('normalization_exclude_features', []),
             'rolling_windows': self._get_config_value('normalization_rolling_windows', [20, 50, 100])
         }
-        
+
         # Cache for generated features
         self.feature_cache = {} if self._get_config_value('cache_results', True) else None
 
@@ -157,7 +157,7 @@ class FeatureBank:
             )
         else:
             self.state_cache = None
-        
+
         # Auto-register default generators
         tprint("🔧 Auto-registering feature generators...")
         self._auto_register_generators()
@@ -213,7 +213,7 @@ class FeatureBank:
             registered_count = 0
             total_categories = len(categories_to_register)
             tprint(f"🚀 Initializing {total_categories} feature categories...")
-            
+
             for i, category in enumerate(categories_to_register, 1):
                 try:
                     tprint(f"🔧 Processing category {i}/{total_categories}: {category.value}")
@@ -269,7 +269,7 @@ class FeatureBank:
             if creator_func:
                 tprint(f"🔧 Creating {category.value} features with auto-optimization...")
                 generators = creator_func()
-                
+
                 # Convert generators to auto-optimized versions if auto-optimization is enabled
                 if self.config.enable_auto_optimization:
                     tprint(f"🔄 Converting {len(generators)} generators to auto-optimized versions...")
@@ -281,7 +281,7 @@ class FeatureBank:
                     tprint(f"✅ Created {len(generators)} auto-optimized generators for {category.value}")
                 else:
                     tprint(f"✅ Created {len(generators)} standard generators for {category.value} (auto-optimization disabled)")
-                
+
                 return generators
             else:
                 tprint(f"⚠️ No creator function available for category: {category.value}")
@@ -296,16 +296,16 @@ class FeatureBank:
     def _convert_to_auto_optimized(self, generator: FeatureGenerator) -> AutoOptimizedFeatureGenerator:
         """
         Convert a regular generator to an auto-optimized generator.
-        
+
         Args:
             generator: Original generator
-            
+
         Returns:
             Auto-optimized generator
         """
         try:
             tprint(f"🔄 Converting generator '{generator.config.name}' to auto-optimized...")
-            
+
             # Create auto-optimized generator with same config
             tprint("📝 Creating auto-optimized generator with same config...")
             auto_optimized_gen = AutoOptimizedFeatureGenerator(
@@ -313,7 +313,7 @@ class FeatureBank:
                 auto_optimization_config=self.config.auto_optimization_config
             )
             tprint("✅ Auto-optimized generator created")
-            
+
             # Copy any additional state from original generator
             if hasattr(generator, 'get_state'):
                 tprint("📦 Copying state from original generator...")
@@ -325,10 +325,10 @@ class FeatureBank:
                     tprint("⚠️ No state to copy or load_state not available")
             else:
                 tprint("⚠️ Original generator has no get_state method")
-            
+
             tprint(f"✅ Generator '{generator.config.name}' converted to auto-optimized successfully")
             return auto_optimized_gen
-            
+
         except Exception as e:
             tprint(f"❌ Failed to convert '{generator.config.name}' to auto-optimized: {e}")
             self.logger.warning(f"Failed to convert {generator.config.name} to auto-optimized: {e}")
@@ -455,7 +455,6 @@ class FeatureBank:
             self.logger.warning(f"⚠️ Failed to create candlestick pattern generators: {e}")
 
         return generators
-
 
     def _create_entropy_generators(self) -> List[FeatureGenerator]:
         """Create entropy-specific feature generators."""
@@ -674,7 +673,7 @@ class FeatureBank:
     def register_generator(self, generator: FeatureGenerator) -> None:
         """
         Register a feature generator.
-        
+
         Args:
             generator: Feature generator to register
         """
@@ -682,11 +681,11 @@ class FeatureBank:
         self.registry.register(generator)
         tprint(f"✅ Successfully registered generator: {generator.config.name}")
         self.logger.debug(f"Registered generator: {generator.config.name} ({generator.config.category.value})")
-    
+
     def register_generators(self, generators: List[FeatureGenerator]) -> None:
         """
         Register multiple feature generators.
-        
+
         Args:
             generators: List of feature generators to register
         """
@@ -694,14 +693,14 @@ class FeatureBank:
         for generator in generators:
             self.register_generator(generator)
         tprint(f"✅ Successfully registered {len(generators)} generators")
-    
+
     def get_generators_by_category(self, category: FeatureCategory) -> List[FeatureGenerator]:
         """
         Get all generators for a specific category.
-        
+
         Args:
             category: Feature category
-            
+
         Returns:
             List of generators for the category
         """
@@ -709,14 +708,14 @@ class FeatureBank:
         generators = self.registry.get_by_category(category)
         tprint(f"✅ Found {len(generators)} generators for category: {category.value}")
         return generators
-    
+
     def get_generator_by_name(self, name: str) -> Optional[FeatureGenerator]:
         """
         Get a generator by name.
-        
+
         Args:
             name: Generator name
-            
+
         Returns:
             Generator or None if not found
         """
@@ -727,11 +726,11 @@ class FeatureBank:
         else:
             tprint(f"❌ Generator not found: {name}")
         return generator
-    
+
     def list_categories(self) -> List[FeatureCategory]:
         """
         List all available categories.
-        
+
         Returns:
             List of available categories
         """
@@ -739,20 +738,20 @@ class FeatureBank:
         categories = self.registry.list_categories()
         tprint(f"✅ Found {len(categories)} categories")
         return categories
-    
+
     def list_features(self, category: Optional[FeatureCategory] = None) -> List[str]:
         """
         List all available features.
-        
+
         Args:
             category: Optional category filter
-            
+
         Returns:
             List of feature names
         """
         return self.registry.list_features(category)
-    
-    def generate_features(self, 
+
+    def generate_features(self,
                          data: pd.DataFrame,
                          categories: Optional[List[Union[str, FeatureCategory]]] = None,
                          features: Optional[List[str]] = None,
@@ -762,7 +761,7 @@ class FeatureBank:
                          **kwargs) -> pd.DataFrame:
         """
         Generate features by category or specific feature names.
-        
+
         Args:
             data: Input data DataFrame
             categories: List of categories to generate features for
@@ -771,25 +770,25 @@ class FeatureBank:
             target_column: Target column for lookback optimization
             use_optimized_pipeline: Whether to use the optimized pipeline
             **kwargs: Additional parameters
-            
+
         Returns:
             DataFrame with generated features
         """
         start_time = time.time()
         tprint("🚀 Starting feature generation...")
         self.logger.info(f"🎯 Starting feature generation...")
-        
+
         if data.empty:
             tprint("⚠️ Empty data provided")
             self.logger.warning("Empty data provided")
             return pd.DataFrame()
-        
+
         # Use optimized pipeline if requested and available
         if use_optimized_pipeline:
             try:
                 from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
                 pipeline = get_optimized_feature_pipeline()
-                
+
                 # Convert categories to strings if needed
                 category_strings = []
                 if categories:
@@ -798,7 +797,7 @@ class FeatureBank:
                             category_strings.append(cat.value)
                         else:
                             category_strings.append(cat)
-                
+
                 result = pipeline.process_features(
                     data=data,
                     categories=category_strings if category_strings else None,
@@ -806,7 +805,7 @@ class FeatureBank:
                     target_column=target_column,
                     **kwargs
                 )
-                
+
                 if result.success:
                     tprint(f"✅ Optimized pipeline completed in {result.processing_time:.3f}s")
                     tprint(f"📊 Generated {len(result.features.columns)} features")
@@ -823,27 +822,27 @@ class FeatureBank:
             except Exception as e:
                 tprint(f"⚠️ Optimized pipeline error: {e}, using standard generation")
                 self.logger.warning(f"Optimized pipeline error: {e}, using standard generation")
-        
+
         # Standard feature generation (fallback)
         tprint("🔧 Using standard feature generation...")
         # Determine which generators to use
         generators_to_use = self._select_generators(categories, features)
-        
+
         if not generators_to_use:
             tprint("⚠️ No generators selected")
             self.logger.warning("No generators selected")
             return pd.DataFrame()
-        
+
         tprint(f"📊 Selected {len(generators_to_use)} generators")
         self.logger.info(f"📊 Selected {len(generators_to_use)} generators")
-        
+
         # Optimize lookbacks if requested
         if lookback_optimization and target_column and self.lookback_optimizer:
             generators_to_use = self._optimize_lookbacks(generators_to_use, data, target_column)
-        
+
         # Generate features
         results = self._generate_features_parallel(generators_to_use, data, **kwargs)
-        
+
         # Combine results
         feature_df = self._combine_results(results, data.index)
 
@@ -984,18 +983,18 @@ class FeatureBank:
 
         return any(indicator in feature_name.lower() for indicator in normalized_indicators)
 
-    def generate_features_by_category(self, 
+    def generate_features_by_category(self,
                                     data: pd.DataFrame,
                                     category: Union[str, FeatureCategory],
                                     **kwargs) -> pd.DataFrame:
         """
         Generate all features for a specific category.
-        
+
         Args:
             data: Input data DataFrame
             category: Feature category
             **kwargs: Additional parameters
-            
+
         Returns:
             DataFrame with generated features
         """
@@ -1005,41 +1004,41 @@ class FeatureBank:
             except ValueError:
                 self.logger.error(f"Invalid category: {category}")
                 return pd.DataFrame()
-        
+
         return self.generate_features(data, categories=[category], **kwargs)
-    
-    def generate_specific_features(self, 
+
+    def generate_specific_features(self,
                                  data: pd.DataFrame,
                                  feature_names: List[str],
                                  **kwargs) -> pd.DataFrame:
         """
         Generate specific features by name.
-        
+
         Args:
             data: Input data DataFrame
             feature_names: List of feature names to generate
             **kwargs: Additional parameters
-            
+
         Returns:
             DataFrame with generated features
         """
         return self.generate_features(data, features=feature_names, **kwargs)
-    
-    def _select_generators(self, 
+
+    def _select_generators(self,
                           categories: Optional[List[Union[str, FeatureCategory]]] = None,
                           features: Optional[List[str]] = None) -> List[FeatureGenerator]:
         """
         Select generators based on categories or feature names.
-        
+
         Args:
             categories: List of categories
             features: List of feature names
-            
+
         Returns:
             List of selected generators
         """
         generators = []
-        
+
         if features:
             # Select by specific feature names
             for feature_name in features:
@@ -1051,7 +1050,7 @@ class FeatureBank:
                     generators.append(generator)
                 else:
                     self.logger.warning(f"Generator not found: {feature_name}")
-        
+
         elif categories:
             # Select by categories
             for category in categories:
@@ -1068,12 +1067,12 @@ class FeatureBank:
 
                 category_generators = self.get_generators_by_category(category)
                 generators.extend(category_generators)
-        
+
         else:
             # Select all generators but filter out problematic ones
             all_generators = self.registry.get_all()
             generators = [gen for gen in all_generators if not self._should_exclude_generator(gen)]
-        
+
         return generators
 
     def _should_exclude_generator(self, generator: FeatureGenerator) -> bool:
@@ -1136,26 +1135,26 @@ class FeatureBank:
 
         return False
 
-    def _optimize_lookbacks(self, 
+    def _optimize_lookbacks(self,
                            generators: List[FeatureGenerator],
                            data: pd.DataFrame,
                            target_column: str) -> List[FeatureGenerator]:
         """
         Optimize lookback periods for generators that support it.
-        
+
         Args:
             generators: List of generators
             data: Input data
             target_column: Target column for optimization
-            
+
         Returns:
             List of generators with optimized lookbacks
         """
         if not self.lookback_optimizer:
             return generators
-        
+
         self.logger.info("🔧 Optimizing lookback periods...")
-        
+
         optimized_generators = []
         for generator in generators:
             if generator.supports_lookback_optimization():
@@ -1164,35 +1163,35 @@ class FeatureBank:
                     optimal_lookback = self.lookback_optimizer.optimize_lookback(
                         generator, data, target_column
                     )
-                    
+
                     # Create a new generator with optimized lookback
                     optimized_config = generator.config
                     optimized_config.default_lookback = optimal_lookback
-                    
+
                     # Create new generator instance (this is a simplified approach)
                     # In practice, you might want to modify the existing generator
                     optimized_generators.append(generator)
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Lookback optimization failed for {generator.config.name}: {e}")
                     optimized_generators.append(generator)
             else:
                 optimized_generators.append(generator)
-        
+
         return optimized_generators
-    
-    def _generate_features_parallel(self, 
+
+    def _generate_features_parallel(self,
                                    generators: List[FeatureGenerator],
                                    data: pd.DataFrame,
                                    **kwargs) -> List[FeatureResult]:
         """
         Generate features using parallel processing if enabled.
-        
+
         Args:
             generators: List of generators
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             List of feature results
         """
@@ -1200,24 +1199,24 @@ class FeatureBank:
             return self._generate_features_parallel_impl(generators, data, **kwargs)
         else:
             return self._generate_features_sequential(generators, data, **kwargs)
-    
-    def _generate_features_sequential(self, 
+
+    def _generate_features_sequential(self,
                                     generators: List[FeatureGenerator],
                                     data: pd.DataFrame,
                                     **kwargs) -> List[FeatureResult]:
         """
         Generate features sequentially.
-        
+
         Args:
             generators: List of generators
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             List of feature results
         """
         results = []
-        
+
         for generator in generators:
             try:
                 # Check cache first
@@ -1244,7 +1243,7 @@ class FeatureBank:
 
                 if self.persist_generator_state:
                     self._store_generator_state(generator, self._extract_state_from_result(generator, result))
-                
+
             except Exception as e:
                 self.logger.error(f"Error generating {generator.config.name}: {e}")
                 # Create failed result
@@ -1257,35 +1256,35 @@ class FeatureBank:
                     error_message=str(e)
                 )
                 results.append(failed_result)
-        
+
         return results
-    
-    def _generate_features_parallel_impl(self, 
+
+    def _generate_features_parallel_impl(self,
                                        generators: List[FeatureGenerator],
                                        data: pd.DataFrame,
                                        **kwargs) -> List[FeatureResult]:
         """
         Generate features using parallel processing.
-        
+
         Args:
             generators: List of generators
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             List of feature results
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        
+
         results = []
-        
+
         with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
             # Submit all tasks
             future_to_generator = {
                 executor.submit(self._generate_single_feature, generator, data, **kwargs): generator
                 for generator in generators
             }
-            
+
             # Collect results as they complete
             for future in as_completed(future_to_generator):
                 generator = future_to_generator[future]
@@ -1304,21 +1303,21 @@ class FeatureBank:
                         error_message=str(e)
                     )
                     results.append(failed_result)
-        
+
         return results
-    
+
     def _generate_single_feature(self,
                                generator: FeatureGenerator,
                                data: pd.DataFrame,
                                **kwargs) -> FeatureResult:
         """
         Generate a single feature (for parallel processing).
-        
+
         Args:
             generator: Feature generator
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             Feature result
         """
@@ -1346,7 +1345,7 @@ class FeatureBank:
                 self._store_generator_state(generator, self._extract_state_from_result(generator, result))
 
             return result
-            
+
         except Exception as e:
             return FeatureResult(
                 name=generator.config.name,
@@ -1387,42 +1386,42 @@ class FeatureBank:
     def _combine_results(self, results: List[FeatureResult], index: pd.Index) -> pd.DataFrame:
         """
         Combine feature results into a single DataFrame.
-        
+
         Args:
             results: List of feature results
             index: Index for the DataFrame
-            
+
         Returns:
             Combined features DataFrame
         """
         feature_data = {}
         successful_features = 0
-        
+
         for result in results:
             if result.success:
                 feature_data[result.name] = result.data
                 successful_features += 1
             else:
                 self.logger.warning(f"Feature {result.name} failed: {result.error_message}")
-        
+
         if not feature_data:
             self.logger.warning("No features were successfully generated")
             return pd.DataFrame(index=index)
-        
+
         feature_df = pd.DataFrame(feature_data, index=index)
         self.logger.info(f"✅ Successfully generated {successful_features}/{len(results)} features")
-        
+
         return feature_df
-    
+
     def _get_cache_key(self, generator: FeatureGenerator, data: pd.DataFrame, **kwargs) -> str:
         """
         Generate cache key for a feature generation request.
-        
+
         Args:
             generator: Feature generator
             data: Input data
             **kwargs: Additional parameters
-            
+
         Returns:
             Cache key string
         """
@@ -1430,14 +1429,14 @@ class FeatureBank:
         data_hash = hash((data.shape, tuple(data.columns)))
         params_hash = hash(tuple(sorted(kwargs.items())))
         return f"{generator.config.name}_{data_hash}_{params_hash}"
-    
-    def _update_performance_stats(self, 
+
+    def _update_performance_stats(self,
                                  generation_time: float,
                                  num_results: int,
                                  categories: Optional[List[Union[str, FeatureCategory]]] = None) -> None:
         """
         Update performance statistics.
-        
+
         Args:
             generation_time: Time taken for generation
             num_results: Number of results
@@ -1447,10 +1446,10 @@ class FeatureBank:
         self.performance_stats['features_generated'] += num_results
         self.performance_stats['total_generation_time'] += generation_time
         self.performance_stats['average_generation_time'] = (
-            self.performance_stats['total_generation_time'] / 
+            self.performance_stats['total_generation_time'] /
             self.performance_stats['total_generations']
         )
-        
+
         if categories:
             for category in categories:
                 if isinstance(category, str):
@@ -1459,28 +1458,28 @@ class FeatureBank:
                     except ValueError:
                         continue
                 self.performance_stats['categories_used'].add(category.value)
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """
         Get performance statistics.
-        
+
         Returns:
             Dictionary with performance statistics
         """
         stats = self.performance_stats.copy()
         stats['categories_used'] = list(stats['categories_used'])
         return stats
-    
+
     def clear_cache(self) -> None:
         """Clear the feature cache."""
         if self.feature_cache:
             self.feature_cache.clear()
             self.logger.info("Feature cache cleared")
-    
+
     def get_feature_summary(self) -> Dict[str, Any]:
         """
         Get a summary of available features.
-        
+
         Returns:
             Dictionary with feature summary
         """
@@ -1491,43 +1490,43 @@ class FeatureBank:
             'auto_optimization_enabled': self.config.enable_auto_optimization,
             'optimization_level': self.config.default_optimization_level
         }
-        
+
         for category in self.list_categories():
             generators = self.get_generators_by_category(category)
             summary['categories'][category.value] = len(generators)
             summary['features_by_category'][category.value] = [
                 gen.config.name for gen in generators
             ]
-        
+
         return summary
-    
+
     def create_auto_optimized_generator(self, name: str, category: FeatureCategory,
-                                      required_columns: List[str], 
+                                      required_columns: List[str],
                                       optimization_level: Optional[str] = None,
                                       **kwargs) -> Optional[AutoOptimizedFeatureGenerator]:
         """
         Create an auto-optimized generator using the factory.
-        
+
         Args:
             name: Generator name
             category: Feature category
             required_columns: Required input columns
             optimization_level: Optimization level (uses default if None)
             **kwargs: Additional parameters
-            
+
         Returns:
             Auto-optimized generator or None if creation fails
         """
         try:
             tprint(f"🔧 Creating auto-optimized generator via FeatureBank: {name}")
             tprint(f"📊 Category: {category.value}")
-            
+
             if optimization_level is None:
                 optimization_level = self.config.default_optimization_level
                 tprint(f"📊 Using default optimization level: {optimization_level}")
             else:
                 tprint(f"📊 Using specified optimization level: {optimization_level}")
-            
+
             tprint("🚀 Delegating to GeneratorFactory...")
             generator = self.generator_factory.create_auto_optimized_generator(
                 name=name,
@@ -1537,51 +1536,51 @@ class FeatureBank:
                 auto_optimization_config=self.config.auto_optimization_config,
                 **kwargs
             )
-            
+
             if generator:
                 tprint(f"✅ Auto-optimized generator '{name}' created successfully via FeatureBank")
             else:
                 tprint(f"❌ Failed to create auto-optimized generator '{name}' via FeatureBank")
-            
+
             return generator
-            
+
         except Exception as e:
             tprint(f"❌ Error creating auto-optimized generator '{name}' via FeatureBank: {e}")
             self.logger.error(f"Error creating auto-optimized generator '{name}': {e}")
             return None
-    
+
     def create_auto_optimized_generators_by_category(self, category: FeatureCategory,
                                                    optimization_level: Optional[str] = None,
                                                    **kwargs) -> List[AutoOptimizedFeatureGenerator]:
         """
         Create auto-optimized generators for a specific category.
-        
+
         Args:
             category: Feature category
             optimization_level: Optimization level (uses default if None)
             **kwargs: Additional parameters
-            
+
         Returns:
             List of auto-optimized generators
         """
         if optimization_level is None:
             optimization_level = self.config.default_optimization_level
-        
+
         # Get existing generators for the category
         existing_generators = self.get_generators_by_category(category)
-        
+
         # Convert to auto-optimized versions
         auto_optimized_generators = []
         for generator in existing_generators:
             auto_optimized_gen = self._convert_to_auto_optimized(generator)
             auto_optimized_generators.append(auto_optimized_gen)
-        
+
         return auto_optimized_generators
-    
+
     def set_optimization_level(self, level: str) -> None:
         """
         Set the default optimization level for all generators.
-        
+
         Args:
             level: Optimization level ("conservative", "balanced", "aggressive")
         """
@@ -1591,21 +1590,21 @@ class FeatureBank:
             self.logger.info(f"Optimization level set to: {level}")
         except ValueError:
             self.logger.error(f"Invalid optimization level: {level}")
-    
+
     def enable_auto_optimization(self, enabled: bool = True) -> None:
         """
         Enable or disable auto-optimization for the feature bank.
-        
+
         Args:
             enabled: Whether to enable auto-optimization
         """
         self.config.enable_auto_optimization = enabled
         self.logger.info(f"Auto-optimization {'enabled' if enabled else 'disabled'}")
-    
+
     def get_optimization_stats(self) -> Dict[str, Any]:
         """
         Get optimization statistics from all generators.
-        
+
         Returns:
             Dictionary with optimization statistics
         """
@@ -1617,23 +1616,23 @@ class FeatureBank:
             'memory_savings_mb': 0.0,
             'optimization_levels': {}
         }
-        
+
         for generator in self.registry.get_all():
             stats['total_generators'] += 1
-            
+
             if isinstance(generator, AutoOptimizedFeatureGenerator):
                 stats['auto_optimized_generators'] += 1
-                
+
                 # Get optimization stats from this generator
                 gen_stats = generator.get_auto_optimization_stats()
                 stats['total_optimizations'] += gen_stats.get('total_optimizations', 0)
                 stats['total_optimization_time'] += gen_stats.get('total_optimization_time', 0.0)
                 stats['memory_savings_mb'] += gen_stats.get('memory_savings_mb', 0.0)
-                
+
                 # Track optimization levels
                 level = gen_stats.get('strategy_used', 'unknown')
                 stats['optimization_levels'][level] = stats['optimization_levels'].get(level, 0) + 1
-        
+
         return stats
 
 # Global feature bank instance
@@ -1642,7 +1641,7 @@ _global_feature_bank: Optional[FeatureBank] = None
 def get_global_feature_bank() -> FeatureBank:
     """
     Get the global feature bank instance.
-    
+
     Returns:
         Global feature bank instance
     """
@@ -1650,19 +1649,18 @@ def get_global_feature_bank() -> FeatureBank:
 
     if _global_feature_bank is None:
         _global_feature_bank = FeatureBank()
-    
+
     # Ensure the feature bank is properly initialized with generators
     if len(_global_feature_bank.registry.get_all()) == 0:
         # Force re-initialization if no generators are found
         _global_feature_bank = FeatureBank()
-    
 
     return _global_feature_bank
 
 def set_global_feature_bank(bank: FeatureBank) -> None:
     """
     Set the global feature bank instance.
-    
+
     Args:
         bank: Feature bank instance
     """

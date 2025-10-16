@@ -26,7 +26,6 @@ ARTIFACTS_ENV_VAR = "ARES_ARTIFACTS_DIR"
 # Setup logging
 logger = logging.getLogger(__name__)
 
-
 def _default_artifacts_dir() -> Path:
     """Return the base directory for artifacts, creating it if necessary."""
     override = os.getenv(ARTIFACTS_ENV_VAR)
@@ -36,7 +35,6 @@ def _default_artifacts_dir() -> Path:
         base = get_pre_training_settings().artifacts_root
     base.mkdir(parents=True, exist_ok=True)
     return base
-
 
 @dataclass
 class ArtifactManifestEntry:
@@ -51,7 +49,6 @@ class ArtifactManifestEntry:
     def resolved_path(self) -> Path:
         """Return the resolved Path for the artifact."""
         return Path(self.path)
-
 
 class ArtifactManifest:
     """Read/write helper for ``artifacts/manifest.json`` with enhanced functionality."""
@@ -258,7 +255,6 @@ class ArtifactManifest:
             logger.error(f"❌ Failed to register artifact '{logical_name}': {e}")
             tprint_error(f"❌ Failed to register artifact '{logical_name}': {e}")
             raise
-
 
 class DataLocator:
     """Resolve artifact storage locations in a consistent manner with enhanced utilities."""

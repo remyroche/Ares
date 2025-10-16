@@ -31,7 +31,6 @@ from ..execution.exchange_interface import ExchangeInterface, TickerData, KlineD
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class ExchangeIntegrationConfig:
     """Configuration for exchange integration."""
@@ -46,11 +45,10 @@ class ExchangeIntegrationConfig:
     enable_risk_management: bool = True
     enable_rate_limiting: bool = True
 
-
 class ExchangeIntegrationManager:
     """
     Manages integration between exchanges/shared/ modules and trading system.
-    
+
     Provides:
     - Unified exchange interface with shared utilities
     - Comprehensive error handling with tprint
@@ -64,7 +62,7 @@ class ExchangeIntegrationManager:
         self.config = config
         self.exchange: Optional[Union[BinanceExchange, BingXExchange]] = None
         self.exchange_interface: Optional[ExchangeInterface] = None
-        
+
         # Shared utilities
         self.auth_manager: Optional[IHighLevelAuthManager] = None
         self.market_manager: Optional[IHighLevelMarketManager] = None
@@ -72,12 +70,12 @@ class ExchangeIntegrationManager:
         self.risk_manager: Optional[IHighLevelRiskManager] = None
         self.balance_manager: Optional[IHighLevelBalanceManager] = None
         self.rate_limit_manager: Optional[IHighLevelRateLimitManager] = None
-        
+
         # Status tracking
         self.is_initialized = False
         self.is_connected = False
         self.last_error: Optional[str] = None
-        
+
         # Initialize the integration
         self._initialize_integration()
 
@@ -102,11 +100,11 @@ class ExchangeIntegrationManager:
                 )
             else:
                 raise ValueError(f"Unsupported exchange type: {self.config.exchange_type}")
-            
+
             # Initialize shared utilities if enabled
             if self.config.enable_shared_utilities:
                 self._initialize_shared_utilities()
-            
+
             # Create exchange interface
             interface_config = {
                 'exchange_type': self.config.exchange_type,
@@ -117,10 +115,10 @@ class ExchangeIntegrationManager:
                 'trade_symbol': self.config.trade_symbol
             }
             self.exchange_interface = ExchangeInterface(interface_config)
-            
+
             self.is_initialized = True
             tprint(f"✅ Exchange integration initialized for {self.config.exchange_type}", "INFO")
-            
+
         except Exception as e:
             self.last_error = str(e)
             tprint(f"❌ Failed to initialize exchange integration: {e}", "ERROR")
@@ -137,28 +135,28 @@ class ExchangeIntegrationManager:
                 'testnet': self.config.testnet,
                 'rate_limits': self.config.rate_limits
             }
-            
+
             # Initialize each utility with correct parameters
             self.auth_manager = HighLevelAuthManager(self.config.exchange_type)
             self.market_manager = HighLevelMarketManager(self.config.exchange_type)
             self.order_manager = HighLevelOrderManager(self.config.exchange_type)
-            
+
             if self.config.enable_risk_management:
                 self.risk_manager = HighLevelRiskManager(self.config.exchange_type)
-            
+
             self.balance_manager = HighLevelBalanceManager(self.config.exchange_type)
-            
+
             if self.config.enable_rate_limiting:
                 self.rate_limit_manager = HighLevelRateLimitManager(self.config.exchange_type)
-            
+
             # Initialize all utilities
-            for manager in [self.auth_manager, self.market_manager, self.order_manager, 
+            for manager in [self.auth_manager, self.market_manager, self.order_manager,
                           self.risk_manager, self.balance_manager, self.rate_limit_manager]:
                 if manager:
                     manager.initialize()
-            
+
             tprint("✅ Shared utilities initialized successfully", "INFO")
-            
+
         except Exception as e:
             tprint(f"❌ Failed to initialize shared utilities: {e}", "ERROR")
             raise
@@ -170,19 +168,19 @@ class ExchangeIntegrationManager:
             if not self.is_initialized:
                 tprint("❌ Integration not initialized", "ERROR")
                 return False
-            
+
             # Connect using exchange interface
             success = await self.exchange_interface.connect()
-            
+
             if success:
                 self.is_connected = True
                 tprint(f"✅ Connected to {self.config.exchange_type}", "INFO")
             else:
                 self.is_connected = False
                 tprint(f"❌ Failed to connect to {self.config.exchange_type}", "ERROR")
-            
+
             return success
-            
+
         except Exception as e:
             self.is_connected = False
             self.last_error = str(e)
@@ -195,16 +193,16 @@ class ExchangeIntegrationManager:
         try:
             if self.exchange_interface:
                 await self.exchange_interface.disconnect()
-            
+
             # Close shared utilities
-            for manager in [self.auth_manager, self.market_manager, self.order_manager, 
+            for manager in [self.auth_manager, self.market_manager, self.order_manager,
                           self.risk_manager, self.balance_manager, self.rate_limit_manager]:
                 if manager:
                     manager.close()
-            
+
             self.is_connected = False
             tprint(f"📴 Disconnected from {self.config.exchange_type}", "INFO")
-            
+
         except Exception as e:
             tprint(f"❌ Error during disconnect: {e}", "ERROR")
 
@@ -215,9 +213,9 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return None
-            
+
             return await self.exchange_interface.get_ticker(symbol)
-            
+
         except Exception as e:
             tprint(f"❌ Error getting ticker for {symbol}: {e}", "ERROR")
             return None
@@ -236,11 +234,11 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return []
-            
+
             return await self.exchange_interface.get_klines(
                 symbol, interval, start_time, end_time, limit
             )
-            
+
         except Exception as e:
             tprint(f"❌ Error getting klines for {symbol}: {e}", "ERROR")
             return []
@@ -260,28 +258,28 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return {'error': 'not_connected'}
-            
+
             # Risk management check
             if self.risk_manager and price:
                 risk_data = self.risk_manager.calculate_position_risk(
                     symbol, quantity, price, kwargs.get('leverage', 1.0)
                 )
-                
+
                 # Check if risk is acceptable
                 if not self.risk_manager.validate_risk_limits(risk_data).is_valid:
                     tprint(f"❌ Order rejected due to risk limits for {symbol}", "WARNING")
                     return {'error': 'risk_limit_exceeded', 'risk_data': risk_data}
-            
+
             # Create order
             result = await self.exchange_interface.create_order(
                 symbol, side, order_type, quantity, price, **kwargs
             )
-            
+
             if 'error' not in result:
                 tprint(f"✅ Order created for {symbol}: {result.get('orderId', 'N/A')}", "INFO")
-            
+
             return result
-            
+
         except Exception as e:
             tprint(f"❌ Error creating order for {symbol}: {e}", "ERROR")
             return {'error': str(e)}
@@ -293,9 +291,9 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return {}
-            
+
             return await self.exchange_interface.get_account_balance(asset)
-            
+
         except Exception as e:
             tprint(f"❌ Error getting account balance: {e}", "ERROR")
             return {}
@@ -307,9 +305,9 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return {}
-            
+
             return await self.exchange_interface.get_risk_info(symbol, position_size, current_price, leverage)
-            
+
         except Exception as e:
             tprint(f"❌ Error getting risk info for {symbol}: {e}", "ERROR")
             return {}
@@ -321,9 +319,9 @@ class ExchangeIntegrationManager:
             if not self.is_connected:
                 tprint("❌ Not connected to exchange", "ERROR")
                 return {}
-            
+
             return await self.exchange_interface.get_portfolio_risk(positions)
-            
+
         except Exception as e:
             tprint(f"❌ Error getting portfolio risk: {e}", "ERROR")
             return {}
@@ -348,29 +346,28 @@ class ExchangeIntegrationManager:
             # Disconnect if connected
             if self.is_connected:
                 asyncio.create_task(self.disconnect())
-            
+
             # Reset state
             self.is_initialized = False
             self.is_connected = False
             self.last_error = None
-            
+
             # Reinitialize
             self._initialize_integration()
-            
+
             tprint("✅ Exchange integration reset", "INFO")
-            
+
         except Exception as e:
             tprint(f"❌ Error resetting integration: {e}", "ERROR")
-
 
 # Factory function for creating exchange integration
 def create_exchange_integration(config: ExchangeIntegrationConfig) -> ExchangeIntegrationManager:
     """
     Create exchange integration manager.
-    
+
     Args:
         config: Exchange integration configuration
-        
+
     Returns:
         ExchangeIntegrationManager instance
     """
@@ -379,7 +376,6 @@ def create_exchange_integration(config: ExchangeIntegrationConfig) -> ExchangeIn
     except Exception as e:
         tprint(f"❌ Failed to create exchange integration: {e}", "ERROR")
         raise
-
 
 # Convenience function for common configurations
 def create_binance_integration(
@@ -397,7 +393,6 @@ def create_binance_integration(
         trade_symbol=trade_symbol
     )
     return create_exchange_integration(config)
-
 
 def create_bingx_integration(
     api_key: str,

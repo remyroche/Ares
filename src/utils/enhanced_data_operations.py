@@ -27,14 +27,14 @@ def memory_optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage."""
     try:
         original_memory = df.memory_usage(deep=True).sum()
-        
+
         for col in df.columns:
             col_type = df[col].dtype
-            
+
             if col_type != 'object':
                 c_min = df[col].min()
                 c_max = df[col].max()
-                
+
                 if str(col_type)[:3] == 'int':
                     if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                         df[col] = df[col].astype(np.int8)
@@ -53,10 +53,10 @@ def memory_optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                         df[col] = df[col].astype(np.float64)
             else:
                 df[col] = df[col].astype('category')
-        
+
         new_memory = df.memory_usage(deep=True).sum()
         logger.info(f"Memory usage decreased from {original_memory / 1024**2:.2f} MB to {new_memory / 1024**2:.2f} MB")
-        
+
         return df
     except Exception as e:
         logger.error(f"Error optimizing DataFrame memory: {e}")
@@ -70,11 +70,11 @@ def chunked_processing(df: pd.DataFrame, chunk_size: int, operation: Callable, *
             chunk = df.iloc[i:i + chunk_size]
             result_chunk = operation(chunk, **kwargs)
             results.append(result_chunk)
-            
+
             # Force garbage collection
             del chunk
             gc.collect()
-        
+
         return pd.concat(results, ignore_index=True)
     except Exception as e:
         logger.error(f"Error in chunked processing: {e}")
@@ -112,9 +112,9 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-        
+
         if axis == 0:
             # Apply to columns
             results = Parallel(n_jobs=n_jobs)(delayed(func)(df[col]) for col in df.columns)
@@ -155,7 +155,7 @@ def rolling_window_analysis(df: pd.DataFrame, window_sizes: List[int], operation
     """Perform rolling window analysis with multiple window sizes."""
     try:
         result_df = df.copy()
-        
+
         for window in window_sizes:
             for col in df.select_dtypes(include=[np.number]).columns:
                 for op in operations:
@@ -169,7 +169,7 @@ def rolling_window_analysis(df: pd.DataFrame, window_sizes: List[int], operation
                         result_df[f"{col}_rolling_max_{window}"] = df[col].rolling(window=window).max()
                     elif op == "sum":
                         result_df[f"{col}_rolling_sum_{window}"] = df[col].rolling(window=window).sum()
-        
+
         return result_df
     except Exception as e:
         logger.error(f"Error in rolling window analysis: {e}")
@@ -179,11 +179,11 @@ def feature_engineering_pipeline(df: pd.DataFrame, operations: List[Dict[str, An
     """Apply a pipeline of feature engineering operations."""
     try:
         result_df = df.copy()
-        
+
         for operation in operations:
             op_type = operation.get('type')
             params = operation.get('params', {})
-            
+
             if op_type == "rolling":
                 result_df = rolling_window_analysis(result_df, **params)
             elif op_type == "lag":
@@ -205,7 +205,7 @@ def feature_engineering_pipeline(df: pd.DataFrame, operations: List[Dict[str, An
             elif op_type == "square":
                 for col in params.get('columns', []):
                     result_df[f"{col}_square"] = result_df[col] ** 2
-        
+
         return result_df
     except Exception as e:
         logger.error(f"Error in feature engineering pipeline: {e}")
@@ -223,21 +223,21 @@ def data_quality_check(df: pd.DataFrame) -> Dict[str, Any]:
             'numeric_summary': df.describe().to_dict() if len(df.select_dtypes(include=[np.number]).columns) > 0 else {},
             'issues': []
         }
-        
+
         # Check for issues
         if quality_report['missing_values']:
             high_missing = {k: v for k, v in quality_report['missing_values'].items() if v > len(df) * 0.5}
             if high_missing:
                 quality_report['issues'].append(f"High missing values in columns: {list(high_missing.keys())}")
-        
+
         if quality_report['duplicate_rows'] > len(df) * 0.1:
             quality_report['issues'].append(f"High duplicate rows: {quality_report['duplicate_rows']}")
-        
+
         # Check for constant columns
         constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
         if constant_cols:
             quality_report['issues'].append(f"Constant columns: {constant_cols}")
-        
+
         return quality_report
     except Exception as e:
         logger.error(f"Error in data quality check: {e}")
@@ -248,7 +248,7 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
     try:
         if len(df) <= sample_size:
             return df
-        
+
         if method == "random":
             return df.sample(n=sample_size, random_state=42)
         elif method == "stratified":
@@ -272,16 +272,16 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -300,8 +300,8 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -318,13 +318,13 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

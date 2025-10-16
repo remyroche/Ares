@@ -12,7 +12,6 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class AdvancedSearchConfig:
     """Configuration for advanced search."""
@@ -23,7 +22,6 @@ class AdvancedSearchConfig:
     crossover_rate: float = 0.8
     diversity_threshold: float = 0.1
     convergence_threshold: float = 0.01
-
 
 class AdvancedTASSearch:
     """Advanced search for tree architectures."""
@@ -78,7 +76,7 @@ class AdvancedTASSearch:
 
         # Initialize population
         self._initialize_population(search_space)
-        
+
         # Evolution loop
         final_generation = 0
         for generation in range(self.config.n_iterations):
@@ -90,21 +88,21 @@ class AdvancedTASSearch:
 
             # Update best individuals
             self._update_best_individuals()
-            
+
             # Check convergence
             if self._check_convergence():
                 logger.info(f"Converged at generation {generation}")
                 break
-            
+
             # Selection
             parents = self._select_parents()
-            
+
             # Crossover and mutation
             offspring = self._create_offspring(parents, search_space)
-            
+
             # Update population
             self._update_population(offspring)
-            
+
             if generation % 100 == 0:
                 logger.info(f"Generation {generation} completed")
 
@@ -157,7 +155,7 @@ class AdvancedTASSearch:
             diversity_threshold=float(_get('diversity_threshold', AdvancedSearchConfig.diversity_threshold)),
             convergence_threshold=float(_get('convergence_threshold', AdvancedSearchConfig.convergence_threshold)),
         )
-    
+
     def _initialize_population(self, search_space: Dict[str, Any]):
         """Initialize population with random individuals."""
         self.population = []
@@ -177,7 +175,7 @@ class AdvancedTASSearch:
             else:
                 individual[param] = values
         return individual
-    
+
     def _evaluate_population(self):
         """Evaluate fitness of all individuals in population."""
         self.fitness_scores = []
@@ -248,7 +246,7 @@ class AdvancedTASSearch:
         """Check if the population has converged."""
         if len(self.fitness_scores) < 2:
             return False
-        
+
         # Check if fitness improvement is below threshold
         best_fitness = max(self.fitness_scores)
         previous_best = getattr(self, 'previous_best_fitness', None)
@@ -259,7 +257,7 @@ class AdvancedTASSearch:
 
         self.previous_best_fitness = best_fitness
         return False
-    
+
     def _select_parents(self) -> List[Dict[str, Any]]:
         """Select parents for reproduction."""
         # Tournament selection
@@ -273,7 +271,7 @@ class AdvancedTASSearch:
             winner_idx = tournament_indices[np.argmax(tournament_fitness)]
             parents.append(self.population[winner_idx])
         return parents
-    
+
     def _create_offspring(self, parents: List[Dict[str, Any]], search_space: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create offspring through crossover and mutation."""
         offspring = []
@@ -294,22 +292,22 @@ class AdvancedTASSearch:
                 self._mutate(child, search_space)
 
         return offspring
-    
+
     def _crossover(self, parent1: Dict[str, Any], parent2: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Perform crossover between two parents."""
         child1 = parent1.copy()
         child2 = parent2.copy()
-        
+
         # Single-point crossover
         crossover_point = np.random.randint(1, len(parent1))
         keys = list(parent1.keys())
-        
+
         for i, key in enumerate(keys):
             if i < crossover_point:
                 child1[key], child2[key] = child2[key], child1[key]
-        
+
         return child1, child2
-    
+
     def _mutate(self, individual: Dict[str, Any], search_space: Dict[str, Any]):
         """Mutate an individual."""
         for key, value in individual.items():
@@ -322,7 +320,7 @@ class AdvancedTASSearch:
                     # Random choice from possible values
                     if key in search_space and isinstance(search_space[key], list):
                         individual[key] = np.random.choice(search_space[key])
-    
+
     def _update_population(self, offspring: List[Dict[str, Any]]):
         """Update population with offspring."""
         # Combine parents and offspring

@@ -67,11 +67,11 @@ class M1GPUManager:
         self.m1_generation = self._detect_m1_generation()
         self.mps_available = self._check_mps_availability()
         self.compatibility_mode = self._determine_compatibility_mode()
-        
+
         # Backwards compatibility flags
         self._legacy_mode = False
         self._fallback_enabled = True
-        
+
         self.logger.info(f"M1 GPU Manager initialized - M1: {self.is_m1}, "
                         f"Generation: {self.m1_generation}, MPS: {self.mps_available}")
 
@@ -100,7 +100,7 @@ class M1GPUManager:
         """Detect M1 chip generation for optimization purposes."""
         if not self.is_m1:
             return "none"
-            
+
         try:
             import subprocess
             result = subprocess.run(['sysctl', 'machdep.cpu.brand_string'],
@@ -137,7 +137,7 @@ class M1GPUManager:
         """Check if Metal Performance Shaders (MPS) is available."""
         if not TORCH_AVAILABLE:
             return False
-            
+
         try:
             if hasattr(torch, 'backends') and hasattr(torch.backends, 'mps'):
                 return torch.backends.mps.is_available()
@@ -211,7 +211,7 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, returning data as-is")
             return data
-            
+
         if not self.mps_available or force_cpu or not self._fallback_enabled:
             if not self.mps_available:
                 self.logger.debug("MPS not available, using CPU operations")
@@ -269,22 +269,22 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, cannot calculate vector norm")
             return array
-            
+
         if not self.mps_available:
             # Fallback to CPU numpy
             return np.linalg.norm(array, axis=axis, keepdims=keepdims)
 
         try:
-            
+
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
-            
+
             # Calculate norm
             norm_tensor = torch.linalg.norm(tensor, dim=axis, keepdim=keepdims)
-            
+
             # Convert back to numpy
             result = norm_tensor.cpu().numpy()
-            
+
             return result
 
         except Exception as e:
@@ -296,22 +296,22 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, cannot calculate absolute values")
             return array
-            
+
         if not self.mps_available:
             # Fallback to CPU numpy
             return np.abs(array)
 
         try:
-            
+
             # Convert to torch tensor and move to MPS
             tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
-            
+
             # Calculate absolute values
             abs_tensor = torch.abs(tensor)
-            
+
             # Convert back to numpy
             result = abs_tensor.cpu().numpy()
-            
+
             return result
 
         except Exception as e:
@@ -323,23 +323,23 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, cannot perform division")
             return array1
-            
+
         if not self.mps_available:
             # Fallback to CPU numpy
             return np.divide(array1, array2)
 
         try:
-            
+
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
             tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
-            
+
             # Perform division
             result_tensor = torch.div(tensor1, tensor2)
-            
+
             # Convert back to numpy
             result = result_tensor.cpu().numpy()
-            
+
             return result
 
         except Exception as e:
@@ -351,23 +351,23 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, cannot perform subtraction")
             return array1
-            
+
         if not self.mps_available:
             # Fallback to CPU numpy
             return np.subtract(array1, array2)
 
         try:
-            
+
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
             tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
-            
+
             # Perform subtraction
             result_tensor = torch.sub(tensor1, tensor2)
-            
+
             # Convert back to numpy
             result = result_tensor.cpu().numpy()
-            
+
             return result
 
         except Exception as e:
@@ -379,64 +379,57 @@ class M1GPUManager:
         if not NUMPY_AVAILABLE:
             self.logger.warning("Numpy not available, cannot perform matrix multiplication")
             return array1
-            
+
         if not self.mps_available:
             # Fallback to CPU numpy
             return np.matmul(array1, array2)
 
         try:
-            
+
             # Convert to torch tensors and move to MPS
             tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
             tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
-            
+
             # Perform matrix multiplication
             result_tensor = torch.matmul(tensor1, tensor2)
-            
+
             # Convert back to numpy
             result = result_tensor.cpu().numpy()
-            
+
             return result
 
         except Exception as e:
             self.logger.warning(f"GPU matrix multiplication failed, falling back to CPU: {e}")
             return np.matmul(array1, array2)
 
-
 # Global instance with M1-specific initialization
 m1_gpu_manager = M1GPUManager(version_check=True)
-
 
 def get_m1_gpu_manager() -> M1GPUManager:
     """Get the global M1 GPU manager instance."""
     return m1_gpu_manager
 
-
 def is_m1_available() -> bool:
     """Check if M1 hardware is available."""
     return m1_gpu_manager.is_m1
-
 
 def is_mps_available() -> bool:
     """Check if MPS is available."""
     return m1_gpu_manager.mps_available
 
-
 def get_m1_generation() -> str:
     """Get M1 chip generation."""
     return m1_gpu_manager.m1_generation
-
 
 def get_compatibility_mode() -> str:
     """Get current compatibility mode."""
     return m1_gpu_manager.compatibility_mode
 
-
 def check_compatibility(required_features: List[str] = None) -> Dict[str, Any]:
     """Check compatibility for required features."""
     if required_features is None:
         required_features = ['m1', 'mps', 'torch', 'numpy']
-    
+
     compatibility = {}
     for feature in required_features:
         if feature == 'm1':
@@ -451,23 +444,21 @@ def check_compatibility(required_features: List[str] = None) -> Dict[str, Any]:
             compatibility[feature] = PANDAS_AVAILABLE
         else:
             compatibility[feature] = False
-    
+
     compatibility['all_available'] = all(compatibility.values())
     return compatibility
-
 
 @deprecated("Use get_m1_gpu_manager().get_compatibility_info() instead", "2.0.0")
 def get_gpu_compatibility_info() -> Dict[str, Any]:
     """Legacy function for getting GPU compatibility info."""
     return m1_gpu_manager.get_compatibility_info()
 
-
 def optimize_dataframe_for_m1(df):
     """Optimize DataFrame operations for M1."""
     if not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
         logger.warning("Pandas or Numpy not available, returning DataFrame as-is")
         return df
-        
+
     if not m1_gpu_manager.is_m1:
         return df
 
@@ -476,7 +467,7 @@ def optimize_dataframe_for_m1(df):
         if not isinstance(df, pd.DataFrame):
             logger.warning(f"⚠️ Matrix optimization failed: Expected DataFrame, got {type(df)}. Returning data as-is.")
             return df
-            
+
         # Additional safety check for empty DataFrame
         if df.empty:
             logger.info("DataFrame is empty, returning as-is")
@@ -496,13 +487,12 @@ def optimize_dataframe_for_m1(df):
 
     return df
 
-
 def create_m1_optimized_array(data, dtype=None):
     """Create numpy array optimized for M1."""
     if not NUMPY_AVAILABLE:
         logger.warning("Numpy not available, returning data as-is")
         return data
-        
+
     if not m1_gpu_manager.is_m1:
         return np.array(data, dtype=dtype)
 
@@ -525,7 +515,6 @@ def create_m1_optimized_array(data, dtype=None):
     except Exception as e:
         logger.warning(f"Array optimization failed: {e}")
         return np.array(data, dtype=dtype)
-
 
 async def m1_backtesting_simulate(
     gpu_data: Any,
@@ -612,7 +601,6 @@ async def m1_backtesting_simulate(
         logger.warning(f"M1 GPU backtesting simulation failed, falling back to CPU: {e}")
         return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
 
-
 async def _cpu_backtesting_fallback(
     data: Any,
     strategy_params: Dict[str, Any],
@@ -681,7 +669,6 @@ async def _cpu_backtesting_fallback(
             'device': 'cpu',
             'error': str(e)
         }
-
 
 async def m1_monte_carlo_simulate(
     data: Any,
@@ -774,7 +761,6 @@ async def m1_monte_carlo_simulate(
     except Exception as e:
         logger.warning(f"M1 GPU Monte Carlo simulation failed, falling back to CPU: {e}")
         return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
-
 
 async def _cpu_monte_carlo_fallback(
     data: Any,

@@ -48,15 +48,15 @@ logger = logging.getLogger(__name__)
 class VectorBTFeatureGenerator(FeatureGenerator):
     """
     High-performance feature generator using VectorBT's optimized backend.
-    
+
     This class provides a foundation for creating feature generators that leverage
     VectorBT's C++ optimized implementations for maximum performance.
     """
-    
+
     def __init__(self, config: FeatureConfig, enable_gpu: bool = False, enable_parallel: bool = True):
         """
         Initialize VectorBT feature generator.
-        
+
         Args:
             config: Feature configuration
             enable_gpu: Whether to enable GPU acceleration
@@ -64,18 +64,18 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         """
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required but not available. Install with: pip install vectorbt")
-        
+
         super().__init__(config)
         self.enable_gpu = enable_gpu
         self.enable_parallel = enable_parallel
-        
+
         # Initialize memory manager and performance monitor
         self.memory_manager = get_memory_manager()
         self.performance_monitor = get_performance_monitor()
-        
+
         # Configure VectorBT settings
         self._configure_vectorbt()
-        
+
         # Performance tracking
         self.vectorbt_stats = {
             'vectorbt_operations': 0,
@@ -83,20 +83,20 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'parallel_operations': 0,
             'memory_optimizations': 0
         }
-        
+
         # Cache for computed features
         self._feature_cache = {}
         self._cache_enabled = True
-        
+
         # Memory optimization
         self._memory_usage = 0
         self._max_memory_usage = 0
-    
+
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
         if not VECTORBT_AVAILABLE:
             return
-        
+
         # Configure VectorBT settings for optimal performance using newer API
         # Check if array_wrapper structure exists and set wrapper if available
         if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
@@ -147,28 +147,28 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             except Exception as e:
                 logger.warning(f"⚠️ Parallel processing not available: {e}")
                 self.enable_parallel = False
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """
         Perform rolling operation using VectorBT native functions with array wrappers for maximum performance.
-        
+
         Args:
             data: Input data series
             operation: Operation type ('mean', 'std', 'var', 'min', 'max', 'sum', 'corr', 'cov')
             window: Rolling window size
             **kwargs: Additional parameters
-            
+
         Returns:
             Result of rolling operation
         """
         self.vectorbt_stats['vectorbt_operations'] += 1
-        
+
         try:
             # Convert to VectorBT array wrapper for optimal performance
             if not hasattr(data, '_vbt') and VECTORBT_AVAILABLE:
                 data = vbt.array_wrapper(data, freq=data.index.freq if hasattr(data.index, 'freq') else None)
-            
+
             # Use VectorBT native rolling functions with array wrappers
             if operation == 'mean':
                 return vbt.rolling_mean(data, window=window, **kwargs)
@@ -200,12 +200,12 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 return vbt.rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
-        
+
         except Exception as e:
             logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -228,24 +228,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             return data.rolling(window=window).cov(other)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _vectorbt_scale(self, data: pd.Series, method: str = 'zscore', **kwargs) -> pd.Series:
         """
         Scale data using VectorBT scaling functions.
-        
+
         Args:
             data: Input data series
             method: Scaling method ('zscore', 'minmax', 'robust', 'quantile', 'winsorize')
             **kwargs: Additional parameters
-            
+
         Returns:
             Scaled data series
         """
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required for this operation")
-        
+
         self.vectorbt_stats['vectorbt_operations'] += 1
-        
+
         try:
             if method == 'zscore':
                 return zscore(data, **kwargs)
@@ -263,11 +263,11 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 return clip(data, **kwargs)
             else:
                 raise ValueError(f"Unsupported scaling method: {method}")
-        
+
         except Exception as e:
             logger.warning(f"VectorBT scaling failed: {e}, using fallback")
             return self._fallback_scale(data, method, **kwargs)
-    
+
     def _fallback_scale(self, data: pd.Series, method: str, **kwargs) -> pd.Series:
         """Fallback scaling using pandas/numpy."""
         if method == 'zscore':
@@ -280,24 +280,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             return (data - median) / mad
         else:
             raise ValueError(f"Unsupported scaling method: {method}")
-    
+
     def _vectorbt_technical_indicator(self, data: pd.DataFrame, indicator: str, **kwargs) -> pd.Series:
         """
         Calculate technical indicator using VectorBT native implementations for maximum performance.
-        
+
         Args:
             data: OHLCV data
             indicator: Indicator name
             **kwargs: Indicator parameters
-            
+
         Returns:
             Indicator values
         """
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required for this operation")
-        
+
         self.vectorbt_stats['vectorbt_operations'] += 1
-        
+
         try:
             # Use VectorBT native indicator implementations
             if indicator == 'rsi':
@@ -356,43 +356,43 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 return vbt.MOM.run(data['close'], **kwargs).mom
             else:
                 raise ValueError(f"Unsupported indicator: {indicator}")
-        
+
         except Exception as e:
             logger.warning(f"VectorBT indicator {indicator} failed: {e}, using fallback")
             return self._fallback_technical_indicator(data, indicator, **kwargs)
-    
+
     def _fallback_technical_indicator(self, data: pd.DataFrame, indicator: str, **kwargs) -> pd.Series:
         """Fallback technical indicator calculation using pandas/numpy."""
         # This would contain fallback implementations
         # For now, return NaN series
         return pd.Series(np.nan, index=data.index)
-    
+
     def _vectorbt_batch_operations(self, data: pd.DataFrame, operations: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Perform batch VectorBT operations for efficiency.
-        
+
         Args:
             data: Input data
             operations: List of operation dictionaries
-            
+
         Returns:
             DataFrame with results
         """
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required for this operation")
-        
+
         self.vectorbt_stats['vectorbt_operations'] += len(operations)
         self.vectorbt_stats['parallel_operations'] += 1
-        
+
         results = {}
-        
+
         try:
             # Use VectorBT's batch processing if available
             for op in operations:
                 op_type = op.get('type')
                 op_params = op.get('params', {})
                 op_name = op.get('name', f"{op_type}_{len(results)}")
-                
+
                 if op_type == 'rolling':
                     operation = op_params.get('operation')
                     window = op_params.get('window')
@@ -411,24 +411,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     results[op_name] = self._vectorbt_scale(
                         data[column], method, **op_params
                     )
-        
+
         except Exception as e:
             logger.warning(f"VectorBT batch operations failed: {e}")
             # Return empty DataFrame on failure
             return pd.DataFrame(index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
-    def _vectorbt_batch_indicators_optimized(self, data: pd.DataFrame, 
+
+    def _vectorbt_batch_indicators_optimized(self, data: pd.DataFrame,
                                            indicators: List[Dict[str, Any]]) -> pd.DataFrame:
         """Optimized batch indicator calculation with memory management."""
         if not VECTORBT_AVAILABLE:
             return self._fallback_batch_indicators(data, indicators)
-        
+
         # Estimate memory requirements
         data_size_gb = data.memory_usage(deep=True).sum() / (1024**3)
         estimated_memory_gb = data_size_gb * len(indicators) * 2  # Rough estimate
-        
+
         with memory_managed_operation(
             estimated_memory_gb,
             f"batch_indicators_{int(time.time())}",
@@ -436,24 +436,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         ):
             try:
                 results = {}
-                
+
                 # Process indicators in batches for memory efficiency
                 batch_size = min(10, len(indicators))  # Process 10 indicators at a time
-                
+
                 for i in range(0, len(indicators), batch_size):
                     batch_indicators = indicators[i:i + batch_size]
-                    
+
                     for indicator_config in batch_indicators:
                         indicator_name = indicator_config['name']
                         indicator_type = indicator_config['type']
                         params = indicator_config.get('params', {})
-                        
+
                         # Check cache first
                         cache_key = f"{indicator_name}_{hash(str(params))}"
                         if self._cache_enabled and cache_key in self._feature_cache:
                             results[indicator_name] = self._feature_cache[cache_key]
                             continue
-                        
+
                         # VectorBT optimized calculation
                         try:
                             if indicator_type == 'rsi':
@@ -485,10 +485,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                             else:
                                 logger.warning(f"Unknown indicator type: {indicator_type}")
                                 continue
-                            
+
                             # Optimize data types
                             result = optimize_memory_usage(result)
-                            
+
                             # Cache result
                             if self._cache_enabled:
                                 self._feature_cache[cache_key] = result
@@ -497,31 +497,31 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                                     # Remove oldest entries
                                     oldest_key = next(iter(self._feature_cache))
                                     del self._feature_cache[oldest_key]
-                            
+
                             results[indicator_name] = result
-                            
+
                         except Exception as e:
                             logger.warning(f"VectorBT indicator {indicator_type} failed: {e}")
                             continue
-                
+
                 self.vectorbt_stats['vectorbt_operations'] += len(indicators)
                 self.vectorbt_stats['parallel_operations'] += 1
-                
+
                 return pd.DataFrame(results, index=data.index)
-                
+
             except Exception as e:
                 logger.error(f"VectorBT batch indicators failed: {e}")
                 return self._fallback_batch_indicators(data, indicators)
-    
+
     def _fallback_batch_indicators(self, data: pd.DataFrame, indicators: List[Dict[str, Any]]) -> pd.DataFrame:
         """Fallback batch indicator calculation using pandas/numpy."""
         results = {}
-        
+
         for indicator_config in indicators:
             indicator_name = indicator_config['name']
             indicator_type = indicator_config['type']
             params = indicator_config.get('params', {})
-            
+
             try:
                 if indicator_type == 'rsi':
                     # Simple RSI calculation
@@ -538,24 +538,24 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 else:
                     # For other indicators, return NaN series
                     result = pd.Series(np.nan, index=data.index)
-                
+
                 results[indicator_name] = result
-                
+
             except Exception as e:
                 logger.warning(f"Fallback indicator {indicator_type} failed: {e}")
                 results[indicator_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
-    def generate_features_batch_optimized(self, data: pd.DataFrame, 
+
+    def generate_features_batch_optimized(self, data: pd.DataFrame,
                                         feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Generate multiple features in batch with memory and performance optimization.
-        
+
         Args:
             data: Input OHLCV data
             feature_configs: List of feature configuration dictionaries
-            
+
         Returns:
             DataFrame with generated features
         """
@@ -564,12 +564,12 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             metadata={'n_features': len(feature_configs), 'data_shape': data.shape}
         ):
             logger.info(f"🚀 Generating {len(feature_configs)} features in batch...")
-            
+
             # Group features by type for efficient processing
             indicator_features = []
             rolling_features = []
             scaling_features = []
-            
+
             for config in feature_configs:
                 feature_type = config.get('type', 'indicator')
                 if feature_type == 'indicator':
@@ -578,52 +578,52 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     rolling_features.append(config)
                 elif feature_type == 'scaling':
                     scaling_features.append(config)
-            
+
             results = {}
-            
+
             # Process indicator features
             if indicator_features:
                 logger.debug(f"Processing {len(indicator_features)} indicator features...")
                 indicator_results = self._vectorbt_batch_indicators_optimized(data, indicator_features)
                 results.update(indicator_results)
-            
+
             # Process rolling features
             if rolling_features:
                 logger.debug(f"Processing {len(rolling_features)} rolling features...")
                 rolling_results = self._process_rolling_features_batch(data, rolling_features)
                 results.update(rolling_results)
-            
+
             # Process scaling features
             if scaling_features:
                 logger.debug(f"Processing {len(scaling_features)} scaling features...")
                 scaling_results = self._process_scaling_features_batch(data, scaling_features)
                 results.update(scaling_results)
-            
+
             # Combine all results
             result_df = pd.DataFrame(results, index=data.index)
-            
+
             # Optimize final result
             result_df = optimize_memory_usage(result_df)
-            
+
             logger.info(f"✅ Generated {len(result_df.columns)} features successfully")
             return result_df
-    
-    def _process_rolling_features_batch(self, data: pd.DataFrame, 
+
+    def _process_rolling_features_batch(self, data: pd.DataFrame,
                                       rolling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
         """Process rolling features in batch."""
         results = {}
-        
+
         for config in rolling_configs:
             feature_name = config['name']
             column = config.get('column', 'close')
             operation = config.get('operation', 'mean')
             window = config.get('window', 20)
-            
+
             if column not in data.columns:
                 logger.warning(f"Column {column} not found for rolling feature {feature_name}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
                 continue
-            
+
             try:
                 if operation == 'mean':
                     result = data[column].rolling(window=window).mean()
@@ -638,30 +638,30 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 else:
                     logger.warning(f"Unknown rolling operation: {operation}")
                     result = pd.Series(np.nan, index=data.index)
-                
+
                 results[feature_name] = result
-                
+
             except Exception as e:
                 logger.warning(f"Rolling feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return results
-    
-    def _process_scaling_features_batch(self, data: pd.DataFrame, 
+
+    def _process_scaling_features_batch(self, data: pd.DataFrame,
                                       scaling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
         """Process scaling features in batch."""
         results = {}
-        
+
         for config in scaling_configs:
             feature_name = config['name']
             column = config.get('column', 'close')
             method = config.get('method', 'zscore')
-            
+
             if column not in data.columns:
                 logger.warning(f"Column {column} not found for scaling feature {feature_name}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
                 continue
-            
+
             try:
                 if method == 'zscore':
                     result = (data[column] - data[column].mean()) / data[column].std()
@@ -674,19 +674,19 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 else:
                     logger.warning(f"Unknown scaling method: {method}")
                     result = pd.Series(np.nan, index=data.index)
-                
+
                 results[feature_name] = result
-                
+
             except Exception as e:
                 logger.warning(f"Scaling feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return results
-    
+
     def get_vectorbt_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""
         return self.vectorbt_stats.copy()
-    
+
     def reset_vectorbt_stats(self):
         """Reset VectorBT performance statistics."""
         self.vectorbt_stats = {
@@ -695,21 +695,21 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'parallel_operations': 0,
             'memory_optimizations': 0
         }
-    
+
     def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize DataFrame for VectorBT processing with memory efficiency and array wrappers.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame with VectorBT array wrappers
         """
         try:
             # Create a copy to avoid modifying original data
             optimized_data = data.copy()
-            
+
             # Optimize data types for memory efficiency
             for column in optimized_data.columns:
                 if optimized_data[column].dtype == 'float64':
@@ -717,13 +717,13 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     if optimized_data[column].min() >= np.finfo(np.float32).min and \
                        optimized_data[column].max() <= np.finfo(np.float32).max:
                         optimized_data[column] = optimized_data[column].astype(np.float32)
-                
+
                 elif optimized_data[column].dtype == 'int64':
                     # Use int32 for better memory usage if range allows
                     if optimized_data[column].min() >= np.iinfo(np.int32).min and \
                        optimized_data[column].max() <= np.iinfo(np.int32).max:
                         optimized_data[column] = optimized_data[column].astype(np.int32)
-            
+
             # Ensure index is optimized
             if isinstance(optimized_data.index, pd.DatetimeIndex):
                 # Use period index for better memory usage if possible
@@ -731,40 +731,40 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     optimized_data.index = optimized_data.index.to_period('T')
                 except:
                     pass
-            
+
             # Convert to VectorBT array wrappers for better performance
             if VECTORBT_AVAILABLE:
                 optimized_data = self._convert_to_vectorbt_arrays(optimized_data)
-            
+
             # Track memory usage
             memory_usage = optimized_data.memory_usage(deep=True).sum()
             self._memory_usage = memory_usage
             self._max_memory_usage = max(self._max_memory_usage, memory_usage)
-            
+
             self.vectorbt_stats['memory_optimizations'] += 1
-            
+
             return optimized_data
-            
+
         except Exception as e:
             logger.warning(f"DataFrame optimization failed: {e}")
             return data
-    
+
     def _convert_to_vectorbt_arrays(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Convert DataFrame columns to VectorBT array wrappers for optimal performance.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             DataFrame with VectorBT array wrappers
         """
         try:
             if not VECTORBT_AVAILABLE:
                 return data
-            
+
             optimized_data = data.copy()
-            
+
             # Convert numeric columns to VectorBT array wrappers
             for column in optimized_data.columns:
                 if optimized_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
@@ -778,27 +778,27 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     except Exception as e:
                         logger.warning(f"Failed to convert column {column} to VectorBT array: {e}")
                         continue
-            
+
             return optimized_data
-            
+
         except Exception as e:
             logger.warning(f"VectorBT array conversion failed: {e}")
             return data
-    
+
     def _cleanup_memory(self):
         """Clean up memory usage."""
         try:
             import gc
             gc.collect()
-            
+
             # Clear feature cache if memory usage is high
             if self._memory_usage > self.vectorbt_memory_limit_gb * 1024**3 * 0.8:
                 self._feature_cache.clear()
                 logger.info("🧹 Cleared feature cache due to high memory usage")
-            
+
         except Exception as e:
             logger.warning(f"Memory cleanup failed: {e}")
-    
+
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get memory usage statistics."""
         return {
@@ -808,16 +808,15 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'memory_usage_percentage': (self._memory_usage / (self.vectorbt_memory_limit_gb * 1024**3)) * 100
         }
 
-
 class VectorBTVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volatility feature generator."""
-    
+
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
@@ -833,26 +832,25 @@ class VectorBTVolatilityGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate volatility feature using VectorBT ATR."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_volatility_{self.period}')
-        
+
         # Use VectorBT ATR for volatility calculation
         atr = self._vectorbt_technical_indicator(data, 'atr', window=self.period)
         return atr.rename(f'vectorbt_volatility_{self.period}')
 
-
 class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized momentum feature generator."""
-    
+
     def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 14) -> FeatureConfig:
         return FeatureConfig(
@@ -868,26 +866,25 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate RSI feature using VectorBT."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rsi_{self.period}')
-        
+
         # Use VectorBT RSI
         rsi = self._vectorbt_technical_indicator(data, 'rsi', window=self.period)
         return rsi.rename(f'vectorbt_rsi_{self.period}')
 
-
 class VectorBTTrendGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend feature generator."""
-    
+
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
@@ -903,31 +900,30 @@ class VectorBTTrendGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate SMA feature using VectorBT rolling mean."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_sma_{self.period}')
-        
+
         # Use VectorBT rolling mean for SMA
         sma = self._vectorbt_rolling_operation(data['close'], 'mean', window=self.period)
         return sma.rename(f'vectorbt_sma_{self.period}')
 
-
 def create_vectorbt_generators() -> List[VectorBTFeatureGenerator]:
     """Create a comprehensive set of VectorBT feature generators."""
     generators = []
-    
+
     # Volatility generators
     for period in [10, 20, 50]:
         generators.append(VectorBTVolatilityGenerator(period))
-    
+
     # Momentum generators
     for period in [14, 21, 30]:
         generators.append(VectorBTMomentumGenerator(period))
-    
+
     # Trend generators
     for period in [10, 20, 50, 100]:
         generators.append(VectorBTTrendGenerator(period))
-    
+
     return generators

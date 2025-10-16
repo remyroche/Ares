@@ -55,21 +55,20 @@ except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("Scikit-learn not available - limited data validation functionality")
 
-
 class DataValidator:
     """Comprehensive data validation for feature selection."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize data validator with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('DataValidator')
-        
+
         # Validation thresholds - adjusted to be less aggressive for moving averages
         self.correlation_threshold = self.config.get('correlation_threshold', 0.95)
         self.mutual_info_threshold = self.config.get('mutual_info_threshold', 0.99)
         self.variance_threshold = self.config.get('variance_threshold', 1e-10)
         self.nan_threshold = self.config.get('nan_threshold', 0.1)  # Max 10% NaN values
-        
+
         _LOGGER.info("🔍 DataValidator initialized with comprehensive validation capabilities")
         _LOGGER.info(f"⚙️ Correlation threshold: {self.correlation_threshold}")
         _LOGGER.info(f"⚙️ Mutual info threshold: {self.mutual_info_threshold}")
@@ -150,7 +149,7 @@ class DataValidator:
                     issues.append(f"Constant features detected: {constant_features}")
                     _LOGGER.warning(f"⚠️ Found {len(constant_features)} constant features: {constant_features}")
                 suspicious_features.extend(constant_features)
-            
+
             # Check for high correlation features (only on filtered data)
             high_corr_features = self.detect_high_correlation_features(X_filtered)
             if high_corr_features:
@@ -181,7 +180,7 @@ class DataValidator:
                     _LOGGER.warning(f"⚠️ Found {len(high_corr_features)} highly correlated feature pairs")
                 suspicious_features.extend([pair[0] for pair in high_corr_features])
                 suspicious_features.extend([pair[1] for pair in high_corr_features])
-            
+
             # Check for suspicious correlations with target
             if y is not None:
                 suspicious_target_corr = self.detect_suspicious_target_correlations(X, y)
@@ -189,14 +188,14 @@ class DataValidator:
                     warnings.append(f"Suspicious target correlations: {len(suspicious_target_corr)} features")
                     suspicious_features.extend([feat[0] for feat in suspicious_target_corr])
                     _LOGGER.warning(f"⚠️ Found {len(suspicious_target_corr)} features with suspicious target correlations")
-            
+
             # Check for NaN/Inf values
             nan_features = self.detect_nan_inf_features(X)
             if nan_features:
                 issues.append(f"NaN/Inf values in features: {nan_features}")
                 suspicious_features.extend(nan_features)
                 _LOGGER.warning(f"⚠️ Found {len(nan_features)} features with NaN/Inf values")
-            
+
             # Check for zero variance features
             zero_var_features = self.detect_zero_variance_features(X)
             if zero_var_features:
@@ -208,7 +207,7 @@ class DataValidator:
                     issues.append(f"Zero variance features: {zero_var_features}")
                     _LOGGER.warning(f"⚠️ Found {len(zero_var_features)} zero variance features: {zero_var_features}")
                 suspicious_features.extend(zero_var_features)
-            
+
             # Check for perfect correlations (suspicious)
             perfect_corr = self.detect_perfect_correlations(X)
             if perfect_corr:
@@ -261,7 +260,7 @@ class DataValidator:
                     _LOGGER.warning(f"⚠️ Found {len(perfect_corr)} perfectly correlated feature pairs")
                     suspicious_features.extend([pair[0] for pair in perfect_corr])
                     suspicious_features.extend([pair[1] for pair in perfect_corr])
-            
+
             # Check for suspicious mutual information
             if y is not None and SKLEARN_AVAILABLE:
                 suspicious_mi = self.detect_suspicious_mutual_information(X, y, feature_names=feature_names)
@@ -269,13 +268,13 @@ class DataValidator:
                     warnings.append(f"Suspicious mutual information: {len(suspicious_mi)} features")
                     suspicious_features.extend([feat[0] for feat in suspicious_mi])
                     _LOGGER.warning(f"⚠️ Found {len(suspicious_mi)} features with suspicious mutual information")
-            
+
             # Check data distribution
             distribution_issues = self.check_data_distribution(X, feature_names)
             if distribution_issues:
                 warnings.extend(distribution_issues)
                 _LOGGER.warning(f"⚠️ Found {len(distribution_issues)} data distribution issues")
-            
+
             # Check for outliers
             outlier_features = self.detect_outlier_features(X)
             if outlier_features:
@@ -296,14 +295,14 @@ class DataValidator:
                                 outlier_count = np.sum(z_scores > 3.0)
                                 outlier_ratio = outlier_count / len(feature_data)
                                 _LOGGER.warning(f"  {feature_name}: {outlier_count}/{len(feature_data)} outliers ({outlier_ratio:.1%})")
-            
+
             is_valid = len(issues) == 0
-            
+
             # Remove duplicates from suspicious features
             suspicious_features = list(set(suspicious_features))
-            
+
             _LOGGER.info(f"✅ Data validation completed - Valid: {is_valid}, Issues: {len(issues)}, Warnings: {len(warnings)}")
-            
+
             return self._create_validation_result(
                 is_valid, issues, warnings, suspicious_features,
                 constant_features=constant_features,
@@ -316,18 +315,18 @@ class DataValidator:
                 distribution_issues=distribution_issues,
                 outlier_features=outlier_features
             )
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Data quality validation failed: {e}")
             return {
-                'is_valid': False, 
-                'issues': [f"Validation error: {e}"], 
+                'is_valid': False,
+                'issues': [f"Validation error: {e}"],
                 'warnings': [],
                 'suspicious_features': [],
                 'error': str(e)
             }
 
-    def _create_validation_result(self, is_valid: bool, issues: List[str], warnings: List[str], 
+    def _create_validation_result(self, is_valid: bool, issues: List[str], warnings: List[str],
                                  suspicious_features: List[int], **kwargs) -> Dict[str, Any]:
         """Create standardized validation result."""
         result = {
@@ -358,7 +357,7 @@ class DataValidator:
         """Detect features with suspiciously high correlations."""
         if threshold is None:
             threshold = self.correlation_threshold
-            
+
         _LOGGER.debug(f"🔍 Detecting high correlation features (threshold: {threshold})...")
         try:
             high_corr_pairs = []
@@ -373,12 +372,12 @@ class DataValidator:
             _LOGGER.warning(f"⚠️ High correlation detection failed: {e}")
             return []
 
-    def detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray, 
+    def detect_suspicious_target_correlations(self, X: np.ndarray, y: np.ndarray,
                                              threshold: float = None) -> List[Tuple[int, float]]:
         """Detect suspiciously high correlations with target."""
         if threshold is None:
             threshold = self.correlation_threshold
-            
+
         _LOGGER.debug(f"🔍 Detecting suspicious target correlations (threshold: {threshold})...")
         try:
             suspicious_features = []
@@ -402,11 +401,11 @@ class DataValidator:
                 nan_count = np.isnan(feature_data).sum()
                 inf_count = np.isinf(feature_data).sum()
                 total_count = len(feature_data)
-                
+
                 if nan_count > 0 or inf_count > 0:
                     nan_ratio = nan_count / total_count
                     inf_ratio = inf_count / total_count
-                    
+
                     if nan_ratio > self.nan_threshold or inf_ratio > self.nan_threshold:
                         problematic_features.append(i)
             _LOGGER.debug(f"📊 Found {len(problematic_features)} features with excessive NaN/Inf values")
@@ -570,37 +569,37 @@ class DataValidator:
         _LOGGER.debug(f"🔍 Detecting outlier features (threshold: {outlier_threshold})...")
         try:
             outlier_features = []
-            
+
             for i in range(X.shape[1]):
                 feature_data = X[:, i]
                 if len(feature_data) > 10:  # Need sufficient data
                     try:
                         mean_val = safe_mean(feature_data)
                         std_val = safe_std(feature_data)
-                        
+
                         if std_val > 0:
                             # Count outliers using z-score
                             z_scores = np.abs((feature_data - mean_val) / std_val)
                             outlier_count = np.sum(z_scores > outlier_threshold)
                             outlier_ratio = outlier_count / len(feature_data)
-                            
+
                             if outlier_ratio > 0.1:  # More than 10% outliers
                                 outlier_features.append(i)
                     except Exception:
                         continue
-            
+
             _LOGGER.debug(f"📊 Found {len(outlier_features)} features with excessive outliers")
             return outlier_features
         except Exception as e:
             _LOGGER.warning(f"⚠️ Outlier detection failed: {e}")
             return []
 
-    def clean_data(self, X: np.ndarray, y: np.ndarray = None, 
+    def clean_data(self, X: np.ndarray, y: np.ndarray = None,
                    remove_constant: bool = True, remove_high_corr: bool = True,
                    remove_nan_inf: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         """Clean data by removing problematic features."""
         _LOGGER.info("🧹 Starting data cleaning...")
-        
+
         try:
             original_shape = X.shape
             features_to_remove = set()
@@ -609,7 +608,7 @@ class DataValidator:
                 'removed_features': [],
                 'cleaning_steps': []
             }
-            
+
             # Remove constant features
             if remove_constant:
                 constant_features = self.detect_constant_features(X)
@@ -617,7 +616,7 @@ class DataValidator:
                     features_to_remove.update(constant_features)
                     cleaning_log['cleaning_steps'].append(f"Removed {len(constant_features)} constant features")
                     _LOGGER.info(f"🧹 Removed {len(constant_features)} constant features")
-            
+
             # Remove features with excessive NaN/Inf
             if remove_nan_inf:
                 nan_features = self.detect_nan_inf_features(X)
@@ -625,7 +624,7 @@ class DataValidator:
                     features_to_remove.update(nan_features)
                     cleaning_log['cleaning_steps'].append(f"Removed {len(nan_features)} features with excessive NaN/Inf")
                     _LOGGER.info(f"🧹 Removed {len(nan_features)} features with excessive NaN/Inf")
-            
+
             # Remove highly correlated features (keep one from each pair)
             if remove_high_corr:
                 high_corr_pairs = self.detect_high_correlation_features(X)
@@ -634,34 +633,34 @@ class DataValidator:
                     features_to_remove.update([pair[1] for pair in high_corr_pairs])
                     cleaning_log['cleaning_steps'].append(f"Removed {len(high_corr_pairs)} highly correlated features")
                     _LOGGER.info(f"🧹 Removed {len(high_corr_pairs)} highly correlated features")
-            
+
             # Convert to sorted list
             features_to_remove = sorted(list(features_to_remove))
             cleaning_log['removed_features'] = features_to_remove
-            
+
             # Remove features
             if features_to_remove:
                 # Create mask for features to keep
                 keep_mask = np.ones(X.shape[1], dtype=bool)
                 keep_mask[features_to_remove] = False
-                
+
                 # Apply mask
                 X_cleaned = X[:, keep_mask]
                 y_cleaned = y if y is None else y
-                
+
                 cleaning_log['final_shape'] = X_cleaned.shape
                 cleaning_log['features_removed_count'] = len(features_to_remove)
-                
+
                 _LOGGER.info(f"✅ Data cleaning completed - Removed {len(features_to_remove)} features")
                 _LOGGER.info(f"📊 Shape: {original_shape} -> {X_cleaned.shape}")
-                
+
                 return X_cleaned, y_cleaned, cleaning_log
             else:
                 _LOGGER.info("✅ No features needed to be removed")
                 cleaning_log['final_shape'] = original_shape
                 cleaning_log['features_removed_count'] = 0
                 return X, y, cleaning_log
-                
+
         except Exception as e:
             _LOGGER.error(f"❌ Data cleaning failed: {e}")
             return X, y, {'error': str(e)}
@@ -669,7 +668,7 @@ class DataValidator:
     def get_data_summary(self, X: np.ndarray, y: np.ndarray = None) -> Dict[str, Any]:
         """Get comprehensive data summary."""
         _LOGGER.info("📊 Generating data summary...")
-        
+
         try:
             summary = {
                 'shape': X.shape,
@@ -678,7 +677,7 @@ class DataValidator:
                 'feature_stats': {},
                 'target_stats': {}
             }
-            
+
             # Feature statistics
             for i in range(X.shape[1]):
                 feature_data = X[:, i]
@@ -690,7 +689,7 @@ class DataValidator:
                     'nan_count': np.isnan(feature_data).sum(),
                     'inf_count': np.isinf(feature_data).sum()
                 }
-            
+
             # Target statistics
             if y is not None:
                 summary['target_stats'] = {
@@ -702,10 +701,10 @@ class DataValidator:
                     'inf_count': np.isinf(y).sum(),
                     'unique_values': len(np.unique(y))
                 }
-            
+
             _LOGGER.info("✅ Data summary generated successfully")
             return summary
-            
+
         except Exception as e:
             _LOGGER.error(f"❌ Data summary generation failed: {e}")
             return {'error': str(e)}

@@ -78,7 +78,6 @@ try:
 except ImportError:
     CPU_OPTIMIZER_AVAILABLE = False
 
-
 def optimize_threshold(
     y_true: np.ndarray,
     y_prob: np.ndarray,
@@ -122,7 +121,6 @@ def optimize_threshold(
     # Sequential implementation (original)
     return _optimize_threshold_sequential(y_true, y_prob, metric, thresholds)
 
-
 def _optimize_threshold_sequential(
     y_true: np.ndarray,
     y_prob: np.ndarray,
@@ -158,7 +156,6 @@ def _optimize_threshold_sequential(
             best_t, best_s = float(t), float(s)
 
     return {'best_threshold': best_t, 'best_score': float(best_s), 'curve': scores}
-
 
 def _optimize_threshold_parallel(
     y_true: np.ndarray,
@@ -215,7 +212,6 @@ def _optimize_threshold_parallel(
 
     return {'best_threshold': best_t, 'best_score': best_s, 'curve': scores}
 
-
 def _score(y_true: np.ndarray, y_pred: np.ndarray, y_scores: np.ndarray, metric: str) -> float:
     try:
         if metric == 'f1_macro':
@@ -233,7 +229,6 @@ def _score(y_true: np.ndarray, y_pred: np.ndarray, y_scores: np.ndarray, metric:
         return 0.0
     except Exception:
         return 0.0
-
 
 def calibrate_probabilities(
     estimator: Any,
@@ -253,19 +248,18 @@ def calibrate_probabilities(
         _LOGGER.warning(f"Calibration failed: {e}, returning original estimator")
         return estimator  # Return original estimator as fallback
 
-
 class AdaptiveThresholding:
     """
     Adaptive thresholding utility class for dynamic threshold optimization.
-    
+
     This class provides methods for automatically finding optimal thresholds
     for classification tasks based on various metrics and criteria.
     """
-    
+
     def __init__(self, metric: str = 'f1_macro', cv_folds: int = 3):
         """
         Initialize adaptive thresholding.
-        
+
         Args:
             metric: Metric to optimize ('f1_macro', 'balanced_accuracy', 'youden_j')
             cv_folds: Number of cross-validation folds for threshold optimization
@@ -275,62 +269,62 @@ class AdaptiveThresholding:
         self.best_threshold = 0.5
         self.best_score = 0.0
         self.threshold_history = []
-        
-    def find_optimal_threshold(self, y_true: np.ndarray, y_scores: np.ndarray, 
+
+    def find_optimal_threshold(self, y_true: np.ndarray, y_scores: np.ndarray,
                              thresholds: Optional[np.ndarray] = None) -> float:
         """
         Find optimal threshold for given predictions and ground truth.
-        
+
         Args:
             y_true: True labels
             y_scores: Predicted probabilities or scores
             thresholds: Optional array of thresholds to test
-            
+
         Returns:
             Optimal threshold value
         """
         if thresholds is None:
             thresholds = np.linspace(0.1, 0.9, 50)
-        
+
         best_threshold = 0.5
         best_score = -np.inf
-        
+
         for threshold in thresholds:
             y_pred = (y_scores >= threshold).astype(int)
             score = _score(y_true, y_pred, y_scores, self.metric)
-            
+
             if score > best_score:
                 best_score = score
                 best_threshold = threshold
-        
+
         self.best_threshold = best_threshold
         self.best_score = best_score
         self.threshold_history.append((best_threshold, best_score))
-        
+
         return best_threshold
-    
+
     def apply_threshold(self, y_scores: np.ndarray, threshold: Optional[float] = None) -> np.ndarray:
         """
         Apply threshold to scores to get binary predictions.
-        
+
         Args:
             y_scores: Predicted probabilities or scores
             threshold: Threshold to use (if None, uses best_threshold)
-            
+
         Returns:
             Binary predictions
         """
         thresh = threshold if threshold is not None else self.best_threshold
         return (y_scores >= thresh).astype(int)
-    
+
     def get_threshold_stats(self) -> Dict[str, Any]:
         """Get statistics about threshold optimization history."""
         if not self.threshold_history:
             return {'count': 0, 'best_threshold': self.best_threshold, 'best_score': self.best_score}
-        
+
         thresholds = [t for t, s in self.threshold_history]
         scores = [s for t, s in self.threshold_history]
-        
+
         return {
             'count': len(self.threshold_history),
             'best_threshold': self.best_threshold,
@@ -341,11 +335,8 @@ class AdaptiveThresholding:
             'std_score': np.std(scores)
         }
 
-
 __all__ = [
     'optimize_threshold',
     'calibrate_probabilities',
     'AdaptiveThresholding',
 ]
-
-

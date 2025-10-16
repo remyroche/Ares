@@ -9,9 +9,7 @@ from typing import Any, Dict, Optional
 
 from src.utils.logger import system_logger
 
-
 logger = system_logger.getChild("UnifiedTrailingManager")
-
 
 class TrailingAction(Enum):
     """Possible trailing management actions."""
@@ -20,7 +18,6 @@ class TrailingAction(Enum):
     MOVE_STOP = "move_stop"
     PARTIAL_EXIT = "partial_exit"
     FULL_EXIT = "full_exit"
-
 
 @dataclass
 class TrailingDecision:
@@ -31,7 +28,6 @@ class TrailingDecision:
     exit_fraction: float = 0.0
     reason: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 @dataclass
 class TrailingState:
@@ -65,7 +61,6 @@ class TrailingState:
     @property
     def side_multiplier(self) -> float:
         return 1.0 if self.side.lower() == "long" else -1.0
-
 
 class UnifiedTrailingManager:
     """Unified trailing-stop management aligned with optimizer parameters."""

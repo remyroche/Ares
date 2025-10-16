@@ -36,13 +36,11 @@ from src.utils.nas_tas.optimization.strategy_search import StrategySearchOptimiz
 
 logger = logging.getLogger(__name__)
 
-
 class ArchitectureType(Enum):
     """Types of architectures supported."""
     NEURAL = "neural"
     TREE = "tree"
     HYBRID = "hybrid"
-
 
 class SearchMode(Enum):
     """Search modes for the unified engine."""
@@ -51,7 +49,6 @@ class SearchMode(Enum):
     REGIME_AWARE = "regime_aware"
     ADAPTIVE = "adaptive"
     CONTINUAL = "continual"
-
 
 @dataclass
 class UnifiedSearchConfig:
@@ -87,7 +84,6 @@ class UnifiedSearchConfig:
     save_best_architectures: bool = True
     output_dir: str = "unified_search_results"
 
-
 @dataclass
 class UnifiedSearchResult:
     """Result from unified architecture search."""
@@ -101,7 +97,6 @@ class UnifiedSearchResult:
     execution_time: float
     n_evaluations: int
     metadata: Dict[str, Any] = field(default_factory=dict)
-
 
 class UnifiedArchitectureSearchEngine:
     """
@@ -727,11 +722,9 @@ class UnifiedArchitectureSearchEngine:
         except Exception as e:
             self.logger.warning(f"⚠️ Could not save search results: {e}")
 
-
 def create_unified_search_engine(config: UnifiedSearchConfig) -> UnifiedArchitectureSearchEngine:
     """Create a unified architecture search engine instance."""
     return UnifiedArchitectureSearchEngine(config)
-
 
 def quick_unified_search(train_data: Tuple[np.ndarray, np.ndarray],
                         validation_data: Tuple[np.ndarray, np.ndarray],

@@ -30,7 +30,7 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 @dataclass
 class FeatureGenerationResult:
     """Result of feature generation step."""
-    
+
     success: bool
     generated_features: pd.DataFrame
     feature_metadata: Dict[str, Any]
@@ -38,15 +38,14 @@ class FeatureGenerationResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-
 class FeatureGenerationFeatureGenerationStep(BasePreTrainingComponent):
     """Feature generation step that calls the consolidated pipeline."""
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the feature generation step."""
         super().__init__(config or ComponentConfig())
         self.logger = logging.getLogger(__name__)
-    
+
     async def execute(self,
                      data: pd.DataFrame,
                      symbol: str = "ETHUSDT",
@@ -59,9 +58,9 @@ class FeatureGenerationFeatureGenerationStep(BasePreTrainingComponent):
                      exchange: str = "binance",
                      custom_overrides: Optional[Dict[str, Any]] = None) -> FeatureGenerationResult:
         """Execute feature generation step using consolidated pipeline."""
-        
+
         self.logger.info("🔧 Starting feature generation step using consolidated pipeline")
-        
+
         try:
             # Call the consolidated pipeline runner
             result = await run_feature_generation_step(
@@ -76,7 +75,7 @@ class FeatureGenerationFeatureGenerationStep(BasePreTrainingComponent):
                 exchange=exchange,
                 custom_overrides=custom_overrides
             )
-            
+
             # Convert result to FeatureGenerationResult
             generation_result = FeatureGenerationResult(
                 success=result['success'],
@@ -86,14 +85,14 @@ class FeatureGenerationFeatureGenerationStep(BasePreTrainingComponent):
                 artifacts=result.get('artifacts', {}),
                 error_message=result.get('error_message')
             )
-            
+
             if generation_result.success:
                 self.logger.info(f"✅ Feature generation completed successfully with {len(generation_result.generated_features.columns)} features")
             else:
                 self.logger.error(f"❌ Feature generation failed: {generation_result.error_message}")
-            
+
             return generation_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature generation step failed with exception: {e}")
             return FeatureGenerationResult(
@@ -104,7 +103,6 @@ class FeatureGenerationFeatureGenerationStep(BasePreTrainingComponent):
                 artifacts={},
                 error_message=str(e)
             )
-
 
 # Command handler for ares_launcher integration
 async def handle_feature_generation_feature_generation_step(
@@ -121,7 +119,7 @@ async def handle_feature_generation_feature_generation_step(
 ) -> FeatureGenerationResult:
     """
     Handle feature generation feature generation step command.
-    
+
     Args:
         symbol: Trading symbol (default: "ETHUSDT")
         timeframe: Timeframe (default: "15m")
@@ -133,7 +131,7 @@ async def handle_feature_generation_feature_generation_step(
         exchange: Exchange (default: "binance")
         custom_overrides: Custom configuration overrides (optional)
         **kwargs: Additional arguments
-        
+
     Returns:
         FeatureGenerationResult with generation results
     """
@@ -145,10 +143,10 @@ async def handle_feature_generation_feature_generation_step(
         'close': np.random.randn(1000).cumsum() + 100,
         'volume': np.random.randint(1000, 10000, 1000)
     })
-    
+
     # Create step instance and execute
     step = FeatureGenerationFeatureGenerationStep()
-    
+
     return await step.execute(
         data=sample_data,
         symbol=symbol,
@@ -161,7 +159,6 @@ async def handle_feature_generation_feature_generation_step(
         exchange=exchange,
         custom_overrides=custom_overrides
     )
-
 
     # Required utility methods for BasePreTrainingComponent
     def safe_dataframe_operation(self, operation_func, *args, **kwargs):
@@ -176,7 +173,6 @@ async def handle_feature_generation_feature_generation_step(
         """Optimize dataframe for matrix operations."""
         return optimize_dataframe(df)
 
-
 # Register component with factory
 def _register_feature_generation_feature_generation_step():
     """Register the FeatureGenerationFeatureGenerationStep component with the factory."""
@@ -189,7 +185,6 @@ def _register_feature_generation_feature_generation_step():
     except ImportError:
         # Component factory not available, skip registration
         pass
-
 
 # Register the component when module is imported
 _register_feature_generation_feature_generation_step()

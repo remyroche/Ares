@@ -32,11 +32,9 @@ TemporalCrossValidator = UnifiedCrossValidator
 # Alias CrossValidator to the unified implementation for compatibility
 CrossValidator = UnifiedCrossValidator
 
-
 def cross_validation_utils():
     """Get cross validation utilities instance."""
     return CrossValidationUtilities()
-
 
 class CrossValidationUtilities:  # minimal shim
     """Backwards-compatible utilities wrapper.
@@ -60,7 +58,6 @@ class CrossValidationUtilities:  # minimal shim
             scoring=scoring,
             n_jobs=n_jobs,
         )
-
 
 # PurgedKFold legacy name: expose the available split config to avoid import errors
 PurgedKFold = PurgedSplitConfig
@@ -115,56 +112,56 @@ except Exception:
 # Simple validation framework for backward compatibility
 class SimpleValidationFramework:
     """Simple validation framework for basic data validation needs."""
-    
+
     def validate_data(self, data, data_type=None):
         """Validate data and return validation results."""
         # Simple validation - check if data is not None and has content
         if data is None:
             return False, {"error": "Data is None"}, None
-        
+
         try:
             # Check if data has content
             if hasattr(data, '__len__') and len(data) == 0:
                 return False, {"error": "Data is empty"}, None
-            
+
             # Basic validation passed
             return True, {"status": "valid"}, data
-            
+
         except Exception as e:
             return False, {"error": f"Validation failed: {str(e)}"}, None
-    
+
     def validate_pipeline_state(self, pipeline_state):
         """Validate pipeline state."""
         if pipeline_state is None:
             return False, {"error": "Pipeline state is None"}
-        
+
         try:
             # Basic validation - check if pipeline state has required attributes
             if not hasattr(pipeline_state, '__dict__'):
                 return False, {"error": "Pipeline state is not a valid object"}
-            
+
             return True, {"status": "valid"}
-            
+
         except Exception as e:
             return False, {"error": f"Pipeline validation failed: {str(e)}"}
-    
+
     def validate_optimization_results(self, optimization_result):
         """Validate optimization results."""
         if optimization_result is None:
             return False, {"error": "Optimization result is None"}
-        
+
         try:
             # Basic validation
             return True, {"status": "valid"}
-            
+
         except Exception as e:
             return False, {"error": f"Optimization validation failed: {str(e)}"}
-    
+
     def generate_validation_summary(self, validation_results):
         """Generate validation summary."""
         if validation_results is None:
             return {"status": "no_results"}
-        
+
         try:
             return {
                 "status": "completed",
@@ -229,7 +226,7 @@ __all__ = [
     # Unified helpers
     'save_validation_config',
     'load_validation_config',
-    
+
     # Simple validation framework
     'get_validation_framework',
     'SimpleValidationFramework'

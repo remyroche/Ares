@@ -9,7 +9,6 @@ These parameters can be optimized in step12.
 from dataclasses import dataclass
 from typing import Any
 
-
 @dataclass
 class TechnicalIndicatorsConfig:
     """Optimizable technical indicator parameters."""
@@ -98,11 +97,9 @@ class TechnicalIndicatorsConfig:
     missing_error: float = 0.2
     variance_threshold: float = 1e-6
 
-
 def get_technical_indicators_config() -> TechnicalIndicatorsConfig:
     """Get technical indicators configuration."""
     return TechnicalIndicatorsConfig()
-
 
 def get_technical_indicators_search_space() -> dict[str, dict[str, Any]]:
     """Get search space for technical indicators optimization."""

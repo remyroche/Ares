@@ -1,5 +1,5 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 from ...utils.logger import system_logger
+from typing import Dict, List, Optional, Union, Any, Tuple
 """
 Monitoring Dashboard GUI
 

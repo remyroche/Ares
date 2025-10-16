@@ -92,7 +92,7 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 except ImportError:
-    
+
     cp = None
 
 from ..base_calculations import (
@@ -106,24 +106,24 @@ logger = logging.getLogger(__name__)
 
 class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Feature generator for trend-based features with VectorBT optimization."""
-    
+
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-            
+
         # Initialize Unified Vectorization Manager
         if UNIFIED_MANAGER_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -143,18 +143,18 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     @classmethod
     def create_default(cls) -> 'TrendFeatureGenerator':
         return cls()
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing using Unified Vectorization Manager
         if self.unified_manager:
             data = self.unified_manager.optimize_dataframe(data)
 
         close_prices = data['close']
-        
+
         # Use Unified Vectorization Manager for optimized rolling operations
         if self.unified_manager and self._should_use_vectorbt(close_prices):
             try:
@@ -180,13 +180,13 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         else:
             sma = self._calculate_sma(close_prices.values, period=20)
             return pd.Series(sma, index=data.index, name='sma_20')
-    
+
     def _calculate_sma(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:
             return np.full(len(prices), np.nan)
 
         prices_series = pd.Series(prices)
-        
+
         # Use VectorBT if available and data is large enough
         if self.vectorbt_optimizer and self._should_use_vectorbt(prices_series):
             try:
@@ -249,7 +249,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                     'dm_minus': dm_minus_series,
                     'tr': tr_series
                 })
-                
+
                 batch_result = self.unified_manager.optimize_operation(
                     OperationType.TECHNICAL_INDICATORS,
                     {
@@ -265,7 +265,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                         memory_budget_mb=256.0
                     )
                 )
-                
+
                 rolling_results = batch_result.result
                 dm_plus_mean = rolling_results['dm_plus']
                 dm_minus_mean = rolling_results['dm_minus']
@@ -300,13 +300,13 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             dm_plus_mean = dm_plus_series.rolling(period).mean()
             dm_minus_mean = dm_minus_series.rolling(period).mean()
             tr_mean = tr_series.rolling(period).mean()
-        
+
         di_plus = 100 * (dm_plus_mean / tr_mean)
         di_minus = 100 * (dm_minus_mean / tr_mean)
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        
+
         # Use optimized rolling mean for final ADX calculation
         if self.unified_manager and self._should_use_vectorbt(pd.Series(dx)):
             try:
@@ -376,21 +376,21 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         trend_score = normalized_signal * adx
 
         return trend_score
-    
+
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (VECTORBT_AVAILABLE and 
+        return (VECTORBT_AVAILABLE and
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
-    
-    def generate_optimized_trend_features(self, data: pd.DataFrame, 
+
+    def generate_optimized_trend_features(self, data: pd.DataFrame,
                                         feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Generate multiple trend features using optimized batch processing.
-        
+
         Args:
             data: OHLCV data
             feature_configs: List of feature configuration dictionaries
-            
+
         Returns:
             DataFrame with generated trend features
         """
@@ -423,13 +423,13 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 feature_name = config['name']
                 feature_type = config.get('type', 'rolling')
                 params = config.get('params', {})
-                
+
                 try:
                     if feature_type == 'rolling':
                         operation = params.get('operation', 'mean')
                         window = params.get('window', 20)
                         column = params.get('column', 'close')
-                        
+
                         if column in data.columns:
                             if operation == 'mean':
                                 results[feature_name] = self.vectorbt_optimizer.rolling_mean(data[column], window)
@@ -443,11 +443,11 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                                 results[feature_name] = self.vectorbt_optimizer.rolling_max(data[column], window)
                             elif operation == 'sum':
                                 results[feature_name] = self.vectorbt_optimizer.rolling_sum(data[column], window)
-                    
+
                     elif feature_type == 'scaling':
                         method = params.get('method', 'zscore')
                         column = params.get('column', 'close')
-                        
+
                         if column in data.columns:
                             if method == 'zscore':
                                 results[feature_name] = self.vectorbt_optimizer.rolling_apply(
@@ -457,11 +457,11 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                                 results[feature_name] = self.vectorbt_optimizer.rolling_apply(
                                     data[column], lambda x: (x - x.min()) / (x.max() - x.min()), window=20
                                 )
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Feature {feature_name} failed: {e}")
                     results[feature_name] = pd.Series(np.nan, index=data.index)
-            
+
             return pd.DataFrame(results, index=data.index)
         else:
             # Fallback to pandas operations
@@ -470,13 +470,13 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 feature_name = config['name']
                 feature_type = config.get('type', 'rolling')
                 params = config.get('params', {})
-                
+
                 try:
                     if feature_type == 'rolling':
                         operation = params.get('operation', 'mean')
                         window = params.get('window', 20)
                         column = params.get('column', 'close')
-                        
+
                         if column in data.columns:
                             rolling_obj = data[column].rolling(window=window)
                             if operation == 'mean':
@@ -491,22 +491,22 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                                 results[feature_name] = rolling_obj.max()
                             elif operation == 'sum':
                                 results[feature_name] = rolling_obj.sum()
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Feature {feature_name} failed: {e}")
                     results[feature_name] = pd.Series(np.nan, index=data.index)
-            
+
             return pd.DataFrame(results, index=data.index)
-    
+
     def _process_trend_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Process trend features individually as fallback when batch processing fails."""
         results = {}
-        
+
         # Group features by operation type for better optimization
         rolling_features = []
         scaling_features = []
         custom_features = []
-        
+
         for config in feature_configs:
             feature_type = config.get('type', 'rolling')
             if feature_type == 'rolling':
@@ -515,15 +515,15 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 scaling_features.append(config)
             else:
                 custom_features.append(config)
-        
+
         # Process rolling features in batch using VectorBTRollingOptimizer
         if rolling_features and self.vectorbt_optimizer:
             results.update(self._process_rolling_features_batch(data, rolling_features))
-        
+
         # Process scaling features using UnifiedVectorizationManager
         if scaling_features and self.unified_manager:
             results.update(self._process_scaling_features_batch(data, scaling_features))
-        
+
         # Process custom features individually
         for config in custom_features:
             feature_name = config['name']
@@ -532,34 +532,34 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             except Exception as e:
                 self.logger.warning(f"Custom feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
+
     def _process_rolling_features_batch(self, data: pd.DataFrame, rolling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
         """Process rolling features in batch using VectorBTRollingOptimizer for better performance."""
         results = {}
-        
+
         # Group by column and window for batch processing
         column_groups = {}
         for config in rolling_configs:
             column = config['params'].get('column', 'close')
             window = config['params'].get('window', self.period)
             operation = config['params'].get('operation', 'mean')
-            
+
             if column not in column_groups:
                 column_groups[column] = {}
             if window not in column_groups[column]:
                 column_groups[column][window] = []
-            
+
             column_groups[column][window].append((config['name'], operation))
-        
+
         # Process each column-window combination
         for column, window_groups in column_groups.items():
             if column not in data.columns:
                 continue
-                
+
             series_data = data[column]
-            
+
             for window, operations in window_groups.items():
                 try:
                     # Use VectorBTRollingOptimizer for batch operations
@@ -606,7 +606,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                                 results[feature_name] = getattr(rolling_obj, operation)()
                             else:
                                 results[feature_name] = pd.Series(np.nan, index=data.index)
-                                
+
                 except Exception as e:
                     self.logger.warning(f"Batch rolling operation failed for {column} window {window}: {e}")
                     # Fallback to individual processing
@@ -620,22 +620,22 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                         except Exception as e2:
                             self.logger.warning(f"Fallback rolling operation failed for {feature_name}: {e2}")
                             results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return results
-    
+
     def _process_scaling_features_batch(self, data: pd.DataFrame, scaling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
         """Process scaling features in batch using UnifiedVectorizationManager."""
         results = {}
-        
+
         for config in scaling_configs:
             feature_name = config['name']
             method = config['params'].get('method', 'zscore')
             column = config['params'].get('column', 'close')
-            
+
             if column not in data.columns:
                 results[feature_name] = pd.Series(np.nan, index=data.index)
                 continue
-            
+
             try:
                 # Use UnifiedVectorizationManager for scaling
                 results[feature_name] = self.unified_manager.scale_data(
@@ -650,15 +650,15 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                     results[feature_name] = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
                 else:
                     results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return results
-    
+
     def _process_custom_feature(self, data: pd.DataFrame, config: Dict[str, Any]) -> pd.Series:
         """Process custom features that don't fit standard patterns."""
         feature_name = config['name']
         feature_type = config.get('type', 'custom')
         params = config.get('params', {})
-        
+
         if feature_type == 'custom' and 'function' in params:
             # Execute custom function
             func = params['function']
@@ -668,29 +668,29 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 raise ValueError(f"Custom function for {feature_name} is not callable")
         else:
             raise ValueError(f"Unsupported custom feature type: {feature_type}")
-    
-    def generate_moving_averages_batch(self, data: pd.DataFrame, windows: List[int], 
+
+    def generate_moving_averages_batch(self, data: pd.DataFrame, windows: List[int],
                                      columns: List[str] = None, operation: str = 'mean') -> pd.DataFrame:
         """
         Generate multiple moving averages in batch using VectorBTRollingOptimizer.
-        
+
         Args:
             data: Input DataFrame with OHLCV data
             windows: List of window sizes for moving averages
             columns: List of columns to calculate moving averages for (default: ['close'])
             operation: Rolling operation type ('mean', 'std', 'var', 'min', 'max', 'sum')
-            
+
         Returns:
             DataFrame with moving average features
         """
         if columns is None:
             columns = ['close']
-        
+
         # Validate columns exist in data
         valid_columns = [col for col in columns if col in data.columns]
         if not valid_columns:
             raise ValueError(f"None of the specified columns {columns} found in data")
-        
+
         # Create feature configurations for batch processing
         feature_configs = []
         for window in windows:
@@ -704,30 +704,30 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                         'column': column
                     }
                 })
-        
+
         # Use batch processing if available
         if self.unified_manager:
             try:
                 return self.unified_manager.batch_process_features(data, feature_configs)
             except Exception as e:
                 self.logger.warning(f"Unified manager batch processing failed: {e}, using individual processing")
-        
+
         # Fallback to individual processing
         return self._process_trend_features_individually(data, feature_configs)
-    
-    def generate_trend_indicators_batch(self, data: pd.DataFrame, 
+
+    def generate_trend_indicators_batch(self, data: pd.DataFrame,
                                       sma_windows: List[int] = None,
                                       ema_windows: List[int] = None,
                                       adx_periods: List[int] = None) -> pd.DataFrame:
         """
         Generate comprehensive trend indicators in batch.
-        
+
         Args:
             data: Input DataFrame with OHLCV data
             sma_windows: List of SMA window sizes (default: [5, 10, 20, 50])
             ema_windows: List of EMA window sizes (default: [12, 26])
             adx_periods: List of ADX periods (default: [14])
-            
+
         Returns:
             DataFrame with trend indicator features
         """
@@ -737,9 +737,9 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
             ema_windows = [12, 26]
         if adx_periods is None:
             adx_periods = [14]
-        
+
         feature_configs = []
-        
+
         # Add SMA features
         for window in sma_windows:
             feature_configs.append({
@@ -747,7 +747,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                 'type': 'rolling',
                 'params': {'operation': 'mean', 'window': window, 'column': 'close'}
             })
-        
+
         # Add EMA features (custom implementation)
         for window in ema_windows:
             feature_configs.append({
@@ -758,7 +758,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                     'window': window
                 }
             })
-        
+
         # Add ADX features (custom implementation)
         for period in adx_periods:
             feature_configs.append({
@@ -771,22 +771,22 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
                     'period': period
                 }
             })
-        
+
         # Process all features
         if self.unified_manager:
             try:
                 return self.unified_manager.batch_process_features(data, feature_configs)
             except Exception as e:
                 self.logger.warning(f"Unified manager batch processing failed: {e}, using individual processing")
-        
+
         return self._process_trend_features_individually(data, feature_configs)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
@@ -805,8 +805,8 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         except Exception as e:
             self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -848,7 +848,7 @@ class ADXGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
@@ -922,7 +922,7 @@ class ADXGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        
+
         if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
             try:
                 adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=period)
@@ -959,7 +959,7 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
             parameters={}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
@@ -1031,7 +1031,7 @@ class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.adx_period = adx_period
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
@@ -1092,27 +1092,27 @@ class TrendScoreGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin)
         high_low_diff = high - low
         high_close_diff = np.abs(high - np.roll(close, 1))
         low_close_diff = np.abs(low - np.roll(close, 1))
-        
+
         true_range = np.maximum(high_low_diff, np.maximum(high_close_diff, low_close_diff))
         true_range[0] = high_low_diff[0]  # First value
-        
+
         # Calculate directional movement
         high_diff = high - np.roll(high, 1)
         low_diff = np.roll(low, 1) - low
-        
+
         plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0)
         minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0)
-        
+
         # Calculate smoothed values
-        plus_di = 100 * (np.convolve(plus_dm, np.ones(period)/period, mode='same') / 
+        plus_di = 100 * (np.convolve(plus_dm, np.ones(period)/period, mode='same') /
                          np.convolve(true_range, np.ones(period)/period, mode='same'))
-        minus_di = 100 * (np.convolve(minus_dm, np.ones(period)/period, mode='same') / 
+        minus_di = 100 * (np.convolve(minus_dm, np.ones(period)/period, mode='same') /
                           np.convolve(true_range, np.ones(period)/period, mode='same'))
-        
+
         # Calculate ADX
         dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-8)
         adx = np.convolve(dx, np.ones(period)/period, mode='same')
-        
+
         return adx
 
     def _calculate_directional_signal(self, prices: np.ndarray) -> np.ndarray:
@@ -1154,7 +1154,7 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                  **base_kwargs):
         """
         Initialize SMA generator.
-        
+
         Args:
             period: SMA period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -1162,13 +1162,13 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"sma_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1186,13 +1186,13 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1200,7 +1200,7 @@ class SMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for SMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1223,7 +1223,7 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
                  **base_kwargs):
         """
         Initialize EMA generator.
-        
+
         Args:
             period: EMA period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -1231,13 +1231,13 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"ema_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1255,13 +1255,13 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1269,7 +1269,7 @@ class EMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
 
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for EMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1291,17 +1291,17 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
             'sma': [5, 10, 20, 50],
             'ema': [12, 26]
         }
-    
+
     generators = []
-    
+
     # SMA generators
     for period in periods.get('sma', [20]):
         generators.append(SMAGenerator(period))
-    
+
     # EMA generators
     for period in periods.get('ema', [12, 26]):
         generators.append(EMAGenerator(period))
-    
+
     return generators
 
 def create_default_trend_generators() -> List[FeatureGenerator]:
@@ -1309,14 +1309,14 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
 
 class WMAGenerator(VectorizedFeatureGenerator):
     """Generator for WMA (Weighted Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize WMA generator.
-        
+
         Args:
             period: WMA period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1324,13 +1324,13 @@ class WMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"wma_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1348,7 +1348,7 @@ class WMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1356,7 +1356,7 @@ class WMAGenerator(VectorizedFeatureGenerator):
 
         """Generate WMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for WMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1382,14 +1382,14 @@ class WMAGenerator(VectorizedFeatureGenerator):
 
 class DEMAGenerator(VectorizedFeatureGenerator):
     """Generator for DEMA (Double Exponential Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize DEMA generator.
-        
+
         Args:
             period: DEMA period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1397,13 +1397,13 @@ class DEMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"dema_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1421,7 +1421,7 @@ class DEMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1429,7 +1429,7 @@ class DEMAGenerator(VectorizedFeatureGenerator):
 
         """Generate DEMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for DEMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1452,14 +1452,14 @@ class DEMAGenerator(VectorizedFeatureGenerator):
 
 class TEMAGenerator(VectorizedFeatureGenerator):
     """Generator for TEMA (Triple Exponential Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize TEMA generator.
-        
+
         Args:
             period: TEMA period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1467,13 +1467,13 @@ class TEMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"tema_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1491,7 +1491,7 @@ class TEMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1499,7 +1499,7 @@ class TEMAGenerator(VectorizedFeatureGenerator):
 
         """Generate TEMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for TEMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1525,14 +1525,14 @@ class TEMAGenerator(VectorizedFeatureGenerator):
 
 class TRIMAGenerator(VectorizedFeatureGenerator):
     """Generator for TRIMA (Triangular Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize TRIMA generator.
-        
+
         Args:
             period: TRIMA period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1540,13 +1540,13 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"trima_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1564,7 +1564,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1572,15 +1572,15 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
 
         """Generate TRIMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for TRIMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate TRIMA using VectorBT rolling mean
                 half_period = self.period // 2
                 trima = self._optimized_rolling_operation(
-                    self.vectorbt_optimizer.rolling_mean(base_values, window=half_period), 
-                    "mean", 
+                    self.vectorbt_optimizer.rolling_mean(base_values, window=half_period),
+                    "mean",
                     half_period
                 )
                 return trima
@@ -1588,31 +1588,31 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
                 self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
                 half_period = self.period // 2
                 trima = self._optimized_rolling_operation(
-                    self._calculate_sma_vectorized(base_values, half_period), 
-                    "mean", 
+                    self._calculate_sma_vectorized(base_values, half_period),
+                    "mean",
                     half_period
                 )
                 return trima
         else:
             half_period = self.period // 2
             trima = self._optimized_rolling_operation(
-                self._calculate_sma_vectorized(base_values, half_period), 
-                "mean", 
+                self._calculate_sma_vectorized(base_values, half_period),
+                "mean",
                 half_period
             )
             return trima
 
 # MAMA (MESA Adaptive Moving Average)class MAMAGenerator(VectorizedFeatureGenerator):
     """Generator for MAMA (MESA Adaptive Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  fast_limit: float = 0.5,
                  slow_limit: float = 0.05,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize MAMA generator.
-        
+
         Args:
             fast_limit: Fast limit
             slow_limit: Slow limit
@@ -1621,13 +1621,13 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"mama_{fast_limit}_{slow_limit}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1647,7 +1647,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         self.fast_limit = fast_limit
         self.slow_limit = slow_limit
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1655,7 +1655,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
 
         """Generate MAMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use VectorBT for MAMA calculation
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1672,14 +1672,14 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
 
 class VWMAGenerator(VectorizedFeatureGenerator):
     """Generator for VWMA (Volume Weighted Moving Average) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize VWMA generator.
-        
+
         Args:
             period: VWMA period
             base_calculation: Base calculation type (price_returns, returns_vwap, etc.)
@@ -1687,15 +1687,15 @@ class VWMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
         if 'volume' not in required_columns:
             required_columns.append('volume')
-        
+
         config = FeatureConfig(
             name=f"vwma_{period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1713,7 +1713,7 @@ class VWMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1722,7 +1722,7 @@ class VWMAGenerator(VectorizedFeatureGenerator):
         """Generate VWMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
-        
+
         # Calculate VWMA using VectorBT optimization
         if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
@@ -1734,12 +1734,12 @@ class VWMAGenerator(VectorizedFeatureGenerator):
                 vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         else:
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-        
+
         return vwma
 
 class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
     """Generator for Keltner Channels with different base calculations."""
-    
+
     def __init__(self,
                  period: int = 20,
                  atr_period: int = 14,
@@ -1748,7 +1748,7 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize Keltner Channels generator.
-        
+
         Args:
             period: EMA period for middle line
             atr_period: ATR period for channel width
@@ -1758,15 +1758,15 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
         if base_calculation == BaseCalculationType.PRICE_LEVELS:
             required_columns.extend(["high", "low"])  # ATR requires high/low
-        
+
         config = FeatureConfig(
             name=f"keltner_channels_{period}_{atr_period}_{base_calculation.value}",
             category=FeatureCategory.TREND,
@@ -1787,7 +1787,7 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
         self.period = period
         self.atr_period = atr_period
         self.multiplier = multiplier
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1799,10 +1799,10 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             close = data['close']
             high = data['high']
             low = data['low']
-            
+
             # Calculate EMA of close prices (middle line)
             ema = close.ewm(span=self.period).mean()
-            
+
             # Calculate ATR
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
@@ -1817,7 +1817,7 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
                     atr = true_range.rolling(window=self.atr_period).mean()
             else:
                 atr = true_range.rolling(window=self.atr_period).mean()
-            
+
             # Return middle line (EMA) as the main feature
             # Upper and lower bands would be: ema ± (multiplier * atr)
             return ema
@@ -1843,37 +1843,37 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
             'adx': [14],
             'trend_score': [14]
         }
-    
+
     generators = []
-    
+
     # SMA generators
     for period in periods.get('sma', [20]):
         generators.append(SMAGenerator(period))
-    
-    # EMA generators  
+
+    # EMA generators
     for period in periods.get('ema', [12, 26]):
         generators.append(EMAGenerator(period))
-    
+
     # WMA generators
     for period in periods.get('wma', [20]):
         generators.append(WMAGenerator(period))
-    
+
     # DEMA generators
     for period in periods.get('dema', [21]):
         generators.append(DEMAGenerator(period))
-    
+
     # TEMA generators
     for period in periods.get('tema', [21]):
         generators.append(TEMAGenerator(period))
-    
+
     # TRIMA generators
     for period in periods.get('trima', [21]):
         generators.append(TRIMAGenerator(period))
-    
+
     # VWMA generators
     for period in periods.get('vwma', [20]):
         generators.append(VWMAGenerator(period))
-    
+
     # Keltner Channels generators
     for period in periods.get('keltner_channels', [20]):
         generators.append(KeltnerChannelsGenerator(period))
@@ -1893,24 +1893,24 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
 
 class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Optimized trend feature generator using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
-    
+
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-            
+
         # Initialize Unified Vectorization Manager
         if UNIFIED_MANAGER_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -1930,18 +1930,18 @@ class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate optimized trend features using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name='optimized_trend')
-        
+
         # Use UnifiedVectorizationManager for batch processing if available
         if self.unified_manager and self.config.parameters.get("use_unified_manager", True):
             return self._generate_with_unified_manager(data, **kwargs)
         else:
             return self._generate_with_vectorbt_optimizer(data, **kwargs)
-    
+
     def _generate_with_unified_manager(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using UnifiedVectorizationManager for optimal performance."""
         try:
@@ -1952,43 +1952,43 @@ class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                 'periods': self.config.parameters.get("periods", [20]),
                 'use_vectorbt': True
             }
-            
+
             # Use unified manager for optimization
             result = self.unified_manager.optimize_operation(
                 OperationType.FEATURE_ENGINEERING,
                 operation_data,
                 **kwargs
             )
-            
+
             # Extract the primary trend feature
             if hasattr(result, 'result') and isinstance(result.result, pd.Series):
                 return result.result
             else:
                 # Fallback to VectorBT optimizer
                 return self._generate_with_vectorbt_optimizer(data, **kwargs)
-                
+
         except Exception as e:
             logger.warning(f"UnifiedVectorizationManager failed: {e}, falling back to VectorBTRollingOptimizer")
             return self._generate_with_vectorbt_optimizer(data, **kwargs)
-    
+
     def _generate_with_vectorbt_optimizer(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate features using VectorBTRollingOptimizer for batch processing."""
         if not self.vectorbt_optimizer:
             return self._generate_basic_trend(data, **kwargs)
-        
+
         try:
             periods = self.config.parameters.get("periods", [20])
             close_prices = data['close']
-            
+
             # Batch process multiple periods using VectorBTRollingOptimizer
             trend_features = []
-            
+
             for period in periods:
                 if len(close_prices) >= period:
                     # Use VectorBTRollingOptimizer for each period
                     sma = self.vectorbt_optimizer.rolling_mean(close_prices, window=period)
                     trend_features.append(sma)
-            
+
             if trend_features:
                 # Combine features (use weighted average of different periods)
                 weights = np.array([1.0 / len(trend_features)] * len(trend_features))
@@ -1996,30 +1996,30 @@ class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                 return combined_trend.rename('optimized_trend')
             else:
                 return self._generate_basic_trend(data, **kwargs)
-                
+
         except Exception as e:
             logger.warning(f"VectorBTRollingOptimizer failed: {e}, using basic trend")
             return self._generate_basic_trend(data, **kwargs)
-    
+
     def _generate_basic_trend(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate basic trend feature as fallback."""
         close_prices = data['close']
         period = self.config.default_lookback
-        
+
         if len(close_prices) >= period:
             return close_prices.rolling(window=period).mean().rename('optimized_trend')
         else:
             return pd.Series(np.nan, index=data.index, name='optimized_trend')
-    
+
     def generate_batch_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate multiple trend features in batch for optimal performance."""
         if data.empty:
             return {}
-        
+
         features = {}
         periods = self.config.parameters.get("periods", [20])
         close_prices = data['close']
-        
+
         if self.vectorbt_optimizer:
             try:
                 # Batch process all periods at once
@@ -2027,53 +2027,53 @@ class OptimizedTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                     if len(close_prices) >= period:
                         features[f'sma_{period}'] = self.vectorbt_optimizer.rolling_mean(close_prices, window=period)
                         features[f'std_{period}'] = self.vectorbt_optimizer.rolling_std(close_prices, window=period)
-                        
+
                         # Additional trend indicators
                         if 'high' in data.columns and 'low' in data.columns:
                             high_low_avg = (data['high'] + data['low']) / 2
                             features[f'hl2_sma_{period}'] = self.vectorbt_optimizer.rolling_mean(high_low_avg, window=period)
-                        
+
                         if 'volume' in data.columns:
                             # Volume-weighted price
                             vwp = (close_prices * data['volume']).rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
                             features[f'vwp_{period}'] = vwp
-                            
+
             except Exception as e:
                 logger.warning(f"Batch feature generation failed: {e}, using individual processing")
                 return self._generate_individual_features(data, **kwargs)
         else:
             return self._generate_individual_features(data, **kwargs)
-        
+
         return features
-    
+
     def _generate_individual_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, pd.Series]:
         """Generate features individually as fallback."""
         features = {}
         periods = self.config.parameters.get("periods", [20])
         close_prices = data['close']
-        
+
         for period in periods:
             if len(close_prices) >= period:
                 features[f'sma_{period}'] = close_prices.rolling(window=period).mean()
                 features[f'std_{period}'] = close_prices.rolling(window=period).std()
-        
+
         return features
 
 class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend feature generator with comprehensive indicators."""
-    
+
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
-        
+
         # Initialize VectorBT optimizer for enhanced performance
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
@@ -2089,43 +2089,43 @@ class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate comprehensive trend features using VectorBTRollingOptimizer."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_{self.period}')
-        
+
         # Use VectorBTRollingOptimizer for enhanced performance
         if self.vectorbt_optimizer:
             try:
                 close_prices = data['close']
-                
+
                 # Generate SMA using VectorBTRollingOptimizer
                 sma = self.vectorbt_optimizer.rolling_mean(close_prices, window=self.period)
-                
+
                 # Generate additional trend indicators
                 if 'high' in data.columns and 'low' in data.columns:
                     high_low_avg = (data['high'] + data['low']) / 2
                     hl2_sma = self.vectorbt_optimizer.rolling_mean(high_low_avg, window=self.period)
-                    
+
                     # Combine SMA and HL2 SMA for comprehensive trend
                     trend = (sma + hl2_sma) / 2
                 else:
                     trend = sma
-                
+
                 return trend.rename(f'vectorbt_trend_{self.period}')
-                
+
             except Exception as e:
                 logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
                 return self._generate_fallback_trend(data, **kwargs)
         else:
             return self._generate_fallback_trend(data, **kwargs)
-    
+
     def _generate_fallback_trend(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate trend using fallback method."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_{self.period}')
-        
+
         # Generate multiple trend indicators using VectorBT
         operations = [
             {'type': 'rolling', 'name': 'sma', 'params': {'operation': 'mean', 'window': self.period, 'column': 'close'}},
@@ -2140,10 +2140,10 @@ class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
             {'type': 'indicator', 'name': 'aroon_up', 'params': {'indicator': 'aroon_up', 'window': self.period}},
             {'type': 'indicator', 'name': 'aroon_down', 'params': {'indicator': 'aroon_down', 'window': self.period}}
         ]
-        
+
         # Use batch operations for efficiency
         results = self._vectorbt_batch_operations(data, operations)
-        
+
         # Combine results into a single trend measure
         if not results.empty:
             # Weighted combination of different trend measures
@@ -2161,18 +2161,18 @@ class VectorBTTrendFeatureGenerator(VectorBTFeatureGenerator):
         else:
             # Fallback to simple SMA
             trend = self._vectorbt_rolling_operation(data['close'], 'mean', window=self.period)
-        
+
         return trend.rename(f'vectorbt_trend_{self.period}')
 
 class VectorBTSMAGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Simple Moving Average generator."""
-    
+
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
@@ -2188,26 +2188,26 @@ class VectorBTSMAGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate SMA using VectorBT rolling mean."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_sma_{self.period}')
-        
+
         # Generate SMA using VectorBT rolling mean
         sma = self._vectorbt_rolling_operation(data['close'], 'mean', window=self.period)
-        
+
         return sma.rename(f'vectorbt_sma_{self.period}')
 
 class VectorBTEMAGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Exponential Moving Average generator."""
-    
+
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
         return FeatureConfig(
@@ -2223,26 +2223,26 @@ class VectorBTEMAGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate EMA using VectorBT."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_ema_{self.period}')
-        
+
         # Generate EMA using VectorBT
         ema = self._vectorbt_technical_indicator(data, 'ema', window=self.period)
-        
+
         return ema.rename(f'vectorbt_ema_{self.period}')
 
 class VectorBTADXGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized ADX generator."""
-    
+
     def __init__(self, period: int = 14, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.period = period
-    
+
     @classmethod
     def _create_default_config(cls, period: int = 14) -> FeatureConfig:
         return FeatureConfig(
@@ -2258,43 +2258,43 @@ class VectorBTADXGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate ADX using VectorBT."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_adx_{self.period}')
-        
+
         # Generate ADX using VectorBT
         adx = self._vectorbt_technical_indicator(data, 'adx', window=self.period)
-        
+
         return adx.rename(f'vectorbt_adx_{self.period}')
 
 def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
     generators = []
-    
+
     if VECTORBT_AVAILABLE:
         # VectorBT-optimized generators
         for period in [5, 10, 20, 50, 100]:
             generators.append(VectorBTTrendFeatureGenerator(period))
             generators.append(VectorBTSMAGenerator(period))
             generators.append(VectorBTEMAGenerator(period))
-            
+
         # ADX with different periods
         for period in [9, 14, 21]:
             generators.append(VectorBTADXGenerator(period))
-        
+
         # Advanced trend indicators
         # Ichimoku Cloud with different parameters
         for tenkan in [9, 12]:
             for kijun in [26, 30]:
                 generators.append(VectorBTIchimokuCloudGenerator(tenkan, kijun, 52, 26))
-        
+
         # Parabolic SAR with different parameters
         for acc in [0.02, 0.05, 0.1]:
             for max_acc in [0.2, 0.3]:
                 generators.append(VectorBTParabolicSARGenerator(acc, max_acc))
-        
+
         # ZigZag with different parameters
         for deviation in [3.0, 5.0, 7.0, 10.0]:
             for backstep in [2, 3, 5]:
@@ -2313,35 +2313,35 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             'adx': [14],
             'trend_score': [14]
         }
-        
+
         # SMA generators
         for period in periods.get('sma', [20]):
             generators.append(SMAGenerator(period))
-        
+
         # EMA generators
         for period in periods.get('ema', [12, 26]):
             generators.append(EMAGenerator(period))
-        
+
         # WMA generators
         for period in periods.get('wma', [20]):
             generators.append(WMAGenerator(period))
-        
+
         # DEMA generators
         for period in periods.get('dema', [21]):
             generators.append(DEMAGenerator(period))
-        
+
         # TEMA generators
         for period in periods.get('tema', [21]):
             generators.append(TEMAGenerator(period))
-        
+
         # TRIMA generators
         for period in periods.get('trima', [21]):
             generators.append(TRIMAGenerator(period))
-        
+
         # VWMA generators
         for period in periods.get('vwma', [20]):
             generators.append(VWMAGenerator(period))
-        
+
         # Keltner Channels generators
         for period in periods.get('keltner_channels', [20]):
             generators.append(KeltnerChannelsGenerator(period))
@@ -2358,35 +2358,35 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
         'adx': [14],
         'trend_score': [14]
     }
-    
+
     # SMA generators
     for period in periods.get('sma', [20]):
         generators.append(SMAGenerator(period))
-    
+
     # EMA generators
     for period in periods.get('ema', [12, 26]):
         generators.append(EMAGenerator(period))
-    
+
     # WMA generators
     for period in periods.get('wma', [20]):
         generators.append(WMAGenerator(period))
-    
+
     # DEMA generators
     for period in periods.get('dema', [21]):
         generators.append(DEMAGenerator(period))
-    
+
     # TEMA generators
     for period in periods.get('tema', [21]):
         generators.append(TEMAGenerator(period))
-    
+
     # TRIMA generators
     for period in periods.get('trima', [21]):
         generators.append(TRIMAGenerator(period))
-    
+
     # VWMA generators
     for period in periods.get('vwma', [20]):
         generators.append(VWMAGenerator(period))
-    
+
     # Keltner Channels generators
     for period in periods.get('keltner_channels', [20]):
         generators.append(KeltnerChannelsGenerator(period))
@@ -2406,8 +2406,8 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
 
 class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Ichimoku Cloud generator."""
-    
-    def __init__(self, tenkan_period: int = 9, kijun_period: int = 26, senkou_span_b_period: int = 52, 
+
+    def __init__(self, tenkan_period: int = 9, kijun_period: int = 26, senkou_span_b_period: int = 52,
                  displacement: int = 26, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(tenkan_period, kijun_period, senkou_span_b_period, displacement)
@@ -2416,15 +2416,15 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
         self.kijun_period = kijun_period
         self.senkou_span_b_period = senkou_span_b_period
         self.displacement = displacement
-        
+
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
         else:
             self.rolling_optimizer = None
-    
+
     @classmethod
-    def _create_default_config(cls, tenkan_period: int = 9, kijun_period: int = 26, 
+    def _create_default_config(cls, tenkan_period: int = 9, kijun_period: int = 26,
                               senkou_span_b_period: int = 52, displacement: int = 26) -> FeatureConfig:
         return FeatureConfig(
             name=f"vectorbt_ichimoku_cloud_{tenkan_period}_{kijun_period}_{senkou_span_b_period}",
@@ -2444,17 +2444,17 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Ichimoku Cloud features using VectorBT."""
         if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
-        
+
         try:
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Calculate Tenkan-sen (Conversion Line)
             if self.rolling_optimizer:
                 try:
@@ -2467,9 +2467,9 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
             else:
                 tenkan_high = high.rolling(window=self.tenkan_period).max()
                 tenkan_low = low.rolling(window=self.tenkan_period).min()
-            
+
             tenkan_sen = (tenkan_high + tenkan_low) / 2
-            
+
             # Calculate Kijun-sen (Base Line)
             if self.rolling_optimizer:
                 try:
@@ -2482,12 +2482,12 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
             else:
                 kijun_high = high.rolling(window=self.kijun_period).max()
                 kijun_low = low.rolling(window=self.kijun_period).min()
-            
+
             kijun_sen = (kijun_high + kijun_low) / 2
-            
+
             # Calculate Senkou Span A (Leading Span A)
             senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(self.displacement)
-            
+
             # Calculate Senkou Span B (Leading Span B)
             if self.rolling_optimizer:
                 try:
@@ -2500,37 +2500,37 @@ class VectorBTIchimokuCloudGenerator(VectorBTFeatureGenerator):
             else:
                 senkou_high = high.rolling(window=self.senkou_span_b_period).max()
                 senkou_low = low.rolling(window=self.senkou_span_b_period).min()
-            
+
             senkou_span_b = ((senkou_high + senkou_low) / 2).shift(self.displacement)
-            
+
             # Calculate Chikou Span (Lagging Span)
             chikou_span = close.shift(-self.displacement)
-            
+
             # Return the cloud position indicator (price relative to cloud)
             cloud_position = close - ((senkou_span_a + senkou_span_b) / 2)
-            
+
             return cloud_position.rename(f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
-            
+
         except Exception as e:
             self.logger.error(f"Error generating Ichimoku Cloud: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_ichimoku_cloud_{self.tenkan_period}')
 
 class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized Parabolic SAR generator."""
-    
+
     def __init__(self, acceleration: float = 0.02, maximum: float = 0.2, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(acceleration, maximum)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.acceleration = acceleration
         self.maximum = maximum
-        
+
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
         else:
             self.rolling_optimizer = None
-    
+
     @classmethod
     def _create_default_config(cls, acceleration: float = 0.02, maximum: float = 0.2) -> FeatureConfig:
         return FeatureConfig(
@@ -2549,29 +2549,29 @@ class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate Parabolic SAR using VectorBT."""
         if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_parabolic_sar_{self.acceleration}')
-        
+
         try:
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Initialize SAR arrays
             sar = np.zeros(len(close))
             trend = np.zeros(len(close))
             af = np.zeros(len(close))
             ep = np.zeros(len(close))
-            
+
             # Initialize first values
             sar[0] = low.iloc[0]
             trend[0] = 1  # 1 for uptrend, -1 for downtrend
             af[0] = self.acceleration
             ep[0] = high.iloc[0]
-            
+
             # Calculate SAR using VectorBT-optimized operations where possible
             for i in range(1, len(close)):
                 # Calculate previous SAR
@@ -2579,10 +2579,10 @@ class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
                 prev_trend = trend[i-1]
                 prev_af = af[i-1]
                 prev_ep = ep[i-1]
-                
+
                 # Calculate new SAR
                 new_sar = prev_sar + prev_af * (prev_ep - prev_sar)
-                
+
                 # Check for trend reversal
                 if prev_trend == 1:  # Uptrend
                     if low.iloc[i] <= new_sar:
@@ -2618,32 +2618,32 @@ class VectorBTParabolicSARGenerator(VectorBTFeatureGenerator):
                         else:
                             ep[i] = prev_ep
                             af[i] = prev_af
-            
+
             # Calculate SAR signal (price relative to SAR)
             sar_signal = close - pd.Series(sar, index=close.index)
-            
+
             return sar_signal.rename(f'vectorbt_parabolic_sar_{self.acceleration}')
-            
+
         except Exception as e:
             self.logger.error(f"Error generating Parabolic SAR: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_parabolic_sar_{self.acceleration}')
 
 class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized ZigZag indicator generator."""
-    
+
     def __init__(self, deviation: float = 5.0, backstep: int = 3, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config(deviation, backstep)
         super().__init__(config, enable_gpu=True, enable_parallel=True)
         self.deviation = deviation
         self.backstep = backstep
-        
+
         # Initialize VectorBT rolling optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
         else:
             self.rolling_optimizer = None
-    
+
     @classmethod
     def _create_default_config(cls, deviation: float = 5.0, backstep: int = 3) -> FeatureConfig:
         return FeatureConfig(
@@ -2662,17 +2662,17 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=True
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate ZigZag indicator using VectorBT."""
         if data.empty or not all(col in data.columns for col in ['high', 'low', 'close']):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
-        
+
         try:
             high = data['high']
             low = data['low']
             close = data['close']
-            
+
             # Initialize ZigZag arrays
             zigzag = np.zeros(len(close))
             last_high_idx = 0
@@ -2680,12 +2680,12 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
             last_high = high.iloc[0]
             last_low = low.iloc[0]
             direction = 0  # 0 = neutral, 1 = up, -1 = down
-            
+
             # Calculate ZigZag points
             for i in range(1, len(close)):
                 current_high = high.iloc[i]
                 current_low = low.iloc[i]
-                
+
                 if direction == 0:  # Neutral - looking for first significant move
                     if current_high > last_high * (1 + self.deviation / 100):
                         direction = 1
@@ -2723,11 +2723,11 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
                         last_high_idx = i
                         last_high = current_high
                         zigzag[i] = current_high
-            
+
             # Calculate ZigZag trend strength
             zigzag_series = pd.Series(zigzag, index=close.index)
             non_zero_points = zigzag_series[zigzag_series != 0]
-            
+
             if len(non_zero_points) > 1:
                 # Calculate trend strength as the slope of the last ZigZag segment
                 last_two_points = non_zero_points.tail(2)
@@ -2737,12 +2737,12 @@ class VectorBTZigZagGenerator(VectorBTFeatureGenerator):
                     trend_strength = 0
             else:
                 trend_strength = 0
-            
+
             # Create trend strength series
             trend_strength_series = pd.Series(trend_strength, index=close.index)
-            
+
             return trend_strength_series.rename(f'vectorbt_zigzag_{self.deviation}')
-            
+
         except Exception as e:
             self.logger.error(f"Error generating ZigZag indicator: {e}")
             return pd.Series(np.nan, index=data.index, name=f'vectorbt_zigzag_{self.deviation}')
@@ -2751,9 +2751,9 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
     """Create a list of optimized trend feature generators using VectorBTRollingOptimizer and UnifiedVectorizationManager."""
     if periods is None:
         periods = [5, 10, 20, 50]
-    
+
     generators = []
-    
+
     # Add the new optimized generator
     optimized_config = FeatureConfig(
         name="optimized_trend_features",
@@ -2773,7 +2773,7 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
         gpu_accelerated=False
     )
     generators.append(OptimizedTrendFeatureGenerator(config=optimized_config))
-    
+
     # Add VectorBT generators for each period
     for period in periods:
         generators.append(VectorBTTrendFeatureGenerator(period=period))
@@ -2786,12 +2786,12 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
 
     return generators
 
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform rolling operation using centralized VectorBTRollingOptimizer."""
         if not hasattr(self, 'rolling_optimizer'):
             self.rolling_optimizer = get_vectorbt_rolling_optimizer()
-        
+
         try:
             if operation == 'mean':
                 return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
@@ -2810,12 +2810,12 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
         except Exception as e:
             logger.warning(f"VectorBT rolling operation failed: {e}, using fallback")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         rolling_obj = data.rolling(window=window, **kwargs)
-        
+
         if operation == 'mean':
             return rolling_obj.mean()
         elif operation == 'std':
@@ -2830,7 +2830,7 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
             return rolling_obj.sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _normalize_feature(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Normalize feature using direct scaling to avoid circular imports."""
         try:
@@ -2848,7 +2848,7 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
         except Exception as e:
             logger.warning(f"Normalization failed: {e}, using simple zscore")
             return (data - data.mean()) / data.std()
-    
+
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
         if method == 'zscore':
@@ -2864,11 +2864,11 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas using VectorBTRollingOptimizer."""
         # Use VectorBTRollingOptimizer if available
@@ -2897,11 +2897,11 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
             except Exception as e:
                 logger.warning(f"VectorBTRollingOptimizer operation failed: {e}, using pandas fallback")
                 return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         # Fallback to direct VectorBT or pandas
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -2920,8 +2920,8 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -2942,20 +2942,20 @@ def create_optimized_trend_generators(periods: List[int] = None, use_unified_man
 class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """
     Generator for a general trend feature that combines ADX (strength) and MACD (direction).
-    
+
     This feature provides a comprehensive trend measure that captures both:
     - Trend strength (via ADX)
     - Trend direction (via MACD)
-    
+
     The general trend is calculated as:
     general_trend = ADX_normalized * MACD_normalized
-    
+
     Where:
     - ADX_normalized: ADX value normalized to [0, 1] range
     - MACD_normalized: MACD value normalized to [-1, 1] range
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  adx_period: int = 14,
                  macd_fast: int = 12,
                  macd_slow: int = 26,
@@ -2965,7 +2965,7 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                  config: Optional[FeatureConfig] = None):
         """
         Initialize General Trend Feature Generator.
-        
+
         Args:
             adx_period: Period for ADX calculation (default 14)
             macd_fast: Fast period for MACD (default 12)
@@ -2979,40 +2979,40 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 adx_period, macd_fast, macd_slow, macd_signal, sma_period, use_sma_instead_of_macd
             )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         self.adx_period = adx_period
         self.macd_fast = macd_fast
         self.macd_slow = macd_slow
         self.macd_signal = macd_signal
         self.sma_period = sma_period
         self.use_sma_instead_of_macd = use_sma_instead_of_macd
-        
+
         # Initialize VectorBT optimizer
         if ROLLING_OPTIMIZER_AVAILABLE:
             self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
         else:
             self.vectorbt_optimizer = None
-            
+
         # Initialize Unified Vectorization Manager
         if UNIFIED_MANAGER_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
         else:
             self.unified_manager = None
-    
+
     @classmethod
-    def _create_default_config(cls, adx_period: int, macd_fast: int, macd_slow: int, 
+    def _create_default_config(cls, adx_period: int, macd_fast: int, macd_slow: int,
                               macd_signal: int, sma_period: int, use_sma_instead_of_macd: bool) -> FeatureConfig:
         """Create default configuration for the general trend feature."""
         direction_method = "SMA" if use_sma_instead_of_macd else "MACD"
         name = f"general_trend_adx{adx_period}_{direction_method.lower()}"
-        
+
         if use_sma_instead_of_macd:
             description = f"General trend combining ADX({adx_period}) strength with SMA({sma_period}) direction"
             required_columns = ["close", "high", "low"]
         else:
             description = f"General trend combining ADX({adx_period}) strength with MACD({macd_fast},{macd_slow},{macd_signal}) direction"
             required_columns = ["close", "high", "low"]
-        
+
         return FeatureConfig(
             name=name,
             category=FeatureCategory.TREND,
@@ -3033,55 +3033,55 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate the general trend feature combining ADX and MACD/SMA."""
         if data.empty:
             return pd.Series(dtype=float, index=data.index, name=self.config.name)
-        
+
         # Optimize DataFrame for processing
         if self.unified_manager:
             data = self.unified_manager.optimize_dataframe(data)
-        
+
         try:
             # Calculate ADX for trend strength
             adx_values = self._calculate_adx(data)
-            
+
             # Calculate direction indicator (MACD or SMA)
             if self.use_sma_instead_of_macd:
                 direction_values = self._calculate_sma_direction(data)
             else:
                 direction_values = self._calculate_macd_direction(data)
-            
+
             # Combine ADX (strength) and direction indicator
             general_trend = self._combine_trend_components(adx_values, direction_values)
-            
+
             return general_trend.rename(self.config.name)
-            
+
         except Exception as e:
             self.logger.warning(f"General trend calculation failed: {e}, using fallback")
             return self._generate_fallback_trend(data)
-    
+
     def _calculate_adx(self, data: pd.DataFrame) -> pd.Series:
         """Calculate ADX for trend strength."""
         high = data['high']
         low = data['low']
         close = data['close']
-        
+
         if len(high) < self.adx_period or len(low) < self.adx_period or len(close) < self.adx_period:
             return pd.Series(np.nan, index=data.index)
-        
+
         # Calculate True Range
         tr = np.maximum.reduce([
             high - low,
             np.abs(high - close.shift(1)),
             np.abs(low - close.shift(1))
         ])
-        
+
         # Calculate Directional Movement
         dm_plus = np.maximum(high - high.shift(1), 0)
         dm_minus = np.maximum(low.shift(1) - low, 0)
-        
+
         # Use VectorBT optimization if available
         if self.vectorbt_optimizer and self._should_use_vectorbt(close):
             try:
@@ -3097,14 +3097,14 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
             dm_plus_mean = dm_plus.rolling(window=self.adx_period).mean()
             dm_minus_mean = dm_minus.rolling(window=self.adx_period).mean()
             tr_mean = tr.rolling(window=self.adx_period).mean()
-        
+
         # Calculate Directional Indicators
         di_plus = 100 * (dm_plus_mean / tr_mean)
         di_minus = 100 * (dm_minus_mean / tr_mean)
-        
+
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        
+
         if self.vectorbt_optimizer and self._should_use_vectorbt(pd.Series(dx)):
             try:
                 adx = self.vectorbt_optimizer.rolling_mean(pd.Series(dx), window=self.adx_period)
@@ -3113,38 +3113,38 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 adx = pd.Series(dx).rolling(window=self.adx_period).mean()
         else:
             adx = pd.Series(dx).rolling(window=self.adx_period).mean()
-        
+
         return adx
-    
+
     def _calculate_macd_direction(self, data: pd.DataFrame) -> pd.Series:
         """Calculate MACD for trend direction."""
         close = data['close']
-        
+
         if len(close) < self.macd_slow:
             return pd.Series(np.nan, index=data.index)
-        
+
         # Calculate EMAs
         ema_fast = close.ewm(span=self.macd_fast).mean()
         ema_slow = close.ewm(span=self.macd_slow).mean()
-        
+
         # Calculate MACD line
         macd = ema_fast - ema_slow
-        
+
         # Calculate signal line
         signal = macd.ewm(span=self.macd_signal).mean()
-        
+
         # Calculate MACD histogram (MACD - Signal)
         macd_histogram = macd - signal
-        
+
         return macd_histogram
-    
+
     def _calculate_sma_direction(self, data: pd.DataFrame) -> pd.Series:
         """Calculate SMA-based direction indicator."""
         close = data['close']
-        
+
         if len(close) < self.sma_period:
             return pd.Series(np.nan, index=data.index)
-        
+
         # Calculate SMA
         if self.vectorbt_optimizer and self._should_use_vectorbt(close):
             try:
@@ -3154,17 +3154,17 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 sma = close.rolling(window=self.sma_period).mean()
         else:
             sma = close.rolling(window=self.sma_period).mean()
-        
+
         # Calculate price position relative to SMA (normalized)
         price_position = (close - sma) / sma
-        
+
         return price_position
-    
+
     def _combine_trend_components(self, adx_values: pd.Series, direction_values: pd.Series) -> pd.Series:
         """Combine ADX (strength) and direction indicator into general trend."""
         # Normalize ADX to [0, 1] range (ADX is typically 0-100)
         adx_normalized = adx_values / 100.0
-        
+
         # Normalize direction to [-1, 1] range
         if self.use_sma_instead_of_macd:
             # For SMA, use tanh to bound the values
@@ -3177,60 +3177,60 @@ class GeneralTrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizat
                 direction_normalized = np.clip(direction_normalized, -1, 1)
             else:
                 direction_normalized = pd.Series(0, index=direction_values.index)
-        
+
         # Combine: general_trend = ADX_strength * direction
         general_trend = adx_normalized * direction_normalized
-        
+
         return general_trend
-    
+
     def _generate_fallback_trend(self, data: pd.DataFrame) -> pd.Series:
         """Generate fallback trend feature using simple SMA."""
         close = data['close']
         period = min(self.sma_period, len(close))
-        
+
         if len(close) >= period:
             sma = close.rolling(window=period).mean()
             return ((close - sma) / sma).rename(self.config.name)
         else:
             return pd.Series(np.nan, index=data.index, name=self.config.name)
-    
+
     def _should_use_vectorbt(self, data: pd.Series) -> bool:
         """Determine if VectorBT should be used based on data size and availability."""
-        return (VECTORBT_AVAILABLE and 
-                len(data) > 100 and 
+        return (VECTORBT_AVAILABLE and
+                len(data) > 100 and
                 self.vectorbt_optimizer is not None and
                 not data.isna().all())
 
-def create_general_trend_generators(adx_periods: List[int] = None, 
+def create_general_trend_generators(adx_periods: List[int] = None,
                                   macd_configs: List[Dict[str, int]] = None,
                                   sma_periods: List[int] = None,
                                   use_sma_variants: bool = True) -> List[FeatureGenerator]:
     """
     Create general trend feature generators with various configurations.
-    
+
     Args:
         adx_periods: List of ADX periods to use (default: [14, 21])
         macd_configs: List of MACD configurations (default: [{"fast": 12, "slow": 26, "signal": 9}])
         sma_periods: List of SMA periods for SMA-based direction (default: [20, 50])
         use_sma_variants: Whether to create SMA-based variants (default: True)
-    
+
     Returns:
         List of GeneralTrendFeatureGenerator instances
     """
     if adx_periods is None:
         adx_periods = [14, 21]
-    
+
     if macd_configs is None:
         macd_configs = [
             {"fast": 12, "slow": 26, "signal": 9},
             {"fast": 8, "slow": 21, "signal": 5}
         ]
-    
+
     if sma_periods is None:
         sma_periods = [20, 50]
-    
+
     generators = []
-    
+
     # Create MACD-based general trend generators
     for adx_period in adx_periods:
         for macd_config in macd_configs:
@@ -3242,7 +3242,7 @@ def create_general_trend_generators(adx_periods: List[int] = None,
                 use_sma_instead_of_macd=False
             )
             generators.append(generator)
-    
+
     # Create SMA-based general trend generators if requested
     if use_sma_variants:
         for adx_period in adx_periods:
@@ -3253,5 +3253,5 @@ def create_general_trend_generators(adx_periods: List[int] = None,
                     use_sma_instead_of_macd=True
                 )
                 generators.append(generator)
-    
+
     return generators

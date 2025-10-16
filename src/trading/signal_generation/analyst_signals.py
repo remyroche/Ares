@@ -74,21 +74,21 @@ class AnalystSignalGenerator:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the analyst signal generator with NAS enhancement.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = logger.getChild('AnalystSignalGenerator')
-        
+
         # Analyst component (will be injected)
         self.analyst = None
-        
+
         # NAS engine for enhanced signal generation
         self.nas_engine = None
         self.nas_models = {}  # Per-regime NAS models
         self.nas_architectures = {}  # Per-regime NAS architectures
-        
+
         # Signal generation parameters
         self.confidence_threshold = config.get('confidence_threshold', 0.6)
         self.nas_confidence_threshold = config.get('nas_confidence_threshold', 0.7)
@@ -98,16 +98,16 @@ class AnalystSignalGenerator:
             SignalStrength.STRONG: 0.8,
             SignalStrength.VERY_STRONG: 0.9
         }
-        
+
         # NAS configuration
         self.enable_nas_enhancement = config.get('enable_nas_enhancement', True)
         self.nas_timeframe = config.get('nas_timeframe', '5m')
         self.regime_timeframe = config.get('regime_timeframe', '15m')
-        
+
         # Signal history
         self.signal_history: List[AnalystSignal] = []
         self.max_history = config.get('max_history', 1000)
-        
+
         # Performance tracking
         self.signal_count = 0
         self.successful_signals = 0
@@ -117,27 +117,27 @@ class AnalystSignalGenerator:
     async def initialize(self, analyst_component, nas_models: Optional[Dict[str, Any]] = None) -> bool:
         """
         Initialize the signal generator with analyst component and NAS models.
-        
+
         Args:
             analyst_component: Initialized Analyst component
             nas_models: Pre-trained NAS models for per-regime signal generation
-            
+
         Returns:
             bool: True if initialization successful
         """
         try:
             self.analyst = analyst_component
-            
+
             # Initialize NAS engine if enhancement is enabled
             if self.enable_nas_enhancement:
                 await self._initialize_nas_engine(nas_models)
-            
+
             self.logger.info("✅ Analyst Signal Generator initialized with NAS enhancement")
             return True
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Analyst Signal Generator: {e}")
             return False
-    
+
     async def _initialize_nas_engine(self, nas_models: Optional[Dict[str, Any]] = None):
         """Initialize NAS engine for enhanced signal generation."""
         try:
@@ -153,19 +153,19 @@ class AnalystSignalGenerator:
                 population_size=30,
                 generations=50
             )
-            
+
             # Initialize NAS engine
             self.nas_engine = EnhancedPerfectNASRegimeDetector(nas_config)
-            
+
             # Load pre-trained NAS models if provided
             if nas_models:
                 self.nas_models = nas_models
                 self.logger.info(f"✅ Loaded {len(nas_models)} NAS models for signal generation")
             else:
                 self.logger.warning("⚠️ No NAS models provided, using fallback analysis")
-            
+
             self.logger.info("✅ NAS engine initialized for signal generation")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize NAS engine: {e}")
             self.enable_nas_enhancement = False
@@ -182,13 +182,13 @@ class AnalystSignalGenerator:
     ) -> Optional[AnalystSignal]:
         """
         Generate trading signal using Analyst component.
-        
+
         Args:
             symbol: Trading symbol
             market_data: Market data DataFrame
             regime_data: Current regime information
             additional_context: Additional context for signal generation
-            
+
         Returns:
             AnalystSignal or None if no signal generated
         """
@@ -198,38 +198,38 @@ class AnalystSignalGenerator:
                 return None
 
             tprint_info(f"🔄 Generating analyst signal for {symbol}")
-            
+
             # Perform market analysis using Analyst
             analysis_result = await self._perform_market_analysis(
                 symbol, market_data, regime_data, additional_context
             )
-            
+
             if not analysis_result:
                 tprint_warning(f"⚠️ No analysis result for {symbol}")
                 return None
-            
+
             # Enhance with NAS prediction if available
             nas_prediction = None
             if self.enable_nas_enhancement and self.nas_engine:
                 nas_prediction = await self._generate_nas_prediction(
                     symbol, market_data, regime_data
                 )
-            
+
             # Generate signal based on analysis and NAS prediction
             signal = await self._generate_signal_from_analysis(
                 symbol, analysis_result, market_data, nas_prediction
             )
-            
+
             if signal:
                 # Store signal in history
                 self._store_signal(signal)
                 self.signal_count += 1
-                
+
                 tprint_success(f"✅ Generated {signal.signal_type.value} signal for {symbol} "
                              f"(confidence: {signal.confidence_score:.3f})")
-            
+
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"❌ Signal generation failed for {symbol}: {e}")
             return None
@@ -250,7 +250,7 @@ class AnalystSignalGenerator:
                 'regime_data': regime_data,
                 'additional_context': additional_context or {}
             }
-            
+
             # Call Analyst's analyze method
             if hasattr(self.analyst, 'analyze'):
                 analysis_result = await self.analyst.analyze(analysis_context)
@@ -259,9 +259,9 @@ class AnalystSignalGenerator:
             else:
                 # Fallback to basic analysis
                 analysis_result = await self._fallback_analysis(analysis_context)
-            
+
             return analysis_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Market analysis failed: {e}")
             return None
@@ -270,19 +270,19 @@ class AnalystSignalGenerator:
         """Fallback analysis when Analyst methods are not available."""
         try:
             market_data = context['market_data']
-            
+
             # Basic technical analysis
             if len(market_data) < 20:
                 return None
-            
+
             # Calculate basic indicators
             close_prices = market_data['close'].values
             returns = np.diff(close_prices) / close_prices[:-1]
-            
+
             # Simple signal based on price momentum
             recent_returns = returns[-5:].mean()
             volatility = np.std(returns[-20:])
-            
+
             # Generate basic analysis result
             analysis_result = {
                 'signal_direction': 'buy' if recent_returns > 0.001 else 'sell' if recent_returns < -0.001 else 'hold',
@@ -297,9 +297,9 @@ class AnalystSignalGenerator:
                     'timestamp': datetime.now().isoformat()
                 }
             }
-            
+
             return analysis_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Fallback analysis failed: {e}")
             return None
@@ -420,18 +420,18 @@ class AnalystSignalGenerator:
         except Exception as e:
             self.logger.error(f"❌ NAS prediction failed for {symbol}: {e}")
             return None
-    
+
     def _prepare_nas_features(self, market_data: pd.DataFrame, regime_data: Optional[Dict[str, Any]]) -> np.ndarray:
         """Prepare features for NAS prediction."""
         try:
             # Extract basic features from market data
             features = []
-            
+
             # Price features
             if len(market_data) >= 20:
                 close_prices = market_data['close'].values
                 returns = np.diff(close_prices) / close_prices[:-1]
-                
+
                 # Recent returns
                 features.extend([
                     returns[-1],  # Latest return
@@ -439,14 +439,14 @@ class AnalystSignalGenerator:
                     returns[-10:].mean(),  # 10-period average return
                     returns[-20:].mean(),  # 20-period average return
                 ])
-                
+
                 # Volatility features
                 features.extend([
                     np.std(returns[-5:]),  # 5-period volatility
                     np.std(returns[-10:]),  # 10-period volatility
                     np.std(returns[-20:]),  # 20-period volatility
                 ])
-                
+
                 # Price momentum
                 features.extend([
                     (close_prices[-1] - close_prices[-5]) / close_prices[-5],  # 5-period momentum
@@ -456,20 +456,20 @@ class AnalystSignalGenerator:
             else:
                 # Fallback features
                 features = [0.0] * 10
-            
+
             # Add regime information if available
             if regime_data:
                 features.append(regime_data.get('regime_id', 0))
                 features.append(regime_data.get('regime_stability', 0.5))
             else:
                 features.extend([0, 0.5])
-            
+
             return np.array(features)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature preparation failed: {e}")
             return np.zeros(12)  # Fallback features
-    
+
     async def _generate_signal_from_analysis(
         self,
         symbol: str,
@@ -482,15 +482,15 @@ class AnalystSignalGenerator:
             # Extract signal information
             signal_direction = analysis_result.get('signal_direction', 'hold')
             confidence_score = analysis_result.get('confidence_score', 0.0)
-            
+
             # Enhance with NAS prediction if available
             if nas_prediction:
                 nas_confidence = nas_prediction.get('nas_confidence', 0.0)
                 nas_prediction_value = nas_prediction.get('nas_prediction', {})
-                
+
                 # Combine confidence scores (weighted average: 60% analysis, 40% NAS)
                 combined_confidence = (confidence_score * 0.6) + (nas_confidence * 0.4)
-                
+
                 # Use NAS prediction to enhance signal direction if confidence is high
                 if nas_confidence >= self.nas_confidence_threshold:
                     nas_direction = nas_prediction_value.get('direction', signal_direction)
@@ -499,25 +499,25 @@ class AnalystSignalGenerator:
                         signal_direction = nas_direction
                         confidence_score = combined_confidence
                         self.nas_enhanced_signals += 1
-                
+
                 confidence_score = combined_confidence
-            
+
             # Check confidence threshold
             if confidence_score < self.confidence_threshold:
                 return None
-            
+
             # Determine signal type
             signal_type = self._map_signal_direction(signal_direction)
-            
+
             # Determine signal strength
             signal_strength = self._determine_signal_strength(confidence_score)
-            
+
             # Calculate price targets
             current_price = market_data['close'].iloc[-1]
             price_target, stop_loss = self._calculate_price_targets(
                 signal_type, current_price, analysis_result
             )
-            
+
             # Create signal with NAS enhancement
             signal = AnalystSignal(
                 timestamp=datetime.now(),
@@ -539,9 +539,9 @@ class AnalystSignalGenerator:
                 regime_id=nas_prediction.get('regime_id') if nas_prediction else None,
                 metadata=analysis_result.get('analysis_metadata', {})
             )
-            
+
             return signal
-            
+
         except Exception as e:
             self.logger.error(f"❌ Signal generation from analysis failed: {e}")
             return None
@@ -576,7 +576,7 @@ class AnalystSignalGenerator:
         """Calculate price targets and stop loss."""
         try:
             volatility = analysis_result.get('volatility_score', 0.02)
-            
+
             if signal_type == SignalType.BUY:
                 # For buy signals, target 2x volatility, stop loss at 1x volatility
                 price_target = current_price * (1 + 2 * volatility)
@@ -589,9 +589,9 @@ class AnalystSignalGenerator:
                 # For hold/close signals, no price targets
                 price_target = None
                 stop_loss = None
-            
+
             return price_target, stop_loss
-            
+
         except Exception as e:
             self.logger.error(f"❌ Price target calculation failed: {e}")
             return None, None
@@ -599,7 +599,7 @@ class AnalystSignalGenerator:
     def _store_signal(self, signal: AnalystSignal):
         """Store signal in history."""
         self.signal_history.append(signal)
-        
+
         # Maintain history size
         if len(self.signal_history) > self.max_history:
             self.signal_history.pop(0)
@@ -617,16 +617,16 @@ class AnalystSignalGenerator:
                 'signal_distribution': {},
                 'avg_confidence': 0.0
             }
-        
+
         # Calculate signal distribution
         signal_distribution = {}
         for signal in self.signal_history:
             signal_type = signal.signal_type.value
             signal_distribution[signal_type] = signal_distribution.get(signal_type, 0) + 1
-        
+
         # Calculate average confidence
         avg_confidence = np.mean([s.confidence_score for s in self.signal_history])
-        
+
         return {
             'total_signals': self.signal_count,
             'success_rate': self.successful_signals / self.signal_count if self.signal_count > 0 else 0.0,
@@ -658,7 +658,7 @@ async def generate_analyst_signal(
     """Generate analyst signal with convenience function."""
     if not signal_generator.analyst:
         await signal_generator.initialize(analyst_component)
-    
+
     return await signal_generator.generate_signal(
         symbol=symbol,
         market_data=market_data,

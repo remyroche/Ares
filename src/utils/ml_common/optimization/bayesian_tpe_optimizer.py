@@ -59,7 +59,6 @@ except ImportError as e:
     VectorizationConfig = None
     get_feature_vectorization_manager = None
 
-
 @dataclass
 class OptimizationConfig:
     """Configuration for hardware-optimized staged Bayesian TPE optimization."""
@@ -104,7 +103,7 @@ class OptimizationConfig:
     vectorbt_memory_limit_gb: float = 4.0
     vectorbt_use_gpu: bool = True
     vectorbt_enable_parallel: bool = True
-    
+
     # Enhanced VectorBT integration settings
     enable_vectorbt_rolling_optimizer: bool = True
     enable_unified_vectorization: bool = True
@@ -157,7 +156,6 @@ class OptimizationConfig:
             raise ValueError("batch_size must be positive")
         if self.memory_limit_gb <= 0:
             raise ValueError("memory_limit_gb must be positive")
-
 
 class BayesianTPEOptimizer:
     """
@@ -220,7 +218,7 @@ class BayesianTPEOptimizer:
         self.best_value = None
         self.optimization_history = []
         self.performance_metrics = []
-        
+
         # Early stopping state
         self.early_stopping_triggered = False
         self.trials_without_improvement = 0
@@ -262,12 +260,12 @@ class BayesianTPEOptimizer:
             self.logger.info("   → Hardware optimization: Enabled")
         else:
             self.logger.info("   → Hardware optimization: Disabled")
-        
+
         if self.vectorbt_manager:
             self.logger.info("   → VectorBT optimization: Enabled")
         else:
             self.logger.info("   → VectorBT optimization: Disabled")
-        
+
         if self.config.early_stopping_patience:
             self.logger.info(f"   → Early stopping: Enabled (patience={self.config.early_stopping_patience})")
 
@@ -314,7 +312,7 @@ class BayesianTPEOptimizer:
         try:
             # Initialize unified vectorization manager
             self.vectorbt_manager = get_unified_vectorization_manager()
-            
+
             # Initialize VectorBT rolling optimizer if enabled
             self.vectorbt_rolling_optimizer = None
             if self.config.enable_vectorbt_rolling_optimizer and get_vectorbt_rolling_optimizer:
@@ -328,7 +326,7 @@ class BayesianTPEOptimizer:
                     self.logger.info("✅ VectorBT Rolling Optimizer initialized")
                 except Exception as e:
                     self.logger.warning(f"⚠️ VectorBT Rolling Optimizer initialization failed: {e}")
-            
+
             # Initialize enhanced unified vectorization manager if enabled
             self.enhanced_vectorization_manager = None
             if self.config.enable_unified_vectorization and get_feature_vectorization_manager:
@@ -348,17 +346,17 @@ class BayesianTPEOptimizer:
                     self.logger.info("✅ Enhanced Unified Vectorization Manager initialized")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Enhanced Vectorization Manager initialization failed: {e}")
-            
+
             # Configure VectorBT settings
             if vbt:
                 # Set memory limit
                 if self.config.vectorbt_memory_limit_gb:
                     vbt.settings.array_wrapper['freq'] = '1min'
-                
+
                 # Configure parallel processing
                 if self.config.vectorbt_enable_parallel:
                     vbt.settings.parallel['threading'] = True
-                
+
                 # Configure GPU usage
                 if self.config.vectorbt_use_gpu:
                     self.logger.info("🚀 VectorBT GPU acceleration enabled")
@@ -428,10 +426,10 @@ class BayesianTPEOptimizer:
                     self.logger.info(f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}")
 
             # Stage 2.5: Adaptive Grid Refinement (if enabled)
-            if (self.config.enable_adaptive_grid_refinement and 
-                fine_results and fine_results['best_params'] and 
+            if (self.config.enable_adaptive_grid_refinement and
+                fine_results and fine_results['best_params'] and
                 self.vectorbt_manager and self.config.enable_vectorbt_optimization):
-                
+
                 adaptive_results = self._run_adaptive_refinement_stage(
                     objective, search_space, fine_results['best_params'], all_trials
                 )
@@ -502,11 +500,11 @@ class BayesianTPEOptimizer:
             return new_value > current_best
         else:
             return new_value < current_best
-    
+
     def _create_early_stopping_callback(self) -> Callable:
         """
         Create adaptive early stopping callback for Optuna optimization.
-        
+
         Returns:
             Callback function that raises TrialPruned when early stopping criteria met
         """
@@ -534,7 +532,7 @@ class BayesianTPEOptimizer:
         # Need minimum history for adaptive patience
         if len(self.best_value_history) < max(self.min_patience + 1, 10):
                 return
-            
+
         # Calculate convergence rate and adaptive patience
         if self.adaptive_patience_enabled:
             convergence_rate = self._calculate_convergence_rate()
@@ -582,7 +580,7 @@ class BayesianTPEOptimizer:
             self.logger.info(f"   Adaptive patience: {self.current_patience}")
             self.logger.info(f"   Convergence rate: {convergence_rate:.6f}")
             raise optuna.TrialPruned()
-        
+
     def _multi_objective_early_stopping_callback(self, study: optuna.Study, trial: optuna.Trial):
         """Multi-objective adaptive early stopping callback."""
         # Extract multiple objectives from trial
@@ -936,49 +934,49 @@ class BayesianTPEOptimizer:
         self.logger.debug(f"   Adaptive threshold: {current_threshold:.8f} (progress: {progress:.2f}, convergence: {convergence_rate:.2f})")
 
         return current_threshold
-    
+
     def _check_early_stopping_grid(self, trials: List[Dict], stage: str) -> bool:
         """
         Check if early stopping should be triggered for grid search.
-        
+
         Args:
             trials: List of completed trials
             stage: Stage name ('coarse' or 'fine')
-            
+
         Returns:
             True if early stopping should be triggered
         """
         if not self.config.early_stopping_patience or len(trials) < self.config.early_stopping_patience:
             return False
-        
+
         # Get recent trial values
-        recent_trials = sorted(trials[-self.config.early_stopping_patience:], 
-                             key=lambda x: x['value'], 
+        recent_trials = sorted(trials[-self.config.early_stopping_patience:],
+                             key=lambda x: x['value'],
                              reverse=(self.config.direction == 'maximize'))
-        
+
         best_recent = recent_trials[0]['value']
-        
+
         # Compare with best overall
-        all_trials_sorted = sorted(trials, 
-                                  key=lambda x: x['value'], 
+        all_trials_sorted = sorted(trials,
+                                  key=lambda x: x['value'],
                                   reverse=(self.config.direction == 'maximize'))
         best_overall = all_trials_sorted[0]['value']
-        
+
         # Calculate improvement
         if self.config.direction == 'maximize':
             improvement = best_recent - best_overall
         else:
             improvement = best_overall - best_recent
-        
+
         # Check threshold
         threshold = self.config.early_stopping_threshold or (abs(best_overall) * 0.001)
-        
+
         if improvement < threshold:
             self.logger.info(f"⏹️ Early stopping triggered in {stage} stage")
             self.logger.info(f"   No significant improvement in last {self.config.early_stopping_patience} trials")
             self.logger.info(f"   Best value: {best_overall:.6f}")
             return True
-        
+
         return False
 
     def _calculate_convergence_rate(self) -> float:
@@ -1081,7 +1079,7 @@ class BayesianTPEOptimizer:
             else:
                 # Fallback to original grid generation
                 coarse_grid = build_coarse_grid_from_search_space(search_space, self.config.coarse_grid_points)
-            
+
             self.logger.info(f"   Generated {len(coarse_grid)} coarse grid points")
 
             if not coarse_grid:
@@ -1117,7 +1115,7 @@ class BayesianTPEOptimizer:
             else:
                 # Fallback to original grid generation
                 fine_grid = build_fine_grid_around_best(search_space, coarse_best_params, self.config.fine_grid_points)
-            
+
             self.logger.info(f"   Generated {len(fine_grid)} fine grid points")
 
             if not fine_grid:
@@ -1156,7 +1154,7 @@ class BayesianTPEOptimizer:
             adaptive_grid = self._generate_vectorbt_adaptive_grid(
                 adaptive_search_space, best_params, self._calculate_adaptive_grid_points()
             )
-            
+
             self.logger.info(f"   Generated {len(adaptive_grid)} adaptive grid points")
             self.logger.info(f"   Refinement iteration: {self.current_refinement_iteration + 1}")
 
@@ -1182,13 +1180,13 @@ class BayesianTPEOptimizer:
                 # Check if we should continue refining
                 if (self.current_refinement_iteration < self.config.max_adaptive_iterations and
                     self._should_continue_refinement(adaptive_results['best_value'], all_trials)):
-                    
+
                     # Recursively call adaptive refinement
                     recursive_results = self._run_adaptive_refinement_stage(
-                        objective, adaptive_search_space, adaptive_results['best_params'], 
+                        objective, adaptive_search_space, adaptive_results['best_params'],
                         all_trials + adaptive_results['trials']
                     )
-                    
+
                     if recursive_results:
                         # Merge results
                         adaptive_results['trials'].extend(recursive_results['trials'])
@@ -1249,7 +1247,7 @@ class BayesianTPEOptimizer:
 
         return improvement > self.config.adaptive_refinement_threshold
 
-    def _generate_adaptive_search_space(self, original_search_space: Dict[str, Any], 
+    def _generate_adaptive_search_space(self, original_search_space: Dict[str, Any],
                                       best_params: Dict[str, Any]) -> Dict[str, Any]:
         """Generate adaptive search space around best parameters."""
         adaptive_space = {}
@@ -1279,7 +1277,7 @@ class BayesianTPEOptimizer:
                     adaptive_rng = rng * self.config.adaptive_refinement_factor
                     adaptive_low = max(low, best_val - adaptive_rng)
                     adaptive_high = min(high, best_val + adaptive_rng)
-                    
+
                     adaptive_config = param_config.copy()
                     adaptive_config['low'] = adaptive_low
                     adaptive_config['high'] = adaptive_high
@@ -1297,17 +1295,17 @@ class BayesianTPEOptimizer:
         """Calculate number of grid points for adaptive refinement."""
         # Start with more points for first iteration, reduce for subsequent iterations
         base_points = self.config.fine_grid_points
-        
+
         # Reduce points as we refine more
         reduction_factor = 0.8 ** self.current_refinement_iteration
         adaptive_points = int(base_points * reduction_factor)
-        
+
         # Clamp to min/max bounds
-        return max(self.config.min_grid_points, 
+        return max(self.config.min_grid_points,
                   min(self.config.max_grid_points, adaptive_points))
 
-    def _generate_vectorbt_adaptive_grid(self, search_space: Dict[str, Any], 
-                                       best_params: Dict[str, Any], 
+    def _generate_vectorbt_adaptive_grid(self, search_space: Dict[str, Any],
+                                       best_params: Dict[str, Any],
                                        grid_points: int) -> List[Dict[str, Any]]:
         """Generate adaptive grid using VectorBT vectorized operations."""
         try:
@@ -1316,15 +1314,15 @@ class BayesianTPEOptimizer:
                 return build_fine_grid_around_best(search_space, best_params, grid_points)
 
             self.logger.debug(f"🔄 Generating VectorBT adaptive grid with {grid_points} points...")
-            
+
             param_combinations = []
-            
+
             for param_name, param_config in search_space.items():
                 if param_name not in best_params:
                     continue
-                    
+
                 best_val = best_params[param_name]
-                
+
                 if isinstance(param_config, tuple) and len(param_config) == 2:
                     # (low, high) format
                     low, high = param_config
@@ -1332,7 +1330,7 @@ class BayesianTPEOptimizer:
                         param_values = np.linspace(low, high, grid_points, dtype=int)
                     else:
                         param_values = np.linspace(low, high, grid_points)
-                        
+
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
                     param_type = param_config.get('type', 'float')
@@ -1351,12 +1349,12 @@ class BayesianTPEOptimizer:
                         continue
                 else:
                     continue
-                
+
                 param_combinations.append([(param_name, val) for val in param_values])
-            
+
             if not param_combinations:
                 return []
-            
+
             # Use VectorBT for efficient adaptive grid generation
             if vbt and len(param_combinations) > 1:
                 # Convert to VectorBT arrays
@@ -1364,10 +1362,10 @@ class BayesianTPEOptimizer:
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
                     param_arrays.append(vbt.array(values))
-                
+
                 # Use VectorBT's efficient operations for adaptive grid
                 mesh_arrays = vbt.meshgrid(*param_arrays)
-                
+
                 # Convert back to parameter dictionaries
                 combinations = []
                 for i in range(len(mesh_arrays[0])):
@@ -1376,13 +1374,13 @@ class BayesianTPEOptimizer:
                         param_name = param_list[0][0]
                         param_dict[param_name] = mesh_arrays[j][i]
                     combinations.append(param_dict)
-                
+
                 return combinations
             else:
                 # Fallback to itertools
                 combinations = list(itertools.product(*param_combinations))
                 return [dict(combo) for combo in combinations]
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT adaptive grid generation failed, using fallback: {e}")
             return build_fine_grid_around_best(search_space, best_params, grid_points)
@@ -1514,7 +1512,7 @@ class BayesianTPEOptimizer:
                 if self._is_better_result(value, best_value):
                     best_params = params
                     best_value = value
-                
+
                 # Note: Early stopping for batch evaluation is less useful since
                 # all evaluations are already computed. This is logged for consistency.
 
@@ -1574,7 +1572,7 @@ class BayesianTPEOptimizer:
                     if self._is_better_result(value, best_value):
                         best_params = params
                         best_value = value
-                    
+
                     # Check early stopping after minimum trials
                     if i >= self.config.early_stopping_patience:
                         if self._check_early_stopping_grid(trials, stage):
@@ -1692,16 +1690,16 @@ class BayesianTPEOptimizer:
         except Exception as e:
             self.logger.warning(f"VectorBT coarse grid generation failed: {e}, using fallback")
             return build_coarse_grid_from_search_space(search_space, grid_points)
-    
+
     def _enhanced_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """Generate coarse grid using enhanced VectorBT vectorization manager."""
         try:
             self.logger.debug("🔄 Generating enhanced VectorBT coarse grid...")
-            
+
             # Use the enhanced vectorization manager for grid generation
             param_names = list(search_space.keys())
             param_configs = list(search_space.values())
-            
+
             # Generate parameter values using VectorBT
             param_values = {}
             for name, config in zip(param_names, param_configs):
@@ -1731,36 +1729,36 @@ class BayesianTPEOptimizer:
                         values = np.linspace(low, high, grid_points)
                     else:
                         values = [config]
-                
+
                 param_values[name] = values
-            
+
             # Generate all combinations using VectorBT if beneficial
             if len(param_values) > 1 and self._should_use_vectorbt_combinations(param_values):
                 combinations = self._vectorbt_generate_combinations(param_values)
             else:
                 combinations = list(itertools.product(*[param_values[name] for name in param_names]))
-            
+
             grid_points_list = [dict(zip(param_names, combo)) for combo in combinations]
-            
+
             self.logger.debug(f"✅ Generated {len(grid_points_list)} enhanced VectorBT coarse grid points")
             return grid_points_list
-            
+
         except Exception as e:
             self.logger.warning(f"Enhanced VectorBT coarse grid generation failed: {e}")
             raise
-    
+
     def _should_use_vectorbt_combinations(self, param_values: Dict[str, List]) -> bool:
         """Determine if VectorBT should be used for combination generation."""
         if not self.enhanced_vectorization_manager:
             return False
-        
+
         # Use VectorBT for large parameter spaces
         total_combinations = 1
         for values in param_values.values():
             total_combinations *= len(values)
-        
+
         return total_combinations > 1000
-    
+
     def _vectorbt_generate_combinations(self, param_values: Dict[str, List]) -> List[Tuple]:
         """Generate combinations using VectorBT vectorized operations."""
         try:
@@ -1768,35 +1766,35 @@ class BayesianTPEOptimizer:
             param_arrays = {}
             for name, values in param_values.items():
                 param_arrays[name] = np.array(values)
-            
+
             # Use VectorBT for efficient combination generation
             names = list(param_arrays.keys())
             arrays = list(param_arrays.values())
-            
+
             # Generate meshgrid for all parameters
             meshgrid = np.meshgrid(*arrays, indexing='ij')
-            
+
             # Reshape to get all combinations
             combinations = []
             for i in range(meshgrid[0].size):
                 combo = tuple(meshgrid[j].flat[i] for j in range(len(meshgrid)))
                 combinations.append(combo)
-            
+
             return combinations
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT combination generation failed: {e}, using itertools")
             # Fallback to itertools
             return list(itertools.product(*param_values.values()))
-    
+
     def _standard_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
         """Generate coarse grid using standard VectorBT operations."""
         try:
             self.logger.debug("🔄 Generating standard VectorBT coarse grid...")
-            
+
             # Use VectorBT's advanced parameter space generation
             param_combinations = []
-            
+
             for param_name, param_config in search_space.items():
                 if isinstance(param_config, tuple) and len(param_config) == 2:
                     # (low, high) format for numerical parameters
@@ -1829,12 +1827,12 @@ class BayesianTPEOptimizer:
                     param_values = vbt.array(param_config)
                 else:
                     continue
-                
+
                 param_combinations.append([(param_name, val) for val in param_values.values])
-            
+
             if not param_combinations:
                 return []
-            
+
             # Use VectorBT's optimized meshgrid with memory-efficient operations
             if vbt and len(param_combinations) > 1:
                 # Convert to VectorBT arrays for efficient operations
@@ -1842,10 +1840,10 @@ class BayesianTPEOptimizer:
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
                     param_arrays.append(vbt.array(values))
-                
+
                 # Use VectorBT's memory-efficient meshgrid
                 mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
-                
+
                 # Convert back to parameter dictionaries using VectorBT's vectorized operations
                 combinations = []
                 for i in range(len(mesh_arrays[0])):
@@ -1854,14 +1852,14 @@ class BayesianTPEOptimizer:
                         param_name = param_list[0][0]
                         param_dict[param_name] = mesh_arrays[j][i]
                     combinations.append(param_dict)
-                
+
                 return combinations
             else:
                 # Fallback to itertools for single parameter or when VectorBT not available
                 import itertools
                 combinations = list(itertools.product(*param_combinations))
                 return [dict(combo) for combo in combinations]
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT grid generation failed, using fallback: {e}")
             return build_coarse_grid_from_search_space(search_space, grid_points)
@@ -1874,15 +1872,15 @@ class BayesianTPEOptimizer:
                 return build_fine_grid_around_best(search_space, best_params, grid_points)
 
             self.logger.debug("🔄 Generating VectorBT fine grid with enhanced vectorization...")
-            
+
             param_combinations = []
-            
+
             for param_name, param_config in search_space.items():
                 if param_name not in best_params:
                     continue
-                    
+
                 best_val = best_params[param_name]
-                
+
                 if isinstance(param_config, tuple) and len(param_config) == 2:
                     # (low, high) format
                     low, high = param_config
@@ -1890,14 +1888,14 @@ class BayesianTPEOptimizer:
                     fine_rng = rng * 0.2
                     fine_min = max(low, best_val - fine_rng)
                     fine_max = min(high, best_val + fine_rng)
-                    
+
                     if isinstance(low, int) and isinstance(high, int):
                         # Use VectorBT's optimized integer range
                         param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points, dtype=int))
                     else:
                         # Use VectorBT's optimized float range
                         param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points))
-                        
+
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
                     param_type = param_config.get('type', 'float')
@@ -1912,7 +1910,7 @@ class BayesianTPEOptimizer:
                         fine_rng = rng * 0.2
                         fine_min = max(low, best_val - fine_rng)
                         fine_max = min(high, best_val + fine_rng)
-                        
+
                         if param_config.get('log', False) and fine_min > 0 and fine_max > fine_min:
                             # Use VectorBT's optimized logspace
                             param_values = vbt.array(np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points))
@@ -1924,12 +1922,12 @@ class BayesianTPEOptimizer:
                         continue
                 else:
                     continue
-                
+
                 param_combinations.append([(param_name, val) for val in param_values.values])
-            
+
             if not param_combinations:
                 return []
-            
+
             # Use VectorBT's optimized meshgrid with memory-efficient operations
             if vbt and len(param_combinations) > 1:
                 # Convert to VectorBT arrays
@@ -1937,10 +1935,10 @@ class BayesianTPEOptimizer:
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
                     param_arrays.append(vbt.array(values))
-                
+
                 # Use VectorBT's memory-efficient meshgrid
                 mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
-                
+
                 # Convert back to parameter dictionaries using vectorized operations
                 combinations = []
                 for i in range(len(mesh_arrays[0])):
@@ -1949,13 +1947,13 @@ class BayesianTPEOptimizer:
                         param_name = param_list[0][0]
                         param_dict[param_name] = mesh_arrays[j][i]
                     combinations.append(param_dict)
-                
+
                 return combinations
             else:
                 # Fallback to itertools
                 combinations = list(itertools.product(*param_combinations))
                 return [dict(combo) for combo in combinations]
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT fine grid generation failed, using fallback: {e}")
             return build_fine_grid_around_best(search_space, best_params, grid_points)
@@ -1973,21 +1971,21 @@ class BayesianTPEOptimizer:
             if self.vectorbt_manager and vbt:
                 # Convert parameter dictionaries to VectorBT arrays for vectorized processing
                 param_arrays = self._prepare_vectorbt_parameters(grid_points)
-                
+
                 # Use VectorBT's optimized parallel processing
                 results = []
                 chunk_size = min(self.config.vectorbt_chunk_size, len(grid_points))
-                
+
                 # Process in optimized chunks using VectorBT's memory management
                 for i in range(0, len(grid_points), chunk_size):
                     chunk_params = grid_points[i:i + chunk_size]
                     chunk_results = []
-                    
+
                     # Use VectorBT's built-in parallel processing with better memory management
                     if self.config.vectorbt_enable_parallel and len(chunk_params) > 1:
                         # Create VectorBT array for batch processing
                         param_batch = vbt.array([list(params.values()) for params in chunk_params])
-                        
+
                         # Use VectorBT's vectorized operations for objective evaluation
                         try:
                             # Vectorized objective evaluation (if objective supports it)
@@ -2015,7 +2013,7 @@ class BayesianTPEOptimizer:
                             except Exception as e:
                                 self.logger.warning(f"⚠️ VectorBT batch evaluation {i} failed: {e}")
                                 chunk_results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
-                    
+
                     results.extend(chunk_results)
             else:
                 # Fallback to regular batch processing
@@ -2084,7 +2082,7 @@ class BayesianTPEOptimizer:
                 values = [params[name] for params in grid_points]
                 # Convert to VectorBT array for vectorized operations
                 param_arrays[name] = vbt.array(values)
-            
+
             return param_arrays
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT parameter preparation failed: {e}")
@@ -2280,12 +2278,12 @@ class BayesianTPEOptimizer:
         if len(self.adaptive_refinement_history) > 0:
             initial_value = self.adaptive_refinement_history[0]['best_value']
             final_value = self.adaptive_refinement_history[-1]['best_value']
-            
+
             if self.config.direction == 'maximize':
                 stats['total_improvement'] = final_value - initial_value
             else:
                 stats['total_improvement'] = initial_value - final_value
-            
+
             stats['average_improvement_per_iteration'] = stats['total_improvement'] / len(self.adaptive_refinement_history)
 
         # Analyze convergence
@@ -2303,7 +2301,7 @@ class BayesianTPEOptimizer:
             stats['search_space_evolution'].append({
                 'iteration': i,
                 'search_space_size': len(search_space),
-                'parameter_ranges': {k: (v[0], v[1]) if isinstance(v, tuple) else str(v) 
+                'parameter_ranges': {k: (v[0], v[1]) if isinstance(v, tuple) else str(v)
                                    for k, v in search_space.items()}
             })
 

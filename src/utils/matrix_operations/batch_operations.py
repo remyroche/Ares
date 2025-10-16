@@ -443,13 +443,13 @@ def batch_matrix_multiply(matrices_a: List['np.ndarray'], matrices_b: List['np.n
     processor = get_batch_matrix_processor()
     return processor.batch_matrix_multiply(matrices_a, matrices_b)
 
-def batch_feature_transformation(data: Union['np.ndarray', 'pd.DataFrame'], 
+def batch_feature_transformation(data: Union['np.ndarray', 'pd.DataFrame'],
                                transformations: List[Dict[str, Any]]) -> Union['np.ndarray', 'pd.DataFrame']:
     """Convenience function for batch feature transformation."""
     processor = get_batch_matrix_processor()
     return processor.batch_feature_transformation(data, transformations)
 
-def batch_correlation_analysis(data: Union['np.ndarray', 'pd.DataFrame'], 
+def batch_correlation_analysis(data: Union['np.ndarray', 'pd.DataFrame'],
                              method: str = 'pearson') -> Tuple['np.ndarray', 'np.ndarray']:
     """Convenience function for batch correlation analysis."""
     processor = get_batch_matrix_processor()

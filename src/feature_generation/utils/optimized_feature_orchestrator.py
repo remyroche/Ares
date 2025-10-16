@@ -4,7 +4,7 @@ Optimized Feature Generation Orchestrator
 
 This module provides a comprehensive feature generation system that integrates:
 - TA-Lib technical indicators with hardware optimization
-- ARIMA/ARMA time series modeling with M1 
+- ARIMA/ARMA time series modeling with M1
 - Parallel processing and memory optimization
 - Safe mathematical operations and error handling
 - Integration with existing ML pipeline
@@ -85,7 +85,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
         STATSMODELS_AVAILABLE = True
     except ImportError:
@@ -180,7 +180,7 @@ class OptimizedFeatureOrchestrator:
         if OPTIMIZATIONS_AVAILABLE:
             capabilities.append("Hardware optimizations")
             if self.gpu_manager and self.gpu_manager.mps_available:
-                capabilities.append("M1 
+                capabilities.append("M1
             if self.parallel_processor:
                 capabilities.append("Parallel processing")
 
@@ -468,16 +468,16 @@ if __name__ == "__main__":
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -496,8 +496,8 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

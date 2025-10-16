@@ -28,7 +28,7 @@ __all__ = [
     'ArchitectureResult',
     'ExecutionInfo',
     'ComparisonResult',
-    
+
     # Comparison utilities
     'ResultComparison',
     'ArchitectureComparison',

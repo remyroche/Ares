@@ -28,14 +28,12 @@ from ..logger import system_logger
 
 logger = logging.getLogger(__name__)
 
-
 class BacktestMode(Enum):
     """Backtesting modes for VectorBT engine."""
     VECTORBT_CPU = "vectorbt_cpu"
     VECTORBT_PARALLEL = "vectorbt_parallel"
     VECTORBT_GPU = "vectorbt_gpu"
     HYBRID = "hybrid"
-
 
 @dataclass
 class VectorBTBacktestConfig:
@@ -49,7 +47,6 @@ class VectorBTBacktestConfig:
     enable_gpu_acceleration: bool = False
     chunk_size: int = 1000
     freq: str = 'D'  # Frequency for portfolio
-
 
 @dataclass
 class BacktestResult:
@@ -67,7 +64,6 @@ class BacktestResult:
     def __post_init__(self):
         if self.trades is None:
             self.trades = []
-
 
 class VectorBTBacktestingEngine:
     """
@@ -261,7 +257,6 @@ class VectorBTBacktestingEngine:
         except Exception as e:
             self.logger.error(f"❌ Failed to extract backtest results: {e}")
             return BacktestResult()
-
 
 def get_vectorbt_backtesting_engine(config: Optional[VectorBTBacktestConfig] = None) -> VectorBTBacktestingEngine:
     """Get a VectorBT backtesting engine instance."""

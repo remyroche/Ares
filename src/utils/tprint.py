@@ -168,7 +168,6 @@ except ImportError:
             """Get current timestamp with microseconds."""
             return datetime.now().strftime('%H:%M:%S.%f')[:-3]  # Remove last 3 digits for milliseconds
 
-
 class LogLevel(Enum):
     """Log level enumeration."""
     DEBUG = "DEBUG"
@@ -179,7 +178,6 @@ class LogLevel(Enum):
     PROGRESS = "PROGRESS"
     PERFORMANCE = "PERFORMANCE"
 
-
 class TimestampFormat(Enum):
     """Timestamp format enumeration."""
     SIMPLE = "%H:%M:%S"
@@ -187,38 +185,37 @@ class TimestampFormat(Enum):
     WITH_MICROSECONDS = "%Y-%m-%d %H:%M:%S.%f"
     ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
 
-
 @dataclass
 class TPrintConfig:
     """Configuration for tprint functionality."""
-    
+
     # Timestamp configuration
     timestamp_format: TimestampFormat = TimestampFormat.WITH_MICROSECONDS
     timezone: Optional[timezone] = None
     include_microseconds: bool = True
-    
+
     # Output configuration
     use_colors: bool = COLORAMA_AVAILABLE
     output_file: Optional[Union[str, Path]] = None
     output_to_console: bool = True
     output_to_file: bool = False
-    
+
     # Logging configuration
     min_log_level: LogLevel = LogLevel.DEBUG
-    
+
     # Performance configuration
     enable_lazy_evaluation: bool = True
     cache_timestamps: bool = True
     timestamp_cache_duration: float = 0.001  # 1ms
-    
+
     # File logging configuration - single file per run
     single_file_per_run: bool = True
     run_id: Optional[str] = None
-    
+
     # Structured logging
     enable_structured_logging: bool = False
     structured_format: str = "json"  # json, yaml, custom
-    
+
     # Integration
     integrate_with_logging: bool = True
     log_to_python_logger: bool = False
@@ -247,10 +244,9 @@ class TPrintConfig:
         LogLevel.PERFORMANCE: Fore.MAGENTA,
     })
 
-
 class TPrintManager:
     """Manager for tprint functionality."""
-    
+
     def __init__(self, config: Optional[TPrintConfig] = None):
         self.config = config or TPrintConfig()
         self._timestamp_cache: Dict[str, str] = {}
@@ -258,30 +254,30 @@ class TPrintManager:
         self._file_handle: Optional[TextIO] = None
         self._setup_file_logging()
         self._setup_python_logging()
-    
+
     def _setup_file_logging(self):
         """Setup file logging if configured."""
         if self.config.output_to_file and self.config.output_file:
             try:
                 log_file = Path(self.config.output_file)
-                
+
                 # If single file per run is enabled, add run ID to filename
                 if self.config.single_file_per_run:
                     if not self.config.run_id:
                         # Generate a unique run ID based on timestamp
                         self.config.run_id = datetime.now().strftime('%Y%m%d_%H%M%S_%f')[:-3]
-                    
+
                     # Add run ID to filename before extension
                     if log_file.suffix:
                         log_file = log_file.parent / f"{log_file.stem}_{self.config.run_id}{log_file.suffix}"
                     else:
                         log_file = log_file.parent / f"{log_file.name}_{self.config.run_id}.log"
-                
+
                 log_file.parent.mkdir(parents=True, exist_ok=True)
                 self._file_handle = open(log_file, 'w', encoding='utf-8')  # 'w' for single file per run
             except Exception as e:
                 print(f"Warning: Could not open log file {self.config.output_file}: {e}")
-    
+
     def _setup_python_logging(self):
         """Setup integration with Python logging if configured."""
         if self.config.integrate_with_logging:
@@ -316,25 +312,25 @@ class TPrintManager:
                         pass
 
                     self.logger.setLevel(logging.DEBUG)
-    
+
     def _get_timestamp(self) -> str:
         """Get formatted timestamp with caching."""
         if not self.config.cache_timestamps:
             return self._format_timestamp()
-        
+
         current_time = time.time()
         if (current_time - self._last_timestamp_time) < self.config.timestamp_cache_duration:
             return self._timestamp_cache.get('cached', self._format_timestamp())
-        
+
         timestamp = self._format_timestamp()
         self._timestamp_cache['cached'] = timestamp
         self._last_timestamp_time = current_time
         return timestamp
-    
+
     def _format_timestamp(self) -> str:
         """Format timestamp according to configuration."""
         now = datetime.now(self.config.timezone)
-        
+
         if self.config.timestamp_format == TimestampFormat.SIMPLE:
             return now.strftime('%H:%M:%S')
         elif self.config.timestamp_format == TimestampFormat.DETAILED:
@@ -345,7 +341,7 @@ class TPrintManager:
             return now.isoformat()
         else:
             return now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Default to microseconds
-    
+
     def _should_log(self, level: LogLevel) -> bool:
         """Check if message should be logged based on level."""
         level_priority = {
@@ -358,35 +354,35 @@ class TPrintManager:
             LogLevel.PERFORMANCE: 1,
         }
         return level_priority.get(level, 0) >= level_priority.get(self.config.min_log_level, 0)
-    
+
     def _format_message(self, level: LogLevel, *args, **kwargs) -> str:
         """Format message with timestamp and level."""
         if not args:
             return f"[{self._get_timestamp()}] {level.value}:"
-        
+
         timestamp = self._get_timestamp()
         first_arg = str(args[0])
         message = f"[{timestamp}] {level.value}: {first_arg}"
-        
+
         if len(args) > 1:
             message += " " + " ".join(str(arg) for arg in args[1:])
-        
+
         return message
-    
+
     def _get_colored_message(self, level: LogLevel, message: str) -> str:
         """Get colored message if colors are enabled."""
         if not self.config.use_colors or not COLORAMA_AVAILABLE:
             return message
-        
+
         color = self.config.colors.get(level, "")
         return f"{color}{message}{Style.RESET_ALL}"
-    
+
     def _write_to_outputs(self, message: str, level: LogLevel, **kwargs):
         """Write message to configured outputs."""
         colored_message = self._get_colored_message(level, message)
 
         # Filter out tprint-specific parameters that print() doesn't accept
-        filtered_kwargs = {k: v for k, v in kwargs.items() 
+        filtered_kwargs = {k: v for k, v in kwargs.items()
                           if k not in ['color', 'bold']}
 
         if self.config.output_to_console:
@@ -414,24 +410,24 @@ class TPrintManager:
             except Exception:
                 # Silently handle logger errors
                 pass
-    
+
     def _format_traceback(self, exc: Optional[BaseException] = None, include_locals: bool = None, depth: int = None) -> str:
         """Format traceback for error messages.
-        
+
         Args:
             exc: Exception to format traceback for (if None, uses current exception)
             include_locals: Whether to include local variables (overrides config)
             depth: Maximum depth to show (overrides config, 0 = all)
-            
+
         Returns:
             Formatted traceback string
         """
         if not self.config.include_traceback:
             return ""
-        
+
         include_locals = include_locals if include_locals is not None else self.config.show_locals
         depth = depth if depth is not None else self.config.traceback_depth
-        
+
         try:
             if exc is None:
                 # Get current exception info
@@ -451,10 +447,10 @@ class TPrintManager:
                 exc_type = type(exc)
                 exc_value = exc
                 exc_tb = exc.__traceback__
-            
+
             if exc_tb is None:
                 return f"\n{exc_type.__name__}: {exc_value}"
-            
+
             # Format the traceback
             if self.config.compact_traceback:
                 # Compact format: just file, line, function
@@ -470,16 +466,16 @@ class TPrintManager:
                 # Full format
                 tb_lines = ['', 'Traceback (most recent call last):']
                 tb_frames = traceback.extract_tb(exc_tb)
-                
+
                 if depth > 0 and len(tb_frames) > depth:
                     tb_frames = tb_frames[-depth:]
                     tb_lines.append(f'  ... ({len(traceback.extract_tb(exc_tb)) - depth} frames omitted)')
-                
+
                 for frame in tb_frames:
                     tb_lines.append(f'  File "{frame.filename}", line {frame.lineno}, in {frame.name}')
                     if frame.line:
                         tb_lines.append(f'    {frame.line}')
-                    
+
                     # Add local variables if requested
                     if include_locals and exc_tb is not None:
                         # Get locals from the frame
@@ -497,10 +493,10 @@ class TPrintManager:
                                         tb_lines.append(f'      {var_name} = <unavailable>')
                         except Exception:
                             pass
-                
+
                 # Add the exception message
                 tb_lines.append(f'{exc_type.__name__}: {exc_value}')
-                
+
                 # Check for exception chain (__cause__ or __context__)
                 if hasattr(exc, '__cause__') and exc.__cause__ is not None:
                     tb_lines.append('')
@@ -510,20 +506,20 @@ class TPrintManager:
                     tb_lines.append('')
                     tb_lines.append('During handling of the above exception, another exception occurred:')
                     tb_lines.append(self._format_traceback(exc.__context__, include_locals, depth))
-                
+
                 return '\n'.join(tb_lines)
-        
+
         except Exception as format_error:
             return f"\n[Error formatting traceback: {format_error}]"
-    
+
     def _log(self, level: LogLevel, *args, **kwargs):
         """Internal logging method."""
         if not self._should_log(level):
             return
-        
+
         message = self._format_message(level, *args, **kwargs)
         self._write_to_outputs(message, level, **kwargs)
-    
+
     def _log_without_level(self, *args, **kwargs):
         """Internal logging method without log level prefix."""
         if not args:
@@ -568,17 +564,15 @@ class TPrintManager:
             except Exception:
                 # Silently handle logger errors
                 pass
-    
+
     def close(self):
         """Close file handles and cleanup."""
         if self._file_handle:
             self._file_handle.close()
             self._file_handle = None
 
-
 # Global manager instance
 _global_manager = TPrintManager()
-
 
 def configure_tprint(config: TPrintConfig) -> None:
     """Configure global tprint settings."""
@@ -588,7 +582,6 @@ def configure_tprint(config: TPrintConfig) -> None:
     # Auto-replace print if configured
     if config.auto_replace_print:
         replace_builtin_print()
-
 
 def configure_tprint_with_system_logger(enable_logging: bool = True, enable_file_output: bool = True) -> None:
     """Configure tprint to integrate with the system logger."""
@@ -602,11 +595,9 @@ def configure_tprint_with_system_logger(enable_logging: bool = True, enable_file
     )
     configure_tprint(config)
 
-
 def get_tprint_config() -> TPrintConfig:
     """Get current tprint configuration."""
     return _global_manager.config
-
 
 def enable_auto_print_logging(enable: bool = True):
     """Enable or disable automatic logging of print statements.
@@ -619,7 +610,6 @@ def enable_auto_print_logging(enable: bool = True):
     config.auto_replace_print = enable
     configure_tprint(config)
 
-
 def set_print_log_level(level: LogLevel):
     """Set the log level for print statement logging.
 
@@ -630,7 +620,6 @@ def set_print_log_level(level: LogLevel):
     config.print_log_level = level
     config.print_capture_level = level
     configure_tprint(config)
-
 
 @contextmanager
 def tprint_context(config: Optional[TPrintConfig] = None):
@@ -644,15 +633,14 @@ def tprint_context(config: Optional[TPrintConfig] = None):
     finally:
         _global_manager = old_manager
 
-
 def tprint(*args, **kwargs) -> None:
     """
     Enhanced print with timestamp - Production-ready version.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function (including color for backward compatibility)
-    
+
     Example:
         tprint("User logged in")  # [2025-01-11 06:30:15] User logged in
         tprint("Value:", 42)      # [2025-01-11 06:30:15] Value: 42
@@ -661,7 +649,7 @@ def tprint(*args, **kwargs) -> None:
     # Handle color parameter for backward compatibility
     color = kwargs.pop('color', None)
     bold = kwargs.pop('bold', False)
-    
+
     if color:
         # Map color names to log levels for backward compatibility
         color_to_level = {
@@ -677,60 +665,56 @@ def tprint(*args, **kwargs) -> None:
     else:
         _global_manager._log_without_level(*args, **kwargs)
 
-
 def tprint_debug(*args, **kwargs) -> None:
     """
     Print with timestamp and DEBUG prefix.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
-    
+
     Example:
         tprint_debug("Processing data")  # [2025-01-11 06:30:15] DEBUG: Processing data
     """
     _global_manager._log(LogLevel.DEBUG, *args, **kwargs)
 
-
 def tprint_info(*args, **kwargs) -> None:
     """
     Print with timestamp and INFO prefix.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
-    
+
     Example:
         tprint_info("Operation completed")  # [2025-01-11 06:30:15] INFO: Operation completed
     """
     _global_manager._log(LogLevel.INFO, *args, **kwargs)
 
-
 def tprint_warning(*args, **kwargs) -> None:
     """
     Print with timestamp and WARNING prefix.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
-    
+
     Example:
         tprint_warning("Low memory")  # [2025-01-11 06:30:15] WARNING: Low memory
     """
     _global_manager._log(LogLevel.WARNING, *args, **kwargs)
 
-
 def tprint_error(*args, **kwargs) -> None:
     """
     Print with timestamp and ERROR prefix.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
             - include_traceback: bool = True - Include traceback if available
             - traceback_depth: int = None - Override default traceback depth
             - show_locals: bool = None - Override show_locals config
-    
+
     Example:
         tprint_error("Connection failed")  # [2025-01-11 06:30:15] ERROR: Connection failed
         tprint_error("Error occurred", include_traceback=True)  # Includes traceback if in exception context
@@ -739,10 +723,10 @@ def tprint_error(*args, **kwargs) -> None:
     include_traceback = kwargs.pop('include_traceback', True)
     traceback_depth = kwargs.pop('traceback_depth', None)
     show_locals = kwargs.pop('show_locals', None)
-    
+
     # Log the error message
     _global_manager._log(LogLevel.ERROR, *args, **kwargs)
-    
+
     # Add traceback if we're in an exception context
     if include_traceback and _global_manager.config.include_traceback:
         exc_type, exc_value, exc_tb = sys.exc_info()
@@ -751,11 +735,10 @@ def tprint_error(*args, **kwargs) -> None:
             if tb_str:
                 _global_manager._write_to_outputs(tb_str, LogLevel.ERROR)
 
-
 def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **kwargs) -> None:
     """
     Print exception with full traceback details.
-    
+
     Args:
         exc: Exception to log (if None, uses current exception from sys.exc_info())
         message: Optional message to include with the exception
@@ -763,13 +746,13 @@ def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **k
             - include_locals: bool - Include local variables in traceback
             - traceback_depth: int - Maximum depth of traceback to show (0 = all)
             - compact: bool - Use compact traceback format
-    
+
     Example:
         try:
             # ... code that raises exception ...
         except Exception as e:
             tprint_exception(e, "Failed to process data")
-            
+
         # Or use without argument in except block:
         try:
             # ... code ...
@@ -780,7 +763,7 @@ def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **k
     include_locals = kwargs.pop('include_locals', None)
     traceback_depth = kwargs.pop('traceback_depth', None)
     compact = kwargs.pop('compact', None)
-    
+
     # Get exception if not provided
     if exc is None:
         exc_type, exc_value, exc_tb = sys.exc_info()
@@ -789,58 +772,56 @@ def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **k
         else:
             tprint_error("tprint_exception called but no exception is active")
             return
-    
+
     # Build the error message
     exc_type_name = type(exc).__name__
     exc_message = str(exc)
-    
+
     if message:
         error_msg = f"{message}: {exc_type_name}: {exc_message}"
     else:
         error_msg = f"{exc_type_name}: {exc_message}"
-    
+
     # Log the error message
     _global_manager._log(LogLevel.ERROR, error_msg, **kwargs)
-    
+
     # Temporarily override compact setting if requested
     if compact is not None:
         old_compact = _global_manager.config.compact_traceback
         _global_manager.config.compact_traceback = compact
-    
+
     # Format and log the traceback
     tb_str = _global_manager._format_traceback(exc, include_locals, traceback_depth)
     if tb_str:
         _global_manager._write_to_outputs(tb_str, LogLevel.ERROR)
-    
+
     # Restore compact setting if it was overridden
     if compact is not None:
         _global_manager.config.compact_traceback = old_compact
 
-
 def tprint_success(*args, **kwargs) -> None:
     """
     Print with timestamp and SUCCESS prefix.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
-    
+
     Example:
         tprint_success("Data saved")  # [2025-01-11 06:30:15] SUCCESS: Data saved
     """
     _global_manager._log(LogLevel.SUCCESS, *args, **kwargs)
 
-
 def tprint_progress(step: int, total: int, message: str = "", **kwargs) -> None:
     """
     Print progress with timestamp.
-    
+
     Args:
         step: Current step number
         total: Total number of steps
         message: Optional message
         **kwargs: Additional keyword arguments for print function
-    
+
     Example:
         tprint_progress(3, 10, "Processing data")  # [2025-01-11 06:30:15] PROGRESS: 3/10 (30.0%) Processing data
     """
@@ -850,32 +831,30 @@ def tprint_progress(step: int, total: int, message: str = "", **kwargs) -> None:
         progress_msg += f" {message}"
     _global_manager._log(LogLevel.PROGRESS, progress_msg, **kwargs)
 
-
 def tprint_performance(operation: str, duration: float, **kwargs) -> None:
     """
     Print performance metrics with timestamp.
-    
+
     Args:
         operation: Name of the operation
         duration: Duration in seconds
         **kwargs: Additional keyword arguments for print function
-    
+
     Example:
         tprint_performance("Data processing", 2.5)  # [2025-01-11 06:30:15] PERFORMANCE: Data processing took 2.5s
     """
     performance_msg = f"{operation} took {duration:.3f}s"
     _global_manager._log(LogLevel.PERFORMANCE, performance_msg, **kwargs)
 
-
 def tprint_structured(data: Dict[str, Any], level: LogLevel = LogLevel.INFO, **kwargs) -> None:
     """
     Print structured data with timestamp.
-    
+
     Args:
         data: Dictionary of structured data
         level: Log level for the message
         **kwargs: Additional keyword arguments for print function
-    
+
     Example:
         tprint_structured({"user_id": 123, "action": "login"})  # [2025-01-11 06:30:15] INFO: {"user_id": 123, "action": "login"}
     """
@@ -888,16 +867,15 @@ def tprint_structured(data: Dict[str, Any], level: LogLevel = LogLevel.INFO, **k
     else:
         _global_manager._log(level, str(data), **kwargs)
 
-
 @contextmanager
 def tprint_timer(operation: str, level: LogLevel = LogLevel.PERFORMANCE):
     """
     Context manager for timing operations.
-    
+
     Args:
         operation: Name of the operation to time
         level: Log level for the timing message
-    
+
     Example:
         with tprint_timer("Data processing"):
             # ... do work ...
@@ -910,11 +888,10 @@ def tprint_timer(operation: str, level: LogLevel = LogLevel.PERFORMANCE):
         duration = time.perf_counter() - start_time
         tprint_performance(operation, duration)
 
-
 def tprint_with_level(level: LogLevel, *args, **kwargs) -> None:
     """
     Print with specific log level.
-    
+
     Args:
         level: Log level to use
         *args: Arguments to print
@@ -922,15 +899,14 @@ def tprint_with_level(level: LogLevel, *args, **kwargs) -> None:
     """
     _global_manager._log(level, *args, **kwargs)
 
-
 def tprint_batch(messages: List[tuple], **kwargs) -> None:
     """
     Print multiple messages in batch for better performance.
-    
+
     Args:
         messages: List of (level, *args) tuples
         **kwargs: Additional keyword arguments for print function
-    
+
     Example:
         tprint_batch([
             (LogLevel.INFO, "Starting process"),
@@ -943,7 +919,6 @@ def tprint_batch(messages: List[tuple], **kwargs) -> None:
         args = message_tuple[1:]
         _global_manager._log(level, *args, **kwargs)
 
-
 # Convenience function for backward compatibility
 def timestamped_print(*args, **kwargs) -> None:
     """
@@ -951,25 +926,24 @@ def timestamped_print(*args, **kwargs) -> None:
     """
     tprint(*args, **kwargs)
 
-
 # Decorator for automatic function logging
-def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, include_result: bool = False, 
+def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, include_result: bool = False,
                   include_traceback: bool = True, traceback_depth: int = None):
     """
     Decorator to automatically log function calls with enhanced error tracking.
-    
+
     Args:
         level: Log level for the messages
         include_args: Whether to include function arguments in log
         include_result: Whether to include function result in log
         include_traceback: Whether to include traceback on errors (default: True)
         traceback_depth: Maximum traceback depth to show (None = use config default)
-    
+
     Example:
         @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
         def my_function(x, y):
             return x + y
-            
+
         @tprint_logged(LogLevel.DEBUG, include_traceback=True, traceback_depth=5)
         def risky_function():
             # Will show detailed traceback if it fails
@@ -989,7 +963,7 @@ def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, i
                 caller_info = ""
                 if caller_frame:
                     caller_info = f" (called from {caller_frame.f_code.co_filename}:{caller_frame.f_lineno})"
-                
+
                 if include_args:
                     # Truncate long args for readability
                     args_repr = str(args)[:200] + ('...' if len(str(args)) > 200 else '')
@@ -1025,7 +999,7 @@ def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, i
             caller_info = ""
             if caller_frame:
                 caller_info = f" (called from {caller_frame.f_code.co_filename}:{caller_frame.f_lineno})"
-            
+
             if include_args:
                 # Truncate long args for readability
                 args_repr = str(args)[:200] + ('...' if len(str(args)) > 200 else '')
@@ -1054,12 +1028,11 @@ def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, i
         return wrapper
     return decorator
 
-
 # Integration with existing numba timestamps
 def tprint_numba_compatible(*args, **kwargs) -> None:
     """
     Numba-compatible version of tprint using existing numba_timestamps.
-    
+
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
@@ -1077,7 +1050,6 @@ def tprint_numba_compatible(*args, **kwargs) -> None:
     else:
         tprint(*args, **kwargs)
 
-
 # Custom print function that automatically logs to tprint and logging
 def tprint_print(*args, **kwargs):
     """
@@ -1093,7 +1065,6 @@ def tprint_print(*args, **kwargs):
 
     # Also log to tprint and logging if enabled
     _global_manager._log_print_statement(*args, **kwargs)
-
 
 # Store original print function to avoid recursion
 import builtins
@@ -1114,18 +1085,15 @@ def enhanced_print(*args, **kwargs):
     # Log to tprint and logging if enabled
     _global_manager._log_print_statement(*args, **kwargs)
 
-
 # Function to replace built-in print with enhanced version
 def replace_builtin_print():
     """Replace the built-in print function with our enhanced version."""
     builtins.print = enhanced_print
 
-
 # Function to restore original print function
 def restore_builtin_print():
     """Restore the original built-in print function."""
     builtins.print = _original_print
-
 
 # Context manager for automatic print capture
 
@@ -1167,7 +1135,6 @@ def capture_print_to_tprint():
         # Restore original stdout
         sys.stdout = original_stdout
 
-
 # Auto-replacement on import if configured
 def _auto_setup_print_capture():
     """Auto-setup print capture if configured."""
@@ -1175,23 +1142,21 @@ def _auto_setup_print_capture():
     if config.auto_log_prints and hasattr(config, 'auto_replace_print') and config.auto_replace_print:
         replace_builtin_print()
 
-
 # Cleanup function
 def cleanup_tprint():
     """Cleanup tprint resources."""
     _global_manager.close()
 
-
 # Helper functions for traceback configuration
 def enable_traceback(enabled: bool = True, depth: int = None, show_locals: bool = None, compact: bool = None):
     """Enable or disable traceback in error messages.
-    
+
     Args:
         enabled: Whether to enable traceback
         depth: Maximum traceback depth (None = use current, 0 = all)
         show_locals: Whether to show local variables
         compact: Whether to use compact format
-    
+
     Example:
         enable_traceback(True, depth=5, show_locals=True)
     """
@@ -1203,10 +1168,9 @@ def enable_traceback(enabled: bool = True, depth: int = None, show_locals: bool 
     if compact is not None:
         _global_manager.config.compact_traceback = compact
 
-
 def get_traceback_config() -> Dict[str, Any]:
     """Get current traceback configuration.
-    
+
     Returns:
         Dictionary with traceback configuration settings
     """
@@ -1217,16 +1181,15 @@ def get_traceback_config() -> Dict[str, Any]:
         'compact_traceback': _global_manager.config.compact_traceback,
     }
 
-
 @contextmanager
 def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool = False):
     """Context manager for temporarily enabling enhanced traceback.
-    
+
     Args:
         depth: Maximum traceback depth (0 = all)
         show_locals: Whether to show local variables
         compact: Whether to use compact format
-        
+
     Example:
         with enhanced_traceback(depth=0, show_locals=True):
             # Code with enhanced error reporting
@@ -1236,7 +1199,7 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
     old_depth = _global_manager.config.traceback_depth
     old_locals = _global_manager.config.show_locals
     old_compact = _global_manager.config.compact_traceback
-    
+
     try:
         _global_manager.config.include_traceback = True
         _global_manager.config.traceback_depth = depth
@@ -1248,7 +1211,6 @@ def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool =
         _global_manager.config.traceback_depth = old_depth
         _global_manager.config.show_locals = old_locals
         _global_manager.config.compact_traceback = old_compact
-
 
 # Export all functions
 __all__ = [

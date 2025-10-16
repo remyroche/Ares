@@ -21,7 +21,7 @@ Built on existing utilities:
 - Uses data_processing_utils.py for data handling
 - Leverages math_validation.py for safe operations
 - Integrates with common_operations.py for robust error handling
-- Uses m1_gpu_utils.py for 
+- Uses m1_gpu_utils.py for
 - Leverages m1_memory_optimizer.py for memory management
 """
 
@@ -80,7 +80,7 @@ class DataQualityUtilities:
         """Initialize data quality utilities with configuration."""
         self.config = config or {}
         self.logger = logger.getChild('DataQuality')
-        
+
         _LOGGER.info("🚀 Initializing DataQualityUtilities...")
 
         # Configuration defaults
@@ -104,7 +104,7 @@ class DataQualityUtilities:
         # Initialize utilities
         self.gpu_manager = M1GPUManager() if self.enable_gpu else None
         self.memory_optimizer = M1MemoryOptimizer() if self.enable_memory_optimization else None
-        
+
         _LOGGER.info(f"⚙️ Configuration - Outlier contamination: {self.outlier_contamination}")
         _LOGGER.info(f"⚙️ Configuration - Missing threshold: {self.missing_threshold}")
         _LOGGER.info(f"⚙️ Configuration - Drift threshold: {self.drift_threshold}")
@@ -128,7 +128,7 @@ class DataQualityUtilities:
         """
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting automated outlier detection using {method}...")
-        
+
         try:
             if contamination is None:
                 contamination = self.outlier_contamination
@@ -164,7 +164,7 @@ class DataQualityUtilities:
             # Calculate summary statistics
             outlier_count = len(outlier_results['outlier_indices'])
             outlier_percentage = (outlier_count / len(X_array)) * 100 if len(X_array) > 0 else 0
-            
+
             outlier_results['summary'] = {
                 'total_samples': len(X_array),
                 'outlier_count': outlier_count,
@@ -175,7 +175,7 @@ class DataQualityUtilities:
             execution_time = time.time() - start_time
             _LOGGER.info(f"✅ Outlier detection completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Results - Total samples: {len(X_array)}, Outliers: {outlier_count} ({outlier_percentage:.2f}%)")
-            
+
             if outlier_count > 0:
                 _LOGGER.warning(f"⚠️ Found {outlier_count} outliers ({outlier_percentage:.2f}%) - consider data cleaning")
             else:
@@ -203,7 +203,7 @@ class DataQualityUtilities:
         """
         start_time = time.time()
         _LOGGER.info(f"🔍 Starting missing value analysis...")
-        
+
         try:
             if missing_threshold is None:
                 missing_threshold = self.missing_threshold
@@ -270,7 +270,7 @@ class DataQualityUtilities:
             execution_time = time.time() - start_time
             _LOGGER.info(f"✅ Missing value analysis completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Results - Severity: {severity}, Total missing: {total_missing_pct:.2f}%")
-            
+
             if severity in ['high', 'critical']:
                 _LOGGER.warning(f"⚠️ High missing value severity ({severity}) - action required")
             else:
@@ -1008,7 +1008,7 @@ class DataQualityUtilities:
     def enhanced_automated_data_cleaning(self, df: pd.DataFrame,
                                        cleaning_config: Optional[Dict[str, Any]] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Enhanced automated data cleaning with advanced strategies and 
+        Enhanced automated data cleaning with advanced strategies and
 
         Args:
             df: DataFrame to clean
@@ -1555,7 +1555,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
                 corr_matrix = np.zeros((X.shape[1], X.shape[1]))
                 for i in range(X.shape[1]):
@@ -1622,16 +1622,16 @@ except ImportError:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1650,8 +1650,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1668,13 +1668,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

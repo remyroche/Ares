@@ -15,6 +15,6 @@ from .vectorized_operations import (
 __all__ = [
     'VectorizedFeatureSelector',
     'OptimizedCorrelationFilter',
-    'OptimizedVarianceFilter', 
+    'OptimizedVarianceFilter',
     'create_vectorized_selector'
 ]

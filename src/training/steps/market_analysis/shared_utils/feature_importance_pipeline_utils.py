@@ -23,7 +23,6 @@ from .feature_importance_integration import (
 
 logger = logging.getLogger(__name__)
 
-
 def create_feature_importance_config_for_pipeline(
     enable_pre_clustering: bool = True,
     enable_post_clustering: bool = True,
@@ -58,7 +57,6 @@ def create_feature_importance_config_for_pipeline(
         save_feature_profiles=True,
         generate_interpretation=True
     )
-
 
 def analyze_features_for_clustering(
     features: np.ndarray,
@@ -151,7 +149,6 @@ def analyze_features_for_clustering(
             'summary': {'analysis_completed': False}
         }
 
-
 def enhance_pipeline_component_with_feature_importance(
     component_instance,
     method_name: str = "execute",
@@ -216,7 +213,6 @@ def enhance_pipeline_component_with_feature_importance(
 
     logger.info(f"✅ Component {type(component_instance).__name__} enhanced with feature importance analysis")
     return component_instance
-
 
 def create_feature_importance_report_summary(
     analysis_results: Dict[str, Any],
@@ -296,7 +292,6 @@ def create_feature_importance_report_summary(
             'analysis_type': 'feature_importance_summary'
         }
 
-
 def validate_feature_importance_integration(
     test_features: np.ndarray,
     test_labels: np.ndarray,
@@ -355,7 +350,6 @@ def validate_feature_importance_integration(
             'analysis_completed': False
         }
 
-
 # Quick integration functions for common use cases
 def quick_regime_feature_analysis(
     features: np.ndarray,
@@ -387,7 +381,6 @@ def quick_regime_feature_analysis(
     except Exception as e:
         logger.error(f"❌ Quick analysis failed: {e}")
         return {}
-
 
 def extract_regime_insights_from_analysis(
     analysis_results: Dict[str, Any],

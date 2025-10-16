@@ -1,7 +1,7 @@
-from typing import Optional
-from typing import List
-from typing import Dict
 from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
 '\nEnhanced Configuration-Driven Architecture System\n\nThis module provides a comprehensive configuration system that replaces\nhardcoded parameters and complex initialization with flexible, version-controlled\nconfiguration files.\n'
 import json
 import logging
@@ -80,7 +80,7 @@ class ConfigurationError(Exception):
 class ConfigurationManager:
     """
     Enhanced configuration manager for pipeline configurations.
-    
+
     Features:
     - Multiple format support (YAML, JSON, Python)
     - Environment-specific configurations
@@ -100,11 +100,11 @@ class ConfigurationManager:
     def load_config(self, config_path: Union[str, Path], environment: Optional[Environment]=None) -> PipelineConfiguration:
         """
         Load pipeline configuration from file.
-        
+
         Args:
             config_path: Path to configuration file
             environment: Environment override
-            
+
         Returns:
             PipelineConfiguration object
         """
@@ -137,7 +137,7 @@ class ConfigurationManager:
     def save_config(self, config: PipelineConfiguration, config_path: Union[str, Path], format: ConfigFormat = ConfigFormat.YAML) -> None:
         """
         Save pipeline configuration to file.
-        
+
         Args:
             config: PipelineConfiguration to save
             config_path: Path to save configuration

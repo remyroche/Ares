@@ -667,10 +667,10 @@ _default_operations_registered = False
 def register_default_custom_operations():
     """Register some useful default custom matrix operations."""
     global _default_operations_registered
-    
+
     if _default_operations_registered:
         return  # Already registered, skip
-    
+
     _default_operations_registered = True
 
     # Matrix condition number with GPU support

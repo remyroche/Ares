@@ -1,7 +1,5 @@
 from src.utils.tprint import tprint
 
-
-
 '\nPrometheus metrics collection utility for training step validators.\n'
 import logging
 from collections import Counter
@@ -10,7 +8,6 @@ from typing import Any
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 from prometheus_client.exposition import start_http_server
 import socket
-
 
 try:
     _PROM_AVAILABLE = True

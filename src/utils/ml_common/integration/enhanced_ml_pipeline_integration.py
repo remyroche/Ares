@@ -27,9 +27,9 @@ from src.utils.logger import get_logger
 
 # Import enhanced components
 from ..monitoring.enhanced_error_detector import (
-    get_global_error_detector, 
-    detect_error, 
-    ErrorCategory, 
+    get_global_error_detector,
+    detect_error,
+    ErrorCategory,
     ErrorSeverity
 )
 from ..optimization.enhanced_hpo_monitor import (
@@ -87,12 +87,12 @@ class PipelineExecution:
 
 class EnhancedMLPipelineIntegration:
     """Enhanced ML pipeline integration system."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced ML pipeline integration."""
         self.config = config or {}
         self.logger = logger.getChild('EnhancedMLPipelineIntegration')
-        
+
         # Initialize enhanced components
         self.error_detector = get_global_error_detector(self.config.get('error_detection', {}))
         self.hpo_monitor = get_global_hpo_monitor(self.config.get('hpo_monitoring', {}))
@@ -100,27 +100,27 @@ class EnhancedMLPipelineIntegration:
             TestConfiguration(**self.config.get('testing', {}))
         )
         self.reporting_system = get_global_reporting_system(self.config.get('reporting', {}))
-        
+
         # Pipeline tracking
         self.active_executions: Dict[str, PipelineExecution] = {}
         self.completed_executions: Dict[str, PipelineExecution] = {}
         self.pipeline_history: deque = deque(maxlen=1000)
-        
+
         # Stage handlers
         self.stage_handlers: Dict[PipelineStage, Callable] = {}
         self.stage_validators: Dict[PipelineStage, Callable] = {}
-        
+
         # Integration state
         self.integration_active = False
         self.integration_thread = None
         self.lock = threading.Lock()
-        
+
         # Performance tracking
         self.performance_metrics: Dict[str, List[float]] = defaultdict(list)
         self.stage_timings: Dict[PipelineStage, List[float]] = defaultdict(list)
-        
+
         self.logger.info("🔗 Enhanced ML Pipeline Integration initialized")
-    
+
     def register_stage_handler(self, stage: PipelineStage, handler: Callable):
         """Register a handler for a pipeline stage."""
         try:
@@ -134,7 +134,7 @@ class EnhancedMLPipelineIntegration:
             }
             detect_error(e, error_context)
             raise
-    
+
     def register_stage_validator(self, stage: PipelineStage, validator: Callable):
         """Register a validator for a pipeline stage."""
         try:
@@ -148,15 +148,15 @@ class EnhancedMLPipelineIntegration:
             }
             detect_error(e, error_context)
             raise
-    
-    def execute_pipeline(self, 
+
+    def execute_pipeline(self,
                         pipeline_name: str,
                         stages: List[PipelineStage],
                         execution_config: Optional[Dict[str, Any]] = None) -> str:
         """Execute a complete ML pipeline with enhanced monitoring."""
         try:
             execution_id = self._generate_execution_id(pipeline_name)
-            
+
             # Create execution tracking
             execution = PipelineExecution(
                 execution_id=execution_id,
@@ -165,12 +165,12 @@ class EnhancedMLPipelineIntegration:
                 status=PipelineStatus.RUNNING,
                 metadata=execution_config or {}
             )
-            
+
             with self.lock:
                 self.active_executions[execution_id] = execution
-            
+
             self.logger.info(f"🚀 Starting pipeline execution: {pipeline_name} ({execution_id})")
-            
+
             # Generate initial report
             self.reporting_system.generate_report(
                 ReportType.TRAINING_PROGRESS,
@@ -183,53 +183,53 @@ class EnhancedMLPipelineIntegration:
                     'config': execution_config
                 }
             )
-            
+
             # Execute stages
             try:
                 for stage in stages:
                     execution.current_stage = stage
                     stage_start_time = time.time()
-                    
+
                     self.logger.info(f"🔄 Executing stage: {stage.value}")
-                    
+
                     # Validate stage prerequisites
                     if stage in self.stage_validators:
                         validation_result = self._validate_stage_prerequisites(stage, execution)
                         if not validation_result['valid']:
                             raise ValueError(f"Stage validation failed: {validation_result['error']}")
-                    
+
                     # Execute stage
                     stage_result = self._execute_stage(stage, execution)
                     execution.stage_results[stage] = stage_result
-                    
+
                     # Track timing
                     stage_duration = time.time() - stage_start_time
                     self.stage_timings[stage].append(stage_duration)
-                    
+
                     # Check for errors
                     if stage_result.get('error_count', 0) > 0:
                         execution.error_count += stage_result['error_count']
-                    
+
                     if stage_result.get('warning_count', 0) > 0:
                         execution.warning_count += stage_result['warning_count']
-                    
+
                     # Generate stage report
                     self._generate_stage_report(stage, stage_result, execution)
-                    
+
                     # Check for pipeline failure conditions
                     if self._should_fail_pipeline(execution):
                         execution.status = PipelineStatus.FAILED
                         break
-                
+
                 # Complete pipeline
                 if execution.status == PipelineStatus.RUNNING:
                     execution.status = PipelineStatus.COMPLETED
                     execution.end_time = datetime.now()
-                
+
             except Exception as e:
                 execution.status = PipelineStatus.FAILED
                 execution.end_time = datetime.now()
-                
+
                 error_context = {
                     'component': 'pipeline_integration',
                     'function': 'execute_pipeline',
@@ -238,7 +238,7 @@ class EnhancedMLPipelineIntegration:
                     'current_stage': execution.current_stage.value if execution.current_stage else None
                 }
                 detect_error(e, error_context)
-                
+
                 # Generate failure report
                 self.reporting_system.generate_report(
                     ReportType.ERROR_ANALYSIS,
@@ -252,9 +252,9 @@ class EnhancedMLPipelineIntegration:
                         'stage_results': execution.stage_results
                     }
                 )
-                
+
                 raise
-            
+
             finally:
                 # Move to completed executions
                 with self.lock:
@@ -262,36 +262,36 @@ class EnhancedMLPipelineIntegration:
                     if execution_id in self.active_executions:
                         del self.active_executions[execution_id]
                     self.pipeline_history.append(execution)
-                
+
                 # Generate final report
                 self._generate_final_pipeline_report(execution)
-            
+
             self.logger.info(f"✅ Pipeline execution completed: {pipeline_name} - {execution.status.value}")
             return execution_id
-            
+
         except Exception as e:
             self.logger.error(f"❌ Pipeline execution failed: {e}")
             raise
-    
+
     def _execute_stage(self, stage: PipelineStage, execution: PipelineExecution) -> Dict[str, Any]:
         """Execute a single pipeline stage with enhanced monitoring."""
         try:
             stage_start_time = time.time()
-            
+
             # Check if handler exists
             if stage not in self.stage_handlers:
                 raise ValueError(f"No handler registered for stage: {stage.value}")
-            
+
             handler = self.stage_handlers[stage]
-            
+
             # Execute stage with error detection
             try:
                 stage_result = handler(execution)
-                
+
                 # Validate stage result
                 if not isinstance(stage_result, dict):
                     stage_result = {'result': stage_result}
-                
+
                 # Add execution metadata
                 stage_result.update({
                     'stage': stage.value,
@@ -302,9 +302,9 @@ class EnhancedMLPipelineIntegration:
                     'error_count': 0,
                     'warning_count': 0
                 })
-                
+
                 return stage_result
-                
+
             except Exception as stage_error:
                 # Detect and classify stage error
                 error_context = {
@@ -314,9 +314,9 @@ class EnhancedMLPipelineIntegration:
                     'execution_id': execution.execution_id,
                     'pipeline_name': execution.pipeline_name
                 }
-                
+
                 error_record = detect_error(stage_error, error_context)
-                
+
                 # Create stage result with error information
                 stage_result = {
                     'stage': stage.value,
@@ -334,7 +334,7 @@ class EnhancedMLPipelineIntegration:
                         'suggested_actions': error_record.suggested_actions
                     }
                 }
-                
+
                 # Create alert if critical
                 if error_record.severity in [ErrorSeverity.CRITICAL, ErrorSeverity.HIGH]:
                     self.reporting_system.create_alert(
@@ -349,67 +349,67 @@ class EnhancedMLPipelineIntegration:
                             'suggested_actions': error_record.suggested_actions
                         }
                     )
-                
+
                 return stage_result
-                
+
         except Exception as e:
             self.logger.error(f"❌ Stage execution failed: {e}")
             raise
-    
+
     def _validate_stage_prerequisites(self, stage: PipelineStage, execution: PipelineExecution) -> Dict[str, Any]:
         """Validate stage prerequisites."""
         try:
             validator = self.stage_validators[stage]
             validation_result = validator(execution)
-            
+
             if not isinstance(validation_result, dict):
                 validation_result = {'valid': bool(validation_result)}
-            
+
             return validation_result
-            
+
         except Exception as e:
             return {
                 'valid': False,
                 'error': f"Validation failed: {str(e)}"
             }
-    
+
     def _should_fail_pipeline(self, execution: PipelineExecution) -> bool:
         """Determine if pipeline should fail based on error conditions."""
         try:
             # Check error thresholds
             max_errors = self.config.get('max_errors_per_pipeline', 10)
             max_critical_errors = self.config.get('max_critical_errors_per_pipeline', 3)
-            
+
             if execution.error_count > max_errors:
                 self.logger.error(f"❌ Pipeline failed: too many errors ({execution.error_count})")
                 return True
-            
+
             # Check for critical errors in recent stages
             recent_stages = list(execution.stage_results.keys())[-3:]  # Last 3 stages
             critical_errors = 0
-            
+
             for stage in recent_stages:
                 stage_result = execution.stage_results[stage]
                 if 'error' in stage_result:
                     error_severity = stage_result['error'].get('error_severity', 'medium')
                     if error_severity == 'critical':
                         critical_errors += 1
-            
+
             if critical_errors > max_critical_errors:
                 self.logger.error(f"❌ Pipeline failed: too many critical errors ({critical_errors})")
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to check pipeline failure conditions: {e}")
             return False
-    
+
     def _generate_stage_report(self, stage: PipelineStage, stage_result: Dict[str, Any], execution: PipelineExecution):
         """Generate report for a pipeline stage."""
         try:
             report_type = self._get_report_type_for_stage(stage)
-            
+
             self.reporting_system.generate_report(
                 report_type,
                 f"Stage Completed: {stage.value}",
@@ -423,16 +423,16 @@ class EnhancedMLPipelineIntegration:
                     'overall_warning_count': execution.warning_count
                 }
             )
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to generate stage report: {e}")
-    
+
     def _generate_final_pipeline_report(self, execution: PipelineExecution):
         """Generate final pipeline execution report."""
         try:
             # Calculate final metrics
             total_duration = (execution.end_time - execution.start_time).total_seconds() if execution.end_time else 0
-            
+
             final_metrics = {
                 'total_duration': total_duration,
                 'stages_completed': len(execution.stage_results),
@@ -444,9 +444,9 @@ class EnhancedMLPipelineIntegration:
                     for stage in execution.stage_results.keys()
                 }
             }
-            
+
             execution.metrics.update(final_metrics)
-            
+
             # Generate comprehensive report
             self.reporting_system.generate_report(
                 ReportType.COMPREHENSIVE,
@@ -464,10 +464,10 @@ class EnhancedMLPipelineIntegration:
                     'metadata': execution.metadata
                 }
             )
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to generate final pipeline report: {e}")
-    
+
     def _get_report_type_for_stage(self, stage: PipelineStage) -> ReportType:
         """Get appropriate report type for a pipeline stage."""
         if stage == PipelineStage.HPO_OPTIMIZATION:
@@ -478,20 +478,20 @@ class EnhancedMLPipelineIntegration:
             return ReportType.TRAINING_PROGRESS
         else:
             return ReportType.PERFORMANCE_METRICS
-    
+
     def _generate_execution_id(self, pipeline_name: str) -> str:
         """Generate unique execution ID."""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         name_hash = hashlib.md5(pipeline_name.encode()).hexdigest()[:8]
         return f"{pipeline_name}_{timestamp}_{name_hash}"
-    
+
     def get_pipeline_status(self, execution_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a pipeline execution."""
         try:
             execution = self.active_executions.get(execution_id) or self.completed_executions.get(execution_id)
             if not execution:
                 return None
-            
+
             return {
                 'execution_id': execution.execution_id,
                 'pipeline_name': execution.pipeline_name,
@@ -505,31 +505,31 @@ class EnhancedMLPipelineIntegration:
                 'warning_count': execution.warning_count,
                 'metrics': execution.metrics
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get pipeline status: {e}")
             return None
-    
+
     def get_integration_summary(self) -> Dict[str, Any]:
         """Get comprehensive integration summary."""
         try:
             with self.lock:
                 active_count = len(self.active_executions)
                 completed_count = len(self.completed_executions)
-                
+
                 # Calculate success rate
                 successful_executions = sum(
-                    1 for e in self.completed_executions.values() 
+                    1 for e in self.completed_executions.values()
                     if e.status == PipelineStatus.COMPLETED
                 )
                 success_rate = successful_executions / max(1, completed_count)
-                
+
                 # Get component summaries
                 error_summary = self.error_detector.get_error_summary()
                 hpo_summary = self.hpo_monitor.get_monitoring_summary()
                 test_summary = self.testing_framework.get_test_summary()
                 report_summary = self.reporting_system.get_report_summary()
-                
+
                 return {
                     'integration_summary': {
                         'active_executions': active_count,
@@ -556,63 +556,63 @@ class EnhancedMLPipelineIntegration:
                         }
                     }
                 }
-                
+
         except Exception as e:
             self.logger.error(f"❌ Failed to get integration summary: {e}")
             return {'error': str(e)}
-    
+
     def start_integration_monitoring(self):
         """Start integration monitoring."""
         if self.integration_active:
             return
-        
+
         self.integration_active = True
         self.integration_thread = threading.Thread(target=self._integration_monitoring_loop, daemon=True)
         self.integration_thread.start()
-        
+
         self.logger.info("🔗 Integration monitoring started")
-    
+
     def stop_integration_monitoring(self):
         """Stop integration monitoring."""
         self.integration_active = False
         if self.integration_thread:
             self.integration_thread.join(timeout=5)
-        
+
         self.logger.info("🔗 Integration monitoring stopped")
-    
+
     def _integration_monitoring_loop(self):
         """Main integration monitoring loop."""
         while self.integration_active:
             try:
                 # Monitor active executions
                 self._monitor_active_executions()
-                
+
                 # Generate periodic reports
                 self._generate_periodic_integration_reports()
-                
+
                 # Sleep for monitoring interval
                 time.sleep(60)  # Check every minute
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Integration monitoring loop error: {e}")
                 time.sleep(60)
-    
+
     def _monitor_active_executions(self):
         """Monitor active pipeline executions."""
         try:
             current_time = datetime.now()
             timeout_threshold = timedelta(hours=24)  # 24 hour timeout
-            
+
             for execution_id, execution in list(self.active_executions.items()):
                 # Check for timeout
                 if (current_time - execution.start_time) > timeout_threshold:
                     execution.status = PipelineStatus.FAILED
                     execution.end_time = current_time
-                    
+
                     # Move to completed
                     self.completed_executions[execution_id] = execution
                     del self.active_executions[execution_id]
-                    
+
                     # Create timeout alert
                     self.reporting_system.create_alert(
                         AlertLevel.CRITICAL,
@@ -621,12 +621,12 @@ class EnhancedMLPipelineIntegration:
                         "pipeline_monitor",
                         {'execution_id': execution_id}
                     )
-                    
+
                     self.logger.error(f"⏰ Pipeline timeout: {execution.pipeline_name}")
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to monitor active executions: {e}")
-    
+
     def _generate_periodic_integration_reports(self):
         """Generate periodic integration reports."""
         try:
@@ -634,15 +634,15 @@ class EnhancedMLPipelineIntegration:
             current_time = datetime.now()
             if not hasattr(self, '_last_health_report') or \
                (current_time - self._last_health_report).total_seconds() > 3600:
-                
+
                 self.reporting_system.generate_report(
                     ReportType.SYSTEM_HEALTH,
                     "System Health Report",
                     self.get_integration_summary()
                 )
-                
+
                 self._last_health_report = current_time
-                
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to generate periodic reports: {e}")
 
@@ -652,9 +652,9 @@ _global_integration = None
 def get_global_integration(config: Optional[Dict[str, Any]] = None) -> EnhancedMLPipelineIntegration:
     """Get or create global integration instance."""
     global _global_integration
-    
+
     if _global_integration is None:
         _global_integration = EnhancedMLPipelineIntegration(config)
         _global_integration.start_integration_monitoring()
-    
+
     return _global_integration

@@ -46,7 +46,6 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class SRLevel:
     """Support/Resistance level data structure."""
@@ -58,7 +57,6 @@ class SRLevel:
     end_time: pd.Timestamp
     confidence: float = 1.0
     breakout_probability: float = 0.5
-
 
 @dataclass
 class BacktestConfig:
@@ -107,7 +105,6 @@ class BacktestConfig:
         if self.stop_loss_pct <= 0 or self.take_profit_pct <= 0:
             raise ValueError("stop_loss_pct and take_profit_pct must be positive")
 
-
 @dataclass
 class BacktestResult:
     """Results from SR backtesting."""
@@ -144,7 +141,6 @@ class BacktestResult:
 
     # Error information
     error_message: Optional[str] = None
-
 
 class SRBacktestingEngine:
     """
@@ -573,7 +569,6 @@ class SRBacktestingEngine:
         except ImportError:
             return 0.0
 
-
 def get_backtesting_engine(config: Optional[BacktestConfig] = None) -> SRBacktestingEngine:
     """
     Factory function to create SR backtesting engine.
@@ -588,7 +583,6 @@ def get_backtesting_engine(config: Optional[BacktestConfig] = None) -> SRBacktes
         config = BacktestConfig()
 
     return SRBacktestingEngine(config)
-
 
 # Export main classes and functions
 __all__ = [

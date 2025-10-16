@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class HybridRegimeArchitecture(nn.Module):
     """
     Hybrid architecture combining multiple neural approaches for regime detection.
-    
+
     Integrates:
     - Neural ODEs for continuous-time regime evolution
     - Vision Transformers for temporal pattern recognition
@@ -27,42 +27,42 @@ class HybridRegimeArchitecture(nn.Module):
     - Attention mechanisms for feature importance
     - Ensemble methods for robust predictions
     """
-    
+
     def __init__(self, neural_architectures: Dict[str, nn.Module], config: PerfectNASConfig):
         """Initialize hybrid architecture.
-        
+
         Args:
             neural_architectures: Dictionary of neural architectures
             config: Perfect NAS configuration
         """
         super(HybridRegimeArchitecture, self).__init__()
-        
+
         self.config = config
         self.neural_architectures = neural_architectures
         self.n_regimes = config.n_regimes
-        
+
         # Architecture components
         self.neural_ode = neural_architectures.get('neural_ode')
         self.vision_transformer = neural_architectures.get('vision_transformer')
         self.state_space_model = neural_architectures.get('state_space')
-        
+
         # Feature dimensions
         self.input_dim = 64  # Feature extractor output
         self.sequence_length = config.sequence_length
         self.hidden_dim = 128
-        
+
         # Initialize fusion components
         self._initialize_fusion_components()
-        
+
         # Initialize attention mechanisms
         self._initialize_attention_mechanisms()
-        
+
         # Initialize ensemble components
         self._initialize_ensemble_components()
-        
+
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.info("✅ Hybrid Regime Architecture initialized")
-    
+
     def _initialize_fusion_components(self):
         """Initialize components for fusing different architectures."""
         # Feature fusion network
@@ -74,7 +74,7 @@ class HybridRegimeArchitecture(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.1)
         )
-        
+
         # Temporal fusion for sequence data
         self.temporal_fusion = nn.LSTM(
             input_size=self.hidden_dim,
@@ -83,7 +83,7 @@ class HybridRegimeArchitecture(nn.Module):
             batch_first=True,
             dropout=0.1
         )
-        
+
         # Regime classification head
         self.regime_classifier = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim // 2),
@@ -92,7 +92,7 @@ class HybridRegimeArchitecture(nn.Module):
             nn.Linear(self.hidden_dim // 2, self.n_regimes),
             nn.LogSoftmax(dim=-1)
         )
-    
+
     def _initialize_attention_mechanisms(self):
         """Initialize attention mechanisms for feature importance."""
         # Multi-head attention for feature importance
@@ -102,7 +102,7 @@ class HybridRegimeArchitecture(nn.Module):
             dropout=0.1,
             batch_first=True
         )
-        
+
         # Temporal attention for sequence importance
         self.temporal_attention = nn.MultiheadAttention(
             embed_dim=self.hidden_dim,
@@ -110,7 +110,7 @@ class HybridRegimeArchitecture(nn.Module):
             dropout=0.1,
             batch_first=True
         )
-        
+
         # Cross-attention between architectures
         self.cross_attention = nn.MultiheadAttention(
             embed_dim=self.hidden_dim,
@@ -118,12 +118,12 @@ class HybridRegimeArchitecture(nn.Module):
             dropout=0.1,
             batch_first=True
         )
-    
+
     def _initialize_ensemble_components(self):
         """Initialize ensemble components for robust predictions."""
         # Ensemble weights (learnable)
         self.ensemble_weights = nn.Parameter(torch.ones(3) / 3)  # 3 architectures
-        
+
         # Uncertainty estimation
         self.uncertainty_estimator = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim // 2),
@@ -131,7 +131,7 @@ class HybridRegimeArchitecture(nn.Module):
             nn.Linear(self.hidden_dim // 2, 1),
             nn.Sigmoid()
         )
-        
+
         # Regime transition predictor
         self.transition_predictor = nn.Sequential(
             nn.Linear(self.hidden_dim, self.hidden_dim // 2),
@@ -139,7 +139,7 @@ class HybridRegimeArchitecture(nn.Module):
             nn.Linear(self.hidden_dim // 2, self.n_regimes),
             nn.Softmax(dim=-1)
         )
-    
+
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, Any]]:
         """Forward pass through hybrid architecture.
 
@@ -156,7 +156,7 @@ class HybridRegimeArchitecture(nn.Module):
         architecture_outputs = {}
 
         # Process sequence data properly to maintain temporal dimension
-        
+
         # Neural ODE features
         if self.neural_ode is not None:
             try:
@@ -167,19 +167,19 @@ class HybridRegimeArchitecture(nn.Module):
                     ode_input = x[:, t, :]  # (batch_size, input_size)
                     ode_output = self.neural_ode(ode_input)
                     ode_outputs.append(ode_output)
-                
+
                 # Stack outputs: (batch_size, seq_len, output_size)
                 ode_output = torch.stack(ode_outputs, dim=1)
                 # Average over time dimension for features
                 ode_features = ode_output.mean(dim=1)  # (batch_size, output_size)
-                
+
                 architecture_features['neural_ode'] = ode_features
                 architecture_outputs['neural_ode'] = ode_output
             except Exception as e:
                 self.logger.warning(f"Neural ODE forward pass failed: {e}")
                 architecture_features['neural_ode'] = torch.zeros(batch_size, self.hidden_dim)
                 architecture_outputs['neural_ode'] = torch.zeros(batch_size, self.n_regimes)
-        
+
         # Vision Transformer features
         if self.vision_transformer is not None:
             try:
@@ -192,7 +192,7 @@ class HybridRegimeArchitecture(nn.Module):
                 self.logger.warning(f"Vision Transformer forward pass failed: {e}")
                 architecture_features['vision_transformer'] = torch.zeros(batch_size, self.hidden_dim)
                 architecture_outputs['vision_transformer'] = torch.zeros(batch_size, self.n_regimes)
-        
+
         # State Space Model features
         if self.state_space_model is not None:
             try:
@@ -209,7 +209,7 @@ class HybridRegimeArchitecture(nn.Module):
                 self.logger.warning(f"State Space Model forward pass failed: {e}")
                 architecture_features['state_space'] = torch.zeros(batch_size, self.hidden_dim)
                 architecture_outputs['state_space'] = torch.zeros(batch_size, self.n_regimes)
-        
+
         # Process the entire sequence at once to maintain proper tensor flow
         # This approach is more efficient and maintains proper gradient flow
 
@@ -322,7 +322,7 @@ class HybridRegimeArchitecture(nn.Module):
         }
 
         return regime_logits, metadata
-    
+
     def _fuse_architecture_features(self, architecture_features: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Fuse features from different architectures."""
         try:
@@ -332,73 +332,73 @@ class HybridRegimeArchitecture(nn.Module):
                 if features.shape[-1] != self.hidden_dim:
                     # Project to hidden dimension
                     if not hasattr(self, f'{arch_name}_projection'):
-                        setattr(self, f'{arch_name}_projection', 
+                        setattr(self, f'{arch_name}_projection',
                                nn.Linear(features.shape[-1], self.hidden_dim).to(features.device))
                     projection = getattr(self, f'{arch_name}_projection')
                     features = projection(features)
                 aligned_features.append(features)
-            
+
             # Concatenate features
             if len(aligned_features) > 1:
                 concatenated = torch.cat(aligned_features, dim=-1)
             else:
                 concatenated = aligned_features[0]
-            
+
             # Apply fusion network
             fused = self.feature_fusion(concatenated)
-            
+
             return fused
-            
+
         except Exception as e:
             self.logger.warning(f"Feature fusion failed: {e}")
             # Return first available features
             return list(architecture_features.values())[0]
-    
-    def _apply_attention_mechanisms(self, features: torch.Tensor, 
+
+    def _apply_attention_mechanisms(self, features: torch.Tensor,
                                   input_sequence: torch.Tensor) -> torch.Tensor:
         """Apply attention mechanisms to features."""
         try:
             # Reshape features for attention
             if len(features.shape) == 2:
                 features = features.unsqueeze(1)  # Add sequence dimension
-            
+
             # Feature attention
             attended_features, attention_weights = self.feature_attention(
                 features, features, features
             )
-            
+
             # Temporal attention (if sequence data available)
             if input_sequence.shape[1] > 1:  # Has sequence dimension
                 # Project input sequence to hidden dimension
                 if not hasattr(self, 'input_projection'):
                     self.input_projection = nn.Linear(input_sequence.shape[-1], self.hidden_dim)
-                
+
                 projected_input = self.input_projection(input_sequence)
                 temporal_attended, temporal_weights = self.temporal_attention(
                     attended_features, projected_input, projected_input
                 )
                 attended_features = temporal_attended
-            
+
             # Global average pooling
             if len(attended_features.shape) > 2:
                 attended_features = attended_features.mean(dim=1)
-            
+
             return attended_features
-            
+
         except Exception as e:
             self.logger.warning(f"Attention mechanism failed: {e}")
             return features
-    
+
     def _calculate_ensemble_predictions(self, architecture_outputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Calculate ensemble predictions from different architectures."""
         try:
             if not architecture_outputs:
                 # Return default output if no architectures available
                 return torch.zeros(1, self.n_regimes)
-            
+
             # Normalize ensemble weights
             weights = F.softmax(self.ensemble_weights, dim=0)
-            
+
             # Filter out tuple outputs and convert to tensors
             valid_outputs = {}
             for arch_name, output in architecture_outputs.items():
@@ -414,14 +414,14 @@ class HybridRegimeArchitecture(nn.Module):
                 else:
                     self.logger.warning(f"Skipping {arch_name} due to invalid output type: {type(output)}")
                     continue
-            
+
             if not valid_outputs:
                 return torch.zeros(1, self.n_regimes)
-            
+
             # Get the first valid output to determine shape
             first_output = list(valid_outputs.values())[0]
             ensemble_output = torch.zeros_like(first_output)
-            
+
             # Weighted combination of outputs
             for i, (arch_name, output) in enumerate(valid_outputs.items()):
                 if i < len(weights):
@@ -434,11 +434,11 @@ class HybridRegimeArchitecture(nn.Module):
                             # If shapes are incompatible, skip this architecture
                             self.logger.warning(f"Skipping {arch_name} due to shape mismatch: {output.shape} vs {ensemble_output.shape}")
                             continue
-                    
+
                     ensemble_output += weights[i] * output
-            
+
             return ensemble_output
-            
+
         except Exception as e:
             self.logger.warning(f"Ensemble calculation failed: {e}")
             # Return first available output or default
@@ -449,47 +449,47 @@ class HybridRegimeArchitecture(nn.Module):
                 elif isinstance(first_output, torch.Tensor):
                     return first_output
             return torch.zeros(1, self.n_regimes)
-    
+
     def get_architecture_importance(self, x: torch.Tensor) -> Dict[str, float]:
         """Get importance scores for different architectures."""
         try:
             with torch.no_grad():
                 # Get ensemble weights
                 weights = F.softmax(self.ensemble_weights, dim=0)
-                
+
                 importance_scores = {}
                 architecture_names = ['neural_ode', 'vision_transformer', 'state_space']
-                
+
                 for i, name in enumerate(architecture_names):
                     if i < len(weights):
                         importance_scores[name] = weights[i].item()
                     else:
                         importance_scores[name] = 0.0
-                
+
                 return importance_scores
-                
+
         except Exception as e:
             self.logger.warning(f"Architecture importance calculation failed: {e}")
             return {'neural_ode': 0.33, 'vision_transformer': 0.33, 'state_space': 0.34}
-    
+
     def get_feature_importance(self, x: torch.Tensor) -> torch.Tensor:
         """Get feature importance scores."""
         try:
             with torch.no_grad():
                 # Forward pass to get attention weights
                 _, metadata = self.forward(x)
-                
+
                 # Extract attention weights (if available)
                 if 'attention_weights' in metadata:
                     return torch.tensor(metadata['attention_weights'])
                 else:
                     # Return uniform importance
                     return torch.ones(x.shape[-1]) / x.shape[-1]
-                    
+
         except Exception as e:
             self.logger.warning(f"Feature importance calculation failed: {e}")
             return torch.ones(x.shape[-1]) / x.shape[-1]
-    
+
     def predict_regime_evolution(self, x: torch.Tensor, time_steps: int = 10) -> torch.Tensor:
         """Predict regime evolution over time."""
         try:
@@ -497,32 +497,32 @@ class HybridRegimeArchitecture(nn.Module):
                 # Get current regime prediction
                 regime_logits, metadata = self.forward(x)
                 current_regime = torch.softmax(regime_logits, dim=-1)
-                
+
                 # Predict future regimes using transition probabilities
                 transition_probs = torch.tensor(metadata['transition_probabilities'])
                 regime_evolution = [current_regime]
-                
+
                 for _ in range(time_steps - 1):
                     # Apply transition matrix
                     next_regime = torch.matmul(regime_evolution[-1], transition_probs)
                     regime_evolution.append(next_regime)
-                
+
                 return torch.stack(regime_evolution)
-                
+
         except Exception as e:
             self.logger.warning(f"Regime evolution prediction failed: {e}")
             # Return current regime repeated
             regime_logits, _ = self.forward(x)
             current_regime = torch.softmax(regime_logits, dim=-1)
             return current_regime.unsqueeze(0).repeat(time_steps, 1, 1)
-    
+
     def get_uncertainty_estimates(self, x: torch.Tensor) -> torch.Tensor:
         """Get uncertainty estimates for predictions."""
         try:
             with torch.no_grad():
                 _, metadata = self.forward(x)
                 return torch.tensor(metadata['uncertainty_estimates'])
-                
+
         except Exception as e:
             self.logger.warning(f"Uncertainty estimation failed: {e}")
             return torch.ones(x.shape[0], 1) * 0.5

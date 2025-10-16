@@ -38,10 +38,10 @@ class TacticianTrainingPipelineResult:
 
 class TacticianTrainingPipeline:
     """Tactician Training Pipeline - Stub Implementation."""
-    
+
     def __init__(self, config: TacticianTrainingPipelineConfig):
         self.config = config
-    
+
     async def execute(self) -> TacticianTrainingPipelineResult:
         """Execute the Tactician training pipeline."""
         # This is a stub implementation

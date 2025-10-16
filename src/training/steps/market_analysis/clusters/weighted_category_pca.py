@@ -68,7 +68,6 @@ from enum import Enum
 
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning
 
-
 def robust_pca_rpca(X: np.ndarray, lambda_val: float = 0.1, max_iter: int = 100, tol: float = 1e-6) -> Tuple[np.ndarray, np.ndarray]:
     """
     Robust PCA using Principal Component Pursuit (PCP) algorithm.
@@ -153,7 +152,6 @@ def robust_pca_rpca(X: np.ndarray, lambda_val: float = 0.1, max_iter: int = 100,
 
     return L, S
 
-
 class NormalizationType(Enum):
     """Different normalization strategies for feature categories."""
     STANDARD = "standard"      # StandardScaler - mean=0, std=1
@@ -162,13 +160,11 @@ class NormalizationType(Enum):
     POWER = "power"            # PowerTransformer - Yeo-Johnson transformation
     NONE = "none"              # No normalization
 
-
 class RobustPCAType(Enum):
     """Different robust PCA variants for outlier handling."""
     STANDARD = "standard"      # Standard PCA
     RPCA = "rpca"              # Robust PCA (low-rank + sparse decomposition)
     HUBER = "huber"            # Huberized PCA (robust to outliers)
-
 
 @dataclass
 class CategoryConfig:
@@ -179,7 +175,6 @@ class CategoryConfig:
     features: List[str]  # Feature names in this category
     normalization_type: NormalizationType = NormalizationType.STANDARD  # Type of normalization to apply
     robust_pca_type: RobustPCAType = RobustPCAType.STANDARD  # Type of PCA to use for robustness
-
 
 # Default feature categorization based on actual feature_engineer.py output
 # NOTE: Momentum features (momentum_10, momentum_20, roc_10, roc_20, vwap_momentum_*)
@@ -236,7 +231,7 @@ DEFAULT_FEATURE_CATEGORIES = {
         features=[
             # Oscillators
             'rsi_14', 'stoch_k', 'stoch_d', 'williams_r', 'cci',
-            # Trend indicators  
+            # Trend indicators
             'macd', 'macd_signal', 'macd_histogram', 'adx',
             # Moving averages
             'close_sma_5', 'close_sma_20', 'close_ema_12', 'close_ema_26',
@@ -259,28 +254,27 @@ DEFAULT_FEATURE_CATEGORIES = {
     )
 }
 
-
 class WeightedCategoryPCA:
     """
     Apply weighted PCA separately to feature categories for enhanced clustering.
-    
+
     This approach:
     1. Divides features into meaningful categories (returns, volatility, etc.)
     2. Applies PCA within each category to extract principal components
     3. Weights components by category importance
     4. Combines weighted components into final feature vector
-    
+
     Benefits:
     - Better regime separation through focused dimensionality reduction
     - Noise reduction via PCA filtering
     - Interpretable components within categories
     - Computational efficiency (fewer dimensions)
     """
-    
+
     def __init__(self, categories_config: Optional[Dict[str, CategoryConfig]] = None):
         """
         Initialize weighted category PCA transformer.
-        
+
         Parameters:
         -----------
         categories_config : dict, optional
@@ -294,18 +288,18 @@ class WeightedCategoryPCA:
         self.original_feature_names: Optional[List[str]] = None
         self.transformed_feature_names: Optional[List[str]] = None
         self.is_fitted = False
-        
+
     def fit(self, features: np.ndarray, feature_names: List[str]) -> 'WeightedCategoryPCA':
         """
         Fit PCA transformers for each category.
-        
+
         Parameters:
         -----------
         features : np.ndarray, shape (n_samples, n_features)
             Input feature matrix
         feature_names : list of str
             List of feature names corresponding to columns
-            
+
         Returns:
         --------
         self : WeightedCategoryPCA
@@ -313,28 +307,28 @@ class WeightedCategoryPCA:
         """
         if features is None or features.size == 0:
             raise ValueError("Features array is None or empty")
-        
+
         if len(feature_names) != features.shape[1]:
             raise ValueError(f"Feature names length ({len(feature_names)}) doesn't match "
                            f"features shape[1] ({features.shape[1]})")
-        
+
         self.original_feature_names = feature_names
-        
+
         # Map feature names to indices (case-insensitive partial matching)
         name_to_idx = {name.lower(): idx for idx, name in enumerate(feature_names)}
-        
+
         tprint("\n🔧 Fitting Weighted Per-Category PCA...", "INFO")
         tprint("="*80, "INFO")
-        
+
         transformed_feature_names = []
         total_original_features = 0
         total_pca_components = 0
-        
+
         for cat_name, cat_config in self.categories_config.items():
             # Find feature indices for this category (fuzzy matching)
             cat_feature_names = cat_config.features
             cat_indices = []
-            
+
             for cat_feat in cat_feature_names:
                 cat_feat_lower = cat_feat.lower()
                 # Try exact match first
@@ -347,37 +341,37 @@ class WeightedCategoryPCA:
                             if idx not in cat_indices:  # Avoid duplicates
                                 cat_indices.append(idx)
                                 break
-            
+
             if not cat_indices:
                 tprint(f"⚠️  Warning: No features found for category '{cat_name}', skipping", "WARNING")
                 continue
-            
+
             self.feature_indices[cat_name] = cat_indices
             total_original_features += len(cat_indices)
-            
+
             # Extract category features
             cat_features = features[:, cat_indices]
-            
+
             # Check for constant features
             feature_stds = np.std(cat_features, axis=0)
             constant_mask = feature_stds > 1e-10
-            
+
             if not np.any(constant_mask):
                 tprint(f"⚠️  Warning: All features in category '{cat_name}' are constant, skipping", "WARNING")
                 continue
-            
+
             # Remove constant features
             if not np.all(constant_mask):
                 cat_features = cat_features[:, constant_mask]
                 cat_indices = [cat_indices[i] for i in range(len(cat_indices)) if constant_mask[i]]
                 self.feature_indices[cat_name] = cat_indices
-            
+
             # Apply category-specific normalization
             cat_config = self.categories_config[cat_name]
             scaler = self._get_scaler_for_category(cat_config.normalization_type)
             cat_features_scaled = scaler.fit_transform(cat_features)
             self.scalers[cat_name] = scaler
-            
+
             # Determine number of components
             if variance_threshold >= 1.0:
                 # Treat as number of components
@@ -401,15 +395,15 @@ class WeightedCategoryPCA:
                 if n_components < pca.n_components_:
                     pca = self._get_pca_for_category(cat_config.robust_pca_type, n_components)
                     pca.fit(cat_features_scaled)
-            
+
             self.pca_transformers[cat_name] = pca
             total_pca_components += pca.n_components_
-            
+
             # Create component names
             for i in range(pca.n_components_):
                 comp_name = f"{cat_name}_pc{i+1}"
                 transformed_feature_names.append(comp_name)
-            
+
             # Log results
             explained_var = pca.explained_variance_ratio_.sum() if hasattr(pca, 'explained_variance_ratio_') else 0.0
             norm_type = cat_config.normalization_type.value
@@ -417,10 +411,10 @@ class WeightedCategoryPCA:
             tprint(f"✅ {cat_name:12s}: {len(cat_indices):3d} features → "
                   f"{pca.n_components_:3d} components ({explained_var:6.2%} variance, "
                   f"norm={norm_type:8s}, pca={pca_type:5s}, weight={cat_config.weight:.2f})", "SUCCESS")
-        
+
         self.transformed_feature_names = transformed_feature_names
         self.is_fitted = True
-        
+
         # Summary
         tprint("="*80, "INFO")
         tprint(f"📊 PCA Summary:", "SUCCESS")
@@ -430,7 +424,7 @@ class WeightedCategoryPCA:
         reduction = (1 - total_pca_components / features.shape[1]) * 100
         tprint(f"   Dimensionality reduction: {reduction:.1f}%", "SUCCESS")
         tprint("="*80, "INFO")
-        
+
         return self
 
     def _get_scaler_for_category(self, normalization_type: NormalizationType):
@@ -526,12 +520,12 @@ class WeightedCategoryPCA:
     def transform(self, features: np.ndarray) -> np.ndarray:
         """
         Transform features using fitted PCA transformers with category weights.
-        
+
         Parameters:
         -----------
         features : np.ndarray, shape (n_samples, n_features)
             Input feature matrix
-            
+
         Returns:
         --------
         transformed_features : np.ndarray, shape (n_samples, total_pca_components)
@@ -539,52 +533,52 @@ class WeightedCategoryPCA:
         """
         if not self.is_fitted:
             raise ValueError("WeightedCategoryPCA must be fitted before transform")
-        
+
         if features.shape[1] != len(self.original_feature_names):
             raise ValueError(f"Feature dimension mismatch: expected {len(self.original_feature_names)}, "
                            f"got {features.shape[1]}")
-        
+
         transformed_parts = []
-        
+
         for cat_name, cat_config in self.categories_config.items():
             if cat_name not in self.feature_indices:
                 continue
-            
+
             # Extract category features
             cat_indices = self.feature_indices[cat_name]
             cat_features = features[:, cat_indices]
-            
+
             # Standardize
             cat_features_scaled = self.scalers[cat_name].transform(cat_features)
-            
+
             # Apply PCA
             cat_pca = self.pca_transformers[cat_name].transform(cat_features_scaled)
-            
+
             # Apply category weight (use sqrt for variance weighting)
             category_weight = cat_config.weight
             weighted_pca = cat_pca * np.sqrt(category_weight)
-            
+
             transformed_parts.append(weighted_pca)
-        
+
         # Concatenate all weighted PCA components
         final_features = np.hstack(transformed_parts)
-        
+
         # L2 normalization for unit scale (per sample)
         norms = np.linalg.norm(final_features, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1, norms)  # Avoid division by zero
         final_features = final_features / norms
-        
+
         return final_features
-    
+
     def fit_transform(self, features: np.ndarray, feature_names: List[str]) -> np.ndarray:
         """Fit and transform in one step."""
         self.fit(features, feature_names)
         return self.transform(features)
-    
+
     def get_component_summary(self) -> Dict[str, Dict]:
         """
         Get summary of PCA components per category.
-        
+
         Returns:
         --------
         summary : dict
@@ -592,7 +586,7 @@ class WeightedCategoryPCA:
         """
         if not self.is_fitted:
             raise ValueError("WeightedCategoryPCA must be fitted before getting summary")
-        
+
         summary = {}
         for cat_name, pca in self.pca_transformers.items():
             cat_config = self.categories_config[cat_name]
@@ -605,48 +599,47 @@ class WeightedCategoryPCA:
                 'total_variance_explained': float(pca.explained_variance_ratio_.sum())
             }
         return summary
-    
+
     def get_feature_names_out(self) -> List[str]:
         """Get transformed feature names."""
         if not self.is_fitted:
             raise ValueError("WeightedCategoryPCA must be fitted first")
         return self.transformed_feature_names
-    
+
     def save(self, filepath: str):
         """Save fitted transformer to disk."""
         if not self.is_fitted:
             raise ValueError("WeightedCategoryPCA must be fitted before saving")
-        
+
         with open(filepath, 'wb') as f:
             pickle.dump(self, f)
-        
+
         tprint(f"✅ Saved WeightedCategoryPCA to {filepath}", "SUCCESS")
-    
+
     @staticmethod
     def load(filepath: str) -> 'WeightedCategoryPCA':
         """Load fitted transformer from disk."""
         with open(filepath, 'rb') as f:
             transformer = pickle.load(f)
-        
+
         if not transformer.is_fitted:
             raise ValueError("Loaded transformer is not fitted")
-        
+
         tprint(f"✅ Loaded WeightedCategoryPCA from {filepath}", "SUCCESS")
         return transformer
-
 
 def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, CategoryConfig]:
     """
     Automatically create feature categories based on feature names.
-    
+
     This is a fallback when specific feature lists are not available.
     Uses keyword matching to categorize features.
-    
+
     Parameters:
     -----------
     feature_names : list of str
         List of all feature names
-        
+
     Returns:
     --------
     categories : dict
@@ -657,17 +650,17 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
     volatility_keywords = ['volatility', 'vol', 'variance', 'std', 'atr', 'bollinger', 'garch']
     volume_keywords = ['volume', 'turnover', 'liquidity', 'dollar_volume', 'obv', 'vwap']
     technical_keywords = ['rsi', 'macd', 'stochastic', 'adx', 'cci', 'ma_', 'sma', 'ema']
-    
+
     # Categorize features
     returns_features = []
     volatility_features = []
     volume_features = []
     technical_features = []
     uncategorized_features = []
-    
+
     for feat_name in feature_names:
         feat_lower = feat_name.lower()
-        
+
         if any(kw in feat_lower for kw in returns_keywords):
             returns_features.append(feat_name)
         elif any(kw in feat_lower for kw in volatility_keywords):
@@ -678,7 +671,7 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
             technical_features.append(feat_name)
         else:
             uncategorized_features.append(feat_name)
-    
+
     # Distribute uncategorized features (split evenly)
     if uncategorized_features:
         n_per_category = len(uncategorized_features) // 4
@@ -686,10 +679,10 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
         volatility_features.extend(uncategorized_features[n_per_category:2*n_per_category])
         volume_features.extend(uncategorized_features[2*n_per_category:3*n_per_category])
         technical_features.extend(uncategorized_features[3*n_per_category:])
-    
+
     # Create category configs
     categories = {}
-    
+
     if returns_features:
         categories['returns'] = CategoryConfig(
             description='Return-based features (auto-detected)',
@@ -699,7 +692,7 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
             normalization_type=NormalizationType.STANDARD,  # Returns are usually well-behaved
             robust_pca_type=RobustPCAType.STANDARD  # Standard PCA for clean return data
         )
-    
+
     if volatility_features:
         categories['volatility'] = CategoryConfig(
             description='Volatility features (auto-detected)',
@@ -709,7 +702,7 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
             normalization_type=NormalizationType.ROBUST,  # Volatility can have outliers
             robust_pca_type=RobustPCAType.RPCA  # Robust PCA for noisy volatility data
         )
-    
+
     if volume_features:
         categories['volume'] = CategoryConfig(
             description='Volume features (auto-detected)',
@@ -719,7 +712,7 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
             normalization_type=NormalizationType.ROBUST,  # Volume can have extreme values
             robust_pca_type=RobustPCAType.RPCA  # Robust PCA for extreme volume data
         )
-    
+
     if technical_features:
         categories['technical'] = CategoryConfig(
             description='Technical indicators (auto-detected)',
@@ -729,11 +722,11 @@ def create_feature_categories_from_names(feature_names: List[str]) -> Dict[str, 
             normalization_type=NormalizationType.POWER,  # Technical indicators often need power transformation
             robust_pca_type=RobustPCAType.STANDARD  # Standard PCA works well for most technical indicators
         )
-    
+
     tprint(f"\n📊 Auto-detected feature categories:", "INFO")
     tprint(f"   Returns: {len(returns_features)} features", "INFO")
     tprint(f"   Volatility: {len(volatility_features)} features", "INFO")
     tprint(f"   Volume: {len(volume_features)} features", "INFO")
     tprint(f"   Technical: {len(technical_features)} features", "INFO")
-    
+
     return categories

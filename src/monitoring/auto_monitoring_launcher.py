@@ -49,27 +49,27 @@ class AutoMonitoringLauncher:
         """
         try:
             self.logger.info('🚀 Launching Auto Enhanced Monitoring System...')
-            
+
             # Get environment settings
             env_settings = get_environment_settings()
-            
+
             # Get trading mode
             self.trading_mode = os.environ.get('TRADING_MODE', env_settings.trading_environment).upper()
-            
+
             # Check if monitoring is enabled
             monitoring_config = env_settings.get_enhanced_monitoring_config()
             if not monitoring_config.get('enable_enhanced_monitoring', True):
                 self.logger.info('⚠️ Enhanced monitoring is disabled in configuration')
                 return True
-            
+
             # Initialize monitoring integration
             self.monitoring_integration = TradingModeMonitoringIntegration()
             success = await self.monitoring_integration.initialize()
-            
+
             if success:
                 self.is_launched = True
                 self.launch_time = datetime.now()
-                
+
                 self.logger.info('✅ Auto Enhanced Monitoring System launched successfully')
                 self.logger.info(f'   📊 Trading Mode: {self.trading_mode}')
                 self.logger.info(f'   🕐 Launch Time: {self.launch_time}')
@@ -77,15 +77,15 @@ class AutoMonitoringLauncher:
                 self.logger.info('   📈 Ensemble and ML model tracking active')
                 self.logger.info('   📋 Daily and monthly CSV exports configured')
                 self.logger.info('   🎯 Automatic trade decision capture enabled')
-                
+
                 # Log configuration details
                 self._log_monitoring_configuration(monitoring_config)
-                
+
                 return True
             else:
                 self.logger.warning('⚠️ Failed to launch Enhanced Monitoring System')
                 return False
-                
+
         except Exception as e:
             self.logger.exception(f'❌ Auto Enhanced Monitoring System launch failed: {e}')
             return False
@@ -125,7 +125,7 @@ class AutoMonitoringLauncher:
                 return
 
             await self.monitoring_integration.record_trade_decision(trade_data, trading_mode)
-            
+
         except Exception as e:
             self.logger.exception(f'Error capturing trade decision: {e}')
 
@@ -150,7 +150,7 @@ class AutoMonitoringLauncher:
                 return
 
             await self.monitoring_integration.update_performance_metrics(performance_data, model_id)
-            
+
         except Exception as e:
             self.logger.exception(f'Error updating performance: {e}')
 
@@ -175,7 +175,7 @@ class AutoMonitoringLauncher:
                 return
 
             await self.monitoring_integration.update_ensemble_performance(ensemble_data, ensemble_id)
-            
+
         except Exception as e:
             self.logger.exception(f'Error updating ensemble: {e}')
 
@@ -226,14 +226,14 @@ class AutoMonitoringLauncher:
                 'monitoring_active': self.is_monitoring_active()
             }
         }
-        
+
         if self.monitoring_integration:
             try:
                 integration_status = self.monitoring_integration.get_system_status()
                 status['monitoring_integration_status'] = integration_status
             except Exception as e:
                 status['monitoring_integration_status'] = {'error': str(e)}
-        
+
         return status
 
     @handles_errors(
@@ -244,14 +244,14 @@ class AutoMonitoringLauncher:
         """Stop the auto monitoring launcher."""
         try:
             self.logger.info('🛑 Stopping Auto Enhanced Monitoring System...')
-            
+
             if self.monitoring_integration:
                 await self.monitoring_integration.stop()
                 self.logger.info('🔍 Monitoring integration stopped')
-            
+
             self.is_launched = False
             self.logger.info('✅ Auto Enhanced Monitoring System stopped successfully')
-            
+
         except Exception as e:
             self.logger.exception(f'Error stopping auto monitoring launcher: {e}')
 
@@ -266,11 +266,11 @@ async def launch_auto_monitoring() -> bool:
         bool: True if launch successful, False otherwise
     """
     global _auto_monitoring_launcher
-    
+
     try:
         if _auto_monitoring_launcher is None:
             _auto_monitoring_launcher = AutoMonitoringLauncher()
-        
+
         return await _auto_monitoring_launcher.launch()
     except Exception as e:
         system_logger.exception(f'Error launching auto monitoring: {e}')

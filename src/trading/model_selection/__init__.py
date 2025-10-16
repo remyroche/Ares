@@ -20,7 +20,7 @@ from .model_selector_service import (
 
 __all__ = [
     'ModelSelectorService',
-    'ModelSelectionResult', 
+    'ModelSelectionResult',
     'TradingModelConfig',
     'get_model_selector_service',
     'select_models_for_trading'

@@ -66,17 +66,17 @@ class Supervisor:
             msg = f'Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}'
             raise ValueError(msg)
         self.model_manager = ModelManager(database_manager = self.db_manager, performance_reporter = self.performance_reporter)
-        
+
         # Live trading utilities
         self.model_manager: ModelManager | None = None
         self.selected_models: dict[str, str] = {}
         self.model_cache: dict[str, Any] = {}
-        
+
         # Performance monitoring for live trading
         self.performance_monitor: PerformanceMonitor | None = None
         self.global_monitor = global_monitor
         self.supervision_cache: dict[str, Any] = {}
-        
+
         if self.trader:
             self.dependency_container.register('sentinel', self.component_builder.build_sentinel(self.trader, self.state_manager))
             self.dependency_container.register('analyst', self.component_builder.build_analyst(self.trader, self.state_manager))
@@ -205,22 +205,22 @@ class MainSupervisor:
     async def initialize(self) -> bool:
         try:
             self.logger.info("Initializing Main Supervisor...")
-            
+
             # Load optimized S/R parameters from step 2.5
             self.logger.info("Loading optimized S/R parameters...")
             initialize_sr_parameters(self.config)
-            
+
             await self._load_supervisor_configuration()
             if not self._validate_configuration():
                 self.logger.error('Invalid configuration for main supervisor')
                 return False
-            
+
             # Initialize live trading utilities
             await self._initialize_live_trading_utilities()
-            
+
             # Initialize performance monitoring
             await self._initialize_performance_monitoring()
-            
+
             self.logger.info('✅ Main Supervisor initialization completed successfully')
             return True
         except Exception as e:
@@ -308,12 +308,12 @@ class MainSupervisor:
         try:
             self.logger.info("Initializing live trading utilities...")
             tprint("Initializing live trading utilities...")
-            
+
             # Initialize Model Manager for model selection and loading
             self.model_manager = ModelManager()
             self.logger.info("✅ Model Manager initialized")
             tprint("✅ Model Manager initialized")
-            
+
             # Set default model selections for each component
             self.selected_models = {
                 "analyst": "analyst_regime_classifier",
@@ -322,13 +322,13 @@ class MainSupervisor:
             }
             self.logger.info("✅ Default model selections configured")
             tprint("✅ Default model selections configured")
-            
+
             # Initialize caches
             self.model_cache = {}
             self.supervision_cache = {}
             self.logger.info("✅ Model and supervision caches initialized")
             tprint("✅ Model and supervision caches initialized")
-            
+
             return True
         except Exception as e:
             error_msg = f"❌ Error initializing live trading utilities: {e}"
@@ -341,15 +341,15 @@ class MainSupervisor:
         """Initialize performance monitoring."""
         try:
             self.logger.info("Initializing performance monitoring...")
-            
+
             # Initialize Performance Monitor
             self.performance_monitor = PerformanceMonitor()
             self.logger.info("✅ Performance Monitor initialized")
-            
+
             # Enable global monitoring
             self.global_monitor.enable()
             self.logger.info("✅ Global monitoring enabled")
-            
+
             return True
         except Exception as e:
             self.logger.error(f"❌ Error initializing performance monitoring: {e}")
@@ -363,11 +363,11 @@ class MainSupervisor:
     async def manage_component_models(self, component: str, model_name: str) -> bool:
         """
         Manage model selection for specific components in live trading.
-        
+
         Args:
             component: Component name (analyst, strategist, tactician)
             model_name: Name of the pre-trained model to select
-            
+
         Returns:
             bool: True if model selection successful
         """
@@ -376,11 +376,11 @@ class MainSupervisor:
             self.logger.error(error_msg)
             tprint(f"❌ {error_msg}")
             return False
-        
+
         try:
             self.logger.info(f"Managing model for component {component}: {model_name}")
             tprint(f"Managing model for component {component}: {model_name}")
-            
+
             # Check if model is available
             available_models = await self.model_manager.list_available_models()
             if model_name not in available_models:
@@ -388,10 +388,10 @@ class MainSupervisor:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
             # Update selected model for component
             self.selected_models[component] = model_name
-            
+
             # Load and cache the model
             model = await self.model_manager.load_model(model_name)
             if model:
@@ -404,7 +404,7 @@ class MainSupervisor:
                 self.logger.error(error_msg)
                 tprint(f"❌ {error_msg}")
                 return False
-            
+
         except Exception as e:
             error_msg = f"Error managing model for component {component}: {e}"
             self.logger.error(error_msg)
@@ -420,32 +420,32 @@ class MainSupervisor:
         """
         Coordinate model usage across all components based on HMM regime detection.
         Uses single models trained on various market conditions with regime-specific parameters.
-        
+
         Args:
             hmm_regime: Detected HMM regime (e.g., "bull_market", "bear_market", "sideways")
             regime_confidence: Confidence in the regime detection
-            
+
         Returns:
             dict: Coordination results and regime-specific parameters for each component
         """
         try:
             self.logger.info(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
             tprint(f"Coordinating models with HMM regime: {hmm_regime} (confidence: {regime_confidence:.3f})")
-            
+
             # Single models for each component (trained on various market conditions)
             component_models = {
                 "analyst": "analyst_market_analysis_model",
                 "strategist": "strategist_regime_classifier",  # Regime classifier moved to strategist
                 "tactician": "tactician_position_sizing_model"
             }
-            
+
             coordination_results = {
                 "hmm_regime": hmm_regime,
                 "regime_confidence": regime_confidence,
                 "component_configs": {},
                 "success": True
             }
-            
+
             # Configure regime-specific parameters for each component
             for component, model_name in component_models.items():
                 try:
@@ -454,7 +454,7 @@ class MainSupervisor:
                     if model:
                         self.model_cache[model_name] = model
                         self.selected_models[component] = model_name
-                        
+
                         # Set regime-specific parameters based on HMM regime
                         regime_config = self._get_regime_specific_config(component, hmm_regime, regime_confidence)
                         coordination_results["component_configs"][component] = {
@@ -462,7 +462,7 @@ class MainSupervisor:
                             "regime_config": regime_config,
                             "loaded": True
                         }
-                        
+
                         self.logger.info(f"✅ {component} model coordinated: {model_name}")
                         tprint(f"✅ {component} model coordinated: {model_name}")
                     else:
@@ -473,7 +473,7 @@ class MainSupervisor:
                             "error": f"Failed to load model: {model_name}"
                         }
                         coordination_results["success"] = False
-                        
+
                 except Exception as e:
                     coordination_results["component_configs"][component] = {
                         "model_name": model_name,
@@ -482,13 +482,13 @@ class MainSupervisor:
                         "error": str(e)
                     }
                     coordination_results["success"] = False
-            
+
             success_count = sum(1 for config in coordination_results["component_configs"].values() if config["loaded"])
             self.logger.info(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
             tprint(f"✅ HMM regime coordination completed: {success_count}/3 components coordinated")
-            
+
             return coordination_results
-            
+
         except Exception as e:
             error_msg = f"Error coordinating models with HMM regime: {e}"
             self.logger.error(error_msg)
@@ -499,12 +499,12 @@ class MainSupervisor:
         """
         Get regime-specific configuration for a component based on HMM regime.
         Handles 15-25 HMM regimes with parameters optimized during training.
-        
+
         Args:
             component: Component name (analyst, strategist, tactician)
             hmm_regime: Detected HMM regime (15-25 possible regimes)
             regime_confidence: Confidence in regime detection
-            
+
         Returns:
             dict: Regime-specific configuration
         """
@@ -512,14 +512,14 @@ class MainSupervisor:
             "hmm_regime": hmm_regime,
             "regime_confidence": regime_confidence
         }
-        
+
         # Load optimized parameters from training (final_parameters_optimization.py)
         optimized_params = self._load_optimized_parameters_for_component_regime(component, hmm_regime)
-        
+
         if optimized_params:
             # Apply confidence-based adjustments
             confidence_adjustment = 0.8 + (regime_confidence * 0.4)  # 0.8 to 1.2 range
-            
+
             adjusted_params = {}
             for param_name, param_value in optimized_params.items():
                 if param_name in ["confidence_threshold", "analyst_confidence_threshold", "tactician_confidence_threshold"]:
@@ -533,22 +533,22 @@ class MainSupervisor:
                     adjusted_params[param_name] = param_value * confidence_adjustment
                 else:
                     adjusted_params[param_name] = param_value
-            
+
             base_config.update(adjusted_params)
         else:
             # Fallback to default parameters if optimization not available
             base_config.update(self._get_default_component_parameters(component, hmm_regime, regime_confidence))
-        
+
         return base_config
 
     def _load_optimized_parameters_for_component_regime(self, component: str, hmm_regime: str) -> dict[str, Any] | None:
         """
         Load optimized parameters for a specific component and regime from training artifacts.
-        
+
         Args:
             component: Component name (analyst, strategist, tactician)
             hmm_regime: HMM regime identifier
-            
+
         Returns:
             dict: Optimized parameters or None if not found
         """
@@ -556,15 +556,15 @@ class MainSupervisor:
             # This would load from the optimized parameters saved during training
             # The parameters are optimized in final_parameters_optimization.py
             # and stored in model artifacts
-            
+
             # For now, return None to use fallback parameters
             # In production, this would load from:
             # - Model artifacts
             # - Optimization results from final_parameters_optimization.py
             # - Regime-specific parameter files
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Error loading optimized parameters for {component} regime {hmm_regime}: {e}")
             return None
@@ -572,12 +572,12 @@ class MainSupervisor:
     def _get_default_component_parameters(self, component: str, hmm_regime: str, regime_confidence: float) -> dict[str, Any]:
         """
         Get default parameters for a component as fallback.
-        
+
         Args:
             component: Component name (analyst, strategist, tactician)
             hmm_regime: HMM regime identifier
             regime_confidence: Confidence in regime detection
-            
+
         Returns:
             dict: Default parameters for the component
         """
@@ -605,10 +605,10 @@ class MainSupervisor:
             }
         else:
             base_params = {}
-        
+
         # Apply confidence-based adjustments
         confidence_adjustment = 0.8 + (regime_confidence * 0.4)
-        
+
         adjusted_params = {}
         for param_name, param_value in base_params.items():
             if param_name in ["confidence_threshold", "analyst_confidence_threshold", "tactician_confidence_threshold"]:
@@ -619,7 +619,7 @@ class MainSupervisor:
                 adjusted_params[param_name] = param_value * confidence_adjustment
             else:
                 adjusted_params[param_name] = param_value
-        
+
         return adjusted_params
 
 main_supervisor: MainSupervisor | None = None

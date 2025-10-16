@@ -20,7 +20,7 @@ class EnhancedStepWrapper:
     def __init__(self, step_class: Type, step_name: str, enable_streaming: bool = True, enable_cross_step_validation: bool = True, enable_advanced_quality: bool = True) -> None:
         """
         Initialize enhanced step wrapper.
-        
+
         Args:
             step_class: The step class to wrap
             step_name: Name of the step

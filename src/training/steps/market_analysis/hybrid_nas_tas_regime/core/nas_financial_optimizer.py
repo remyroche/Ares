@@ -24,7 +24,6 @@ from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning,
 
 logger = logging.getLogger(__name__)
 
-
 class LossFunction(Enum):
     """Financial-specific loss functions."""
     SHARPE_RATIO = "sharpe_ratio"
@@ -36,7 +35,6 @@ class LossFunction(Enum):
     ASYMMETRIC = "asymmetric"
     ROBUST_FINANCIAL = "robust_financial"
 
-
 class LearningRateSchedule(Enum):
     """Learning rate scheduling strategies."""
     STEP = "step"
@@ -45,7 +43,6 @@ class LearningRateSchedule(Enum):
     VOLATILITY_ADAPTIVE = "volatility_adaptive"
     REGIME_ADAPTIVE = "regime_adaptive"
     PERFORMANCE_BASED = "performance_based"
-
 
 @dataclass
 class NASOptimizerConfig:
@@ -90,7 +87,6 @@ class NASOptimizerConfig:
     transaction_cost_penalty: float = 0.001
     position_limit_penalty: float = 0.01
     risk_adjustment_factor: float = 0.1
-
 
 class FinancialLossFunctions:
     """Collection of financial-specific loss functions."""
@@ -211,7 +207,6 @@ class FinancialLossFunctions:
 
         return huber_loss + 0.1 * financial_loss
 
-
 class VolatilityAdaptiveScheduler(_LRScheduler):
     """Learning rate scheduler that adapts based on market volatility."""
 
@@ -237,7 +232,6 @@ class VolatilityAdaptiveScheduler(_LRScheduler):
             lr_multiplier = 1.0
 
         return [base_lr * lr_multiplier for base_lr in self.base_lrs]
-
 
 class RegimeAdaptiveScheduler(_LRScheduler):
     """Learning rate scheduler that adapts based on market regimes."""
@@ -274,7 +268,6 @@ class RegimeAdaptiveScheduler(_LRScheduler):
         # In practice, this would use actual regime classification
         return 'trending'  # Default
 
-
 class PerformanceBasedScheduler(_LRScheduler):
     """Learning rate scheduler based on model performance."""
 
@@ -303,7 +296,6 @@ class PerformanceBasedScheduler(_LRScheduler):
             lr_multiplier = 1.0
 
         return [base_lr * lr_multiplier for base_lr in self.base_lrs]
-
 
 class FinancialAdam(Optimizer):
     """Adam optimizer with financial-specific enhancements."""
@@ -374,7 +366,6 @@ class FinancialAdam(Optimizer):
         # Simplified volatility adjustment
         # In practice, this would use market volatility data
         return grad
-
 
 class NASFinancialOptimizer:
     """
@@ -665,11 +656,9 @@ class NASFinancialOptimizer:
             self.logger.error(f"❌ Failed to load optimizer state: {e}")
             return False
 
-
 def create_nas_financial_optimizer(model: nn.Module, config: NASOptimizerConfig) -> NASFinancialOptimizer:
     """Create NAS financial optimizer instance."""
     return NASFinancialOptimizer(model, config)
-
 
 def quick_financial_optimization(model: nn.Module,
                                train_data: torch.Tensor,

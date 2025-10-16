@@ -67,7 +67,6 @@ from src.core.errors import (
 
 logger = logging.getLogger(__name__)
 
-
 class ModelType(Enum):
     """Enumeration of all supported model types."""
     # Tree-based models
@@ -87,7 +86,7 @@ class ModelType(Enum):
     XGBOOST_CUSTOM = "XGBoostCustom"
     XGBOOST_META = "XGBoostMeta"
     XGBOOST_LAMBDAMART = "XGBoostLambdaMART"
-    
+
     # Neural network models
     TABNET = "TabNetRegressor"
     TABNET_CLASSIFIER = "TabNetClassifier"
@@ -121,7 +120,7 @@ class ModelType(Enum):
     MULTISCALE_NBEATS = "MultiScaleNBEATS"  # Enhanced NBEATS with multi-timeframe
     NAS = "NAS"  # Neural Architecture Search for regime detection
     NAS_CLASSIFIER = "NASClassifier"  # NAS for classification tasks
-    
+
     # Linear models
     RIDGE = "Ridge"
     RIDGE_CLASSIFIER = "RidgeClassifier"
@@ -134,7 +133,7 @@ class ModelType(Enum):
     LOGISTIC_REGRESSION = "LogisticRegression"
     LINEAR_REGRESSION = "LinearRegression"
     HUBER_REGRESSION = "HuberRegression"
-    
+
     # Ensemble models
     VOTING_CLASSIFIER = "VotingClassifier"
     VOTING_REGRESSOR = "VotingRegressor"
@@ -147,57 +146,55 @@ class ModelType(Enum):
     GRADIENT_BOOSTING_CLASSIFIER = "GradientBoostingClassifier"
     GRADIENT_BOOSTING_REGRESSOR = "GradientBoostingRegressor"
 
-
 @dataclass
 class ModelConfig:
     """Configuration for model creation and training."""
     # Basic configuration
     model_type: ModelType
     model_name: str
-    
+
     # Model-specific parameters
     model_params: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Training configuration
     enable_gpu_acceleration: bool = True
     enable_memory_optimization: bool = True
     enable_parallel_processing: bool = True
     memory_limit_gb: float = 8.0
     max_workers: Optional[int] = None
-    
+
     # Model-specific settings
     random_state: int = 42
     n_jobs: int = -1
-    
+
     # Multi-output specific settings
     is_multi_output: bool = False
     n_outputs: int = 1
     output_names: Optional[List[str]] = None
-    
+
     # Hardware optimization
     use_m1_optimizations: bool = True
     enable_mixed_precision: bool = False
-    
+
     # Validation settings
     enable_validation: bool = True
     validation_split: float = 0.2
-    
+
     # Performance settings
     enable_profiling: bool = False
     enable_caching: bool = True
 
-
 class EnhancedModelFactory:
     """Enhanced model factory with comprehensive model support and M1 optimizations."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced model factory."""
         self.logger = logger.getChild('EnhancedModelFactory')
         self.logger.info("🚀 Initializing EnhancedModelFactory...")
         start_time = time.time()
-        
+
         self.config = config or {}
-        
+
         # Initialize M1 optimizers
         self.logger.debug("🔧 Initializing M1 optimizers...")
         self.m1_gpu = get_m1_memory_optimizer() if self.config.get('enable_gpu_acceleration', True) else None
@@ -205,26 +202,26 @@ class EnhancedModelFactory:
             memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
         ) if self.config.get('enable_memory_optimization', True) else None
         self.m1_cpu = get_memory_manager() if self.config.get('enable_parallel_processing', True) else None
-        
+
         self.logger.debug("✅ M1 optimizers initialized")
-        
+
         # Model registry for created models
         self.model_registry: Dict[str, Any] = {}
-        
+
         # Dependency checking
         self.dependencies = self._check_dependencies()
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ EnhancedModelFactory initialized in {init_time:.3f}s")
         self.logger.info(f"⚡ GPU acceleration: {self.m1_gpu is not None}")
         self.logger.info(f"🧠 Memory optimization: {self.m1_memory is not None}")
         self.logger.info(f"🔄 Parallel processing: {self.m1_cpu is not None}")
         self.logger.info(f"📊 Available dependencies: {list(self.dependencies.keys())}")
-    
+
     def _check_dependencies(self) -> Dict[str, bool]:
         """Check availability of required dependencies."""
         dependencies = {}
-        
+
         # Scikit-learn
         try:
             import sklearn
@@ -233,7 +230,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['sklearn'] = False
             self.logger.warning("⚠️ Scikit-learn not available")
-        
+
         # LightGBM
         try:
             import lightgbm
@@ -242,7 +239,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['lightgbm'] = False
             self.logger.warning("⚠️ LightGBM not available")
-        
+
         # CatBoost
         try:
             import catboost
@@ -251,7 +248,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['catboost'] = False
             self.logger.warning("⚠️ CatBoost not available")
-        
+
         # XGBoost
         try:
             import xgboost
@@ -260,7 +257,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['xgboost'] = False
             self.logger.warning("⚠️ XGBoost not available")
-        
+
         # TabNet
         try:
             import pytorch_tabnet
@@ -269,7 +266,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['pytorch_tabnet'] = False
             self.logger.warning("⚠️ PyTorch TabNet not available")
-        
+
         # PyTorch
         try:
             dependencies['torch'] = True
@@ -277,7 +274,7 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['torch'] = False
             self.logger.warning("⚠️ PyTorch not available")
-        
+
         # TensorFlow
         try:
             import tensorflow
@@ -295,9 +292,9 @@ class EnhancedModelFactory:
         except ImportError:
             dependencies['nbeats_pytorch'] = False
             self.logger.warning("⚠️ N-BEATS PyTorch not available")
-        
+
         return dependencies
-    
+
     @traced(span_name='create_model')
     def create_model(self, model_config: ModelConfig) -> Any:
         """Create a model instance based on configuration."""
@@ -406,52 +403,52 @@ class EnhancedModelFactory:
                 model = self._create_linear_model(model_config)
             else:
                 raise ValueError(f"Unsupported model type: {model_config.model_type}")
-            
+
             # Apply M1 optimizations if enabled
             if model_config.use_m1_optimizations:
                 self.logger.debug("🔧 Applying M1 optimizations...")
                 model = self._apply_m1_optimizations(model, model_config)
                 self.logger.debug("✅ M1 optimizations applied")
-            
+
             # Register model
             self.model_registry[model_config.model_name] = model
-            
+
             creation_time = time.time() - start_time
             self.logger.info(f"✅ Model {model_config.model_name} created in {creation_time:.3f}s")
             self.logger.info(f"🎯 Model type: {type(model).__name__}")
             self.logger.info(f"📊 Model parameters: {len(model_config.model_params)} configured")
-            
+
             return model
-            
+
         except Exception as e:
             creation_time = time.time() - start_time
             self.logger.error(f"❌ Failed to create model {model_config.model_name} after {creation_time:.3f}s: {e}")
             raise
-    
+
     def _validate_model_config(self, model_config: ModelConfig) -> None:
         """Validate model configuration."""
-        
+
         # Check if model type is supported
         if not isinstance(model_config.model_type, ModelType):
             raise ValidationError(f"Invalid model type: {model_config.model_type}")
-        
+
         # Check dependencies
         if model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER, ModelType.LGBM_DART_CLASSIFIER]:
             if not self.dependencies.get('lightgbm', False):
                 raise ValidationError("LightGBM not available")
-        
+
         if model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
             if not self.dependencies.get('catboost', False):
                 raise ValidationError("CatBoost not available")
-        
+
         if model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER, ModelType.XGBOOST_CUSTOM, ModelType.XGBOOST_META]:
             if not self.dependencies.get('xgboost', False):
                 raise ValidationError("XGBoost not available")
-        
+
         if model_config.model_type in [ModelType.TABNET, ModelType.TABNET_CLASSIFIER]:
             if not self.dependencies.get('pytorch_tabnet', False):
                 raise ValidationError("PyTorch TabNet not available")
-        
+
         if model_config.model_type in [ModelType.TIME_SERIES_TRANSFORMER, ModelType.TCN, ModelType.LSTM]:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("PyTorch not available")
@@ -463,20 +460,20 @@ class EnhancedModelFactory:
         if model_config.model_type == ModelType.NBEATS:
             if not self.dependencies.get('nbeats_pytorch', False):
                 raise ValidationError("N-BEATS PyTorch not available")
-        
+
         # Validate multi-output configuration
         if model_config.is_multi_output:
             if model_config.n_outputs < 2:
                 raise ValidationError("Multi-output requires at least 2 outputs")
             if model_config.output_names and len(model_config.output_names) != model_config.n_outputs:
                 raise ValidationError("Output names count must match n_outputs")
-    
+
     def _create_random_forest_model(self, model_config: ModelConfig) -> Any:
         """Create Random Forest model with CLVSA wrapper by default."""
-        
+
         from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
         from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'n_estimators': 500,
@@ -488,19 +485,19 @@ class EnhancedModelFactory:
             'random_state': model_config.random_state,
             'n_jobs': model_config.n_jobs
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.RANDOM_FOREST:
             base_model = RandomForestRegressor(**params)
         else:
             base_model = RandomForestClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -513,14 +510,14 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ Random Forest wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ Random Forest created without CLVSA wrapper")
-        
+
         return model
 
     def _create_lgbm_dart_model(self, model_config: ModelConfig) -> Any:
@@ -579,9 +576,9 @@ class EnhancedModelFactory:
 
     def _create_lightgbm_model(self, model_config: ModelConfig) -> Any:
         """Create LightGBM model with CLVSA wrapper by default."""
-        
+
         import lightgbm as lgb
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'n_estimators': 1000,
@@ -598,19 +595,19 @@ class EnhancedModelFactory:
             'n_jobs': model_config.n_jobs,
             'verbosity': -1
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.LIGHTGBM:
             base_model = lgb.LGBMRegressor(**params)
         else:
             base_model = lgb.LGBMClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -623,21 +620,21 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ LightGBM wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ LightGBM created without CLVSA wrapper")
-        
+
         return model
-    
+
     def _create_catboost_model(self, model_config: ModelConfig) -> Any:
         """Create CatBoost model with CLVSA wrapper by default."""
-        
+
         from catboost import CatBoostRegressor, CatBoostClassifier
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'iterations': 1000,
@@ -651,19 +648,19 @@ class EnhancedModelFactory:
             'random_seed': model_config.random_state,
             'verbose': False
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.CATBOOST:
             base_model = CatBoostRegressor(**params)
         else:
             base_model = CatBoostClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -676,21 +673,21 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ CatBoost wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ CatBoost created without CLVSA wrapper")
-        
+
         return model
-    
+
     def _create_xgboost_model(self, model_config: ModelConfig) -> Any:
         """Create XGBoost model with CLVSA wrapper by default."""
-        
+
         import xgboost as xgb
-        
+
         # Default parameters
         default_params = {
             'n_estimators': 100,
@@ -700,19 +697,19 @@ class EnhancedModelFactory:
             'n_jobs': model_config.n_jobs,
             'verbosity': 0
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.XGBOOST:
             base_model = xgb.XGBRegressor(**params)
         else:
             base_model = xgb.XGBClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -725,21 +722,21 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ XGBoost wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ XGBoost created without CLVSA wrapper")
-        
+
         return model
-    
+
     def _create_tabnet_model(self, model_config: ModelConfig) -> Any:
         """Create TabNet model."""
-        
+
         from pytorch_tabnet.tab_model import TabNetRegressor, TabNetClassifier
-        
+
         # Default parameters
         default_params = {
             'n_d': 64,
@@ -755,21 +752,21 @@ class EnhancedModelFactory:
             'scheduler_fn': 'step',
             'seed': model_config.random_state
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         if model_config.model_type == ModelType.TABNET:
             model = TabNetRegressor(**params)
         else:
             model = TabNetClassifier(**params)
-        
+
         return model
-    
+
     def _create_time_series_transformer_model(self, model_config: ModelConfig) -> Any:
         """Create Time Series Transformer model."""
-        
+
         # This is a placeholder implementation
         # In practice, you would implement a custom TimeSeriesTransformer class
         class TimeSeriesTransformer:
@@ -785,44 +782,42 @@ class EnhancedModelFactory:
                 self.activation = kwargs.get('activation', 'relu')
                 self.use_positional_encoding = kwargs.get('use_positional_encoding', True)
                 self.attention_type = kwargs.get('attention_type', 'multi_head')
-                
+
             def fit(self, X, y):
                 """Fit the TimeSeriesTransformer model."""
                 # Placeholder implementation
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation - return random predictions
                 return np.random.normal(0, 0.1, len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return TimeSeriesTransformer(**model_config.model_params)
-    
-    
-    
+
     def _create_lstm_model(self, model_config: ModelConfig) -> Any:
         """Create LSTM model."""
-        
+
         # This is a placeholder implementation
         # In practice, you would implement a custom LSTM class
         class LSTM:
@@ -839,37 +834,37 @@ class EnhancedModelFactory:
                 self.recurrent_dropout = kwargs.get('recurrent_dropout', 0.0)
                 self.use_batch_norm = kwargs.get('use_batch_norm', True)
                 self.return_sequences = kwargs.get('return_sequences', False)
-            
+
             def fit(self, X, y):
                 """Fit the LSTM model."""
                 # Placeholder implementation
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation - return random predictions
                 return np.random.normal(0, 0.1, len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return LSTM(**model_config.model_params)
 
     def _create_deepscaler_model(self, model_config: ModelConfig) -> Any:
@@ -926,18 +921,18 @@ class EnhancedModelFactory:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation - return random predictions
                 return np.random.normal(0, 0.1, len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
@@ -1594,11 +1589,11 @@ class EnhancedModelFactory:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation - return regime probabilities
                 return np.random.dirichlet(np.ones(self.output_classes), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
@@ -1663,18 +1658,18 @@ class EnhancedModelFactory:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X, analyst_inputs=None, hmm_inputs=None):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
@@ -1735,7 +1730,7 @@ class EnhancedModelFactory:
 
     def _create_tcn_model(self, model_config: ModelConfig) -> Any:
         """Create TCN model with overfitting prevention."""
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'num_filters': 64,
@@ -1749,10 +1744,10 @@ class EnhancedModelFactory:
             'use_skip_connections': True,
             'use_batch_norm': True
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # This is a placeholder implementation
         # In practice, you would implement a custom TCN class with proper overfitting prevention
         class TCN:
@@ -1793,19 +1788,19 @@ class EnhancedModelFactory:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-        
+
         return TCN(**params)
-    
+
     def _create_wavenet_model(self, model_config: ModelConfig) -> Any:
         """Create WaveNet model with overfitting prevention."""
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'dilations': [1, 2, 4, 8, 16, 32, 64],
@@ -1819,10 +1814,10 @@ class EnhancedModelFactory:
             'batch_size': 32,
             'epochs': 100
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # This is a placeholder implementation
         class WaveNet:
             def __init__(self, **kwargs):
@@ -1838,42 +1833,42 @@ class EnhancedModelFactory:
                 self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
                 self.batch_size = kwargs.get('batch_size', 32)
                 self.epochs = kwargs.get('epochs', 100)
-            
+
             def fit(self, X, y):
                 """Fit the WaveNet model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return WaveNet(**params)
-    
+
     def _create_tft_model(self, model_config: ModelConfig) -> Any:
         """Create Temporal Fusion Transformer model."""
-        
+
         # Default parameters
         default_params = {
             'attention_heads': 8,
@@ -1884,10 +1879,10 @@ class EnhancedModelFactory:
             'batch_size': 32,
             'epochs': 100
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # This is a placeholder implementation
         class TemporalFusionTransformer:
             def __init__(self, **kwargs):
@@ -1900,42 +1895,42 @@ class EnhancedModelFactory:
                 self.use_interpretable_attention = kwargs.get('use_interpretable_attention', True)
                 self.batch_size = kwargs.get('batch_size', 32)
                 self.epochs = kwargs.get('epochs', 100)
-            
+
             def fit(self, X, y):
                 """Fit the TemporalFusionTransformer model."""
                 # Placeholder implementation
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return TemporalFusionTransformer(**params)
-    
+
     def _create_tabnet_attention_model(self, model_config: ModelConfig) -> Any:
         """Create TabNet with attention model."""
-        
+
         # Default parameters
         default_params = {
             'n_d': 64,
@@ -1947,10 +1942,10 @@ class EnhancedModelFactory:
             'batch_size': 32,
             'epochs': 100
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # This is a placeholder implementation
         class TabNetAttention:
             def __init__(self, **kwargs):
@@ -1964,44 +1959,44 @@ class EnhancedModelFactory:
                 self.optimizer_params = kwargs.get('optimizer_params', {'lr': 2e-2})
                 self.batch_size = kwargs.get('batch_size', 32)
                 self.epochs = kwargs.get('epochs', 100)
-            
+
             def fit(self, X, y):
                 """Fit the TabNetAttention model."""
                 # Placeholder implementation
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return TabNetAttention(**params)
-    
+
     def _create_elastic_net_model(self, model_config: ModelConfig) -> Any:
         """Create Elastic Net model."""
-        
+
         from sklearn.linear_model import ElasticNet, ElasticNetCV
-        
+
         # Default parameters
         default_params = {
             'alpha': 0.1,
@@ -2009,22 +2004,21 @@ class EnhancedModelFactory:
             'max_iter': 1000,
             'random_state': 42
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         if model_config.model_type == ModelType.ELASTIC_NET:
             model = ElasticNet(**params)
         else:
             model = ElasticNetCV(**params)
-        
+
         return model
-    
+
     def _create_elastic_net_cv_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model with cross-validation."""
-        
-        
+
         # Default parameters for ElasticNetCV
         default_params = {
             'alphas': [0.01, 0.1, 1.0, 10.0],
@@ -2033,18 +2027,18 @@ class EnhancedModelFactory:
             'max_iter': 1000,
             'random_state': 42
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         model = ElasticNetCV(**params)
-        
+
         return model
-    
+
     def _create_elastic_net_quantile_model(self, model_config: ModelConfig) -> Any:
         """Create Elastic Net with Quantile Regression."""
-        
+
         # This is a placeholder implementation
         class ElasticNetQuantile:
             def __init__(self, **kwargs):
@@ -2053,23 +2047,23 @@ class EnhancedModelFactory:
                 self.alpha = kwargs.get('alpha', 0.1)
                 self.l1_ratio = kwargs.get('l1_ratio', 0.5)
                 self.quantiles = kwargs.get('quantiles', [0.05, 0.25, 0.5, 0.75, 0.95])
-            
+
             def fit(self, X, y):
                 # Placeholder implementation
                 self.is_fitted = True
                 return self
-            
+
             def predict(self, X):
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-        
+
         return ElasticNetQuantile(**model_config.model_params)
-    
+
     def _create_quantile_regression_model(self, model_config: ModelConfig) -> Any:
         """Create Quantile Regression model."""
-        
+
         # This is a placeholder implementation
         class QuantileRegression:
             def __init__(self, **kwargs):
@@ -2078,25 +2072,25 @@ class EnhancedModelFactory:
                 self.quantiles = kwargs.get('quantiles', [0.05, 0.25, 0.5, 0.75, 0.95])
                 self.alpha = kwargs.get('alpha', 0.1)
                 self.solver = kwargs.get('solver', 'highs')
-            
+
             def fit(self, X, y):
                 # Placeholder implementation
                 self.is_fitted = True
                 return self
-            
+
             def predict(self, X):
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-        
+
         return QuantileRegression(**model_config.model_params)
-    
+
     def _create_huber_regression_model(self, model_config: ModelConfig) -> Any:
         """Create Huber Regression model."""
-        
+
         from sklearn.linear_model import HuberRegressor
-        
+
         # Default parameters
         default_params = {
             'epsilon': 1.35,
@@ -2106,17 +2100,17 @@ class EnhancedModelFactory:
             'fit_intercept': True,
             'tol': 1e-05
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         return HuberRegressor(**params)
-    
+
     def _create_hist_gradient_boosting_model(self, model_config: ModelConfig) -> Any:
         """Create HistGradientBoosting model with CLVSA wrapper by default."""
-        
+
         from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
-        
+
         # Default parameters
         default_params = {
             'max_iter': 100,
@@ -2126,19 +2120,19 @@ class EnhancedModelFactory:
             'categorical_features': 'auto',
             'random_state': 42
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.HIST_GRADIENT_BOOSTING:
             base_model = HistGradientBoostingRegressor(**params)
         else:
             base_model = HistGradientBoostingClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -2151,21 +2145,21 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ HistGradientBoosting wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ HistGradientBoosting created without CLVSA wrapper")
-        
+
         return model
-    
+
     def _create_extra_trees_model(self, model_config: ModelConfig) -> Any:
         """Create ExtraTrees model with CLVSA wrapper by default."""
-        
+
         from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
-        
+
         # Default parameters
         default_params = {
             'n_estimators': 100,
@@ -2175,19 +2169,19 @@ class EnhancedModelFactory:
             'random_state': 42,
             'n_jobs': -1
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create base model
         if model_config.model_type == ModelType.EXTRA_TREES:
             base_model = ExtraTreesRegressor(**params)
         else:
             base_model = ExtraTreesClassifier(**params)
-        
+
         # Check if CLVSA wrapper should be applied (default: True for tree models)
         use_clvsa = model_config.model_params.get('use_clvsa', True)
-        
+
         if use_clvsa:
             # Create Tree CLVSA wrapper configuration
             clvsa_config = create_tree_clvsa_config(
@@ -2200,20 +2194,19 @@ class EnhancedModelFactory:
                 ensemble_attention=model_config.model_params.get('ensemble_attention', True),
                 memory_efficient=model_config.model_params.get('memory_efficient', True)
             )
-            
+
             # Wrap with Tree CLVSA attention
             model = create_tree_clvsa_wrapper(base_model, clvsa_config)
             self.logger.info("✅ Extra Trees wrapped with Tree CLVSA attention architecture")
         else:
             model = base_model
             self.logger.info("✅ Extra Trees created without CLVSA wrapper")
-        
+
         return model
-    
+
     def _create_xgboost_custom_model(self, model_config: ModelConfig) -> Any:
         """Create XGBoost with custom financial objectives."""
-        
-        
+
         # Default parameters with financial focus
         default_params = {
             'n_estimators': 100,
@@ -2226,19 +2219,18 @@ class EnhancedModelFactory:
             'objective': 'reg:squarederror',  # Can be customized for financial objectives
             'eval_metric': 'rmse'
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         model = xgb.XGBRegressor(**params)
-        
+
         return model
-    
+
     def _create_xgboost_meta_model(self, model_config: ModelConfig) -> Any:
         """Create XGBoost meta-model for ensemble combination."""
-        
-        
+
         # Default parameters for meta-model
         default_params = {
             'n_estimators': 100,
@@ -2251,18 +2243,18 @@ class EnhancedModelFactory:
             'objective': 'multi:softprob',  # For multi-class probability output
             'eval_metric': 'mlogloss'
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         model = xgb.XGBClassifier(**params)
-        
+
         return model
-    
+
     def _create_node_model(self, model_config: ModelConfig) -> Any:
         """Create Neural Oblivious Decision Ensembles (NODE) model with overfitting prevention."""
-        
+
         # Default parameters with overfitting prevention
         default_params = {
             'n_d': 64,
@@ -2275,10 +2267,10 @@ class EnhancedModelFactory:
             'batch_size': 32,
             'epochs': 100
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # This is a placeholder implementation
         # In practice, you would implement a custom NODE class with proper overfitting prevention
         class NODE:
@@ -2294,42 +2286,42 @@ class EnhancedModelFactory:
                 self.l2_regularization = kwargs.get('l2_regularization', 0.01)
                 self.batch_size = kwargs.get('batch_size', 32)
                 self.epochs = kwargs.get('epochs', 100)
-            
+
             def fit(self, X, y):
                 """Fit the NODE model with overfitting prevention."""
                 # Placeholder implementation with overfitting prevention
                 self.is_fitted = True
                 self.feature_names_ = getattr(X, 'columns', None) if hasattr(X, 'columns') else None
                 return self
-            
+
             def predict(self, X):
                 """Make predictions using the fitted model."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.zeros(len(X))
-            
+
             def predict_proba(self, X):
                 """Predict class probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model not fitted")
                 # Placeholder implementation
                 return np.random.dirichlet(np.ones(2), len(X))
-            
+
             def get_params(self, deep=True):
                 """Get model parameters."""
                 return self.params.copy()
-            
+
             def set_params(self, **params):
                 """Set model parameters."""
                 self.params.update(params)
                 return self
-        
+
         return NODE(**params)
-    
+
     def _create_nas_model(self, model_config: ModelConfig) -> Any:
         """Create NAS (Neural Architecture Search) model for regime detection."""
-        
+
         # Default parameters for NAS regime detection
         default_params = {
             'learning_rate': 0.01,
@@ -2341,9 +2333,9 @@ class EnhancedModelFactory:
             'economic_significance': True,
             'trading_viability': True
         }
-        
+
         params = {**default_params, **model_config.model_params}
-        
+
         # Create NAS model for regime detection
         class NASRegimeDetector:
             def __init__(self, **kwargs):
@@ -2351,34 +2343,33 @@ class EnhancedModelFactory:
                 self.is_fitted = False
                 self.regime_labels = None
                 self.feature_importance = None
-                
+
             def fit(self, X, y):
                 """Fit NAS model to regime detection data."""
                 # Placeholder for actual NAS implementation
                 self.is_fitted = True
                 self.regime_labels = y
                 return self
-                
+
             def predict(self, X):
                 """Predict regime labels."""
                 if not self.is_fitted:
                     raise ValueError("Model must be fitted before prediction")
                 # Placeholder for actual NAS prediction
                 return np.zeros(len(X))
-                
+
             def predict_proba(self, X):
                 """Predict regime probabilities."""
                 if not self.is_fitted:
                     raise ValueError("Model must be fitted before prediction")
                 # Placeholder for actual NAS probability prediction
                 return np.ones((len(X), len(np.unique(self.regime_labels))))
-        
+
         return NASRegimeDetector(**params)
 
     def _create_ridge_model(self, model_config: ModelConfig) -> Any:
         """Create ElasticNetCV model (replacing Ridge with automatic parameter optimization)."""
-        
-        
+
         # Default parameters for ElasticNetCV (replacing Ridge)
         default_params = {
             'alphas': [0.01, 0.1, 1.0, 10.0],
@@ -2387,52 +2378,52 @@ class EnhancedModelFactory:
             'max_iter': 1000,
             'random_state': model_config.random_state
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model (using ElasticNetCV instead of Ridge for automatic optimization)
         model = ElasticNetCV(**params)
-        
+
         return model
-    
+
     def _create_linear_model(self, model_config: ModelConfig) -> Any:
         """Create Linear model."""
-        
+
         from sklearn.linear_model import LogisticRegression, LinearRegression
-        
+
         # Default parameters
         default_params = {
             'random_state': model_config.random_state
         }
-        
+
         # Merge with user parameters
         params = {**default_params, **model_config.model_params}
-        
+
         # Create model
         if model_config.model_type == ModelType.LOGISTIC_REGRESSION:
             model = LogisticRegression(**params)
         else:
             model = LinearRegression(**params)
-        
+
         return model
-    
+
     def _apply_m1_optimizations(self, model: Any, model_config: ModelConfig) -> Any:
         """Apply M1-specific optimizations to the model."""
-        
+
         # This is a placeholder for M1-specific optimizations
         # In practice, you would apply specific optimizations based on model type
-        
+
         if hasattr(model, 'set_params'):
             # Apply M1-specific parameters if available
             m1_params = {}
-            
+
             # Memory optimization
             if self.m1_memory and model_config.enable_memory_optimization:
                 m1_params.update({
                     'n_jobs': min(model_config.n_jobs, 4),  # Limit parallel jobs on M1
                 })
-            
+
             # GPU acceleration (if supported by model)
             if self.m1_gpu and model_config.enable_gpu_acceleration:
                 # Add GPU-specific parameters if the model supports them
@@ -2456,22 +2447,22 @@ class EnhancedModelFactory:
                 else:
                     # If GPU acceleration was requested but not supported, continue without it
                     self.logger.warning("GPU acceleration requested but not supported by model, continuing without GPU")
-            
+
             # Apply parameters
             if m1_params:
                 model.set_params(**m1_params)
                 self.logger.debug(f"🔧 Applied M1 optimizations: {m1_params}")
-        
+
         return model
-    
+
     def get_model(self, model_name: str) -> Optional[Any]:
         """Get a model from the registry."""
         return self.model_registry.get(model_name)
-    
+
     def list_models(self) -> List[str]:
         """List all registered models."""
         return list(self.model_registry.keys())
-    
+
     def remove_model(self, model_name: str) -> bool:
         """Remove a model from the registry."""
         if model_name in self.model_registry:
@@ -2479,15 +2470,11 @@ class EnhancedModelFactory:
             self.logger.info(f"🗑️ Removed model: {model_name}")
             return True
         return False
-    
+
     def clear_registry(self) -> None:
         """Clear all models from the registry."""
         self.model_registry.clear()
         self.logger.info("🗑️ Cleared model registry")
-
-
-    
-
 
     def _create_attention_lightgbm_model(self, model_config: ModelConfig) -> Any:
         """Create CLVSA-enhanced LightGBM model."""
@@ -2908,7 +2895,6 @@ class EnhancedModelFactory:
         model = TFTSmall(**default_params)
         self.logger.info(f"✅ TFT-Small created with {default_params['hidden_size']} hidden units")
         return model
-
 
 def create_model_factory(config: Optional[Dict[str, Any]] = None) -> EnhancedModelFactory:
     """Create an enhanced model factory instance."""

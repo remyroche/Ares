@@ -61,7 +61,7 @@ class DataFrameValidator:
     """Backwards compatibility alias for DataFrameValidator."""
     def __init__(self):
         self.processor = DataProcessor()
-    
+
     def validate_dataframe(self, df, **kwargs):
         return self.processor.validate_and_fix_data_quality(df, **kwargs)
 
@@ -70,7 +70,7 @@ class DataFrameCleaner:
     def __init__(self):
         self.processor = DataProcessor()
         self.cleaner = DataCleaner()
-    
+
     def clean_dataframe(self, df, **kwargs):
         return self.processor.validate_and_fix_data_quality(df, **kwargs)
 
@@ -78,7 +78,7 @@ class DataFrameTransformer:
     """Backwards compatibility alias for DataFrameTransformer."""
     def __init__(self):
         self.processor = DataProcessor()
-    
+
     def transform_dataframe(self, df, **kwargs):
         return self.processor.regularize_timestamps(df, **kwargs)
 
@@ -115,13 +115,13 @@ OptimizedDataManager = DataProcessor
 __all__ = [
     # Data Quality Framework
     'DataQualityFramework',
-    'QualityThresholds', 
+    'QualityThresholds',
     'QualityResult',
     'quick_validate_dataframe',
     'validate_unified_dataframe',
     'check_dataframe_health',
     'data_quality_framework',
-    
+
     # Data Processing
     'DataProcessor',
     'regularize_timestamps',
@@ -132,7 +132,7 @@ __all__ = [
     'apply_feature_specific_optimization',
     'optimize_feature_engineering_pipeline',
     'data_processor',
-    
+
     # Data Cleaning
     'DataCleaner',
     'GapType',
@@ -146,21 +146,21 @@ __all__ = [
     'enhanced_missing_value_handler',
     'enhanced_outlier_handler',
     'get_data_cleaner',
-    
+
     # Data Streaming
     'DataStreamingManager',
     'data_streaming_manager',
-    
+
     # Cross-step Validation
     'CrossStepValidator',
     'DataLineage',
     'ConsistencyIssue',
     'cross_step_validator',
-    
+
     # Unified Interface
     'UnifiedDataUtils',
     'unified_data_utils',
-    
+
     # Backwards Compatibility Classes
     'DataFrameValidator',
     'DataFrameCleaner',
@@ -170,7 +170,7 @@ __all__ = [
     'ColumnNamingConvention',
     'DataLoader',
     'OptimizedDataManager',
-    
+
     # Backwards Compatibility Functions
     'validate_dataframe',
     'clean_dataframe',

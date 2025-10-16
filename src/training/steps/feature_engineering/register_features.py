@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 def register_advanced_features(feature_bank: FeatureBank) -> None:
     """
     Register all advanced features with the feature bank.
-    
+
     Args:
         feature_bank: FeatureBank instance to register features with
     """
     logger.info("🔧 Registering advanced features with feature bank")
-    
+
     # Define feature generators with their configurations
     feature_generators = [
         # Price Action Features
@@ -86,33 +86,32 @@ def register_advanced_features(feature_bank: FeatureBank) -> None:
             }
         }
     ]
-    
+
     # Register each feature generator
     for feature_config in feature_generators:
         try:
             generator_class = feature_config['generator_class']
             lookback = feature_config['lookback']
             parameters = feature_config.get('parameters', {})
-            
+
             # Create generator instance
             generator = generator_class(lookback=lookback, **parameters)
-            
+
             # Register with feature bank
             feature_bank.register_generator(generator)
-            
+
             logger.info(f"✅ Registered {feature_config['name']} with lookback {lookback}")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to register {feature_config['name']}: {e}")
             raise
-    
-    logger.info("🎉 Advanced features registration completed")
 
+    logger.info("🎉 Advanced features registration completed")
 
 def get_advanced_feature_generators() -> Dict[str, Type]:
     """
     Get dictionary of advanced feature generator classes.
-    
+
     Returns:
         Dictionary mapping feature names to generator classes
     """
@@ -123,16 +122,15 @@ def get_advanced_feature_generators() -> Dict[str, Type]:
         'trend_coherence': TrendCoherenceGenerator
     }
 
-
 def create_feature_bank_with_advanced_features() -> FeatureBank:
     """
     Create a feature bank with all advanced features registered.
-    
+
     Returns:
         FeatureBank instance with advanced features
     """
     from src.feature_generation.core.feature_bank import FeatureBankConfig
-    
+
     # Create feature bank with optimized configuration
     config = FeatureBankConfig(
         enable_matrix_operations=True,
@@ -145,20 +143,19 @@ def create_feature_bank_with_advanced_features() -> FeatureBank:
         cache_results=True,
         default_lookback=10
     )
-    
+
     feature_bank = FeatureBank(config)
-    
+
     # Register advanced features
     register_advanced_features(feature_bank)
-    
-    return feature_bank
 
+    return feature_bank
 
 # Convenience function for quick access
 def get_advanced_features_by_category() -> Dict[str, List[str]]:
     """
     Get advanced features organized by category.
-    
+
     Returns:
         Dictionary mapping categories to lists of feature names
     """
@@ -175,17 +172,16 @@ def get_advanced_features_by_category() -> Dict[str, List[str]]:
         ]
     }
 
-
 if __name__ == "__main__":
     # Example usage
     logging.basicConfig(level=logging.INFO)
-    
+
     # Create feature bank with advanced features
     feature_bank = create_feature_bank_with_advanced_features()
-    
+
     # Print registered features
     print("📊 Registered advanced features:")
     for category, features in get_advanced_features_by_category().items():
         print(f"  {category}: {features}")
-    
+
     print("✅ Feature bank setup completed")

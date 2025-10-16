@@ -28,7 +28,6 @@ from ..core.tas_result import TASResult
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class PerformanceMetrics:
     """Performance metrics for monitoring."""
@@ -42,7 +41,6 @@ class PerformanceMetrics:
     model_complexity: float = 0.0
     adaptation_score: float = 0.0
 
-
 @dataclass
 class SystemHealth:
     """System health status."""
@@ -52,7 +50,6 @@ class SystemHealth:
     storage_health: str = "good"
     warnings: List[str] = field(default_factory=list)
     recommendations: List[str] = field(default_factory=list)
-
 
 class TreePerformanceMonitor:
     """
@@ -463,7 +460,6 @@ class TreePerformanceMonitor:
         """Get optimization suggestions."""
         return list(self.optimization_queue)
 
-
 class TreeRealTimeAdapter:
     """
     Real-Time Adaptation System for Tree Architecture Search.
@@ -482,7 +478,7 @@ class TreeRealTimeAdapter:
         tprint_debug(f"Configuration: {config}")
         tprint_debug(f"Adaptation enabled: {config.enable_real_time_adaptation}")
         tprint_debug(f"Adaptation threshold: {config.adaptation_threshold}")
-        
+
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -860,17 +856,14 @@ class TreeRealTimeAdapter:
             'recent_adaptations': self.adaptation_history[-5:] if len(self.adaptation_history) > 5 else self.adaptation_history
         }
 
-
 # Convenience functions
 def create_performance_monitor(config: TASConfig) -> TreePerformanceMonitor:
     """Create a performance monitor with default configuration."""
     return TreePerformanceMonitor(config)
 
-
 def create_real_time_adapter(config: TASConfig) -> TreeRealTimeAdapter:
     """Create a real-time adapter with default configuration."""
     return TreeRealTimeAdapter(config)
-
 
 def quick_adaptation(current_architecture: TreeArchitectureCandidate,
                     new_data: Tuple[np.ndarray, np.ndarray]) -> TreeArchitectureCandidate:
@@ -878,7 +871,6 @@ def quick_adaptation(current_architecture: TreeArchitectureCandidate,
     config = TASConfig()
     adapter = TreeRealTimeAdapter(config)
     return adapter.adapt_architecture(current_architecture, new_data)
-
 
 class TreeAdaptiveSearch:
     """

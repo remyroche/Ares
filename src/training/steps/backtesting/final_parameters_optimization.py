@@ -89,7 +89,6 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class EvaluationMetrics:
     """Container for evaluation metrics with proper validation"""
@@ -104,7 +103,7 @@ class EvaluationMetrics:
     confidence_score: float = 0.0
     cv_mean: float = 0.0
     cv_std: float = 0.0
-    
+
     def to_score(self, weights: Optional[Dict[str, float]] = None) -> float:
         """Convert metrics to single optimization score"""
         if weights is None:
@@ -116,7 +115,7 @@ class EvaluationMetrics:
                 'profit_factor': 0.15,
                 'total_return': 0.10
             }
-        
+
         # Validate and normalize components
         sharpe_normalized = np.clip(validate_positive(self.sharpe_ratio, 0) / 3.0, 0, 1)
         sortino_normalized = np.clip(validate_positive(self.sortino_ratio, 0) / 4.0, 0, 1)
@@ -124,7 +123,7 @@ class EvaluationMetrics:
         win_rate_normalized = validate_probability(self.win_rate)
         pf_normalized = np.clip(validate_positive(self.profit_factor, 0) / 3.0, 0, 1)
         return_normalized = np.clip(self.total_return / 0.5, 0, 1)
-        
+
         # Combined score
         score = (
             weights.get('sharpe_ratio', 0.25) * sharpe_normalized +
@@ -134,51 +133,50 @@ class EvaluationMetrics:
             weights.get('profit_factor', 0.15) * pf_normalized +
             weights.get('total_return', 0.10) * return_normalized
         )
-        
+
         # Apply CV stability penalty if available
         if self.cv_std > 0:
             stability_penalty = min(0.2, self.cv_std * 0.5)
             score = max(0, score - stability_penalty)
-        
-        return validate_range(score, 0, 1, default=0)
 
+        return validate_range(score, 0, 1, default=0)
 
 class FinalParametersOptimizer:
     """
     System-wide final parameters optimizer.
-    
+
     This handles optimization of final system parameters after model training,
     separate from hyperparameter optimization during training.
     """
-    
+
     def __init__(self, config: Dict[str, Any], nonlinear_config: Optional[NonLinearConfig] = None):
         """Initialize the enhanced final parameters optimizer with hardware acceleration and CV support."""
         self.config = config
         self.logger = logger.getChild('FinalParametersOptimizer')
-        
+
         tprint("🚀 Initializing Enhanced Final Parameters Optimizer", "header")
-        
+
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.parameter_sampler = NonLinearParameterSampler(self.nonlinear_config)
-        
+
         # Parameter categories for optimization (updated for new Analyst & Tactician models)
         self.categories = [
             'confidence', 'intensity', 'position_sizing', 'leverage', 'tpsl', 'exit_strategy',
             'ensemble', 'sr', 'two_tier', 'technical_indicators',
             'system_monitoring', 'training_optimization', 'regime_transitions',
-            'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization', 
+            'signal_aggregation', 'turnover_cost_penalty', 'entry_timing_optimization',
             'confidence_aware_ensemble', 'model_specific_parameters',
             # New directional categories
-            'long_specific_parameters', 'short_specific_parameters', 
+            'long_specific_parameters', 'short_specific_parameters',
             'directional_thresholds', 'asymmetric_risk_management',
             # Merged Tactician & Analyst integration
             'tactician_analyst_integration', 'analyst_oof_weights', 'merged_feature_importance'
         ]
-        
+
         # Default search spaces for each category
         self.default_search_spaces = self._get_default_search_spaces()
-        
+
         # Enhanced search spaces with non-linear transformations
         self.enhanced_search_spaces = self._create_enhanced_search_spaces()
 
@@ -201,7 +199,7 @@ class FinalParametersOptimizer:
         tprint(f"🔄 Cross-validation: {self.use_cv} ({self.cv_folds} folds)", "info")
         tprint(f"⚡ Parallel evaluation: {self.enable_parallel} ({self.max_workers} workers)", "info")
         tprint(f"🛑 Early stopping: patience={self.early_stopping_patience}, threshold={self.early_stopping_threshold}", "info")
-        
+
         if self.use_nonlinear_optimization:
             tprint(f"🚀 Non-linear optimization enabled:", "info")
             tprint(f"   • Log sampling: {self.nonlinear_config.use_log_sampling}", "info")
@@ -219,11 +217,11 @@ class FinalParametersOptimizer:
             self.oof_generator = OOFGenerator()
             self.leakage_detector = DataLeakageDetector()
             tprint("✅ CV utilities initialized", "success")
-        
+
         # Initialize BayesianTPEOptimizer for each category
         self.tpe_optimizers = {}
         self._init_tpe_optimizers()
-        
+
         # Initialize hardware optimization if available
         self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.get('enable_hardware_optimization', True)
         if self.hardware_enabled:
@@ -235,7 +233,7 @@ class FinalParametersOptimizer:
             self.matrix_processor = None
             self.batch_processor = None
             tprint("ℹ️  Hardware optimization disabled", "info")
-        
+
         # Initialize VectorBT optimization if available
         self.vectorbt_enabled = VECTORBT_AVAILABLE and config.get('enable_vectorbt_optimization', True)
         if self.vectorbt_enabled:
@@ -245,7 +243,7 @@ class FinalParametersOptimizer:
             self.vectorization_manager = None
             self.optimization_manager = None
             tprint("ℹ️  VectorBT optimization disabled", "info")
-        
+
         # Parameter evaluation cache
         self.evaluation_cache = {}
         self.cache_hits = 0
@@ -259,19 +257,19 @@ class FinalParametersOptimizer:
             location = self.regime_performance_path or 'unknown location'
             tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
             tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
-    
+
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
-        
+
         tprint("✅ Final Parameters Optimizer initialization complete", "success")
-    
+
     def _init_vectorbt_optimization(self):
         """Initialize VectorBT optimization components."""
         try:
             tprint("🚀 Initializing VectorBT optimization components", "info")
-            
+
             # Initialize VectorBT rolling optimizer
             self.rolling_optimizer = get_vectorbt_rolling_optimizer(
                 enable_gpu=self.hardware_enabled,
@@ -282,11 +280,11 @@ class FinalParametersOptimizer:
                 enable_logging=True
             )
             tprint("✅ VectorBT rolling optimizer initialized", "success")
-            
+
             # Initialize UnifiedVectorizationManager
             self.vectorization_manager = UnifiedVectorizationManager()
             tprint("✅ UnifiedVectorizationManager initialized", "success")
-            
+
             # Initialize VectorBT optimization manager
             self.optimization_manager = get_optimization_manager(
                 enable_gpu=self.hardware_enabled,
@@ -297,7 +295,7 @@ class FinalParametersOptimizer:
                 enable_monitoring=True
             )
             tprint("✅ VectorBT optimization manager initialized", "success")
-            
+
             # Performance tracking for VectorBT operations
             self.vectorbt_stats = {
                 'rolling_operations': 0,
@@ -306,7 +304,7 @@ class FinalParametersOptimizer:
                 'total_vectorbt_time': 0.0,
                 'performance_gains': []
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize VectorBT optimization: {e}")
             tprint(f"⚠️  VectorBT optimization initialization failed: {e}", "warning")
@@ -314,12 +312,12 @@ class FinalParametersOptimizer:
             self.vectorization_manager = None
             self.optimization_manager = None
             self.vectorbt_enabled = False
-    
+
     def _init_tpe_optimizers(self):
         """Initialize BayesianTPEOptimizer instances for optimization"""
         try:
             tprint("🔧 Initializing Bayesian TPE Optimizers", "info")
-            
+
             # Create optimizer config
             opt_config = OptimizationConfig(
                 n_trials=self.n_trials,
@@ -335,26 +333,26 @@ class FinalParametersOptimizer:
                 enable_batch_processing=self.enable_parallel,
                 batch_size=self.max_workers
             )
-            
+
             # Create optimizer instance (will be shared across categories)
             self.bayesian_optimizer = BayesianTPEOptimizer(opt_config)
             tprint(f"✅ Bayesian TPE Optimizer initialized", "success")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize TPE optimizers: {e}")
             tprint(f"⚠️  TPE optimizer initialization failed: {e}", "warning")
             self.bayesian_optimizer = None
-    
+
     def _init_hardware_optimization(self):
         """Initialize hardware optimization components"""
         try:
             tprint("⚡ Initializing M1 hardware optimization", "info")
-            
+
             # Initialize M1 accelerators
             self.gpu_accelerator = M1GPUAccelerator()
             self.memory_optimizer = M1MemoryOptimizer()
             self.cpu_optimizer = M1CPUOptimizer()
-            
+
             # Initialize matrix operations
             self.matrix_processor = HardwareOptimizedMatrixProcessor()
             self.batch_processor = BatchMatrixProcessor(
@@ -363,15 +361,15 @@ class FinalParametersOptimizer:
                 enable_parallel=True,
                 max_workers=self.max_workers
             )
-            
+
             # Optimize memory
             self.memory_optimizer.optimize_memory_for_ml()
-            
+
             tprint("✅ Hardware optimization initialized", "success")
             tprint(f"   • GPU: {'Available' if self.gpu_accelerator.is_available() else 'Not available'}", "info")
             tprint(f"   • Memory optimized: {self.memory_optimizer.is_optimized}", "info")
             tprint(f"   • Matrix operations: Hardware-accelerated", "info")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize hardware optimization: {e}")
             tprint(f"⚠️  Hardware optimization init failed: {e}", "warning")
@@ -380,20 +378,20 @@ class FinalParametersOptimizer:
             self.cpu_optimizer = None
             self.matrix_processor = None
             self.batch_processor = None
-    
-    def simulate_trading(self, params: Dict[str, Any], 
-                        signals: np.ndarray, 
+
+    def simulate_trading(self, params: Dict[str, Any],
+                        signals: np.ndarray,
                         returns: np.ndarray,
                         confidences: Optional[np.ndarray] = None) -> EvaluationMetrics:
         """
         Simulate trading with given parameters using VectorBT-optimized metrics calculation
-        
+
         Args:
             params: Trading parameters
             signals: Trading signals (1=long, -1=short, 0=neutral)
             returns: Forward returns
             confidences: Optional confidence scores
-            
+
         Returns:
             EvaluationMetrics object
         """
@@ -402,12 +400,12 @@ class FinalParametersOptimizer:
             if len(signals) != len(returns):
                 tprint(f"⚠️  Signals/returns length mismatch: {len(signals)} vs {len(returns)}", "warning")
                 return EvaluationMetrics()
-            
+
             # Apply confidence threshold with validation
             confidence_threshold = validate_probability(
                 params.get('confidence_threshold', 0.6), default=0.6
             )
-            
+
             if confidences is not None:
                 confidences = ensure_array(confidences)
                 valid_conf = validate_probability(confidences)
@@ -415,33 +413,33 @@ class FinalParametersOptimizer:
                 signals = signals[mask]
                 returns = returns[mask]
                 confidences = confidences[mask]
-            
+
             if len(signals) == 0:
                 tprint("⚠️  No signals after confidence filtering", "warning")
                 return EvaluationMetrics()
-            
+
             # Calculate position sizing with validation
             base_position_size = validate_positive(
                 params.get('base_position_size', 0.01), default=0.01
             )
             base_position_size = validate_range(base_position_size, 0.001, 0.2, default=0.01)
-            
+
             # Calculate trade returns
             trade_returns = signals * returns * base_position_size
-            
+
             # Remove invalid values
             valid_mask = ~(check_for_nans(trade_returns) | check_for_infs(trade_returns))
             trade_returns = trade_returns[valid_mask]
-            
+
             if len(trade_returns) == 0:
                 tprint("⚠️  No valid trade returns", "warning")
                 return EvaluationMetrics()
-            
+
             # Use VectorBT optimization for metrics calculation if available
             if self.vectorbt_enabled and self.rolling_optimizer:
                 tprint("🎯 Using VectorBT-optimized metrics calculation", "debug")
                 sharpe, sortino, max_dd, win_rate, profit_factor, total_return = self._calculate_metrics_vectorbt(trade_returns)
-                
+
                 # Update VectorBT stats
                 self.vectorbt_stats['rolling_operations'] += 5  # 5 rolling operations
                 self.vectorbt_stats['total_vectorbt_time'] += time.time() - start_time if 'start_time' in locals() else 0
@@ -453,14 +451,14 @@ class FinalParametersOptimizer:
                 win_rate = calculate_win_rate(trade_returns)
                 profit_factor = calculate_profit_factor(trade_returns)
                 total_return = float(np.sum(trade_returns))
-            
+
             # Validate all metrics
             sharpe = validate_positive(sharpe, default=0.0) if not check_for_nans(sharpe) else 0.0
             sortino = validate_positive(sortino, default=0.0) if not check_for_nans(sortino) else 0.0
             max_dd = float(max_dd) if not check_for_nans(max_dd) else 0.0
             win_rate = validate_probability(win_rate) if not check_for_nans(win_rate) else 0.0
             profit_factor = validate_positive(profit_factor, default=0.0) if not check_for_nans(profit_factor) else 0.0
-            
+
             metrics = EvaluationMetrics(
                 sharpe_ratio=sharpe,
                 sortino_ratio=sortino,
@@ -472,32 +470,32 @@ class FinalParametersOptimizer:
                 avg_trade_duration=0.0,  # Would need timestamps
                 confidence_score=float(np.mean(confidences)) if confidences is not None else 0.0
             )
-            
+
             return metrics
-            
+
         except Exception as e:
             self.logger.error(f"Error in trading simulation: {e}")
             tprint(f"❌ Trading simulation failed: {e}", "error")
             return EvaluationMetrics()
-    
+
     def _calculate_metrics_vectorbt(self, trade_returns: np.ndarray) -> Tuple[float, float, float, float, float, float]:
         """Calculate trading metrics using VectorBT optimization."""
         try:
             # Convert to pandas Series for VectorBT processing
             returns_series = pd.Series(trade_returns)
-            
+
             # Use VectorBT rolling operations for enhanced calculations
             if len(returns_series) > 1:
                 # Calculate rolling statistics for more robust metrics
                 rolling_mean = self.rolling_optimizer.rolling_mean(returns_series, window=min(20, len(returns_series)))
                 rolling_std = self.rolling_optimizer.rolling_std(returns_series, window=min(20, len(returns_series)))
-                
+
                 # Use rolling statistics for Sharpe ratio
                 if not rolling_std.empty and rolling_std.iloc[-1] > 0:
                     sharpe = float(rolling_mean.iloc[-1] / rolling_std.iloc[-1]) if not rolling_mean.empty else 0.0
                 else:
                     sharpe = 0.0
-                
+
                 # Calculate Sortino ratio (downside deviation)
                 negative_returns = returns_series[returns_series < 0]
                 if len(negative_returns) > 1:
@@ -510,25 +508,25 @@ class FinalParametersOptimizer:
                         sortino = 0.0
                 else:
                     sortino = 0.0
-                
+
                 # Calculate rolling max drawdown using cumulative returns
                 cumulative_returns = returns_series.cumsum()
                 rolling_max = self.rolling_optimizer.rolling_max(cumulative_returns, window=len(cumulative_returns))
                 drawdown = cumulative_returns - rolling_max
                 max_dd = float(abs(drawdown.min())) if not drawdown.empty else 0.0
-                
+
                 # Calculate win rate using rolling operations
                 winning_trades = (returns_series > 0).astype(int)
                 rolling_wins = self.rolling_optimizer.rolling_sum(winning_trades, window=len(winning_trades))
                 win_rate = float(rolling_wins.iloc[-1] / len(returns_series)) if not rolling_wins.empty else 0.0
-                
+
                 # Calculate profit factor
                 positive_returns = returns_series[returns_series > 0]
                 negative_returns = returns_series[returns_series < 0]
                 gross_profit = float(positive_returns.sum()) if len(positive_returns) > 0 else 0.0
                 gross_loss = float(abs(negative_returns.sum())) if len(negative_returns) > 0 else 0.0
                 profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
-                
+
             else:
                 # Fallback for single return
                 sharpe = 0.0
@@ -536,12 +534,12 @@ class FinalParametersOptimizer:
                 max_dd = 0.0
                 win_rate = 1.0 if trade_returns[0] > 0 else 0.0
                 profit_factor = 0.0
-            
+
             # Total return
             total_return = float(returns_series.sum())
-            
+
             return sharpe, sortino, max_dd, win_rate, profit_factor, total_return
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT metrics calculation failed, using fallback: {e}")
             # Fallback to standard calculations
@@ -551,14 +549,14 @@ class FinalParametersOptimizer:
             win_rate = calculate_win_rate(trade_returns)
             profit_factor = calculate_profit_factor(trade_returns)
             total_return = float(np.sum(trade_returns))
-            
+
             return sharpe, sortino, max_dd, win_rate, profit_factor, total_return
-    
+
     def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""
         try:
             stats = self.vectorbt_stats.copy()
-            
+
             # Add VectorBT rolling optimizer stats if available
             if self.rolling_optimizer:
                 rolling_stats = self.rolling_optimizer.get_performance_stats()
@@ -569,7 +567,7 @@ class FinalParametersOptimizer:
                     'vectorbt_errors': rolling_stats.get('errors', 0),
                     'vectorbt_avg_time_per_operation': rolling_stats.get('avg_time_per_operation', 0.0)
                 })
-            
+
             # Add unified vectorization manager stats if available
             if self.vectorization_manager:
                 vectorization_stats = self.vectorization_manager.get_performance_stats()
@@ -579,7 +577,7 @@ class FinalParametersOptimizer:
                     'unified_vectorization_memory_savings': vectorization_stats.get('memory_savings', 0.0),
                     'unified_vectorization_cache_hit_rate': vectorization_stats.get('cache_hit_rate', 0.0)
                 })
-            
+
             # Calculate efficiency metrics
             if stats['rolling_operations'] > 0:
                 stats['vectorbt_usage_rate'] = stats['rolling_operations'] / max(1, stats['rolling_operations'] + stats.get('batch_operations', 0))
@@ -587,24 +585,24 @@ class FinalParametersOptimizer:
             else:
                 stats['vectorbt_usage_rate'] = 0.0
                 stats['performance_gain'] = 0.0
-            
+
             return stats
-            
+
         except Exception as e:
             self.logger.error(f"Failed to get VectorBT performance stats: {e}")
             return self.vectorbt_stats.copy()
-    
+
     def evaluate_with_cv(self, params: Dict[str, Any], data: Dict[str, Any],
                          evaluation_func: callable, category: str) -> Tuple[float, Dict[str, Any]]:
         """
         Evaluate parameters using cross-validation
-        
+
         Args:
             params: Parameters to evaluate
             data: Data dictionary containing features, targets, etc.
             evaluation_func: Function that evaluates params on a data split
             category: Parameter category being evaluated
-            
+
         Returns:
             Tuple of (mean_score, cv_results_dict)
         """
@@ -613,29 +611,29 @@ class FinalParametersOptimizer:
             if self.use_cv and 'features' in data and 'targets' in data:
                 X = ensure_array(data['features'])
                 y = ensure_array(data['targets'])
-                
+
                 leakage_results = self.leakage_detector.detect_leakage(X, y)
                 if leakage_results.get('has_leakage', False):
                     leakage_score = leakage_results.get('leakage_score', 0)
                     tprint(f"⚠️  Data leakage detected in {category}: {leakage_score:.4f}", "warning")
-            
+
             # Get CV splits
             X = data.get('features', pd.DataFrame())
             y = data.get('targets', pd.Series())
-            
+
             if isinstance(X, np.ndarray):
                 X = pd.DataFrame(X)
             if isinstance(y, np.ndarray):
                 y = pd.Series(y)
-            
+
             if X.empty or y.empty or len(X) < self.cv_folds * 100:
                 tprint(f"ℹ️  Insufficient data for CV in {category}, using single evaluation", "info")
                 return evaluation_func(params, data), {}
-            
+
             cv_scores = []
             cv_metrics = []
             fold_results = []
-            
+
             for fold_idx, (train_idx, val_idx) in enumerate(
                 self.cv_validator.split(X, y), 1
             ):
@@ -655,15 +653,15 @@ class FinalParametersOptimizer:
                     for key, value in data.items():
                         if key not in ['features', 'targets']:
                             fold_data[key] = value
-                    
+
                     # Evaluate on this fold
                     fold_score, fold_metrics = evaluation_func(params, fold_data)
-                    
+
                     # Validate score
                     if check_for_nans(fold_score) or check_for_infs(fold_score):
                         tprint(f"⚠️  Invalid score in fold {fold_idx} for {category}, skipping", "warning")
                         continue
-                    
+
                     cv_scores.append(fold_score)
                     cv_metrics.append(fold_metrics)
                     fold_results.append({
@@ -673,23 +671,23 @@ class FinalParametersOptimizer:
                         'train_size': len(train_idx),
                         'val_size': len(val_idx)
                     })
-                    
+
                 except Exception as e:
                     tprint(f"⚠️  Error in fold {fold_idx} for {category}: {e}", "warning")
                     continue
-            
+
             if not cv_scores:
                 tprint(f"❌ No valid CV scores for {category}, falling back to single evaluation", "error")
                 return evaluation_func(params, data), {}
-            
+
             # Calculate mean and std
             mean_score = float(np.mean(cv_scores))
             std_score = float(np.std(cv_scores))
-            
+
             # Penalize high variance (unstable parameters)
             stability_penalty = std_score * 0.1
             adjusted_score = max(0.0, mean_score - stability_penalty)
-            
+
             cv_results = {
                 'mean_score': mean_score,
                 'std_score': std_score,
@@ -698,27 +696,27 @@ class FinalParametersOptimizer:
                 'fold_results': fold_results,
                 'n_folds': len(cv_scores)
             }
-            
+
             tprint(f"   CV results for {category}: {mean_score:.4f} ± {std_score:.4f}", "info")
-            
+
             return adjusted_score, cv_results
-            
+
         except Exception as e:
             self.logger.error(f"Error in CV evaluation for {category}: {e}")
             tprint(f"❌ CV evaluation failed for {category}: {e}", "error")
             return evaluation_func(params, data), {}
-    
-    def calculate_combined_confidence(self, analyst_conf: np.ndarray, 
+
+    def calculate_combined_confidence(self, analyst_conf: np.ndarray,
                                      tactician_conf: np.ndarray,
                                      params: Dict[str, Any]) -> np.ndarray:
         """
         Calculate combined confidence using multiple methods with validation
-        
+
         Args:
             analyst_conf: Analyst confidence array
             tactician_conf: Tactician confidence array
             params: Parameters including weights and combination method
-            
+
         Returns:
             Combined confidence array
         """
@@ -726,21 +724,21 @@ class FinalParametersOptimizer:
             # Validate inputs
             analyst_conf = ensure_array(analyst_conf)
             tactician_conf = ensure_array(tactician_conf)
-            
+
             if len(analyst_conf) != len(tactician_conf):
                 tprint(f"⚠️  Confidence length mismatch: {len(analyst_conf)} vs {len(tactician_conf)}", "warning")
                 min_len = min(len(analyst_conf), len(tactician_conf))
                 analyst_conf = analyst_conf[:min_len]
                 tactician_conf = tactician_conf[:min_len]
-            
+
             # Validate confidence values
             analyst_conf = validate_probability(analyst_conf)
             tactician_conf = validate_probability(tactician_conf)
-            
+
             # Get weights and validate
             tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
             analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
-            
+
             # Normalize weights to sum to 1
             total_weight = tactician_weight + analyst_weight
             if total_weight > 0:
@@ -748,15 +746,15 @@ class FinalParametersOptimizer:
                 analyst_weight = analyst_weight / total_weight
             else:
                 tactician_weight, analyst_weight = 0.6, 0.4
-            
+
             # Get combination method
             method = params.get('confidence_combination_method', 'weighted_average')
-            
+
             # Calculate combined confidence based on method
             if method == 'multiplicative':
                 # Multiplicative: (tact^w_t) * (analyst^w_a)
                 combined = (
-                    np.power(np.maximum(tactician_conf, 0.001), tactician_weight) * 
+                    np.power(np.maximum(tactician_conf, 0.001), tactician_weight) *
                     np.power(np.maximum(analyst_conf, 0.001), analyst_weight)
                 )
             elif method == 'logarithmic':
@@ -776,35 +774,34 @@ class FinalParametersOptimizer:
                 )
             else:  # weighted_average
                 combined = tactician_conf * tactician_weight + analyst_conf * analyst_weight
-            
+
             # Validate and clip to [0, 1]
             combined = validate_probability(combined)
-            
+
             return combined
-            
+
         except Exception as e:
             self.logger.error(f"Error calculating combined confidence: {e}")
             tprint(f"❌ Combined confidence calculation failed: {e}", "error")
             # Fallback to simple average
             return (analyst_conf + tactician_conf) / 2.0
 
-
 class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     """Enhanced optimizer with long/short parameter differentiation"""
-    
+
     def __init__(self, config: Dict[str, Any], nonlinear_config: Optional[NonLinearConfig] = None):
         super().__init__(config, nonlinear_config)
-        
+
         # Enhanced search spaces with directional parameters
         self.directional_search_spaces = self._get_directional_search_spaces()
         self.default_search_spaces.update(self.directional_search_spaces)
-        
+
         # Re-create enhanced search spaces with new directional parameters
         self.enhanced_search_spaces = self._create_enhanced_search_spaces()
-        
+
         self.logger.info("🎯 Asymmetric Parameters Optimizer initialized")
         self.logger.info(f"   Added directional parameter categories: {len(self.directional_search_spaces)}")
-        
+
     def _get_directional_search_spaces(self):
         """Define search spaces for directional parameters"""
         return {
@@ -871,64 +868,64 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'feature_interaction_depth': {'type': 'int', 'min': 1, 'max': 3},  # Depth of feature interactions
             }
         }
-    
+
     def optimize_per_regime_with_direction(self, regime_data: Dict[str, Any], regime_id: str):
         """
         Optimize parameters per regime with directional differentiation
-        
+
         Args:
             regime_data: Data for specific regime including signals, directions, returns, etc.
             regime_id: Regime identifier
         """
-        
+
         # Check if regime has enough samples for directional split
         total_samples = len(regime_data.get('signals', []))
         directions = regime_data.get('directions', np.array([]))
-        
+
         if len(directions) == 0:
             self.logger.warning(f"⚠️ Regime {regime_id}: No direction data available, using standard optimization")
             return self.optimize_regime_parameters(regime_data, regime_id)
-        
+
         long_samples = np.sum(directions > 0)
         short_samples = np.sum(directions < 0)
-        
+
         min_samples_per_direction = self.config.get('min_samples_per_direction', 100)
-        
+
         if long_samples >= min_samples_per_direction and short_samples >= min_samples_per_direction:
             # Sufficient samples: optimize separately
             self.logger.info(f"📊 Regime {regime_id}: Sufficient samples for directional optimization")
             self.logger.info(f"   Long samples: {long_samples}, Short samples: {short_samples}")
-            
+
             return self._optimize_directional_parameters(regime_data, regime_id)
-        
+
         else:
             # Insufficient samples: use averaged parameters with directional bias
             self.logger.info(f"📊 Regime {regime_id}: Using averaged parameters with directional bias")
             self.logger.info(f"   Long samples: {long_samples}, Short samples: {short_samples}")
-            
+
             return self._optimize_averaged_parameters_with_bias(regime_data, regime_id)
-    
+
     def _optimize_directional_parameters(self, regime_data: Dict[str, Any], regime_id: str):
         """Optimize separate parameters for longs and shorts"""
-        
+
         results = {}
-        
+
         # Separate data by direction
         directions = regime_data['directions']
         long_mask = directions > 0
         short_mask = directions < 0
-        
+
         # Optimize long parameters
         long_data = self._filter_data_by_mask(regime_data, long_mask)
-        
+
         long_study = optuna.create_study(
             direction='maximize',
             study_name=f'{self.study_name}_regime_{regime_id}_long',
             sampler=optuna.samplers.TPESampler(seed=42)
         )
-        
+
         long_objective = self._create_directional_objective(long_data, 'long', regime_id)
-        
+
         try:
             long_study.optimize(long_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
             results['long_parameters'] = long_study.best_params
@@ -939,18 +936,18 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             results['long_parameters'] = {}
             results['long_score'] = 0.0
             results['long_trials'] = 0
-        
+
         # Optimize short parameters
         short_data = self._filter_data_by_mask(regime_data, short_mask)
-        
+
         short_study = optuna.create_study(
             direction='maximize',
             study_name=f'{self.study_name}_regime_{regime_id}_short',
             sampler=optuna.samplers.TPESampler(seed=43)
         )
-        
+
         short_objective = self._create_directional_objective(short_data, 'short', regime_id)
-        
+
         try:
             short_study.optimize(short_objective, n_trials=self.n_trials // 2, timeout=self.timeout // 2)
             results['short_parameters'] = short_study.best_params
@@ -961,54 +958,54 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             results['short_parameters'] = {}
             results['short_score'] = 0.0
             results['short_trials'] = 0
-        
+
         # Create combined parameters
         results['combined_parameters'] = self._combine_directional_parameters(
-            results.get('long_parameters', {}), 
+            results.get('long_parameters', {}),
             results.get('short_parameters', {})
         )
-        
+
         # Calculate weighted score
         total_trials = results['long_trials'] + results['short_trials']
         if total_trials > 0:
             results['combined_score'] = (
-                (results['long_score'] * results['long_trials'] + 
+                (results['long_score'] * results['long_trials'] +
                  results['short_score'] * results['short_trials']) / total_trials
             )
         else:
             results['combined_score'] = 0.0
-        
+
         self.logger.info(f"✅ Directional optimization completed for regime {regime_id}")
         self.logger.info(f"   Long score: {results['long_score']:.4f} ({results['long_trials']} trials)")
         self.logger.info(f"   Short score: {results['short_score']:.4f} ({results['short_trials']} trials)")
         self.logger.info(f"   Combined score: {results['combined_score']:.4f}")
-        
+
         return results
-    
+
     def _optimize_averaged_parameters_with_bias(self, regime_data: Dict[str, Any], regime_id: str):
         """Optimize averaged parameters with directional bias when samples are insufficient"""
-        
+
         # Calculate directional bias
         directions = regime_data['directions']
         long_ratio = np.sum(directions > 0) / len(directions)
         short_ratio = np.sum(directions < 0) / len(directions)
         directional_bias = 'long' if long_ratio > short_ratio else 'short'
         bias_strength = abs(long_ratio - short_ratio)
-        
+
         self.logger.info(f"   Directional bias: {directional_bias} (strength: {bias_strength:.2f})")
         self.logger.info(f"   Long ratio: {long_ratio:.1%}, Short ratio: {short_ratio:.1%}")
-        
+
         # Create biased objective function
         study = optuna.create_study(
             direction='maximize',
             study_name=f'{self.study_name}_regime_{regime_id}_averaged',
             sampler=optuna.samplers.TPESampler(seed=42)
         )
-        
+
         biased_objective = self._create_biased_objective(
             regime_data, directional_bias, long_ratio, short_ratio, regime_id
         )
-        
+
         try:
             study.optimize(biased_objective, n_trials=self.n_trials, timeout=self.timeout)
             base_parameters = study.best_params
@@ -1019,12 +1016,12 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             base_parameters = {}
             base_score = 0.0
             trials_completed = 0
-        
+
         # Apply directional bias to parameters
         biased_parameters = self._apply_directional_bias(
             base_parameters, directional_bias, long_ratio, short_ratio
         )
-        
+
         results = {
             'base_parameters': base_parameters,
             'biased_parameters': biased_parameters,
@@ -1035,17 +1032,17 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             'score': base_score,
             'trials_completed': trials_completed
         }
-        
+
         self.logger.info(f"✅ Biased optimization completed for regime {regime_id}")
         self.logger.info(f"   Base score: {base_score:.4f} ({trials_completed} trials)")
         self.logger.info(f"   Bias applied: {directional_bias} (strength: {bias_strength:.2f})")
-        
+
         return results
-    
+
     def _filter_data_by_mask(self, data: Dict[str, Any], mask: np.ndarray) -> Dict[str, Any]:
         """Filter regime data by directional mask"""
         filtered_data = {}
-        
+
         for key, value in data.items():
             if isinstance(value, np.ndarray) and len(value) == len(mask):
                 filtered_data[key] = value[mask]
@@ -1054,17 +1051,17 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             else:
                 # Keep non-array data as-is
                 filtered_data[key] = value
-                
+
         return filtered_data
-    
+
     def _create_directional_objective(self, data: Dict[str, Any], direction: str, regime_id: str):
         """Create objective function for specific direction"""
-        
+
         def objective(trial):
             try:
                 # Sample directional parameters
                 params = {}
-                
+
                 # Sample direction-specific parameters
                 direction_space = self.directional_search_spaces[f'{direction}_specific_parameters']
                 for param_name, param_config in direction_space.items():
@@ -1076,7 +1073,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                         params[param_name] = trial.suggest_int(
                             param_name, param_config['low'], param_config['high']
                         )
-                
+
                 # Sample general directional parameters
                 for category in ['directional_thresholds', 'asymmetric_risk_management']:
                     if category in self.directional_search_spaces:
@@ -1090,53 +1087,53 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                                 params[param_name] = trial.suggest_int(
                                     param_name, param_config['low'], param_config['high']
                                 )
-                
+
                 # Sample some general parameters with directional adjustments
                 general_params = self._sample_general_parameters_with_direction(trial, direction)
                 params.update(general_params)
-                
+
                 # Evaluate performance with these parameters
                 performance = self._evaluate_directional_performance(data, params, direction, regime_id)
-                
+
                 return performance
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Objective evaluation failed: {e}")
                 return 0.0  # Return poor score on failure
-        
+
         return objective
-    
-    def _create_biased_objective(self, data: Dict[str, Any], bias: str, long_ratio: float, 
+
+    def _create_biased_objective(self, data: Dict[str, Any], bias: str, long_ratio: float,
                                 short_ratio: float, regime_id: str):
         """Create objective function with directional bias"""
-        
+
         def objective(trial):
             try:
                 # Sample base parameters
                 params = self._sample_base_parameters(trial)
-                
+
                 # Apply directional bias during sampling
                 biased_params = self._apply_directional_bias_to_sampling(
                     params, trial, bias, long_ratio, short_ratio
                 )
-                
+
                 # Evaluate performance with biased parameters
                 performance = self._evaluate_biased_performance(
                     data, biased_params, bias, long_ratio, short_ratio, regime_id
                 )
-                
+
                 return performance
-                
+
             except Exception as e:
                 self.logger.error(f"❌ Biased objective evaluation failed: {e}")
                 return 0.0  # Return poor score on failure
-        
+
         return objective
-    
+
     def _sample_general_parameters_with_direction(self, trial, direction: str) -> Dict[str, Any]:
         """Sample general parameters with directional adjustments"""
         params = {}
-        
+
         # Adjust confidence thresholds based on direction
         if direction == 'long':
             params['confidence_threshold'] = trial.suggest_float('confidence_threshold', 0.5, 0.75)
@@ -1144,13 +1141,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         else:  # short
             params['confidence_threshold'] = trial.suggest_float('confidence_threshold', 0.6, 0.85)
             params['position_size_base'] = trial.suggest_float('position_size_base', 0.006, 0.012)
-        
+
         # Direction-agnostic parameters
         params['leverage_multiplier'] = trial.suggest_float('leverage_multiplier', 0.8, 1.2)
         params['risk_adjustment'] = trial.suggest_float('risk_adjustment', 0.9, 1.1)
-        
+
         return params
-    
+
     def _sample_base_parameters(self, trial) -> Dict[str, Any]:
         """Sample base parameters without directional bias"""
         return {
@@ -1161,15 +1158,15 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             'profit_target_multiplier': trial.suggest_float('profit_target_multiplier', 0.8, 1.4),
             'stop_loss_multiplier': trial.suggest_float('stop_loss_multiplier', 0.8, 1.3),
         }
-    
-    def _apply_directional_bias_to_sampling(self, params: Dict[str, Any], trial, bias: str, 
+
+    def _apply_directional_bias_to_sampling(self, params: Dict[str, Any], trial, bias: str,
                                           long_ratio: float, short_ratio: float) -> Dict[str, Any]:
         """Apply directional bias during parameter sampling"""
         biased_params = params.copy()
-        
+
         # Sample directional adjustment factors
         bias_adjustment = trial.suggest_float('bias_adjustment', 0.9, 1.1)
-        
+
         if bias == 'long':
             # Long-friendly adjustments
             biased_params['confidence_threshold'] *= 0.95  # Slightly lower
@@ -1180,10 +1177,10 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             biased_params['confidence_threshold'] *= 1.05  # Slightly higher
             biased_params['position_size_base'] *= bias_adjustment * 0.95  # Slightly smaller
             biased_params['stop_loss_multiplier'] *= 1.1  # Tighter stops
-        
+
         return biased_params
-    
-    def _evaluate_directional_performance(self, data: Dict[str, Any], params: Dict[str, Any], 
+
+    def _evaluate_directional_performance(self, data: Dict[str, Any], params: Dict[str, Any],
                                         direction: str, regime_id: str) -> float:
         """Evaluate performance for specific direction"""
         try:
@@ -1191,23 +1188,23 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             signals = data.get('signals', np.array([]))
             returns = data.get('returns', np.array([]))
             directions = data.get('directions', np.array([]))
-            
+
             if len(signals) == 0 or len(returns) == 0:
                 return 0.0
-            
+
             # Apply directional parameters to simulate performance
             confidence_threshold = params.get('confidence_threshold', 0.6)
             position_size = params.get('position_size_base', 0.01)
-            
+
             # Filter signals by confidence
             confident_signals = signals >= confidence_threshold
-            
+
             # Calculate directional returns
             directional_returns = returns[confident_signals] * position_size
-            
+
             if len(directional_returns) == 0:
                 return 0.0
-            
+
             # Direction-specific performance metrics
             if direction == 'long':
                 # For longs: reward sustained positive returns
@@ -1222,19 +1219,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Bonus for capturing volatility
                 volatility_bonus = np.std(directional_returns) * 0.05
                 performance += volatility_bonus
-            
+
             # Apply risk adjustment
             risk_adjustment = params.get('risk_adjustment', 1.0)
             performance *= risk_adjustment
-            
+
             return max(0.0, performance)  # Ensure non-negative
-            
+
         except Exception as e:
             self.logger.error(f"❌ Directional performance evaluation failed: {e}")
             return 0.0
-    
-    def _evaluate_biased_performance(self, data: Dict[str, Any], params: Dict[str, Any], 
-                                   bias: str, long_ratio: float, short_ratio: float, 
+
+    def _evaluate_biased_performance(self, data: Dict[str, Any], params: Dict[str, Any],
+                                   bias: str, long_ratio: float, short_ratio: float,
                                    regime_id: str) -> float:
         """Evaluate performance with directional bias"""
         try:
@@ -1242,67 +1239,67 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             signals = data.get('signals', np.array([]))
             returns = data.get('returns', np.array([]))
             directions = data.get('directions', np.array([]))
-            
+
             if len(signals) == 0 or len(returns) == 0:
                 return 0.0
-            
+
             # Apply parameters
             confidence_threshold = params.get('confidence_threshold', 0.6)
             position_size = params.get('position_size_base', 0.01)
-            
+
             # Filter signals
             confident_signals = signals >= confidence_threshold
             filtered_returns = returns[confident_signals]
             filtered_directions = directions[confident_signals]
-            
+
             if len(filtered_returns) == 0:
                 return 0.0
-            
+
             # Calculate weighted performance based on directional bias
             long_mask = filtered_directions > 0
             short_mask = filtered_directions < 0
-            
+
             performance = 0.0
-            
+
             if np.any(long_mask):
                 long_returns = filtered_returns[long_mask] * position_size
                 long_performance = np.mean(long_returns) * np.sqrt(len(long_returns))
                 performance += long_performance * long_ratio
-            
+
             if np.any(short_mask):
                 short_returns = filtered_returns[short_mask] * position_size
                 short_performance = np.mean(short_returns) * np.sqrt(len(short_returns))
                 performance += short_performance * short_ratio
-            
+
             # Apply bias boost
             bias_strength = abs(long_ratio - short_ratio)
             bias_boost = 1.0 + (bias_strength * 0.1)  # Up to 10% boost for strong bias
             performance *= bias_boost
-            
+
             return max(0.0, performance)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Biased performance evaluation failed: {e}")
             return 0.0
-    
-    def _combine_directional_parameters(self, long_params: Dict[str, Any], 
+
+    def _combine_directional_parameters(self, long_params: Dict[str, Any],
                                       short_params: Dict[str, Any]) -> Dict[str, Any]:
         """Combine long and short parameters into unified set"""
         combined = {}
-        
+
         # Combine parameters with directional prefixes
         for key, value in long_params.items():
             if not key.startswith('long_'):
                 combined[f'long_{key}'] = value
             else:
                 combined[key] = value
-        
+
         for key, value in short_params.items():
             if not key.startswith('short_'):
                 combined[f'short_{key}'] = value
             else:
                 combined[key] = value
-        
+
         # Create averaged parameters for general use
         general_params = {}
         for long_key, long_value in long_params.items():
@@ -1311,49 +1308,49 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 short_key = f'short_{base_key}'
                 if short_key in short_params:
                     general_params[base_key] = (long_value + short_params[short_key]) / 2
-        
+
         combined.update(general_params)
-        
+
         return combined
-    
-    def _apply_directional_bias(self, base_params: Dict[str, Any], bias: str, 
+
+    def _apply_directional_bias(self, base_params: Dict[str, Any], bias: str,
                               long_ratio: float, short_ratio: float) -> Dict[str, Any]:
         """Apply directional bias to base parameters"""
-        
+
         biased_params = base_params.copy()
         bias_strength = abs(long_ratio - short_ratio)
-        
+
         if bias == 'long':
             # Bias towards long-friendly parameters
             biased_params['confidence_threshold'] = biased_params.get('confidence_threshold', 0.6) * (1 - bias_strength * 0.1)
             biased_params['position_size_base'] = biased_params.get('position_size_base', 0.01) * (1 + bias_strength * 0.2)
             biased_params['profit_target_multiplier'] = biased_params.get('profit_target_multiplier', 1.0) * (1 + bias_strength * 0.3)
             biased_params['max_position_duration'] = int(biased_params.get('max_position_duration', 25) * (1 + bias_strength * 0.4))
-            
+
         else:  # short bias
-            # Bias towards short-friendly parameters  
+            # Bias towards short-friendly parameters
             biased_params['confidence_threshold'] = biased_params.get('confidence_threshold', 0.6) * (1 + bias_strength * 0.1)
             biased_params['position_size_base'] = biased_params.get('position_size_base', 0.01) * (1 - bias_strength * 0.1)
             biased_params['stop_loss_multiplier'] = biased_params.get('stop_loss_multiplier', 1.0) * (1 + bias_strength * 0.2)
             biased_params['max_position_duration'] = int(biased_params.get('max_position_duration', 25) * (1 - bias_strength * 0.3))
-        
+
         # Add directional metadata
         biased_params['directional_bias'] = bias
         biased_params['bias_strength'] = bias_strength
         biased_params['long_ratio'] = long_ratio
         biased_params['short_ratio'] = short_ratio
-        
+
         return biased_params
-    
+
     def _create_enhanced_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Create enhanced search spaces with non-linear transformation metadata."""
         enhanced_spaces = {}
-        
+
         for category, space in self.default_search_spaces.items():
             enhanced_spaces[category] = create_enhanced_search_space(space, self.nonlinear_config)
-        
+
         return enhanced_spaces
-    
+
     def _get_default_search_spaces(self) -> Dict[str, Dict[str, Any]]:
         """Get default search spaces for parameter categories."""
         return {
@@ -1581,7 +1578,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'analyst_lightgbm_weight': {'type': 'float', 'min': 0.2, 'max': 0.4},
                 # Analyst meta-learner weight
                 'analyst_elastic_net_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-                
+
                 # Tactician model weights (Base models)
                 'tactician_xgboost_weight': {'type': 'float', 'min': 0.2, 'max': 0.35},
                 'tactician_randomforest_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
@@ -1589,22 +1586,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'tactician_elastic_net_weight': {'type': 'float', 'min': 0.15, 'max': 0.3},
                 # Tactician meta-learner weight
                 'tactician_lightgbm_weight': {'type': 'float', 'min': 0.1, 'max': 0.3},
-                
+
                 # General model parameters
                 'model_diversity_bonus': {'type': 'float', 'min': 0.05, 'max': 0.15},
                 'model_complexity_penalty': {'type': 'float', 'min': 0.01, 'max': 0.1}
             }
         }
-    
-    async def optimize_all_parameters(self, calibration_results: Dict[str, Any], 
+
+    async def optimize_all_parameters(self, calibration_results: Dict[str, Any],
                                     previous_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Optimize all parameters by category.
-        
+
         Args:
             calibration_results: Results from confidence calibration
             previous_results: Previous optimization results for warm start
-            
+
         Returns:
             Dict containing optimized parameters by category
         """
@@ -1612,55 +1609,55 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info("🔧 Starting final parameters optimization...")
             self.logger.info(f"📊 Calibration results available: {len(calibration_results)} keys")
             self.logger.info(f"🔄 Previous results available: {previous_results is not None}")
-            
+
             optimization_results = {}
             start_time = time.time()
-            
+
             for i, category in enumerate(self.categories, 1):
                 self.logger.info(f"🔄 Optimizing {category} parameters ({i}/{len(self.categories)})...")
                 category_start = time.time()
-                
+
                 category_results = await self._optimize_category(
-                    category, calibration_results, 
+                    category, calibration_results,
                     previous_results.get(category) if previous_results else None
                 )
-                
+
                 category_duration = time.time() - category_start
                 optimization_results[category] = category_results
-                
+
                 if category_results and 'best_value' in category_results:
                     self.logger.info(f"✅ {category} optimization completed in {category_duration:.2f}s - Best value: {category_results['best_value']:.4f}")
                 else:
                     self.logger.warning(f"⚠️ {category} optimization completed in {category_duration:.2f}s - No results obtained")
-            
+
             total_duration = time.time() - start_time
             self.logger.info("✅ Final parameters optimization completed")
             self.logger.info(f"⏱️ Total optimization time: {total_duration:.2f}s")
             self.logger.info(f"📊 Categories optimized: {len(optimization_results)}")
-            
+
             return optimization_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in final parameters optimization: {e}")
             self.logger.exception("Full traceback:")
             raise
-    
-    async def _optimize_category(self, category: str, calibration_results: Dict[str, Any], 
+
+    async def _optimize_category(self, category: str, calibration_results: Dict[str, Any],
                                previous_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Enhanced optimization using BayesianTPEOptimizer with hardware acceleration.
-        
+
         Args:
             category: Parameter category to optimize
             calibration_results: Results from confidence calibration
             previous_results: Previous optimization results for this category
-            
+
         Returns:
             Dict containing optimization results for the category
         """
         try:
             tprint(f"🔍 Optimizing category: {category}", "header")
-            
+
             # Use enhanced search space if non-linear optimization is enabled
             if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
                 search_space = self.enhanced_search_spaces[category]
@@ -1668,16 +1665,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             else:
                 search_space = self.default_search_spaces.get(category, {})
                 tprint(f"📊 Using standard search space for {category}", "info")
-            
+
             if not search_space:
                 tprint(f"⚠️  No search space found for category: {category}", "warning")
                 return {}
-            
+
             tprint(f"📊 Search space: {len(search_space)} parameters", "info")
-            
+
             # Convert search space to BayesianTPEOptimizer format
             converted_search_space = self._convert_search_space_format(search_space)
-            
+
             # Use BayesianTPEOptimizer if available, fallback to manual optimization
             if self.bayesian_optimizer:
                 result = await self._optimize_with_bayesian_tpe(
@@ -1688,31 +1685,31 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 result = await self._optimize_with_fallback(
                     category, search_space, calibration_results
                 )
-            
+
             if result and 'best_params' in result:
                 tprint(f"✅ {category} optimization complete", "success")
                 tprint(f"   Best score: {result.get('best_value', 0):.4f}", "info")
                 tprint(f"   Time: {result.get('optimization_time', 0):.2f}s", "info")
-                
+
                 # Log cache statistics
                 if self.evaluation_cache:
                     cache_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
                     tprint(f"   Cache hit rate: {cache_rate:.1%} ({self.cache_hits}/{self.cache_hits + self.cache_misses})", "info")
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error optimizing category {category}: {e}")
             tprint(f"❌ Optimization failed for {category}: {e}", "error")
             return {}
-    
+
     def _convert_search_space_format(self, search_space: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
         """
         Convert search space to BayesianTPEOptimizer format
-        
+
         Args:
             search_space: Original search space dictionary
-            
+
         Returns:
             Converted search space for BayesianTPEOptimizer
         """
@@ -1728,25 +1725,25 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # For boolean, use list of choices
                 converted[param_name] = [True, False]
         return converted
-    
+
     async def _optimize_with_bayesian_tpe(self, category: str, search_space: Dict[str, Any],
                                          calibration_results: Dict[str, Any],
                                          previous_results: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Optimize using BayesianTPEOptimizer with staged optimization and early stopping
-        
+
         Args:
             category: Parameter category
             search_space: Converted search space
             calibration_results: Calibration results
             previous_results: Previous optimization results
-            
+
         Returns:
             Optimization results dictionary
         """
         try:
             tprint(f"🎯 Starting Bayesian TPE optimization for {category}", "info")
-            
+
             # Define objective function for this category
             def objective(params: Dict[str, Any]) -> float:
                 """Objective function for optimization"""
@@ -1755,17 +1752,17 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 if cache_key in self.evaluation_cache:
                     self.cache_hits += 1
                     return self.evaluation_cache[cache_key]
-                
+
                 self.cache_misses += 1
-                
+
                 # Evaluate configuration
                 score = self._evaluate_configuration(category, params, calibration_results)
-                
+
                 # Cache result
                 self.evaluation_cache[cache_key] = score
-                
+
                 return score
-            
+
             # Run optimization
             start_time = time.time()
             optimization_results = self.bayesian_optimizer.optimize(
@@ -1773,16 +1770,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 search_space=search_space
             )
             optimization_time = time.time() - start_time
-            
+
             # Extract results
             best_params = optimization_results.get('best_params', {})
             best_value = optimization_results.get('best_value', 0.0)
-            
+
             tprint(f"   Completed {optimization_results.get('n_trials', 0)} trials", "info")
             tprint(f"   Stages: Coarse={optimization_results.get('stages', {}).get('coarse_grid', 0)}, "
                   f"Fine={optimization_results.get('stages', {}).get('fine_grid', 0)}, "
                   f"TPE={optimization_results.get('stages', {}).get('tpe', 0)}", "info")
-            
+
             result = {
                 'best_params': best_params,
                 'best_value': best_value,
@@ -1793,66 +1790,66 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'history': optimization_results.get('history', []),
                 'hardware_accelerated': self.hardware_enabled
             }
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.error(f"BayesianTPE optimization failed for {category}: {e}")
             tprint(f"❌ BayesianTPE failed for {category}: {e}", "error")
             return {}
-    
+
     async def _optimize_with_fallback(self, category: str, search_space: Dict[str, Dict[str, Any]],
                                      calibration_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Fallback optimization when BayesianTPEOptimizer is not available
-        
+
         Args:
             category: Parameter category
             search_space: Original search space
             calibration_results: Calibration results
-            
+
         Returns:
             Optimization results dictionary
         """
         try:
             tprint(f"🔄 Using fallback optimization for {category}", "info")
-            
+
             # Use simple grid search as fallback
             coarse_result = await self._coarse_grid_search(category, search_space, calibration_results)
-            
+
             if not coarse_result:
                 return self._create_fallback_result(category)
-            
+
             return {
                 'best_params': coarse_result.get('best_params', {}),
                 'best_value': coarse_result.get('best_score', 0.0),
                 'optimization_method': 'fallback_grid',
                 'n_combinations': coarse_result.get('n_combinations', 0)
             }
-            
+
         except Exception as e:
             self.logger.error(f"Fallback optimization failed for {category}: {e}")
             tprint(f"❌ Fallback failed for {category}: {e}", "error")
             return self._create_fallback_result(category)
-    
-    def _objective_function(self, trial: optuna.Trial, category: str, 
-                          search_space: Dict[str, Dict[str, Any]], 
+
+    def _objective_function(self, trial: optuna.Trial, category: str,
+                          search_space: Dict[str, Dict[str, Any]],
                           calibration_results: Dict[str, Any]) -> float:
         """
         Enhanced objective function for Optuna optimization with non-linear sampling.
-        
+
         Args:
             trial: Optuna trial object
             category: Parameter category being optimized
             search_space: Search space for the category
             calibration_results: Results from confidence calibration
-            
+
         Returns:
             Optimization score (higher is better)
         """
         try:
             params = {}
-            
+
             # Use enhanced search space if non-linear optimization is enabled
             if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
                 enhanced_space = self.enhanced_search_spaces[category]
@@ -1888,21 +1885,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                         params[param_name] = trial.suggest_categorical(param_name, [True, False])
                     elif param_config['type'] == 'categorical':
                         params[param_name] = trial.suggest_categorical(param_name, param_config['choices'])
-            
+
             # Evaluate configuration
             score = self._evaluate_configuration(category, params, calibration_results)
-            
+
             # Apply non-linear scoring enhancements
             if self.use_nonlinear_optimization:
                 enhanced_score = apply_nonlinear_scoring(score, params, category)
                 return enhanced_score
-            
+
             return score
-            
+
         except Exception as e:
             self.logger.error(f"Error in objective function for {category}: {e}")
             return -999.0
-    
+
     def _evaluate_configuration(self, category: str, params: Dict[str, Any],
                               calibration_results: Dict[str, Any]) -> float:
         """
@@ -1971,16 +1968,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.error(f"Error evaluating configuration for {category}: {e}")
             return 0.0
-    
-    def _evaluate_confidence_params(self, params: Dict[str, Any], 
+
+    def _evaluate_confidence_params(self, params: Dict[str, Any],
                                   calibration_results: Dict[str, Any]) -> float:
         """
         Evaluate confidence threshold parameters using proper simulation and CV
-        
+
         Args:
             params: Confidence parameters to evaluate
             calibration_results: Calibration results with confidence data
-            
+
         Returns:
             Evaluation score
         """
@@ -1989,32 +1986,32 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
             tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
             returns = calibration_results.get('returns', np.array([]))
-            
+
             # If we have actual confidence data, use simulation-based evaluation
             if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
                 return self._evaluate_confidence_with_simulation(params, analyst_conf, tactician_conf, returns)
-            
+
             # Otherwise, fall back to heuristic evaluation
             return self._evaluate_confidence_heuristic(params, calibration_results)
-            
+
         except Exception as e:
             self.logger.error(f"Error evaluating confidence params: {e}")
             tprint(f"❌ Confidence evaluation error: {e}", "error")
             return 0.0
-    
+
     def _evaluate_confidence_with_simulation(self, params: Dict[str, Any],
                                             analyst_conf: np.ndarray,
                                             tactician_conf: np.ndarray,
                                             returns: np.ndarray) -> float:
         """
         Evaluate confidence parameters using actual trading simulation
-        
+
         Args:
             params: Confidence parameters
             analyst_conf: Analyst confidence array
             tactician_conf: Tactician confidence array
             returns: Returns array
-            
+
         Returns:
             Evaluation score based on simulated trading
         """
@@ -2024,14 +2021,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             analyst_conf = ensure_array(analyst_conf)[:min_len]
             tactician_conf = ensure_array(tactician_conf)[:min_len]
             returns = ensure_array(returns)[:min_len]
-            
+
             # Calculate combined confidence
             combined_conf = self.calculate_combined_confidence(analyst_conf, tactician_conf, params)
-            
+
             # Generate signals based on confidence threshold
             threshold = validate_probability(params.get('analyst_confidence_threshold', 0.6))
             signals = np.where(combined_conf >= threshold, 1, 0)
-            
+
             # Simulate trading with CV if enabled and sufficient data
             if self.use_cv and len(signals) >= self.cv_folds * 100:
                 # Prepare data for CV
@@ -2046,7 +2043,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     'returns': returns,
                     'confidences': combined_conf
                 }
-                
+
                 # Define evaluation function for a single fold
                 def eval_fold(fold_params: Dict[str, Any], fold_data: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
                     if 'val' in fold_data:
@@ -2057,41 +2054,41 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                         fold_signals = fold_data['signals']
                         fold_returns = fold_data['returns']
                         fold_confidences = fold_data['confidences']
-                    
+
                     metrics = self.simulate_trading(fold_params, fold_signals, fold_returns, fold_confidences)
                     score = metrics.to_score()
                     return score, metrics.__dict__
-                
+
                 # Evaluate with CV
                 cv_score, cv_results = self.evaluate_with_cv(params, data, eval_fold, 'confidence')
-                
+
                 return cv_score
             else:
                 # Single evaluation without CV
                 metrics = self.simulate_trading(params, signals, returns, combined_conf)
                 score = metrics.to_score()
-                
+
                 return score
-                
+
         except Exception as e:
             self.logger.error(f"Error in confidence simulation: {e}")
             tprint(f"❌ Confidence simulation error: {e}", "error")
             return 0.0
-    
+
     def _evaluate_confidence_heuristic(self, params: Dict[str, Any],
                                       calibration_results: Dict[str, Any]) -> float:
         """
         Fallback heuristic evaluation when simulation data is unavailable
-        
+
         Args:
             params: Confidence parameters
             calibration_results: Calibration results
-            
+
         Returns:
             Heuristic score
         """
         score = 0.0
-        
+
         # Base entry threshold evaluation with validation
         if 'base_entry_threshold' in params:
             threshold = validate_probability(params['base_entry_threshold'])
@@ -2099,57 +2096,57 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.3
             elif validate_range(threshold, 0.5, 0.9):
                 score += 0.2
-        
+
         # Threshold relationship validation
         if 'analyst_confidence_threshold' in params and 'tactician_confidence_threshold' in params:
             analyst_thresh = validate_probability(params['analyst_confidence_threshold'])
             tactician_thresh = validate_probability(params['tactician_confidence_threshold'])
-            
+
             # Tactician should have higher threshold
             if tactician_thresh > analyst_thresh:
                 score += 0.2
-            
+
             # Reasonable separation
             diff = tactician_thresh - analyst_thresh
             if validate_range(diff, 0.1, 0.2):
                 score += 0.1
-        
+
         # Weight validation
         tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
         analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
-        
+
         # Check if weights sum to approximately 1
         if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
             score += 0.2
-        
+
         # Exit confidence validation
         exit_threshold = validate_probability(params.get('exit_confidence_threshold', 0.5))
         if validate_range(exit_threshold, 0.3, 0.7):
             score += 0.1
-        
+
         # Bonus for advanced combination methods
         method = params.get('confidence_combination_method', 'weighted_average')
         if method in ['multiplicative', 'logarithmic', 'harmonic']:
             score += 0.1
-        
+
         return score
-    
-    def _calculate_optimal_confidence(self, analyst_threshold: float, tactician_threshold: float, 
+
+    def _calculate_optimal_confidence(self, analyst_threshold: float, tactician_threshold: float,
                                     calibration_results: Dict[str, Any]) -> Optional[float]:
         """
         Calculate optimal confidence using multiplicative and logarithmic operations.
-        
+
         This method implements the requirement for optimal confidence calculation based on
         tactician's and analyst's confidence outputs, using:
         1. Multiplicative operations for combining confidences
         2. Logarithmic additions for weighted combination
         3. Different weights for tactician and analyst
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             calibration_results: Results from confidence calibration
-            
+
         Returns:
             Optimal confidence value or None if calculation fails
         """
@@ -2158,11 +2155,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             if not self._has_confidence_levels_available(calibration_results):
                 self.logger.warning("⚠️ Both tactician and analyst confidence levels not available")
                 return None
-            
+
             # Extract confidence weights from calibration results or use defaults
             tactician_weight = calibration_results.get('tactician_confidence_weight', 0.6)
             analyst_weight = calibration_results.get('analyst_confidence_weight', 0.4)
-            
+
             # Ensure weights sum to 1.0
             total_weight = tactician_weight + analyst_weight
             if total_weight > 0:
@@ -2171,12 +2168,12 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             else:
                 tactician_weight = 0.6
                 analyst_weight = 0.4
-            
+
             self.logger.debug(f"📊 Using confidence weights - Tactician: {tactician_weight:.3f}, Analyst: {analyst_weight:.3f}")
-            
+
             # Get combination method from calibration results
             combination_method = calibration_results.get('confidence_combination_method', 'weighted_average')
-            
+
             # Calculate confidence based on selected method
             if combination_method == 'multiplicative':
                 optimal_confidence = self._calculate_multiplicative_confidence(
@@ -2195,47 +2192,47 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 multiplicative_confidence = self._calculate_multiplicative_confidence(
                     analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
                 )
-                
+
                 # Method 2: Logarithmic addition combination
                 logarithmic_confidence = self._calculate_logarithmic_confidence(
                     analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
                 )
-                
+
                 # Method 3: Weighted harmonic mean (additional method for robustness)
                 harmonic_confidence = self._calculate_harmonic_confidence(
                     analyst_threshold, tactician_threshold, tactician_weight, analyst_weight
                 )
-                
+
                 # Combine methods using weighted average
                 optimal_confidence = (
                     0.4 * multiplicative_confidence +
                     0.4 * logarithmic_confidence +
                     0.2 * harmonic_confidence
                 )
-            
+
             # Ensure confidence is within valid range [0, 1]
             optimal_confidence = max(0.0, min(1.0, optimal_confidence))
-            
+
             self.logger.debug(f"📊 Optimal confidence calculation using {combination_method}:")
             if combination_method == 'weighted_average':
                 self.logger.debug(f"   Multiplicative: {multiplicative_confidence:.4f}")
                 self.logger.debug(f"   Logarithmic: {logarithmic_confidence:.4f}")
                 self.logger.debug(f"   Harmonic: {harmonic_confidence:.4f}")
             self.logger.debug(f"   Final optimal: {optimal_confidence:.4f}")
-            
+
             return optimal_confidence
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error calculating optimal confidence: {e}")
             return None
-    
+
     def _has_confidence_levels_available(self, calibration_results: Dict[str, Any]) -> bool:
         """
         Check if both tactician and analyst confidence levels are available.
-        
+
         Args:
             calibration_results: Results from confidence calibration
-            
+
         Returns:
             True if both confidence levels are available, False otherwise
         """
@@ -2246,38 +2243,38 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'tactician_models' in calibration_results or
                 'tactician_ensemble' in calibration_results
             )
-            
+
             # Check for analyst confidence data
             analyst_available = (
                 'analyst_confidence' in calibration_results or
                 'analyst_models' in calibration_results or
                 'analyst_ensemble' in calibration_results
             )
-            
+
             both_available = tactician_available and analyst_available
-            
+
             if not both_available:
                 self.logger.warning(f"⚠️ Confidence availability - Tactician: {tactician_available}, Analyst: {analyst_available}")
-            
+
             return both_available
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error checking confidence availability: {e}")
             return False
-    
+
     def _calculate_multiplicative_confidence(self, analyst_threshold: float, tactician_threshold: float,
                                            tactician_weight: float, analyst_weight: float) -> float:
         """
         Calculate confidence using multiplicative operations.
-        
+
         Formula: (tactician_threshold^tactician_weight) * (analyst_threshold^analyst_weight)
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             tactician_weight: Weight for tactician confidence
             analyst_weight: Weight for analyst confidence
-            
+
         Returns:
             Multiplicative confidence value
         """
@@ -2285,35 +2282,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             # Ensure thresholds are positive for power operations
             analyst_thresh = max(0.001, analyst_threshold)
             tactician_thresh = max(0.001, tactician_threshold)
-            
+
             # Multiplicative combination with weights as exponents
             multiplicative_conf = (
-                (tactician_thresh ** tactician_weight) * 
+                (tactician_thresh ** tactician_weight) *
                 (analyst_thresh ** analyst_weight)
             )
-            
+
             # Normalize to [0, 1] range
             multiplicative_conf = min(1.0, multiplicative_conf)
-            
+
             return multiplicative_conf
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in multiplicative confidence calculation: {e}")
             return 0.5  # Default fallback
-    
+
     def _calculate_logarithmic_confidence(self, analyst_threshold: float, tactician_threshold: float,
                                         tactician_weight: float, analyst_weight: float) -> float:
         """
         Calculate confidence using logarithmic additions.
-        
+
         Formula: exp(tactician_weight * log(tactician_threshold) + analyst_weight * log(analyst_threshold))
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             tactician_weight: Weight for tactician confidence
             analyst_weight: Weight for analyst confidence
-            
+
         Returns:
             Logarithmic confidence value
         """
@@ -2321,38 +2318,38 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             # Ensure thresholds are positive for log operations
             analyst_thresh = max(0.001, analyst_threshold)
             tactician_thresh = max(0.001, tactician_threshold)
-            
+
             # Logarithmic addition with weights
             log_combination = (
                 tactician_weight * np.log(tactician_thresh) +
                 analyst_weight * np.log(analyst_thresh)
             )
-            
+
             # Convert back using exponential
             logarithmic_conf = np.exp(log_combination)
-            
+
             # Normalize to [0, 1] range
             logarithmic_conf = min(1.0, max(0.0, logarithmic_conf))
-            
+
             return logarithmic_conf
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in logarithmic confidence calculation: {e}")
             return 0.5  # Default fallback
-    
+
     def _calculate_harmonic_confidence(self, analyst_threshold: float, tactician_threshold: float,
                                      tactician_weight: float, analyst_weight: float) -> float:
         """
         Calculate confidence using weighted harmonic mean.
-        
+
         Formula: 1 / (tactician_weight/tactician_threshold + analyst_weight/analyst_threshold)
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             tactician_weight: Weight for tactician confidence
             analyst_weight: Weight for analyst confidence
-            
+
         Returns:
             Harmonic confidence value
         """
@@ -2360,38 +2357,38 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             # Ensure thresholds are positive for harmonic mean
             analyst_thresh = max(0.001, analyst_threshold)
             tactician_thresh = max(0.001, tactician_threshold)
-            
+
             # Weighted harmonic mean
             harmonic_conf = 1.0 / (
-                tactician_weight / tactician_thresh + 
+                tactician_weight / tactician_thresh +
                 analyst_weight / analyst_thresh
             )
-            
+
             # Normalize to [0, 1] range
             harmonic_conf = min(1.0, max(0.0, harmonic_conf))
-            
+
             return harmonic_conf
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in harmonic confidence calculation: {e}")
             return 0.5  # Default fallback
-    
+
     def _evaluate_confidence_stability(self, analyst_threshold: float, tactician_threshold: float,
                                      calibration_results: Dict[str, Any]) -> float:
         """
         Evaluate confidence stability based on threshold consistency.
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             calibration_results: Results from confidence calibration
-            
+
         Returns:
             Stability score between 0 and 1
         """
         try:
             stability_score = 0.0
-            
+
             # Check threshold consistency
             threshold_diff = abs(tactician_threshold - analyst_threshold)
             if 0.05 <= threshold_diff <= 0.3:  # Good separation
@@ -2400,56 +2397,56 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 stability_score += 0.1
             else:  # Too far apart
                 stability_score += 0.2
-            
+
             # Check if thresholds are in reasonable ranges
             if 0.5 <= analyst_threshold <= 0.9:
                 stability_score += 0.3
             if 0.6 <= tactician_threshold <= 0.95:
                 stability_score += 0.3
-            
+
             return min(1.0, stability_score)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error evaluating confidence stability: {e}")
             return 0.5  # Default fallback
-    
+
     def _evaluate_exit_confidence_calculation(self, analyst_threshold: float, tactician_threshold: float,
                                            calibration_results: Dict[str, Any]) -> float:
         """
         Evaluate exit confidence calculation effectiveness.
-        
+
         Args:
             analyst_threshold: Analyst confidence threshold
             tactician_threshold: Tactician confidence threshold
             calibration_results: Results from confidence calibration including exit parameters
-            
+
         Returns:
             Exit confidence evaluation score between 0 and 1
         """
         try:
             score = 0.0
-            
+
             # Get exit confidence parameters
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
             tactician_exit_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
             analyst_exit_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
             exit_combination_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
-            
+
             # Calculate exit confidence using different methods
             exit_confidences = {}
-            
+
             # Method 1: Multiplicative
             try:
                 analyst_conf = max(0.001, analyst_threshold)
                 tactician_conf = max(0.001, tactician_threshold)
                 multiplicative_exit = (
-                    (tactician_conf ** tactician_exit_weight) * 
+                    (tactician_conf ** tactician_exit_weight) *
                     (analyst_conf ** analyst_exit_weight)
                 )
                 exit_confidences['multiplicative'] = min(1.0, multiplicative_exit)
             except:
                 exit_confidences['multiplicative'] = 0.5
-            
+
             # Method 2: Logarithmic
             try:
                 analyst_conf = max(0.001, analyst_threshold)
@@ -2462,17 +2459,17 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 exit_confidences['logarithmic'] = min(1.0, max(0.0, logarithmic_exit))
             except:
                 exit_confidences['logarithmic'] = 0.5
-            
+
             # Method 3: Weighted Average
             weighted_avg_exit = (
                 analyst_threshold * analyst_exit_weight +
                 tactician_threshold * tactician_exit_weight
             )
             exit_confidences['weighted_average'] = max(0.0, min(1.0, weighted_avg_exit))
-            
+
             # Score based on selected method effectiveness
             selected_exit_confidence = exit_confidences.get(exit_combination_method, 0.5)
-            
+
             # Score factors
             # 1. Exit confidence should be reasonable (not too high or too low)
             if 0.4 <= selected_exit_confidence <= 0.8:
@@ -2481,7 +2478,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-            
+
             # 2. Exit threshold should be lower than entry confidence
             entry_confidence = (analyst_threshold + tactician_threshold) / 2
             if exit_threshold < entry_confidence:
@@ -2490,42 +2487,42 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 gap = entry_confidence - exit_threshold
                 if 0.1 <= gap <= 0.3:
                     score += 0.1
-            
+
             # 3. Exit weights should be reasonable
             if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
                 score += 0.2
-            
+
             # 4. Method consistency bonus
             if exit_combination_method in ['multiplicative', 'logarithmic']:
                 # These methods should produce reasonable results
                 multiplicative_conf = exit_confidences.get('multiplicative', 0)
                 logarithmic_conf = exit_confidences.get('logarithmic', 0)
-                
+
                 if multiplicative_conf > 0.1 and logarithmic_conf > 0.1:
                     score += 0.1
-                    
+
                     # Bonus if methods are consistent
                     if abs(multiplicative_conf - logarithmic_conf) < 0.2:
                         score += 0.1
-            
+
             return min(1.0, score)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error evaluating exit confidence calculation: {e}")
             return 0.5  # Default fallback
-    
-    def _evaluate_using_existing_backtesting_framework(self, calibration_results: Dict[str, Any], 
+
+    def _evaluate_using_existing_backtesting_framework(self, calibration_results: Dict[str, Any],
                                                      params: Dict[str, Any]) -> float:
         """
         Evaluate exit confidence parameters using the existing backtesting framework.
-        
+
         This method integrates exit confidence optimization into the existing backtesting
         system rather than creating a separate backtesting strategy.
-        
+
         Args:
             calibration_results: Results from confidence calibration
             params: Current parameter configuration
-            
+
         Returns:
             Backtesting evaluation score (0.0 to 1.0)
         """
@@ -2533,65 +2530,65 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             # Extract exit parameters
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
             exit_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
-            
+
             # Use existing calibration data for evaluation
             if 'analyst_confidence' in calibration_results and 'tactician_confidence' in calibration_results:
                 analyst_confidences = calibration_results['analyst_confidence']
                 tactician_confidences = calibration_results['tactician_confidence']
-                
+
                 # Evaluate exit timing using historical data
                 exit_performance = self._evaluate_exit_timing_on_historical_data(
                     analyst_confidences, tactician_confidences, calibration_results
                 )
-                
+
                 return exit_performance
-            
+
             # Fallback evaluation based on parameter reasonableness
             score = 0.0
-            
+
             # Exit threshold should be reasonable
             if 0.4 <= exit_threshold <= 0.6:
                 score += 0.4
             elif 0.3 <= exit_threshold <= 0.7:
                 score += 0.2
-            
+
             # Method consistency
             if exit_method in ['multiplicative', 'logarithmic']:
                 score += 0.3
             else:
                 score += 0.2
-            
+
             # Weight balance
             tactician_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
             analyst_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
-            
+
             if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
                 score += 0.3
-            
+
             return min(1.0, score)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in existing backtesting framework evaluation: {e}")
             return 0.5
-    
-    def _evaluate_exit_timing_on_historical_data(self, analyst_confidences: List[float], 
+
+    def _evaluate_exit_timing_on_historical_data(self, analyst_confidences: List[float],
                                                tactician_confidences: List[float],
                                                calibration_results: Dict[str, Any]) -> float:
         """
         Evaluate exit timing using historical confidence data from calibration results.
-        
+
         This uses the existing backtesting framework's historical data rather than
         creating synthetic scenarios.
         """
         try:
             if len(analyst_confidences) != len(tactician_confidences):
                 return 0.5
-            
+
             exit_threshold = calibration_results.get('exit_confidence_threshold', 0.5)
             tactician_weight = calibration_results.get('tactician_exit_confidence_weight', 0.6)
             analyst_weight = calibration_results.get('analyst_exit_confidence_weight', 0.4)
             exit_method = calibration_results.get('exit_confidence_combination_method', 'multiplicative')
-            
+
             # Calculate exit points using historical data
             exit_signals = []
             for analyst_conf, tactician_conf in zip(analyst_confidences, tactician_confidences):
@@ -2605,17 +2602,17 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     )
                 else:
                     exit_conf = analyst_conf * analyst_weight + tactician_conf * tactician_weight
-                
+
                 exit_signals.append(exit_conf < exit_threshold)
-            
+
             # Evaluate exit signal quality using existing framework metrics
             if 'historical_returns' in calibration_results:
                 returns = calibration_results['historical_returns']
                 return self._score_exit_signals_against_returns(exit_signals, returns)
-            
+
             # Fallback: evaluate signal consistency
             exit_rate = sum(exit_signals) / len(exit_signals) if exit_signals else 0
-            
+
             # Reasonable exit rate (not too frequent, not too rare)
             if 0.1 <= exit_rate <= 0.3:
                 return 0.8
@@ -2623,12 +2620,12 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 return 0.6
             else:
                 return 0.4
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error evaluating exit timing on historical data: {e}")
             return 0.5
-    
-    def _score_exit_signals_against_returns(self, exit_signals: List[bool], 
+
+    def _score_exit_signals_against_returns(self, exit_signals: List[bool],
                                           returns: List[float]) -> float:
         """
         Score exit signals against historical returns using existing backtesting framework.
@@ -2636,14 +2633,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             if len(exit_signals) != len(returns):
                 return 0.5
-            
+
             score = 0.0
             correct_exits = 0
             total_exits = sum(exit_signals)
-            
+
             if total_exits == 0:
                 return 0.3  # No exits might be too conservative
-            
+
             # Check if exits preceded negative returns
             for i, (should_exit, return_val) in enumerate(zip(exit_signals[:-1], returns[1:])):
                 if should_exit:
@@ -2653,23 +2650,23 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     # Penalty for exiting before positive returns
                     elif return_val > 0.01:  # Significant positive return
                         correct_exits -= 0.5
-            
+
             # Score based on exit accuracy
             if total_exits > 0:
                 exit_accuracy = correct_exits / total_exits
                 score = max(0.0, min(1.0, 0.5 + exit_accuracy * 0.5))
-            
+
             return score
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error scoring exit signals against returns: {e}")
             return 0.5
 
-    def _evaluate_position_sizing_params(self, params: Dict[str, Any], 
+    def _evaluate_position_sizing_params(self, params: Dict[str, Any],
                                        calibration_results: Dict[str, Any]) -> float:
         """Evaluate position sizing parameters."""
         score = 0.0
-        
+
         if 'base_position_size' in params:
             base_size = params['base_position_size']
             if 0.02 <= base_size <= 0.1:
@@ -2678,21 +2675,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'max_position_size' in params:
             max_size = params['max_position_size']
             if 0.15 <= max_size <= 0.3:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_leverage_params(self, params: Dict[str, Any], 
+
+    def _evaluate_leverage_params(self, params: Dict[str, Any],
                                 calibration_results: Dict[str, Any]) -> float:
         """Evaluate leverage parameters."""
         score = 0.0
-        
+
         if 'safe_leverage_multiplier' in params:
             multiplier = params['safe_leverage_multiplier']
             if 0.7 <= multiplier <= 0.9:
@@ -2701,14 +2698,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_tpsl_params(self, params: Dict[str, Any], 
+
+    def _evaluate_tpsl_params(self, params: Dict[str, Any],
                             calibration_results: Dict[str, Any]) -> float:
         """Evaluate TP/SL parameters."""
         score = 0.0
-        
+
         if 'tp_long' in params and 'sl_long' in params:
             tp = params['tp_long']
             sl = params['sl_long']
@@ -2718,9 +2715,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
+
     def _evaluate_exit_strategy_params(self, params: Dict[str, Any],
                                      calibration_results: Dict[str, Any]) -> float:
         """Evaluate exit strategy parameters."""
@@ -2833,13 +2830,13 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 trailing_atr = params['trailing_atr_multiplier']
                 min_dist = params['trailing_min_distance']
                 conf_act = params['trailing_confidence_activation']
-                
+
                 # Validate trailing stop parameters
-                if (1.0 <= trailing_atr <= 3.0 and 
-                    0.005 <= min_dist <= 0.03 and 
+                if (1.0 <= trailing_atr <= 3.0 and
+                    0.005 <= min_dist <= 0.03 and
                     0.6 <= conf_act <= 0.9):
                     score += 0.1
-            
+
             # 6. Unified trailing parameter validation (0.15 weight)
             unified_keys = [
                 'profit_buffer_atr_multiplier',
@@ -2995,31 +2992,31 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             score = 0.0
 
         return min(score, 1.0)  # Cap at 1.0
-    
-    def _evaluate_parameters_vectorbt_optimized(self, objective_function: callable, 
+
+    def _evaluate_parameters_vectorbt_optimized(self, objective_function: callable,
                                               parameters: Dict[str, Any]) -> float:
         """
         Enhanced parameter evaluation using VectorBT optimization with VectorBTRollingOptimizer.
-        
+
         Args:
             objective_function: Function to evaluate parameters
             parameters: Parameters to evaluate
-            
+
         Returns:
             Evaluation score
         """
         if not self.vectorbt_enabled:
             # Fallback to standard evaluation
             return objective_function(parameters)
-        
+
         try:
             start_time = time.time()
-            
+
             # Use VectorBTRollingOptimizer for enhanced data preprocessing
             optimized_data = None
             if hasattr(self, 'training_data') and self.training_data is not None:
                 optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
-            
+
             # Create operation context for VectorBT optimization
             operation_context = {
                 'data_size': len(self.training_data) if hasattr(self, 'training_data') else 1000,
@@ -3028,7 +3025,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'optimized_data': optimized_data,
                 'rolling_optimizer': self.rolling_optimizer
             }
-            
+
             # Use UnifiedVectorizationManager for intelligent optimization
             operation_config = OperationConfig(
                 operation_type=OperationType.VECTORBT_BACKTESTING,
@@ -3038,7 +3035,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 time_budget_seconds=self.config.get('time_budget_seconds', 60),
                 parallel_workers=self.max_workers
             )
-            
+
             # Optimize the objective function execution with VectorBT
             with self.vectorization_manager.performance_monitoring("parameter_evaluation"):
                 # Use VectorBTRollingOptimizer for enhanced processing
@@ -3048,43 +3045,43 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     # Create optimized objective function
                     optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
                     result = optimized_obj_func(parameters, operation_context)
-            
+
             # Update VectorBT statistics
             execution_time = time.time() - start_time
             self.vectorbt_stats['vectorization_operations'] += 1
             self.vectorbt_stats['total_vectorbt_time'] += execution_time
             self.vectorbt_stats['rolling_operations'] += 1
-            
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT optimization failed, falling back to standard evaluation: {e}")
             return objective_function(parameters)
-    
-    def _evaluate_parameters_batch_vectorbt(self, parameter_sets: List[Dict[str, Any]], 
+
+    def _evaluate_parameters_batch_vectorbt(self, parameter_sets: List[Dict[str, Any]],
                                           objective_function: callable) -> List[float]:
         """
         Evaluate multiple parameter sets in batch using VectorBT optimization with VectorBTRollingOptimizer.
-        
+
         Args:
             parameter_sets: List of parameter dictionaries to evaluate
             objective_function: Function to evaluate parameters
-            
+
         Returns:
             List of evaluation scores
         """
         if not self.vectorbt_enabled or len(parameter_sets) == 1:
             # Fallback to sequential evaluation
             return [objective_function(params) for params in parameter_sets]
-        
+
         try:
             start_time = time.time()
-            
+
             # Use VectorBTRollingOptimizer for enhanced batch processing
             optimized_data = None
             if hasattr(self, 'training_data') and self.training_data is not None:
                 optimized_data = self._optimize_data_for_vectorbt_enhanced(self.training_data)
-            
+
             # Create operation context for VectorBT optimization
             operation_context = {
                 'data_size': len(self.training_data) if hasattr(self, 'training_data') else 1000,
@@ -3092,7 +3089,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'optimized_data': optimized_data,
                 'rolling_optimizer': self.rolling_optimizer
             }
-            
+
             # Use VectorBT optimization manager for batch processing
             operation_config = OperationConfig(
                 operation_type=OperationType.VECTORBT_BACKTESTING,
@@ -3100,19 +3097,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 data_dimensions=operation_context['data_dimensions'],
                 parallel_workers=self.max_workers
             )
-            
+
             # Process in batches for memory efficiency
             batch_size = min(self.config.get('batch_size', 10), len(parameter_sets))
             results = []
-            
+
             for i in range(0, len(parameter_sets), batch_size):
                 batch = parameter_sets[i:i + batch_size]
-                
+
                 # Use VectorBT optimization for batch processing
                 if hasattr(self.optimization_manager, 'optimize_batch_operation'):
                     batch_results = self.optimization_manager.optimize_batch_operation(
-                        objective_function, 
-                        batch, 
+                        objective_function,
+                        batch,
                         operation_config
                     )
                 else:
@@ -3120,48 +3117,48 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     batch_results = self._process_batch_with_vectorbt_rolling(
                         batch, objective_function, operation_context
                     )
-                
+
                 results.extend(batch_results)
-            
+
             # Update VectorBT statistics
             execution_time = time.time() - start_time
             self.vectorbt_stats['batch_operations'] += 1
             self.vectorbt_stats['total_vectorbt_time'] += execution_time
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT batch optimization failed, falling back to sequential evaluation: {e}")
             return [objective_function(params) for params in parameter_sets]
-    
+
     def _process_batch_with_vectorbt_rolling(self, parameter_batch: List[Dict[str, Any]],
                                            objective_function: callable,
                                            operation_context: Dict[str, Any]) -> List[float]:
         """
         Process a batch of parameters using VectorBTRollingOptimizer.
-        
+
         Args:
             parameter_batch: Batch of parameters to process
             objective_function: Function to evaluate parameters
             operation_context: Context for optimization
-            
+
         Returns:
             List of evaluation scores
         """
         try:
             rolling_optimizer = operation_context.get('rolling_optimizer')
             optimized_data = operation_context.get('optimized_data')
-            
+
             if rolling_optimizer is None:
                 # Fallback to standard evaluation
                 return [objective_function(params) for params in parameter_batch]
-            
+
             # Use VectorBTRollingOptimizer for parallel batch processing
             if hasattr(rolling_optimizer, 'process_batch_parallel'):
                 return rolling_optimizer.process_batch_parallel(
                     parameter_batch, objective_function, optimized_data
                 )
-            
+
             # Fallback: sequential processing with VectorBT optimizations
             results = []
             for params in parameter_batch:
@@ -3169,71 +3166,71 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 optimized_obj_func = self._create_vectorbt_optimized_objective(objective_function)
                 result = optimized_obj_func(params, operation_context)
                 results.append(result)
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBTRollingOptimizer batch processing failed: {e}")
             return [objective_function(params) for params in parameter_batch]
-    
-    def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame, 
+
+    def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame,
                                           window: int = 252) -> Dict[str, pd.Series]:
         """
         Calculate rolling metrics using VectorBT optimization.
-        
+
         Args:
             data: Input data with OHLCV columns
             window: Rolling window size
-            
+
         Returns:
             Dictionary of rolling metrics
         """
         if not self.vectorbt_enabled or self.rolling_optimizer is None:
             # Fallback to pandas rolling operations
             return self._calculate_rolling_metrics_pandas(data, window)
-        
+
         try:
             start_time = time.time()
             rolling_metrics = {}
-            
+
             if 'close' in data.columns:
                 returns = data['close'].pct_change().dropna()
-                
+
                 # Use VectorBT rolling optimizer for batch calculations
                 rolling_metrics.update({
                     'volatility': self.rolling_optimizer.rolling_std(returns, window=window),
                     'momentum': self.rolling_optimizer.rolling_mean(returns, window=window),
                     'max_drawdown': self.rolling_optimizer.rolling_min(returns, window=window),
-                    'sharpe_ratio': (self.rolling_optimizer.rolling_mean(returns, window=window) / 
+                    'sharpe_ratio': (self.rolling_optimizer.rolling_mean(returns, window=window) /
                                    self.rolling_optimizer.rolling_std(returns, window=window))
                 })
-                
+
                 # Calculate additional metrics
                 rolling_metrics['skewness'] = self.rolling_optimizer.rolling_skew(returns, window=window)
                 rolling_metrics['kurtosis'] = self.rolling_optimizer.rolling_kurt(returns, window=window)
                 rolling_metrics['quantile_25'] = self.rolling_optimizer.rolling_quantile(returns, window=window, q=0.25)
                 rolling_metrics['quantile_75'] = self.rolling_optimizer.rolling_quantile(returns, window=window, q=0.75)
-            
+
             if 'volume' in data.columns:
                 volume = data['volume']
                 rolling_metrics['volume_ma'] = self.rolling_optimizer.rolling_mean(volume, window=window)
                 rolling_metrics['volume_std'] = self.rolling_optimizer.rolling_std(volume, window=window)
-            
+
             # Update VectorBT statistics
             execution_time = time.time() - start_time
             self.vectorbt_stats['rolling_operations'] += 1
             self.vectorbt_stats['total_vectorbt_time'] += execution_time
-            
+
             return rolling_metrics
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT rolling metrics calculation failed, falling back to pandas: {e}")
             return self._calculate_rolling_metrics_pandas(data, window)
-    
+
     def _calculate_rolling_metrics_pandas(self, data: pd.DataFrame, window: int) -> Dict[str, pd.Series]:
         """Fallback pandas implementation for rolling metrics."""
         rolling_metrics = {}
-        
+
         if 'close' in data.columns:
             returns = data['close'].pct_change().dropna()
             rolling_metrics.update({
@@ -3242,89 +3239,89 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'max_drawdown': returns.rolling(window=window).min(),
                 'sharpe_ratio': returns.rolling(window=window).mean() / returns.rolling(window=window).std()
             })
-        
+
         return rolling_metrics
-    
+
     def _optimize_data_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize data for VectorBT processing.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame
         """
         if not self.vectorbt_enabled:
             return data
-        
+
         try:
             # Use existing memory optimizer
             if self.memory_optimizer:
                 data = self.memory_optimizer.optimize_dataframe(data)
-            
+
             # Additional VectorBT-specific optimizations
             if self.rolling_optimizer:
                 data = self.rolling_optimizer._optimize_data_types(data)
-            
+
             return data
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT data optimization failed: {e}")
             return data
-    
+
     def _optimize_data_for_vectorbt_enhanced(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Enhanced data optimization using VectorBTRollingOptimizer.
-        
+
         Args:
             data: Input DataFrame
-            
+
         Returns:
             Optimized DataFrame with VectorBT enhancements
         """
         if not self.vectorbt_enabled or self.rolling_optimizer is None:
             return data
-        
+
         try:
             # Use existing memory optimizer
             if self.memory_optimizer:
                 data = self.memory_optimizer.optimize_dataframe(data)
-            
+
             # Enhanced VectorBT-specific optimizations
             if self.rolling_optimizer:
                 data = self.rolling_optimizer._optimize_data_types(data)
-                
+
                 # Precompute common rolling features for faster access
                 if hasattr(self.rolling_optimizer, 'precompute_rolling_features'):
                     rolling_features = self.rolling_optimizer.precompute_rolling_features(
-                        data, 
+                        data,
                         windows=[5, 10, 20, 50, 100],
                         operations=['mean', 'std', 'min', 'max', 'skew', 'kurt']
                     )
                     data = data.join(rolling_features)
-                
+
                 # Memory optimization
                 if hasattr(self.rolling_optimizer, 'optimize_memory_usage'):
                     data = self.rolling_optimizer.optimize_memory_usage(data)
-            
+
             return data
-            
+
         except Exception as e:
             self.logger.warning(f"Enhanced VectorBT data optimization failed: {e}")
             return data
-    
+
     def _create_vectorbt_optimized_objective(self, original_function: callable) -> callable:
         """
         Create a VectorBT-optimized version of the objective function.
-        
+
         Args:
             original_function: Original objective function
-            
+
         Returns:
             VectorBT-optimized objective function
         """
-        def optimized_function(parameters: Dict[str, Any], 
+        def optimized_function(parameters: Dict[str, Any],
                               operation_context: Optional[Dict[str, Any]] = None) -> float:
             """
             VectorBT-optimized objective function.
@@ -3333,60 +3330,60 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 # Extract data and rolling optimizer from context
                 optimized_data = operation_context.get('optimized_data') if operation_context else None
                 rolling_optimizer = operation_context.get('rolling_optimizer') if operation_context else None
-                
+
                 # Use VectorBT for data preprocessing if data is available
                 if optimized_data is not None and rolling_optimizer is not None:
                     # Calculate rolling metrics using VectorBTRollingOptimizer
                     rolling_metrics = self._calculate_rolling_metrics_vectorbt(
                         optimized_data, rolling_optimizer
                     )
-                    
+
                     # Calculate technical indicators using VectorBTRollingOptimizer
                     technical_indicators = self._calculate_technical_indicators_vectorbt(
                         optimized_data, rolling_optimizer
                     )
-                    
+
                     # Add to parameters for the original function
                     enhanced_parameters = parameters.copy()
                     enhanced_parameters['rolling_metrics'] = rolling_metrics
                     enhanced_parameters['technical_indicators'] = technical_indicators
                     enhanced_parameters['vectorbt_optimized'] = True
-                    
+
                     return original_function(enhanced_parameters)
                 else:
                     return original_function(parameters)
-                    
+
             except Exception as e:
                 self.logger.warning(f"VectorBT optimized objective function failed: {e}")
                 return original_function(parameters)
-        
+
         # Mark as VectorBT optimized
         optimized_function.__vectorbt_optimized__ = True
-        
+
         return optimized_function
-    
-    def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame, 
+
+    def _calculate_rolling_metrics_vectorbt(self, data: pd.DataFrame,
                                           rolling_optimizer) -> Dict[str, Any]:
         """
         Calculate rolling metrics using VectorBTRollingOptimizer.
-        
+
         Args:
             data: Input data
             rolling_optimizer: VectorBTRollingOptimizer instance
-            
+
         Returns:
             Dictionary of rolling metrics
         """
         try:
             results = {}
             windows = [5, 10, 20, 50, 100]
-            
+
             if 'close' in data.columns:
                 close_prices = data['close']
-                
+
                 for window in windows:
                     window_results = {}
-                    
+
                     # Use VectorBT rolling operations
                     window_results['mean'] = rolling_optimizer.rolling_mean(close_prices, window=window)
                     window_results['std'] = rolling_optimizer.rolling_std(close_prices, window=window)
@@ -3394,47 +3391,47 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     window_results['max'] = rolling_optimizer.rolling_max(close_prices, window=window)
                     window_results['skew'] = rolling_optimizer.rolling_skew(close_prices, window=window)
                     window_results['kurt'] = rolling_optimizer.rolling_kurt(close_prices, window=window)
-                    
+
                     results[f'window_{window}'] = window_results
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT rolling metrics calculation failed: {e}")
             return {}
-    
-    def _calculate_technical_indicators_vectorbt(self, data: pd.DataFrame, 
+
+    def _calculate_technical_indicators_vectorbt(self, data: pd.DataFrame,
                                                rolling_optimizer) -> Dict[str, Any]:
         """
         Calculate technical indicators using VectorBTRollingOptimizer.
-        
+
         Args:
             data: Input OHLCV data
             rolling_optimizer: VectorBTRollingOptimizer instance
-            
+
         Returns:
             Dictionary of technical indicators
         """
         try:
             results = {}
-            
+
             if 'close' in data.columns:
                 close_prices = data['close']
-                
+
                 # Moving averages
                 results['sma_20'] = rolling_optimizer.rolling_mean(close_prices, window=20)
                 results['sma_50'] = rolling_optimizer.rolling_mean(close_prices, window=50)
                 results['sma_200'] = rolling_optimizer.rolling_mean(close_prices, window=200)
-                
+
                 # Volatility
                 results['volatility_20'] = rolling_optimizer.rolling_std(close_prices, window=20)
                 results['volatility_50'] = rolling_optimizer.rolling_std(close_prices, window=50)
-                
+
                 # Price ranges
                 if 'high' in data.columns and 'low' in data.columns:
                     high_prices = data['high']
                     low_prices = data['low']
-                    
+
                     # ATR calculation
                     if hasattr(rolling_optimizer, 'rolling_atr'):
                         results['atr_20'] = rolling_optimizer.rolling_atr(
@@ -3443,68 +3440,68 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                         results['atr_50'] = rolling_optimizer.rolling_atr(
                             high_prices, low_prices, close_prices, window=50
                         )
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.warning(f"VectorBT technical indicators calculation failed: {e}")
             return {}
-    
+
     def get_vectorbt_performance_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""
         if not self.vectorbt_enabled:
             return {'vectorbt_enabled': False}
-        
+
         stats = self.vectorbt_stats.copy()
         stats['vectorbt_enabled'] = True
-        
+
         # Add rolling optimizer stats
         if self.rolling_optimizer:
             rolling_stats = self.rolling_optimizer.get_performance_stats()
             stats['rolling_optimizer_stats'] = rolling_stats
-        
+
         # Add optimization manager stats
         if self.optimization_manager:
             optimization_stats = self.optimization_manager.get_optimization_stats()
             stats['optimization_manager_stats'] = optimization_stats
-        
+
         return stats
-    
-    def _evaluate_ensemble_params(self, params: Dict[str, Any], 
+
+    def _evaluate_ensemble_params(self, params: Dict[str, Any],
                                 calibration_results: Dict[str, Any]) -> float:
         """Evaluate ensemble parameters."""
         score = 0.0
-        
+
         if all(key in params for key in ['analyst_weight', 'tactician_weight', 'strategist_weight']):
             weights = [params['analyst_weight'], params['tactician_weight'], params['strategist_weight']]
             if abs(sum(weights) - 1.0) < 0.1:
                 score += 0.3
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_sr_params(self, params: Dict[str, Any], 
+
+    def _evaluate_sr_params(self, params: Dict[str, Any],
                           calibration_results: Dict[str, Any]) -> float:
         """Evaluate S/R parameters."""
         score = 0.0
-        
-        weight_params = ['touch_count_weight', 'total_volume_weight', 'level_age_weight', 
+
+        weight_params = ['touch_count_weight', 'total_volume_weight', 'level_age_weight',
                         'bounce_rate_weight', 'isolation_score_weight']
         weights = [params.get(param, 0.0) for param in weight_params]
-        
+
         if abs(sum(weights) - 1.0) < 0.1:
             score += 0.3
         else:
             score += 0.1
-        
+
         return score
-    
-    def _evaluate_two_tier_params(self, params: Dict[str, Any], 
+
+    def _evaluate_two_tier_params(self, params: Dict[str, Any],
                                 calibration_results: Dict[str, Any]) -> float:
         """Evaluate two-tier system parameters."""
         score = 0.0
-        
+
         if 'tier1_weight' in params and 'tier2_weight' in params:
             tier1_weight = params['tier1_weight']
             tier2_weight = params['tier2_weight']
@@ -3512,35 +3509,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.3
             else:
                 score += 0.1
-        
+
         if 'direction_threshold' in params:
             threshold = params['direction_threshold']
             if 0.6 <= threshold <= 0.8:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'timing_threshold' in params:
             threshold = params['timing_threshold']
             if 0.7 <= threshold <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_technical_indicators_params(self, params: Dict[str, Any], 
+
+    def _evaluate_technical_indicators_params(self, params: Dict[str, Any],
                                            calibration_results: Dict[str, Any]) -> float:
         """Evaluate technical indicator parameters."""
         score = 0.0
-        
+
         if 'rsi_period' in params:
             rsi_period = params['rsi_period']
             if 10 <= rsi_period <= 20:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'macd_fast_period' in params and 'macd_slow_period' in params:
             fast = params['macd_fast_period']
             slow = params['macd_slow_period']
@@ -3548,7 +3545,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'adx_trend_threshold' in params and 'adx_sideways_threshold' in params:
             trend = params['adx_trend_threshold']
             sideways = params['adx_sideways_threshold']
@@ -3556,56 +3553,56 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'volatility_threshold' in params:
             vol_thresh = params['volatility_threshold']
             if 0.015 <= vol_thresh <= 0.035:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_system_monitoring_params(self, params: Dict[str, Any], 
+
+    def _evaluate_system_monitoring_params(self, params: Dict[str, Any],
                                         calibration_results: Dict[str, Any]) -> float:
         """Evaluate system monitoring parameters."""
         score = 0.0
-        
+
         if 'analysis_interval' in params:
             interval = params['analysis_interval']
             if 1800 <= interval <= 7200:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'max_history' in params:
             max_hist = params['max_history']
             if 50 <= max_hist <= 200:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'memory_threshold' in params:
             mem_thresh = params['memory_threshold']
             if 0.7 <= mem_thresh <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'learning_rate' in params:
             lr = params['learning_rate']
             if 0.005 <= lr <= 0.05:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_training_optimization_params(self, params: Dict[str, Any], 
+
+    def _evaluate_training_optimization_params(self, params: Dict[str, Any],
                                             calibration_results: Dict[str, Any]) -> float:
         """Evaluate training optimization parameters."""
         score = 0.0
-        
+
         if 'adx_trend_threshold' in params and 'adx_sideways_threshold' in params:
             trend = params['adx_trend_threshold']
             sideways = params['adx_sideways_threshold']
@@ -3613,7 +3610,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'min_label_balance' in params and 'max_label_balance' in params:
             min_balance = params['min_label_balance']
             max_balance = params['max_label_balance']
@@ -3621,49 +3618,49 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'stability_threshold' in params:
             stability = params['stability_threshold']
             if 0.6 <= stability <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'lgb_learning_rate' in params:
             lr = params['lgb_learning_rate']
             if 0.01 <= lr <= 0.2:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'model_performance_threshold' in params:
             perf_thresh = params['model_performance_threshold']
             if 0.6 <= perf_thresh <= 0.85:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_regime_transitions_params(self, params: Dict[str, Any], 
+
+    def _evaluate_regime_transitions_params(self, params: Dict[str, Any],
                                          calibration_results: Dict[str, Any]) -> float:
         """Evaluate regime transition parameters."""
         score = 0.0
-        
+
         if 'transition_intensity_threshold' in params:
             threshold = params['transition_intensity_threshold']
             if 0.2 <= threshold <= 0.5:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'transition_confidence_threshold' in params:
             confidence_thresh = params['transition_confidence_threshold']
             if 0.6 <= confidence_thresh <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if all(key in params for key in ['step9_5_weight', 'step10_weight', 'regime_expert_weight']):
             step9_5_w = params['step9_5_weight']
             step10_w = params['step10_weight']
@@ -3673,32 +3670,32 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'transition_lookback_periods' in params:
             lookback = params['transition_lookback_periods']
             if 3 <= lookback <= 10:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'transition_risk_multiplier' in params:
             risk_mult = params['transition_risk_multiplier']
             if 1.0 <= risk_mult <= 1.5:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_signal_aggregation_params(self, params: Dict[str, Any], 
+
+    def _evaluate_signal_aggregation_params(self, params: Dict[str, Any],
                                          calibration_results: Dict[str, Any]) -> float:
         """Evaluate signal aggregation parameters."""
         score = 0.0
-        
-        if all(key in params for key in ['analyst_weight', 'tactician_weight', 'scenario_weight', 
+
+        if all(key in params for key in ['analyst_weight', 'tactician_weight', 'scenario_weight',
                                        'sr_breakout_weight', 'regime_weight']):
-            total_weight = (params['analyst_weight'] + params['tactician_weight'] + 
-                          params['scenario_weight'] + params['sr_breakout_weight'] + 
+            total_weight = (params['analyst_weight'] + params['tactician_weight'] +
+                          params['scenario_weight'] + params['sr_breakout_weight'] +
                           params['regime_weight'])
             if 1.0 <= total_weight <= 2.5:
                 score += 0.2
@@ -3706,19 +3703,19 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     score += 0.1
             else:
                 score += 0.1
-        
+
         if 'conflict_penalty_factor' in params:
             penalty = params['conflict_penalty_factor']
             if 0.4 <= penalty <= 0.6:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'min_source_weight' in params:
             min_weight = params['min_source_weight']
             if 0.05 <= min_weight <= 0.15:
                 score += 0.1
-        
+
         if 'min_signal_confidence' in params and 'min_aggregated_confidence' in params:
             signal_conf = params['min_signal_confidence']
             agg_conf = params['min_aggregated_confidence']
@@ -3726,16 +3723,16 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'regime_alignment_bonus' in params and 'multi_signal_alignment_bonus' in params:
             regime_bonus = params['regime_alignment_bonus']
             multi_bonus = params['multi_signal_alignment_bonus']
             if 0.1 <= regime_bonus <= 0.25 and 0.05 <= multi_bonus <= 0.15:
                 score += 0.1
-        
+
         if 'use_multiplicative' in params and params['use_multiplicative']:
             score += 0.1
-        
+
         return score
 
     def _evaluate_turnover_cost_penalty_params(self, params: Dict[str, Any],
@@ -3775,11 +3772,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
 
         return score
 
-    def _evaluate_intensity_params(self, params: Dict[str, Any], 
+    def _evaluate_intensity_params(self, params: Dict[str, Any],
                                  calibration_results: Dict[str, Any]) -> float:
         """Evaluate signal intensity parameters."""
         score = 0.0
-        
+
         if 'signal_intensity_threshold' in params:
             threshold = params['signal_intensity_threshold']
             if 0.5 <= threshold <= 0.7:
@@ -3788,7 +3785,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'intensity_decay_factor' in params:
             decay = params['intensity_decay_factor']
             if 0.9 <= decay <= 0.95:
@@ -3797,14 +3794,14 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.15
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_entry_timing_optimization_params(self, params: Dict[str, Any], 
+
+    def _evaluate_entry_timing_optimization_params(self, params: Dict[str, Any],
                                                  calibration_results: Dict[str, Any]) -> float:
         """Evaluate entry timing optimization parameters for updated Tactician models."""
         score = 0.0
-        
+
         if 'entry_timing_range' in params:
             range_val = params['entry_timing_range']
             # Optimal range is around 0.003-0.004 (0.3%-0.4%)
@@ -3814,7 +3811,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.2
             else:
                 score += 0.1
-        
+
         if 'optimal_entry_reward_weight' in params and 'early_entry_penalty_weight' in params:
             reward_weight = params['optimal_entry_reward_weight']
             penalty_weight = params['early_entry_penalty_weight']
@@ -3823,21 +3820,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.25
             else:
                 score += 0.15
-        
+
         if 'directional_accuracy_threshold' in params:
             threshold = params['directional_accuracy_threshold']
             if 0.6 <= threshold <= 0.7:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_confidence_aware_ensemble_params(self, params: Dict[str, Any], 
+
+    def _evaluate_confidence_aware_ensemble_params(self, params: Dict[str, Any],
                                                  calibration_results: Dict[str, Any]) -> float:
         """Evaluate confidence-aware ensemble parameters for updated models."""
         score = 0.0
-        
+
         if 'confidence_threshold_entry' in params and 'confidence_threshold_exit' in params:
             entry_thresh = params['confidence_threshold_entry']
             exit_thresh = params['confidence_threshold_exit']
@@ -3846,7 +3843,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.3
             else:
                 score += 0.15
-        
+
         if 'confidence_weight_tactician' in params and 'confidence_weight_analyst' in params:
             tactician_weight = params['confidence_weight_tactician']
             analyst_weight = params['confidence_weight_analyst']
@@ -3855,84 +3852,84 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 score += 0.25
             else:
                 score += 0.15
-        
+
         if 'ensemble_confidence_threshold' in params:
             threshold = params['ensemble_confidence_threshold']
             if 0.7 <= threshold <= 0.85:
                 score += 0.2
             else:
                 score += 0.1
-        
+
         return score
-    
-    def _evaluate_model_specific_params(self, params: Dict[str, Any], 
+
+    def _evaluate_model_specific_params(self, params: Dict[str, Any],
                                       calibration_results: Dict[str, Any]) -> float:
         """Evaluate model-specific parameters for new Analyst & Tactician model types."""
         score = 0.0
-        
+
         # Check if weights are balanced for different model types
         analyst_weights = []
         tactician_weights = []
-        
+
         # Analyst model weights
         analyst_weight_keys = [
             'analyst_tcn_weight', 'analyst_catboost_weight', 'analyst_lightgbm_weight'
         ]
-        
-        # Tactician model weights  
+
+        # Tactician model weights
         tactician_weight_keys = [
-            'tactician_xgboost_weight', 'tactician_randomforest_weight', 
+            'tactician_xgboost_weight', 'tactician_randomforest_weight',
             'tactician_catboost_weight', 'tactician_elastic_net_weight'
         ]
-        
+
         for key in analyst_weight_keys:
             if key in params:
                 analyst_weights.append(params[key])
-                
+
         for key in tactician_weight_keys:
             if key in params:
                 tactician_weights.append(params[key])
-        
+
         # Evaluate Analyst model balance
         if analyst_weights:
             max_weight = max(analyst_weights)
             min_weight = min(analyst_weights)
             weight_balance = min_weight / max_weight if max_weight > 0 else 0
-            
+
             if weight_balance >= 0.6:  # Well balanced
                 score += 0.15
             elif weight_balance >= 0.4:  # Moderately balanced
                 score += 0.1
             else:
                 score += 0.05
-        
+
         # Evaluate Tactician model balance
         if tactician_weights:
             max_weight = max(tactician_weights)
             min_weight = min(tactician_weights)
             weight_balance = min_weight / max_weight if max_weight > 0 else 0
-            
+
             if weight_balance >= 0.6:  # Well balanced
                 score += 0.15
             elif weight_balance >= 0.4:  # Moderately balanced
                 score += 0.1
             else:
                 score += 0.05
-        
+
         if 'model_diversity_bonus' in params:
             bonus = params['model_diversity_bonus']
             if 0.08 <= bonus <= 0.12:
                 score += 0.15
             else:
                 score += 0.1
-        
+
         if 'model_complexity_penalty' in params:
             penalty = params['model_complexity_penalty']
             if 0.02 <= penalty <= 0.06:
                 score += 0.15
             else:
                 score += 0.1
-        
+
         return score
 
     def _calculate_turnover_penalty(self, params: Dict[str, Any],
@@ -4137,26 +4134,25 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.warning(f"Error estimating turnover rate: {e}")
             return 0.15  # Default turnover rate
-    
-    
+
     def _calculate_multiplicative_confidence(self, analyst_conf: float, tactician_conf: float,
                                            tactician_weight: float, analyst_weight: float) -> float:
         """Calculate confidence using multiplicative method (shared with signal pipeline)."""
         try:
             analyst_conf = max(0.001, analyst_conf)
             tactician_conf = max(0.001, tactician_conf)
-            
+
             multiplicative_conf = (
-                (tactician_conf ** tactician_weight) * 
+                (tactician_conf ** tactician_weight) *
                 (analyst_conf ** analyst_weight)
             )
-            
+
             return min(1.0, multiplicative_conf)
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in multiplicative confidence calculation: {e}")
             return 0.5
-    
+
     def _calculate_logarithmic_confidence(self, analyst_conf: float, tactician_conf: float,
                                         tactician_weight: float, analyst_weight: float) -> float:
         """Calculate confidence using logarithmic method (shared with signal pipeline)."""
@@ -4249,21 +4245,21 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             optimization_dir = f'generated/backtesting/optimization_results'
             os.makedirs(optimization_dir, exist_ok=True)
             self.logger.info(f"📁 Optimization directory: {optimization_dir}")
-            
+
             results_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl'
             self.logger.info(f"🔄 Saving pickle file: {results_file}")
             with open(results_file, 'wb') as f:
                 pickle.dump(optimization_results, f)
-            
+
             json_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.json'
             self.logger.info(f"🔄 Saving JSON file: {json_file}")
             with open(json_file, 'w') as f:
                 json.dump(optimization_results, f, indent=2, default=str)
-            
+
             # Log file sizes
             pickle_size = os.path.getsize(results_file) / 1024  # KB
             json_size = os.path.getsize(json_file) / 1024  # KB
-            
+
             self.logger.info(f'✅ Optimization results saved successfully')
             self.logger.info(f'📊 Pickle file size: {pickle_size:.1f} KB')
             self.logger.info(f'📊 JSON file size: {json_size:.1f} KB')
@@ -4300,24 +4296,24 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.error(f'❌ Error saving optimization results: {e}')
             self.logger.exception("Full traceback:")
-    
-    async def load_optimization_results(self, symbol: str, exchange: str, 
+
+    async def load_optimization_results(self, symbol: str, exchange: str,
                                       data_dir: str) -> Optional[Dict[str, Any]]:
         """Load previous optimization results."""
         try:
             self.logger.info(f"📂 Loading previous optimization results for {exchange}_{symbol}")
             optimization_dir = f'{data_dir}/optimization_results'
             previous_file = f'{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl'
-            
+
             self.logger.info(f"🔍 Checking for previous results: {previous_file}")
-            
+
             if os.path.exists(previous_file):
                 file_size = os.path.getsize(previous_file) / 1024  # KB
                 self.logger.info(f"📁 Previous results found - File size: {file_size:.1f} KB")
-                
+
                 with open(previous_file, 'rb') as f:
                     results = pickle.load(f)
-                
+
                 if results:
                     self.logger.info(f"✅ Successfully loaded previous optimization results")
                     self.logger.info(f"📊 Categories in previous results: {len(results)}")
@@ -4325,35 +4321,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                         self.logger.debug(f"   • {category}")
                 else:
                     self.logger.warning(f"⚠️ Previous results file is empty")
-                
+
                 return results
             else:
                 self.logger.info(f"ℹ️ No previous optimization results found")
                 return None
-            
+
         except Exception as e:
             self.logger.error(f'❌ Error loading optimization results: {e}')
             self.logger.exception("Full traceback:")
             return None
-    
+
     async def validate_optimization_results(self, optimization_results: Dict[str, Any]) -> bool:
         """Validate optimization results."""
         try:
             if not optimization_results:
                 return False
-            
+
             for category in self.categories:
                 if category not in optimization_results:
                     self.logger.warning(f'Missing optimization results for category: {category}')
                     return False
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f'Error validating optimization results: {e}')
             return False
-    
-    async def generate_optimization_report(self, optimization_results: Dict[str, Any], 
+
+    async def generate_optimization_report(self, optimization_results: Dict[str, Any],
                                          start_time: datetime) -> Dict[str, Any]:
         """Generate optimization report."""
         try:
@@ -4363,30 +4359,30 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'categories_optimized': list(optimization_results.keys()),
                 'summary': {}
             }
-            
+
             for category, results in optimization_results.items():
                 if results and 'best_value' in results:
                     report['summary'][category] = {
                         'best_value': results['best_value'],
                         'n_trials': results.get('n_trials', 0)
                     }
-            
+
             return report
-            
+
         except Exception as e:
             self.logger.error(f'Error generating optimization report: {e}')
             return {'error': str(e)}
-    
+
     def _analyze_convergence(self, study: optuna.Study) -> Dict[str, Any]:
         """Analyze convergence characteristics of the optimization."""
         try:
             if len(study.trials) < 5:
                 return {'convergence_quality': 'insufficient_data'}
-            
+
             values = [t.value for t in study.trials if t.value is not None]
             if not values:
                 return {'convergence_quality': 'no_valid_trials'}
-            
+
             # Calculate convergence metrics
             best_values = []
             current_best = float('-inf')
@@ -4394,11 +4390,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 if value > current_best:
                     current_best = value
                 best_values.append(current_best)
-            
+
             # Improvement rate
             total_improvement = best_values[-1] - best_values[0]
             improvement_rate = total_improvement / len(values) if len(values) > 0 else 0
-            
+
             # Convergence stability (variance in last 20% of trials)
             last_portion = int(len(best_values) * 0.2)
             if last_portion > 1:
@@ -4406,7 +4402,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 convergence_variance = np.var(recent_values)
             else:
                 convergence_variance = 0
-            
+
             # Convergence quality assessment
             if improvement_rate > 0.01 and convergence_variance < 0.001:
                 convergence_quality = 'excellent'
@@ -4416,7 +4412,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 convergence_quality = 'fair'
             else:
                 convergence_quality = 'poor'
-            
+
             return {
                 'convergence_quality': convergence_quality,
                 'total_improvement': total_improvement,
@@ -4425,11 +4421,11 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'final_best_value': best_values[-1],
                 'n_trials': len(values)
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Convergence analysis failed: {e}")
             return {'convergence_quality': 'analysis_failed', 'error': str(e)}
-    
+
     def _get_used_enhancement_methods(self, search_space: Dict[str, Dict[str, Any]]) -> List[str]:
         """Get list of enhancement methods used in the search space."""
         methods = set()
@@ -4439,44 +4435,44 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 if transform_type in ['log', 'power', 'sigmoid', 'adaptive']:
                     methods.add(transform_type)
         return list(methods)
-    
-    async def _coarse_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+
+    async def _coarse_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]],
                                 calibration_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform coarse grid search with fewer parameter combinations."""
         try:
             self.logger.info(f"🔍 Creating coarse grid for {category}")
-            
+
             # Create coarse parameter grid
             coarse_grid = self._create_coarse_parameter_grid(search_space)
             self.logger.info(f"📊 Coarse grid size: {len(coarse_grid)} combinations")
-            
+
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
-            
+
             # Evaluate each parameter combination
             for i, params in enumerate(coarse_grid):
                 try:
                     score = self._evaluate_configuration(category, params, calibration_results)
                     parameter_scores.append((params, score))
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params.copy()
-                    
+
                     if (i + 1) % 10 == 0:
                         self.logger.debug(f"   Evaluated {i + 1}/{len(coarse_grid)} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
                     continue
-            
+
             if not parameter_scores:
                 self.logger.error(f"❌ No valid parameter combinations found for {category}")
                 return {}
-            
+
             self.logger.info(f"✅ Coarse grid search completed - Best score: {best_score:.4f}")
-            
+
             return {
                 'best_params': best_params,
                 'best_score': best_score,
@@ -4484,48 +4480,48 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'valid_combinations': len(parameter_scores),
                 'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Coarse grid search failed for {category}: {e}")
             return {}
-    
-    async def _fine_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+
+    async def _fine_grid_search(self, category: str, search_space: Dict[str, Dict[str, Any]],
                               best_coarse_params: Dict[str, Any], calibration_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform fine grid search around best coarse parameters."""
         try:
             self.logger.info(f"🔍 Creating fine grid around best coarse parameters for {category}")
-            
+
             # Create fine parameter grid around best coarse parameters
             fine_grid = self._create_fine_parameter_grid(search_space, best_coarse_params)
             self.logger.info(f"📊 Fine grid size: {len(fine_grid)} combinations")
-            
+
             best_score = -np.inf
             best_params = {}
             parameter_scores = []
-            
+
             # Evaluate each parameter combination
             for i, params in enumerate(fine_grid):
                 try:
                     score = self._evaluate_configuration(category, params, calibration_results)
                     parameter_scores.append((params, score))
-                    
+
                     if score > best_score:
                         best_score = score
                         best_params = params.copy()
-                    
+
                     if (i + 1) % 10 == 0:
                         self.logger.debug(f"   Evaluated {i + 1}/{len(fine_grid)} combinations")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to evaluate parameters {params}: {e}")
                     continue
-            
+
             if not parameter_scores:
                 self.logger.error(f"❌ No valid parameter combinations found for {category}")
                 return {}
-            
+
             self.logger.info(f"✅ Fine grid search completed - Best score: {best_score:.4f}")
-            
+
             return {
                 'best_params': best_params,
                 'best_score': best_score,
@@ -4533,24 +4529,24 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'valid_combinations': len(parameter_scores),
                 'parameter_scores': parameter_scores[:10]  # Keep top 10 for analysis
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Fine grid search failed for {category}: {e}")
             return {}
-    
-    async def _optuna_tpe_optimization(self, category: str, search_space: Dict[str, Dict[str, Any]], 
+
+    async def _optuna_tpe_optimization(self, category: str, search_space: Dict[str, Dict[str, Any]],
                                      best_grid_params: Dict[str, Any], calibration_results: Dict[str, Any]) -> Dict[str, Any]:
         """Perform Optuna TPE optimization around best grid parameters."""
         try:
             self.logger.info(f"🎲 Starting Optuna TPE optimization for {category}")
-            
+
             # Create narrowed search space around best grid parameters
             narrowed_space = self._create_narrowed_search_space(search_space, best_grid_params)
-            
+
             study_name = f'{self.study_name}_{category}_tpe'
             if self.use_nonlinear_optimization:
                 study_name += '_enhanced'
-            
+
             # Use TPE sampler with enhanced settings
             sampler = optuna.samplers.TPESampler(
                 n_startup_trials=5,  # Fewer startup trials since we have good starting point
@@ -4560,7 +4556,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 consider_magic_clip=True,
                 consider_endpoints=True
             )
-            
+
             study = optuna.create_study(
                 study_name=study_name,
                 direction='maximize',
@@ -4568,35 +4564,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 storage='sqlite:///optuna_studies_coarse_fine.db',
                 load_if_exists=True
             )
-            
+
             # Use fewer trials since we're fine-tuning around good parameters
             n_trials = min(self.n_trials // 3, 30)  # Use 1/3 of original trials or max 30
             timeout = min(self.timeout // 3, 120)   # Use 1/3 of original timeout or max 2 minutes
-            
+
             self.logger.info(f"🎯 Starting TPE optimization with {n_trials} trials (timeout: {timeout}s)")
-            
+
             def objective(trial):
                 return self._objective_function(trial, category, narrowed_space, calibration_results)
-            
+
             start_time = time.time()
             study.optimize(objective, n_trials=n_trials, timeout=timeout)
             optimization_time = time.time() - start_time
-            
+
             best_params = study.best_params
             best_value = study.best_value
-            
+
             # Convert parameters back to original space for reporting
             if self.use_nonlinear_optimization:
                 converted_params = convert_parameters_to_original_space(best_params, narrowed_space)
             else:
                 converted_params = best_params
-            
+
             self.logger.info(f"✅ Optuna TPE optimization completed in {optimization_time:.2f}s")
             self.logger.info(f"📈 Best TPE score: {best_value:.4f}")
-            
+
             # Enhanced convergence analysis
             convergence_analysis = self._analyze_convergence(study)
-            
+
             return {
                 'best_params': converted_params,
                 'best_score': best_value,
@@ -4606,22 +4602,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'convergence_analysis': convergence_analysis,
                 'narrowed_space': narrowed_space
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Optuna TPE optimization failed for {category}: {e}")
             return {}
-    
+
     def _create_coarse_parameter_grid(self, search_space: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Create coarse parameter grid with fewer combinations."""
         import itertools
-        
+
         param_combinations = []
-        
+
         for param_name, param_config in search_space.items():
             if param_config['type'] == 'float':
                 # Use 3 points for coarse grid
                 min_val, max_val = param_config['min'], param_config['max']
-                if param_config.get('log', False) or (self.use_nonlinear_optimization and 
+                if param_config.get('log', False) or (self.use_nonlinear_optimization and
                     param_config.get('transform_type') == 'log'):
                     # Log-spaced values
                     values = np.logspace(np.log10(min_val), np.log10(max_val), 3)
@@ -4629,7 +4625,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     # Linear-spaced values
                     values = np.linspace(min_val, max_val, 3)
                 param_combinations.append([(param_name, v) for v in values])
-                
+
             elif param_config['type'] == 'int':
                 # Use 3 points for coarse grid
                 min_val, max_val = param_config['min'], param_config['max']
@@ -4638,35 +4634,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 else:
                     values = np.linspace(min_val, max_val, 3, dtype=int)
                 param_combinations.append([(param_name, v) for v in values])
-                
+
             elif param_config['type'] == 'bool':
                 param_combinations.append([(param_name, v) for v in [True, False]])
             elif param_config['type'] == 'categorical':
                 param_combinations.append([(param_name, v) for v in param_config['choices']])
-        
+
         # Generate all combinations
         all_combinations = list(itertools.product(*param_combinations))
-        
+
         # Convert to list of dictionaries
         grid = []
         for combination in all_combinations:
             param_dict = dict(combination)
             grid.append(param_dict)
-        
+
         return grid
-    
-    def _create_fine_parameter_grid(self, search_space: Dict[str, Dict[str, Any]], 
+
+    def _create_fine_parameter_grid(self, search_space: Dict[str, Dict[str, Any]],
                                   best_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Create fine parameter grid around best parameters."""
-        
+
         param_combinations = []
-        
+
         for param_name, param_config in search_space.items():
             if param_name not in best_params:
                 continue
-                
+
             best_value = best_params[param_name]
-            
+
             if param_config['type'] == 'float':
                 min_val, max_val = param_config['min'], param_config['max']
                 # Create fine grid around best value (±20% of range)
@@ -4674,9 +4670,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 fine_range = range_size * 0.2
                 fine_min = max(min_val, best_value - fine_range)
                 fine_max = min(max_val, best_value + fine_range)
-                
+
                 # Use 5 points for fine grid
-                if param_config.get('log', False) or (self.use_nonlinear_optimization and 
+                if param_config.get('log', False) or (self.use_nonlinear_optimization and
                     param_config.get('transform_type') == 'log'):
                     # Log-spaced values
                     values = np.logspace(np.log10(fine_min), np.log10(fine_max), 5)
@@ -4684,7 +4680,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     # Linear-spaced values
                     values = np.linspace(fine_min, fine_max, 5)
                 param_combinations.append([(param_name, v) for v in values])
-                
+
             elif param_config['type'] == 'int':
                 min_val, max_val = param_config['min'], param_config['max']
                 # Create fine grid around best value (±2 values)
@@ -4692,36 +4688,36 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 fine_max = min(max_val, best_value + 2)
                 values = list(range(fine_min, fine_max + 1))
                 param_combinations.append([(param_name, v) for v in values])
-                
+
             elif param_config['type'] == 'bool':
                 param_combinations.append([(param_name, v) for v in [True, False]])
             elif param_config['type'] == 'categorical':
                 param_combinations.append([(param_name, v) for v in param_config['choices']])
-        
+
         # Generate all combinations
         all_combinations = list(itertools.product(*param_combinations))
-        
+
         # Convert to list of dictionaries
         grid = []
         for combination in all_combinations:
             param_dict = dict(combination)
             grid.append(param_dict)
-        
+
         return grid
-    
-    def _create_narrowed_search_space(self, search_space: Dict[str, Dict[str, Any]], 
+
+    def _create_narrowed_search_space(self, search_space: Dict[str, Dict[str, Any]],
                                     best_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Create narrowed search space around best parameters for Optuna."""
         narrowed_space = {}
-        
+
         for param_name, param_config in search_space.items():
             if param_name not in best_params:
                 narrowed_space[param_name] = param_config
                 continue
-            
+
             best_value = best_params[param_name]
             narrowed_config = param_config.copy()
-            
+
             if param_config['type'] == 'float':
                 min_val, max_val = param_config['min'], param_config['max']
                 # Narrow range to ±10% of original range around best value
@@ -4729,22 +4725,22 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 narrow_range = range_size * 0.1
                 narrowed_config['min'] = max(min_val, best_value - narrow_range)
                 narrowed_config['max'] = min(max_val, best_value + narrow_range)
-                
+
             elif param_config['type'] == 'int':
                 min_val, max_val = param_config['min'], param_config['max']
                 # Narrow range to ±1 around best value
                 narrowed_config['min'] = max(min_val, best_value - 1)
                 narrowed_config['max'] = min(max_val, best_value + 1)
-            
+
             narrowed_space[param_name] = narrowed_config
-        
+
         return narrowed_space
-    
+
     def _create_fallback_result(self, category: str) -> Dict[str, Any]:
         """Create fallback result with default parameters."""
         default_params = {}
         search_space = self.default_search_spaces.get(category, {})
-        
+
         for param_name, param_config in search_space.items():
             if param_config['type'] == 'float':
                 # Use middle value
@@ -4756,7 +4752,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 default_params[param_name] = True
             elif param_config['type'] == 'categorical':
                 default_params[param_name] = param_config['choices'][0]  # Use first choice as default
-        
+
         return {
             'best_params': default_params,
             'best_value': 0.0,
@@ -4764,9 +4760,8 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             'error': 'Grid search failed, using default parameters'
         }
 
-
 # Convenience functions for easy integration
-async def optimize_final_parameters(calibration_results: Dict[str, Any], 
+async def optimize_final_parameters(calibration_results: Dict[str, Any],
                                   config: Dict[str, Any],
                                   symbol: str = "ETHUSDT",
                                   exchange: str = "BINANCE",
@@ -4774,7 +4769,7 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
                                   nonlinear_config: Optional[NonLinearConfig] = None) -> Dict[str, Any]:
     """
     Enhanced convenience function to optimize final parameters with optional non-linear transformations.
-    
+
     Args:
         calibration_results: Results from confidence calibration
         config: Configuration dictionary
@@ -4782,38 +4777,38 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
         exchange: Exchange name
         data_dir: Data directory
         nonlinear_config: Non-linear optimization configuration (optional)
-        
+
     Returns:
         Optimization results
     """
     optimizer = FinalParametersOptimizer(config, nonlinear_config)
-    
+
     # Load previous results for warm start
     previous_results = await optimizer.load_optimization_results(symbol, exchange, data_dir)
-    
+
     # Optimize all parameters
     optimization_results = await optimizer.optimize_all_parameters(
         calibration_results, previous_results
     )
-    
+
     # Validate results
     validation_passed = await optimizer.validate_optimization_results(optimization_results)
     if not validation_passed:
         logger.warning('⚠️ Optimization results validation failed, using fallback parameters')
-    
+
     # Save results
     await optimizer.save_optimization_results(optimization_results, symbol, exchange, data_dir)
-    
+
     # Generate report
     start_time = datetime.now()
     report = await optimizer.generate_optimization_report(optimization_results, start_time)
-    
+
     result = {
         'final_parameters': optimization_results,
         'optimization_report': report,
         'validation_passed': validation_passed
     }
-    
+
     # Add non-linear optimization summary if used
     if optimizer.use_nonlinear_optimization:
         result['nonlinear_optimization'] = True
@@ -4823,5 +4818,5 @@ async def optimize_final_parameters(calibration_results: Dict[str, Any],
             'use_sigmoid_transforms': optimizer.nonlinear_config.use_sigmoid_transforms,
             'use_adaptive_transforms': optimizer.nonlinear_config.use_adaptive_transforms
         }
-    
+
     return result

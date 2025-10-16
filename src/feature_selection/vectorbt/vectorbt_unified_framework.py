@@ -37,7 +37,6 @@ from src.utils.math_validation import validate_numeric_array, validate_finite
 
 logger = logging.getLogger(__name__)
 
-
 class FeatureSelectionMethod(Enum):
     """Available feature selection methods."""
     COMPREHENSIVE = "comprehensive"
@@ -49,7 +48,6 @@ class FeatureSelectionMethod(Enum):
     ELASTICNET = "elasticnet"
     RFE = "rfe"
     ADAPTIVE = "adaptive"
-
 
 @dataclass
 class SelectionResult:
@@ -66,11 +64,10 @@ class SelectionResult:
     error: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
-
 class VectorBTUnifiedFramework:
     """
     Unified VectorBT feature selection framework.
-    
+
     This class provides:
     - Consistent API across all VectorBT-optimized methods
     - Automatic method selection based on data characteristics
@@ -78,19 +75,19 @@ class VectorBTUnifiedFramework:
     - Memory-efficient processing for large datasets
     - Financial data optimization
     """
-    
+
     def __init__(self, config: Optional[VectorBTFeatureSelectionConfig] = None):
         """Initialize VectorBT unified framework."""
         self.config = config or VectorBTFeatureSelectionConfig()
         self.logger = logger.getChild('VectorBTUnifiedFramework')
-        
+
         # Check VectorBT availability
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required but not available. Please install vectorbt.")
-        
+
         # Initialize selectors
         self._initialize_selectors()
-        
+
         # Performance tracking
         self.performance_stats = {
             'total_selections': 0,
@@ -101,25 +98,25 @@ class VectorBTUnifiedFramework:
             'avg_execution_time': 0.0,
             'memory_saved_mb': 0.0
         }
-        
+
         tprint_success("🚀 VectorBTUnifiedFramework initialized")
-    
+
     def _initialize_selectors(self):
         """Initialize all VectorBT selectors with enhanced configuration."""
         try:
             # Ensure VectorBT optimizations are enabled by default
             self.config.setup_vectorbt_optimizations()
-            
+
             # Setup GPU acceleration
             gpu_available = self.config.setup_gpu_acceleration()
             if gpu_available:
                 tprint_success("✅ GPU acceleration enabled")
-            
+
             # Setup advanced parallel processing
             parallel_clients = self.config.setup_advanced_parallel_processing()
             if parallel_clients:
                 tprint_success(f"✅ Advanced parallel processing enabled: {list(parallel_clients.keys())}")
-            
+
             # Initialize all selectors with enhanced configuration
             self.correlation_filter = VectorBTCorrelationFilter(self.config)
             self.mutual_information = VectorBTMutualInformation(self.config)
@@ -128,50 +125,50 @@ class VectorBTUnifiedFramework:
             self.regularization_selector = VectorBTRegularizationSelector(self.config)
             self.rfe_selector = VectorBTRFESelector(self.config)
             self.feature_selector = VectorBTFeatureSelector(self.config)
-            
+
             tprint_success("✅ All VectorBT selectors initialized with advanced optimizations")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to initialize selectors: {e}")
             raise
-    
-    def _validate_inputs(self, X: np.ndarray, y: np.ndarray, 
+
+    def _validate_inputs(self, X: np.ndarray, y: np.ndarray,
                         feature_names: Optional[List[str]] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """Validate and prepare inputs."""
         # Validate X
         X = validate_numeric_array(X, name="Feature matrix X")
         if not validate_finite(X):
             raise ValueError("Feature matrix X contains non-finite values")
-        
+
         # Validate y
         y = validate_numeric_array(y, name="Target variable y")
         if not validate_finite(y):
             raise ValueError("Target variable y contains non-finite values")
-        
+
         # Check dimensions
         if X.shape[0] != y.shape[0]:
             raise ValueError(f"X and y must have same number of samples: {X.shape[0]} vs {y.shape[0]}")
-        
+
         # Prepare feature names
         if feature_names is None:
             feature_names = [f"feature_{i}" for i in range(X.shape[1])]
         elif len(feature_names) != X.shape[1]:
             raise ValueError(f"Feature names length {len(feature_names)} doesn't match X shape[1] {X.shape[1]}")
-        
+
         return X, y, feature_names
-    
-    def _select_method_automatically(self, X: np.ndarray, y: np.ndarray, 
+
+    def _select_method_automatically(self, X: np.ndarray, y: np.ndarray,
                                    k: int) -> FeatureSelectionMethod:
         """Enhanced automatic method selection using advanced VectorBT analytics."""
         try:
             n_samples, n_features = X.shape
-            
+
             # Use VectorBT to analyze data characteristics
             df = vbt.PandasDataFrame(X)
-            
+
             # Enhanced VectorBT analytics
             analytics = self._analyze_data_characteristics_vectorbt(df, X, y)
-            
+
             # Advanced decision tree based on comprehensive VectorBT analytics
             if analytics['n_features'] <= 50 and analytics['sparsity'] < 0.1 and analytics['correlation_structure'] < 0.3:
                 return FeatureSelectionMethod.COMPREHENSIVE
@@ -187,7 +184,7 @@ class VectorBTUnifiedFramework:
                 return FeatureSelectionMethod.CORRELATION
             else:
                 return FeatureSelectionMethod.ELASTICNET
-            
+
         except Exception as e:
             self.logger.warning(f"Enhanced method selection failed: {e}")
             # Fallback to simple decision tree
@@ -200,12 +197,12 @@ class VectorBTUnifiedFramework:
                 return FeatureSelectionMethod.STABILITY_SELECTION
             else:
                 return FeatureSelectionMethod.ELASTICNET
-    
+
     def _analyze_data_characteristics_vectorbt(self, df: pd.DataFrame, X: np.ndarray, y: np.ndarray) -> Dict[str, Any]:
         """Analyze data characteristics using advanced VectorBT operations."""
         try:
             n_samples, n_features = X.shape
-            
+
             # Basic characteristics
             analytics = {
                 'n_samples': n_samples,
@@ -217,12 +214,12 @@ class VectorBTUnifiedFramework:
                 'memory_usage': X.nbytes / (1024 * 1024),  # MB
                 'data_type': 'numeric'
             }
-            
+
             if hasattr(df, 'vbt'):
                 try:
                     # Analyze data sparsity using VectorBT
                     analytics['sparsity'] = df.vbt.isna().sum().sum() / (n_samples * n_features)
-                    
+
                     # Analyze correlation structure using VectorBT rolling operations
                     if n_features > 1:
                         try:
@@ -235,7 +232,7 @@ class VectorBTUnifiedFramework:
                         except Exception as corr_e:
                             tprint_debug(f"⚠️ Correlation analysis failed: {corr_e}")
                             analytics['correlation_structure'] = 0.0
-                    
+
                     # Analyze variance using VectorBT rolling operations
                     try:
                         variance_rolling = df.vbt.rolling_std(
@@ -246,28 +243,28 @@ class VectorBTUnifiedFramework:
                     except Exception as var_e:
                         tprint_debug(f"⚠️ Variance analysis failed: {var_e}")
                         analytics['variance_ratio'] = 0.0
-                    
+
                     # Analyze stability using VectorBT bootstrap sampling
                     try:
                         if n_samples > 100:
                             bootstrap_samples = min(10, n_samples // 10)
                             feature_importance_scores = []
-                            
+
                             for _ in range(bootstrap_samples):
                                 bootstrap_idx = np.random.choice(n_samples, size=n_samples, replace=True)
                                 X_bootstrap = X[bootstrap_idx]
                                 y_bootstrap = y[bootstrap_idx]
-                                
+
                                 # Calculate feature importance using correlation with target
                                 if len(np.unique(y_bootstrap)) > 1:  # Check if target has variation
                                     correlations = np.abs(np.corrcoef(X_bootstrap.T, y_bootstrap)[:-1, -1])
                                     feature_importance_scores.append(correlations)
-                            
+
                             if feature_importance_scores:
                                 # Calculate stability as consistency of feature rankings across bootstrap samples
                                 importance_matrix = np.array(feature_importance_scores)
                                 feature_rankings = np.argsort(importance_matrix, axis=1)
-                                
+
                                 # Calculate ranking stability (lower is more stable)
                                 ranking_std = np.std(feature_rankings, axis=0)
                                 stability_score = 1.0 - np.mean(ranking_std) / n_features  # Normalize by number of features
@@ -279,16 +276,16 @@ class VectorBTUnifiedFramework:
                     except Exception as stability_e:
                         tprint_debug(f"⚠️ Stability analysis failed: {stability_e}")
                         analytics['stability_score'] = 0.5
-                    
+
                     tprint_debug(f"📊 VectorBT analytics: sparsity={analytics['sparsity']:.3f}, "
                                f"corr_structure={analytics['correlation_structure']:.3f}, "
                                f"variance_ratio={analytics['variance_ratio']:.3f}")
-                    
+
                 except Exception as vbt_e:
                     self.logger.debug(f"VectorBT analytics failed: {vbt_e}")
-            
+
             return analytics
-            
+
         except Exception as e:
             self.logger.warning(f"Data characteristics analysis failed: {e}")
             return {
@@ -301,14 +298,14 @@ class VectorBTUnifiedFramework:
                 'memory_usage': X.nbytes / (1024 * 1024),
                 'data_type': 'numeric'
             }
-    
-    def select_features(self, X: np.ndarray, y: np.ndarray, 
+
+    def select_features(self, X: np.ndarray, y: np.ndarray,
                        method: Union[str, FeatureSelectionMethod] = 'auto',
                        k: int = None, feature_names: Optional[List[str]] = None,
                        **kwargs) -> SelectionResult:
         """
         Select features using VectorBT-optimized methods.
-        
+
         Args:
             X: Feature matrix (n_samples, n_features)
             y: Target variable (n_samples,)
@@ -316,16 +313,16 @@ class VectorBTUnifiedFramework:
             k: Number of features to select
             feature_names: Optional list of feature names
             **kwargs: Additional method-specific parameters
-            
+
         Returns:
             SelectionResult with selection results
         """
         start_time = time.time()
-        
+
         try:
             # Validate inputs
             X, y, feature_names = self._validate_inputs(X, y, feature_names)
-            
+
             # Determine method
             if method == 'auto':
                 method = self._select_method_automatically(X, y, k or 50)
@@ -334,32 +331,32 @@ class VectorBTUnifiedFramework:
                     method = FeatureSelectionMethod(method)
                 except ValueError:
                     raise ValueError(f"Unknown method: {method}")
-            
+
             # Set default k if not provided
             if k is None:
                 k = min(50, X.shape[1] // 2)
-            
+
             tprint(f"🚀 Starting VectorBT {method.value} selection with {X.shape[1]} features, target: {k}")
-            
+
             # Execute method
             result = self._execute_method(method, X, y, k, feature_names, **kwargs)
-            
+
             # Update performance stats
             execution_time = time.time() - start_time
             self.performance_stats['total_selections'] += 1
             self.performance_stats['total_time'] += execution_time
-            
+
             if result['success']:
                 self.performance_stats['successful_selections'] += 1
                 self.performance_stats['methods_used'][method.value] = \
                     self.performance_stats['methods_used'].get(method.value, 0) + 1
             else:
                 self.performance_stats['failed_selections'] += 1
-            
+
             # Calculate average execution time
             self.performance_stats['avg_execution_time'] = \
                 self.performance_stats['total_time'] / self.performance_stats['total_selections']
-            
+
             # Create result object
             selection_result = SelectionResult(
                 success=result['success'],
@@ -374,23 +371,23 @@ class VectorBTUnifiedFramework:
                 error=result.get('error'),
                 metadata=result.get('metadata', {})
             )
-            
+
             if result['success']:
                 tprint_success(f"✅ VectorBT {method.value} completed: {selection_result.n_selected}/{selection_result.n_total} features "
                              f"in {execution_time:.3f}s")
             else:
                 tprint_warning(f"⚠️ VectorBT {method.value} failed: {result.get('error', 'Unknown error')}")
-            
+
             return selection_result
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
             self.performance_stats['total_selections'] += 1
             self.performance_stats['failed_selections'] += 1
             self.performance_stats['total_time'] += execution_time
-            
+
             self.logger.error(f"Feature selection failed: {e}")
-            
+
             return SelectionResult(
                 success=False,
                 selected_features=[],
@@ -403,7 +400,7 @@ class VectorBTUnifiedFramework:
                 performance_stats={},
                 error=str(e)
             )
-    
+
     def _execute_method(self, method: FeatureSelectionMethod, X: np.ndarray, y: np.ndarray,
                        k: int, feature_names: List[str], **kwargs) -> Dict[str, Any]:
         """Execute the specified feature selection method."""
@@ -430,7 +427,7 @@ class VectorBTUnifiedFramework:
                 return self._execute_adaptive_selection(X, y, k, feature_names, **kwargs)
             else:
                 raise ValueError(f"Unknown method: {method}")
-                
+
         except Exception as e:
             self.logger.error(f"Method execution failed: {e}")
             return {
@@ -438,7 +435,7 @@ class VectorBTUnifiedFramework:
                 'error': str(e),
                 'method': method.value
             }
-    
+
     def _execute_adaptive_selection(self, X: np.ndarray, y: np.ndarray, k: int,
                                    feature_names: List[str], **kwargs) -> Dict[str, Any]:
         """Execute adaptive feature selection using multiple methods."""
@@ -449,7 +446,7 @@ class VectorBTUnifiedFramework:
                 FeatureSelectionMethod.STABILITY_SELECTION,
                 FeatureSelectionMethod.ELASTICNET
             ]
-            
+
             results = []
             for method in methods_to_try:
                 try:
@@ -459,25 +456,25 @@ class VectorBTUnifiedFramework:
                 except Exception as e:
                     self.logger.warning(f"Method {method.value} failed: {e}")
                     continue
-            
+
             if not results:
                 return {
                     'success': False,
                     'error': 'All adaptive methods failed',
                     'method': 'adaptive'
                 }
-            
+
             # Select best result based on number of features selected
             best_method, best_result = min(results, key=lambda x: abs(x[1]['n_selected'] - k))
-            
+
             best_result['method'] = f'adaptive_{best_method.value}'
             best_result['metadata'] = {
                 'methods_tried': [m.value for m, _ in results],
                 'best_method': best_method.value
             }
-            
+
             return best_result
-            
+
         except Exception as e:
             self.logger.error(f"Adaptive selection failed: {e}")
             return {
@@ -485,27 +482,27 @@ class VectorBTUnifiedFramework:
                 'error': str(e),
                 'method': 'adaptive'
             }
-    
+
     def benchmark_methods(self, X: np.ndarray, y: np.ndarray, k: int = 50,
                          feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Benchmark all VectorBT methods on the given dataset.
-        
+
         Args:
             X: Feature matrix (n_samples, n_features)
             y: Target variable (n_samples,)
             k: Number of features to select
             feature_names: Optional list of feature names
-            
+
         Returns:
             Dictionary with benchmark results
         """
         try:
             # Validate inputs
             X, y, feature_names = self._validate_inputs(X, y, feature_names)
-            
+
             tprint(f"🚀 Starting VectorBT method benchmarking with {X.shape[1]} features, target: {k}")
-            
+
             # Test all methods
             methods_to_test = [
                 FeatureSelectionMethod.COMPREHENSIVE,
@@ -517,17 +514,17 @@ class VectorBTUnifiedFramework:
                 FeatureSelectionMethod.ELASTICNET,
                 FeatureSelectionMethod.RFE
             ]
-            
+
             benchmark_results = {}
-            
+
             for method in methods_to_test:
                 try:
                     tprint_debug(f"📊 Testing {method.value}...")
-                    
+
                     start_time = time.time()
                     result = self.select_features(X, y, method, k, feature_names)
                     execution_time = time.time() - start_time
-                    
+
                     benchmark_results[method.value] = {
                         'success': result.success,
                         'n_selected': result.n_selected,
@@ -535,7 +532,7 @@ class VectorBTUnifiedFramework:
                         'error': result.error,
                         'performance_stats': result.performance_stats
                     }
-                    
+
                 except Exception as e:
                     benchmark_results[method.value] = {
                         'success': False,
@@ -544,21 +541,21 @@ class VectorBTUnifiedFramework:
                         'error': str(e),
                         'performance_stats': {}
                     }
-            
+
             # Find best method
             successful_results = {k: v for k, v in benchmark_results.items() if v['success']}
-            
+
             if successful_results:
-                best_method = min(successful_results.items(), 
+                best_method = min(successful_results.items(),
                                 key=lambda x: abs(x[1]['n_selected'] - k))
                 best_method_name = best_method[0]
                 best_method_result = best_method[1]
             else:
                 best_method_name = None
                 best_method_result = None
-            
+
             tprint_success(f"✅ Benchmarking completed. Best method: {best_method_name}")
-            
+
             return {
                 'success': True,
                 'benchmark_results': benchmark_results,
@@ -567,7 +564,7 @@ class VectorBTUnifiedFramework:
                 'n_methods_tested': len(methods_to_test),
                 'n_successful': len(successful_results)
             }
-            
+
         except Exception as e:
             self.logger.error(f"Benchmarking failed: {e}")
             return {
@@ -575,16 +572,16 @@ class VectorBTUnifiedFramework:
                 'error': str(e),
                 'benchmark_results': {}
             }
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()
-        
+
         if stats['total_selections'] > 0:
             stats['success_rate'] = stats['successful_selections'] / stats['total_selections']
         else:
             stats['success_rate'] = 0.0
-        
+
         # Add individual selector stats
         stats['selector_stats'] = {
             'correlation_filter': self.correlation_filter.get_performance_stats(),
@@ -595,13 +592,12 @@ class VectorBTUnifiedFramework:
             'rfe_selector': self.rfe_selector.get_performance_stats(),
             'feature_selector': self.feature_selector.get_performance_stats()
         }
-        
+
         tprint_performance(f"📊 VectorBT Unified Framework Stats: {stats['total_selections']} total selections, "
                          f"{stats['success_rate']:.2%} success rate, "
                          f"{stats['avg_execution_time']:.3f}s avg execution time")
-        
-        return stats
 
+        return stats
 
 def create_vectorbt_unified_framework(config: Optional[VectorBTFeatureSelectionConfig] = None) -> VectorBTUnifiedFramework:
     """Create a VectorBT unified framework."""

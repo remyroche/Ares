@@ -121,7 +121,7 @@ class LiveDataCollector:
         self.error_recovery = get_enhanced_error_handler() if config.error_recovery else None
         self.streaming_processor = get_streaming_processor()
         self.hardware_manager = get_unified_hardware_manager()
-        
+
         # Performance optimization
         self.memory_optimized = True
 
@@ -133,7 +133,7 @@ class LiveDataCollector:
             # Initialize exchange client (skip for simulated mode)
             if self.config.collection_mode != CollectionMode.SIMULATED:
                 tprint_info(f"🔄 Initializing {self.config.exchange} exchange client...")
-                
+
                 # Use Binance exchange directly
                 if self.config.exchange.lower() == "binance":
                     self.exchange_client = BinanceExchange()
@@ -168,7 +168,7 @@ class LiveDataCollector:
             if self.config.feature_engineering:
                 tprint_info("⚙️ Initializing feature engineering...")
                 self._initialize_feature_engineering()
-            
+
             # Initialize hardware optimization
             if self.hardware_manager:
                 tprint_info("🚀 Optimizing hardware performance...")
@@ -597,22 +597,22 @@ class LiveDataCollector:
         data_points = self.get_timeframe_data(timeframe, n)
         if not data_points:
             return pd.DataFrame()
-        
+
         # Convert to DataFrame
         data_list = []
         for dp in data_points:
             if dp.processed_data:
                 data_list.append(dp.processed_data)
-        
+
         df = pd.DataFrame(data_list)
-        
+
         # Optimize memory usage for the returned DataFrame
         if self.memory_optimized and not df.empty:
             try:
                 df = optimize_dataframe_dtypes(df)
             except Exception as e:
                 tprint_warning(f"⚠️ Memory optimization failed: {e}")
-        
+
         return df
 
     def get_stats(self) -> Dict[str, Any]:
@@ -630,22 +630,22 @@ class LiveDataCollector:
             'ml_predictions_enabled': self.ml_model is not None,
             'feature_engineering_enabled': self.feature_engineer is not None
         }
-    
+
     async def _optimize_memory_usage(self):
         """Optimize memory usage of data buffers."""
         try:
             if self.hardware_manager:
                 # Use hardware manager for memory optimization
                 await self.hardware_manager.optimize_memory_usage()
-            
+
             # Convert processed buffer to optimized DataFrame and back
             if self.processed_buffer:
                 temp_df = pd.DataFrame(self.processed_buffer[-100:])  # Keep last 100
                 optimized_df = optimize_dataframe_dtypes(temp_df)
                 self.processed_buffer = optimized_df.to_dict('records')
-                
+
             tprint_info("🧹 Memory optimization completed")
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Memory optimization failed: {e}")
 

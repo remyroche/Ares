@@ -477,7 +477,6 @@ def get_global_error_handler() -> ErrorHandler:
         _global_error_handler = ErrorHandler()
     return _global_error_handler
 
-
 def safe_operation(operation_name: str, default_value: Any = None, log_level: str = "warning"):
     """
     Decorator for safe operations with error handling and fallback to default values.

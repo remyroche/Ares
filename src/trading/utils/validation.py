@@ -16,26 +16,26 @@ from .error_handling import ValidationError, TradingErrorSeverity
 def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool:
     """
     Validate trading configuration parameters.
-    
+
     Args:
         config: Trading configuration dictionary
         strict: Whether to use strict validation (no warnings allowed)
-        
+
     Returns:
         bool: True if validation passes
-        
+
     Raises:
         ValidationError: If validation fails
     """
     errors = []
     warnings = []
-    
+
     # Required fields
     required_fields = ['symbol', 'exchange', 'trading_mode']
     for field in required_fields:
         if field not in config:
             errors.append(f"Missing required field: {field}")
-    
+
     # Symbol validation
     if 'symbol' in config:
         symbol = config['symbol']
@@ -43,19 +43,19 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
             errors.append(f"Invalid symbol: {symbol}")
         if not symbol.isalnum():
             warnings.append(f"Symbol contains non-alphanumeric characters: {symbol}")
-    
+
     # Exchange validation
     if 'exchange' in config:
         valid_exchanges = ['binance', 'binance_testnet', 'simulated']
         if config['exchange'] not in valid_exchanges:
             errors.append(f"Invalid exchange: {config['exchange']}. Must be one of {valid_exchanges}")
-    
+
     # Trading mode validation
     if 'trading_mode' in config:
         valid_modes = ['paper', 'live', 'backtest', 'simulation']
         if config['trading_mode'] not in valid_modes:
             errors.append(f"Invalid trading mode: {config['trading_mode']}. Must be one of {valid_modes}")
-    
+
     # Risk parameters validation
     risk_params = {
         'max_portfolio_risk': (0.0, 1.0),
@@ -65,7 +65,7 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
         'max_position_size': (0.0, 1.0),
         'min_position_size': (0.0, 1.0)
     }
-    
+
     for param, (min_val, max_val) in risk_params.items():
         if param in config:
             value = config[param]
@@ -73,16 +73,16 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
                 errors.append(f"{param} must be a number, got {type(value)}")
             elif not (min_val <= value <= max_val):
                 errors.append(f"{param} must be between {min_val} and {max_val}, got {value}")
-    
+
     # Position size consistency
     if all(param in config for param in ['min_position_size', 'base_position_size', 'max_position_size']):
         min_size = config['min_position_size']
         base_size = config['base_position_size']
         max_size = config['max_position_size']
-        
+
         if not (min_size <= base_size <= max_size):
             errors.append(f"Position sizes must satisfy: min <= base <= max, got min={min_size}, base={base_size}, max={max_size}")
-    
+
     # Confidence thresholds
     confidence_params = ['confidence_threshold', 'regime_confidence_threshold']
     for param in confidence_params:
@@ -92,7 +92,7 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
                 errors.append(f"{param} must be a number, got {type(value)}")
             elif not (0.0 <= value <= 1.0):
                 errors.append(f"{param} must be between 0.0 and 1.0, got {value}")
-    
+
     # Log results
     if errors:
         for error in errors:
@@ -102,7 +102,7 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
             severity=TradingErrorSeverity.CRITICAL,
             context={'config': config, 'errors': errors, 'warnings': warnings}
         )
-    
+
     if warnings:
         for warning in warnings:
             tprint_warning(f"⚠️ Configuration Warning: {warning}")
@@ -112,10 +112,10 @@ def validate_trading_config(config: Dict[str, Any], strict: bool = True) -> bool
                 severity=TradingErrorSeverity.HIGH,
                 context={'config': config, 'warnings': warnings}
             )
-    
+
     if not warnings and not errors:
         tprint_success("✅ Trading configuration validation passed")
-    
+
     return True
 
 def validate_market_data(
@@ -127,23 +127,23 @@ def validate_market_data(
 ) -> bool:
     """
     Validate market data DataFrame.
-    
+
     Args:
         data: Market data DataFrame
         required_columns: List of required column names
         min_rows: Minimum number of rows required
         check_completeness: Whether to check for missing data
         check_quality: Whether to check data quality
-        
+
     Returns:
         bool: True if validation passes
-        
+
     Raises:
         ValidationError: If validation fails
     """
     errors = []
     warnings = []
-    
+
     # Basic structure validation
     if not isinstance(data, pd.DataFrame):
         errors.append(f"Market data must be a DataFrame, got {type(data)}")
@@ -152,22 +152,22 @@ def validate_market_data(
             severity=TradingErrorSeverity.CRITICAL,
             context={'data_type': type(data)}
         )
-    
+
     # Size validation
     if len(data) < min_rows:
         errors.append(f"Market data has insufficient rows: {len(data)} < {min_rows}")
-    
+
     if data.empty:
         errors.append("Market data is empty")
-    
+
     # Column validation
     default_required_columns = ['open', 'high', 'low', 'close', 'volume']
     columns_to_check = required_columns or default_required_columns
-    
+
     missing_columns = [col for col in columns_to_check if col not in data.columns]
     if missing_columns:
         errors.append(f"Missing required columns: {missing_columns}")
-    
+
     # Data completeness check
     if check_completeness and not data.empty:
         for col in columns_to_check:
@@ -179,7 +179,7 @@ def validate_market_data(
                         errors.append(f"Column {col} has {null_percentage:.1f}% missing values")
                     elif null_percentage > 5:  # 5-10% missing
                         warnings.append(f"Column {col} has {null_percentage:.1f}% missing values")
-    
+
     # Data quality checks
     if check_quality and not data.empty:
         # Price validation
@@ -190,53 +190,53 @@ def validate_market_data(
                 negative_count = (data[col] <= 0).sum()
                 if negative_count > 0:
                     errors.append(f"Column {col} has {negative_count} non-positive values")
-                
+
                 # Check for extreme values
                 if len(data) > 1:
                     price_changes = data[col].pct_change().abs()
                     extreme_changes = (price_changes > 0.5).sum()  # 50% change
                     if extreme_changes > 0:
                         warnings.append(f"Column {col} has {extreme_changes} extreme price changes (>50%)")
-        
+
         # OHLC consistency
         if all(col in data.columns for col in ['open', 'high', 'low', 'close']):
             # High should be >= Open, Close, Low
-            high_violations = ((data['high'] < data['open']) | 
-                             (data['high'] < data['close']) | 
+            high_violations = ((data['high'] < data['open']) |
+                             (data['high'] < data['close']) |
                              (data['high'] < data['low'])).sum()
             if high_violations > 0:
                 errors.append(f"OHLC inconsistency: High is not highest in {high_violations} rows")
-            
+
             # Low should be <= Open, Close, High
-            low_violations = ((data['low'] > data['open']) | 
-                            (data['low'] > data['close']) | 
+            low_violations = ((data['low'] > data['open']) |
+                            (data['low'] > data['close']) |
                             (data['low'] > data['high'])).sum()
             if low_violations > 0:
                 errors.append(f"OHLC inconsistency: Low is not lowest in {low_violations} rows")
-        
+
         # Volume validation
         if 'volume' in data.columns:
             negative_volume = (data['volume'] < 0).sum()
             if negative_volume > 0:
                 errors.append(f"Volume has {negative_volume} negative values")
-            
+
             zero_volume = (data['volume'] == 0).sum()
             if zero_volume > len(data) * 0.1:  # More than 10% zero volume
                 warnings.append(f"Volume has {zero_volume} zero values ({zero_volume/len(data)*100:.1f}%)")
-    
+
     # Timestamp validation (if present)
     if 'timestamp' in data.columns:
         # Check for duplicates
         duplicate_timestamps = data['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
             errors.append(f"Found {duplicate_timestamps} duplicate timestamps")
-        
+
         # Check for proper ordering
         if len(data) > 1:
             unsorted_count = (data['timestamp'].diff().dt.total_seconds() < 0).sum()
             if unsorted_count > 0:
                 warnings.append(f"Found {unsorted_count} out-of-order timestamps")
-    
+
     # Log results
     if errors:
         for error in errors:
@@ -251,14 +251,14 @@ def validate_market_data(
                 'warnings': warnings
             }
         )
-    
+
     if warnings:
         for warning in warnings:
             tprint_warning(f"⚠️ Market Data Warning: {warning}")
-    
+
     if not warnings and not errors:
         tprint_success(f"✅ Market data validation passed ({len(data)} rows, {len(data.columns)} columns)")
-    
+
     return True
 
 def validate_signal_data(
@@ -268,39 +268,39 @@ def validate_signal_data(
 ) -> bool:
     """
     Validate trading signal data.
-    
+
     Args:
         signal: Signal dictionary
         required_fields: List of required field names
         check_confidence: Whether to validate confidence scores
-        
+
     Returns:
         bool: True if validation passes
-        
+
     Raises:
         ValidationError: If validation fails
     """
     errors = []
     warnings = []
-    
+
     # Basic structure validation
     if not isinstance(signal, dict):
         errors.append(f"Signal must be a dictionary, got {type(signal)}")
-    
+
     # Required fields validation
     default_required_fields = ['timestamp', 'symbol', 'action', 'confidence']
     fields_to_check = required_fields or default_required_fields
-    
+
     missing_fields = [field for field in fields_to_check if field not in signal]
     if missing_fields:
         errors.append(f"Missing required signal fields: {missing_fields}")
-    
+
     # Action validation
     if 'action' in signal:
         valid_actions = ['buy', 'sell', 'hold', 'close']
         if signal['action'] not in valid_actions:
             errors.append(f"Invalid action: {signal['action']}. Must be one of {valid_actions}")
-    
+
     # Confidence validation
     if check_confidence and 'confidence' in signal:
         confidence = signal['confidence']
@@ -310,7 +310,7 @@ def validate_signal_data(
             errors.append(f"Confidence must be between 0.0 and 1.0, got {confidence}")
         elif confidence < 0.5:
             warnings.append(f"Low confidence signal: {confidence}")
-    
+
     # Timestamp validation
     if 'timestamp' in signal:
         timestamp = signal['timestamp']
@@ -321,13 +321,13 @@ def validate_signal_data(
                 errors.append(f"Invalid timestamp format: {timestamp}")
         elif not isinstance(timestamp, datetime):
             errors.append(f"Timestamp must be datetime or ISO string, got {type(timestamp)}")
-    
+
     # Symbol validation
     if 'symbol' in signal:
         symbol = signal['symbol']
         if not isinstance(symbol, str) or len(symbol) < 3:
             errors.append(f"Invalid symbol: {symbol}")
-    
+
     # Price validation (if present)
     price_fields = ['price', 'price_target', 'stop_loss']
     for field in price_fields:
@@ -338,7 +338,7 @@ def validate_signal_data(
                     errors.append(f"{field} must be a number, got {type(price)}")
                 elif price <= 0:
                     errors.append(f"{field} must be positive, got {price}")
-    
+
     # Log results
     if errors:
         for error in errors:
@@ -348,14 +348,14 @@ def validate_signal_data(
             severity=TradingErrorSeverity.HIGH,
             context={'signal': signal, 'errors': errors, 'warnings': warnings}
         )
-    
+
     if warnings:
         for warning in warnings:
             tprint_warning(f"⚠️ Signal Validation Warning: {warning}")
-    
+
     if not warnings and not errors:
         tprint_success("✅ Signal validation passed")
-    
+
     return True
 
 def validate_position_size(
@@ -366,32 +366,32 @@ def validate_position_size(
 ) -> bool:
     """
     Validate position size parameters.
-    
+
     Args:
         size: Position size (as fraction of account balance)
         account_balance: Current account balance
         max_position_size: Maximum allowed position size
         min_position_size: Minimum allowed position size
-        
+
     Returns:
         bool: True if validation passes
-        
+
     Raises:
         ValidationError: If validation fails
     """
     errors = []
     warnings = []
-    
+
     # Basic validation
     if not isinstance(size, (int, float)):
         errors.append(f"Position size must be a number, got {type(size)}")
-    
+
     if not isinstance(account_balance, (int, float)):
         errors.append(f"Account balance must be a number, got {type(account_balance)}")
-    
+
     if account_balance <= 0:
         errors.append(f"Account balance must be positive, got {account_balance}")
-    
+
     # Size validation
     if isinstance(size, (int, float)):
         if size < 0:
@@ -402,13 +402,13 @@ def validate_position_size(
             errors.append(f"Position size {size} exceeds maximum {max_position_size}")
         elif size > 0.5:  # Warning for large positions
             warnings.append(f"Large position size: {size} (>50% of account)")
-    
+
     # Dollar amount validation
     if isinstance(size, (int, float)) and isinstance(account_balance, (int, float)):
         dollar_amount = size * account_balance
         if dollar_amount < 10:  # Minimum trade size
             warnings.append(f"Small trade size: ${dollar_amount:.2f}")
-    
+
     # Log results
     if errors:
         for error in errors:
@@ -425,14 +425,14 @@ def validate_position_size(
                 'warnings': warnings
             }
         )
-    
+
     if warnings:
         for warning in warnings:
             tprint_warning(f"⚠️ Position Size Warning: {warning}")
-    
+
     if not warnings and not errors:
         tprint_success(f"✅ Position size validation passed (${size * account_balance:.2f})")
-    
+
     return True
 
 def validate_regime_data(
@@ -441,30 +441,30 @@ def validate_regime_data(
 ) -> bool:
     """
     Validate regime detection data.
-    
+
     Args:
         regime_data: Regime detection result
         check_probabilities: Whether to validate probability distributions
-        
+
     Returns:
         bool: True if validation passes
-        
+
     Raises:
         ValidationError: If validation fails
     """
     errors = []
     warnings = []
-    
+
     # Basic structure validation
     if not isinstance(regime_data, dict):
         errors.append(f"Regime data must be a dictionary, got {type(regime_data)}")
-    
+
     # Required fields
     required_fields = ['primary_regime', 'confidence', 'regime_probabilities']
     missing_fields = [field for field in required_fields if field not in regime_data]
     if missing_fields:
         errors.append(f"Missing required regime fields: {missing_fields}")
-    
+
     # Confidence validation
     if 'confidence' in regime_data:
         confidence = regime_data['confidence']
@@ -474,7 +474,7 @@ def validate_regime_data(
             errors.append(f"Regime confidence must be between 0.0 and 1.0, got {confidence}")
         elif confidence < 0.3:
             warnings.append(f"Low regime confidence: {confidence}")
-    
+
     # Probability validation
     if check_probabilities and 'regime_probabilities' in regime_data:
         probs = regime_data['regime_probabilities']
@@ -487,12 +487,12 @@ def validate_regime_data(
                     errors.append(f"Probability for {regime} must be a number, got {type(prob)}")
                 elif not (0.0 <= prob <= 1.0):
                     errors.append(f"Probability for {regime} must be between 0.0 and 1.0, got {prob}")
-            
+
             # Check if probabilities sum to approximately 1.0
             total_prob = sum(prob for prob in probs.values() if isinstance(prob, (int, float)))
             if abs(total_prob - 1.0) > 0.1:  # Allow 10% tolerance
                 warnings.append(f"Regime probabilities don't sum to 1.0: {total_prob}")
-    
+
     # Log results
     if errors:
         for error in errors:
@@ -502,16 +502,15 @@ def validate_regime_data(
             severity=TradingErrorSeverity.HIGH,
             context={'regime_data': regime_data, 'errors': errors, 'warnings': warnings}
         )
-    
+
     if warnings:
         for warning in warnings:
             tprint_warning(f"⚠️ Regime Data Warning: {warning}")
-    
+
     if not warnings and not errors:
         tprint_success("✅ Regime data validation passed")
 
     return True
-
 
 def validate_order_params(
     symbol: str,

@@ -24,7 +24,7 @@ class RecoveryManager:
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         Initialize recovery manager.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -33,12 +33,12 @@ class RecoveryManager:
         self.recovery_attempts: Dict[str, int] = defaultdict(int)
         self.last_recovery_attempt: Dict[str, float] = {}
         self.recovery_history: List[Dict[str, Any]] = []
-        
+
         # Configuration
         self.max_recovery_attempts: int = config.get("max_recovery_attempts", 3)
         self.recovery_cooldown: int = config.get("recovery_cooldown", 300)  # 5 minutes
         self.max_history: int = config.get("max_recovery_history", 100)
-        
+
         # Recovery strategies
         self.recovery_strategies = {
             "restart": self._restart_component,
@@ -51,37 +51,37 @@ class RecoveryManager:
         exceptions=(Exception,),
         default_return=False,
     )
-    async def handle_component_failure(self, component_name: str, 
+    async def handle_component_failure(self, component_name: str,
                                     error_details: Dict[str, Any]) -> bool:
         """
         Handle component failure with automatic recovery.
-        
+
         Args:
             component_name: Name of the failed component
             error_details: Details about the failure
-            
+
         Returns:
             True if recovery was successful
         """
         try:
             self.logger.warning(warning(f"Handling failure for component: {component_name}"))
-            
+
             # Check if we should attempt recovery
             if not self._should_attempt_recovery(component_name):
                 self.logger.error(failed(f"Max recovery attempts reached for {component_name}"))
                 return False
-            
+
             # Determine recovery strategy
             strategy = self._determine_recovery_strategy(component_name, error_details)
-            
+
             # Execute recovery
             recovery_result = await self._execute_recovery(component_name, strategy, error_details)
-            
+
             # Record recovery attempt
             self._record_recovery_attempt(component_name, strategy, recovery_result)
-            
+
             return recovery_result["success"]
-            
+
         except Exception as e:
             self.logger.error(error(f"Error in recovery process: {e}"))
             return False
@@ -91,20 +91,20 @@ class RecoveryManager:
         # Check attempt count
         if self.recovery_attempts[component_name] >= self.max_recovery_attempts:
             return False
-        
+
         # Check cooldown period
         last_attempt = self.last_recovery_attempt.get(component_name, 0)
         if time.time() - last_attempt < self.recovery_cooldown:
             return False
-        
+
         return True
 
-    def _determine_recovery_strategy(self, component_name: str, 
+    def _determine_recovery_strategy(self, component_name: str,
                                 error_details: Dict[str, Any]) -> str:
         """Determine the appropriate recovery strategy."""
         attempt_count = self.recovery_attempts[component_name]
         error_type = error_details.get("error_type", "unknown")
-        
+
         # Progressive recovery strategies
         if attempt_count == 0:
             # First attempt: try restart
@@ -119,12 +119,12 @@ class RecoveryManager:
             # Final attempt: isolate component
             return "isolate"
 
-    async def _execute_recovery(self, component_name: str, 
+    async def _execute_recovery(self, component_name: str,
                             strategy: str,
                             error_details: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the recovery strategy."""
         self.logger.info(f"Executing {strategy} recovery for {component_name}")
-        
+
         result = {
             "component": component_name,
             "strategy": strategy,
@@ -132,7 +132,7 @@ class RecoveryManager:
             "success": False,
             "message": "",
         }
-        
+
         try:
             if strategy in self.recovery_strategies:
                 recovery_func = self.recovery_strategies[strategy]
@@ -141,14 +141,14 @@ class RecoveryManager:
                 result["message"] = f"{strategy} recovery {'succeeded' if success else 'failed'}"
             else:
                 result["message"] = f"Unknown recovery strategy: {strategy}"
-                
+
         except Exception as e:
             result["message"] = f"Recovery failed with error: {str(e)}"
             self.logger.error(error(f"Recovery execution failed: {e}"))
-        
+
         return result
 
-    async def _restart_component(self, component_name: str, 
+    async def _restart_component(self, component_name: str,
                                 error_details: Dict[str, Any]) -> bool:
         """Restart the component."""
         try:
@@ -161,7 +161,7 @@ class RecoveryManager:
             self.logger.error(f"Failed to restart component: {e}")
             return False
 
-    async def _reset_component(self, component_name: str, 
+    async def _reset_component(self, component_name: str,
                             error_details: Dict[str, Any]) -> bool:
         """Reset component to initial state."""
         try:
@@ -174,7 +174,7 @@ class RecoveryManager:
             self.logger.error(f"Failed to reset component: {e}")
             return False
 
-    async def _fallback_component(self, component_name: str, 
+    async def _fallback_component(self, component_name: str,
                                 error_details: Dict[str, Any]) -> bool:
         """Switch to fallback implementation."""
         try:
@@ -187,7 +187,7 @@ class RecoveryManager:
             self.logger.error(f"Failed to switch to fallback: {e}")
             return False
 
-    async def _isolate_component(self, component_name: str, 
+    async def _isolate_component(self, component_name: str,
                                 error_details: Dict[str, Any]) -> bool:
         """Isolate the component to prevent further issues."""
         try:
@@ -200,13 +200,13 @@ class RecoveryManager:
             self.logger.error(f"Failed to isolate component: {e}")
             return False
 
-    def _record_recovery_attempt(self, component_name: str, 
+    def _record_recovery_attempt(self, component_name: str,
                             strategy: str,
                             result: Dict[str, Any]) -> None:
         """Record recovery attempt details."""
         self.recovery_attempts[component_name] += 1
         self.last_recovery_attempt[component_name] = time.time()
-        
+
         # Add to history
         self.recovery_history.append(result)
         if len(self.recovery_history) > self.max_history:

@@ -40,7 +40,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 # Setup logging
@@ -77,11 +77,11 @@ class ValidationContext:
 
 class Step06FunctionTracker:
     """Tracks function execution for step06 operations."""
-    
+
     def __init__(self):
         self.functions: Dict[str, ValidationContext] = {}
         self.execution_history: List[ValidationContext] = []
-    
+
     def start_function(self, function_name: str, validation_level: ValidationLevel = ValidationLevel.STANDARD) -> ValidationContext:
         """Start tracking a function."""
         context = ValidationContext(
@@ -92,7 +92,7 @@ class Step06FunctionTracker:
         )
         self.functions[function_name] = context
         return context
-    
+
     def complete_function(self, function_name: str, errors: List[str] = None, warnings: List[str] = None, metadata: Dict[str, Any] = None):
         """Complete function tracking."""
         if function_name in self.functions:
@@ -105,9 +105,9 @@ class Step06FunctionTracker:
                 context.warnings.extend(warnings)
             if metadata:
                 context.metadata.update(metadata)
-            
+
             self.execution_history.append(context)
-    
+
     def fail_function(self, function_name: str, error: str, metadata: Dict[str, Any] = None):
         """Mark function as failed."""
         if function_name in self.functions:
@@ -117,21 +117,21 @@ class Step06FunctionTracker:
             context.errors.append(error)
             if metadata:
                 context.metadata.update(metadata)
-            
+
             self.execution_history.append(context)
-    
+
     def get_function_status(self, function_name: str) -> Optional[FunctionStatus]:
         """Get function status."""
         if function_name in self.functions:
             return self.functions[function_name].status
         return None
-    
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary."""
         total_functions = len(self.execution_history)
         completed = len([f for f in self.execution_history if f.status == FunctionStatus.COMPLETED])
         failed = len([f for f in self.execution_history if f.status == FunctionStatus.FAILED])
-        
+
         return {
             'total_functions': total_functions,
             'completed': completed,
@@ -150,21 +150,21 @@ def step06_function_validator(validation_level: ValidationLevel = ValidationLeve
         def wrapper(*args, **kwargs):
             function_name = func.__name__
             context = step06_function_tracker.start_function(function_name, validation_level)
-            
+
             try:
                 logger.info(f"Starting {function_name} with validation level {validation_level.value}")
                 result = func(*args, **kwargs)
-                
+
                 step06_function_tracker.complete_function(function_name)
                 logger.info(f"Completed {function_name} successfully")
                 return result
-                
+
             except Exception as e:
                 error_msg = f"Error in {function_name}: {str(e)}"
                 step06_function_tracker.fail_function(function_name, error_msg)
                 logger.error(error_msg)
                 raise
-        
+
         return wrapper
     return decorator
 
@@ -182,11 +182,11 @@ def validate_step06_inputs(data: Any, required_type: type = None, min_size: int 
     try:
         if required_type and not isinstance(data, required_type):
             raise ValueError(f"Expected {required_type}, got {type(data)}")
-        
+
         if min_size is not None:
             if hasattr(data, '__len__') and len(data) < min_size:
                 raise ValueError(f"Expected minimum size {min_size}, got {len(data)}")
-        
+
         return True
     except Exception as e:
         logger.error(f"Step06 input validation failed: {e}")
@@ -197,11 +197,11 @@ def validate_step06_outputs(data: Any, expected_type: type = None, min_size: int
     try:
         if expected_type and not isinstance(data, expected_type):
             raise ValueError(f"Expected {expected_type}, got {type(data)}")
-        
+
         if min_size is not None:
             if hasattr(data, '__len__') and len(data) < min_size:
                 raise ValueError(f"Expected minimum size {min_size}, got {len(data)}")
-        
+
         return True
     except Exception as e:
         logger.error(f"Step06 output validation failed: {e}")
@@ -214,25 +214,25 @@ def step06_performance_monitor(func: Callable) -> Callable:
         start_time = time.time()
         result = func(*args, **kwargs)
         end_time = time.time()
-        
+
         execution_time = end_time - start_time
         logger.info(f"Step06 function {func.__name__} executed in {execution_time:.2f} seconds")
-        
+
         return result
     return wrapper
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -251,8 +251,8 @@ def step06_performance_monitor(func: Callable) -> Callable:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

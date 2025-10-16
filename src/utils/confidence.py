@@ -21,7 +21,6 @@ def normalize_dual_confidence(analyst_confidence: float, tactician_confidence: f
         pass
     return (dual, normalized)
 
-
 def _clamp01(value: float) -> float:
     return 0.0 if value < 0.0 else min(value, 1.0)
 
@@ -84,16 +83,16 @@ def aggregate_directional_confidences(models: Iterable[dict[str, Any]]) -> dict[
 def aggregate_weighted_signals_step17(signals: Iterable[dict[str, Any]], step17_weights: dict[str, float]=None, use_multiplicative: bool = True, logger: logging.Logger = None) -> dict[str, Any]:
     """
     Enhanced weighted signal aggregation with step17 optimization support.
-    
+
     Uses multiplicative weighting for same-direction signals and subtractive
     for opposite-direction signals, with weights optimized by step17.
-    
+
     Args:
         signals: Iterable of signal dicts with "source", "direction", "confidence"
         step17_weights: Optimized weights from step17 (e.g., {"analyst": 0.6, "tactician": 0.4})
         use_multiplicative: If True, use multiplicative aggregation for aligned signals
         logger: Optional logger for debugging
-        
+
     Returns:
         dict with aggregated signal information
     """

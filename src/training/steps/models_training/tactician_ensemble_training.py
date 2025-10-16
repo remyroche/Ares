@@ -121,7 +121,6 @@ except ImportError as e:
     print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
     VALIDATION_UTILS_AVAILABLE = False
 
-
 @dataclass
 class TacticianEnsembleTrainingConfig:
     """Configuration for Tactician ensemble training."""
@@ -156,7 +155,6 @@ class TacticianEnsembleTrainingConfig:
                 "ELASTIC_NET_CV"
             ]
 
-
 @dataclass
 class TacticianEnsembleTrainingResult:
     """Result of Tactician ensemble training."""
@@ -174,7 +172,6 @@ class TacticianEnsembleTrainingResult:
     # Status
     training_completed: bool = False
     error: Optional[str] = None
-
 
 class TacticianEnsembleTrainingStep:
     """
@@ -229,7 +226,7 @@ class TacticianEnsembleTrainingStep:
             tprint_error(f"❌ Failed to initialize TacticianEnsembleTrainingStep: {e}")
             raise
 
-    def _optimized_rolling_operation(self, data: pd.Series, operation: str, 
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
                                    window: int, **kwargs) -> pd.Series:
         """Perform optimized rolling operation using VectorBT Rolling Optimizer."""
         if self.vectorbt_optimizer is not None:
@@ -257,11 +254,11 @@ class TacticianEnsembleTrainingStep:
         else:
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
 
-    def _optimized_batch_rolling_operations(self, data: pd.DataFrame, 
+    def _optimized_batch_rolling_operations(self, data: pd.DataFrame,
                                           operations: List[str], window: int, **kwargs) -> Dict[str, pd.DataFrame]:
         """
         Perform multiple rolling operations in a single optimized batch.
-        
+
         This provides 3-5x speedup by processing multiple rolling operations
         simultaneously instead of sequentially.
         """
@@ -276,7 +273,7 @@ class TacticianEnsembleTrainingStep:
             tprint_warning("⚠️ VectorBT optimizer not available, using sequential fallback")
             return self._sequential_batch_fallback(data, operations, window, **kwargs)
 
-    def _sequential_batch_fallback(self, data: pd.DataFrame, operations: List[str], 
+    def _sequential_batch_fallback(self, data: pd.DataFrame, operations: List[str],
                                  window: int, **kwargs) -> Dict[str, pd.DataFrame]:
         """Sequential fallback for batch rolling operations."""
         results = {}
@@ -304,8 +301,8 @@ class TacticianEnsembleTrainingStep:
                 tprint_warning(f"⚠️ Fallback operation {operation} failed: {e}")
                 results[operation] = pd.DataFrame(index=data.index, columns=data.columns, dtype=float)
         return results
-    
-    def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _fallback_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -325,13 +322,13 @@ class TacticianEnsembleTrainingStep:
             return data.rolling(window=window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
+
     def _optimize_feature_vectorization(self, features: pd.DataFrame) -> pd.DataFrame:
         """Optimize feature vectorization using Unified Vectorization Manager."""
         if self.vectorization_manager is not None:
             try:
                 tprint_debug("🔧 Applying unified vectorization optimization to features")
-                
+
                 # Use UnifiedVectorizationManager for feature engineering optimization
                 config = OperationConfig(
                     operation_type=OperationType.FEATURE_ENGINEERING,
@@ -340,14 +337,14 @@ class TacticianEnsembleTrainingStep:
                     memory_budget_mb=self.config.memory_limit_gb * 1024,
                     time_budget_seconds=300.0
                 )
-                
+
                 # Optimize feature engineering using VectorBT
                 result = self.vectorization_manager.optimize_operation(
                     OperationType.FEATURE_ENGINEERING,
                     features,
                     config
                 )
-                
+
                 if result.result is not None:
                     tprint_success(f"✅ Feature vectorization optimized using {result.strategy_used.value}")
                     tprint_performance(f"Feature optimization", result.computation_time)
@@ -355,7 +352,7 @@ class TacticianEnsembleTrainingStep:
                 else:
                     tprint_warning("⚠️ Vectorization optimization returned no result, using original features")
                     return features
-                
+
             except Exception as e:
                 tprint_warning(f"⚠️ Unified vectorization failed: {e}, using original features")
                 return features
@@ -392,20 +389,20 @@ class TacticianEnsembleTrainingStep:
             # Enhanced input validation using validation utilities
             if VALIDATION_UTILS_AVAILABLE:
                 tprint_debug("🔍 Validating ensemble training inputs...")
-                
+
                 # Validate ensemble training inputs
                 validation_result = validate_ensemble_training_inputs(
                     training_data, feature_columns, target_columns, list(base_models.keys()),
                     context=ValidationContext.ENSEMBLE_TRAINING
                 )
-                
+
                 if not validation_result.is_valid:
                     tprint_error(f"❌ Input validation failed: {validation_result.error_message}")
                     if validation_result.should_fail_fast:
                         raise ValueError(f"Input validation failed: {validation_result.error_message}")
                     else:
                         tprint_warning(f"⚠️ Validation warnings: {validation_result.warnings}")
-                
+
                 tprint_success("✅ Input validation passed")
             else:
                 # Fallback validation
@@ -544,34 +541,34 @@ class TacticianEnsembleTrainingStep:
 
             if hmm_columns:
                 hmm_data = training_data[hmm_columns].copy()
-                
+
                 # Apply VectorBT rolling optimizations to HMM features using batch processing
                 if self.vectorbt_optimizer is not None:
                     tprint_debug("🔧 Applying VectorBT batch optimizations to HMM features")
-                    
+
                     # Identify numeric columns for batch processing
                     numeric_cols = [col for col in hmm_columns if hmm_data[col].dtype in ['float64', 'int64']]
-                    
+
                     if numeric_cols:
                         # Use batch processing for multiple rolling operations
                         hmm_numeric_data = hmm_data[numeric_cols]
                         rolling_operations = ['mean', 'std']
-                        
+
                         # Process all numeric columns in a single batch
                         batch_results = self._optimized_batch_rolling_operations(
                             hmm_numeric_data, rolling_operations, window=20
                         )
-                        
+
                         # Add results to the dataframe
                         for col in numeric_cols:
                             for operation in rolling_operations:
                                 if operation in batch_results:
                                     hmm_data[f'{col}_rolling_{operation}'] = batch_results[operation][col]
-                        
+
                         tprint_success(f"✅ Applied batch rolling operations to {len(numeric_cols)} HMM features")
                     else:
                         tprint_warning("⚠️ No numeric HMM columns found for batch processing")
-                
+
                 hmm_features = hmm_data.values
                 tprint_debug(f"📊 Extracted {len(hmm_columns)} HMM features with VectorBT optimizations")
                 return hmm_features
@@ -595,30 +592,30 @@ class TacticianEnsembleTrainingStep:
 
             if analyst_columns:
                 analyst_data = training_data[analyst_columns].copy()
-                
+
                 # Apply VectorBT rolling optimizations to Analyst features using batch processing
                 if self.vectorbt_optimizer is not None:
                     tprint_debug("🔧 Applying VectorBT batch optimizations to Analyst features")
-                    
+
                     # Identify numeric columns for batch processing
                     numeric_cols = [col for col in analyst_columns if analyst_data[col].dtype in ['float64', 'int64']]
-                    
+
                     if numeric_cols:
                         # Use batch processing for multiple rolling operations
                         analyst_numeric_data = analyst_data[numeric_cols]
                         rolling_operations = ['mean', 'std']
-                        
+
                         # Process all numeric columns in a single batch
                         batch_results = self._optimized_batch_rolling_operations(
                             analyst_numeric_data, rolling_operations, window=15
                         )
-                        
+
                         # Add results to the dataframe
                         for col in numeric_cols:
                             for operation in rolling_operations:
                                 if operation in batch_results:
                                     analyst_data[f'{col}_rolling_{operation}'] = batch_results[operation][col]
-                        
+
                         # Process quantiles separately (different parameters)
                         quantile_operations = ['quantile']
                         for col in numeric_cols:
@@ -628,18 +625,18 @@ class TacticianEnsembleTrainingStep:
                             )
                             if 'quantile' in q25_results:
                                 analyst_data[f'{col}_rolling_q25'] = q25_results['quantile'][col]
-                            
+
                             # Q75
                             q75_results = self._optimized_batch_rolling_operations(
                                 analyst_numeric_data[[col]], quantile_operations, window=15, q=0.75
                             )
                             if 'quantile' in q75_results:
                                 analyst_data[f'{col}_rolling_q75'] = q75_results['quantile'][col]
-                        
+
                         tprint_success(f"✅ Applied batch rolling operations to {len(numeric_cols)} Analyst features")
                     else:
                         tprint_warning("⚠️ No numeric Analyst columns found for batch processing")
-                
+
                 analyst_features = analyst_data.values
                 tprint_debug(f"📊 Extracted {len(analyst_columns)} Analyst features with VectorBT optimizations")
                 return analyst_features
@@ -662,18 +659,18 @@ class TacticianEnsembleTrainingStep:
                         pred = model.predict(X_base)
                         if len(pred.shape) == 1:
                             pred = pred.reshape(-1, 1)
-                        
+
                         # Apply VectorBT rolling optimizations to predictions using batch processing
                         if self.vectorbt_optimizer is not None and pred.shape[1] == 1:
                             pred_series = pd.Series(pred.flatten())
                             pred_df = pred_series.to_frame()
-                            
+
                             # Use batch processing for rolling statistics
                             rolling_operations = ['mean', 'std']
                             batch_results = self._optimized_batch_rolling_operations(
                                 pred_df, rolling_operations, window=10
                             )
-                            
+
                             # Combine original predictions with rolling features
                             enhanced_pred = np.column_stack([
                                 pred,
@@ -683,7 +680,7 @@ class TacticianEnsembleTrainingStep:
                             oof_predictions.append(enhanced_pred)
                         else:
                             oof_predictions.append(pred)
-                        
+
                         tprint_debug(f"📊 Got OOF predictions from {model_name} with VectorBT enhancements")
                     else:
                         tprint_debug(f"📊 Model {model_name} doesn't have predict method")
@@ -817,7 +814,6 @@ class TacticianEnsembleTrainingStep:
                 tprint_warning(f"⚠️ Failed to get vectorization stats: {e}")
 
         return metrics
-
 
 # Convenience function for external usage
 async def execute_tactician_ensemble_training(

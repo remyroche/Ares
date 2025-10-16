@@ -94,7 +94,6 @@ except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
     tprint(f"⚠️ [REGIME_MODELS] Feature generation system not available: {e}", color="yellow")
 
-
 class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     """
     Regime Detection Models Training Component.
@@ -105,12 +104,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     - ExtraTrees (base model)
     - stacker_lgbm_calibrated (meta-learner with probability calibration)
     """
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the Regime Models Training Component."""
         tprint("🚀 [REGIME_MODELS] Initializing Regime Models Training Component", color="cyan", bold=True)
         tprint(f"📋 [REGIME_MODELS] Config provided: {config is not None}", color="blue")
-        
+
         # Initialize parent component
         try:
             super().__init__(config)
@@ -118,7 +117,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Failed to initialize parent component: {e}", color="red")
             raise
-        
+
         # Initialize logger
         try:
             self.logger = system_logger.getChild('RegimeModelsTrainingComponent')
@@ -126,7 +125,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Logger initialized successfully", color="green")
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Logger initialization warning: {e}", color="yellow")
-        
+
         # Initialize model training parameters
         tprint("🔧 [REGIME_MODELS] Configuring model training parameters", color="cyan")
         self.model_config = {
@@ -135,7 +134,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             'cv_folds': 5,
             'n_jobs': -1
         }
-        
+
         # Regime-specific model configurations
         self.regime_models_config = {
             'base': {
@@ -178,57 +177,57 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 }
             }
         }
-        
+
         # Initialize model storage
         self.models = {}
         self.model_metrics = {}
         self.training_history = []
         self.performance_metrics = {}
-        
+
         tprint("📊 [REGIME_MODELS] Model storage initialized", color="blue")
         tprint(f"🔍 [REGIME_MODELS] Available ML libraries: {ML_LIBRARIES_AVAILABLE}", color="blue")
         if ML_LIBRARIES_AVAILABLE:
             tprint(f"📚 [REGIME_MODELS] Library versions: {ML_LIBRARY_VERSIONS}", color="blue")
-        
+
         # Log initialization completion
         tprint("✅ [REGIME_MODELS] Regime Models Training Component initialized successfully", color="green", bold=True)
         self.logger.info("Regime Models Training Component initialization completed")
-    
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         tprint("📋 [REGIME_MODELS] Getting required artifacts", color="cyan")
         required_artifacts = ['regime_models_training_result']
         tprint(f"✅ [REGIME_MODELS] Required artifacts: {required_artifacts}", color="green")
         return required_artifacts
-    
+
     async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute regime detection models training.
-        
+
         Args:
             data: Market data DataFrame
             pipeline_state: Pipeline state dictionary
-            
+
         Returns:
             ComponentResult with training results
         """
         execution_start_time = time.time()
         tprint("🚀 [REGIME_MODELS] Starting regime detection models training execution", color="cyan", bold=True)
         self.logger.info("Starting regime detection models training execution")
-        
+
         # Log initial system performance
         initial_perf = self._get_system_performance()
         if initial_perf:
             tprint(f"💻 [REGIME_MODELS] Initial system state - CPU: {initial_perf.get('cpu_percent', 'N/A')}%, Memory: {initial_perf.get('memory_percent', 'N/A')}%", color="blue")
-        
+
         # Monitor initial memory usage
         initial_memory = self._monitor_memory_usage("Initial")
-        
+
         # Log execution context
         tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
         tprint(f"📋 [REGIME_MODELS] Data columns: {list(data.columns)}", color="blue")
         tprint(f"🔍 [REGIME_MODELS] Pipeline state keys: {list(pipeline_state.keys())}", color="blue")
-        
+
         try:
             # Step 0: Validate input data
             tprint("🔍 [REGIME_MODELS] Step 0: Validating input data", color="cyan")
@@ -241,7 +240,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             # Step 1: Check ML libraries availability
             tprint("🔍 [REGIME_MODELS] Step 1: Checking ML libraries availability", color="cyan")
             if not ML_LIBRARIES_AVAILABLE:
@@ -255,7 +254,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     error_message=error_msg
                 )
             tprint("✅ [REGIME_MODELS] ML libraries check passed", color="green")
-            
+
             # Step 2: Extract and validate regime labels
             tprint("🔍 [REGIME_MODELS] Step 2: Extracting regime labels from pipeline state", color="cyan")
             artifacts = pipeline_state.get('artifacts', {})
@@ -264,11 +263,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # If no artifacts available, try to load from previous outcome files or artifact manager
             if not artifacts:
                 tprint("🔍 [REGIME_MODELS] No artifacts in pipeline state, trying to load from previous stages", color="yellow")
-                
+
                 # First try to load from artifact manager (most recent session)
                 try:
                     nas_tas_artifacts = self.load_artifacts_from_latest_session(
-                        "NASTASClusteringComponent", 
+                        "NASTASClusteringComponent",
                         ["nas_tas_clustering_result", "cluster_characteristics", "clustering_metrics"]
                     )
                     if nas_tas_artifacts:
@@ -284,7 +283,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Look for regime labels in nas_tas_regime_discovery_result artifact
             nas_tas_regime_discovery_result = artifacts.get('nas_tas_regime_discovery_result', {})
             tprint(f"🔍 [REGIME_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="blue")
-            
+
             # Try to get regime labels from TAS assignments first, then NAS assignments as fallback
             regime_labels = nas_tas_regime_discovery_result.get('tas_assignments')
             if regime_labels is None:
@@ -296,7 +295,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # If still no regime labels, try alternative artifact structures
             if regime_labels is None:
                 tprint("🔍 [REGIME_MODELS] Trying alternative artifact structures...", color="yellow")
-                
+
                 # Try direct access to artifacts
                 if 'tas_assignments' in artifacts:
                     regime_labels = artifacts['tas_assignments']
@@ -304,14 +303,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 elif 'nas_assignments' in artifacts:
                     regime_labels = artifacts['nas_assignments']
                     tprint("🔍 [REGIME_MODELS] Found NAS assignments in direct artifacts", color="blue")
-                
+
                 # Try other possible artifact keys
                 for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
                     if key in artifacts:
                         regime_labels = artifacts[key]
                         tprint(f"🔍 [REGIME_MODELS] Found regime labels in {key}", color="blue")
                         break
-                
+
                 # Try nested structures
                 if regime_labels is None:
                     for artifact_key, artifact_value in artifacts.items():
@@ -332,7 +331,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                 regime_labels = artifact_value['cluster_assignments']
                                 tprint(f"🔍 [REGIME_MODELS] Found cluster_assignments in {artifact_key}", color="blue")
                                 break
-                
+
                 # Try extracting from optimal_regime_clustering_result clustering_result object
                 if regime_labels is None:
                     optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
@@ -402,7 +401,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                     else:
                                         # If it's already a numpy array or list, use it directly
                                         tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.cluster_assignments", color="blue")
-                            
+
                             # If not found in direct dict, try to get assignments from the clustering result object
                             if regime_labels is None and hasattr(clustering_result, 'current_results') and clustering_result.current_results:
                                 current_results = clustering_result.current_results
@@ -412,7 +411,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                         regime_labels = current_results[assignment_key]
                                         tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.current_results.{assignment_key}", color="blue")
                                         break
-                                
+
                                 # If still not found, try to get from context
                                 if regime_labels is None and hasattr(clustering_result, 'context'):
                                     context = clustering_result.context
@@ -422,7 +421,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                     elif hasattr(context, 'initial_assignments') and context.initial_assignments is not None:
                                         regime_labels = context.initial_assignments
                                         tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.initial_assignments", color="blue")
-                
+
                 # Try extracting from component factory wrapper structure (fallback)
                 if regime_labels is None:
                     optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
@@ -446,7 +445,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             # Validate regime labels
             regime_labels = np.array(regime_labels)
             if not self._validate_regime_labels(regime_labels):
@@ -458,13 +457,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             unique_regimes = np.unique(regime_labels)
             tprint(f"📊 [REGIME_MODELS] Found regime labels: {len(regime_labels)} samples", color="blue")
             tprint(f"📊 [REGIME_MODELS] Unique regimes: {unique_regimes} (count: {len(unique_regimes)})", color="blue")
             regime_dist = {int(k): int(v) for k, v in zip(*np.unique(regime_labels, return_counts=True))}
             tprint(f"📊 [REGIME_MODELS] Regime distribution: {regime_dist}", color="blue")
-            
+
             # Step 3: Prepare training data
             tprint("🔍 [REGIME_MODELS] Step 3: Preparing training data", color="cyan")
             data_prep_start = time.time()
@@ -480,7 +479,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             # Validate prepared training data
             if not self._validate_training_data(X, y, feature_names):
                 error_msg = "Training data validation failed"
@@ -491,7 +490,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             tprint(f"📊 [REGIME_MODELS] Training data prepared: X={X.shape}, y={y.shape}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Feature matrix info: dtype={X.dtype}, min={X.min():.4f}, max={X.max():.4f}", color="blue")
             if feature_selection_info:
@@ -516,10 +515,10 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             training_results = self._train_regime_models(X, y, feature_selection_info)
             self._log_performance_metrics("Model training", model_training_start)
             self._monitor_memory_usage("After model training")
-            
+
             # Clean up memory after training
             self._cleanup_memory()
-            
+
             # Validate trained models
             if not self._validate_models(training_results['models']):
                 error_msg = "Trained models validation failed"
@@ -530,7 +529,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     artifacts={},
                     error_message=error_msg
                 )
-            
+
             # Step 5: Create and validate artifacts
             tprint("🔍 [REGIME_MODELS] Step 5: Creating artifacts", color="cyan")
             artifacts = {
@@ -547,21 +546,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'selected_feature_names': feature_selection_info.get('selected_feature_names', []) if feature_selection_info else []
                 }
             }
-            
+
             execution_time = time.time() - execution_start_time
-            
+
             # Log final performance metrics
             final_perf = self._get_system_performance()
             final_memory = self._monitor_memory_usage("Final")
-            
+
             tprint(f"⏱️ [REGIME_MODELS] Total execution time: {execution_time:.2f} seconds", color="blue")
             if final_perf:
                 tprint(f"💻 [REGIME_MODELS] Final system state - CPU: {final_perf.get('cpu_percent', 'N/A')}%, Memory: {final_perf.get('memory_percent', 'N/A')}%", color="blue")
             tprint(f"🧠 [REGIME_MODELS] Memory usage change: {final_memory - initial_memory:.1f} MB", color="blue")
-            
+
             tprint("✅ [REGIME_MODELS] Regime detection models training completed successfully", color="green", bold=True)
             self.logger.info(f"Regime detection models training completed successfully in {execution_time:.2f} seconds")
-            
+
             # Generate regime probability report
             try:
                 regime_report = await self._generate_regime_probability_report(
@@ -572,7 +571,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     tprint("📊 [REGIME_MODELS] Regime probability report generated successfully", color="green")
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="yellow")
-            
+
             # Save artifacts persistently using the artifact manager
             try:
                 save_report = await self.save_artifacts(artifacts, {
@@ -590,7 +589,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 )
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
-            
+
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -605,78 +604,78 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'artifacts_saved_persistently': True
                 }
             )
-            
+
         except Exception as e:
             execution_time = time.time() - execution_start_time
             error_type = type(e).__name__
             error_msg = f"Regime detection models training failed: {str(e)}"
-            
+
             # Enhanced error logging with context
             tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
             tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
             tprint(f"🔍 [REGIME_MODELS] Execution time before failure: {execution_time:.2f} seconds", color="yellow")
-            
+
             # Log system state at failure
             failure_perf = self._get_system_performance()
             if failure_perf:
                 tprint(f"💻 [REGIME_MODELS] System state at failure - CPU: {failure_perf.get('cpu_percent', 'N/A')}%, Memory: {failure_perf.get('memory_percent', 'N/A')}%", color="yellow")
-            
+
             # Provide recovery suggestions based on error type
             recovery_suggestions = self._get_recovery_suggestions(e)
             if recovery_suggestions:
                 tprint(f"💡 [REGIME_MODELS] Recovery suggestions: {recovery_suggestions}", color="cyan")
-            
+
             # Log detailed error information
             self.logger.error(f"Regime detection models training failed after {execution_time:.2f} seconds", exc_info=True)
             self.logger.error(f"Error type: {error_type}, Error message: {str(e)}")
             if recovery_suggestions:
                 self.logger.error(f"Recovery suggestions: {recovery_suggestions}")
-            
+
             return ComponentResult(
                 success=False,
                 artifacts={},
                 error_message=f"{error_msg} (Type: {error_type})"
             )
-    
+
     async def _generate_regime_probability_report(
-        self, 
-        training_results: Dict[str, Any], 
-        X: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        training_results: Dict[str, Any],
+        X: np.ndarray,
+        feature_names: List[str],
         artifacts: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Generate a comprehensive report with regime probabilities for all regimes."""
         try:
             tprint("📊 [REGIME_MODELS] Generating regime probability report", color="cyan")
-            
+
             # Get the trained models
             models = training_results.get('models', {})
             if not models:
                 tprint("⚠️ [REGIME_MODELS] No trained models found for report generation", color="yellow")
                 return None
-            
+
             # Use the first available model for probability generation
             model_name = list(models.keys())[0]
             model = models[model_name]
-            
+
             if not hasattr(model, 'predict_proba'):
                 tprint(f"⚠️ [REGIME_MODELS] Model {model_name} does not support probability prediction", color="yellow")
                 return None
-            
+
             # Generate regime probabilities for all samples
             tprint(f"🔮 [REGIME_MODELS] Generating regime probabilities using {model_name}", color="cyan")
             regime_probabilities = model.predict_proba(X)
             regime_labels = model.predict(X)
-            
+
             n_regimes = regime_probabilities.shape[1]
             n_samples = len(regime_probabilities)
-            
+
             # Calculate regime statistics
             regime_stats = {}
             for i in range(n_regimes):
                 regime_probs = regime_probabilities[:, i]
                 regime_count = np.sum(regime_labels == i)
-                
+
                 regime_stats[f'regime_{i}'] = {
                     'sample_count': int(regime_count),
                     'percentage': float(regime_count / n_samples * 100),
@@ -690,7 +689,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'low_confidence': int(np.sum(regime_probs <= 0.5))
                     }
                 }
-            
+
             # Calculate overall statistics
             overall_stats = {
                 'total_samples': n_samples,
@@ -701,7 +700,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'prediction_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
                 'uncertainty_entropy': float(np.mean([-np.sum(p * np.log(p + 1e-10)) for p in regime_probabilities]))
             }
-            
+
             # Generate comprehensive report
             report = {
                 'model_name': model_name,
@@ -714,14 +713,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'data_shape': X.shape,
                 'report_type': 'regime_probability_analysis'
             }
-            
+
             # Generate text report
             text_report = self._generate_text_report(report)
             report['text_report'] = text_report
-            
+
             tprint(f"✅ [REGIME_MODELS] Regime probability report generated for {n_regimes} regimes", color="green")
             return report
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="red")
             return None
@@ -736,7 +735,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             lines.append(f"Generated: {report.get('generation_timestamp', 'Unknown')}")
             lines.append("=" * 80)
             lines.append("")
-            
+
             # Overall Statistics
             overall = report.get('overall_statistics', {})
             lines.append("📊 OVERALL STATISTICS")
@@ -749,12 +748,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
             lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
             lines.append("")
-            
+
             # Regime Statistics
             regime_stats = report.get('regime_statistics', {})
             lines.append("🎯 REGIME PROBABILITY STATISTICS")
             lines.append("-" * 40)
-            
+
             for regime_key, regime_data in regime_stats.items():
                 if isinstance(regime_data, dict):
                     lines.append(f"{regime_key.upper()}:")
@@ -764,20 +763,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     lines.append(f"  Std Probability: {regime_data.get('std_probability', 0):.3f}")
                     lines.append(f"  Min Probability: {regime_data.get('min_probability', 0):.3f}")
                     lines.append(f"  Max Probability: {regime_data.get('max_probability', 0):.3f}")
-                    
+
                     conf_dist = regime_data.get('confidence_distribution', {})
                     lines.append(f"  Confidence Distribution:")
                     lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
                     lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
                     lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
                     lines.append("")
-            
+
             lines.append("=" * 80)
             lines.append("END OF REGIME PROBABILITY REPORT")
             lines.append("=" * 80)
-            
+
             return "\n".join(lines)
-            
+
         except Exception as e:
             return f"Error generating text report: {e}"
 
@@ -787,13 +786,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # CPU usage
             cpu_percent = psutil.cpu_percent(interval=1)
             cpu_count = psutil.cpu_count()
-            
+
             # Memory usage
             memory = psutil.virtual_memory()
             memory_used_gb = memory.used / (1024**3)
             memory_total_gb = memory.total / (1024**3)
             memory_percent = memory.percent
-            
+
             return {
                 'cpu_percent': cpu_percent,
                 'cpu_count': cpu_count,
@@ -804,24 +803,24 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Failed to get system performance: {e}", color="yellow")
             return {}
-    
+
     def _log_performance_metrics(self, stage: str, start_time: float):
         """Log performance metrics for a given stage."""
         current_time = time.time()
         elapsed_time = current_time - start_time
-        
+
         # Get system performance
         perf_metrics = self._get_system_performance()
-        
+
         # Log timing
         tprint(f"⏱️ [REGIME_MODELS] {stage} completed in {elapsed_time:.3f} seconds", color="blue")
-        
+
         # Log system metrics if available
         if perf_metrics:
             tprint(f"💻 [REGIME_MODELS] System metrics - CPU: {perf_metrics.get('cpu_percent', 'N/A')}%, Memory: {perf_metrics.get('memory_percent', 'N/A')}% ({perf_metrics.get('memory_used_gb', 0):.1f}GB/{perf_metrics.get('memory_total_gb', 0):.1f}GB)", color="blue")
-        
+
         return elapsed_time, perf_metrics
-    
+
     def _monitor_memory_usage(self, stage: str):
         """Monitor and log memory usage."""
         try:
@@ -833,7 +832,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Failed to monitor memory: {e}", color="yellow")
             return 0
-    
+
     def _cleanup_memory(self):
         """Clean up memory by forcing garbage collection."""
         try:
@@ -841,131 +840,131 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🧹 [REGIME_MODELS] Memory cleanup completed", color="blue")
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Memory cleanup failed: {e}", color="yellow")
-    
+
     def _validate_input_data(self, data: pd.DataFrame) -> bool:
         """Validate input data for training."""
         tprint("🔍 [REGIME_MODELS] Validating input data", color="cyan")
-        
+
         try:
             # Check if data is empty
             if data.empty:
                 tprint("❌ [REGIME_MODELS] Input data is empty", color="red")
                 return False
-            
+
             # Check minimum required columns
             required_columns = ['close']
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 tprint(f"❌ [REGIME_MODELS] Missing required columns: {missing_columns}", color="red")
                 return False
-            
+
             # Check data types
             if not pd.api.types.is_numeric_dtype(data['close']):
                 tprint("❌ [REGIME_MODELS] 'close' column is not numeric", color="red")
                 return False
-            
+
             # Check for sufficient data points
             min_samples = 100
             if len(data) < min_samples:
                 tprint(f"❌ [REGIME_MODELS] Insufficient data points: {len(data)} < {min_samples}", color="red")
                 return False
-            
+
             tprint("✅ [REGIME_MODELS] Input data validation passed", color="green")
             return True
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Data validation error: {e}", color="red")
             return False
-    
+
     def _validate_regime_labels(self, regime_labels: np.ndarray) -> bool:
         """Validate regime labels."""
         tprint("🔍 [REGIME_MODELS] Validating regime labels", color="cyan")
-        
+
         try:
             # Check if labels are not None
             if regime_labels is None:
                 tprint("❌ [REGIME_MODELS] Regime labels are None", color="red")
                 return False
-            
+
             # Convert to numpy array if needed
             regime_labels = np.array(regime_labels)
-            
+
             # Check for sufficient samples (reduced for testing with small datasets)
             min_labels = 6  # Reduced from 50 for testing with small datasets
             if len(regime_labels) < min_labels:
                 tprint(f"❌ [REGIME_MODELS] Insufficient regime labels: {len(regime_labels)} < {min_labels}", color="red")
                 return False
-            
+
             # Check for valid regime values
             unique_regimes = np.unique(regime_labels)
             if len(unique_regimes) < 2:
                 tprint(f"❌ [REGIME_MODELS] Insufficient regime classes: {len(unique_regimes)} < 2", color="red")
                 return False
-            
+
             tprint(f"✅ [REGIME_MODELS] Regime labels validation passed - {len(unique_regimes)} classes, {len(regime_labels)} samples", color="green")
             return True
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Regime labels validation error: {e}", color="red")
             return False
-    
+
     def _validate_training_data(self, X: np.ndarray, y: np.ndarray, feature_names: Optional[List[str]] = None) -> bool:
         """Validate prepared training data."""
         tprint("🔍 [REGIME_MODELS] Validating training data", color="cyan")
-        
+
         try:
             # Check shapes
             if X.shape[0] != y.shape[0]:
                 tprint(f"❌ [REGIME_MODELS] Mismatched sample counts: X={X.shape[0]}, y={y.shape[0]}", color="red")
                 return False
-            
+
             # Check for sufficient features
             if X.shape[1] < 2:
                 tprint(f"❌ [REGIME_MODELS] Insufficient features: {X.shape[1]} < 2", color="red")
                 return False
-            
+
             # Check for NaN or infinite values with detailed analysis
             nan_count = np.isnan(X).sum()
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
                 # Import the detailed NaN analysis function
                 from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
-                
+
                 # Perform detailed NaN analysis
                 nan_analysis = analyze_nan_values_detailed(X, feature_names)
                 detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_MODELS] ")
-                
+
                 tprint(f"❌ [REGIME_MODELS] Found {nan_count} NaN values in features", color="red")
                 tprint(detailed_report, color="red")
                 return False
             if inf_count > 0:
                 tprint(f"❌ [REGIME_MODELS] Found {inf_count} infinite values in features", color="red")
                 return False
-            
+
             tprint("✅ [REGIME_MODELS] Training data validation passed", color="green")
             return True
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Training data validation error: {e}", color="red")
             return False
-    
+
     def _validate_models(self, models: Dict[str, Any]) -> bool:
         """Validate trained models."""
         tprint("🔍 [REGIME_MODELS] Validating trained models", color="cyan")
-        
+
         try:
             if not models:
                 tprint("❌ [REGIME_MODELS] No models trained", color="red")
                 return False
-            
+
             # Filter out metadata objects that are not actual models
-            model_names_to_validate = [name for name in models.keys() 
-                                    if not name.endswith('_feature_indices') and 
+            model_names_to_validate = [name for name in models.keys()
+                                    if not name.endswith('_feature_indices') and
                                        not name.endswith('_metadata') and
                                        not name.endswith('_config')]
-            
+
             tprint(f"🔍 [REGIME_MODELS] Validating {len(model_names_to_validate)} models: {model_names_to_validate}", color="blue")
-            
+
             # Check each model
             valid_models = 0
             for name in model_names_to_validate:
@@ -973,26 +972,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 if model is None:
                     tprint(f"⚠️ [REGIME_MODELS] Model {name} is None (training failed)", color="yellow")
                     continue  # Skip None models but don't fail validation
-                
+
                 # Check if model has required methods
                 if not hasattr(model, 'predict'):
                     tprint(f"❌ [REGIME_MODELS] Model {name} missing predict method", color="red")
                     return False
-                
+
                 valid_models += 1
-            
+
             # Ensure at least one model is valid
             if valid_models == 0:
                 tprint("❌ [REGIME_MODELS] No valid models trained", color="red")
                 return False
-            
+
             tprint(f"✅ [REGIME_MODELS] Model validation passed - {valid_models} valid models out of {len(model_names_to_validate)} attempted", color="green")
             return True
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Model validation error: {e}", color="red")
             return False
-    
+
     def _prepare_training_data(
         self,
         data: pd.DataFrame,
@@ -1002,22 +1001,22 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         """Prepare training data from market data and regime labels."""
         tprint("🔧 [REGIME_MODELS] Preparing training data", color="cyan")
         self.logger.info("Starting data preparation process")
-        
+
         try:
             # Log input data characteristics
             tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Input data columns: {list(data.columns)}", color="blue")
-            
+
             # Force comprehensive feature generation using feature bank
             tprint("🔧 [REGIME_MODELS] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)
             tprint("🚫 [REGIME_MODELS] Bypassing clustering features to ensure comprehensive feature set", color="yellow")
-            
+
             # Check if we should use original market data for feature generation
             original_data = None
             if pipeline_state is not None:
                 original_data = pipeline_state.get('original_data')
                 force_feature_bank = pipeline_state.get('force_feature_bank', False)
-                
+
                 if original_data is not None and force_feature_bank:
                     tprint("✅ [REGIME_MODELS] Using original market data for feature bank generation", color="green")
                     data_for_features = original_data
@@ -1026,7 +1025,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     data_for_features = data
             else:
                 data_for_features = data
-            
+
             if FEATURE_GENERATION_AVAILABLE:
                 X, feature_names = self._generate_features_with_bank(data_for_features)
                 if X is None or X.shape[1] < 50:
@@ -1043,18 +1042,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 self.logger.error(error_msg)
                 return None, None, {}, None, None
-            
+
             # Check for NaN or infinite values in features with detailed analysis
             nan_count = np.isnan(X).sum()
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
                 # Import the detailed NaN analysis function
                 from src.utils.common_utilities import analyze_nan_values_detailed, format_nan_analysis_report
-                
+
                 # Perform detailed NaN analysis
                 nan_analysis = analyze_nan_values_detailed(X, feature_names)
                 detailed_report = format_nan_analysis_report(nan_analysis, "[REGIME_MODELS] ")
-                
+
                 tprint(f"⚠️ [REGIME_MODELS] Found {nan_count} NaN values in features", color="yellow")
                 tprint(detailed_report, color="yellow")
                 tprint("🔧 [REGIME_MODELS] Filling NaN values with 0.0", color="cyan")
@@ -1063,20 +1062,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"⚠️ [REGIME_MODELS] Found {inf_count} infinite values in features", color="yellow")
                 tprint("🔧 [REGIME_MODELS] Replacing infinite values with finite numbers", color="cyan")
                 X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
-            
+
             # Align with regime labels
             tprint("🔧 [REGIME_MODELS] Aligning features with regime labels", color="cyan")
             min_length = min(len(X), len(regime_labels))
             X = X[:min_length]
             y = np.array(regime_labels[:min_length])
-            
+
             # Early validation: Check class distribution before proceeding
             unique_classes, class_counts = np.unique(y, return_counts=True)
             min_class_count = np.min(class_counts)
             class_distribution = dict(zip(unique_classes, class_counts))
-            
+
             tprint(f"📊 [REGIME_MODELS] Regime class distribution: {class_distribution}", color="blue")
-            
+
             if min_class_count < 2:
                 error_msg = f"🚨 CRITICAL: Insufficient regime class samples detected early!"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
@@ -1084,11 +1083,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ [REGIME_MODELS] 🚨 Minimum class count: {min_class_count} (required: 2+)", color="red")
                 tprint("❌ [REGIME_MODELS] 🚨 Fast fail: Cannot proceed with insufficient regime data", color="red")
                 tprint("❌ [REGIME_MODELS] 💡 Recommendation: Check regime clustering and labeling process", color="red")
-                
+
                 raise ValueError(f"Early validation failed: Insufficient regime class samples. Distribution: {class_distribution}. Minimum required: 2 samples per class.")
-            
+
             tprint(f"✅ [REGIME_MODELS] Early validation passed: All regime classes have sufficient samples", color="green")
-            
+
             # Perform model-driven feature selection
             feature_selection_info = self._run_feature_selection(X, y, feature_names)
 
@@ -1128,30 +1127,30 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
             self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
             return None, None, {}, None
-    
+
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Generate comprehensive features using the existing feature bank."""
         tprint("🔧 [REGIME_MODELS] Generating features using feature bank", color="cyan", bold=True)
-        
+
         try:
             if not FEATURE_GENERATION_AVAILABLE:
                 tprint("❌ [REGIME_MODELS] Feature generation system not available", color="red")
                 return None, None
-            
+
             # Get feature bank
             feature_bank = get_feature_bank()
             tprint("✅ [REGIME_MODELS] Feature bank retrieved successfully", color="green")
-            
+
             # Define feature categories to generate
             categories = [
                 FeatureCategory.MOMENTUM,
-                FeatureCategory.VOLATILITY, 
+                FeatureCategory.VOLATILITY,
                 FeatureCategory.VOLUME,
                 FeatureCategory.TREND,
                 FeatureCategory.OSCILLATOR,
                 FeatureCategory.RETURNS
             ]
-            
+
             # Add advanced regime features for better regime detection
             tprint("🔧 [REGIME_MODELS] Adding advanced regime features for enhanced regime detection", color="cyan")
             advanced_generators = []
@@ -1165,29 +1164,29 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Error loading advanced regime features: {e}", color="yellow")
                 advanced_generators = []
-            
+
             all_features = pd.DataFrame(index=data.index)
             total_features = 0
-            
+
             # Generate features for each category
             for category in categories:
                 tprint(f"🔍 [REGIME_MODELS] Generating {category.value} features", color="blue")
-                
+
                 # Get generators for this category
                 generators = feature_bank.get_generators_by_category(category)
-                
+
                 if not generators:
                     tprint(f"⚠️ [REGIME_MODELS] No generators found for {category.value}", color="yellow")
                     continue
-                
+
                 category_features = pd.DataFrame(index=data.index)
-                
+
                 # Generate features using each generator
                 for generator in generators:
                     try:
                         tprint(f"🔧 [REGIME_MODELS] Using generator: {generator.config.name}", color="blue")
                         result = generator.generate(data)
-                        
+
                         if result and hasattr(result, 'data') and not result.data.empty:
                             # Add feature with category prefix
                             feature_name = f"{category.value}_{result.name}"
@@ -1196,16 +1195,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             tprint(f"✅ [REGIME_MODELS] Generated feature: {feature_name}", color="green")
                         else:
                             tprint(f"⚠️ [REGIME_MODELS] Generator {generator.config.name} returned empty result", color="yellow")
-                            
+
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Generator {generator.config.name} failed: {e}", color="yellow")
                         continue
-                
+
                 # Add category features to all features
                 if not category_features.empty:
                     all_features = pd.concat([all_features, category_features], axis=1)
                     tprint(f"📊 [REGIME_MODELS] {category.value} features: {category_features.shape[1]}", color="blue")
-            
+
             # Generate advanced regime features
             if advanced_generators:
                 tprint("🔍 [REGIME_MODELS] Generating advanced regime features", color="cyan")
@@ -1214,7 +1213,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     try:
                         tprint(f"🔧 [REGIME_MODELS] Using advanced regime generator: {generator.config.name}", color="blue")
                         result = generator.generate(data)
-                        
+
                         if result is not None and not result.empty:
                             feature_name = f"advanced_regime_{generator.config.name}"
                             advanced_features[feature_name] = result
@@ -1225,12 +1224,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     except Exception as e:
                         tprint(f"⚠️ [REGIME_MODELS] Advanced regime generator {generator.config.name} failed: {e}", color="yellow")
                         continue
-                
+
                 # Add advanced regime features to all features
                 if not advanced_features.empty:
                     all_features = pd.concat([all_features, advanced_features], axis=1)
                     tprint(f"📊 [REGIME_MODELS] Advanced regime features: {advanced_features.shape[1]}", color="blue")
-            
+
             # Convert to numpy array
             if not all_features.empty:
                 X = all_features.values
@@ -1241,12 +1240,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")
                 return None, None
-                
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Error generating features with feature bank: {e}", color="red")
             self.logger.error(f"Error generating features with feature bank: {str(e)}", exc_info=True)
             return None, None
-    
+
     def _train_regime_models(
         self,
         X: np.ndarray,
@@ -1261,7 +1260,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         models = {}
         metrics = {}
         training_history = []
-        
+
         try:
             # Log training data characteristics
             tprint(f"📊 [REGIME_MODELS] Training data: {X.shape[0]} samples, {X.shape[1]} features", color="blue")
@@ -1271,51 +1270,51 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     color="blue"
                 )
             tprint(f"📊 [REGIME_MODELS] Target classes: {np.unique(y)} (count: {len(np.unique(y))})", color="blue")
-            
+
             # Step 1: Validate class distribution before splitting
             tprint("🔧 [REGIME_MODELS] Step 1: Validating class distribution for training", color="cyan")
             split_start = time.time()
-            
+
             # Check class distribution for stratified splitting
             unique_classes, class_counts = np.unique(y, return_counts=True)
             min_class_count = np.min(class_counts)
             class_distribution = dict(zip(unique_classes, class_counts))
-            
+
             if min_class_count < 2:
                 error_msg = f"🚨 CRITICAL: Insufficient samples for stratified training! Minimum class count: {min_class_count}"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 tprint(f"❌ [REGIME_MODELS] 🚨 Class distribution: {class_distribution}", color="red")
                 tprint("❌ [REGIME_MODELS] 🚨 Fast fail: Cannot proceed with model training", color="red")
                 tprint("❌ [REGIME_MODELS] 💡 Recommendation: Ensure all regime classes have at least 2 samples", color="red")
-                
+
                 raise ValueError(f"Insufficient class samples for stratified training. Class distribution: {class_distribution}. Minimum required: 2 samples per class.")
-            
+
             # Proceed with stratified split when validation passes
             tprint(f"✅ [REGIME_MODELS] Class distribution validation passed: {class_distribution}", color="green")
             tprint("🔧 [REGIME_MODELS] Proceeding with stratified train/test split", color="cyan")
-            
+
             X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=self.model_config['test_size'], 
-                random_state=self.model_config['random_state'], 
+                X, y, test_size=self.model_config['test_size'],
+                random_state=self.model_config['random_state'],
                 stratify=y
             )
-            
+
             split_time = time.time() - split_start
             tprint(f"📊 [REGIME_MODELS] Train set: {X_train.shape[0]} samples", color="blue")
             tprint(f"📊 [REGIME_MODELS] Test set: {X_test.shape[0]} samples", color="blue")
             tprint(f"⏱️ [REGIME_MODELS] Data splitting completed in {split_time:.3f} seconds", color="blue")
-            
+
             # Step 2: Scale features
             tprint("🔧 [REGIME_MODELS] Step 2: Scaling features", color="cyan")
             scale_start = time.time()
-            
+
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
             X_test_scaled = scaler.transform(X_test)
-            
+
             scale_time = time.time() - scale_start
             tprint(f"⏱️ [REGIME_MODELS] Feature scaling completed in {scale_time:.3f} seconds", color="blue")
-            
+
             # Step 3: Train CatBoost with timeout protection
             tprint("🔧 [REGIME_MODELS] Step 3: Training CatBoost", color="cyan")
             catboost_start = time.time()
@@ -1342,16 +1341,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Step 4: Train Greedy Rule Lists with parameter optimization
             tprint("🔧 [REGIME_MODELS] Step 4: Training Greedy Rule Lists with parameter optimization", color="cyan")
             grl_start = time.time()
-            
+
             # Get number of classes for logging
             n_classes = len(np.unique(y_train))
-            
+
             try:
                 # First try with simple, robust parameters
                 tprint("🔧 [REGIME_MODELS] Attempting Greedy Rule Lists with robust parameters", color="blue")
                 grl_model = self._robust_grl_training(X_train_scaled, y_train, n_classes)
                 models['Greedy Rule Lists'] = grl_model
-                
+
                 grl_time = time.time() - grl_start
                 tprint(f"⏱️ [REGIME_MODELS] Greedy Rule Lists training completed in {grl_time:.3f} seconds", color="blue")
                 tprint(f"📊 [REGIME_MODELS] Greedy Rule Lists: Supports multi-class with {n_classes} classes", color="green")
@@ -1359,46 +1358,46 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists training failed: {e}", color="red")
                 tprint(f"🔍 [REGIME_MODELS] Error details: {type(e).__name__}: {str(e)}", color="yellow")
                 models['Greedy Rule Lists'] = None
-            
+
             # Step 5: Train ExtraTrees
             tprint("🔧 [REGIME_MODELS] Step 5: Training ExtraTrees", color="cyan")
             extratrees_start = time.time()
-            
+
             try:
                 extratrees_model = ExtraTreesClassifier(**self.regime_models_config['base']['ExtraTrees'])
                 extratrees_model.fit(X_train_scaled, y_train)
                 models['ExtraTrees'] = extratrees_model
-                
+
                 extratrees_time = time.time() - extratrees_start
                 tprint(f"⏱️ [REGIME_MODELS] ExtraTrees training completed in {extratrees_time:.3f} seconds", color="blue")
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] ExtraTrees training failed: {e}", color="red")
                 models['ExtraTrees'] = None
-            
+
             # Step 6: Train stacker_lgbm_calibrated (meta-learner) with proper cross-validation
             tprint("🔧 [REGIME_MODELS] Step 6: Training stacker_lgbm_calibrated meta-learner with CV", color="cyan")
             meta_start = time.time()
-            
+
             try:
                 # Create base models for stacking
                 base_models = {}
                 for name, model in models.items():
                     if model is not None:
                         base_models[name] = model
-                
+
                 if base_models:
                     # Generate out-of-fold predictions using cross-validation
                     tprint("🔄 [REGIME_MODELS] Generating out-of-fold predictions for meta-learning", color="blue")
                     oof_predictions = self._generate_out_of_fold_predictions(
                         base_models, X_train_scaled, y_train, cv_folds=5
                     )
-                    
+
                     if oof_predictions is not None:
                         # Create enhanced meta-learner features and store feature indices for consistency
                         enhanced_features, feature_indices = self._create_enhanced_meta_features_with_indices(
                             oof_predictions, X_train_scaled
                         )
-                        
+
                         # Create meta-learner with regularization to prevent overfitting
                         meta_config = self.regime_models_config['meta_learner']['stacker_lgbm_calibrated'].copy()
                         meta_config.update({
@@ -1412,14 +1411,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             'colsample_bytree': 0.8,  # Feature sampling
                             'min_child_samples': 20,  # Minimum samples per leaf
                         })
-                        
+
                         meta_learner = lgb.LGBMClassifier(**meta_config)
                         meta_learner.fit(enhanced_features, y_train)
                         models['stacker_lgbm_calibrated'] = meta_learner
-                        
+
                         # Store feature indices for consistent prediction (as metadata, not as a model)
                         models['stacker_lgbm_calibrated_feature_indices'] = feature_indices
-                        
+
                         meta_time = time.time() - meta_start
                         tprint(f"⏱️ [REGIME_MODELS] Meta-learner training completed in {meta_time:.3f} seconds", color="blue")
                         tprint(f"📊 [REGIME_MODELS] Meta-learner features: {enhanced_features.shape[1]}", color="blue")
@@ -1429,23 +1428,23 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 else:
                     tprint("⚠️ [REGIME_MODELS] No base models available for meta-learner", color="yellow")
                     models['stacker_lgbm_calibrated'] = None
-                    
+
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] Meta-learner training failed: {e}", color="red")
                 models['stacker_lgbm_calibrated'] = None
-            
+
             # Step 7: Evaluate models
             tprint("🔧 [REGIME_MODELS] Step 7: Evaluating models", color="cyan")
             eval_start = time.time()
-            
+
             # Only evaluate actual model objects, skip metadata like feature_indices
-            model_names_to_evaluate = [name for name, model in models.items() 
+            model_names_to_evaluate = [name for name, model in models.items()
                                      if model is not None and hasattr(model, 'predict')]
-            
+
             for name in model_names_to_evaluate:
                 model = models[name]
                 tprint(f"📊 [REGIME_MODELS] Evaluating {name}", color="blue")
-                
+
                 # Make predictions - handle meta-learner differently
                 if name == 'stacker_lgbm_calibrated':
                     # Meta-learner needs enhanced features as input
@@ -1461,27 +1460,27 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     tprint(f"🔧 [REGIME_MODELS] Base predictions shape: {base_predictions.shape}", color="blue")
                     tprint(f"🔧 [REGIME_MODELS] Feature indices: {len(feature_indices) if feature_indices is not None else 'None'}", color="blue")
                     enhanced_test_features = self._create_enhanced_meta_features(base_predictions, X_test_scaled, feature_indices)
-                    
+
                     # Validate feature dimensions match the trained model
                     expected_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else None
                     actual_features = enhanced_test_features.shape[1]
                     tprint(f"🔧 [REGIME_MODELS] Expected features: {expected_features}, Actual features: {actual_features}", color="blue")
-                    
+
                     if expected_features is not None and expected_features != actual_features:
                         error_msg = f"Feature dimension mismatch: model expects {expected_features} features but received {actual_features}"
                         tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                         raise ValueError(error_msg)
-                    
+
                     y_pred = model.predict(enhanced_test_features)
                     y_pred_proba = model.predict_proba(enhanced_test_features) if hasattr(model, 'predict_proba') else None
                 else:
                     # Regular models use original features
                     y_pred = model.predict(X_test_scaled)
                     y_pred_proba = model.predict_proba(X_test_scaled) if hasattr(model, 'predict_proba') else None
-                
+
                 # Calculate metrics
                 accuracy = accuracy_score(y_test, y_pred)
-                
+
                 # Store detailed metrics
                 model_metrics = {
                     'accuracy': accuracy,
@@ -1489,7 +1488,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'train_samples': len(y_train),
                     'n_features': X.shape[1]
                 }
-                
+
                 # Add comprehensive prediction probabilities if available
                 if y_pred_proba is not None:
                     # Basic confidence metrics
@@ -1500,7 +1499,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'min': max_probs.min(),
                         'max': max_probs.max()
                     }
-                    
+
                     # Regime-specific probability statistics
                     n_regimes = y_pred_proba.shape[1]
                     regime_prob_stats = {}
@@ -1513,7 +1512,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             'max': regime_probs.max()
                         }
                     model_metrics['regime_probability_stats'] = regime_prob_stats
-                    
+
                     # Entropy and uncertainty measures
                     epsilon = 1e-10
                     entropy = -np.sum(y_pred_proba * np.log(y_pred_proba + epsilon), axis=1)
@@ -1523,7 +1522,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'min': entropy.min(),
                         'max': entropy.max()
                     }
-                    
+
                     # Regime dominance (difference between top 2 probabilities)
                     sorted_probs = np.sort(y_pred_proba, axis=1)
                     if n_regimes > 1:
@@ -1536,41 +1535,41 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         }
                     else:
                         model_metrics['dominance_stats'] = {'mean': 1.0, 'std': 0.0, 'min': 1.0, 'max': 1.0}
-                    
+
                     # Prediction stability (consistency across samples)
                     prob_std = np.std(y_pred_proba, axis=0)
                     model_metrics['regime_stability'] = {
                         'mean': (1.0 - prob_std).mean(),
                         'std': (1.0 - prob_std).std()
                     }
-                
+
                 metrics[name] = model_metrics
-                
+
                 # Log detailed results
                 tprint(f"📊 [REGIME_MODELS] {name} accuracy: {accuracy:.4f}", color="green")
-            
+
             eval_time = time.time() - eval_start
             tprint(f"⏱️ [REGIME_MODELS] Model evaluation completed in {eval_time:.3f} seconds", color="blue")
-            
+
             # Calculate total training time
             training_time = time.time() - start_time
-            
+
             # Log comprehensive training summary
             tprint("📊 [REGIME_MODELS] Training Summary:", color="cyan", bold=True)
             tprint(f"⏱️ [REGIME_MODELS] Total training time: {training_time:.2f} seconds", color="blue")
             tprint(f"📊 [REGIME_MODELS] Models trained: {len([m for m in models.values() if m is not None])}", color="blue")
             if metrics:
                 tprint(f"📊 [REGIME_MODELS] Best accuracy: {max(metrics[m]['accuracy'] for m in metrics):.4f}", color="green")
-            
+
             # Store training history
             training_history = {
                 'data_split_time': split_time,
                 'scaling_time': scale_time,
                 'total_time': training_time
             }
-            
+
             self.logger.info(f"Regime detection models training completed successfully in {training_time:.2f} seconds")
-            
+
             return {
                 'models': models,
                 'metrics': metrics,
@@ -1583,15 +1582,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'feature_names': feature_names,
                 'n_regimes': len(unique_regimes)
             }
-            
+
         except Exception as e:
             training_time = time.time() - start_time
             error_type = type(e).__name__
             tprint(f"❌ [REGIME_MODELS] Error training regime detection models: {e}", color="red")
             tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
-            
+
             self.logger.error(f"Error training regime detection models after {training_time:.2f} seconds: {str(e)}", exc_info=True)
-            
+
             return {
                 'models': {},
                 'metrics': {},
@@ -1611,14 +1610,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         """
         Predict regime labels and probabilities using trained ensemble models.
         Enhanced to provide comprehensive probabilistic outputs for each detected regime.
-        
+
         Args:
             models: Dictionary of trained models
             scaler: Fitted scaler for feature normalization
             X: Feature matrix
             feature_names: List of feature names
             use_meta_learner: Whether to use the meta-learner (stacker_lgbm_calibrated)
-            
+
         Returns:
             Dictionary with comprehensive prediction information including:
             - regime_labels: Predicted regime for each sample
@@ -1629,102 +1628,102 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         """
         try:
             tprint("🔮 [REGIME_MODELS] Starting regime prediction with probabilities", color="cyan")
-            
+
             # Scale features
             X_scaled = scaler.transform(X)
-            
+
             # Get the primary model (meta-learner if available, otherwise best base model)
             primary_model = None
             model_name = None
-            
+
             if use_meta_learner and 'stacker_lgbm_calibrated' in models and models['stacker_lgbm_calibrated'] is not None:
                 primary_model = models['stacker_lgbm_calibrated']
                 model_name = 'stacker_lgbm_calibrated'
                 tprint("🎯 [REGIME_MODELS] Using meta-learner (stacker_lgbm_calibrated)", color="blue")
-                
+
                 # Create enhanced features for meta-learner
                 base_model_names = ['CatBoost', 'Greedy Rule Lists', 'ExtraTrees']
                 base_predictions = np.column_stack([
-                    np.argmax(models[base_name].predict_proba(X_scaled), axis=1).reshape(-1, 1) 
-                    if hasattr(models[base_name], 'predict_proba') 
+                    np.argmax(models[base_name].predict_proba(X_scaled), axis=1).reshape(-1, 1)
+                    if hasattr(models[base_name], 'predict_proba')
                     else models[base_name].predict(X_scaled).reshape(-1, 1)
                     for base_name in base_model_names
                     if base_name in models and models[base_name] is not None
                 ])
-                
+
                 feature_indices = models.get('stacker_lgbm_calibrated_feature_indices')
                 enhanced_features = self._create_enhanced_meta_features(base_predictions, X_scaled, feature_indices)
                 X_for_prediction = enhanced_features
-                
+
             else:
                 # Use best available base model
-                available_models = {name: model for name, model in models.items() 
+                available_models = {name: model for name, model in models.items()
                                  if model is not None and hasattr(model, 'predict') and name != 'stacker_lgbm_calibrated_feature_indices'}
-                
+
                 if not available_models:
                     raise ValueError("No trained models available for prediction")
-                
+
                 # Use the first available model
                 model_name = list(available_models.keys())[0]
                 primary_model = available_models[model_name]
                 X_for_prediction = X_scaled
                 tprint(f"🎯 [REGIME_MODELS] Using base model: {model_name}", color="blue")
-            
+
             # Make predictions
             regime_labels = primary_model.predict(X_for_prediction)
             regime_probabilities = primary_model.predict_proba(X_for_prediction)
-            
+
             # Get number of regimes
             n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
-            
+
             # Calculate comprehensive probability information
             max_probs = np.max(regime_probabilities, axis=1)
             confidence_scores = max_probs
-            
+
             # Calculate regime distribution statistics
             regime_counts = np.bincount(regime_labels, minlength=n_regimes)
             regime_percentages = regime_counts / len(regime_labels) * 100
-            
+
             # Calculate average probabilities for each regime
             avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
-            
+
             # Calculate regime stability (how consistent the predictions are)
             regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
-            
+
             # Calculate entropy (uncertainty measure)
             epsilon = 1e-10
             entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + epsilon), axis=1)
-            
+
             # Calculate dominance (difference between top 2 probabilities)
             sorted_probs = np.sort(regime_probabilities, axis=1)
             if n_regimes > 1:
                 dominance = sorted_probs[:, -1] - sorted_probs[:, -2]
             else:
                 dominance = np.ones(len(regime_labels))
-            
+
             # Generate ensemble probabilities from all available models
             from src.utils.regime_ensemble_utils import generate_ensemble_probabilities
             ensemble_probabilities = generate_ensemble_probabilities(models, X_scaled, feature_names, "REGIME_MODELS")
-            
+
             # Use RegimeProbabilityAnalyzer for comprehensive analysis
             from src.utils.regime_probability_analyzer import RegimeProbabilityAnalyzer
             analyzer = RegimeProbabilityAnalyzer()
-            
+
             # Create prediction result for analysis
             prediction_result = {
                 'regime_labels': regime_labels,
                 'regime_probabilities': regime_probabilities,
                 'n_regimes': n_regimes
             }
-            
+
             # Perform comprehensive analysis
             analysis_results = analyzer.analyze_regime_predictions(prediction_result, model_name)
-            
+
             # Extract analysis components
             regime_analysis = analysis_results.get('regime_analysis', {})
             regime_transitions = analysis_results.get('transition_analysis', {})
             regime_persistence = analysis_results.get('persistence_analysis', {})
-            
+
             # Create comprehensive prediction result
             prediction_result = {
                 'regime_labels': regime_labels,
@@ -1751,13 +1750,13 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'ensemble_models_used': len(ensemble_probabilities) if ensemble_probabilities else 0
                 }
             }
-            
+
             tprint(f"✅ [REGIME_MODELS] Prediction completed: {len(regime_labels)} samples, {n_regimes} regimes", color="green")
             tprint(f"📊 [REGIME_MODELS] Confidence range: [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]", color="cyan")
             tprint(f"📈 [REGIME_MODELS] Regime distribution: {dict(zip(range(n_regimes), regime_counts))}", color="cyan")
-            
+
             return prediction_result
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Prediction failed: {e}", color="red")
             self.logger.error(f"Error in regime prediction: {e}", exc_info=True)
@@ -1882,7 +1881,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             info['selection_time_seconds'] = time.time() - selection_start
             tprint(f"⚠️ [REGIME_MODELS] Feature selection failed ({e}); using fallback selection", color="yellow")
             self.logger.warning("Feature selection failed; using fallback selection", exc_info=True)
-            
+
             # Fallback: Select top features by variance if available, otherwise use all
             if features.shape[1] > 0:
                 try:
@@ -1893,7 +1892,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     min_features = max(90, min(110, features.shape[1]))
                     top_k = min(max(min_features, int(np.ceil(features.shape[1] * 0.9))), features.shape[1])
                     selected_indices = sorted_indices[:top_k]
-                    
+
                     info.update({
                         'selection_performed': True,
                         'selection_method': 'variance_fallback',
@@ -1903,7 +1902,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         'total_feature_count': int(features.shape[1]),
                         'selection_time_seconds': time.time() - selection_start
                     })
-                    
+
                     tprint(f"✅ [REGIME_MODELS] Fallback selection retained {len(selected_indices)}/{features.shape[1]} features", color="green")
                 except Exception as fallback_error:
                     tprint(f"⚠️ [REGIME_MODELS] Fallback selection also failed ({fallback_error}); using all features", color="yellow")
@@ -1935,11 +1934,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         indices_array = np.asarray(indices, dtype=int)
         return np.asarray(features)[:, indices_array]
-    
+
     def _get_recovery_suggestions(self, error: Exception) -> str:
         """Get recovery suggestions based on error type."""
         error_type = type(error).__name__
-        
+
         if "MemoryError" in error_type or "memory" in str(error).lower():
             return "Try reducing data size, increasing available memory, or using data sampling"
         elif "ImportError" in error_type:
@@ -1952,52 +1951,52 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             return "Check model object integrity and required methods availability"
         else:
             return "Check logs for detailed error information and system requirements"
-    
+
     def _generate_out_of_fold_predictions(self, base_models: dict, X: np.ndarray, y: np.ndarray, cv_folds: int = 5) -> Optional[np.ndarray]:
         """
         Generate out-of-fold predictions using cross-validation to prevent data leakage.
-        
+
         Args:
             base_models: Dictionary of trained base models
             X: Feature matrix
             y: Target labels
             cv_folds: Number of cross-validation folds
-            
+
         Returns:
             Array of out-of-fold predictions or None if failed
         """
         try:
             from sklearn.model_selection import StratifiedKFold
-            
+
             tprint(f"🔄 [REGIME_MODELS] Generating {cv_folds}-fold out-of-fold predictions", color="blue")
-            
+
             # Initialize array to store OOF predictions
             oof_predictions = np.zeros((X.shape[0], 0))
-            
+
             # Create stratified K-fold for balanced regime distribution
             skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-            
+
             for model_name, model in base_models.items():
                 if model is None:
                     continue
-                    
+
                 tprint(f"📊 [REGIME_MODELS] Generating OOF predictions for {model_name}", color="blue")
-                
+
                 # Special handling for CatBoost to prevent hanging
                 if model_name == 'CatBoost':
                     model_oof = self._generate_catboost_oof_with_timeout(model, X, y, skf)
                 else:
                     model_oof = np.zeros(X.shape[0])
-                    
+
                     # Generate out-of-fold predictions for this model
                     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
                         X_train_fold, X_val_fold = X[train_idx], X[val_idx]
                         y_train_fold = y[train_idx]
-                        
+
                         # Train model on fold
                         if hasattr(model, 'fit'):
                             model.fit(X_train_fold, y_train_fold)
-                        
+
                         # Predict on validation fold
                         if hasattr(model, 'predict_proba'):
                             val_pred_proba = model.predict_proba(X_val_fold)
@@ -2005,53 +2004,53 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             model_oof[val_idx] = np.argmax(val_pred_proba, axis=1)
                         else:
                             model_oof[val_idx] = model.predict(X_val_fold)
-                
+
                 # Reshape and add to OOF predictions
                 model_oof = model_oof.reshape(-1, 1)
                 oof_predictions = np.column_stack([oof_predictions, model_oof])
-            
+
             if oof_predictions.shape[1] > 0:
                 tprint(f"✅ [REGIME_MODELS] Generated OOF predictions: {oof_predictions.shape}", color="green")
                 return oof_predictions
             else:
                 tprint("⚠️ [REGIME_MODELS] No valid OOF predictions generated", color="yellow")
                 return None
-                
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] OOF prediction generation failed: {e}", color="red")
             self.logger.error(f"OOF prediction generation failed: {e}")
             return None
-    
+
     def _generate_catboost_oof_with_timeout(self, model, X: np.ndarray, y: np.ndarray, skf) -> np.ndarray:
         """
         Generate CatBoost OOF predictions with timeout and CPU fallback to prevent hanging.
-        
+
         Args:
             model: CatBoost model
             X: Feature matrix
             y: Target labels
             skf: StratifiedKFold object
-            
+
         Returns:
             Array of OOF predictions
         """
         import signal
         import threading
         import time
-        
+
         def timeout_handler(signum, frame):
             raise TimeoutError("CatBoost OOF prediction timed out")
-        
+
         model_oof = np.zeros(X.shape[0])
-        
+
         try:
             # Set timeout for CatBoost operations (30 seconds per fold)
             timeout_seconds = 30
-            
+
             for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
                 X_train_fold, X_val_fold = X[train_idx], X[val_idx]
                 y_train_fold = y[train_idx]
-                
+
                 # Create a fresh CatBoost model for this fold to avoid GPU issues
                 try:
                     # Use CPU-only configuration to prevent hanging
@@ -2063,21 +2062,21 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         verbose=False,
                         random_seed=42
                     )
-                    
+
                     # Set timeout for training
                     signal.signal(signal.SIGALRM, timeout_handler)
                     signal.alarm(timeout_seconds)
-                    
+
                     # Train model on fold
                     fold_model.fit(X_train_fold, y_train_fold)
-                    
+
                     # Predict on validation fold
                     val_pred_proba = fold_model.predict_proba(X_val_fold)
                     model_oof[val_idx] = np.argmax(val_pred_proba, axis=1)
-                    
+
                     # Cancel timeout
                     signal.alarm(0)
-                    
+
                 except TimeoutError:
                     tprint(f"⚠️ [REGIME_MODELS] CatBoost fold {fold} timed out, using fallback", color="yellow")
                     # Fallback: use simple majority class prediction
@@ -2085,7 +2084,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     majority_class = Counter(y_train_fold).most_common(1)[0][0]
                     model_oof[val_idx] = majority_class
                     signal.alarm(0)
-                    
+
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_MODELS] CatBoost fold {fold} failed: {e}, using fallback", color="yellow")
                     # Fallback: use simple majority class prediction
@@ -2093,26 +2092,26 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     majority_class = Counter(y_train_fold).most_common(1)[0][0]
                     model_oof[val_idx] = majority_class
                     signal.alarm(0)
-            
+
             tprint(f"✅ [REGIME_MODELS] CatBoost OOF predictions generated with timeout protection", color="green")
             return model_oof
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] CatBoost OOF generation failed: {e}", color="red")
             # Ultimate fallback: return random predictions
             np.random.seed(42)
             unique_classes = np.unique(y)
             return np.random.choice(unique_classes, size=X.shape[0])
-    
+
     def _create_enhanced_meta_features(self, base_predictions: np.ndarray, original_features: np.ndarray, feature_indices: Optional[np.ndarray] = None) -> np.ndarray:
         """
         Create enhanced meta-learner features combining base predictions with original features.
-        
+
         Args:
             base_predictions: Out-of-fold predictions from base models
             original_features: Original feature matrix
             feature_indices: Pre-selected feature indices for consistency (optional)
-            
+
         Returns:
             Enhanced feature matrix for meta-learner
         """
@@ -2120,12 +2119,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("🔧 [REGIME_MODELS] Creating enhanced meta-learner features", color="blue")
             tprint(f"🔧 [REGIME_MODELS] Base predictions shape: {base_predictions.shape}", color="blue")
             tprint(f"🔧 [REGIME_MODELS] Original features shape: {original_features.shape}", color="blue")
-            
+
             enhanced_features = []
-            
+
             # Add base model predictions
             enhanced_features.append(base_predictions)
-            
+
             # Add prediction statistics
             if base_predictions.shape[1] > 1:
                 # Prediction agreement (how many models agree)
@@ -2133,16 +2132,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     lambda x: len(set(x)) / len(x), axis=1, arr=base_predictions
                 ).reshape(-1, 1)
                 enhanced_features.append(pred_agreement)
-                
+
                 # Prediction confidence (standard deviation of predictions)
                 pred_confidence = np.std(base_predictions, axis=1).reshape(-1, 1)
                 enhanced_features.append(pred_confidence)
-                
+
                 # Most frequent prediction (safer alternative to stats.mode)
                 # Use the prediction with highest confidence instead of mode
                 most_frequent = np.argmax(base_predictions, axis=1).reshape(-1, 1)
                 enhanced_features.append(most_frequent)
-            
+
             # Add subset of original features (most important ones)
             # Use consistent feature selection to avoid training/prediction mismatch
             if feature_indices is not None:
@@ -2154,40 +2153,40 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 feature_variance = np.var(original_features, axis=0)
                 top_features_idx = np.argsort(feature_variance)[-min(6, original_features.shape[1]):]
                 tprint(f"🔧 [REGIME_MODELS] Selected top features by variance: {len(top_features_idx)} features", color="blue")
-            
+
             enhanced_features.append(original_features[:, top_features_idx])
-            
+
             # Combine all enhanced features
             enhanced_matrix = np.column_stack(enhanced_features)
-            
+
             tprint(f"✅ [REGIME_MODELS] Enhanced features created: {enhanced_matrix.shape}", color="green")
             return enhanced_matrix
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Enhanced feature creation failed: {e}", color="red")
             self.logger.error(f"Enhanced feature creation failed: {e}")
             # Fallback to base predictions only
             return base_predictions
-    
+
     def _create_enhanced_meta_features_with_indices(self, base_predictions: np.ndarray, original_features: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Create enhanced meta-learner features and return feature indices for consistency.
-        
+
         Args:
             base_predictions: Out-of-fold predictions from base models
             original_features: Original feature matrix
-            
+
         Returns:
             Tuple of (enhanced feature matrix, feature indices)
         """
         try:
             tprint("🔧 [REGIME_MODELS] Creating enhanced meta-learner features with indices", color="blue")
-            
+
             enhanced_features = []
-            
+
             # Add base model predictions
             enhanced_features.append(base_predictions)
-            
+
             # Add prediction statistics
             if base_predictions.shape[1] > 1:
                 # Prediction agreement (how many models agree)
@@ -2195,38 +2194,38 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     lambda x: len(set(x)) / len(x), axis=1, arr=base_predictions
                 ).reshape(-1, 1)
                 enhanced_features.append(pred_agreement)
-                
+
                 # Prediction confidence (standard deviation of predictions)
                 pred_confidence = np.std(base_predictions, axis=1).reshape(-1, 1)
                 enhanced_features.append(pred_confidence)
-                
+
                 # Most frequent prediction (safer alternative to stats.mode)
                 # Use the prediction with highest confidence instead of mode
                 most_frequent = np.argmax(base_predictions, axis=1).reshape(-1, 1)
                 enhanced_features.append(most_frequent)
-            
+
             # Select features with highest variance (most informative) and store indices
             feature_variance = np.var(original_features, axis=0)
             top_features_idx = np.argsort(feature_variance)[-min(6, original_features.shape[1]):]
             enhanced_features.append(original_features[:, top_features_idx])
-            
+
             # Combine all enhanced features
             enhanced_matrix = np.column_stack(enhanced_features)
-            
+
             tprint(f"✅ [REGIME_MODELS] Enhanced features created: {enhanced_matrix.shape}", color="green")
             tprint(f"🔧 [REGIME_MODELS] Stored feature indices: {len(top_features_idx)} features", color="blue")
             return enhanced_matrix, top_features_idx
-            
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Enhanced feature creation failed: {e}", color="red")
             self.logger.error(f"Enhanced feature creation failed: {e}")
             # Fallback to base predictions only
             return base_predictions, np.array([])
-    
+
     def _log_grl_optimization_results(self, best_params: dict, best_score: float, n_classes: int, n_samples: int) -> None:
         """
         Log detailed results of Greedy Rule Lists optimization.
-        
+
         Args:
             best_params: Best parameters found
             best_score: Best cross-validation score
@@ -2240,45 +2239,45 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"   - max_depth: {best_params.get('max_depth', 'N/A')}", color="blue")
             tprint(f"   - max_rules: {best_params.get('max_rules', 'N/A')}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Context: {n_classes} regimes, {n_samples} samples", color="blue")
-            
+
             # Calculate expected improvement over default
             default_score = 0.0545  # 5.45% baseline
             improvement = ((best_score - default_score) / default_score) * 100
             tprint(f"📈 [REGIME_MODELS] Expected improvement: {improvement:+.1f}% over baseline", color="green")
-            
+
             # Log to file for persistence
             self.logger.info(f"Greedy Rule Lists optimization completed:")
             self.logger.info(f"  Best CV Score: {best_score:.4f}")
             self.logger.info(f"  Best Parameters: {best_params}")
             self.logger.info(f"  Expected improvement: {improvement:+.1f}% over baseline")
-            
+
         except Exception as e:
             tprint(f"⚠️ [REGIME_MODELS] Failed to log optimization results: {e}", color="yellow")
-    
+
     def _advanced_grl_optimization(self, X_train: np.ndarray, y_train: np.ndarray, n_classes: int) -> GreedyRuleListClassifier:
         """
         Advanced parameter optimization for Greedy Rule Lists using adaptive search.
-        
+
         Args:
             X_train: Training features
             y_train: Training labels
             n_classes: Number of regime classes
-            
+
         Returns:
             Optimized GreedyRuleListClassifier
         """
         try:
             tprint("🚀 [REGIME_MODELS] Advanced Greedy Rule Lists optimization with adaptive search", color="cyan")
-            
+
             # Adaptive parameter ranges based on data characteristics
             n_samples, n_features = X_train.shape
-            
+
             # Calculate adaptive parameter ranges
             adaptive_max_depth = min(20, max(8, int(np.log2(n_samples))))
             adaptive_min_samples = max(5, min(50, n_samples // (n_classes * 4)))
-            
+
             tprint(f"📊 [REGIME_MODELS] Adaptive ranges - max_depth: {adaptive_max_depth}, min_samples: {adaptive_min_samples}", color="blue")
-            
+
             # Define adaptive parameter search space
             # Note: GreedyRuleListClassifier only supports max_depth, class_weight, and criterion parameters
             param_combinations = [
@@ -2295,15 +2294,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'max_depth': adaptive_max_depth - 4
                 }
             ]
-            
+
             best_model = None
             best_score = 0.0
             best_params = None
-            
+
             # Test each parameter combination
             for i, params in enumerate(param_combinations):
                 tprint(f"🔍 [REGIME_MODELS] Testing combination {i+1}/{len(param_combinations)}: {params}", color="blue")
-                
+
                 try:
                     # Create model with current parameters
                     # Note: GreedyRuleListClassifier doesn't support min_samples_split and min_samples_leaf
@@ -2311,35 +2310,35 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         max_depth=params['max_depth'],
                         criterion='gini'
                     )
-                    
+
                     # Use stratified cross-validation for better regime balance
                     from sklearn.model_selection import StratifiedKFold
                     skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
-                    
+
                     cv_scores = cross_val_score(
-                        model, X_train, y_train, 
+                        model, X_train, y_train,
                         cv=skf, scoring='accuracy', n_jobs=1
                     )
                     mean_score = cv_scores.mean()
                     std_score = cv_scores.std()
-                    
+
                     tprint(f"📊 [REGIME_MODELS] CV Score: {mean_score:.4f} ± {std_score:.4f}", color="blue")
-                    
+
                     # Update best model if this is better
                     if mean_score > best_score:
                         best_score = mean_score
                         best_model = model
                         best_params = params.copy()
-                        
+
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_MODELS] Parameter combination {i+1} failed: {e}", color="yellow")
                     continue
-            
+
             # Train the best model on full training data
             if best_model is not None:
                 tprint(f"✅ [REGIME_MODELS] Best parameters found: {best_params}", color="green")
                 tprint(f"📊 [REGIME_MODELS] Best CV score: {best_score:.4f}", color="green")
-                
+
                 # Fit the best model
                 best_model.fit(X_train, y_train)
                 return best_model
@@ -2349,32 +2348,32 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 default_model = GreedyRuleListClassifier(**self.regime_models_config['base']['Greedy Rule Lists'])
                 default_model.fit(X_train, y_train)
                 return default_model
-                
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Advanced Greedy Rule Lists optimization failed: {e}", color="red")
             self.logger.error(f"Advanced Greedy Rule Lists optimization failed: {e}")
-            
+
             # Fallback to default parameters
             tprint("🔄 [REGIME_MODELS] Using fallback default parameters", color="yellow")
             default_model = GreedyRuleListClassifier(**self.regime_models_config['base']['Greedy Rule Lists'])
             default_model.fit(X_train, y_train)
             return default_model
-    
+
     def _optimize_greedy_rule_lists(self, X_train: np.ndarray, y_train: np.ndarray, n_classes: int) -> GreedyRuleListClassifier:
         """
         Optimize Greedy Rule Lists parameters for complex regime detection.
-        
+
         Args:
             X_train: Training features
             y_train: Training labels
             n_classes: Number of regime classes
-            
+
         Returns:
             Optimized GreedyRuleListClassifier
         """
         try:
             tprint("🔧 [REGIME_MODELS] Optimizing Greedy Rule Lists parameters for complex regimes", color="cyan")
-            
+
             # Define parameter search space based on regime complexity
             # Note: GreedyRuleListClassifier only supports max_depth, class_weight, and criterion parameters
             param_grids = [
@@ -2389,18 +2388,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'class_weight': ['balanced']
                 }
             ]
-            
+
             best_model = None
             best_score = 0.0
             best_params = None
-            
+
             # Try different parameter combinations
             for param_grid in param_grids:
                 tprint(f"🔍 [REGIME_MODELS] Testing parameter grid: {param_grid}", color="blue")
-                
+
                 # Simple grid search with cross-validation
                 from sklearn.model_selection import cross_val_score
-                
+
                 for max_depth in param_grid['max_depth']:
                     for class_weight in param_grid['class_weight']:
                         try:
@@ -2411,16 +2410,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                 criterion='gini',
                                 class_weight=class_weight
                             )
-                        
+
                             # Cross-validation score
                             cv_scores = cross_val_score(
-                                model, X_train, y_train, 
+                                model, X_train, y_train,
                                 cv=3, scoring='accuracy', n_jobs=1
                             )
                             mean_score = cv_scores.mean()
-                            
+
                             tprint(f"📊 [REGIME_MODELS] Params: depth={max_depth}, class_weight={class_weight} -> CV Score: {mean_score:.4f}", color="blue")
-                            
+
                             # Update best model if this is better
                             if mean_score > best_score:
                                 best_score = mean_score
@@ -2429,16 +2428,16 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                     'max_depth': max_depth,
                                     'class_weight': class_weight
                                 }
-                        
+
                         except Exception as e:
                             tprint(f"⚠️ [REGIME_MODELS] Parameter combination failed: {e}", color="yellow")
                             continue
-            
+
             # Train the best model on full training data
             if best_model is not None:
                 tprint(f"✅ [REGIME_MODELS] Best parameters found: {best_params}", color="green")
                 tprint(f"📊 [REGIME_MODELS] Best CV score: {best_score:.4f}", color="green")
-                
+
                 # Fit the best model
                 best_model.fit(X_train, y_train)
                 return best_model
@@ -2448,43 +2447,43 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 default_model = GreedyRuleListClassifier(**self.regime_models_config['base']['Greedy Rule Lists'])
                 default_model.fit(X_train, y_train)
                 return default_model
-                
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Greedy Rule Lists optimization failed: {e}", color="red")
             self.logger.error(f"Greedy Rule Lists optimization failed: {e}")
-            
+
             # Fallback to default parameters
             tprint("🔄 [REGIME_MODELS] Using fallback default parameters", color="yellow")
             default_model = GreedyRuleListClassifier(**self.regime_models_config['base']['Greedy Rule Lists'])
             default_model.fit(X_train, y_train)
             return default_model
-    
+
     def _robust_grl_training(self, X_train: np.ndarray, y_train: np.ndarray, n_classes: int) -> GreedyRuleListClassifier:
         """
         Robust Greedy Rule Lists training with multiple fallback strategies.
-        
+
         Args:
             X_train: Training features
             y_train: Training labels
             n_classes: Number of regime classes
-            
+
         Returns:
             Trained GreedyRuleListClassifier
         """
         try:
             tprint("🔧 [REGIME_MODELS] Starting robust Greedy Rule Lists training", color="cyan")
-            
+
             # Preprocess features for better GRL performance
             tprint("🔧 [REGIME_MODELS] Preprocessing features for Greedy Rule Lists", color="blue")
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
-            
+
             # Check class distribution
             from collections import Counter
             class_counts = Counter(y_train)
             tprint(f"📊 [REGIME_MODELS] Class distribution: {dict(class_counts)}", color="blue")
-            
+
             # Handle class imbalance with SMOTE if needed
             min_class_count = min(class_counts.values())
             if min_class_count < 10:  # If any class has less than 10 samples
@@ -2496,7 +2495,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     tprint(f"📊 [REGIME_MODELS] After SMOTE - X: {X_train_scaled.shape}, y: {len(y_train)}", color="blue")
                 except Exception as e:
                     tprint(f"⚠️ [REGIME_MODELS] SMOTE failed, continuing without resampling: {e}", color="yellow")
-            
+
             # Strategy 1: Conservative parameters for stability
             try:
                 tprint("🔧 [REGIME_MODELS] Strategy 1: Conservative parameters", color="blue")
@@ -2505,15 +2504,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'criterion': 'gini',
                     'class_weight': 'balanced'
                 }
-                
+
                 model = GreedyRuleListClassifier(**conservative_params)
                 model.fit(X_train_scaled, y_train)
                 tprint("✅ [REGIME_MODELS] Conservative parameters successful", color="green")
                 return model
-                
+
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Conservative parameters failed: {e}", color="yellow")
-            
+
             # Strategy 2: Minimal parameters
             try:
                 tprint("🔧 [REGIME_MODELS] Strategy 2: Minimal parameters", color="blue")
@@ -2522,15 +2521,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'criterion': 'gini',
                     'class_weight': 'balanced'
                 }
-                
+
                 model = GreedyRuleListClassifier(**minimal_params)
                 model.fit(X_train_scaled, y_train)
                 tprint("✅ [REGIME_MODELS] Minimal parameters successful", color="green")
                 return model
-                
+
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Minimal parameters failed: {e}", color="yellow")
-            
+
             # Strategy 3: Ultra-minimal parameters
             try:
                 tprint("🔧 [REGIME_MODELS] Strategy 3: Ultra-minimal parameters", color="blue")
@@ -2539,15 +2538,15 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'criterion': 'gini',
                     'class_weight': 'balanced'
                 }
-                
+
                 model = GreedyRuleListClassifier(**ultra_minimal_params)
                 model.fit(X_train_scaled, y_train)
                 tprint("✅ [REGIME_MODELS] Ultra-minimal parameters successful", color="green")
                 return model
-                
+
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Ultra-minimal parameters failed: {e}", color="yellow")
-            
+
             # Strategy 4: Default parameters as last resort
             try:
                 tprint("🔧 [REGIME_MODELS] Strategy 4: Default parameters", color="blue")
@@ -2555,11 +2554,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 model.fit(X_train_scaled, y_train)
                 tprint("✅ [REGIME_MODELS] Default parameters successful", color="green")
                 return model
-                
+
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] All Greedy Rule Lists strategies failed: {e}", color="red")
                 raise e
-                
+
         except Exception as e:
             tprint(f"❌ [REGIME_MODELS] Robust Greedy Rule Lists training failed: {e}", color="red")
             self.logger.error(f"Robust Greedy Rule Lists training failed: {e}")
@@ -2628,4 +2627,3 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Failed to load artifacts from outcome files: {e}")
 
         return artifacts
-

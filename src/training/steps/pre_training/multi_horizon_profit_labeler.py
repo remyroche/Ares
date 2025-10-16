@@ -180,7 +180,6 @@ except (ImportError, SyntaxError):
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.training.steps.pre_training.components.contracts import MultiHorizonArtifacts, PipelineState
 
-
 def _normalize_for_hash(value: Any) -> Any:
     """Normalize complex structures into hash-friendly primitives."""
     if isinstance(value, dict):
@@ -207,13 +206,11 @@ def _normalize_for_hash(value: Any) -> Any:
         return _normalize_for_hash(value.tolist())
     return value
 
-
 def _json_default(value: Any) -> Any:
     normalized = _normalize_for_hash(value)
     if isinstance(normalized, (dict, list, str, int, float, bool)) or normalized is None:
         return normalized
     return str(normalized)
-
 
 def _compute_outcome_digest(
     symbol: str,
@@ -230,7 +227,6 @@ def _compute_outcome_digest(
     serialized = json.dumps(payload, sort_keys=True, default=_json_default, ensure_ascii=False)
     return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
-
 def _build_outcome_filename(
     symbol: str,
     exchange: str,
@@ -243,7 +239,6 @@ def _build_outcome_filename(
         f"{symbol}_{exchange}_{timeframe}_{digest[:16]}.json"
     )
     return filename, digest
-
 
 def _persist_labeling_outcome(
     *,
@@ -298,7 +293,6 @@ def _persist_labeling_outcome(
 
     return report, skipped
 
-
 def _ensure_labeling_contract(payload: Mapping[str, Any]) -> Dict[str, Any]:
     """Return a payload that satisfies the downstream data contract defaults."""
 
@@ -348,7 +342,6 @@ def _ensure_labeling_contract(payload: Mapping[str, Any]) -> Dict[str, Any]:
     normalized.setdefault('metadata', {})
     return normalized
 
-
 @dataclass
 class HorizonWeightsConfig:
     """Configuration for horizon weights in multi-horizon labeling."""
@@ -357,7 +350,6 @@ class HorizonWeightsConfig:
     medium: float = 0.3  # 30% - short-term opportunities
     high: float = 0.2    # 20% - longer-term opportunities
 
-
 @dataclass
 class TransactionCostConfig:
     """Configuration for transaction cost modeling."""
@@ -365,13 +357,12 @@ class TransactionCostConfig:
     taker_fee: float = 0.0004  # 0.04% taker fee
     slippage_bps: float = 2.0  # 2 basis points slippage
     enable_cost_adjustment: bool = True
-    
+
     def total_roundtrip_cost(self, is_aggressive: bool = True) -> float:
         """Calculate total round-trip transaction cost."""
         fee = self.taker_fee if is_aggressive else self.maker_fee
         slippage = self.slippage_bps / 10000.0
         return 2 * (fee + slippage)  # Round-trip
-
 
 @dataclass
 class TemporalValidationConfig:
@@ -386,7 +377,6 @@ class TemporalValidationConfig:
     walk_forward_folds: int = 3
     validate_distribution: bool = True
 
-
 @dataclass
 class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
@@ -394,16 +384,16 @@ class MultiHorizonConfig:
     # Timeframe settings
     timeframe: str = "15m"
     base_period_minutes: Optional[float] = None
-    
+
     # Horizon weights configuration
     horizon_weights: HorizonWeightsConfig = None
-    
+
     # Transaction cost configuration
     transaction_costs: TransactionCostConfig = None
-    
+
     # Temporal validation configuration
     temporal_validation: TemporalValidationConfig = None
-    
+
     def __post_init__(self):
         """Initialize default configurations if not provided."""
         if not self.timeframe:
@@ -522,7 +512,6 @@ class MultiHorizonConfig:
     data_dir_key: str = "market_data"
     outcomes_dir_key: str = "multi_horizon_outcomes"
 
-
 def validate_and_prepare_dataframe(
     df: pd.DataFrame,
     name: str = "DataFrame",
@@ -576,10 +565,9 @@ def validate_and_prepare_dataframe(
     if not df.index.is_monotonic_increasing:
         tprint_info(f"📊 Sorting {name} by index")
         df = df.sort_index()
-    
+
     tprint(f"✅ {name} validated: {len(df)} rows, {len(df.columns)} columns")
     return df
-
 
 class MultiHorizonProfitLabeler:
     """
@@ -618,12 +606,12 @@ class MultiHorizonProfitLabeler:
         else:
             self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
             tprint_info("   → Enhanced labels: Disabled")
-        
+
         # Log transaction cost configuration
         if self.config.transaction_costs.enable_cost_adjustment:
             cost = self.config.transaction_costs.total_roundtrip_cost()
             tprint_info(f"   → Transaction cost adjustment: Enabled (round-trip: {cost:.4%})")
-        
+
         # Log temporal validation configuration
         if self.config.temporal_validation.enable_temporal_validation:
             tprint_info(f"   → Temporal validation: Enabled")
@@ -704,31 +692,31 @@ class MultiHorizonProfitLabeler:
     ) -> LabelingResult:
         """
         Adjust label returns for transaction costs.
-        
+
         Args:
             labeling_result: Original labeling result
-        
+
         Returns:
             LabelingResult with cost-adjusted labels
         """
         if not self.config.transaction_costs.enable_cost_adjustment:
             return labeling_result
-        
+
         tprint_info("💰 Adjusting labels for transaction costs...")
-        
+
         # Get round-trip cost
         roundtrip_cost = self.config.transaction_costs.total_roundtrip_cost()
-        
+
         # Adjust sigma-normalized labels
         # Since labels are already sigma-normalized, we need to adjust them proportionally
         adjusted_labels = labeling_result.labels.copy()
-        
+
         # Subtract cost from raw returns before normalization was applied
         # This is an approximation - ideally we'd adjust before sigma normalization
         if 'sigma_payoffs' in dir(labeling_result) and not labeling_result.sigma_payoffs.empty:
             # We have access to sigma payoffs, adjust those
             adjusted_sigma = labeling_result.sigma_payoffs - roundtrip_cost
-            
+
             # Update normalization factors
             if labeling_result.normalization_factors:
                 updated_factors = copy.deepcopy(labeling_result.normalization_factors)
@@ -753,7 +741,7 @@ class MultiHorizonProfitLabeler:
             cost_factor = 1.0 - (roundtrip_cost / 2.0)  # Reduce signal strength proportionally
             adjusted_labels = adjusted_labels * cost_factor
             updated_factors = labeling_result.normalization_factors or {}
-        
+
         # Create new result with adjusted labels
         adjusted_result = LabelingResult(
             labels=adjusted_labels,
@@ -775,7 +763,7 @@ class MultiHorizonProfitLabeler:
         tprint_success(f"✅ Transaction cost adjustment applied (round-trip: {roundtrip_cost:.4%})")
 
         return adjusted_result
-    
+
     def _create_temporal_splits(self, data: pd.DataFrame) -> List[WalkForwardFold]:
         """Create purged, embargoed walk-forward folds for temporal validation."""
 
@@ -1231,7 +1219,7 @@ class MultiHorizonProfitLabeler:
                     }
                 }
             }
-            
+
             tprint_error("❌ Error artifacts created for downstream components")
             return error_artifacts
 
@@ -1248,35 +1236,35 @@ class MultiHorizonProfitLabeler:
     ) -> Dict[str, Any]:
         """
         Validate that the labeling results are compatible with downstream components.
-        
+
         Args:
             labels_df: DataFrame with labels
             horizon_weights: Dictionary of horizon weights
             target_columns: List of target column names
-            
+
         Returns:
             Dictionary with validation results
         """
         try:
             tprint_info("🔍 Validating downstream compatibility...")
-            
+
             issues = []
             is_valid = True
-            
+
             # Check if we have labels
             if labels_df is None or labels_df.empty:
                 issues.append("No labels available")
                 is_valid = False
             else:
                 tprint_info(f"✅ Labels available: {len(labels_df)} rows, {len(labels_df.columns)} columns")
-            
+
             # Check if we have target columns
             if not target_columns:
                 issues.append("No target columns identified")
                 is_valid = False
             else:
                 tprint_info(f"✅ Target columns identified: {target_columns}")
-                
+
                 # Check if target columns exist in labels
                 missing_targets = [col for col in target_columns if col not in labels_df.columns]
                 if missing_targets:
@@ -1359,13 +1347,13 @@ class MultiHorizonProfitLabeler:
                         non_null_count = labels_df[col].notna().sum()
                         total_count = len(labels_df)
                         null_ratio = 1 - (non_null_count / total_count) if total_count > 0 else 1.0
-                        
+
                         if null_ratio > 0.5:  # More than 50% null values
                             issues.append(f"High null ratio in target '{col}': {null_ratio:.2%}")
                             is_valid = False
                         else:
                             tprint_info(f"✅ Target '{col}' has good data quality: {null_ratio:.2%} null values")
-            
+
             validation_result = {
                 'is_valid': is_valid,
                 'issues': issues,
@@ -1375,14 +1363,14 @@ class MultiHorizonProfitLabeler:
                 'data_quality_score': 1.0 - (len(issues) / 10.0),  # Simple quality score
                 'min_target_shift': min_required_shift,
             }
-            
+
             if is_valid:
                 tprint_success("✅ Downstream compatibility validation passed")
             else:
                 tprint_warning(f"⚠️ Downstream compatibility validation failed: {len(issues)} issues")
-            
+
             return validation_result
-            
+
         except Exception as e:
             tprint_error(f"❌ Error during downstream compatibility validation: {e}")
             return {
@@ -1474,7 +1462,7 @@ class MultiHorizonProfitLabeler:
             if len(y_balanced) == 0:
                 tprint_warning("⚠️ Balancing resulted in empty dataset, returning original labels")
                 return labeling_result
-            
+
             if len(y_balanced) < 100:  # Minimum threshold for reliable analysis
                 tprint_warning(f"⚠️ Balancing resulted in very small dataset ({len(y_balanced)} samples), proceeding with caution")
 
@@ -1566,11 +1554,11 @@ class MultiHorizonProfitLabeler:
             # Calculate balancing statistics
             original_distribution = y.value_counts().to_dict() if not y.empty else {}
             balanced_distribution = y_balanced.value_counts().to_dict()
-            
+
             tprint_success(f"✅ Balancing completed: {labeling_result.n_samples} → {len(y_balanced)} samples")
             tprint_info(f"📊 Original class distribution: {original_distribution}")
             tprint_info(f"📊 Balanced class distribution: {balanced_distribution}")
-            
+
             # Check if balancing improved class balance
             if original_distribution and balanced_distribution:
                 original_balance = min(original_distribution.values()) / max(original_distribution.values()) if max(original_distribution.values()) > 0 else 0
@@ -2677,7 +2665,6 @@ class MultiHorizonProfitLabeler:
                 'timestamp': datetime.now().isoformat()
             }
 
-
 class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
     """
     Component wrapper for Multi-Horizon Profit Labeler.
@@ -2943,7 +2930,6 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 metadata={'component_type': 'multi_horizon_profit_labeler'}
             )
 
-
 # Register component with factory
 def _register_multi_horizon_profit_labeler():
     """Register the multi-horizon profit labeler component with the factory."""
@@ -2956,7 +2942,6 @@ def _register_multi_horizon_profit_labeler():
     except ImportError:
         # Component factory not available, skip registration
         pass
-
 
 # Register the component when module is imported
 _register_multi_horizon_profit_labeler()

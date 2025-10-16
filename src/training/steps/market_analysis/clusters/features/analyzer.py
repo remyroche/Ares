@@ -55,7 +55,6 @@ try:
 except ImportError:
     HARDWARE_AVAILABLE = False
 
-
 @dataclass
 class FeatureAnalyzerConfig:
     """Configuration for feature analysis."""
@@ -76,7 +75,6 @@ class FeatureAnalyzerConfig:
     generate_plots: bool = True
     plot_format: str = "png"
     max_plot_features: int = 50
-
 
 class FeatureAnalyzer:
     """

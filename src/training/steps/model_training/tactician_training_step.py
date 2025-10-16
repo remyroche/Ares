@@ -91,7 +91,6 @@ except ImportError as e:
     TACTICIAN_TRAINING_AVAILABLE = False
     tprint_warning(f"⚠️ Tactician training components not available: {e}")
 
-
 class TrainingPhase(Enum):
     """Training phase enumeration."""
     PRE_ML_ORCHESTRATION = "pre_ml_orchestration"
@@ -100,7 +99,6 @@ class TrainingPhase(Enum):
     VALIDATION = "validation"
     COMPLETED = "completed"
     FAILED = "failed"
-
 
 @dataclass
 class TacticianTrainingConfig:
@@ -160,7 +158,6 @@ class TacticianTrainingConfig:
                 'short': 4         # 20 minutes
             }
 
-
 @dataclass
 class TacticianTrainingResult:
     """Result of Tactician unified training."""
@@ -188,7 +185,6 @@ class TacticianTrainingResult:
     base_training_completed: bool = False
     ensemble_training_completed: bool = False
     validation_completed: bool = False
-
 
 class TacticianTrainingStep:
     """

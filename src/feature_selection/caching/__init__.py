@@ -14,7 +14,7 @@ from .intelligent_feature_cache import (
 
 __all__ = [
     'IntelligentFeatureCache',
-    'FeatureSelectionCacheManager', 
+    'FeatureSelectionCacheManager',
     'cached_feature_selection',
     'create_feature_cache'
 ]

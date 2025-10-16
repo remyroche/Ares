@@ -84,11 +84,11 @@ class DataReadingStep(BaseStep):
 
     def validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step inputs.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """
@@ -114,11 +114,11 @@ class DataReadingStep(BaseStep):
     @handles_errors(exceptions=(Exception,), default_return={'success': False})
     async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data reading and validation logic.
-        
+
         Args:
             training_input: Training input parameters
             pipeline_state: Current pipeline state
-            
+
         Returns:
             Updated pipeline state
         """
@@ -133,7 +133,7 @@ class DataReadingStep(BaseStep):
             symbol = training_input.get('symbol', '').upper()
             exchange = training_input.get('exchange', '').upper()
             timeframe = training_input.get('timeframe', '1m')
-            
+
             # Try partitioned data first
             partitioned_path = standardized_parquet_handler.get_partitioned_path('unified_partitioned', exchange, symbol, timeframe)
             if os.path.exists(partitioned_path):
@@ -150,7 +150,7 @@ class DataReadingStep(BaseStep):
             else:
                 self.logger.warning(f'⚠️ Partitioned data directory not found at: {partitioned_path}')
                 data = None
-            
+
             # Fallback to single file if partitioned data not available
             if data is None or data.empty:
                 standards = PipelineStandards(self.logger)
@@ -193,7 +193,7 @@ class DataReadingStep(BaseStep):
                     self.logger.info(f'📊 Concatenated {len(dataframes)} dataframes')
             else:
                 raise ValueError(f'Path does not exist: {data_path}')
-        
+
         try:
             if data is None or data.empty:
                 # Attempt centralized auto re-collection and one retry
@@ -226,7 +226,7 @@ class DataReadingStep(BaseStep):
                 if data is None or data.empty:
                     raise ValueError(f'Failed to read data from {data_path}')
             self.logger.info(f'✅ Loaded {len(data)} rows with {len(data.columns)} columns')
-            
+
             # Validate no lookahead bias in loaded data
             try:
                 if hasattr(data, 'index') and len(data) > 0:
@@ -240,7 +240,7 @@ class DataReadingStep(BaseStep):
                 raise
             except Exception as e:
                 self.logger.warning(f"Lookahead bias validation failed: {e}")
-                
+
         except Exception as e:
             self.logger.error(f'❌ Failed to read data: {e}')
             raise
@@ -279,10 +279,10 @@ class DataReadingStep(BaseStep):
 
     def validate_outputs(self, pipeline_state: Dict[str, Any]) -> Tuple[bool, list]:
         """Validate step outputs.
-        
+
         Args:
             pipeline_state: Updated pipeline state
-            
+
         Returns:
             Tuple of (is_valid, errors)
         """
@@ -305,10 +305,10 @@ class DataReadingStep(BaseStep):
 
     def _validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Perform comprehensive data quality validation.
-        
+
         Args:
             data: DataFrame to validate
-            
+
         Returns:
             Validation results dictionary
         """
@@ -375,7 +375,7 @@ class DataReadingStep(BaseStep):
 
     def _log_validation_summary(self, validation_results: Dict[str, Any]) -> None:
         """Log a summary of validation results.
-        
+
         Args:
             validation_results: Validation results dictionary
         """

@@ -953,7 +953,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
                 perm_model = LogisticRegression(random_state = 42, max_iter = 2000)
@@ -1175,38 +1175,38 @@ class AutoencoderFeatureGenerator:
         """
         try:
             self.logger.info(f'🚀 Starting autoencoder feature generation for regime: {regime_name}')
-            
+
             # Step 1: Validate and preprocess data
             features_df = self._validate_and_preprocess_data(features_df, labels)
             if features_df.empty:
                 return features_df
-            
+
             # Step 2: Filter features
             filtered_features = self._filter_features(features_df, labels)
             if filtered_features.empty:
                 return features_df
-            
+
             # Step 3: Validate feature quality
             if not self._validate_feature_quality(filtered_features):
                 return features_df
-            
+
             # Step 4: Prepare sequences
             X_sequences, y_targets, target_indices = self._prepare_sequences(filtered_features)
             if X_sequences is None:
                 return features_df
-            
+
             # Step 5: Train autoencoder
             autoencoder, best_params = self._train_autoencoder(X_sequences, y_targets)
-            
+
             # Step 6: Generate encoded features
             encoded_df, mean_recon_error = self._generate_encoded_features(autoencoder, X_sequences, y_targets, target_indices)
-            
+
             # Step 7: Merge features
             result_df, autoencoder_cols = self._merge_features(features_df, encoded_df)
-            
+
             # Step 8: Run feature analysis
             self._run_feature_analysis(result_df, autoencoder_cols, features_df, labels, regime_labels, enable_analysis)
-            
+
             # Final summary
             self.logger.info('🎉 Autoencoder feature generation pipeline completed successfully!')
             self.logger.info(f"📊 Summary for regime '{regime_name}':")
@@ -1215,9 +1215,9 @@ class AutoencoderFeatureGenerator:
             self.logger.info(f'   📊 New autoencoder features: {len(autoencoder_cols)} columns')
             self.logger.info(f'   📊 Data samples: {result_df.shape[0]} rows')
             self.logger.info(f"   📊 Autoencoder performance: {('Good' if mean_recon_error < 0.1 else 'Acceptable' if mean_recon_error < 0.5 else 'Needs improvement')}")
-            
+
             return result_df
-            
+
         except Exception as e:
             self.logger.exception('❌ Error in autoencoder feature generation pipeline')
             self.logger.error(f'📊 Error details: {str(e)}')
@@ -1261,40 +1261,40 @@ class AutoencoderFeatureGenerator:
         price_converter = PriceReturnConverter(self.config)
         features_df = price_converter.convert_price_features_to_returns(features_df)
         self.logger.info(f'✅ Price return conversion completed. Features shape: {features_df.shape}')
-        
+
         return features_df
 
     def _filter_features(self, features_df: pd.DataFrame, labels: np.ndarray) -> pd.DataFrame:
         """Apply feature filtering using Random Forest + SHAP."""
         self.logger.info('🔄 Step 1/5: Feature filtering with Random Forest + SHAP')
         self.logger.info(f'📊 Starting with {features_df.shape[1]} input features')
-        
+
         feature_filter = FeatureFilter(self.config)
         filtered_features = feature_filter.filter_features(features_df, labels)
-        
+
         if features_df.shape[1] == 0:
             self.logger.warning('⚠️ No features available for filtering - returning original features')
             return features_df
-            
+
         feature_reduction = features_df.shape[1] - filtered_features.shape[1]
         reduction_percentage = feature_reduction / features_df.shape[1] * 100
         self.logger.info('✅ Feature filtering completed successfully!')
         self.logger.info(f'📊 Results: {filtered_features.shape[1]} features selected from {features_df.shape[1]} input features')
         self.logger.info(f'📉 Feature reduction: {feature_reduction} features removed ({reduction_percentage:.1f}% reduction)')
-        
+
         return filtered_features
 
     def _validate_feature_quality(self, filtered_features: pd.DataFrame) -> bool:
         """Validate feature quality for autoencoder training."""
         self.logger.info('🔍 Validating feature quality for autoencoder training...')
-        
+
         min_features_for_ae = int(self.config.get('feature_filtering.min_features_for_ae', 15))
         numeric_features = filtered_features.select_dtypes(include=[np.number])
         actual_numeric_features = numeric_features.shape[1]
-        
+
         self.logger.info(f'📊 Numeric features available: {actual_numeric_features}')
         self.logger.info(f'📊 Minimum features required: {min_features_for_ae}')
-        
+
         if actual_numeric_features < min_features_for_ae:
             self.logger.warning('⚠️ Insufficient features for autoencoder training')
             self.logger.warning(f'📊 Have: {actual_numeric_features} numeric features, Need: {min_features_for_ae}+ features')
@@ -1304,7 +1304,7 @@ class AutoencoderFeatureGenerator:
         std_threshold = float(self.config.get('autoencoder.min_feature_std', 1e-06))
         per_feature_std = numeric_features.std(axis = 0, skipna = True)
         low_std_cols = per_feature_std.index[per_feature_std <= std_threshold].tolist()
-        
+
         if len(low_std_cols) > 0:
             preview = ', '.join(low_std_cols[:10]) + ('...' if len(low_std_cols) > 10 else '')
             self.logger.warning('⚠️ Low variance features detected')
@@ -1320,70 +1320,70 @@ class AutoencoderFeatureGenerator:
         """Prepare sequences for autoencoder training."""
         self.logger.info('🔄 Step 2/5: Data preprocessing and sequence creation')
         self.logger.info('🔧 Initializing data preprocessor...')
-        
+
         preprocessor = ImprovedAutoencoderPreprocessor(self.config)
         self.logger.info('🔧 Fitting preprocessor on filtered features...')
         preprocessor.fit(filtered_features)
         self.logger.info('🔧 Transforming features for autoencoder input...')
         X_processed = preprocessor.transform(filtered_features)
-        
+
         self.logger.info('✅ Preprocessing completed successfully')
         self.logger.info(f'📊 Processed data shape: {X_processed.shape}')
-        
+
         timesteps = self.config.get('sequence.timesteps', 10)
         self.logger.info(f'📊 Creating sequences with {timesteps} timesteps...')
         X_sequences, y_targets, target_indices = create_sequences_with_index(X_processed, timesteps, filtered_features.index)
-        
+
         self.logger.info('✅ Sequence creation completed successfully')
         self.logger.info(f'📊 Sequence shapes: X_sequences={X_sequences.shape}, y_targets={y_targets.shape}')
         self.logger.info(f'📊 Sequence configuration: timesteps={timesteps}, overlap = 50%')
         self.logger.info(f'📊 Target indices: {len(target_indices)} samples with preserved timestamps')
-        
+
         min_sequences = 5
         if len(X_sequences) < min_sequences:
             self.logger.warning('⚠️ Insufficient sequences for autoencoder training')
             self.logger.warning(f'📊 Have: {len(X_sequences)} sequences, Need: {min_sequences}+ sequences')
             self.logger.info('🔄 Returning original features without autoencoder enhancement')
             return None, None, None
-            
+
         return X_sequences, y_targets, target_indices
 
     def _train_autoencoder(self, X_sequences: np.ndarray, y_targets: np.ndarray) -> tuple[SequenceAwareAutoencoder, dict]:
         """Train the autoencoder with hyperparameter optimization."""
         self.logger.info('🔄 Step 3/5: Hyperparameter optimization with Optuna')
-        
+
         # Split data
         split_ratio = 0.8
         split_idx = int(split_ratio * len(X_sequences))
         X_train, y_train = (X_sequences[:split_idx], y_targets[:split_idx])
         X_val, y_val = (X_sequences[split_idx:], y_targets[split_idx:])
-        
+
         self.logger.info(f'📊 Data split configuration: {split_ratio * 100:.0f}% train, {(1 - split_ratio) * 100:.0f}% validation')
         self.logger.info(f'📊 Training set: {X_train.shape[0]} sequences ({X_train.shape[0] / len(X_sequences) * 100:.1f}%)')
         self.logger.info(f'📊 Validation set: {X_val.shape[0]} sequences ({X_val.shape[0] / len(X_sequences) * 100:.1f}%)')
-        
+
         n_trials = self.config.get('training.n_trials', 50)
         n_jobs = self.config.get('training.n_jobs', 1)
         self.logger.info('🔍 Starting Optuna hyperparameter optimization')
         self.logger.info(f'📊 Optimization parameters: n_trials={n_trials}, n_jobs={n_jobs}')
         self.logger.info('📊 Search space: filters=[16,32,64], kernel_size=[3-7], dropout=[0.1-0.5], lr=[1e-5-1e-2], encoding_dim=[8-64], batch_size=[16,32,64,128]')
-        
+
         best_params = self._run_optuna_optimization(X_train, y_train, X_val, y_val)
         self.config.config['best_params'] = best_params
-        
+
         self.logger.info('✅ Hyperparameter optimization completed successfully')
         self.logger.info('🏆 Best hyperparameters selected:')
         for param, value in best_params.items():
             self.logger.info(f'   📊 {param}: {value}')
-        
+
         self.logger.info('🔄 Step 4/5: Final autoencoder training and feature generation')
         self.logger.info('🔧 Building final autoencoder model with optimized hyperparameters...')
-        
+
         final_autoencoder = SequenceAwareAutoencoder(self.config)
         final_autoencoder.build_model(X_sequences.shape[1:])
         self.logger.info('🔧 Training final autoencoder model...')
         training_history = final_autoencoder.fit(X_train, y_train, X_val, y_val)
-        
+
         if hasattr(training_history, 'history'):
             final_train_loss = training_history.history.get('loss', [0])[-1]
             final_val_loss = training_history.history.get('val_loss', [0])[-1]
@@ -1391,7 +1391,7 @@ class AutoencoderFeatureGenerator:
             self.logger.info(f'📊 Final training loss: {final_train_loss:.6f}')
             self.logger.info(f'📊 Final validation loss: {final_val_loss:.6f}')
             self.logger.info(f"📊 Model performance: {('Good' if final_val_loss < 0.1 else 'Acceptable' if final_val_loss < 0.5 else 'Needs improvement')}")
-        
+
         return final_autoencoder, best_params
 
     def _generate_encoded_features(self, autoencoder: SequenceAwareAutoencoder, X_sequences: np.ndarray, y_targets: np.ndarray, target_indices: pd.Index) -> tuple[pd.DataFrame, float]:
@@ -1401,31 +1401,31 @@ class AutoencoderFeatureGenerator:
         encoded_features = autoencoder.encoder.predict(X_sequences, verbose = 0)
         self.logger.info('📊 Using full autoencoder to generate reconstructions...')
         reconstructed = autoencoder.autoencoder.predict(X_sequences, verbose = 0)
-        
+
         self.logger.info('✅ Feature generation completed successfully')
         self.logger.info(f'📊 Encoded features shape: {encoded_features.shape}')
         self.logger.info(f'📊 Reconstructed features shape: {reconstructed.shape}')
-        
+
         self.logger.info('📊 Calculating reconstruction error...')
         recon_error = np.mean((y_targets - reconstructed) ** 2, axis = 1)
         mean_recon_error = np.mean(recon_error)
         std_recon_error = np.std(recon_error)
-        
+
         self.logger.info('📊 Reconstruction error statistics:')
         self.logger.info(f'   📊 Mean reconstruction error: {mean_recon_error:.6f}')
         self.logger.info(f'   📊 Std reconstruction error: {std_recon_error:.6f}')
         self.logger.info(f'   📊 Min reconstruction error: {np.min(recon_error):.6f}')
         self.logger.info(f'   📊 Max reconstruction error: {np.max(recon_error):.6f}')
-        
+
         self.logger.info('🔄 Step 5/5: Creating enriched feature DataFrame')
         self.logger.info('📊 Creating encoded features DataFrame...')
         encoded_df = pd.DataFrame(encoded_features, index = target_indices, columns=[f'autoencoder_{i + 1}' for i in range(encoded_features.shape[1])])
         encoded_df['autoencoder_recon_error'] = recon_error
-        
+
         self.logger.info('✅ Encoded features DataFrame created successfully')
         self.logger.info(f'📊 Encoded DataFrame shape: {encoded_df.shape}')
         self.logger.info(f'📊 Encoded features: {encoded_features.shape[1]} latent dimensions + 1 reconstruction error')
-        
+
         return encoded_df, mean_recon_error
 
     def _merge_features(self, features_df: pd.DataFrame, encoded_df: pd.DataFrame) -> pd.DataFrame:
@@ -1434,13 +1434,13 @@ class AutoencoderFeatureGenerator:
         result_df = features_df.merge(encoded_df, left_index = True, right_index = True, how='left')
         autoencoder_cols = [col for col in result_df.columns if 'autoencoder' in col]
         result_df[autoencoder_cols] = result_df[autoencoder_cols].fillna(0)
-        
+
         self.logger.info('✅ Feature merging completed successfully')
         self.logger.info(f'📊 Original features: {features_df.shape[1]} columns')
         self.logger.info(f'📊 Autoencoder features added: {len(autoencoder_cols)} columns')
         self.logger.info(f'📊 Final result shape: {result_df.shape}')
         self.logger.info(f'📊 Feature enhancement: {len(autoencoder_cols)} new features added ({len(autoencoder_cols) / features_df.shape[1] * 100:.1f}% increase)')
-        
+
         return result_df, autoencoder_cols
 
     def _run_feature_analysis(self, result_df: pd.DataFrame, autoencoder_cols: list, features_df: pd.DataFrame, labels: np.ndarray, regime_labels: np.ndarray | None, enable_analysis: bool | None) -> None:
@@ -1452,12 +1452,12 @@ class AutoencoderFeatureGenerator:
                 feature_analyzer = AutoencoderFeatureAnalyzer(self.config)
                 autoencoder_features = result_df[autoencoder_cols].copy()
                 analysis_results = feature_analyzer.analyze_feature_importance(
-                    encoded_features = autoencoder_features, 
-                    labels = labels, 
-                    original_features = features_df if self.config.get('feature_analysis.comparison_with_original', True) else None, 
+                    encoded_features = autoencoder_features,
+                    labels = labels,
+                    original_features = features_df if self.config.get('feature_analysis.comparison_with_original', True) else None,
                     regime_labels = regime_labels if self.config.get('feature_analysis.regime_analysis_enabled', True) else None
                 )
-                
+
                 if 'error' not in analysis_results:
                     self.logger.info('📊 Feature importance analysis completed successfully!')
                     if 'summary_statistics' in analysis_results:
@@ -1467,14 +1467,14 @@ class AutoencoderFeatureGenerator:
                         self.logger.info(f"   📊 Mean importance: {summary.get('mean_importance', 0):.4f}")
                         self.logger.info(f"   📊 Mean correlation: {summary.get('mean_correlation', 0):.4f}")
                         self.logger.info(f"   📊 Mean stability: {summary.get('mean_stability', 0):.4f}")
-                    
+
                     if 'recommendations' in analysis_results:
                         recommendations = analysis_results['recommendations']
                         if recommendations:
                             self.logger.info('💡 Recommendations:')
                             for rec in recommendations[:5]:
                                 self.logger.info(f'   {rec}')
-                    
+
                     self.last_analysis_results = analysis_results
                 else:
                     self.logger.warning(f"⚠️ Feature analysis failed: {analysis_results['error']}")
@@ -1552,16 +1552,16 @@ class AutoencoderFeatureGenerator:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1580,8 +1580,8 @@ class AutoencoderFeatureGenerator:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -1598,13 +1598,13 @@ class AutoencoderFeatureGenerator:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

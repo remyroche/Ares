@@ -1,7 +1,7 @@
-from typing import Dict, List, Optional, Union, Any, Tuple
 from dataclasses import dataclass
-import yaml
 from pathlib import Path
+from typing import Dict, List, Optional, Union, Any, Tuple
+import yaml
 
 """Training modes configuration."""
 
@@ -42,11 +42,11 @@ def _get_default_training_modes_config() -> Dict[str, Any]:
     """Get default training modes configuration."""
     # Import centralized configuration
     from .pipeline_modes import get_full_mode_config, get_light_mode_config, get_blank_mode_config
-    
+
     full_config = get_full_mode_config()
     light_config = get_light_mode_config()
     blank_config = get_blank_mode_config()
-    
+
     return {
         "training_modes": {
             "full": {
@@ -106,17 +106,17 @@ def get_training_mode_config(training_mode: str, sub_pipeline_name: Optional[str
     """Get training mode configuration."""
     config_data = _load_training_modes_config()
     modes = config_data.get("training_modes", {})
-    
+
     if training_mode not in modes:
         raise ValueError(f"Unknown training mode: {training_mode}")
-    
+
     mode_data = modes[training_mode]
-    
+
     # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
     lookback_days = mode_data.get("lookback_days", 30)
     if sub_pipeline_name == "hmm_regime_discovery":
         lookback_days = 1460
-    
+
     return TrainingModeConfig(
         description=mode_data.get("description", ""),
         lookback_days=lookback_days,
@@ -143,12 +143,12 @@ def get_intensity_comparison() -> Dict[str, Dict[str, Any]]:
     """Get intensity comparison data for all modes."""
     modes = ["full", "blank", "light"]
     comparison = {}
-    
+
     for mode in modes:
         try:
             config = get_training_mode_config(mode)
             intensity_pct = get_intensity_percentage(mode)
-            
+
             comparison[mode] = {
                 "intensity_percentage": intensity_pct,
                 "max_trials": config.model_training.get("max_trials", 100),
@@ -161,7 +161,7 @@ def get_intensity_comparison() -> Dict[str, Dict[str, Any]]:
             }
         except ValueError:
             continue
-    
+
     return comparison
 
 def get_mode_recommendations() -> Dict[str, str]:
@@ -184,7 +184,7 @@ def apply_mode_parameters_to_config(config: Dict[str, Any], training_mode: str) 
     """Apply mode parameters to configuration."""
     mode_config = get_training_mode_config(training_mode)
     intensity_pct = get_intensity_percentage(training_mode)
-    
+
     # Apply intensity scaling to key parameters
     if "model_training" in config:
         model_config = config["model_training"]
@@ -194,21 +194,21 @@ def apply_mode_parameters_to_config(config: Dict[str, Any], training_mode: str) 
             model_config["n_trials"] = int(model_config["n_trials"] * intensity_pct)
         if "epochs" in model_config:
             model_config["epochs"] = int(model_config["epochs"] * intensity_pct)
-    
+
     if "validation" in config:
         validation_config = config["validation"]
         if "monte_carlo_samples" in validation_config:
             validation_config["monte_carlo_samples"] = int(validation_config["monte_carlo_samples"] * intensity_pct)
         if "ab_test_rounds" in validation_config:
             validation_config["ab_test_rounds"] = int(validation_config["ab_test_rounds"] * intensity_pct)
-    
+
     if "optimization" in config:
         opt_config = config["optimization"]
         if "optuna_trials" in opt_config:
             opt_config["optuna_trials"] = int(opt_config["optuna_trials"] * intensity_pct)
         if "optuna_timeout" in opt_config:
             opt_config["optuna_timeout"] = int(opt_config["optuna_timeout"] * intensity_pct)
-    
+
     return config
 
 def get_training_config_dict(training_mode: str) -> Dict[str, Any]:
@@ -227,12 +227,12 @@ def get_training_config_dict(training_mode: str) -> Dict[str, Any]:
 def get_training_input_dict(training_mode: str, sub_pipeline_name: Optional[str] = None) -> Dict[str, Any]:
     """Get training input dictionary for a mode."""
     mode_config = get_training_mode_config(training_mode)
-    
+
     # Special exception: HMM regime discovery always uses 1460 days (4 years) regardless of training mode
     lookback_days = mode_config.lookback_days
     if sub_pipeline_name == "hmm_regime_discovery":
         lookback_days = 1460
-    
+
     return {
         "training_mode": training_mode,
         "lookback_days": lookback_days,

@@ -14,7 +14,6 @@ from .logger import system_logger
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
 
-
 @dataclass
 class ArtifactManager:
 	config: dict
@@ -31,7 +30,7 @@ class ArtifactManager:
 		# Ensure base directories exist
 		for d in (self._data_dir, self._reports_dir, self._cache_dir, self._optimization_dir, self._tmp_dir):
 			ensure_directory(str(d))
-		
+
 		# Initialize version manager
 		self.version_manager = get_version_manager()
 
@@ -59,26 +58,25 @@ class ArtifactManager:
 			path = path / s
 		ensure_directory(str(path))
 		return path
-	
+
 	def get_versioned_filename(self, base_name: str, extension: str = ".pkl") -> str:
 		"""Generate a versioned filename with timestamp.
-		
+
 		Args:
 			base_name: Base name for the file
 			extension: File extension
-			
+
 		Returns:
 			Versioned filename
 		"""
 		version = self.version_manager.get_ares_version()
 		timestamp = self.version_manager.generate_timestamp()
 		return f"{base_name}_{version}_{timestamp}{extension}"
-	
+
 	def get_ares_version(self) -> str:
 		"""Get the current Ares version.
-		
+
 		Returns:
 			Current Ares version
 		"""
 		return self.version_manager.get_ares_version()
-

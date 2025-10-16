@@ -4,7 +4,6 @@ S/R Levels Module - Comprehensive Support/Resistance Detection System
 This module provides all S/R detection and optimization components.
 """
 
-
 __all__ = [
     'SRStrengthOptimizer',
     'EnhancedSROptimizer',

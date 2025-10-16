@@ -1,6 +1,6 @@
 from ....core.decorators import handles_errors
-from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from src.training.steps.standardized_parquet_handler import standardized_parquet_handler
+from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 """Model registry component for model persistence."""
 import json
@@ -17,7 +17,7 @@ class ModelRegistry:
 
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model registry.
-        
+
         Args:
             config: Configuration dictionary
         """
@@ -43,12 +43,12 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return=[], context='model registration')
     async def register_models(self, artifacts: Dict[str, Any], metadata: Dict[str, Any], version_info: Dict[str, Any]) -> List[str]:
         """Register models in the registry.
-        
+
         Args:
             artifacts: Saved artifact paths
             metadata: Model metadata
             version_info: Version information
-            
+
         Returns:
             List of registered model IDs
         """
@@ -67,14 +67,14 @@ class ModelRegistry:
 
     async def _register_single_model(self, model_name: str, model_path: str, category: str, metadata: Dict[str, Any], version_info: Dict[str, Any]) -> Optional[str]:
         """Register a single model.
-        
+
         Args:
             model_name: Model name
             model_path: Path to model file
             category: Model category
             metadata: Model metadata
             version_info: Version information
-            
+
         Returns:
             Model ID or None
         """
@@ -106,13 +106,13 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return=[], context='model search')
     async def search_models(self, category: Optional[str]=None, version: Optional[str]=None, symbol: Optional[str]=None, tags: Optional[List[str]]=None) -> List[Dict[str, Any]]:
         """Search for models in the registry.
-        
+
         Args:
             category: Filter by category
             version: Filter by version
             symbol: Filter by symbol
             tags: Filter by tags
-            
+
         Returns:
             List of matching models
         """
@@ -135,10 +135,10 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return = None, context='model retrieval')
     async def get_model(self, model_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific model from the registry.
-        
+
         Args:
             model_id: Model ID
-            
+
         Returns:
             Model information or None
         """
@@ -147,12 +147,12 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return = False, context='model tagging')
     async def tag_model(self, model_id: str, tags: List[str], replace: bool = False) -> bool:
         """Tag a model in the registry.
-        
+
         Args:
             model_id: Model ID
             tags: Tags to add
             replace: Replace existing tags if True
-            
+
         Returns:
             Success status
         """
@@ -176,12 +176,12 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return = False, context='model deployment')
     async def mark_for_deployment(self, model_id: str, environment: str, notes: Optional[str]=None) -> bool:
         """Mark a model for deployment.
-        
+
         Args:
             model_id: Model ID
             environment: Deployment environment (e.g., "staging", "production")
             notes: Optional deployment notes
-            
+
         Returns:
             Success status
         """
@@ -201,7 +201,7 @@ class ModelRegistry:
     @handles_errors(exceptions=(Exception,), default_return={}, context='registry statistics')
     async def get_registry_stats(self) -> Dict[str, Any]:
         """Get registry statistics.
-        
+
         Returns:
             Registry statistics
         """

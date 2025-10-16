@@ -14,12 +14,10 @@ from .config import CoverageClusteringConfig
 from .clusterer import CoverageConstrainedClusterer
 from .utils import load_latest_hmm_discovery_artifact
 
-
 @dataclass
 class CoverageClusteringComponentConfig(ComponentConfig):
 	# Extend base config with clustering specifics if needed in future
 	pass
-
 
 class CoverageConstrainedClusteringComponent(BaseMarketAnalysisComponent):
 	"""Aggregate 4D HMM regimes into ~20 macro-clusters with coverage/size constraints."""
@@ -82,4 +80,3 @@ class CoverageConstrainedClusteringComponent(BaseMarketAnalysisComponent):
 		except Exception as e:
 			self.logger.exception(f"Coverage-constrained clustering failed: {e}")
 			return ComponentResult(success=False, artifacts={}, error_message=str(e))
-

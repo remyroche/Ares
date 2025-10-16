@@ -35,7 +35,6 @@ except ImportError:
 import numpy as np
 import pandas as pd
 
-
 @dataclass
 class ArtifactMetadata:
     """Metadata for an artifact."""
@@ -46,7 +45,6 @@ class ArtifactMetadata:
     checksum: str
     tags: Dict[str, str] = None
     description: str = ""
-
 
 @dataclass
 class ArtifactSaveReport:
@@ -59,11 +57,10 @@ class ArtifactSaveReport:
     artifacts_saved: int
     errors: List[str] = None
 
-
 class AdvancedArtifactManager:
     """
     Advanced artifact manager for unified pipeline.
-    
+
     Provides comprehensive artifact creation, storage, and retrieval capabilities
     similar to FeatureLookbackOptimizationComponent.
     """
@@ -79,7 +76,7 @@ class AdvancedArtifactManager:
         # Set up artifact directories
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(exist_ok=True)
-        
+
         # Create subdirectories
         self.dirs = {
             'results': self.base_dir / 'results',
@@ -89,7 +86,7 @@ class AdvancedArtifactManager:
             'logs': self.base_dir / 'logs',
             'temp': self.base_dir / 'temp'
         }
-        
+
         for dir_path in self.dirs.values():
             dir_path.mkdir(exist_ok=True)
 
@@ -102,16 +99,16 @@ class AdvancedArtifactManager:
     def analyze_artifact_quality(self, artifact_data: Any, artifact_name: str) -> Dict[str, Any]:
         """
         Analyze data quality of an artifact using enhanced utilities.
-        
+
         Args:
             artifact_data: The artifact data to analyze
             artifact_name: Name of the artifact
-            
+
         Returns:
             Dictionary with quality analysis results
         """
         tprint_debug(f"🔍 Analyzing quality of artifact: {artifact_name}")
-        
+
         try:
             quality_analysis = {
                 'artifact_name': artifact_name,
@@ -119,22 +116,22 @@ class AdvancedArtifactManager:
                 'artifact_type': type(artifact_data).__name__,
                 'analysis_results': {}
             }
-            
+
             # Analyze DataFrame artifacts
             if isinstance(artifact_data, pd.DataFrame):
                 tprint_debug(f"📊 Analyzing DataFrame artifact: {artifact_name}")
-                
+
                 # Validate columns
                 required_columns = ['close'] if 'close' in artifact_data.columns else []
                 column_validation = validate_dataframe_columns(artifact_data, required_columns)
-                
+
                 # Comprehensive data quality analysis
                 nan_analysis = analyze_nan_values_detailed(artifact_data)
                 quality_metrics = calculate_data_quality_metrics(artifact_data)
                 quality_report = create_data_quality_report(artifact_data)
                 dataframe_info = get_dataframe_info(artifact_data)
                 summary_stats = create_summary_statistics(artifact_data)
-                
+
                 quality_analysis['analysis_results'] = {
                     'column_validation': column_validation,
                     'nan_analysis': nan_analysis,
@@ -143,25 +140,25 @@ class AdvancedArtifactManager:
                     'dataframe_info': dataframe_info,
                     'summary_statistics': summary_stats
                 }
-                
+
                 tprint_success(f"✅ DataFrame analysis completed: {quality_metrics.get('missing_percentage', 0):.1f}% missing")
-                
+
             elif isinstance(artifact_data, np.ndarray):
                 tprint_debug(f"🔢 Analyzing NumPy array artifact: {artifact_name}")
-                
+
                 # Convert to DataFrame for analysis
                 if artifact_data.ndim == 2:
                     df_for_analysis = pd.DataFrame(artifact_data)
                     nan_analysis = analyze_nan_values_detailed(df_for_analysis)
                     quality_metrics = calculate_data_quality_metrics(df_for_analysis)
-                    
+
                     quality_analysis['analysis_results'] = {
                         'array_shape': artifact_data.shape,
                         'array_dtype': str(artifact_data.dtype),
                         'nan_analysis': nan_analysis,
                         'quality_metrics': quality_metrics
                     }
-                    
+
                     tprint_success(f"✅ Array analysis completed: shape {artifact_data.shape}")
                 else:
                     quality_analysis['analysis_results'] = {
@@ -169,7 +166,7 @@ class AdvancedArtifactManager:
                         'array_dtype': str(artifact_data.dtype),
                         'note': '1D array - limited analysis available'
                     }
-                    
+
             else:
                 # Basic analysis for other types
                 quality_analysis['analysis_results'] = {
@@ -177,9 +174,9 @@ class AdvancedArtifactManager:
                     'size_bytes': self.common_utils.get_file_size(str(artifact_data)) if hasattr(artifact_data, '__len__') else 0,
                     'note': 'Limited analysis available for this data type'
                 }
-            
+
             return quality_analysis
-            
+
         except Exception as e:
             tprint_error(f"❌ Quality analysis failed for {artifact_name}: {e}")
             return {
@@ -189,21 +186,21 @@ class AdvancedArtifactManager:
                 'analysis_results': {}
             }
 
-    async def save_artifacts(self, artifacts: Dict[str, Any], 
+    async def save_artifacts(self, artifacts: Dict[str, Any],
                            metadata: Optional[Dict[str, Any]] = None) -> ArtifactSaveReport:
         """
         Save artifacts to persistent storage.
-        
+
         Args:
             artifacts: Dictionary of artifacts to save
             metadata: Optional metadata for the save operation
-            
+
         Returns:
             ArtifactSaveReport with save operation details
         """
         tprint_debug("💾 Starting artifact saving operation")
         start_time = datetime.now()
-        
+
         correlation_id = f"save_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         saved_paths = {}
         errors = []
@@ -216,21 +213,21 @@ class AdvancedArtifactManager:
                     # Determine artifact type and save method
                     artifact_type = self._determine_artifact_type(artifact_data)
                     save_path = self._get_save_path(artifact_name, artifact_type)
-                    
+
                     # Save the artifact
                     saved_size = await self._save_single_artifact(
                         artifact_data, save_path, artifact_type
                     )
-                    
+
                     saved_paths[artifact_name] = str(save_path)
                     total_size += saved_size
                     artifacts_saved += 1
-                    
+
                     # Register artifact
                     self._register_artifact(artifact_name, artifact_type, save_path, saved_size)
-                    
+
                     tprint_debug(f"✅ Saved artifact {artifact_name} to {save_path}")
-                    
+
                 except Exception as e:
                     error_msg = f"Failed to save artifact {artifact_name}: {str(e)}"
                     errors.append(error_msg)
@@ -260,14 +257,14 @@ class AdvancedArtifactManager:
                 artifacts_saved=artifacts_saved,
                 errors=errors if errors else None
             )
-            
+
             self.save_history.append(report)
-            
+
             if report.success:
                 tprint_success(f"✅ Artifact saving completed: {artifacts_saved} artifacts, {total_size/1024/1024:.2f}MB")
             else:
                 tprint_warning(f"⚠️ Artifact saving completed with errors: {len(errors)} errors")
-            
+
             return report
 
         except Exception as e:
@@ -285,43 +282,43 @@ class AdvancedArtifactManager:
     async def load_artifacts(self, correlation_id: str) -> Dict[str, Any]:
         """
         Load artifacts by correlation ID.
-        
+
         Args:
             correlation_id: Correlation ID of the save operation
-            
+
         Returns:
             Dictionary of loaded artifacts
         """
         tprint_debug(f"📥 Loading artifacts for correlation ID: {correlation_id}")
-        
+
         # Find the save report
         save_report = None
         for report in self.save_history:
             if report.correlation_id == correlation_id:
                 save_report = report
                 break
-        
+
         if not save_report:
             tprint_error(f"❌ No save report found for correlation ID: {correlation_id}")
             return {}
-        
+
         loaded_artifacts = {}
-        
+
         try:
             for artifact_name, artifact_path in save_report.paths.items():
                 if artifact_name == 'metadata':
                     continue
-                
+
                 try:
                     artifact_data = await self._load_single_artifact(artifact_path)
                     loaded_artifacts[artifact_name] = artifact_data
                     tprint_debug(f"✅ Loaded artifact {artifact_name}")
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to load artifact {artifact_name}: {e}")
-            
+
             tprint_success(f"✅ Loaded {len(loaded_artifacts)} artifacts")
             return loaded_artifacts
-            
+
         except Exception as e:
             tprint_error(f"❌ Artifact loading failed: {e}")
             return {}
@@ -330,32 +327,32 @@ class AdvancedArtifactManager:
                                     pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Create comprehensive artifacts from optimization results.
-        
+
         Args:
             optimization_results: Results from optimization
             pipeline_state: Pipeline state information
-            
+
         Returns:
             Dictionary of artifacts ready for saving
         """
         tprint_debug("📦 Creating optimization artifacts")
-        
+
         artifacts = {}
-        
+
         # Core optimization results
         if 'feature_results' in optimization_results:
             artifacts['feature_results'] = optimization_results['feature_results']
-        
+
         if 'optimal_periods' in optimization_results:
             artifacts['optimal_periods'] = optimization_results['optimal_periods']
-        
+
         if 'selected_features' in optimization_results:
             artifacts['selected_features'] = optimization_results['selected_features']
-        
+
         # Performance metrics
         if 'performance_metrics' in optimization_results:
             artifacts['performance_metrics'] = optimization_results['performance_metrics']
-        
+
         # Configuration
         if pipeline_state:
             artifacts['pipeline_config'] = {
@@ -365,21 +362,21 @@ class AdvancedArtifactManager:
                 'execution_mode': pipeline_state.get('execution_mode', 'UNKNOWN'),
                 'optimization_direction': pipeline_state.get('direction', 'both')
             }
-        
+
         # Summary statistics
         artifacts['summary'] = self._create_summary_statistics(optimization_results)
-        
+
         # Feature importance
         if 'feature_importance' in optimization_results:
             artifacts['feature_importance'] = optimization_results['feature_importance']
-        
+
         # Lookback optimization results
         if 'long_pipeline' in optimization_results.get('feature_results', {}):
             artifacts['long_pipeline_results'] = optimization_results['feature_results']['long_pipeline']
-        
+
         if 'short_pipeline' in optimization_results.get('feature_results', {}):
             artifacts['short_pipeline_results'] = optimization_results['feature_results']['short_pipeline']
-        
+
         tprint_success(f"✅ Created {len(artifacts)} optimization artifacts")
         return artifacts
 
@@ -388,35 +385,35 @@ class AdvancedArtifactManager:
                             pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Create comprehensive outcome report.
-        
+
         Args:
             optimization_results: Results from optimization
             performance_metrics: Performance metrics
             pipeline_state: Pipeline state information
-            
+
         Returns:
             Comprehensive outcome report
         """
         tprint_debug("📊 Creating comprehensive outcome report")
-        
+
         # Extract feature statistics
         long_pipeline = optimization_results.get('feature_results', {}).get('long_pipeline', {})
         short_pipeline = optimization_results.get('feature_results', {}).get('short_pipeline', {})
-        
+
         long_count = len(long_pipeline)
         short_count = len(short_pipeline)
-        
+
         # Calculate optimization statistics
-        long_lookbacks = [data.get('best_lookback_period', 0) for data in long_pipeline.values() 
+        long_lookbacks = [data.get('best_lookback_period', 0) for data in long_pipeline.values()
                          if isinstance(data, dict) and 'best_lookback_period' in data]
-        long_scores = [data.get('best_score', 0.0) for data in long_pipeline.values() 
+        long_scores = [data.get('best_score', 0.0) for data in long_pipeline.values()
                       if isinstance(data, dict) and 'best_score' in data]
-        
-        short_lookbacks = [data.get('best_lookback_period', 0) for data in short_pipeline.values() 
+
+        short_lookbacks = [data.get('best_lookback_period', 0) for data in short_pipeline.values()
                           if isinstance(data, dict) and 'best_lookback_period' in data]
-        short_scores = [data.get('best_score', 0.0) for data in short_pipeline.values() 
+        short_scores = [data.get('best_score', 0.0) for data in short_pipeline.values()
                        if isinstance(data, dict) and 'best_score' in data]
-        
+
         # Create outcome report
         outcome_report = {
             'component': 'unified_data_driven_pipeline',
@@ -461,7 +458,7 @@ class AdvancedArtifactManager:
             'performance_metrics': performance_metrics,
             'status': 'success'
         }
-        
+
         tprint_success("✅ Created comprehensive outcome report")
         return outcome_report
 
@@ -469,7 +466,7 @@ class AdvancedArtifactManager:
         """Save a single artifact using proper async I/O operations."""
         import aiofiles
         import asyncio
-        
+
         try:
             if artifact_type == 'dataframe':
                 # Use asyncio.to_thread for blocking pandas operations
@@ -520,7 +517,7 @@ class AdvancedArtifactManager:
     async def _load_single_artifact(self, path: str) -> Any:
         """Load a single artifact."""
         path_obj = Path(path)
-        
+
         if path_obj.suffix == '.parquet':
             return pd.read_parquet(path)
         elif path_obj.suffix == '.json':
@@ -546,11 +543,11 @@ class AdvancedArtifactManager:
         """Get the save path for an artifact with microsecond precision to avoid collisions."""
         # Use microsecond precision to avoid timestamp collisions
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
-        
+
         # Add a small random component as additional collision prevention
         import random
         random_suffix = random.randint(1000, 9999)
-        
+
         if artifact_type == 'dataframe':
             return self.dirs['data'] / f"{artifact_name}_{timestamp}_{random_suffix}.parquet"
         elif artifact_type == 'json':
@@ -568,7 +565,7 @@ class AdvancedArtifactManager:
             checksum=str(hash(str(path))),  # Simple checksum
             description=f"Artifact saved at {path}"
         )
-        
+
         self.artifact_registry[name] = metadata
 
     def _create_summary_statistics(self, optimization_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -579,16 +576,16 @@ class AdvancedArtifactManager:
             'execution_mode': optimization_results.get('execution_mode', 'unknown'),
             'timestamp': datetime.now().isoformat()
         }
-        
+
         # Count features
         feature_results = optimization_results.get('feature_results', {})
         long_pipeline = feature_results.get('long_pipeline', {})
         short_pipeline = feature_results.get('short_pipeline', {})
-        
+
         summary['total_features_optimized'] = len(long_pipeline) + len(short_pipeline)
         summary['long_features'] = len(long_pipeline)
         summary['short_features'] = len(short_pipeline)
-        
+
         return summary
 
     def get_artifact_registry(self) -> Dict[str, ArtifactMetadata]:
@@ -602,10 +599,10 @@ class AdvancedArtifactManager:
     def cleanup_old_artifacts(self, days_to_keep: int = 30):
         """Clean up old artifacts."""
         tprint_debug(f"🧹 Cleaning up artifacts older than {days_to_keep} days")
-        
+
         cutoff_date = datetime.now() - timedelta(days=days_to_keep)
         cleaned_count = 0
-        
+
         for dir_path in self.dirs.values():
             for file_path in dir_path.iterdir():
                 if file_path.is_file():
@@ -616,5 +613,5 @@ class AdvancedArtifactManager:
                             cleaned_count += 1
                         except Exception as e:
                             tprint_warning(f"⚠️ Failed to delete {file_path}: {e}")
-        
+
         tprint_success(f"✅ Cleaned up {cleaned_count} old artifacts")

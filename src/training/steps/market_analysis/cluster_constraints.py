@@ -22,7 +22,6 @@ try:
 except Exception:  # pragma: no cover
     from sklearn.cluster import KMeans  # type: ignore
 
-
 def _compute_centroids(
     X: np.ndarray,
     labels: np.ndarray,
@@ -43,13 +42,11 @@ def _compute_centroids(
         centroids[int(c)] = centroid
     return centroids
 
-
 def _pairwise_distance(a: np.ndarray, b: np.ndarray, metric: str = "euclidean") -> float:
     if metric == "cosine":
         denom = (np.linalg.norm(a) + 1e-12) * (np.linalg.norm(b) + 1e-12)
         return float(1.0 - (np.dot(a, b) / denom))
     return float(np.linalg.norm(a - b))
-
 
 def _nearest_centroid(X: np.ndarray, centroids: Dict[int, np.ndarray], metric: str) -> np.ndarray:
     keys = list(centroids.keys())
@@ -67,11 +64,9 @@ def _nearest_centroid(X: np.ndarray, centroids: Dict[int, np.ndarray], metric: s
         arg = np.argmin(d2, axis=1)
     return np.array([keys[i] for i in arg], dtype=int)
 
-
 def _split_with_kmeans(X: np.ndarray, k: int, random_state: int) -> np.ndarray:
     k = max(2, int(k))
     return KMeans(n_clusters=k, random_state=random_state, n_init=10).fit_predict(X)
-
 
 def fit_hdbscan_with_noise_target(
     X: np.ndarray,
@@ -114,7 +109,6 @@ def fit_hdbscan_with_noise_target(
             high = mid - 1
     return best if best is not None else _fit(max(2, int(np.sqrt(N))))[0]
 
-
 def split_giant_clusters(
     X: np.ndarray,
     labels: np.ndarray,
@@ -154,7 +148,6 @@ def split_giant_clusters(
             next_label += 1
     return new_labels
 
-
 def merge_tail_into_topk(
     X: np.ndarray,
     labels: np.ndarray,
@@ -184,7 +177,6 @@ def merge_tail_into_topk(
             break
         new_labels[idx] = _nearest_centroid(X[idx], centroids, metric=metric)
     return new_labels
-
 
 def balance_topk_range(
     X: np.ndarray,
@@ -244,7 +236,6 @@ def balance_topk_range(
             break
     return new_labels
 
-
 def enforce_cluster_constraints(
     X: np.ndarray,
     labels: np.ndarray,
@@ -274,7 +265,6 @@ def enforce_cluster_constraints(
             break
     return new_labels
 
-
 def summarize_distribution(labels: np.ndarray, topk: int = 20) -> dict:
     """Return noise fraction, largest cluster fraction, and top-k coverage."""
     total = len(labels)
@@ -289,4 +279,3 @@ def summarize_distribution(labels: np.ndarray, topk: int = 20) -> dict:
         "largest_cluster_fraction": largest_fraction,
         "topk_coverage": topk_coverage,
     }
-

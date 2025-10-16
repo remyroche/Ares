@@ -243,7 +243,7 @@ class DataFrameValidator:
     """DataFrame validator."""
     def __init__(self):
         pass
-    
+
     def validate(self, df: pd.DataFrame) -> bool:
         return validate_dataframe(df)
 
@@ -251,7 +251,7 @@ class DataFrameCleaner:
     """DataFrame cleaner."""
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-    
+
     def clean(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.dropna()
 
@@ -259,7 +259,7 @@ class DataFrameTransformer:
     """DataFrame transformer."""
     def __init__(self):
         pass
-    
+
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         return df
 
@@ -299,7 +299,7 @@ class JSONSerializer:
     def save(data, filepath):
         with open(filepath, 'w') as f:
             json.dump(data, f)
-    
+
     @staticmethod
     def load(filepath):
         with open(filepath, 'r') as f:
@@ -310,7 +310,7 @@ class PickleSerializer:
     def save(data, filepath):
         with open(filepath, 'wb') as f:
             pickle.dump(data, f)
-    
+
     @staticmethod
     def load(filepath):
         with open(filepath, 'rb') as f:
@@ -320,7 +320,7 @@ class ParquetSerializer:
     @staticmethod
     def save(data, filepath):
         data.to_parquet(filepath)
-    
+
     @staticmethod
     def load(filepath):
         return pd.read_parquet(filepath)
@@ -334,7 +334,7 @@ class UniversalSerializer:
             PickleSerializer.save(data, filepath)
         elif filepath.endswith('.parquet'):
             ParquetSerializer.save(data, filepath)
-    
+
     @staticmethod
     def load(filepath):
         if filepath.endswith('.json'):
@@ -407,7 +407,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 except ImportError:
     # Fallback if M1 optimizations not available
@@ -416,7 +416,7 @@ except ImportError:
             pass
         def optimize_memory(self):
             return {}
-    
+
     class M1DataManager:
         def __init__(self, *args, **kwargs):
             pass
@@ -429,48 +429,48 @@ class UtilityConfig:
     # Common operations config
     enable_common_operations: bool = True
     common_operations_log_level: str = "INFO"
-    
+
     # Data processing config
     enable_data_processing: bool = True
     data_processing_chunk_size: int = 10000
     data_processing_memory_limit_mb: int = 1000
-    
+
     # Math validation config
     enable_math_validation: bool = True
     math_validation_epsilon: float = 1e-10
-    
+
     # Parquet utils config
     enable_parquet_utils: bool = True
     parquet_compression: str = "snappy"
-    
+
     # Serialization config
     enable_serialization: bool = True
     serialization_compression: bool = False
-    
+
     # M1 optimization config
     enable_m1_gpu: bool = True
     enable_m1_memory: bool = True
     enable_m1_cpu: bool = True
     m1_memory_limit_gb: float = 8.0
     m1_max_workers: int = 8
-    
+
     # Performance config
     enable_performance_tracking: bool = True
     performance_log_interval: int = 100
 
 class ServiceLifecycle(ABC):
     """Abstract base class for service lifecycle management."""
-    
+
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the service."""
         pass
-    
+
     @abstractmethod
     async def cleanup(self) -> None:
         """Cleanup the service."""
         pass
-    
+
     @abstractmethod
     def is_healthy(self) -> bool:
         """Check if the service is healthy."""
@@ -478,45 +478,45 @@ class ServiceLifecycle(ABC):
 
 class UtilityService(ServiceLifecycle):
     """Base class for utility services."""
-    
+
     def __init__(self, name: str, config: UtilityConfig):
         self.name = name
         self.config = config
         self.logger = get_logger(f"Step06Utility.{name}")
         self._initialized = False
         self._healthy = False
-    
+
     async def initialize(self) -> None:
         """Initialize the service."""
         if self._initialized:
             return
-        
+
         self.logger.info(f"🔧 Initializing {self.name} service")
         await self._do_initialize()
         self._initialized = True
         self._healthy = True
         self.logger.info(f"✅ {self.name} service initialized")
-    
+
     async def cleanup(self) -> None:
         """Cleanup the service."""
         if not self._initialized:
             return
-        
+
         self.logger.info(f"🧹 Cleaning up {self.name} service")
         await self._do_cleanup()
         self._initialized = False
         self._healthy = False
         self.logger.info(f"✅ {self.name} service cleaned up")
-    
+
     def is_healthy(self) -> bool:
         """Check if the service is healthy."""
         return self._healthy
-    
+
     @abstractmethod
     async def _do_initialize(self) -> None:
         """Service-specific initialization."""
         pass
-    
+
     @abstractmethod
     async def _do_cleanup(self) -> None:
         """Service-specific cleanup."""
@@ -524,7 +524,7 @@ class UtilityService(ServiceLifecycle):
 
 class CommonOperationsService(UtilityService):
     """Service for common operations utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("CommonOperations", config)
         self.operations = {
@@ -576,17 +576,17 @@ class CommonOperationsService(UtilityService):
                 'parallel_map': parallel_map
             }
         }
-    
+
     async def _do_initialize(self) -> None:
         """Initialize common operations service."""
         if self.config.enable_common_operations:
             setup_basic_logging(getattr(logging, self.config.common_operations_log_level))
             self.logger.info("✅ Common operations utilities loaded")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup common operations service."""
         pass
-    
+
     def get_operation(self, category: str, operation: str) -> Callable:
         """Get a specific operation."""
         if category not in self.operations:
@@ -597,13 +597,13 @@ class CommonOperationsService(UtilityService):
 
 class DataProcessingService(UtilityService):
     """Service for data processing utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("DataProcessing", config)
         self.validator = None
         self.cleaner = None
         self.transformer = None
-    
+
     async def _do_initialize(self) -> None:
         """Initialize data processing service."""
         if self.config.enable_data_processing:
@@ -614,7 +614,7 @@ class DataProcessingService(UtilityService):
             })
             self.transformer = DataFrameTransformer()
             self.logger.info("✅ Data processing utilities initialized")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup data processing service."""
         self.validator = None
@@ -623,44 +623,44 @@ class DataProcessingService(UtilityService):
 
 class MathValidationService(UtilityService):
     """Service for mathematical validation utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("MathValidation", config)
         self.epsilon = config.math_validation_epsilon
-    
+
     async def _do_initialize(self) -> None:
         """Initialize math validation service."""
         if self.config.enable_math_validation:
             self.logger.info(f"✅ Math validation utilities initialized (epsilon: {self.epsilon})")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup math validation service."""
         pass
 
 class ParquetService(UtilityService):
     """Service for parquet utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("Parquet", config)
         self.parquet_utils = None
-    
+
     async def _do_initialize(self) -> None:
         """Initialize parquet service."""
         if self.config.enable_parquet_utils:
             self.parquet_utils = get_parquet_utils()
             self.logger.info(f"✅ Parquet utilities initialized (compression: {self.config.parquet_compression})")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup parquet service."""
         self.parquet_utils = None
 
 class SerializationService(UtilityService):
     """Service for serialization utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("Serialization", config)
         self.serializers = {}
-    
+
     async def _do_initialize(self) -> None:
         """Initialize serialization service."""
         if self.config.enable_serialization:
@@ -671,26 +671,26 @@ class SerializationService(UtilityService):
                 'universal': UniversalSerializer()
             }
             self.logger.info(f"✅ Serialization utilities initialized (compression: {self.config.serialization_compression})")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup serialization service."""
         self.serializers = {}
 
 class M1GPUService(UtilityService):
     """Service for M1 GPU utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("M1GPU", config)
         self.gpu_manager = None
         self.performance_optimizer = None
-    
+
     async def _do_initialize(self) -> None:
         """Initialize M1 GPU service."""
         if self.config.enable_m1_gpu:
             self.gpu_manager = initialize_m1_gpu()
             self.performance_optimizer = M1PerformanceOptimizer(self.gpu_manager)
             self.logger.info("✅ M1 GPU utilities initialized")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup M1 GPU service."""
         if self.gpu_manager:
@@ -700,12 +700,12 @@ class M1GPUService(UtilityService):
 
 class M1MemoryService(UtilityService):
     """Service for M1 memory utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("M1Memory", config)
         self.memory_optimizer = None
         self.data_manager = None
-    
+
     async def _do_initialize(self) -> None:
         """Initialize M1 memory service."""
         if self.config.enable_m1_memory:
@@ -714,7 +714,7 @@ class M1MemoryService(UtilityService):
             )
             self.data_manager = M1DataManager(self.memory_optimizer)
             self.logger.info(f"✅ M1 memory utilities initialized (limit: {self.config.m1_memory_limit_gb}GB)")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup M1 memory service."""
         if self.memory_optimizer:
@@ -724,22 +724,22 @@ class M1MemoryService(UtilityService):
 
 class M1CPUService(UtilityService):
     """Service for M1 CPU utilities."""
-    
+
     def __init__(self, config: UtilityConfig):
         super().__init__("M1CPU", config)
         self.cpu_optimizer = None
         self.batch_processor = None
-    
+
     async def _do_initialize(self) -> None:
         """Initialize M1 CPU service."""
         if self.config.enable_m1_cpu:
             self.cpu_optimizer = initialize_m1_cpu_optimizer()
             self.batch_processor = M1BatchProcessor(
-                self.cpu_optimizer, 
+                self.cpu_optimizer,
                 batch_size=self.config.data_processing_chunk_size
             )
             self.logger.info(f"✅ M1 CPU utilities initialized (max workers: {self.config.m1_max_workers})")
-    
+
     async def _do_cleanup(self) -> None:
         """Cleanup M1 CPU service."""
         self.cpu_optimizer = None
@@ -747,25 +747,25 @@ class M1CPUService(UtilityService):
 
 class Step06UtilityContainer:
     """Dependency injection container for step06 utilities."""
-    
+
     def __init__(self, config: Optional[UtilityConfig] = None):
         self.config = config or UtilityConfig()
         self.logger = get_logger("Step06UtilityContainer")
         self._services: Dict[str, UtilityService] = {}
         self._initialized = False
         self._lock = threading.Lock()
-    
+
     async def initialize(self) -> None:
         """Initialize all utility services."""
         if self._initialized:
             return
-        
+
         with self._lock:
             if self._initialized:
                 return
-            
+
             self.logger.info("🚀 Initializing Step06 Utility Container")
-            
+
             # Initialize all services
             services = [
                 CommonOperationsService(self.config),
@@ -777,7 +777,7 @@ class Step06UtilityContainer:
                 M1MemoryService(self.config),
                 M1CPUService(self.config)
             ]
-            
+
             for service in services:
                 try:
                     await service.initialize()
@@ -785,92 +785,92 @@ class Step06UtilityContainer:
                 except Exception as e:
                     self.logger.error(f"❌ Failed to initialize {service.name}: {e}")
                     raise
-            
+
             self._initialized = True
             self.logger.info("✅ Step06 Utility Container initialized")
-    
+
     async def cleanup(self) -> None:
         """Cleanup all utility services."""
         if not self._initialized:
             return
-        
+
         with self._lock:
             if not self._initialized:
                 return
-            
+
             self.logger.info("🧹 Cleaning up Step06 Utility Container")
-            
+
             for service in reversed(list(self._services.values())):
                 try:
                     await service.cleanup()
                 except Exception as e:
                     self.logger.error(f"❌ Failed to cleanup {service.name}: {e}")
-            
+
             self._services.clear()
             self._initialized = False
             self.logger.info("✅ Step06 Utility Container cleaned up")
-    
+
     def get_service(self, service_name: str) -> UtilityService:
         """Get a utility service by name."""
         if not self._initialized:
             raise RuntimeError("Container not initialized")
-        
+
         if service_name not in self._services:
             raise ValueError(f"Service not found: {service_name}")
-        
+
         return self._services[service_name]
-    
+
     def get_common_operations(self) -> CommonOperationsService:
         """Get common operations service."""
         return self.get_service("CommonOperations")
-    
+
     def get_data_processing(self) -> DataProcessingService:
         """Get data processing service."""
         return self.get_service("DataProcessing")
-    
+
     def get_math_validation(self) -> MathValidationService:
         """Get math validation service."""
         return self.get_service("MathValidation")
-    
+
     def get_parquet(self) -> ParquetService:
         """Get parquet service."""
         return self.get_service("Parquet")
-    
+
     def get_serialization(self) -> SerializationService:
         """Get serialization service."""
         return self.get_service("Serialization")
-    
+
     def get_m1_gpu(self) -> M1GPUService:
         """Get M1 GPU service."""
         return self.get_service("M1GPU")
-    
+
     def get_m1_memory(self) -> M1MemoryService:
         """Get M1 memory service."""
         return self.get_service("M1Memory")
-    
+
     def get_m1_cpu(self) -> M1CPUService:
         """Get M1 CPU service."""
         return self.get_service("M1CPU")
-    
+
     def is_healthy(self) -> bool:
         """Check if all services are healthy."""
         if not self._initialized:
             return False
-        
+
         return all(service.is_healthy() for service in self._services.values())
-    
+
     def get_health_report(self) -> Dict[str, Any]:
         """Get health report for all services."""
         if not self._initialized:
             return {"status": "not_initialized", "services": {}}
-        
+
         services_health = {}
         for name, service in self._services.items():
             services_health[name] = {
                 "healthy": service.is_healthy(),
                 "initialized": service._initialized
             }
-        
+
         return {
             "status": "healthy" if all(s["healthy"] for s in services_health.values()) else "unhealthy",
             "services": services_health,
@@ -885,7 +885,7 @@ _container_lock = threading.Lock()
 async def get_utility_container(config: Optional[UtilityConfig] = None) -> Step06UtilityContainer:
     """Get or create the global utility container."""
     global _container
-    
+
     with _container_lock:
         if _container is None:
             _container = Step06UtilityContainer(config)
@@ -895,7 +895,7 @@ async def get_utility_container(config: Optional[UtilityConfig] = None) -> Step0
 async def cleanup_utility_container() -> None:
     """Cleanup the global utility container."""
     global _container
-    
+
     with _container_lock:
         if _container is not None:
             await _container.cleanup()
@@ -959,7 +959,7 @@ def inject_utilities(*service_names: str):
         async def wrapper(*args, **kwargs):
             container = await get_utility_container()
             injected_services = {}
-            
+
             for service_name in service_names:
                 if service_name == "common_ops":
                     injected_services[service_name] = container.get_common_operations()
@@ -979,7 +979,7 @@ def inject_utilities(*service_names: str):
                     injected_services[service_name] = container.get_m1_cpu()
                 else:
                     raise ValueError(f"Unknown service: {service_name}")
-            
+
             return await func(*args, **kwargs, **injected_services)
         return wrapper
     return decorator
@@ -997,37 +997,37 @@ async def test_utility_container():
         enable_m1_memory=True,
         enable_m1_cpu=True
     )
-    
+
     async with utility_container_context(config) as container:
         # Test service access
         common_ops = container.get_common_operations()
         data_proc = container.get_data_processing()
         math_val = container.get_math_validation()
-        
+
         # Test health
         health_report = container.get_health_report()
         tprint(f"Health Report: {health_report}")
-        
+
         # Test operations
         current_time = common_ops.get_operation('datetime', 'get_current_datetime')()
         tprint(f"Current time: {current_time}")
-        
+
         return health_report
 
 if __name__ == "__main__":
     asyncio.run(test_utility_container())
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1046,8 +1046,8 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

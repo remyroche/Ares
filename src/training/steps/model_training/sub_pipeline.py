@@ -132,13 +132,11 @@ except ImportError as e:
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
-
 class ExecutionMode(Enum):
     """Execution modes for sub-pipelines."""
     FULL = "full"
     LIGHT = "light"
     BLANK = "blank"
-
 
 class SubPipelineStatus(Enum):
     """Status of sub-pipeline execution."""
@@ -147,7 +145,6 @@ class SubPipelineStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
-
 
 @dataclass
 class SubPipelineConfig:
@@ -161,13 +158,13 @@ class SubPipelineConfig:
     data_dir: str = "historical_data"
     start_date: Optional[str] = None  # Optional date filtering
     end_date: Optional[str] = None    # Optional date filtering
-    
+
     # Training configuration
     train_analyst: bool = True
     train_tactician: bool = True
     train_short_models: bool = True
     train_long_models: bool = True
-    
+
     # Execution parameters
     force_rerun: bool = False
     parallel_processing: bool = True
@@ -175,22 +172,21 @@ class SubPipelineConfig:
     validation_enabled: bool = True
     monitoring_enabled: bool = True  # Hardware monitoring
     single_stage_only: bool = False   # Pipeline chaining control
-    
+
     # Output configuration
     output_directory: str = "generated/model_training"
     save_models: bool = True
-    
+
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
 
     # Direction control for trading (inherited from main pipeline config)
     enable_long_positions: bool = True
     enable_short_positions: bool = True
-    
+
     # Additional compatibility parameters
     use_existing_data: bool = False  # Use pre-existing data artifacts
     logging: Optional[Any] = None     # Logging configuration (optional)
-
 
 @dataclass
 class SubPipelineResult:
@@ -206,21 +202,20 @@ class SubPipelineResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
 
-
 class ModelTrainingSubPipeline:
     """
     Model Training Sub-Pipeline.
-    
+
     Orchestrates the complete training workflow for both Analyst and Tactician models
     with proper timeframe separation and data filtering.
     """
-    
+
     def __init__(self):
         """Initialize the model training sub-pipeline."""
         self.logger = logger.getChild('ModelTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
         self._current_pipeline_state: Dict[str, Any] = {}
-        
+
         # Initialize orchestrators
         if ANALYST_PRE_ML_AVAILABLE:
             from .analyst_pre_ml_orchestration import AnalystPreMLConfig
@@ -228,7 +223,7 @@ class ModelTrainingSubPipeline:
             self.analyst_pre_ml = AnalystPreMLOrchestrator(config)
         else:
             self.analyst_pre_ml = None
-            
+
         if ANALYST_TRAINING_AVAILABLE:
             analyst_training_config = AnalystTrainingPipelineConfig(
                 ensemble_models=False
@@ -592,21 +587,21 @@ class ModelTrainingSubPipeline:
             artifacts=artifacts or {},
             metadata=metadata or {}
         )
-    
+
     async def execute_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """
         Execute the complete model training pipeline.
-        
+
         Args:
             config: Configuration for pipeline execution
-            
+
         Returns:
             Dictionary containing execution results
         """
         self.logger.info('🚀 Starting Model Training Sub-Pipeline execution')
         self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
         self.logger.info(f'⏰ Analyst timeframe: {config.analyst_timeframe}, Tactician timeframe: {config.tactician_timeframe}')
-        
+
         start_time = datetime.now()
         results = {
             'success': False,
@@ -616,7 +611,7 @@ class ModelTrainingSubPipeline:
             'completed_steps': 0,
             'total_steps': 0
         }
-        
+
         # Count total steps
         total_steps = 0
         if config.train_analyst:
@@ -624,55 +619,55 @@ class ModelTrainingSubPipeline:
         if config.train_tactician:
             total_steps += 3  # pre_ml, models, ensemble
         results['total_steps'] = total_steps
-        
+
         try:
             # ==================== ANALYST PIPELINE (60m) ====================
             if config.train_analyst:
                 self.logger.info('=' * 80)
                 self.logger.info('🎯 ANALYST PIPELINE (60m timeframe - IF we trade)')
                 self.logger.info('=' * 80)
-                
+
                 # Step 1: Analyst Pre-ML Orchestration
                 analyst_pre_ml_result = await self._execute_analyst_pre_ml_orchestration(config)
                 if not analyst_pre_ml_result.success:
                     self.logger.error(f'❌ Analyst pre-ML orchestration failed: {analyst_pre_ml_result.error_message}')
                     return results
-                
+
                 results['analyst_results']['pre_ml'] = analyst_pre_ml_result.artifacts
                 self._current_pipeline_state['analyst_features'] = analyst_pre_ml_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 # Step 2: Analyst Models Training
                 analyst_models_result = await self._execute_analyst_models_training(config, analyst_pre_ml_result)
                 if not analyst_models_result.success:
                     self.logger.error(f'❌ Analyst models training failed: {analyst_models_result.error_message}')
                     return results
-                
+
                 results['analyst_results']['models'] = analyst_models_result.artifacts
                 self._current_pipeline_state['analyst_models'] = analyst_models_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 # Step 3: Analyst Ensemble Training
                 analyst_ensemble_result = await self._execute_analyst_ensemble_training(config, analyst_models_result)
                 if not analyst_ensemble_result.success:
                     self.logger.error(f'❌ Analyst ensemble training failed: {analyst_ensemble_result.error_message}')
                     return results
-                
+
                 results['analyst_results']['ensemble'] = analyst_ensemble_result.artifacts
                 self._current_pipeline_state['analyst_ensemble'] = analyst_ensemble_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 self.logger.info('✅ Analyst pipeline completed successfully')
-            
+
             # ==================== TACTICIAN PIPELINE (15m) ====================
             if config.train_tactician:
                 self.logger.info('=' * 80)
                 self.logger.info('🎯 TACTICIAN PIPELINE (15m timeframe - WHEN we trade)')
                 self.logger.info('=' * 80)
-                
+
                 # Get Analyst predictions for filtering
                 analyst_predictions = self._current_pipeline_state.get('analyst_ensemble', {}).get('predictions')
-                
+
                 # Step 4: Tactician Pre-ML Orchestration (with Analyst filtering)
                 tactician_pre_ml_result = await self._execute_tactician_pre_ml_orchestration(
                     config, analyst_predictions
@@ -680,11 +675,11 @@ class ModelTrainingSubPipeline:
                 if not tactician_pre_ml_result.success:
                     self.logger.error(f'❌ Tactician pre-ML orchestration failed: {tactician_pre_ml_result.error_message}')
                     return results
-                
+
                 results['tactician_results']['pre_ml'] = tactician_pre_ml_result.artifacts
                 self._current_pipeline_state['tactician_features'] = tactician_pre_ml_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 # Step 5: Tactician Models Training
                 tactician_models_result = await self._execute_tactician_models_training(
                     config, tactician_pre_ml_result, analyst_predictions
@@ -692,11 +687,11 @@ class ModelTrainingSubPipeline:
                 if not tactician_models_result.success:
                     self.logger.error(f'❌ Tactician models training failed: {tactician_models_result.error_message}')
                     return results
-                
+
                 results['tactician_results']['models'] = tactician_models_result.artifacts
                 self._current_pipeline_state['tactician_models'] = tactician_models_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 # Step 6: Tactician Ensemble Training
                 tactician_ensemble_result = await self._execute_tactician_ensemble_training(
                     config, tactician_models_result, analyst_predictions
@@ -704,27 +699,27 @@ class ModelTrainingSubPipeline:
                 if not tactician_ensemble_result.success:
                     self.logger.error(f'❌ Tactician ensemble training failed: {tactician_ensemble_result.error_message}')
                     return results
-                
+
                 results['tactician_results']['ensemble'] = tactician_ensemble_result.artifacts
                 self._current_pipeline_state['tactician_ensemble'] = tactician_ensemble_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 self.logger.info('✅ Tactician pipeline completed successfully')
-            
+
             # Success
             end_time = datetime.now()
             results['success'] = True
             results['execution_time'] = (end_time - start_time).total_seconds()
-            
+
             self.logger.info(f'🎉 Model Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
             self.logger.info(f'📊 Completed steps: {results["completed_steps"]}/{results["total_steps"]}')
-            
+
         except Exception as e:
             self.logger.error(f'❌ Model Training Sub-Pipeline failed with exception: {e}')
             results['error_message'] = str(e)
-        
+
         return results
-    
+
     async def _execute_analyst_pre_ml_orchestration(self, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute Analyst pre-ML orchestration (60m timeframe)."""
         result = SubPipelineResult(
@@ -811,11 +806,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Analyst pre-ML orchestration failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     async def _execute_analyst_models_training(
         self, config: SubPipelineConfig, pre_ml_result: SubPipelineResult
     ) -> SubPipelineResult:
@@ -825,7 +820,7 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.analyst_training:
                 raise RuntimeError("Analyst training pipeline not available")
@@ -886,12 +881,12 @@ class ModelTrainingSubPipeline:
                         target_columns=['target_long', 'target_short'],
                         regime_assignments=regime_assignments
                     )
-                    
+
                     if per_regime_result.success:
                         self.logger.info('✅ Analyst per-regime training completed successfully')
                     else:
                         self.logger.warning(f'⚠️ Analyst per-regime training failed: {per_regime_result.error_message}')
-                        
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Analyst per-regime training failed: {e}')
 
@@ -934,11 +929,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Analyst models training failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     async def _execute_analyst_ensemble_training(
         self, config: SubPipelineConfig, models_result: SubPipelineResult
     ) -> SubPipelineResult:
@@ -948,7 +943,7 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.analyst_ensemble_trainer:
                 raise RuntimeError("Analyst ensemble training step not available")
@@ -1044,11 +1039,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Analyst ensemble training failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     async def _execute_tactician_pre_ml_orchestration(
         self, config: SubPipelineConfig, analyst_predictions: Optional[pd.DataFrame]
     ) -> SubPipelineResult:
@@ -1058,7 +1053,7 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.tactician_pre_ml:
                 raise RuntimeError("Tactician pre-ML orchestrator not available")
@@ -1142,11 +1137,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Tactician pre-ML orchestration failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     async def _execute_tactician_models_training(
         self, config: SubPipelineConfig, pre_ml_result: SubPipelineResult, analyst_predictions: Optional[pd.DataFrame]
     ) -> SubPipelineResult:
@@ -1156,7 +1151,7 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.tactician_training:
                 raise RuntimeError("Tactician training pipeline not available")
@@ -1242,12 +1237,12 @@ class ModelTrainingSubPipeline:
                         target_columns=['target_long', 'target_short'],
                         regime_assignments=regime_assignments
                     )
-                    
+
                     if per_regime_result.success:
                         self.logger.info('✅ Tactician per-regime training completed successfully')
                     else:
                         self.logger.warning(f'⚠️ Tactician per-regime training failed: {per_regime_result.error_message}')
-                        
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Tactician per-regime training failed: {e}')
 
@@ -1291,11 +1286,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Tactician models training failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     async def _execute_tactician_ensemble_training(
         self, config: SubPipelineConfig, models_result: SubPipelineResult, analyst_predictions: Optional[pd.DataFrame]
     ) -> SubPipelineResult:
@@ -1305,7 +1300,7 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.tactician_ensemble_trainer:
                 raise RuntimeError("Tactician ensemble training step not available")
@@ -1422,11 +1417,11 @@ class ModelTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             self.logger.error(f'❌ Tactician ensemble training failed: {e}')
-        
+
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
-    
+
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
         return [
@@ -1437,7 +1432,7 @@ class ModelTrainingSubPipeline:
             'tactician_models_training',
             'tactician_ensemble_training'
         ]
-    
+
     async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline."""
         result: Optional[SubPipelineResult] = None
@@ -1571,7 +1566,7 @@ class ModelTrainingSubPipeline:
             return result
 
         raise RuntimeError(f"Sub-pipeline '{sub_pipeline_name}' did not return a result")
-    
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary."""
         return {
@@ -1590,7 +1585,6 @@ class ModelTrainingSubPipeline:
                 for r in self.results
             ]
         }
-
 
 # Convenience function for direct execution
 async def execute_model_training_pipeline(config: SubPipelineConfig) -> Dict[str, Any]:

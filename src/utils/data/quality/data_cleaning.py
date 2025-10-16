@@ -100,26 +100,26 @@ class DataSchema:
             'type_mismatches': [],
             'constraint_violations': []
         }
-        
+
         df_columns = set(df.columns)
         missing_required = self.required_columns - df_columns
         if missing_required:
             results['valid'] = False
             results['missing_columns'] = list(missing_required)
             results['errors'].append(f'Missing required columns: {missing_required}')
-            
+
         extra_columns = df_columns - self.all_columns
         if extra_columns:
             results['warnings'].append(f'Extra columns found: {extra_columns}')
             results['extra_columns'] = list(extra_columns)
-            
+
         for column, expected_type in self.data_types.items():
             if column in df.columns:
                 actual_type = str(df[column].dtype)
                 if actual_type != expected_type:
                     results['type_mismatches'].append({'column': column, 'expected': expected_type, 'actual': actual_type})
                     results['warnings'].append(f'Type mismatch in {column}: expected {expected_type}, got {actual_type}')
-                    
+
         for column, constraint in self.constraints.items():
             if column in df.columns:
                 if 'not_null' in constraint and constraint['not_null']:
@@ -140,7 +140,7 @@ class DataSchema:
                     if (df[column] > max_val).any():
                         results['constraint_violations'].append(f'Column {column} contains values above maximum {max_val}')
                         results['warnings'].append(f'Values above maximum {max_val} found in {column}')
-                        
+
         return results
 
 class DataCleaner:
@@ -148,7 +148,7 @@ class DataCleaner:
 
     def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True, data_type: str = 'klines') -> None:
         """Initialize data cleaner with data-type specific gap thresholds.
-        
+
         Args:
             max_forward_fill_gap: Maximum gap size for forward fill (seconds)
             download_threshold: Threshold for triggering data download (seconds)
@@ -163,7 +163,7 @@ class DataCleaner:
         self.raise_errors = raise_errors
         self.log_details = log_details
         self.data_type = data_type
-        
+
         # Data-type specific gap thresholds (in seconds)
         # Large gaps trigger re-downloading of missing data
         # Thresholds are adjusted based on timeframe for relevance
@@ -229,7 +229,7 @@ class DataCleaner:
                 GapType.CRITICAL: 1800 # 30 minutes (same as klines)
             }
         }
-        
+
         # Use data-type specific thresholds or fallback to generic
         if data_type in self.data_type_gap_thresholds:
             self.gap_thresholds = self.data_type_gap_thresholds[data_type]
@@ -243,14 +243,14 @@ class DataCleaner:
                 GapType.CRITICAL: float('inf')
             }
             self.logger.warning(f"Unknown data type '{data_type}', using generic gap thresholds")
-        
+
         self.fill_strategies = {
             GapType.SMALL: 'download',           # All gaps now trigger download
             GapType.MEDIUM: 'download',
             GapType.LARGE: 'download',
             GapType.CRITICAL: 'unified_gap_filler'  # Critical gaps use UnifiedGapFiller
         }
-        
+
         self.outlier_history = []
         self.standard_schemas = {
             'klines': DataSchema(
@@ -286,7 +286,7 @@ class DataCleaner:
                 constraints={'timestamp': {'not_null': True}, 'label': {'not_null': True}}
             )
         }
-        
+
         self.detection_methods = {
             'zscore': self._detect_zscore_outliers,
             'iqr': self._detect_iqr_outliers,
@@ -294,10 +294,10 @@ class DataCleaner:
             'local_outlier_factor': self._detect_lof_outliers,
             'mahalanobis': self._detect_mahalanobis_outliers
         }
-        
+
         # Reduce verbosity of initialization logging
         self.logger.debug(f'🧹 Data Cleaner initialized with {len(self.detection_methods)} outlier detection methods')
-        
+
         # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
@@ -319,17 +319,17 @@ class DataCleaner:
         if timestamp_column not in data.columns:
             self.logger.error(f"Timestamp column '{timestamp_column}' not found")
             return data
-            
+
         data = data.sort_values(timestamp_column).reset_index(drop=True)
         gaps = self._analyze_gaps(data, timestamp_column)
-        
+
         if not gaps:
             self.logger.info('No gaps detected in data')
             return data
-            
+
         self._log_gap_analysis(gaps)
         filled_data = data.copy()
-        
+
         for gap in gaps:
             # PRIORITY 1: Try to re-download data for ALL gaps (small, medium, large)
             if symbol and exchange and timeframe:
@@ -369,13 +369,13 @@ class DataCleaner:
                     # Try UnifiedGapFiller for critical gaps even without parameters
                     self.logger.info(f'🔄 Attempting UnifiedGapFiller for critical gap (no params): {gap}')
                     filled_data = self._handle_critical_gap(filled_data, gap, timestamp_column, symbol, exchange, timeframe)
-                
+
         final_gaps = self._analyze_gaps(filled_data, timestamp_column)
         if final_gaps:
             self.logger.warning(f'Remaining gaps after filling: {len(final_gaps)}')
         else:
             self.logger.info('All gaps successfully filled')
-            
+
         return filled_data
 
     def _analyze_gaps(self, data: pd.DataFrame, timestamp_column: str) -> List[GapInfo]:
@@ -437,7 +437,7 @@ class DataCleaner:
             if gap_type not in gap_counts:
                 gap_counts[gap_type] = 0
             gap_counts[gap_type] += 1
-            
+
         self.logger.info(f'Gap analysis: {len(gaps)} total gaps')
         for gap_type, count in gap_counts.items():
             self.logger.info(f'  {gap_type}: {count} gaps')
@@ -462,24 +462,24 @@ class DataCleaner:
         self.logger.info(f'Handling small gap with forward fill: {gap}')
         before_gap_idx = data[data[timestamp_column] <= gap.start_time].index[-1]
         filled_data = data.copy()
-        
+
         missing_timestamps = []
         current_time = gap.start_time
         while current_time < gap.end_time:
             missing_timestamps.append(current_time)
             current_time += 60
-            
+
         new_rows = []
         for timestamp in missing_timestamps:
             new_row = data.iloc[before_gap_idx].copy()
             new_row[timestamp_column] = timestamp
             new_rows.append(new_row)
-            
+
         if new_rows:
             new_df = pd.DataFrame(new_rows)
             filled_data = pd.concat([filled_data, new_df], ignore_index=True)
             filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
-            
+
         gap.filled = True
         gap.fill_method = 'forward_fill'
         return filled_data
@@ -517,7 +517,7 @@ class DataCleaner:
             start_dt = datetime.fromtimestamp(start_time)
             end_dt = datetime.fromtimestamp(end_time)
             self.logger.info(f'Downloading {symbol} data from {exchange} for {start_dt} to {end_dt}')
-            
+
             if exchange.lower() == 'binance':
                 from src.training.steps.data_collection.unified_data_downloader import UnifiedDataDownloader
 
@@ -533,7 +533,7 @@ class DataCleaner:
                 if not success:
                     self.logger.error(f"Failed to download data: {error}")
                     return None
-                
+
                 if downloaded_data is not None and len(downloaded_data) > 0:
                     # Convert timestamp to unix timestamp (seconds since epoch)
                     if 'timestamp' in downloaded_data.columns:
@@ -594,21 +594,21 @@ class DataCleaner:
         filled_data = data.copy()
         before_gap_idx = data[data[timestamp_column] <= gap.start_time].index[-1]
         after_gap_idx = data[data[timestamp_column] >= gap.end_time].index[0]
-        
+
         missing_timestamps = []
         current_time = gap.start_time
         while current_time < gap.end_time:
             missing_timestamps.append(current_time)
             current_time += 60
-            
+
         for timestamp in missing_timestamps:
             time_diff = timestamp - data.iloc[before_gap_idx][timestamp_column]
             total_gap = data.iloc[after_gap_idx][timestamp_column] - data.iloc[before_gap_idx][timestamp_column]
             weight = time_diff / total_gap if total_gap > 0 else 0
-            
+
             new_row = data.iloc[before_gap_idx].copy()
             new_row[timestamp_column] = timestamp
-            
+
             numeric_columns = data.select_dtypes(include=[np.number]).columns
             for col in numeric_columns:
                 if col != timestamp_column:
@@ -616,9 +616,9 @@ class DataCleaner:
                     after_val = data.iloc[after_gap_idx][col]
                     interpolated_val = before_val + weight * (after_val - before_val)
                     new_row[col] = interpolated_val
-                    
+
             filled_data = pd.concat([filled_data, pd.DataFrame([new_row])], ignore_index=True)
-            
+
         filled_data = filled_data.sort_values(timestamp_column).reset_index(drop=True)
         gap.filled = True
         gap.fill_method = 'interpolation_fallback'
@@ -694,14 +694,14 @@ class DataCleaner:
         """Detect outliers in data using specified method."""
         if raise_errors is None:
             raise_errors = self.raise_errors
-            
+
         if method not in self.detection_methods:
             self.logger.error(f'Unknown detection method: {method}')
             return []
-            
+
         if columns is None:
             columns = data.select_dtypes(include=[np.number]).columns.tolist()
-            
+
         all_outliers = []
         for column in columns:
             if column not in data.columns:
@@ -710,21 +710,21 @@ class DataCleaner:
             if not np.issubdtype(data[column].dtype, np.number):
                 self.logger.warning(f'Column {column} is not numeric, skipping')
                 continue
-                
+
             clean_data = data[column].dropna()
             if len(clean_data) == 0:
                 self.logger.warning(f'Column {column} has no valid data')
                 continue
-                
+
             outliers = self.detection_methods[method](data, column, threshold)
             all_outliers.extend(outliers)
-            
+
         if all_outliers:
             self._log_outlier_details(all_outliers)
             if raise_errors:
                 self._handle_outlier_errors(all_outliers)
             self.outlier_history.extend(all_outliers)
-            
+
         return all_outliers
 
     def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
@@ -733,11 +733,11 @@ class DataCleaner:
         try:
             z_scores = np.abs((data[column] - data[column].mean()) / data[column].std())
             outlier_indices = np.where(z_scores > threshold)[0]
-            
+
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 max_z_score = z_scores.max()
-                
+
                 # Adjust severity thresholds for cryptocurrency data
                 # Crypto markets have higher volatility and more extreme movements
                 if max_z_score > threshold * 5:  # Increased from 3 to 5 for crypto
@@ -748,7 +748,7 @@ class DataCleaner:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                    
+
                 outlier_info = OutlierInfo(
                     column=column,
                     indices=outlier_indices.tolist(),
@@ -778,7 +778,7 @@ class DataCleaner:
             lower_bound = Q1 - threshold * IQR
             upper_bound = Q3 + threshold * IQR
             outlier_indices = np.where((data[column] < lower_bound) | (data[column] > upper_bound))[0]
-            
+
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 distances = []
@@ -788,7 +788,7 @@ class DataCleaner:
                         distances.append((lower_bound - val) / IQR)
                     else:
                         distances.append((val - upper_bound) / IQR)
-                        
+
                 max_distance = max(distances)
                 if max_distance > threshold * 2:
                     severity = OutlierSeverity.CRITICAL
@@ -798,7 +798,7 @@ class DataCleaner:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                    
+
                 outlier_info = OutlierInfo(
                     column=column,
                     indices=outlier_indices.tolist(),
@@ -829,13 +829,13 @@ class DataCleaner:
             iso_forest = IsolationForest(contamination=0.1, random_state=42)
             predictions = iso_forest.fit_predict(X)
             outlier_indices = np.where(predictions == -1)[0]
-            
+
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 anomaly_scores = iso_forest.decision_function(X)
                 outlier_scores = anomaly_scores[outlier_indices]
                 min_score = min(outlier_scores)
-                
+
                 if min_score < -0.5:
                     severity = OutlierSeverity.CRITICAL
                 elif min_score < -0.3:
@@ -844,7 +844,7 @@ class DataCleaner:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                    
+
                 outlier_info = OutlierInfo(
                     column=column,
                     indices=outlier_indices.tolist(),
@@ -874,13 +874,13 @@ class DataCleaner:
             lof = LocalOutlierFactor(contamination=0.1, n_neighbors=20)
             predictions = lof.fit_predict(X)
             outlier_indices = np.where(predictions == -1)[0]
-            
+
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 lof_scores = lof.negative_outlier_factor_
                 outlier_scores = lof_scores[outlier_indices]
                 min_score = min(outlier_scores)
-                
+
                 if min_score < -1.5:
                     severity = OutlierSeverity.CRITICAL
                 elif min_score < -1.2:
@@ -889,7 +889,7 @@ class DataCleaner:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                    
+
                 outlier_info = OutlierInfo(
                     column=column,
                     indices=outlier_indices.tolist(),
@@ -918,14 +918,14 @@ class DataCleaner:
             mad = np.median(np.abs(data[column] - median))
             if mad == 0:
                 return outliers
-                
+
             modified_z_scores = 0.6745 * (data[column] - median) / mad
             outlier_indices = np.where(np.abs(modified_z_scores) > threshold)[0]
-            
+
             if len(outlier_indices) > 0:
                 outlier_values = data[column].iloc[outlier_indices].tolist()
                 max_score = np.abs(modified_z_scores).max()
-                
+
                 if max_score > threshold * 2:
                     severity = OutlierSeverity.CRITICAL
                 elif max_score > threshold * 1.5:
@@ -934,7 +934,7 @@ class DataCleaner:
                     severity = OutlierSeverity.MEDIUM
                 else:
                     severity = OutlierSeverity.LOW
-                    
+
                 outlier_info = OutlierInfo(
                     column=column,
                     indices=outlier_indices.tolist(),
@@ -959,13 +959,13 @@ class DataCleaner:
         if not outliers:
             return
         self.logger.info(f'🔍 Detected {len(outliers)} outlier groups')
-        
+
         # Group outliers by severity for better analysis
         critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
         high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
         medium_outliers = [o for o in outliers if o.severity == OutlierSeverity.MEDIUM]
         low_outliers = [o for o in outliers if o.severity == OutlierSeverity.LOW]
-        
+
         # Log summary with crypto context
         if critical_outliers:
             self.logger.warning(f'🚨 CRITICAL outliers detected: {len(critical_outliers)} groups - These may indicate major market events (flash crashes, pumps, whale movements)')
@@ -975,11 +975,11 @@ class DataCleaner:
             self.logger.info(f'📊 MEDIUM severity outliers: {len(medium_outliers)} groups - Normal crypto market volatility')
         if low_outliers:
             self.logger.info(f'📈 LOW severity outliers: {len(low_outliers)} groups - Minor market fluctuations')
-        
+
         # Log detailed information for critical and high outliers
         for outlier in critical_outliers + high_outliers:
             self.logger.warning(f'Outlier in {outlier.column}: {len(outlier.indices)} values, severity={outlier.severity.value}, method={outlier.method}')
-            
+
             # Add crypto-specific context
             if outlier.column in ['volume', 'quote_volume']:
                 self.logger.info(f'  💰 Volume outliers may indicate whale movements or major news events')
@@ -987,7 +987,7 @@ class DataCleaner:
                 self.logger.info(f'  📈 Price range outliers may indicate flash crashes or pumps')
             elif outlier.column in ['trades']:
                 self.logger.info(f'  🔄 Trade count outliers may indicate high-frequency trading periods')
-            
+
             if outlier.severity == OutlierSeverity.CRITICAL:
                 self.logger.error(f'Critical outlier details: {outlier}')
                 self.logger.error(f'  Values: {outlier.values[:5]}...')
@@ -997,14 +997,14 @@ class DataCleaner:
         """Handle outlier errors by raising exceptions or logging."""
         critical_outliers = [o for o in outliers if o.severity == OutlierSeverity.CRITICAL]
         high_outliers = [o for o in outliers if o.severity == OutlierSeverity.HIGH]
-        
+
         if critical_outliers:
             error_msg = f'Critical outliers detected: {len(critical_outliers)} groups'
             for outlier in critical_outliers:
                 error_msg += f'\n  {outlier.column}: {len(outlier.indices)} values'
             self.logger.error(error_msg)
             raise ValueError(error_msg)
-            
+
         if high_outliers:
             error_msg = f'High severity outliers detected: {len(high_outliers)} groups'
             for outlier in high_outliers:
@@ -1030,7 +1030,7 @@ class DataCleaner:
             'gap_summary': {},
             'gap_details': []
         }
-        
+
         for gap_type in GapType:
             gap_type_gaps = [g for g in gaps if g.gap_type == gap_type]
             report['gap_summary'][gap_type.value] = {
@@ -1038,7 +1038,7 @@ class DataCleaner:
                 'total_size': sum((g.gap_size for g in gap_type_gaps)),
                 'avg_size': np.mean([g.gap_size for g in gap_type_gaps]) if gap_type_gaps else 0
             }
-            
+
         for gap in gaps:
             report['gap_details'].append({
                 'start_time': gap.start_time,
@@ -1048,31 +1048,31 @@ class DataCleaner:
                 'filled': gap.filled,
                 'fill_method': gap.fill_method
             })
-            
+
         return report
 
     def get_outlier_report(self) -> Dict[str, Any]:
         """Generate comprehensive outlier report."""
         if not self.outlier_history:
             return {'message': 'No outliers detected'}
-            
+
         severity_counts = {}
         column_counts = {}
         method_counts = {}
-        
+
         for outlier in self.outlier_history:
             severity = outlier.severity.value
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
-            
+
             column = outlier.column
             if column not in column_counts:
                 column_counts[column] = {'count': 0, 'total_values': 0}
             column_counts[column]['count'] += 1
             column_counts[column]['total_values'] += len(outlier.indices)
-            
+
             method = outlier.method
             method_counts[method] = method_counts.get(method, 0) + 1
-            
+
         return {
             'timestamp': datetime.now().isoformat(),
             'total_outlier_groups': len(self.outlier_history),
@@ -1096,7 +1096,7 @@ class DataCleaner:
                        timestamp_column: str = 'timestamp', symbol: str = None,
                        exchange: str = None, timeframe: str = None) -> Optional[pd.DataFrame]:
         """Clean dataframe with comprehensive data quality improvements.
-        
+
         Args:
             data: DataFrame to clean
             remove_constant_features: Whether to remove constant features
@@ -1106,42 +1106,42 @@ class DataCleaner:
             symbol: Trading symbol for data collection hooks
             exchange: Exchange name for data collection hooks
             timeframe: Timeframe for data collection hooks
-            
+
         Returns:
             Cleaned DataFrame or None if cleaning failed
         """
         if data is None or data.empty:
             self.logger.warning("⚠️ Input data is None or empty, returning None")
             return None
-            
+
         self.logger.info(f"🧹 Starting data cleaning for {len(data)} rows, {len(data.columns)} columns")
         self.logger.info(f"   Data type: {self.data_type}")
         self.logger.info(f"   Gap thresholds: {self.gap_thresholds}")
-        
+
         cleaned_data = data.copy()
         original_columns = set(cleaned_data.columns)
         removed_columns = []
-        
+
         try:
             # 1. Remove constant features with adequate warnings
             if remove_constant_features:
                 self.logger.info("🔍 Checking for constant features...")
                 constant_features = self._identify_constant_features(cleaned_data)
-                
+
                 if constant_features:
                     self.logger.warning(f"⚠️ CONSTANT FEATURES DETECTED: {len(constant_features)} features with no variation")
                     self.logger.warning(f"   Constant features: {constant_features}")
                     self.logger.warning("   ⚠️ WARNING: Removing constant features may impact model performance")
                     self.logger.warning("   ⚠️ WARNING: Consider investigating data source for proper feature calculation")
                     self.logger.warning("   ⚠️ WARNING: This may indicate data processing pipeline issues")
-                    
+
                     # Remove constant features
                     cleaned_data = cleaned_data.drop(columns=constant_features)
                     removed_columns.extend(constant_features)
                     self.logger.info(f"✅ Removed {len(constant_features)} constant features")
                 else:
                     self.logger.info("✅ No constant features detected")
-            
+
             # 2. Remove duplicates
             if remove_duplicates:
                 initial_rows = len(cleaned_data)
@@ -1152,63 +1152,63 @@ class DataCleaner:
                 duplicates_removed = initial_rows - len(cleaned_data)
                 if duplicates_removed > 0:
                     self.logger.info(f"✅ Removed {duplicates_removed} duplicate rows")
-            
+
             # 3. Handle missing values with gap detection
             if handle_missing_values and timestamp_column in cleaned_data.columns:
                 self.logger.info("🔍 Handling missing values and detecting gaps...")
                 cleaned_data = await self.handle_missing_values_intelligently(
                     cleaned_data, timestamp_column, symbol, exchange, timeframe
                 )
-                
+
                 # Log gap detection results
                 gap_report = self.get_gap_report(cleaned_data, timestamp_column)
                 if gap_report['total_gaps'] > 0:
                     self.logger.warning(f"⚠️ GAP DETECTION: Found {gap_report['total_gaps']} gaps in data")
                     self.logger.warning(f"   Large gaps (triggering re-download): {gap_report.get('large_gaps', 0)}")
                     self.logger.warning(f"   Critical gaps: {gap_report.get('critical_gaps', 0)}")
-                    
+
                     # Hook with data collection for large gaps
                     if gap_report.get('large_gaps', 0) > 0 or gap_report.get('critical_gaps', 0) > 0:
                         self.logger.warning("🔄 LARGE GAPS DETECTED - Consider triggering data re-collection")
                         self.logger.warning("   Hook with data collection pipeline for missing data")
-                        
+
                         # Trigger gap collection hook if parameters are available
                         if symbol and exchange:
                             try:
                                 from src.utils.data.quality.gap_collection_hook import trigger_gap_collection
-                                
+
                                 # Create gap info for collection hook
                                 gap_info = {
                                     'gap_size': gap_report.get('max_gap_seconds', 0),
                                     'gap_type': 'large' if gap_report.get('large_gaps', 0) > 0 else 'critical',
                                     'total_gaps': gap_report.get('total_gaps', 0)
                                 }
-                                
+
                                 collection_result = trigger_gap_collection(
                                     gap_info, self.data_type, symbol, exchange, timeframe
                                 )
-                                
+
                                 if collection_result.get('triggered', False):
                                     self.logger.info("✅ Data collection hook triggered successfully")
                                 else:
                                     self.logger.warning(f"⚠️ Data collection hook not triggered: {collection_result.get('reason', 'Unknown')}")
-                                    
+
                             except Exception as e:
                                 self.logger.warning(f"⚠️ Failed to trigger gap collection hook: {e}")
                         else:
                             self.logger.warning("⚠️ Missing symbol/exchange parameters - cannot trigger data collection hook")
-            
+
             # 4. Final validation
             final_columns = set(cleaned_data.columns)
             removed_columns.extend(original_columns - final_columns)
-            
+
             if removed_columns:
                 self.logger.warning(f"⚠️ SUMMARY: Removed {len(removed_columns)} columns during cleaning")
                 self.logger.warning(f"   Removed columns: {removed_columns}")
-            
+
             self.logger.info(f"✅ Data cleaning completed: {len(cleaned_data)} rows, {len(cleaned_data.columns)} columns")
             return cleaned_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Data cleaning failed: {e}")
             if self.raise_errors:
@@ -1296,13 +1296,12 @@ def validate_data_schema(data: pd.DataFrame, schema_name: str) -> Dict[str, Any]
 enhanced_missing_value_handler = DataCleaner()
 enhanced_outlier_handler = DataCleaner()
 
-
 class DataCleanerManager:
     """Centralized manager for DataCleaner instances to prevent duplicate initialization."""
-    
+
     _instance = None
     _lock = threading.Lock()
-    
+
     def __new__(cls):
         if cls._instance is None:
             with cls._lock:
@@ -1310,18 +1309,18 @@ class DataCleanerManager:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
         return cls._instance
-    
+
     def __init__(self):
         if not hasattr(self, '_initialized') or not self._initialized:
             self.logger = system_logger.getChild('DataCleanerManager')
             self._cleaners: Dict[str, DataCleaner] = {}
             self._initialized = True
             self.logger.info("🔧 DataCleanerManager initialized (singleton)")
-    
+
     def get_cleaner(self, data_type: str = 'klines', **kwargs) -> DataCleaner:
         """Get or create DataCleaner instance for specific data type."""
         start_time = time.time()
-        
+
         if data_type not in self._cleaners:
             with self._lock:
                 if data_type not in self._cleaners:
@@ -1335,23 +1334,21 @@ class DataCleanerManager:
         else:
             duration = time.time() - start_time
             self.logger.info(f"♻️ Reusing existing DataCleaner for '{data_type}' (took {duration:.3f}s)")
-        
+
         return self._cleaners[data_type]
-    
+
     def get_all_cleaners(self) -> Dict[str, DataCleaner]:
         """Get all created cleaners."""
         return self._cleaners.copy()
-    
+
     def clear_cleaners(self):
         """Clear all cleaners (for testing)."""
         with self._lock:
             self._cleaners.clear()
             self.logger.info("🧹 All DataCleaner instances cleared")
 
-
 # Global manager instance
 _data_cleaner_manager = DataCleanerManager()
-
 
 def get_data_cleaner(data_type: str = 'klines', **kwargs) -> DataCleaner:
     """Get DataCleaner instance through centralized manager."""

@@ -39,7 +39,7 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Pandas not available: {e}")
-    
+
     class _PDStub:
         class DataFrame:
             pass
@@ -104,12 +104,12 @@ def ensure_directory(path: Union[str, Path]) -> None:
 def safe_dataframe_operation(df: pd.DataFrame, operation: str, **kwargs) -> Any:
     """
     Safely perform operations on a DataFrame with error handling.
-    
+
     Args:
         df: DataFrame to operate on
         operation: Name of the operation to perform
         **kwargs: Additional arguments for the operation
-        
+
     Returns:
         Result of the operation or None if failed
     """
@@ -228,10 +228,10 @@ def create_fallback_decorator():
 
 class CommonOperations:
     """Consolidated common operations class."""
-    
+
     def __init__(self):
         self.logger = create_fallback_logger()
-    
+
     def safe_operation(self, operation: Callable, *args, **kwargs) -> Any:
         """Safely execute an operation with error handling."""
         try:
@@ -239,7 +239,7 @@ class CommonOperations:
         except Exception as e:
             self.logger.error(f"Error in operation {operation.__name__}: {e}")
             return None
-    
+
     def batch_operation(self, items: List[Any], operation: Callable, **kwargs) -> List[Any]:
         """Apply operation to a batch of items."""
         results = []

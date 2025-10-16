@@ -32,7 +32,7 @@ class ParallelProcessingOptimizer:
     """Parallel processing optimizer."""
     def __init__(self, max_workers=4):
         self.max_workers = max_workers
-    
+
     def optimize(self, func, items):
         """Optimize processing with parallel execution."""
         import concurrent.futures
@@ -99,12 +99,12 @@ class Step06ComprehensiveImplementation:
     """
     Comprehensive implementation of all step06 enhancements with extensive utility integration.
     """
-    
+
     def __init__(self, config: Dict[str, Any], utility_config: Optional[UtilityConfig] = None):
         """Initialize comprehensive step06 implementation with utility integration."""
         self.config = config
         self.logger = logger
-        
+
         # Initialize utility configuration
         self.utility_config = utility_config or UtilityConfig(
             enable_common_operations=True,
@@ -119,10 +119,10 @@ class Step06ComprehensiveImplementation:
             m1_memory_limit_gb=8.0,
             m1_max_workers=8
         )
-        
+
         # Utility services will be initialized when needed
         self.utility_container = None
-        
+
         # Initialize all components
         self.enhanced_feature_engineering = EnhancedFeatureEngineering(config)
         self.enhanced_feature_step = EnhancedFeatureEngineeringStep(config)
@@ -133,7 +133,7 @@ class Step06ComprehensiveImplementation:
             stop_loss_multiplier=self.label_params.stop_loss,
             transaction_cost=self.label_params.tx_cost
         )
-        
+
         # Enhanced performance tracking with utility metrics
         self.performance_metrics = {
             'total_execution_time': 0.0,
@@ -152,7 +152,7 @@ class Step06ComprehensiveImplementation:
             'chunks_processed': 0,
             'utility_operations_count': 0
         }
-        
+
         self.logger.info("🚀 Step06 Comprehensive Implementation with Utility Integration initialized")
         self.logger.info("   ✅ Enhanced feature engineering")
         self.logger.info("   ✅ Optimized triple barrier labeling")
@@ -165,66 +165,66 @@ class Step06ComprehensiveImplementation:
     async def initialize_utilities(self) -> None:
         """Initialize utility services for comprehensive processing."""
         start_time = time.time()
-        
+
         try:
             self.logger.info("🔧 Initializing utility services...")
             self.utility_container = await get_utility_container(self.utility_config)
-            
+
             # Test utility services
             if self.utility_config.enable_common_operations:
                 common_ops = self.utility_container.get_common_operations()
                 self.logger.debug("✅ Common operations service initialized")
-                
+
             if self.utility_config.enable_data_processing:
                 data_proc = self.utility_container.get_data_processing()
                 self.logger.debug("✅ Data processing service initialized")
-                
+
             if self.utility_config.enable_math_validation:
                 math_val = self.utility_container.get_math_validation()
                 self.logger.debug("✅ Math validation service initialized")
-                
+
             if self.utility_config.enable_parquet_utils:
                 parquet = self.utility_container.get_parquet()
                 self.logger.debug("✅ Parquet utilities service initialized")
-                
+
             if self.utility_config.enable_serialization:
                 serialization = self.utility_container.get_serialization()
                 self.logger.debug("✅ Serialization service initialized")
-                
+
             if self.utility_config.enable_m1_gpu:
                 m1_gpu = self.utility_container.get_m1_gpu()
                 self.logger.debug("✅ M1 GPU service initialized")
-                
+
             if self.utility_config.enable_m1_memory:
                 m1_memory = self.utility_container.get_m1_memory()
                 self.logger.debug("✅ M1 memory service initialized")
-                
+
             if self.utility_config.enable_m1_cpu:
                 m1_cpu = self.utility_container.get_m1_cpu()
                 self.logger.debug("✅ M1 CPU service initialized")
-            
+
             # Get health report
             health_report = self.utility_container.get_health_report()
             self.logger.info(f"🏥 Utility health status: {health_report['status']}")
             self.logger.info(f"   Healthy services: {health_report['healthy_services']}/{health_report['total_services']}")
-            
+
             self.performance_metrics['utility_initialization_time'] = time.time() - start_time
             self.logger.info(f"✅ Utility services initialized in {self.performance_metrics['utility_initialization_time']:.2f}s")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize utility services: {e}")
             self.performance_metrics['utility_errors'] += 1
             raise
 
-    async def run_comprehensive_pipeline(self, market_data: pd.DataFrame, 
+    async def run_comprehensive_pipeline(self, market_data: pd.DataFrame,
                                        target_data: Optional[pd.Series] = None) -> Dict[str, Any]:
         """
         Run the comprehensive step06 pipeline with all enhancements and utility integration.
-        
+
         Args:
             market_data: OHLCV market data
             target_data: Optional target data for optimization
-            
+
         Returns:
             Comprehensive results dictionary with utility integration
         """
@@ -232,10 +232,10 @@ class Step06ComprehensiveImplementation:
         self.logger.info("🚀 Starting comprehensive step06 pipeline with utility integration")
         self.logger.info(f"   Input data shape: {market_data.shape}")
         self.logger.info(f"   Target data provided: {target_data is not None}")
-        
+
         # Initialize utilities first
         await self.initialize_utilities()
-        
+
         results = {
             'pipeline_status': 'running',
             'input_data_info': {
@@ -252,28 +252,28 @@ class Step06ComprehensiveImplementation:
             'errors': [],
             'warnings': []
         }
-        
+
         try:
             # Step 1: Comprehensive validation
             validation_start = time.time()
             validation_results = await self._run_comprehensive_validation(market_data)
             validation_time = time.time() - validation_start
-            
+
             results['validation_results'] = validation_results
             self.performance_metrics['validation_time'] = validation_time
-            
+
             if not validation_results['is_valid']:
                 results['errors'].extend(validation_results['errors'])
                 results['pipeline_status'] = 'failed_validation'
                 # Ensure resources are released before returning
                 await self.cleanup()
                 return results
-            
+
             # Step 2: Enhanced feature engineering with utilities
             feature_start = time.time()
             enhanced_features = await self._create_enhanced_features_with_utilities(market_data)
             feature_time = time.time() - feature_start
-            
+
             results['feature_engineering_results'] = {
                 'enhanced_features': enhanced_features,
                 'features_created': len(enhanced_features.columns),
@@ -281,12 +281,12 @@ class Step06ComprehensiveImplementation:
             }
             self.performance_metrics['feature_engineering_time'] = feature_time
             self.performance_metrics['features_created'] = len(enhanced_features.columns)
-            
+
             # Step 3: Optimized labeling with utilities
             labeling_start = time.time()
             labels = await self._create_labels_with_utilities(market_data)
             labeling_time = time.time() - labeling_start
-            
+
             results['labeling_results'] = {
                 'labels': labels,
                 'labels_generated': len(labels.dropna()),
@@ -294,40 +294,40 @@ class Step06ComprehensiveImplementation:
             }
             self.performance_metrics['labeling_time'] = labeling_time
             self.performance_metrics['labels_generated'] = len(labels.dropna())
-            
+
             # Step 4: Memory optimization with utilities
             memory_start = time.time()
             memory_results = await self._optimize_memory_usage_with_utilities(enhanced_features, labels)
             memory_time = time.time() - memory_start
-            
+
             results['utility_integration_results']['memory_optimization'] = memory_results
             self.performance_metrics['data_processing_time'] += memory_time
-            
+
             # Step 5: Performance optimization with M1 utilities
             performance_start = time.time()
             performance_results = await self._optimize_performance_with_m1_utilities(enhanced_features, labels)
             performance_time = time.time() - performance_start
-            
+
             results['utility_integration_results']['performance_optimization'] = performance_results
             self.performance_metrics['data_processing_time'] += performance_time
-            
+
             # Step 6: Integration and final processing
             integration_results = await self._integrate_results_with_utilities(
                 enhanced_features, labels, market_data
             )
             results['integration_results'] = integration_results
-            
+
             # Update performance metrics
             total_time = time.time() - start_time
             self.performance_metrics['total_execution_time'] = total_time
             results['performance_metrics'] = self.performance_metrics.copy()
-            
+
             results['pipeline_status'] = 'completed'
             self.logger.info(f"✅ Comprehensive pipeline completed in {total_time:.2f}s")
             self.logger.info(f"   Features created: {self.performance_metrics['features_created']}")
             self.logger.info(f"   Labels generated: {self.performance_metrics['labels_generated']}")
             self.logger.info(f"   Validation errors: {self.performance_metrics['validation_errors']}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Comprehensive pipeline failed: {e}")
             results['pipeline_status'] = 'failed'
@@ -343,22 +343,22 @@ class Step06ComprehensiveImplementation:
                                                      common_ops, data_proc, math_val, parquet, serialization) -> pd.DataFrame:
         """Create enhanced features using utility services."""
         self.logger.info("🔧 Creating enhanced features with utility integration...")
-        
+
         try:
             # Use common operations for data validation
             if common_ops:
                 validation_result = common_ops.get_operation('validation', 'validate_dataframe')(market_data, ['open', 'high', 'low', 'close'])
                 if not validation_result:
                     raise ValueError("Data validation failed")
-            
+
             # Use data processing utilities for feature creation
             enhanced_features = market_data.copy()
-            
+
             if data_proc and data_proc.validator:
                 # Validate data quality before feature engineering
                 quality_report = data_proc.validator.validate_dataframe(enhanced_features)
                 self.logger.info(f"Data quality score: {quality_report.summary.get('data_quality_score', 0)}")
-            
+
             # Create features using math validation for safety
             if math_val:
                 # Price-based features with safe mathematical operations
@@ -368,7 +368,7 @@ class Step06ComprehensiveImplementation:
                     enhanced_features['close'],
                     default=0.0
                 )
-                
+
                 # Volatility features
                 enhanced_features['volatility'] = enhanced_features['close'].rolling(20).std()
                 enhanced_features['volatility_pct'] = safe_divide(
@@ -376,12 +376,12 @@ class Step06ComprehensiveImplementation:
                     enhanced_features['close'],
                     default=0.0
                 )
-                
+
                 # Momentum features - SAFE CALCULATION to prevent infinity from corrupted data
                 enhanced_features['momentum_5'] = self._calculate_safe_momentum(enhanced_features['close'], 5)
                 enhanced_features['momentum_10'] = self._calculate_safe_momentum(enhanced_features['close'], 10)
                 enhanced_features['momentum_20'] = self._calculate_safe_momentum(enhanced_features['close'], 20)
-            
+
             # Use data processing utilities for feature transformation
             if data_proc and data_proc.transformer:
                 # Add technical indicators
@@ -393,10 +393,10 @@ class Step06ComprehensiveImplementation:
                     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
                     rs = gain / loss
                     return 100 - (100 / (1 + rs))
-                
+
                 enhanced_features = data_proc.transformer.add_column(
-                    enhanced_features, 
-                    'rsi_14', 
+                    enhanced_features,
+                    'rsi_14',
                     calculate_rsi(enhanced_features['close'], 14)
                 )
                 enhanced_features = data_proc.transformer.add_column(
@@ -409,7 +409,7 @@ class Step06ComprehensiveImplementation:
                     'ema_12',
                     enhanced_features['close'].ewm(span=12).mean()
                 )
-            
+
             # Use serialization utilities to save intermediate results
             if serialization:
                 intermediate_file = Path('/tmp/step06_enhanced_features_intermediate.json')
@@ -421,12 +421,12 @@ class Step06ComprehensiveImplementation:
                 }
                 serialization.serializers['json'].save(feature_info, intermediate_file)
                 self.logger.debug(f"Feature info saved to {intermediate_file}")
-            
+
             self.performance_metrics['utility_operations_count'] += 1
             self.logger.info(f"✅ Enhanced features created with utilities: {len(enhanced_features.columns)} features")
-            
+
             return enhanced_features
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature engineering with utilities failed: {e}")
             self.performance_metrics['utility_errors'] += 1
@@ -437,7 +437,7 @@ class Step06ComprehensiveImplementation:
                                           common_ops, math_val, data_proc) -> pd.Series:
         """Create labels using utility services."""
         self.logger.info("🏷️ Creating labels with utility integration...")
-        
+
         try:
             # Use math validation for safe label calculations
             if math_val:
@@ -447,7 +447,7 @@ class Step06ComprehensiveImplementation:
                     if not np.isfinite(value):
                         raise ValueError(f"{name} is not finite: {value}")
                     return value
-                
+
                 # Calculate returns with safe division
                 returns = market_data['close'].pct_change()
                 # Vectorized, robust labeling using thresholds from OptimizedTripleBarrierLabeling to keep logic consistent
@@ -463,21 +463,21 @@ class Step06ComprehensiveImplementation:
                 labels[pos_mask] = 1.0
                 labels[neg_mask] = -1.0
                 labels[mid_mask] = 0.0
-                
+
                 # Use data processing utilities for label validation
                 if data_proc and data_proc.validator:
                     label_df = pd.DataFrame({'labels': labels})
                     quality_report = data_proc.validator.validate_dataframe(label_df)
                     self.logger.info(f"Label quality score: {quality_report.summary.get('data_quality_score', 0)}")
-                
+
                 self.performance_metrics['utility_operations_count'] += 1
                 self.logger.info(f"✅ Labels created with utilities: {len(labels.dropna())} valid labels")
-                
+
                 return labels
             else:
                 # Fallback to standard labeling
                 return self.optimized_labeling.create_labels(market_data)
-                
+
         except Exception as e:
             self.logger.error(f"❌ Label creation with utilities failed: {e}")
             self.performance_metrics['utility_errors'] += 1
@@ -488,14 +488,14 @@ class Step06ComprehensiveImplementation:
                                                   m1_memory, data_proc) -> Dict[str, Any]:
         """Optimize memory usage using M1 memory utilities."""
         self.logger.info("💾 Optimizing memory usage with M1 utilities...")
-        
+
         try:
             optimized_data = {
                 'features': features,
                 'labels': labels,
                 'memory_optimization_applied': False
             }
-            
+
             if m1_memory and getattr(m1_memory, 'memory_optimizer', None):
                 # Use M1 memory optimizer for chunked processing
                 chunk_size = self.utility_config.data_processing_chunk_size
@@ -514,9 +514,9 @@ class Step06ComprehensiveImplementation:
                 optimized_data['memory_optimization_applied'] = True
                 self.performance_metrics['utility_operations_count'] += 1
                 self.logger.info("✅ Memory optimization with M1 utilities completed")
-            
+
             return optimized_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Memory optimization with utilities failed: {e}")
             self.performance_metrics['utility_errors'] += 1
@@ -527,14 +527,14 @@ class Step06ComprehensiveImplementation:
                                                     m1_gpu, m1_cpu) -> Dict[str, Any]:
         """Optimize performance using M1 GPU and CPU utilities."""
         self.logger.info("⚡ Optimizing performance with M1 utilities...")
-        
+
         try:
             performance_results = {
                 'gpu_optimization_applied': False,
                 'cpu_optimization_applied': False,
                 'performance_metrics': {}
             }
-            
+
             # GPU optimization
             if m1_gpu and getattr(m1_gpu, 'gpu_manager', None):
                 # Use M1 GPU for tensor operations if applicable
@@ -544,17 +544,17 @@ class Step06ComprehensiveImplementation:
                     if torch.cuda.is_available() or getattr(torch.backends, 'mps', None):
                         feature_tensor = torch.tensor(features.select_dtypes(include=[np.number]).values, dtype=torch.float32)
                         feature_tensor = m1_gpu.gpu_manager.to_device(feature_tensor, "feature_processing")
-                        
+
                         # Perform some GPU-accelerated operations
                         if getattr(m1_gpu, 'performance_optimizer', None):
                             optimal_batch_size = m1_gpu.performance_optimizer.get_optimal_batch_size(tuple(feature_tensor.shape), operation_type="general")
                             performance_results['optimal_batch_size'] = int(optimal_batch_size)
-                        
+
                         performance_results['gpu_optimization_applied'] = True
                         self.logger.info("✅ GPU optimization applied")
                 except Exception as e:
                     self.logger.exception(f"GPU optimization failed: {e}")
-            
+
             # CPU optimization
             if m1_cpu and getattr(m1_cpu, 'cpu_optimizer', None):
                 # Use M1 CPU optimizer for parallel processing
@@ -562,20 +562,20 @@ class Step06ComprehensiveImplementation:
                     # Calculate optimal workers
                     optimal_workers = m1_cpu.cpu_optimizer.get_optimal_workers_for_task("general")
                     performance_results['optimal_workers'] = optimal_workers
-                    
+
                     # Use parallel processing for data operations
                     if getattr(m1_cpu, 'batch_processor', None):
                         optimal_batch_size = m1_cpu.batch_processor.calculate_optimal_batch_size(features.shape[0])
                         performance_results['cpu_optimal_batch_size'] = int(optimal_batch_size)
-                    
+
                     performance_results['cpu_optimization_applied'] = True
                     self.logger.info("✅ CPU optimization applied")
                 except Exception as e:
                     self.logger.exception(f"CPU optimization failed: {e}")
-            
+
             self.performance_metrics['utility_operations_count'] += 1
             return performance_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Performance optimization with utilities failed: {e}")
             self.performance_metrics['utility_errors'] += 1
@@ -629,11 +629,11 @@ class Step06ComprehensiveImplementation:
             return pd.Series(np.nan, index=prices.index, name=f'momentum_{period}')
 
     @inject_utilities('common_ops', 'serialization', 'parquet')
-    async def _integrate_results_with_utilities(self, enhanced_features: pd.DataFrame, labels: pd.Series, 
+    async def _integrate_results_with_utilities(self, enhanced_features: pd.DataFrame, labels: pd.Series,
                                               market_data: pd.DataFrame, common_ops, serialization, parquet) -> Dict[str, Any]:
         """Integrate all results using utility services."""
         self.logger.info("🔗 Integrating results with utility services...")
-        
+
         try:
             integration_results = {
                 'final_data_shape': enhanced_features.shape,
@@ -641,11 +641,11 @@ class Step06ComprehensiveImplementation:
                 'integration_timestamp': None,
                 'data_persistence': {}
             }
-            
+
             # Use common operations for timestamp
             if common_ops:
                 integration_results['integration_timestamp'] = common_ops.get_operation('datetime', 'get_current_datetime')().isoformat()
-            
+
             # Use serialization utilities to save final results
             if serialization:
                 try:
@@ -657,16 +657,16 @@ class Step06ComprehensiveImplementation:
                         'label_count': len(labels.dropna()),
                         'integration_timestamp': integration_results['integration_timestamp']
                     }
-                    
+
                     summary_file = Path('/tmp/step06_integration_summary.json')
                     serialization.serializers['json'].save(feature_summary, summary_file)
                     integration_results['data_persistence']['summary_saved'] = True
                     integration_results['data_persistence']['summary_file'] = str(summary_file)
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Failed to save integration summary: {e}")
                     integration_results['data_persistence']['summary_saved'] = False
-            
+
             # Use parquet utilities for data persistence
             if parquet and parquet.parquet_utils:
                 try:
@@ -701,22 +701,22 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
                     ParquetWriter.write_partitioned(enhanced_features, features_file, partition_size=500_000)
-                    
+
                     # Validate saved parquet file
                     validation_result = parquet.parquet_utils.validate_parquet_file(str(features_file))
                     integration_results['data_persistence']['features_saved'] = validation_result.get('valid', False)
                     integration_results['data_persistence']['features_file'] = str(features_file)
-                    
+
                 except Exception as e:
                     self.logger.warning(f"Failed to save enhanced features: {e}")
                     integration_results['data_persistence']['features_saved'] = False
-            
+
             self.performance_metrics['utility_operations_count'] += 1
             self.logger.info("✅ Results integration with utilities completed")
-            
+
             # Also attach final_data for downstream saving if needed
             try:
                 final_df = pd.concat([enhanced_features, labels.rename('label')], axis=1)
@@ -724,7 +724,7 @@ except ImportError:
             except Exception:
                 pass
             return integration_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Results integration with utilities failed: {e}")
             self.performance_metrics['utility_errors'] += 1
@@ -733,13 +733,13 @@ except ImportError:
     async def cleanup(self) -> None:
         """Clean up utility services and resources."""
         self.logger.info("🧹 Cleaning up utility services...")
-        
+
         try:
             if self.utility_container:
                 await self.utility_container.cleanup()
                 self.utility_container = None
                 self.logger.info("✅ Utility services cleaned up")
-            
+
             # Reset performance metrics
             self.performance_metrics = {
                 'total_execution_time': 0.0,
@@ -758,70 +758,70 @@ except ImportError:
                 'chunks_processed': 0,
                 'utility_operations_count': 0
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Cleanup failed: {e}")
 
     async def _run_comprehensive_validation(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run comprehensive validation on market data."""
         self.logger.info("🔍 Running comprehensive validation...")
-        
+
         validation_results = {
             'is_valid': True,
             'errors': [],
             'warnings': [],
             'validation_details': {}
         }
-        
+
         try:
             # Data quality validation
             data_quality = self._validate_data_quality(market_data)
             validation_results['validation_details']['data_quality'] = data_quality
-            
+
             if not data_quality['is_valid']:
                 validation_results['is_valid'] = False
                 validation_results['errors'].extend(data_quality['errors'])
-            
+
             # Financial parameter validation
             financial_validation = self._validate_financial_parameters()
             validation_results['validation_details']['financial_parameters'] = financial_validation
-            
+
             if not financial_validation['is_valid']:
                 validation_results['is_valid'] = False
                 validation_results['errors'].extend(financial_validation['errors'])
-            
+
             # Temporal validation
             temporal_validation = self._validate_temporal_consistency(market_data)
             validation_results['validation_details']['temporal_consistency'] = temporal_validation
-            
+
             if not temporal_validation['is_valid']:
                 validation_results['is_valid'] = False
                 validation_results['errors'].extend(temporal_validation['errors'])
-            
+
             self.logger.info(f"✅ Comprehensive validation completed: {'PASSED' if validation_results['is_valid'] else 'FAILED'}")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Validation failed: {e}")
             validation_results['is_valid'] = False
             validation_results['errors'].append(f"Validation error: {e}")
-        
+
         return validation_results
 
     def _validate_data_quality(self, data: pd.DataFrame) -> Dict[str, Any]:
         """Validate data quality."""
         errors = []
         warnings = []
-        
+
         # Check data shape
         if len(data) < 50:
             errors.append(f"Insufficient data: {len(data)} rows (minimum 50 required)")
-        
+
         # Check required columns
         required_columns = ['open', 'high', 'low', 'close']
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             errors.append(f"Missing required columns: {missing_columns}")
-        
+
         # Check for valid prices
         for col in required_columns:
             if col in data.columns:
@@ -829,14 +829,14 @@ except ImportError:
                     errors.append(f"Invalid prices in {col}: non-positive values found")
                 if data[col].isna().any():
                     errors.append(f"NaN values in {col}")
-        
+
         # Check for suspicious price movements
         if 'close' in data.columns:
             price_changes = data['close'].pct_change().abs()
             large_moves = (price_changes > 0.2).sum()
             if large_moves > len(data) * 0.01:  # More than 1% large moves
                 warnings.append(f"Suspicious price movements: {large_moves} moves >20%")
-        
+
         return {
             'is_valid': len(errors) == 0,
             'errors': errors,
@@ -851,7 +851,7 @@ except ImportError:
     def _validate_financial_parameters(self) -> Dict[str, Any]:
         """Validate financial parameters."""
         errors = []
-        
+
         # Validate labeling parameters
         try:
             # These will be validated by the OptimizedTripleBarrierLabeling constructor
@@ -859,7 +859,7 @@ except ImportError:
             self.logger.info("✅ Financial parameters validated successfully")
         except MathValidationError as e:
             errors.append(f"Financial parameter validation failed: {e}")
-        
+
         return {
             'is_valid': len(errors) == 0,
             'errors': errors,
@@ -874,12 +874,12 @@ except ImportError:
         """Validate temporal consistency."""
         errors = []
         warnings = []
-        
+
         if isinstance(data.index, pd.DatetimeIndex):
             # Check temporal ordering
             if not data.index.is_monotonic_increasing:
                 errors.append("Data index is not temporally ordered")
-            
+
             # Check for timestamp gaps
             time_diffs = data.index.to_series().diff().dt.total_seconds()
             expected_gap = time_diffs.median()
@@ -887,12 +887,12 @@ except ImportError:
             large_gaps = (time_diffs > threshold).sum()
             if large_gaps > 0:
                 warnings.append(f"Timestamp gaps detected: {large_gaps} gaps >0.5s")
-            
+
             # Check for duplicates
             duplicate_count = data.index.duplicated().sum()
             if duplicate_count > len(data) * 0.001:  # More than 0.1%
                 errors.append(f"Too many duplicate timestamps: {duplicate_count}")
-        
+
         return {
             'is_valid': len(errors) == 0,
             'errors': errors,
@@ -902,7 +902,7 @@ except ImportError:
     async def _run_enhanced_feature_engineering(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run enhanced feature engineering."""
         self.logger.info("🔧 Running enhanced feature engineering...")
-        
+
         try:
             # Extract technical indicators using batch processing
             lookback_periods = {
@@ -917,7 +917,7 @@ except ImportError:
                 'OBV': [10, 20, 50],
                 'MFI': [7, 14, 30]
             }
-            
+
             # Parallel indicator extraction for speed-up
             ppo = ParallelProcessingOptimizer(max_workers=self.utility_config.m1_max_workers)
 
@@ -933,15 +933,15 @@ except ImportError:
                 chunks
             )
             indicators = pd.concat(indicator_parts, axis=1)
-            
+
             # Create sophisticated interactions
             interactions = self.enhanced_feature_generation.utils.create_sophisticated_interactions(
                 indicators, current_idx=len(indicators) - 1
             )
-            
+
             # Combine results
             engineered_data = pd.concat([market_data, indicators, interactions], axis=1)
-            
+
             # Calculate statistics
             feature_cols = [col for col in engineered_data.columns if col not in market_data.columns]
             feature_stats = {
@@ -950,19 +950,19 @@ except ImportError:
                 'interaction_features': len([col for col in feature_cols if col.startswith(('poly_', 'cross_', 'pattern_', 'momentum_', 'regime_'))]),
                 'data_shape': engineered_data.shape
             }
-            
+
             self.logger.info(f"✅ Enhanced feature engineering completed")
             self.logger.info(f"   Technical indicators: {feature_stats['technical_indicators']}")
             self.logger.info(f"   Interaction features: {feature_stats['interaction_features']}")
             self.logger.info(f"   Total features: {feature_stats['total_features']}")
-            
+
             return {
                 'engineered_data': engineered_data,
                 'feature_statistics': feature_stats,
                 'features_created': len(feature_cols),
                 'processing_stats': self.enhanced_feature_generation.utils.get_processing_stats()
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced feature engineering failed: {e}")
             raise
@@ -970,11 +970,11 @@ except ImportError:
     async def _run_optimized_labeling(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Run optimized triple barrier labeling."""
         self.logger.info("🏷️ Running optimized triple barrier labeling...")
-        
+
         try:
             # Apply triple barrier labeling
             labeled_data = self.optimized_labeling.apply_triple_barrier_labeling_vectorized(market_data)
-            
+
             # Calculate labeling statistics
             label_distribution = labeled_data['label'].value_counts().to_dict()
             profit_stats = {
@@ -983,22 +983,22 @@ except ImportError:
                 'min_profit': labeled_data['potential_profit_pct'].min(),
                 'max_profit': labeled_data['potential_profit_pct'].max()
             }
-            
+
             # Calculate net profit after transaction costs
             long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
             short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
-            
+
             net_profit_stats = {
                 'long_mean_net_profit': long_profits.mean() if len(long_profits) > 0 else 0.0,
                 'short_mean_net_profit': short_profits.mean() if len(short_profits) > 0 else 0.0,
                 'overall_net_profit': labeled_data['potential_profit_pct'].mean()
             }
-            
+
             self.logger.info(f"✅ Optimized labeling completed")
             self.logger.info(f"   Labels generated: {len(labeled_data)}")
             self.logger.info(f"   Label distribution: {label_distribution}")
             self.logger.info(f"   Net profit: {net_profit_stats['overall_net_profit']:.4f}")
-            
+
             return {
                 'labeled_data': labeled_data,
                 'label_distribution': label_distribution,
@@ -1006,29 +1006,29 @@ except ImportError:
                 'net_profit_statistics': net_profit_stats,
                 'labels_generated': len(labeled_data)
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Optimized labeling failed: {e}")
             raise
 
-    async def _integrate_results(self, feature_results: Dict[str, Any], 
-                               labeling_results: Dict[str, Any], 
+    async def _integrate_results(self, feature_results: Dict[str, Any],
+                               labeling_results: Dict[str, Any],
                                market_data: pd.DataFrame) -> Dict[str, Any]:
         """Integrate feature engineering and labeling results."""
         self.logger.info("🔗 Integrating results...")
-        
+
         try:
             engineered_data = feature_results['engineered_data']
             labeled_data = labeling_results['labeled_data']
-            
+
             # Align data by index
             common_index = engineered_data.index.intersection(labeled_data.index)
             aligned_engineered = engineered_data.loc[common_index]
             aligned_labeled = labeled_data.loc[common_index]
-            
+
             # Combine engineered features with labels
             final_data = pd.concat([aligned_engineered, aligned_labeled[['label', 'potential_profit_pct']]], axis=1)
-            
+
             # Calculate final statistics
             integration_stats = {
                 'final_data_shape': final_data.shape,
@@ -1036,18 +1036,18 @@ except ImportError:
                 'samples_with_labels': len(final_data[final_data['label'] != 0]),
                 'data_alignment_success': len(common_index) / len(market_data)
             }
-            
+
             self.logger.info(f"✅ Results integration completed")
             self.logger.info(f"   Final data shape: {final_data.shape}")
             self.logger.info(f"   Features used: {integration_stats['features_used']}")
             self.logger.info(f"   Samples with labels: {integration_stats['samples_with_labels']}")
-            
+
             return {
                 'final_data': final_data,
                 'integration_statistics': integration_stats,
                 'alignment_success_rate': integration_stats['data_alignment_success']
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Results integration failed: {e}")
             raise
@@ -1060,25 +1060,25 @@ except ImportError:
         """Save comprehensive results to disk."""
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Save main results
         results_path = output_path / 'comprehensive_results.json'
         with open(results_path, 'w') as f:
             # Convert numpy arrays to lists for JSON serialization
             serializable_results = self._make_json_serializable(results)
             json.dump(serializable_results, f, indent=2, default=str)
-        
+
         # Save performance metrics
         metrics_path = output_path / 'performance_metrics.json'
         with open(metrics_path, 'w') as f:
             json.dump(self.performance_metrics, f, indent=2)
-        
+
         # Save final data if available
         if 'integration_results' in results and 'final_data' in results['integration_results']:
             final_data_path = output_path / 'final_engineered_data.parquet'
             final_reduced = reduce_dataframe_memory(results['integration_results']['final_data'])
             ParquetWriter.write_partitioned(final_reduced, final_data_path, partition_size=500_000)
-        
+
         self.logger.info(f"💾 Results saved to {output_path}")
 
     def _make_json_serializable(self, obj: Any) -> Any:
@@ -1104,14 +1104,14 @@ async def run_step06_comprehensive_example():
     # Create sample market data
     np.random.seed(42)
     dates = pd.date_range('2024-01-01', periods=1000, freq='1min')
-    
+
     # Generate realistic OHLCV data
     base_price = 100.0
     returns = np.random.normal(0, 0.001, 1000)
     prices = [base_price]
     for ret in returns[1:]:
         prices.append(prices[-1] * (1 + ret))
-    
+
     market_data = pd.DataFrame({
         'open': prices,
         'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
@@ -1119,11 +1119,11 @@ async def run_step06_comprehensive_example():
         'close': prices,
         'volume': np.random.uniform(1000, 10000, 1000)
     }, index=dates)
-    
+
     # Ensure OHLC consistency
     market_data['high'] = np.maximum(market_data['high'], np.maximum(market_data['open'], market_data['close']))
     market_data['low'] = np.minimum(market_data['low'], np.minimum(market_data['open'], market_data['close']))
-    
+
     # Configuration
     config = {
         'step06_feature_engineering': {
@@ -1134,7 +1134,7 @@ async def run_step06_comprehensive_example():
             'memory_limit_mb': 500
         }
     }
-    
+
     # Create utility configuration
     utility_config = UtilityConfig(
         enable_common_operations=True,
@@ -1149,20 +1149,20 @@ async def run_step06_comprehensive_example():
         m1_memory_limit_gb=4.0,
         m1_max_workers=4
     )
-    
+
     # Run comprehensive implementation with utility integration
     implementation = Step06ComprehensiveImplementation(config, utility_config)
-    
+
     try:
         results = await implementation.run_comprehensive_pipeline(market_data)
-        
+
         # Save results
         implementation.save_results(results)
-        
+
     finally:
         # Clean up utility services
         await implementation.cleanup()
-    
+
     # Print summary
     tprint("\n" + "="*80)
     tprint("STEP06 COMPREHENSIVE IMPLEMENTATION WITH UTILITY INTEGRATION SUMMARY")
@@ -1174,7 +1174,7 @@ async def run_step06_comprehensive_example():
     tprint(f"Validation Errors: {results['performance_metrics']['validation_errors']}")
     tprint(f"Utility Errors: {results['performance_metrics']['utility_errors']}")
     tprint(f"Utility Operations: {results['performance_metrics']['utility_operations_count']}")
-    
+
     # Utility integration results
     if 'utility_integration_results' in results:
         tprint("\n🔧 UTILITY INTEGRATION RESULTS:")
@@ -1186,13 +1186,13 @@ async def run_step06_comprehensive_example():
             perf_opt = utility_results['performance_optimization']
             tprint(f"   GPU Optimization Applied: {perf_opt.get('gpu_optimization_applied', False)}")
             tprint(f"   CPU Optimization Applied: {perf_opt.get('cpu_optimization_applied', False)}")
-    
+
     # Utility health report
     if 'utility_health_report' in results and results['utility_health_report']:
         health_report = results['utility_health_report']
         tprint(f"\n🏥 UTILITY HEALTH STATUS: {health_report['status']}")
         tprint(f"   Healthy Services: {health_report['healthy_services']}/{health_report['total_services']}")
-    
+
     if results['pipeline_status'] == 'completed':
         tprint("\n✅ All enhancements successfully implemented:")
         tprint("   ✅ Vectorized batch processing")
@@ -1205,7 +1205,7 @@ async def run_step06_comprehensive_example():
         tprint("   ✅ Mathematical safety utilities")
         tprint("   ✅ Utility integration with dependency injection")
         tprint("   ✅ M1 optimization for performance")
-    
+
     return results
 
 if __name__ == "__main__":
@@ -1213,16 +1213,16 @@ if __name__ == "__main__":
     asyncio.run(run_step06_comprehensive_example())
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1241,8 +1241,8 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

@@ -68,20 +68,20 @@ class ErrorCategory(Enum):
 def classify_error(error: Exception, context: str = "") -> Tuple[ErrorSeverity, ErrorCategory]:
     """
     Classify errors for appropriate handling using core error classes.
-    
+
     Args:
         error: The exception that occurred
         context: Additional context about where the error occurred
-        
+
     Returns:
         Tuple of (ErrorSeverity, ErrorCategory)
     """
     error_type = type(error).__name__
     error_msg = str(error).lower()
-    
+
     logger.debug(f"🔍 Classifying error: {error_type} in context: '{context}'")
     logger.debug(f"📋 Error message: {error_msg[:100]}...")
-    
+
     # Critical errors - map to core error classes
     if isinstance(error, (MemoryError, SystemError)):
         logger.critical(f"🚨 CRITICAL ERROR detected: {error_type} - System resource issue")
@@ -89,7 +89,7 @@ def classify_error(error: Exception, context: str = "") -> Tuple[ErrorSeverity, 
     if isinstance(error, (ValueError, KeyError)) and "data" in context.lower():
         logger.critical(f"🚨 CRITICAL ERROR detected: {error_type} - Data quality issue")
         return ErrorSeverity.CRITICAL, ErrorCategory.DATA_QUALITY
-    
+
     # High severity errors - map to core error classes
     if isinstance(error, (ValueError, KeyError, AttributeError)) and "data" in context.lower():
         logger.error(f"⚠️ HIGH SEVERITY ERROR detected: {error_type} - Data quality issue")
@@ -97,7 +97,7 @@ def classify_error(error: Exception, context: str = "") -> Tuple[ErrorSeverity, 
     if isinstance(error, (ValueError, KeyError, AttributeError)) and ("ml" in context.lower() or "model" in context.lower()):
         logger.error(f"⚠️ HIGH SEVERITY ERROR detected: {error_type} - ML training issue")
         return ErrorSeverity.HIGH, ErrorCategory.ML_TRAINING
-    
+
     # Medium severity errors
     if isinstance(error, (ImportError, ModuleNotFoundError)):
         logger.warning(f"⚠️ MEDIUM SEVERITY ERROR detected: {error_type} - External dependency issue")
@@ -108,7 +108,7 @@ def classify_error(error: Exception, context: str = "") -> Tuple[ErrorSeverity, 
     if "feature" in context.lower():
         logger.warning(f"⚠️ MEDIUM SEVERITY ERROR detected: {error_type} - Feature engineering issue")
         return ErrorSeverity.MEDIUM, ErrorCategory.FEATURE_ENGINEERING
-    
+
     # Default classification
     logger.info(f"ℹ️ Default classification applied: {error_type} - System resource issue")
     return ErrorSeverity.MEDIUM, ErrorCategory.SYSTEM_RESOURCE
@@ -116,24 +116,24 @@ def classify_error(error: Exception, context: str = "") -> Tuple[ErrorSeverity, 
 def handle_error_with_recovery(error: Exception, context: str, max_retries: int = 3) -> bool:
     """
     Handle errors with appropriate recovery strategies using core error handling.
-    
+
     Args:
         error: The exception that occurred
         context: Context where the error occurred
         max_retries: Maximum number of retry attempts
-        
+
     Returns:
         True if error was handled successfully, False otherwise
     """
     logger.info(f"🔄 Starting error recovery process for {type(error).__name__}")
     start_time = time.time()
-    
+
     severity, category = classify_error(error, context)
-    
+
     logger.error(f"🚨 {severity.value} ERROR in {category.value}: {error}")
     logger.error(f"📋 Context: {context}")
     logger.error(f"📋 Traceback: {traceback.format_exc()}")
-    
+
     if severity == ErrorSeverity.CRITICAL:
         logger.critical("💥 CRITICAL ERROR - System cannot continue safely")
         logger.critical("🛑 Initiating emergency shutdown procedures...")
@@ -150,51 +150,51 @@ def handle_error_with_recovery(error: Exception, context: str, max_retries: int 
 
 class RobustErrorHandler:
     """Robust error handling with automatic retry and fallback mechanisms."""
-    
+
     def __init__(self, max_retries: int = 3, retry_delay: float = 1.0):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.logger = logger.getChild('RobustErrorHandler')
-        
+
         self.logger.info(f"🚀 RobustErrorHandler initialized with max_retries={max_retries}, retry_delay={retry_delay}s")
         self.logger.debug("🔄 Error handler ready for robust error recovery operations")
-    
+
     def execute_with_retry(self, operation_name: str, operation_func: Callable, *args, **kwargs):
         """
         Execute an operation with automatic retry and fallback mechanisms.
-        
+
         Args:
             operation_name: Name of the operation for logging
             operation_func: Function to execute
             *args: Positional arguments for the function
             **kwargs: Keyword arguments for the function
-            
+
         Returns:
             Result of the operation or fallback result
         """
         self.logger.info(f"🚀 Starting retry execution for operation: {operation_name}")
         start_time = time.time()
-        
+
         for attempt in range(self.max_retries):
             attempt_start_time = time.time()
             self.logger.debug(f"🔄 Attempt {attempt + 1}/{self.max_retries} for {operation_name}")
-            
+
             try:
                 result = operation_func(*args, **kwargs)
                 attempt_time = time.time() - attempt_start_time
                 total_time = time.time() - start_time
-                
+
                 if attempt > 0:
                     self.logger.info(f"✅ Operation {operation_name} succeeded on attempt {attempt + 1} after {total_time:.3f}s")
                 else:
                     self.logger.debug(f"✅ Operation {operation_name} succeeded on first attempt in {attempt_time:.3f}s")
-                
+
                 return result
-                
+
             except MemoryError as e:
                 attempt_time = time.time() - attempt_start_time
                 self.logger.warning(f"🧠 Memory error in {operation_name} (attempt {attempt + 1}) after {attempt_time:.3f}s: {e}")
-                
+
                 if attempt < self.max_retries - 1:
                     self.logger.warning(f"🔄 Retrying {operation_name} with reduced data...")
                     # Reduce data size and retry
@@ -205,11 +205,11 @@ class RobustErrorHandler:
                 else:
                     self.logger.error(f"❌ Memory error in {operation_name} after {self.max_retries} attempts")
                     return self._get_fallback_result(operation_name)
-                    
+
             except asyncio.TimeoutError as e:
                 attempt_time = time.time() - attempt_start_time
                 self.logger.warning(f"⏰ Timeout error in {operation_name} (attempt {attempt + 1}) after {attempt_time:.3f}s: {e}")
-                
+
                 if attempt < self.max_retries - 1:
                     self.logger.warning(f"🔄 Retrying {operation_name} after timeout...")
                     time.sleep(self.retry_delay)
@@ -218,11 +218,11 @@ class RobustErrorHandler:
                 else:
                     self.logger.error(f"❌ Timeout error in {operation_name} after {self.max_retries} attempts")
                     return self._get_fallback_result(operation_name)
-                    
+
             except Exception as e:
                 attempt_time = time.time() - attempt_start_time
                 self.logger.warning(f"⚠️ Error in {operation_name} (attempt {attempt + 1}) after {attempt_time:.3f}s: {e}")
-                
+
                 if attempt < self.max_retries - 1:
                     self.logger.warning(f"🔄 Retrying {operation_name} in {self.retry_delay}s...")
                     time.sleep(self.retry_delay)
@@ -232,12 +232,12 @@ class RobustErrorHandler:
                     total_time = time.time() - start_time
                     self.logger.error(f"❌ Error in {operation_name} after {self.max_retries} attempts in {total_time:.3f}s: {e}")
                     return self._get_fallback_result(operation_name)
-    
+
     def _reduce_data_size(self, args: tuple) -> tuple:
         """Reduce data size for memory-constrained retries."""
         self.logger.debug("🔄 Reducing data size for memory-constrained retry...")
         reduced_args = []
-        
+
         for i, arg in enumerate(args):
             if isinstance(arg, (pd.DataFrame, np.ndarray)):
                 original_size = len(arg)
@@ -251,27 +251,27 @@ class RobustErrorHandler:
                 reduced_args.append(reduced_arg)
             else:
                 reduced_args.append(arg)
-        
+
         self.logger.debug(f"✅ Data size reduction completed for {len(args)} arguments")
         return tuple(reduced_args)
-    
+
     def _get_fallback_result(self, operation_name: str) -> Dict[str, Any]:
         """Get fallback result for failed operations."""
         self.logger.warning(f"🔄 Generating fallback result for failed operation: {operation_name}")
-        
+
         fallback_result = {
             'operation': operation_name,
             'status': 'failed',
             'fallback': True,
             'timestamp': datetime.now().isoformat()
         }
-        
+
         self.logger.info(f"✅ Fallback result generated for {operation_name}")
         return fallback_result
 
 class MLFailureHandler:
     """ML failure handler with intelligent fast fail mechanism."""
-    
+
     def __init__(self, max_failures: int = 5, critical_threshold: int = 2, recoverable_threshold: int = 3):
         self.max_failures = max_failures
         self.critical_threshold = critical_threshold
@@ -282,27 +282,27 @@ class MLFailureHandler:
         self.recoverable_failure_count = 0
         self.fast_fail_engaged = False
         self.logger = logger.getChild('MLFailureHandler')
-        
+
         self.logger.info(f"🚀 MLFailureHandler initialized:")
         self.logger.info(f"   📊 Max failures: {max_failures}")
         self.logger.info(f"   🚨 Critical threshold: {critical_threshold}")
         self.logger.info(f"   ⚠️ Recoverable threshold: {recoverable_threshold}")
         self.logger.debug("🔄 ML failure handler ready for intelligent failure management")
-    
+
     def handle_ml_failure(self, error_message: str, error_type: str = "UNKNOWN_ERROR") -> Dict[str, Any]:
         """
         Handle ML training failures with intelligent fast fail mechanism.
-        
+
         Args:
             error_message: Description of the error
             error_type: Type of error for classification
-            
+
         Returns:
             Fallback result or raises exception if fast fail is triggered
         """
         self.logger.info(f"🔄 Handling ML failure #{self.ml_failure_count + 1}: {error_type}")
         start_time = time.time()
-        
+
         self.ml_failure_count += 1
         failure_record = {
             'timestamp': datetime.now().isoformat(),
@@ -311,42 +311,42 @@ class MLFailureHandler:
             'failure_count': self.ml_failure_count
         }
         self.ml_failure_reasons.append(failure_record)
-        
+
         self.logger.debug(f"📊 Failure record added: {failure_record}")
-        
+
         # Classify failure severity - make bias detection more lenient
         critical_errors = ["DATA_UNAVAILABLE", "EMPTY_DATA"]
         recoverable_errors = ["FORWARD_BIAS_ERROR", "OPTUNA_ERROR", "CV_ERROR", "MODEL_FIT_ERROR", "ML_TRAINING_ERROR", "METHOD_VALIDATION_ERROR"]
-        
+
         is_critical = error_type in critical_errors
         is_recoverable = error_type in recoverable_errors
-        
+
         self.logger.debug(f"🔍 Failure classification: Critical={is_critical}, Recoverable={is_recoverable}")
-        
+
         if is_critical:
             self.critical_failure_count += 1
             self.logger.warning(f"🚨 Critical failure count increased to {self.critical_failure_count}")
         elif is_recoverable:
             self.recoverable_failure_count += 1
             self.logger.warning(f"⚠️ Recoverable failure count increased to {self.recoverable_failure_count}")
-        
+
         # Check if fast fail should be triggered
         should_fast_fail = (
             self.critical_failure_count >= self.critical_threshold or
             self.recoverable_failure_count >= self.recoverable_threshold or
             self.ml_failure_count >= self.max_failures
         )
-        
+
         self.logger.debug(f"🔍 Fast fail check: should_fail={should_fast_fail}, engaged={self.fast_fail_engaged}")
         self.logger.debug(f"📊 Current counts: Total={self.ml_failure_count}, Critical={self.critical_failure_count}, Recoverable={self.recoverable_failure_count}")
-        
+
         if should_fast_fail and not self.fast_fail_engaged:
             self.fast_fail_engaged = True
             self.logger.critical(f"🚨 FAST FAIL triggered after {self.ml_failure_count} ML failures")
             self.logger.critical(f"🚨 Critical: {self.critical_failure_count}, Recoverable: {self.recoverable_failure_count}")
             self.logger.critical("🛑 Raising RuntimeError to halt ML training pipeline")
             raise RuntimeError(f"Fast fail triggered after {self.ml_failure_count} ML training failures")
-        
+
         # Log the failure
         if is_critical:
             self.logger.error(f"❌ Critical ML failure #{self.ml_failure_count}: {error_message}")
@@ -354,16 +354,16 @@ class MLFailureHandler:
             self.logger.warning(f"⚠️ Recoverable ML failure #{self.ml_failure_count}: {error_message}")
         else:
             self.logger.info(f"ℹ️ ML failure #{self.ml_failure_count}: {error_message}")
-        
+
         processing_time = time.time() - start_time
         self.logger.debug(f"⏱️ ML failure handling completed in {processing_time:.3f}s")
-        
+
         return self._get_fallback_ml_result_with_failure_info(error_message, error_type)
-    
+
     def _get_fallback_ml_result_with_failure_info(self, error_message: str, error_type: str) -> Dict[str, Any]:
         """Get fallback ML result with detailed failure information."""
         self.logger.debug(f"🔄 Generating fallback ML result for failure: {error_type}")
-        
+
         fallback_result = {
             'direction_accuracy': 0.5,
             'volatility_mae': 0.1,
@@ -376,16 +376,16 @@ class MLFailureHandler:
             'failure_count': self.ml_failure_count,
             'fast_fail_enabled': self.fast_fail_engaged
         }
-        
+
         self.logger.info(f"✅ Fallback ML result generated with failure info")
         self.logger.debug(f"📊 Fallback result keys: {list(fallback_result.keys())}")
-        
+
         return fallback_result
-    
+
     def get_failure_summary(self) -> Dict[str, Any]:
         """Get a summary of all ML failures."""
         self.logger.info("📊 Generating ML failure summary...")
-        
+
         summary = {
             'total_failures': self.ml_failure_count,
             'critical_failures': self.critical_failure_count,
@@ -394,50 +394,50 @@ class MLFailureHandler:
             'failure_types': [f['error_type'] for f in self.ml_failure_reasons[-10:]],  # Last 10 failures
             'recent_failures': self.ml_failure_reasons[-5:]  # Last 5 failure details
         }
-        
+
         self.logger.info(f"📈 ML Failure Summary:")
         self.logger.info(f"   📊 Total failures: {summary['total_failures']}")
         self.logger.info(f"   🚨 Critical failures: {summary['critical_failures']}")
         self.logger.info(f"   ⚠️ Recoverable failures: {summary['recoverable_failures']}")
         self.logger.info(f"   🛑 Fast fail engaged: {summary['fast_fail_engaged']}")
         self.logger.info(f"   📋 Recent failure types: {summary['failure_types']}")
-        
+
         return summary
 
-def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.DataFrame] = None, 
+def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.DataFrame] = None,
                      drift_threshold: float = 0.1) -> Dict[str, Any]:
     """
     Detect data drift between current and reference datasets using statistical baselines.
-    
+
     Args:
         current_data: Current dataset
         reference_data: Reference dataset (optional)
         drift_threshold: Threshold for drift detection
-        
+
     Returns:
         Dictionary with drift detection results
     """
     logger.info("🔍 Starting data drift detection...")
     start_time = time.time()
-    
+
     drift_results = {
         'drift_detected': False,
         'drift_score': 0.0,
         'drift_details': {},
         'recommendations': []
     }
-    
+
     try:
         logger.debug(f"📊 Current data shape: {current_data.shape}")
         logger.debug(f"📊 Reference data: {'Provided' if reference_data is not None else 'Not provided'}")
         if reference_data is not None:
             logger.debug(f"📊 Reference data shape: {reference_data.shape}")
         logger.debug(f"📊 Drift threshold: {drift_threshold}")
-        
+
         # If no reference data, use statistical baselines
         if reference_data is None:
             logger.debug("🔄 Using statistical baselines for drift detection...")
-            
+
             # Use statistical baselines for common financial metrics
             baseline_stats = {
                 'close_mean': current_data['close'].mean() if 'close' in current_data.columns else 0.0,
@@ -445,9 +445,9 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.Da
                 'volume_mean': current_data['volume'].mean() if 'volume' in current_data.columns else 0.0,
                 'volume_std': current_data['volume'].std() if 'volume' in current_data.columns else 0.0
             }
-            
+
             logger.debug(f"📊 Baseline statistics: {baseline_stats}")
-            
+
             # Simple drift detection based on statistical properties
             current_stats = {
                 'close_mean': current_data['close'].mean() if 'close' in current_data.columns else 0.0,
@@ -455,9 +455,9 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.Da
                 'volume_mean': current_data['volume'].mean() if 'volume' in current_data.columns else 0.0,
                 'volume_std': current_data['volume'].std() if 'volume' in current_data.columns else 0.0
             }
-            
+
             logger.debug(f"📊 Current statistics: {current_stats}")
-            
+
             # Calculate drift score (simplified)
             drift_score = 0.0
             for key in baseline_stats:
@@ -465,14 +465,14 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.Da
                     drift_ratio = abs(current_stats[key] - baseline_stats[key]) / abs(baseline_stats[key])
                     drift_score += drift_ratio
                     logger.debug(f"📊 {key} drift ratio: {drift_ratio:.4f}")
-            
+
             drift_score /= len(baseline_stats)
             drift_results['drift_score'] = drift_score
             drift_results['drift_detected'] = drift_score > drift_threshold
-            
+
             logger.info(f"📊 Drift score: {drift_score:.4f} (threshold: {drift_threshold})")
             logger.info(f"🔍 Drift detected: {drift_results['drift_detected']}")
-            
+
             if drift_results['drift_detected']:
                 logger.warning("⚠️ Data drift detected - model retraining recommended")
                 drift_results['recommendations'].append("Consider retraining models due to data drift")
@@ -481,21 +481,21 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.Da
                 logger.info("✅ No significant data drift detected")
         else:
             logger.debug("🔄 Comparing with reference data...")
-            
+
             # Compare with reference data
             numeric_cols = current_data.select_dtypes(include=[np.number]).columns
             drift_detected = False
-            
+
             logger.debug(f"📊 Numeric columns to check: {list(numeric_cols)}")
-            
+
             for col in numeric_cols:
                 if col in reference_data.columns:
                     current_mean = current_data[col].mean()
                     reference_mean = reference_data[col].mean()
-                    
+
                     if reference_mean != 0:
                         drift_ratio = abs(current_mean - reference_mean) / abs(reference_mean)
-                        
+
                         if drift_ratio > drift_threshold:
                             drift_detected = True
                             drift_results['drift_details'][col] = {
@@ -506,23 +506,23 @@ def detect_data_drift(current_data: pd.DataFrame, reference_data: Optional[pd.Da
                             logger.warning(f"⚠️ Drift detected in {col}: ratio={drift_ratio:.4f}")
                         else:
                             logger.debug(f"✅ No drift in {col}: ratio={drift_ratio:.4f}")
-            
+
             drift_results['drift_detected'] = drift_detected
-            
+
             if drift_detected:
                 logger.warning("⚠️ Data drift detected - model retraining recommended")
                 drift_results['recommendations'].append("Data drift detected - consider model retraining")
             else:
                 logger.info("✅ No significant data drift detected")
-        
+
         processing_time = time.time() - start_time
         logger.info(f"✅ Data drift detection completed in {processing_time:.3f}s")
-        
+
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"❌ Data drift detection failed after {processing_time:.3f}s: {e}")
         drift_results['error'] = str(e)
-    
+
     return drift_results
 
 class PerformanceMonitor:

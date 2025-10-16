@@ -21,7 +21,7 @@ from ..clusters.hardware_service import HardwareService
 
 __all__ = [
     'NASTASClusteringComponent',
-    'NASTASClusteringConfig', 
+    'NASTASClusteringConfig',
     'ClusteringContext',
     'ClusteringService',
     'FeatureService',

@@ -285,7 +285,7 @@ class ComprehensiveGapFiller:
         try:
             # Use the enhanced Binance exchange client
             from src.exchange.binance import BinanceExchange
-            
+
             # Initialize Binance exchange
             binance_config = {
                 'binance_exchange': {
@@ -295,21 +295,21 @@ class ComprehensiveGapFiller:
                     'use_ccxt_fallback': True
                 }
             }
-            
+
             binance = BinanceExchange(binance_config)
-            
+
             # Initialize connection
             if not await binance.initialize():
                 self.logger.warning("Failed to initialize Binance exchange for aggtrades")
                 return []
-            
+
             # Fetch aggregate trades data
             aggtrades_data = await binance.get_aggregate_trades(
                 symbol=symbol,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms
             )
-            
+
             if aggtrades_data:
                 # Convert to standardized format
                 standardized_data = []
@@ -323,13 +323,13 @@ class ComprehensiveGapFiller:
                         'timestamp': trade.get('T'),
                         'is_buyer_maker': trade.get('m', False)
                     })
-                
+
                 self.logger.info(f"Downloaded {len(standardized_data)} aggtrades from regular API")
                 return standardized_data
             else:
                 self.logger.warning("No aggtrades data received from regular API")
                 return []
-                
+
         except Exception as e:
             self.logger.error(f"Error fetching aggtrades from regular API: {e}")
             return []
@@ -417,7 +417,6 @@ class ComprehensiveGapFiller:
         except Exception:
             return []
 
-
     async def _fetch_klines_data(
         self,
         symbol: str,
@@ -454,7 +453,7 @@ class ComprehensiveGapFiller:
 
         try:
             # Use the enhanced Binance exchange client
-            
+
             # Initialize Binance exchange
             binance_config = {
                 'binance_exchange': {
@@ -464,14 +463,14 @@ class ComprehensiveGapFiller:
                     'use_ccxt_fallback': True
                 }
             }
-            
+
             binance = BinanceExchange(binance_config)
-            
+
             # Initialize connection
             if not await binance.initialize():
                 self.logger.warning("Failed to initialize Binance exchange for klines")
                 return []
-            
+
             # Calculate number of klines needed based on time range and interval
             time_diff = gap_end - gap_start
             if interval == "1m":
@@ -482,14 +481,14 @@ class ComprehensiveGapFiller:
                 limit = min(int(time_diff.total_seconds() / 3600), 1000)
             else:
                 limit = 1000
-            
+
             # Fetch klines data
             klines_data = await binance.get_klines(
                 symbol=symbol,
                 interval=interval,
                 limit=limit
             )
-            
+
             if klines_data:
                 # Convert to standardized format
                 standardized_data = []
@@ -503,13 +502,13 @@ class ComprehensiveGapFiller:
                         'close': float(kline[4]),
                         'volume': float(kline[5])
                     })
-                
+
                 self.logger.info(f"Downloaded {len(standardized_data)} klines from regular API")
                 return standardized_data
             else:
                 self.logger.warning("No klines data received from regular API")
                 return []
-                
+
         except Exception as e:
             self.logger.error(f"Error fetching klines from regular API: {e}")
             return []
@@ -768,7 +767,7 @@ class ComprehensiveGapFiller:
 
                     # Save back in the same format
                     if file_path.suffix.lower() == ".parquet":
-                        standardized_parquet_handler.write_parquet_standardized(df_combined, 
+                        standardized_parquet_handler.write_parquet_standardized(df_combined,
                             file_path, compression="zstd", index = False
                         )
                     elif file_path.suffix.lower() == ".csv":
@@ -953,7 +952,7 @@ class ComprehensiveGapFiller:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
 
         logger = system_logger.getChild("ComprehensiveGapFiller")
-        
+
         gap_filling_start = datetime.now()
         logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
@@ -961,7 +960,7 @@ class ComprehensiveGapFiller:
         logger.info(f"⏱️  Call delay: {self.call_delay}s")
         logger.info(f"⏱️  Max consecutive empty: {self.max_consecutive_empty}")
         logger.info("-" * 60)
-        
+
         # Find all files for each data type - updated patterns to match actual file naming (lowercase exchange)
         aggtrades_pattern = f"aggtrades_{exchange.lower()}_{symbol}_*.parquet"
         aggtrades_csv_pattern = f"aggtrades_{exchange.lower()}_{symbol}_*.csv"
@@ -1067,7 +1066,7 @@ class ComprehensiveGapFiller:
         # Summary
         gap_filling_end = datetime.now()
         gap_filling_time = gap_filling_end - gap_filling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 COMPREHENSIVE GAP FILLING SUMMARY")
         logger.info(f"⏱️  Total processing time: {gap_filling_time}")
@@ -1078,18 +1077,18 @@ class ComprehensiveGapFiller:
         logger.info(f"❌ Gaps failed: {total_gaps_failed}")
         logger.info(f"📡 API calls made: {total_api_calls}")
         logger.info(f"📡 Successful API calls: {total_successful_calls}")
-        
+
         if total_gaps_found > 0:
             success_rate = (total_gaps_filled / total_gaps_found) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
-            
+
             if total_gaps_filled > 0:
                 logger.info("✅ GAP FILLING COMPLETED SUCCESSFULLY!")
             else:
                 logger.warning("⚠️  GAP FILLING COMPLETED WITH NO SUCCESSFUL FILLS!")
         else:
             logger.info("✅ NO GAPS FOUND - ALL DATA IS COMPLETE!")
-        
+
         if total_gaps_found > 0:
             return {
                 "files_processed": total_files_processed,
@@ -1127,4 +1126,3 @@ async def run_comprehensive_gap_filling_pipeline(
 
 if __name__ == "__main__":
     asyncio.run( run_comprehensive_gap_filling_pipeline())
-

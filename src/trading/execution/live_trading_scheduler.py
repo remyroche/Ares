@@ -5,7 +5,7 @@ This module provides a comprehensive live trading scheduler that coordinates
 the execution of the three-tier model system with different frequencies:
 
 - HMM (1h timeframe): Runs every 15 minutes with partial-bar nowcasting
-- Analyst (5m timeframe): Runs every 2 minutes  
+- Analyst (5m timeframe): Runs every 2 minutes
 - Tactician (1m timeframe): Runs every 30 seconds
 
 The scheduler ensures proper data flow between models and maintains
@@ -78,10 +78,10 @@ class ExecutionResult:
 class LiveTradingScheduler:
     """
     Live Trading Scheduler for coordinating HMM, Analyst, and Tactician execution.
-    
+
     Features:
     - HMM (1h timeframe): Runs every 15 minutes
-    - Analyst (5m timeframe): Runs every 2 minutes  
+    - Analyst (5m timeframe): Runs every 2 minutes
     - Tactician (1m timeframe): Runs every 30 seconds
     - Proper data flow between models
     - Hierarchical decision-making process
@@ -92,7 +92,7 @@ class LiveTradingScheduler:
     def __init__(self, symbol: str = "ETH", exchange: str = "binance"):
         """
         Initialize the live trading scheduler.
-        
+
         Args:
             symbol: Trading symbol
             exchange: Exchange name
@@ -100,7 +100,7 @@ class LiveTradingScheduler:
         self.symbol = symbol
         self.exchange = exchange
         self.logger = logger.getChild(f'{symbol}_{exchange}')
-        
+
         # Initialize partial-bar nowcaster for HMM
         self.nowcaster = create_partial_bar_nowcaster(
             base_timeframe="1h",
@@ -108,7 +108,7 @@ class LiveTradingScheduler:
             min_bar_completion=0.25,     # 25% minimum completion
             max_bar_completion=0.95      # 95% maximum completion
         )
-        
+
         # Model configurations
         self.model_configs = {
             ModelType.HMM: ModelConfig(
@@ -146,12 +146,12 @@ class LiveTradingScheduler:
                 }
             )
         }
-        
+
         # State management
         self.is_running = False
         self.start_time: Optional[datetime] = None
         self.execution_history: List[ExecutionResult] = []
-        
+
         # Model instances and data
         self.hmm_models = None
         self.analyst_models = None
@@ -159,11 +159,11 @@ class LiveTradingScheduler:
         self.hmm_data = None
         self.analyst_data = None
         self.tactician_data = None
-        
+
         # Callbacks
         self.on_execution_callbacks: List[Callable[[ExecutionResult], None]] = []
         self.on_error_callbacks: List[Callable[[Exception], None]] = []
-        
+
         tprint_info(f"🚀 Initialized Live Trading Scheduler for {symbol} on {exchange}")
         tprint_info("📊 Model Configuration:")
         for model_type, config in self.model_configs.items():
@@ -177,26 +177,26 @@ class LiveTradingScheduler:
 
         try:
             tprint_info("🚀 Starting Live Trading Scheduler...")
-            
+
             # Initialize partial-bar nowcaster
             await self.nowcaster.initialize()
-            
+
             # Initialize models
             await self._initialize_models()
-            
+
             # Set initial execution times
             self._schedule_initial_executions()
-            
+
             # Start scheduler loop
             self.is_running = True
             self.start_time = datetime.now()
-            
+
             # Start the main scheduler loop
             asyncio.create_task(self._scheduler_loop())
-            
+
             tprint_success("✅ Live Trading Scheduler started successfully")
             return True
-            
+
         except Exception as e:
             tprint_error(f"❌ Failed to start scheduler: {e}")
             self.is_running = False
@@ -209,10 +209,10 @@ class LiveTradingScheduler:
 
         tprint_info("🛑 Stopping Live Trading Scheduler...")
         self.is_running = False
-        
+
         # Wait for cleanup
         await asyncio.sleep(0.1)
-        
+
         tprint_success("✅ Live Trading Scheduler stopped")
         return True
 
@@ -220,18 +220,18 @@ class LiveTradingScheduler:
         """Initialize all models for live trading."""
         try:
             tprint_info("🔄 Initializing models for live trading...")
-            
+
             # Initialize HMM models
             await self._initialize_hmm_models()
-            
+
             # Initialize Analyst models
             await self._initialize_analyst_models()
-            
+
             # Initialize Tactician models
             await self._initialize_tactician_models()
-            
+
             tprint_success("✅ All models initialized successfully")
-            
+
         except Exception as e:
             tprint_error(f"❌ Model initialization failed: {e}")
             raise
@@ -240,15 +240,15 @@ class LiveTradingScheduler:
         """Initialize HMM models for regime detection."""
         try:
             from src.training.steps.model_training.simplified.hmm_training import HMMTrainingPipeline
-            
+
             config = self.model_configs[ModelType.HMM]
             self.hmm_models = HMMTrainingPipeline(
                 n_regimes=config.custom_params['n_regimes'],
                 n_features=config.custom_params['n_features']
             )
-            
+
             tprint_success("✅ HMM models initialized")
-            
+
         except Exception as e:
             tprint_error(f"❌ HMM model initialization failed: {e}")
             raise
@@ -257,11 +257,11 @@ class LiveTradingScheduler:
         """Initialize Analyst models for trade decisions."""
         try:
             from src.training.steps.model_training.analyst_ensemble_training import AnalystEnsembleTrainingStep
-            
+
             self.analyst_models = AnalystEnsembleTrainingStep()
-            
+
             tprint_success("✅ Analyst models initialized")
-            
+
         except Exception as e:
             tprint_error(f"❌ Analyst model initialization failed: {e}")
             raise
@@ -270,11 +270,11 @@ class LiveTradingScheduler:
         """Initialize Tactician models for timing decisions."""
         try:
             from src.training.steps.model_training.tactician_ensemble_training import TacticianEnsembleTrainingStep
-            
+
             self.tactician_models = TacticianEnsembleTrainingStep()
-            
+
             tprint_success("✅ Tactician models initialized")
-            
+
         except Exception as e:
             tprint_error(f"❌ Tactician model initialization failed: {e}")
             raise
@@ -282,7 +282,7 @@ class LiveTradingScheduler:
     def _schedule_initial_executions(self):
         """Schedule initial execution times for all models."""
         now = datetime.now()
-        
+
         for model_type, config in self.model_configs.items():
             if config.enabled:
                 # Schedule first execution immediately
@@ -294,32 +294,32 @@ class LiveTradingScheduler:
         while self.is_running:
             try:
                 current_time = datetime.now()
-                
+
                 # Check which models need to be executed
                 models_to_execute = []
                 for model_type, config in self.model_configs.items():
-                    if (config.enabled and 
-                        config.next_execution and 
+                    if (config.enabled and
+                        config.next_execution and
                         current_time >= config.next_execution):
-                        
+
                         # For HMM, check if regime evaluation should occur based on bar completion
                         if model_type == ModelType.HMM and config.custom_params.get('use_nowcasting', False):
                             should_evaluate = await self.nowcaster.should_evaluate_regime(current_time)
                             if not should_evaluate:
                                 tprint_debug("⏳ HMM evaluation skipped - insufficient bar completion")
                                 continue
-                        
+
                         models_to_execute.append(model_type)
-                
+
                 # Execute models in order of priority (HMM -> Analyst -> Tactician)
                 execution_order = [ModelType.HMM, ModelType.ANALYST, ModelType.TACTICIAN]
                 for model_type in execution_order:
                     if model_type in models_to_execute:
                         await self._execute_model(model_type)
-                
+
                 # Brief pause to prevent excessive CPU usage
                 await asyncio.sleep(1)
-                
+
             except Exception as e:
                 tprint_error(f"❌ Scheduler loop error: {e}")
                 await self._handle_error(e)
@@ -329,14 +329,14 @@ class LiveTradingScheduler:
         """Execute a specific model."""
         config = self.model_configs[model_type]
         execution_start = time.time()
-        
+
         try:
             tprint_info(f"🔄 Executing {model_type.value.upper()} model...")
-            
+
             # Update status
             config.last_execution = datetime.now()
             config.execution_count += 1
-            
+
             # Execute based on model type
             if model_type == ModelType.HMM:
                 result_data = await self._execute_hmm()
@@ -346,17 +346,17 @@ class LiveTradingScheduler:
                 result_data = await self._execute_tactician()
             else:
                 raise ValueError(f"Unknown model type: {model_type}")
-            
+
             # Update execution time
             execution_duration = time.time() - execution_start
             config.avg_execution_time = (
-                (config.avg_execution_time * (config.execution_count - 1) + execution_duration) 
+                (config.avg_execution_time * (config.execution_count - 1) + execution_duration)
                 / config.execution_count
             )
-            
+
             # Schedule next execution
             config.next_execution = datetime.now() + timedelta(seconds=config.execution_interval_seconds)
-            
+
             # Create execution result
             result = ExecutionResult(
                 model_type=model_type,
@@ -370,22 +370,22 @@ class LiveTradingScheduler:
                     'next_execution': config.next_execution
                 }
             )
-            
+
             # Update success count
             config.success_count += 1
-            
+
             # Store result
             self.execution_history.append(result)
-            
+
             # Trigger callbacks
             await self._trigger_execution_callbacks(result)
-            
+
             tprint_success(f"✅ {model_type.value.upper()} execution completed in {execution_duration:.2f}s")
-            
+
         except Exception as e:
             execution_duration = time.time() - execution_start
             config.failure_count += 1
-            
+
             # Create error result
             result = ExecutionResult(
                 model_type=model_type,
@@ -398,15 +398,15 @@ class LiveTradingScheduler:
                     'failure_count': config.failure_count
                 }
             )
-            
+
             # Store result
             self.execution_history.append(result)
-            
+
             # Trigger error callbacks
             await self._trigger_error_callbacks(e)
-            
+
             tprint_error(f"❌ {model_type.value.upper()} execution failed: {e}")
-            
+
             # Schedule next execution even on failure
             config.next_execution = datetime.now() + timedelta(seconds=config.execution_interval_seconds)
 
@@ -414,10 +414,10 @@ class LiveTradingScheduler:
         """Execute HMM model for regime detection with partial-bar nowcasting."""
         try:
             tprint_info("🔮 Executing HMM with partial-bar nowcasting...")
-            
+
             # Get complete hourly bars using nowcasting
             complete_bars = await self.nowcaster.get_complete_hourly_bars(n_bars=24)
-            
+
             if len(complete_bars) == 0:
                 tprint_warning("⚠️ No complete bars available for HMM evaluation")
                 return {
@@ -429,10 +429,10 @@ class LiveTradingScheduler:
                     'execution_time': datetime.now().isoformat(),
                     'error': 'No complete bars available'
                 }
-            
+
             # Create bar split for this evaluation
             bar_split = await self.nowcaster.create_bar_split()
-            
+
             # This would integrate with your HMM training pipeline
             # For now, return mock data with nowcasting information
             result = {
@@ -449,16 +449,16 @@ class LiveTradingScheduler:
                     'bar_split_time': bar_split.end_time.isoformat()
                 }
             }
-            
+
             # Store HMM data for other models
             self.hmm_data = result
-            
+
             # Update evaluation time
             await self.nowcaster.update_evaluation_time()
-            
+
             tprint_success(f"✅ HMM execution completed with {len(complete_bars)} complete bars")
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ HMM execution failed: {e}")
             raise
@@ -475,12 +475,12 @@ class LiveTradingScheduler:
                 'n_features': 300,
                 'execution_time': datetime.now().isoformat()
             }
-            
+
             # Store Analyst data for Tactician
             self.analyst_data = result
-            
+
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Analyst execution failed: {e}")
             raise
@@ -497,12 +497,12 @@ class LiveTradingScheduler:
                 'n_features': 50,
                 'execution_time': datetime.now().isoformat()
             }
-            
+
             # Store Tactician data
             self.tactician_data = result
-            
+
             return result
-            
+
         except Exception as e:
             tprint_error(f"❌ Tactician execution failed: {e}")
             raise
@@ -547,7 +547,7 @@ class LiveTradingScheduler:
         total_executions = sum(config.execution_count for config in self.model_configs.values())
         total_successes = sum(config.success_count for config in self.model_configs.values())
         total_failures = sum(config.failure_count for config in self.model_configs.values())
-        
+
         return {
             'is_running': self.is_running,
             'start_time': self.start_time,
@@ -612,21 +612,21 @@ async def start_live_trading_scheduler(
     error_callback: Optional[Callable] = None
 ) -> LiveTradingScheduler:
     """Start live trading scheduler with default settings."""
-    
+
     scheduler = create_live_trading_scheduler(symbol=symbol, exchange=exchange)
-    
+
     if execution_callback:
         scheduler.add_execution_callback(execution_callback)
-    
+
     if error_callback:
         scheduler.add_error_callback(error_callback)
-    
+
     success = await scheduler.start_scheduler()
     if success:
         tprint_success(f"✅ Live trading scheduler started for {symbol} on {exchange}")
     else:
         tprint_error(f"❌ Failed to start live trading scheduler")
-    
+
     return scheduler
 
 # Example usage
@@ -636,11 +636,11 @@ if __name__ == "__main__":
         tprint_info(f"📊 {result.model_type.value.upper()} execution completed: {result.status.value}")
         if result.result_data:
             tprint_info(f"   Duration: {result.execution_duration:.2f}s")
-    
+
     async def example_error_callback(error: Exception):
         """Example error callback."""
         tprint_error(f"❌ Scheduler error: {error}")
-    
+
     async def main():
         """Example main function."""
         scheduler = await start_live_trading_scheduler(
@@ -649,16 +649,16 @@ if __name__ == "__main__":
             execution_callback=example_execution_callback,
             error_callback=example_error_callback
         )
-        
+
         # Run for 5 minutes
         await asyncio.sleep(300)
-        
+
         # Get stats
         stats = scheduler.get_scheduler_stats()
         tprint_structured(stats, LogLevel.INFO)
-        
+
         # Stop scheduler
         await scheduler.stop_scheduler()
-    
+
     # Run example
     asyncio.run(main())

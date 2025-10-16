@@ -23,7 +23,6 @@ from ..core.tas_config import TASConfig, TASArchitectureType, TradingObjective
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class NeuralArchitectureConfig:
     """Configuration for neural architecture components."""
@@ -39,7 +38,6 @@ class NeuralArchitectureConfig:
     sequence_length: int = 20
     attention_heads: int = 4
     problem_type: str = "regression"
-
 
 class LSTMTradingModel(nn.Module):
     """LSTM-based trading model for time series forecasting."""
@@ -134,7 +132,6 @@ class LSTMTradingModel(nn.Module):
         output = self.output_layer(x)
 
         return output
-
 
 class AttentionTradingModel(nn.Module):
     """Attention-based trading model for capturing long-range dependencies."""
@@ -245,7 +242,6 @@ class AttentionTradingModel(nn.Module):
 
         return output
 
-
 class NeuralODETradingModel(nn.Module):
     """Neural ODE-based trading model for continuous-time modeling."""
 
@@ -331,7 +327,6 @@ class NeuralODETradingModel(nn.Module):
 
         return state
 
-
 class ODENet(nn.Module):
     """Neural ODE function representing dynamics."""
 
@@ -363,7 +358,6 @@ class ODENet(nn.Module):
             State derivative
         """
         return self.net(x)
-
 
 class NeuralStateSpaceModel(nn.Module):
     """Neural State Space model for regime detection."""
@@ -440,7 +434,6 @@ class NeuralStateSpaceModel(nn.Module):
 
         return observations, state_probabilities
 
-
 class HybridTreeNeuralModel(nn.Module):
     """Hybrid model combining tree-based and neural approaches."""
 
@@ -500,7 +493,6 @@ class HybridTreeNeuralModel(nn.Module):
 
         return output
 
-
 class TreeInspiredLayer(nn.Module):
     """Tree-inspired neural layer with splitting behavior."""
 
@@ -551,7 +543,6 @@ class TreeInspiredLayer(nn.Module):
         output = self.combine(combined)
 
         return output
-
 
 class TASNeuralModel(nn.Module):
     """Main neural model class for TAS that combines different architectures."""

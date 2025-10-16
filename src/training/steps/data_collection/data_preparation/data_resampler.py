@@ -17,8 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from src.utils.validation.unified_framework import (
-    handles_errors, 
-    validates, 
+    handles_errors,
+    validates,
     traced,
     ValidationLevel,
     comprehensive_data_validation,
@@ -44,7 +44,6 @@ sys.path.insert(0, str(project_root))
 from ..unified_resampler import UnifiedResampler
 
 logger = system_logger.getChild("DataPreparation")
-
 
 class DataPreparation:
     """Prepares data for step1_5_data_converter.py processing."""
@@ -441,21 +440,21 @@ class DataPreparation:
 
         """
         resampling_start = datetime.now()
-        
+
         if timeframes is None:
             timeframes = ["1m", "5m", "15m", "30m", "1h"]
-        
+
         # Use unified resampler
         try:
             import asyncio
             unified_resampler = UnifiedResampler()
-            
+
             # Run async function
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             result = loop.run_until_complete(
                 unified_resampler.resample_all_timeframes(
-                    symbol, exchange, 
+                    symbol, exchange,
                     source_timeframe="1m",
                     target_timeframes=[tf for tf in timeframes if tf != "1m"],
                     start_date=start_date,
@@ -463,20 +462,20 @@ class DataPreparation:
                 )
             )
             loop.close()
-            
+
             return result
-            
+
         except Exception as e:
             logger.exception(f"❌ Error using unified resampler: {e}")
             # Fallback to original implementation if needed
             return self._fallback_resample_all_timeframes(symbol, exchange, timeframes, start_date, end_date, create_partitions)
-    
+
     def _fallback_resample_all_timeframes(
         self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
     ) -> dict:
         """Fallback resampling implementation."""
         resampling_start = datetime.now()
-        
+
         if timeframes is None:
             timeframes = ["1m", "5m", "15m", "30m", "1h"]
 
@@ -551,7 +550,7 @@ class DataPreparation:
 
         resampling_end = datetime.now()
         resampling_time = resampling_end - resampling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 RESAMPLING SUMMARY")
         logger.info(f"⏱️  Total resampling time: {resampling_time}")
@@ -559,22 +558,22 @@ class DataPreparation:
         logger.info(f"📁 Resampled files created: {len(results.get('resampled_files', {}))}")
         logger.info(f"📁 Partitioned datasets created: {len(results.get('partitioned_datasets', {}))}")
         logger.info(f"✅ Success: {results.get('success', False)}")
-        
+
         if results.get('resampled_files'):
             logger.info("📊 RESAMPLED FILES CREATED:")
             for timeframe, file_path in results['resampled_files'].items():
                 logger.info(f"  • {timeframe}: {file_path}")
-        
+
         if results.get('partitioned_datasets'):
             logger.info("📁 PARTITIONED DATASETS CREATED:")
             for timeframe, dataset_path in results['partitioned_datasets'].items():
                 logger.info(f"  • {timeframe}: {dataset_path}")
-        
+
         if results.get('success'):
             logger.info("✅ RESAMPLING COMPLETED SUCCESSFULLY!")
         else:
             logger.error(f"❌ RESAMPLING FAILED: {results.get('error', 'Unknown error')}")
-        
+
         return results
 
     @validates()

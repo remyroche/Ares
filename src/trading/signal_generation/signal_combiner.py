@@ -75,13 +75,13 @@ class SignalCombiner:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the signal combiner.
-        
+
         Args:
             config: Configuration dictionary
         """
         self.config = config
         self.logger = logger.getChild('SignalCombiner')
-        
+
         # Combination parameters
         self.weights = CombinationWeights(
             analyst_weight=config.get('analyst_weight', 0.6),
@@ -90,7 +90,7 @@ class SignalCombiner:
             risk_adjustment_factor=config.get('risk_adjustment_factor', 0.8),
             regime_adjustment_factor=config.get('regime_adjustment_factor', 1.0)
         )
-        
+
         # Combination method
         self.combination_method = CombinationMethod(
             config.get('combination_method', 'weighted_average')
@@ -114,7 +114,7 @@ class SignalCombiner:
     async def initialize(self) -> bool:
         """
         Initialize the signal combiner.
-        
+
         Returns:
             bool: True if initialization successful
         """
@@ -167,23 +167,23 @@ class SignalCombiner:
     ) -> Optional[Dict[str, Any]]:
         """
         Combine Analyst and Tactician signals.
-        
+
         Args:
             analyst_signal: Signal from Analyst component
             tactician_signal: Signal from Tactician component
             additional_context: Additional context for combination
-            
+
         Returns:
             Combined signal result or None if no valid combination
         """
         try:
             tprint_info("🔄 Combining Analyst and Tactician signals...")
-            
+
             # Validate inputs
             if not analyst_signal and not tactician_signal:
                 tprint_warning("⚠️ No signals provided for combination")
                 return None
-            
+
             # Perform signal combination based on method
             if self.combination_method == CombinationMethod.WEIGHTED_AVERAGE:
                 combined_signal = await self._weighted_average_combination(
@@ -210,20 +210,20 @@ class SignalCombiner:
                 combined_signal = await self._weighted_average_combination(
                     analyst_signal, tactician_signal, additional_context
                 )
-            
+
             if combined_signal:
                 # Store combination in history
                 self._store_combination(combined_signal)
                 self.combination_count += 1
-                
+
                 tprint_success(f"✅ Combined signal generated: {combined_signal.action.value} "
                              f"(confidence: {combined_signal.confidence:.3f})")
-                
+
                 # Return as dictionary for compatibility
                 return self._signal_to_dict(combined_signal)
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ Signal combination failed: {e}")
             return None
@@ -334,37 +334,37 @@ class SignalCombiner:
             # Use confidence scores as weights
             analyst_confidence = analyst_signal.confidence_score if analyst_signal else 0.0
             tactician_confidence = tactician_signal.confidence_score if tactician_signal else 0.0
-            
+
             total_confidence = analyst_confidence + tactician_confidence
             if total_confidence == 0:
                 return None
-            
+
             # Normalize confidence scores to weights
             analyst_weight = analyst_confidence / total_confidence
             tactician_weight = tactician_confidence / total_confidence
-            
+
             # Combined confidence is the weighted average
             combined_confidence = (
-                analyst_confidence * analyst_weight + 
+                analyst_confidence * analyst_weight +
                 tactician_confidence * tactician_weight
             )
-            
+
             # Check confidence threshold
             if combined_confidence < self.weights.confidence_threshold:
                 return None
-            
+
             # Determine action
             action = self._determine_combined_action(analyst_signal, tactician_signal)
-            
+
             # Calculate strength
             strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
-            
+
             # Calculate risk metrics
             risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
-            
+
             # Calculate position sizing
             position_sizing = self._calculate_position_sizing(tactician_signal)
-            
+
             return CombinedSignal(
                 timestamp=datetime.now(),
                 symbol=analyst_signal.symbol if analyst_signal else tactician_signal.symbol,
@@ -384,7 +384,7 @@ class SignalCombiner:
                     'additional_context': additional_context or {}
                 }
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Confidence weighted combination failed: {e}")
             return None
@@ -400,7 +400,7 @@ class SignalCombiner:
             # Analyst determines the overall direction
             if not analyst_signal:
                 return None
-            
+
             # Tactician provides timing and position sizing
             if not tactician_signal:
                 # Use analyst signal with default timing
@@ -410,20 +410,20 @@ class SignalCombiner:
                 # Combine with tactician timing
                 combined_confidence = min(analyst_signal.confidence_score, tactician_signal.confidence_score)
                 action = self._determine_combined_action(analyst_signal, tactician_signal)
-            
+
             # Check confidence threshold
             if combined_confidence < self.weights.confidence_threshold:
                 return None
-            
+
             # Calculate strength
             strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
-            
+
             # Calculate risk metrics
             risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
-            
+
             # Calculate position sizing
             position_sizing = self._calculate_position_sizing(tactician_signal)
-            
+
             return CombinedSignal(
                 timestamp=datetime.now(),
                 symbol=analyst_signal.symbol,
@@ -440,7 +440,7 @@ class SignalCombiner:
                     'additional_context': additional_context or {}
                 }
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Hierarchical combination failed: {e}")
             return None
@@ -456,11 +456,11 @@ class SignalCombiner:
             # Both signals must be present for consensus
             if not analyst_signal or not tactician_signal:
                 return None
-            
+
             # Check if signals agree on direction
             analyst_action = self._map_analyst_signal_to_action(analyst_signal.signal_type)
             tactician_action = self._map_tactician_signal_to_action(tactician_signal.timing_signal)
-            
+
             # Determine if there's consensus
             if analyst_action == tactician_action:
                 # Consensus reached
@@ -470,20 +470,20 @@ class SignalCombiner:
                 # No consensus - default to hold
                 combined_confidence = 0.3  # Low confidence for no consensus
                 action = CombinedAction.HOLD
-            
+
             # Check confidence threshold
             if combined_confidence < self.weights.confidence_threshold:
                 return None
-            
+
             # Calculate strength
             strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
-            
+
             # Calculate risk metrics
             risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
-            
+
             # Calculate position sizing
             position_sizing = self._calculate_position_sizing(tactician_signal)
-            
+
             return CombinedSignal(
                 timestamp=datetime.now(),
                 symbol=analyst_signal.symbol,
@@ -502,7 +502,7 @@ class SignalCombiner:
                     'additional_context': additional_context or {}
                 }
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Consensus combination failed: {e}")
             return None
@@ -519,28 +519,28 @@ class SignalCombiner:
             base_signal = await self._weighted_average_combination(
                 analyst_signal, tactician_signal, additional_context
             )
-            
+
             if not base_signal:
                 return None
-            
+
             # Apply risk adjustments
             risk_adjustment = self.weights.risk_adjustment_factor
-            
+
             # Adjust confidence based on risk metrics
             if base_signal.risk_metrics:
                 volatility_risk = base_signal.risk_metrics.get('volatility', 0.02)
                 liquidation_risk = base_signal.risk_metrics.get('liquidation_risk', 0.1)
-                
+
                 # Reduce confidence for high risk
                 risk_factor = 1.0 - (volatility_risk * 2 + liquidation_risk * 0.5)
                 risk_factor = max(0.1, min(1.0, risk_factor))
-                
+
                 base_signal.confidence *= risk_factor * risk_adjustment
-            
+
             # Check confidence threshold after risk adjustment
             if base_signal.confidence < self.weights.confidence_threshold:
                 return None
-            
+
             # Update metadata
             base_signal.combination_method = CombinationMethod.RISK_ADJUSTED
             base_signal.metadata['risk_adjustment'] = {
@@ -548,9 +548,9 @@ class SignalCombiner:
                 'volatility_risk': base_signal.risk_metrics.get('volatility', 0.0),
                 'liquidation_risk': base_signal.risk_metrics.get('liquidation_risk', 0.0)
             }
-            
+
             return base_signal
-            
+
         except Exception as e:
             self.logger.error(f"❌ Risk adjusted combination failed: {e}")
             return None
@@ -569,7 +569,7 @@ class SignalCombiner:
             tactician_action = self._map_tactician_signal_to_action(
                 tactician_signal.timing_signal if tactician_signal else TimingSignal.HOLD
             )
-            
+
             # Combine actions based on priority
             if analyst_action == CombinedAction.BUY and tactician_action in [CombinedAction.BUY, CombinedAction.HOLD]:
                 return CombinedAction.BUY
@@ -579,7 +579,7 @@ class SignalCombiner:
                 return CombinedAction.CLOSE
             else:
                 return CombinedAction.HOLD
-                
+
         except Exception as e:
             self.logger.error(f"❌ Action determination failed: {e}")
             return CombinedAction.HOLD
@@ -615,7 +615,7 @@ class SignalCombiner:
         try:
             analyst_strength = analyst_signal.signal_strength.value if analyst_signal else 0.0
             tactician_strength = tactician_signal.confidence.value if tactician_signal else 0.0
-            
+
             # Map strength values to numeric
             strength_mapping = {
                 'weak': 0.25,
@@ -627,20 +627,20 @@ class SignalCombiner:
                 'very_strong': 1.0,
                 'very_high': 1.0
             }
-            
+
             analyst_numeric = strength_mapping.get(analyst_strength, 0.5)
             tactician_numeric = strength_mapping.get(tactician_strength, 0.5)
-            
+
             # Weighted average
             analyst_weight = self.weights.analyst_weight if analyst_signal else 0.0
             tactician_weight = self.weights.tactician_weight if tactician_signal else 0.0
-            
+
             total_weight = analyst_weight + tactician_weight
             if total_weight == 0:
                 return 0.5
-            
+
             return (analyst_numeric * analyst_weight + tactician_numeric * tactician_weight) / total_weight
-            
+
         except Exception as e:
             self.logger.error(f"❌ Strength calculation failed: {e}")
             return 0.5
@@ -653,7 +653,7 @@ class SignalCombiner:
         """Calculate combined risk metrics."""
         try:
             risk_metrics = {}
-            
+
             # Analyst risk metrics
             if analyst_signal:
                 risk_metrics.update({
@@ -661,13 +661,13 @@ class SignalCombiner:
                     'volatility': analyst_signal.volatility_score,
                     'liquidation_risk': analyst_signal.liquidation_risk_score
                 })
-            
+
             # Tactician risk metrics
             if tactician_signal:
                 risk_metrics.update(tactician_signal.risk_metrics)
-            
+
             return risk_metrics
-            
+
         except Exception as e:
             self.logger.error(f"❌ Risk metrics calculation failed: {e}")
             return {}
@@ -682,7 +682,7 @@ class SignalCombiner:
                     'leverage': 1.0,
                     'risk_per_trade': 0.02
                 }
-            
+
             sizing = tactician_signal.position_sizing
             return {
                 'recommended_size': sizing.recommended_size,
@@ -692,7 +692,7 @@ class SignalCombiner:
                 'kelly_fraction': sizing.kelly_fraction,
                 'confidence_multiplier': sizing.confidence_multiplier
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Position sizing calculation failed: {e}")
             return {
@@ -915,7 +915,7 @@ class SignalCombiner:
     def _store_combination(self, signal: CombinedSignal):
         """Store combination in history."""
         self.combination_history.append(signal)
-        
+
         # Maintain history size
         if len(self.combination_history) > self.max_history:
             self.combination_history.pop(0)
@@ -933,16 +933,16 @@ class SignalCombiner:
                 'action_distribution': {},
                 'avg_confidence': 0.0
             }
-        
+
         # Calculate action distribution
         action_distribution = {}
         for signal in self.combination_history:
             action = signal.action.value
             action_distribution[action] = action_distribution.get(action, 0) + 1
-        
+
         # Calculate average confidence
         avg_confidence = np.mean([s.confidence for s in self.combination_history])
-        
+
         return {
             'total_combinations': self.combination_count,
             'success_rate': self.successful_combinations / self.combination_count if self.combination_count > 0 else 0.0,

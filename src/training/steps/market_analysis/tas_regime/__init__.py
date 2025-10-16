@@ -90,60 +90,60 @@ __all__ = [
     'TreeArchitectureSearchEngine',
     'TASConfig', 'TASSearchConfig', 'TASOptimizationConfig',
     'TASResult', 'TASSearchResult', 'TASOptimizationResult',
-    
+
     # Trading-specific components
     'TASArchitectureType', 'TradingObjective', 'MarketRegime', 'MicroRegimeType',
     'AdvancedTradingArchitectureSearch', 'AdvancedTASResult',
     'TreeCVLSASearch', 'CVLSAResult',
     'MicroRegimeDetector', 'MicroRegimeDetectionResult',
     'TASNeuralModel', 'NeuralArchitectureConfig',
-    
+
     # Meta-learning
     'TreeMetaLearning', 'TreeMAML', 'TreePrototypicalNetwork',
     'FewShotTreeLearner', 'TreeFewShotAdapter',
     'ContinualTreeLearner', 'TreeEpisodicMemory',
-    
+
     # Search strategies
     'EvolutionaryTreeSearch', 'TreeGeneticAlgorithm',
     'BayesianTreeSearch', 'TreeBayesianOptimizer',
     'RLTreeSearch', 'TreeReinforcementLearner',
     'MultiObjectiveTreeSearch', 'TreeNSGA2',
-    
+
     # Optimization
     'TreeHardwareOptimizer', 'TreeMatrixOperations',
     'TreeMemoryOptimizer', 'TreeCacheManager',
     'TreeParallelOptimizer', 'TreeDistributedSearch',
-    
+
     # Uncertainty
     'TreeUncertaintyEstimator', 'TreeEnsembleUncertainty',
     'TreeConfidenceScorer', 'TreeReliabilityEstimator',
     'TreeRobustnessAnalyzer', 'TreeAdversarialTesting',
-    
+
     # Regime analysis
     'TreeRegimeAnalyzer', 'TreeRegimeDetector',
     'TreeRegimeOptimizer', 'TreeRegimeSelector',
     'TreeRegimeReporter', 'TreeRegimeVisualizer',
-    
+
     # Adaptation
     'TreeRealTimeAdapter', 'TreePerformanceMonitor',
     'TreeDynamicOptimizer', 'TreeAdaptiveSearch',
     'TreePerformanceTracker', 'TreeMetricsCollector',
-    
+
     # Evaluation
     'TreeEvaluator', 'TreePerformanceEvaluator',
     'TreeMultiObjectiveEvaluator',
     'TreeRegimeEvaluator', 'TreeRegimePerformanceAnalyzer',
     'TASEvaluator', 'EvaluationResult',
-    
+
     # Utilities
     'TreeUtils', 'TreeArchitectureUtils',
     'TreeVisualizer', 'TreeArchitectureVisualizer',
     'TreeLogger', 'TreeSearchLogger',
-    
+
     # Convenience functions
     'optimize_advanced_trading_architecture',
     'optimize_cvlSA_architecture',
-    
+
     # Configuration
     'DEFAULT_CONFIG'
 ]

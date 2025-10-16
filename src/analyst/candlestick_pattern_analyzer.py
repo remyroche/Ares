@@ -39,7 +39,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class CandlestickPatternAnalyzer:
@@ -50,7 +50,7 @@ class CandlestickPatternAnalyzer:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("CandlestickPatternAnalyzer")
-        
+
         # Pattern detection parameters
         self.pattern_config = config.get("candlestick_patterns", {})
         self.doji_threshold = self.pattern_config.get("doji_threshold", 0.1)
@@ -59,7 +59,7 @@ class CandlestickPatternAnalyzer:
         self.engulfing_ratio = self.pattern_config.get("engulfing_ratio", 1.1)
         self.tweezer_threshold = self.pattern_config.get("tweezer_threshold", 0.02)
         self.marubozu_threshold = self.pattern_config.get("marubozu_threshold", 0.1)
-        
+
         self.is_initialized = False
 
     @handles_errors(
@@ -700,16 +700,16 @@ def initialization_error(message: str) -> str:
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -728,8 +728,8 @@ def initialization_error(message: str) -> str:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -746,13 +746,13 @@ def initialization_error(message: str) -> str:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

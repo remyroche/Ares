@@ -40,7 +40,6 @@ _EXPORT_MAP: Dict[str, str] = {
     "TASEngine": "src.utils.nas_tas.core.tas_engine",
 }
 
-
 def __getattr__(name: str) -> Any:  # pragma: no cover - trivial wrapper
     """Lazily import NAS/TAS components on first attribute access."""
     if name in _EXPORT_MAP:

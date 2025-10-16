@@ -759,7 +759,6 @@ class OptimalRegimeClusteringOrchestrator:
                 'optimization_level': 'high' if self.use_matrix_optimization else 'standard'
             })
 
-
             # Create detailed cluster analysis
             detailed_analysis = self._create_detailed_cluster_analysis(clustering_result)
 

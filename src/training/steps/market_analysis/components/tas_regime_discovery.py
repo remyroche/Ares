@@ -19,38 +19,38 @@ import time
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 from src.utils.tprint import (
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
     tprint_success, tprint_progress, tprint_performance, tprint_timer
 )
 
 class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
     """
     TAS Regime Discovery Component.
-    
+
     Discovers market regimes using Tree-driven Advanced Statistics (TAS) with
     advanced tree-based learning, hardware optimization, and economic significance evaluation.
     """
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the TAS regime discovery component."""
         tprint_info("🚀 Initializing TAS Regime Discovery Component")
         tprint_debug(f"Configuration: {config}")
-        
+
         super().__init__(config)
         self.logger = system_logger.getChild('TASRegimeDiscovery')
         self._resources_to_cleanup = []
-        
+
         tprint_success("✅ TAS Regime Discovery Component initialized")
         tprint_info("🔧 Component ready for regime discovery")
-    
+
     def __enter__(self):
         """Context manager entry."""
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with resource cleanup."""
         self._cleanup_resources()
-        
+
     def _cleanup_resources(self):
         """Clean up any allocated resources."""
         try:
@@ -62,29 +62,29 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self._resources_to_cleanup.clear()
         except Exception as e:
             self.logger.warning(f"Error during resource cleanup: {e}")
-    
+
     def __del__(self):
         """Destructor with resource cleanup."""
         self._cleanup_resources()
-    
+
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         return ['tas_regime_discovery_result']
-    
+
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute TAS regime discovery.
-        
+
         Args:
             data: Market data for regime discovery
             pipeline_state: Current pipeline state
-            
+
         Returns:
             ComponentResult with TAS regime discovery results
         """
         tprint_info("🌳 Starting TAS Regime Discovery")
         self.logger.info('🌳 Starting TAS Regime Discovery')
-        
+
         try:
             # Resolve symbol from config or pipeline state
             tprint_debug("🔍 Resolving symbol configuration...")
@@ -95,7 +95,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tprint_error("❌ Symbol must be provided in config or pipeline state")
                 raise ValueError("Symbol must be provided in config or pipeline state")
             tprint_success(f"✅ Symbol resolved: {symbol}")
-                
+
             # Resolve timeframe from config or pipeline state
             tprint_debug("🔍 Resolving timeframe configuration...")
             timeframe = getattr(self.config, 'timeframe', None)
@@ -113,19 +113,19 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 tprint_error(f"❌ No market data available for symbol: {symbol}")
                 raise ValueError(f"No market data available for TAS regime discovery for symbol: {symbol}")
             tprint_success(f"✅ Market data loaded: {len(market_data)} rows")
-            
+
             # Configure TAS regime detection
             tprint_info("⚙️ Creating TAS configuration...")
             tas_config = self._create_tas_config(market_data, pipeline_state)
             tprint_success("✅ TAS configuration created")
-            
+
             # Perform TAS regime discovery
             tprint_info("🌳 Performing TAS regime discovery...")
             discovery_start_time = time.time()
             tas_result = await self._perform_tas_regime_discovery(market_data, tas_config)
             discovery_time = time.time() - discovery_start_time
             tprint_success(f"✅ TAS regime discovery completed in {discovery_time:.2f}s")
-            
+
             if not tas_result.success:
                 tprint_error(f"❌ TAS regime discovery failed: {tas_result.error_message}")
                 raise ValueError(f"TAS regime discovery failed: {tas_result.error_message}")
@@ -136,12 +136,12 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             regime_probabilities = tas_result.regime_probabilities
             unique_regimes = len(set(regime_predictions))
             tprint_success(f"✅ Extracted {unique_regimes} unique regimes")
-            
+
             # Calculate regime metrics
             tprint_info("📊 Calculating regime metrics...")
             regime_metrics = self._calculate_tas_regime_metrics(regime_predictions, tas_result)
             tprint_success("✅ Regime metrics calculated")
-            
+
             # Create regime characteristics for clustering
             tprint_info("🔍 Creating regime characteristics...")
             regime_characteristics = self._create_tas_regime_characteristics(
@@ -157,7 +157,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'total_samples': len(regime_predictions),
                     'regime_distribution': self._calculate_regime_distribution(regime_predictions),
                     'regime_characteristics': regime_characteristics,
-                    
+
                     # Enhanced TAS regime information
                     'tas_regime_info': {
                         'architecture_type': tas_result.metadata.get('architecture_type', 'TAS'),
@@ -170,7 +170,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'regime_stability_scores': tas_result.regime_stability_scores.tolist() if hasattr(tas_result, 'regime_stability_scores') else [],
                         'transition_probabilities': tas_result.transition_probabilities.tolist() if hasattr(tas_result, 'transition_probabilities') else []
                     },
-                    
+
                     'regime_metrics': regime_metrics,
                     'configuration': {
                         'symbol': symbol,
@@ -190,13 +190,13 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                         'discovery_time': discovery_time,
                         'tree_performance_metrics': tas_result.tree_performance_metrics if hasattr(tas_result, 'tree_performance_metrics') else {}
                     },
-                    
+
                     # Time-series regime assignments for clustering pipeline
                     'regime_assignments': regime_predictions.tolist() if hasattr(regime_predictions, 'tolist') else list(regime_predictions),
                     'regime_probabilities': regime_probabilities.tolist() if hasattr(regime_probabilities, 'tolist') else list(regime_probabilities)
                 }
             }
-            
+
             tprint_success(f"✅ TAS Regime Discovery completed: {unique_regimes} regimes discovered using advanced tree-based learning")
             self.logger.info(f'✅ TAS Regime Discovery completed: {unique_regimes} regimes discovered using advanced tree-based learning')
             return ComponentResult(
@@ -212,7 +212,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     'discovery_time': discovery_time
                 }
             )
-            
+
         except Exception as e:
             tprint_error(f"❌ TAS Regime Discovery failed: {e}")
             self.logger.error(f'❌ TAS Regime Discovery failed: {e}')
@@ -223,7 +223,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 artifacts={},
                 error_message=f"TAS regime discovery failed: {str(e)}"
             )
-    
+
     def _create_tas_config(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create TAS configuration based on data and pipeline state."""
         tprint_debug("⚙️ Creating TAS configuration...")
@@ -231,7 +231,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             # Calculate optimal parameters based on data size
             data_size = len(market_data)
             tprint_debug(f"📊 Data size: {data_size} rows")
-            
+
             # Determine number of regimes based on data characteristics
             if data_size < 1000:
                 n_regimes = 5
@@ -245,7 +245,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 n_regimes = 10
                 tree_depth = 8
                 n_estimators = 1000
-            
+
             tas_config = {
                 'n_regimes': n_regimes,
                 'primary_timeframe': getattr(self.config, 'timeframe', '15m'),
@@ -267,11 +267,11 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'enable_uncertainty_quantification': True,
                 'enable_multi_scale_analysis': True
             }
-            
+
             tprint_success(f"✅ TAS Configuration created: {n_regimes} regimes, depth={tree_depth}, estimators={n_estimators}")
             self.logger.info(f"📊 TAS Configuration: {n_regimes} regimes, depth={tree_depth}, estimators={n_estimators}")
             return tas_config
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Failed to create TAS config: {e}, using defaults")
             self.logger.warning(f"Failed to create TAS config: {e}, using defaults")
@@ -288,7 +288,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 'enable_economic_evaluation': True,
                 'enable_meta_learning': True
             }
-    
+
     async def _perform_tas_regime_discovery(self, market_data: pd.DataFrame, tas_config: Dict[str, Any]) -> Any:
         """Perform TAS regime discovery using the advanced TAS system."""
         try:
@@ -299,7 +299,7 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             from src.training.steps.market_analysis.tas_regime.core.tas_regime_config import (
                 TASRegimeConfig, TASArchitectureType
             )
-            
+
             # Create TAS configuration
             tas_regime_config = TASRegimeConfig(
                 n_regimes=tas_config.get('n_regimes', 8),
@@ -323,19 +323,19 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 enable_multi_scale_analysis=tas_config.get('enable_multi_scale_analysis', True),
                 primary_architecture=TASArchitectureType.HYBRID
             )
-            
+
             # Initialize TAS detector
             tas_detector = TASRegimeDetector(tas_regime_config)
-            
+
             # Perform regime detection
             tas_result = tas_detector.detect_regimes(
                 market_data,
                 optimize_performance=True,
                 enable_patchtst_enhancement=True
             )
-            
+
             return tas_result
-            
+
         except ImportError as e:
             self.logger.error(f"Failed to import TAS components: {e}")
             # Fallback to basic clustering if TAS components are not available
@@ -344,25 +344,25 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"TAS regime discovery failed: {e}")
             # Fallback to basic clustering
             return await self._fallback_regime_discovery(market_data, tas_config)
-    
+
     async def _fallback_regime_discovery(self, market_data: pd.DataFrame, tas_config: Dict[str, Any]) -> Any:
         """Fallback regime discovery using basic clustering."""
         try:
             from sklearn.cluster import KMeans
-            
+
             self.logger.warning("⚠️ Using fallback clustering for TAS regime discovery")
-            
+
             # Create basic features from OHLCV data
             features = self._create_basic_features(market_data)
-            
+
             # Perform clustering
             n_regimes = tas_config.get('n_regimes', 8)
             kmeans = KMeans(n_clusters=n_regimes, random_state=42)
             regime_predictions = kmeans.fit_predict(features)
-            
+
             # Create dummy probabilities
             regime_probabilities = np.random.dirichlet(np.ones(n_regimes), len(regime_predictions))
-            
+
             # Create a simple result object
             class FallbackResult:
                 def __init__(self, predictions, probabilities):
@@ -376,9 +376,9 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                     self.metadata = {'architecture_type': 'TAS_Fallback', 'method': 'kmeans'}
                     self.tree_performance_metrics = {}
                     self.error_message = None
-            
+
             return FallbackResult(regime_predictions, regime_probabilities)
-            
+
         except Exception as e:
             self.logger.error(f"Fallback regime discovery failed: {e}")
             # Return a failed result
@@ -386,38 +386,38 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
                 def __init__(self, error_msg):
                     self.success = False
                     self.error_message = error_msg
-            
+
             return FailedResult(str(e))
-    
+
     def _create_basic_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """Create basic features from OHLCV data for fallback clustering."""
         try:
             features = []
-            
+
             # Price-based features
             if 'close' in market_data.columns:
                 returns = market_data['close'].pct_change().fillna(0)
                 features.append(returns.values)
-                
+
                 # Volatility
                 volatility = returns.rolling(20).std().fillna(0)
                 features.append(volatility.values)
-                
+
                 # Moving averages
                 sma_20 = market_data['close'].rolling(20).mean().fillna(market_data['close'].iloc[0])
                 features.append((market_data['close'] / sma_20 - 1).values)
-                
+
                 # High-low spread
                 if 'high' in market_data.columns and 'low' in market_data.columns:
                     hl_spread = (market_data['high'] - market_data['low']) / market_data['close']
                     features.append(hl_spread.fillna(0).values)
-            
+
             # Volume features
             if 'volume' in market_data.columns:
                 volume_ma = market_data['volume'].rolling(20).mean().fillna(market_data['volume'].mean())
                 volume_ratio = market_data['volume'] / volume_ma
                 features.append(volume_ratio.fillna(1).values)
-            
+
             # Combine features
             if features:
                 feature_array = np.column_stack(features)
@@ -427,11 +427,11 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
             else:
                 # If no features could be created, return dummy features
                 return np.random.randn(len(market_data), 4)
-                
+
         except Exception as e:
             self.logger.warning(f"Failed to create basic features: {e}")
             return np.random.randn(len(market_data), 4)
-    
+
     async def _load_market_data(self, data: Any, symbol: Optional[str] = None) -> Optional[pd.DataFrame]:
         """Load and prepare market data for regime discovery."""
         try:
@@ -443,11 +443,11 @@ class TASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
 
                 # Try to load data using klines_parquet manager
                 from src.utils.data.klines_parquet import get_klines_manager
-                
+
                 # Load data logic would go here
                 # For now, return None as placeholder
                 return None
-                
+
         except Exception as e:
             self.logger.error(f"Failed to load market data: {e}")
             return None
@@ -479,15 +479,15 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
-    
+
     def _calculate_tas_regime_metrics(self, regime_predictions: np.ndarray, tas_result: Any) -> Dict[str, Any]:
         """Calculate TAS-specific regime metrics."""
         try:
             unique_regimes = set(regime_predictions)
             regime_counts = {regime: np.sum(regime_predictions == regime) for regime in unique_regimes}
-            
+
             metrics = {
                 'total_regimes': len(unique_regimes),
                 'total_samples': len(regime_predictions),
@@ -500,23 +500,23 @@ except ImportError:
                     'transition_stability': np.mean(np.diag(getattr(tas_result, 'transition_probabilities', np.eye(len(unique_regimes))/len(unique_regimes))))
                 }
             }
-            
+
             return metrics
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate TAS regime metrics: {e}")
             return {'total_regimes': 0, 'total_samples': 0, 'regime_distribution': {}}
-    
+
     def _create_tas_regime_characteristics(self, market_data: pd.DataFrame, regime_predictions: np.ndarray, tas_result: Any) -> Dict[str, Any]:
         """Create TAS regime characteristics for clustering."""
         try:
             regime_characteristics = {}
             unique_regimes = set(regime_predictions)
-            
+
             for regime_id in unique_regimes:
                 regime_mask = regime_predictions == regime_id
                 regime_data = market_data[regime_mask]
-                
+
                 if len(regime_data) > 0:
                     characteristics = {
                         'features': {
@@ -546,47 +546,47 @@ except ImportError:
                             'tree_depth': tas_result.metadata.get('tree_depth', 6) if hasattr(tas_result, 'metadata') else 6
                         }
                     }
-                    
+
                     regime_characteristics[f'regime_{regime_id}'] = characteristics
-            
+
             self.logger.info(f"✅ Created TAS regime characteristics for {len(regime_characteristics)} regimes")
             return regime_characteristics
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to create TAS regime characteristics: {e}")
             return {}
-    
+
     def _calculate_regime_distribution(self, regime_assignments: List[int]) -> Dict[str, float]:
         """Calculate the distribution of regime assignments."""
         if not regime_assignments:
             return {}
-        
+
         total_assignments = len(regime_assignments)
         regime_counts = {}
-        
+
         for assignment in regime_assignments:
             regime_counts[assignment] = regime_counts.get(assignment, 0) + 1
-        
+
         # Convert to percentages
         regime_distribution = {}
         for regime, count in regime_counts.items():
             key = f'regime_{regime}'
             regime_distribution[key] = (count / total_assignments) * 100
-        
+
         return regime_distribution
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -605,8 +605,8 @@ except ImportError:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
@@ -623,13 +623,13 @@ except ImportError:
             return data.rolling(window=window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
+
+    def _vectorbt_apply_operation(self, data: pd.Series, func,
                                  window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling apply operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return data.rolling(window=window).apply(func, **kwargs)
-        
+
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:

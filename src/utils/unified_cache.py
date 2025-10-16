@@ -39,7 +39,6 @@ try:  # pandas
 except Exception:  # pragma: no cover - optional
     pd = None  # type: ignore
 
-
 class UnifiedCache:
     """Unified cache with in-memory LRU and optional disk persistence."""
 
@@ -314,7 +313,6 @@ class UnifiedCache:
             return f"<async_like_{type(obj).__name__}>"
         return obj
 
-
 # Convenience factory for callers who only need a simple, namespaced cache
 def get_unified_cache(
     *,
@@ -333,7 +331,6 @@ def get_unified_cache(
         default_ttl_seconds=default_ttl_seconds,
         namespace=namespace,
     )
-
 
 def cached(
     ttl: Optional[int] = None,
@@ -383,4 +380,3 @@ def cached(
         return sync_wrapper  # type: ignore[return-value]
 
     return decorator
-

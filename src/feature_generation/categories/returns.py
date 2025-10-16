@@ -30,7 +30,7 @@ except ImportError:
 # Unified Vectorization Manager
 try:
     from ...utils.ml_common.unified_vectorization_manager import (
-        get_unified_vectorization_manager, UnifiedVectorizationManager, 
+        get_unified_vectorization_manager, UnifiedVectorizationManager,
         OperationType, OptimizationStrategy, OperationConfig
     )
     UNIFIED_VECTORIZATION_MANAGER_AVAILABLE = True
@@ -61,21 +61,21 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for return-based features with full VectorBT optimization."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT components
         self.rolling_optimizer = None
         self.unified_manager = None
-        
+
         # Initialize VectorBT Rolling Optimizer
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
@@ -83,7 +83,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 self.logger.info("✅ VectorBTRollingOptimizer initialized for returns features")
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
-        
+
         # Initialize Unified Vectorization Manager
         if UNIFIED_VECTORIZATION_MANAGER_AVAILABLE:
             try:
@@ -91,7 +91,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 self.logger.info("✅ UnifiedVectorizationManager initialized for returns features")
             except Exception as e:
                 self.logger.warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
-        
+
         # Performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -101,7 +101,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             'total_operations': 0,
             'total_time': 0.0
         }
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -121,11 +121,11 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     @classmethod
     def create_default(cls) -> 'ReturnsFeatureGenerator':
         return cls()
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -159,13 +159,13 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 returns[0] = np.nan
 
         return pd.Series(returns, index=data.index, name='returns_1')
-    
+
     def _calculate_returns(self, prices: np.ndarray, period: int = 1) -> np.ndarray:
         if len(prices) < period + 1:
             return np.full(len(prices), np.nan)
 
         prices_series = pd.Series(prices)
-        
+
         # Use Unified Vectorization Manager for optimized returns calculation
         if self.unified_manager and len(prices) > 50:
             try:
@@ -186,7 +186,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                     )
                 )
                 returns = returns_result.result
-                
+
                 self.performance_stats['unified_manager_operations'] += 1
                 return returns
             except Exception as e:
@@ -197,7 +197,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                             returns = prices_series.pct_change(periods=period).values
                         else:
                             returns = self.rolling_optimizer.rolling_apply(
-                                prices_series, 
+                                prices_series,
                                 lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan,
                                 window=period
                             ).values
@@ -219,11 +219,11 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 else:
                     # For multiple periods, use rolling operations
                     returns = self.rolling_optimizer.rolling_apply(
-                        prices_series, 
+                        prices_series,
                         lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == period and x.iloc[0] != 0 else np.nan,
                         window=period
                     ).values
-                
+
                 self.performance_stats['rolling_optimizer_operations'] += 1
                 return returns
             except Exception as e:
@@ -240,7 +240,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             except Exception as e:
                 self.logger.warning(f"VectorBT returns calculation failed: {e}, using numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
-        
+
         # Fallback to numpy
         returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
         returns[:period] = np.nan
@@ -263,15 +263,15 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
 
         super()._finalize_state(data, feature_data)
 
-    def generate_returns_features_batch(self, data: pd.DataFrame, 
+    def generate_returns_features_batch(self, data: pd.DataFrame,
                                       feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Generate multiple returns features in batch using VectorBT optimization.
-        
+
         Args:
             data: Input OHLCV data
             feature_configs: List of feature configuration dictionaries
-            
+
         Returns:
             DataFrame with generated features
         """
@@ -299,7 +299,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 return self._process_returns_features_individually(data, feature_configs)
         else:
             return self._fallback_batch_processing(data, feature_configs)
-    
+
     def _process_returns_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Process returns features individually as fallback when batch processing fails."""
         results = {}
@@ -307,33 +307,33 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             feature_name = config['name']
             feature_type = config.get('type', 'returns')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'returns':
                     period = params.get('period', 1)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         prices = data[column].values
                         returns = self._calculate_returns(prices, period)
                         results[feature_name] = pd.Series(returns, index=data.index)
-                
+
             except Exception as e:
                 self.logger.warning(f"Returns feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
-    
-    def _fallback_batch_processing(self, data: pd.DataFrame, 
+
+    def _fallback_batch_processing(self, data: pd.DataFrame,
                                  feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Fallback batch processing using individual feature generators."""
         results = {}
-        
+
         for config in feature_configs:
             feature_type = config.get('type', 'simple_returns')
             period = config.get('period', 1)
             window = config.get('window', 20)
-            
+
             try:
                 if feature_type == 'simple_returns':
                     generator = SimpleReturnsGenerator(period)
@@ -353,23 +353,23 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                     generator = SharpeRatioGenerator(window)
                 else:
                     continue
-                
+
                 feature_result = generator.generate_feature(data)
                 results[f"{feature_type}_{period}_{window}"] = feature_result
-                
+
             except Exception as e:
                 self.logger.warning(f"Feature generation failed for {feature_type}: {e}")
                 continue
-        
+
         return pd.DataFrame(results, index=data.index)
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()
-        
+
         if stats['total_operations'] > 0:
             stats['vectorbt_usage_percentage'] = (
-                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) / 
+                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) /
                 stats['total_operations'] * 100
             )
             stats['unified_manager_usage_percentage'] = (
@@ -382,19 +382,19 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
             stats['vectorbt_usage_percentage'] = 0
             stats['unified_manager_usage_percentage'] = 0
             stats['pandas_fallback_percentage'] = 0
-        
+
         return stats
 
 class LogReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Log Returns with different base calculations - VECTORIZED with VectorBT optimization."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 1,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Log Returns generator with VectorBT optimization.
-        
+
         Args:
             period: Return period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -402,13 +402,13 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"log_returns_{period}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -428,7 +428,7 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-        
+
         # Initialize VectorBT Rolling Optimizer
         self.rolling_optimizer = None
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
@@ -436,7 +436,7 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
             except Exception as e:
                 self.logger.warning(f"VectorBTRollingOptimizer initialization failed: {e}")
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -445,14 +445,14 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         """Generate log returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to pandas Series for VectorBT operations
         values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
-        
+
         # Vectorized log returns calculation with VectorBT optimization
         if len(values_series) < self.period + 1:
             return pd.Series(np.full(len(values_series), np.nan), index=data.index)
-        
+
         # Use VectorBT Rolling Optimizer for log returns calculation
         if self.rolling_optimizer and len(values_series) > 50:
             try:
@@ -463,43 +463,43 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
                 else:
                     # For multiple periods, use rolling operations
                     returns = self.rolling_optimizer.rolling_apply(
-                        values_series, 
+                        values_series,
                         lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
                         window=self.period
                     )
-                
+
                 # Apply log transformation to returns
                 log_returns = np.log(1 + returns)
                 return log_returns
-                
+
             except Exception as e:
                 self.logger.warning(f"VectorBT Rolling Optimizer log returns calculation failed: {e}, using numpy fallback")
-        
+
         # Fallback to numpy operations
         values = values_series.values
-        
+
         # Calculate log returns using numpy operations
         shifted_values = np.roll(values, self.period)
         shifted_values[:self.period] = np.nan  # Set initial values to NaN
-        
+
         # Avoid division by zero and log of zero
         ratio = values / shifted_values
         ratio = np.where(np.isfinite(ratio) & (ratio > 0), ratio, np.nan)
-        
+
         log_returns = np.log(ratio)
-        
+
         return pd.Series(log_returns, index=data.index)
 
 class SimpleReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Returns with different base calculations - VECTORIZED with VectorBT optimization."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 1,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Simple Returns generator with VectorBT optimization.
-        
+
         Args:
             period: Return period
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -507,13 +507,13 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"simple_returns_{period}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -533,7 +533,7 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
-        
+
         # Initialize VectorBT Rolling Optimizer
         self.rolling_optimizer = None
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
@@ -541,7 +541,7 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
             except Exception as e:
                 self.logger.warning(f"VectorBTRollingOptimizer initialization failed: {e}")
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -550,14 +550,14 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         """Generate simple returns based on the specified base calculation - VECTORIZED with VectorBT optimization."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to pandas Series for VectorBT operations
         values_series = base_values if isinstance(base_values, pd.Series) else pd.Series(base_values, index=data.index)
-        
+
         # Vectorized simple returns calculation with VectorBT optimization
         if len(values_series) < self.period + 1:
             return pd.Series(np.full(len(values_series), np.nan), index=data.index)
-        
+
         # Use VectorBT Rolling Optimizer for simple returns calculation
         if self.rolling_optimizer and len(values_series) > 50:
             try:
@@ -568,42 +568,42 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
                 else:
                     # For multiple periods, use rolling operations
                     simple_returns = self.rolling_optimizer.rolling_apply(
-                        values_series, 
+                        values_series,
                         lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
                         window=self.period
                     )
-                
+
                 return simple_returns
-                
+
             except Exception as e:
                 self.logger.warning(f"VectorBT Rolling Optimizer simple returns calculation failed: {e}, using numpy fallback")
-        
+
         # Fallback to numpy operations
         values = values_series.values
-        
+
         # Calculate simple returns using numpy operations
         shifted_values = np.roll(values, self.period)
         shifted_values[:self.period] = np.nan  # Set initial values to NaN
-        
+
         # Avoid division by zero
         simple_returns = np.where(
             np.isfinite(shifted_values) & (shifted_values != 0),
             (values - shifted_values) / shifted_values,
             np.nan
         )
-        
+
         return pd.Series(simple_returns, index=data.index)
 
 class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Cumulative Returns with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Cumulative Returns generator.
-        
+
         Args:
             window: Rolling window for cumulative returns
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -611,13 +611,13 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"cumulative_returns_{window}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -637,7 +637,7 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -646,40 +646,40 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         """Generate cumulative returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized cumulative returns calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate returns using vectorized operations
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
-        
+
         # Vectorized rolling cumulative returns calculation
         cumulative_returns = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_returns = returns[i-self.window+1:i+1]
             # Filter out NaN values
             valid_returns = window_returns[np.isfinite(window_returns)]
             if len(valid_returns) > 0:
                 cumulative_returns[i] = np.prod(1 + valid_returns) - 1
-        
+
         return pd.Series(cumulative_returns, index=data.index)
 
 class RollingReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Rolling Returns with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Rolling Returns generator.
-        
+
         Args:
             window: Rolling window for returns
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -687,13 +687,13 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"rolling_returns_{window}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -713,7 +713,7 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -722,34 +722,34 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
         """Generate rolling returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized rolling returns calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate rolling returns using vectorized operations
         rolling_returns = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_values = values[i-self.window:i+1]
             if np.isfinite(window_values[0]) and window_values[0] != 0:
                 rolling_returns[i] = (window_values[-1] - window_values[0]) / window_values[0]
-        
+
         return pd.Series(rolling_returns, index=data.index)
 
 class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Volatility with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Returns Volatility generator.
-        
+
         Args:
             window: Rolling window for volatility calculation
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -757,13 +757,13 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"returns_volatility_{window}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -783,7 +783,7 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -792,40 +792,40 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         """Generate returns volatility based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized returns volatility calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate returns using vectorized operations
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
-        
+
         # Vectorized rolling volatility calculation
         volatility = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_returns = returns[i-self.window+1:i+1]
             # Filter out NaN values
             valid_returns = window_returns[np.isfinite(window_returns)]
             if len(valid_returns) > 1:  # Need at least 2 values for std
                 volatility[i] = np.std(valid_returns, ddof=1)
-        
+
         return pd.Series(volatility, index=data.index)
 
 class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Skewness with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Returns Skewness generator.
-        
+
         Args:
             window: Rolling window for skewness calculation
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -833,13 +833,13 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"returns_skewness_{window}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -859,7 +859,7 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -868,21 +868,21 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
         """Generate returns skewness based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized returns skewness calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate returns using vectorized operations
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
-        
+
         # Vectorized rolling skewness calculation
         skewness = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_returns = returns[i-self.window+1:i+1]
             # Filter out NaN values
@@ -892,19 +892,19 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
                 std_ret = np.std(valid_returns, ddof=1)
                 if std_ret > 0:
                     skewness[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 3)
-        
+
         return pd.Series(skewness, index=data.index)
 
 class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Kurtosis with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Returns Kurtosis generator.
-        
+
         Args:
             window: Rolling window for kurtosis calculation
             base_calculation: Base calculation type (price_levels, returns_vwap, etc.)
@@ -912,13 +912,13 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"returns_kurtosis_{window}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -938,7 +938,7 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -947,21 +947,21 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
         """Generate returns kurtosis based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized returns kurtosis calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate returns using vectorized operations
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
-        
+
         # Vectorized rolling kurtosis calculation
         kurtosis = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_returns = returns[i-self.window+1:i+1]
             # Filter out NaN values
@@ -971,20 +971,20 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
                 std_ret = np.std(valid_returns, ddof=1)
                 if std_ret > 0:
                     kurtosis[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 4) - 3  # Excess kurtosis
-        
+
         return pd.Series(kurtosis, index=data.index)
 
 class SharpeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for Sharpe Ratio with different base calculations - VECTORIZED."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  window: int = 20,
                  risk_free_rate: float = 0.0,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize Sharpe Ratio generator.
-        
+
         Args:
             window: Rolling window for Sharpe ratio calculation
             risk_free_rate: Risk-free rate (annualized)
@@ -993,13 +993,13 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"sharpe_ratio_{window}_{risk_free_rate}_{base_calculation.value}",
             category=FeatureCategory.RETURNS,
@@ -1021,7 +1021,7 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.risk_free_rate = risk_free_rate
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1030,24 +1030,24 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
         """Generate Sharpe ratio based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
+
         # Convert to numpy array for vectorized operations
         values = base_values.values
-        
+
         # Vectorized Sharpe ratio calculation
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
-        
+
         # Calculate returns using vectorized operations
         returns = np.diff(values) / values[:-1]
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
-        
+
         # Calculate daily risk-free rate
         daily_rf_rate = self.risk_free_rate / 252
-        
+
         # Vectorized rolling Sharpe ratio calculation
         sharpe_ratio = np.full(len(values), np.nan)
-        
+
         for i in range(self.window, len(values)):
             window_returns = returns[i-self.window+1:i+1]
             # Filter out NaN values
@@ -1058,14 +1058,14 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
                 std_returns = np.std(valid_returns, ddof=1)
                 if std_returns > 0:
                     sharpe_ratio[i] = mean_excess / std_returns
-        
+
         return pd.Series(sharpe_ratio, index=data.index)
 
 # NEW FEATURES - Advanced Returns Analysis
 
 class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for cumulative returns over a specified window (enhanced version)."""
-    
+
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"advanced_cumulative_returns_{window}",
@@ -1081,19 +1081,19 @@ class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate cumulative returns
         cumulative_returns = np.full(len(close), np.nan)
         for i in range(self.window - 1, len(close)):
@@ -1101,12 +1101,12 @@ class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
             valid_returns = window_returns[np.isfinite(window_returns)]
             if len(valid_returns) > 0:
                 cumulative_returns[i] = np.prod(1 + valid_returns) - 1
-        
+
         return pd.Series(cumulative_returns, index=data.index)
 
 class RollingZScoreReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for rolling z-score of returns."""
-    
+
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"rolling_zscore_returns_{window}",
@@ -1122,19 +1122,19 @@ class RollingZScoreReturnsGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate rolling z-score
         z_scores = np.full(len(close), np.nan)
         for i in range(self.window - 1, len(close)):
@@ -1145,12 +1145,12 @@ class RollingZScoreReturnsGenerator(VectorizedFeatureGenerator):
                 std_return = np.std(valid_returns, ddof=1)
                 if std_return > 0:
                     z_scores[i] = (returns[i] - mean_return) / std_return
-        
+
         return pd.Series(z_scores, index=data.index)
 
 class ARCoefficientsGenerator(VectorizedFeatureGenerator):
     """Generator for AR(1) and AR(p) coefficients on returns."""
-    
+
     def __init__(self, order: int = 1, window: int = 20):
         config = FeatureConfig(
             name=f"ar_{order}_coefficients_{window}",
@@ -1167,27 +1167,27 @@ class ARCoefficientsGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.order = order
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + self.order:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate AR coefficients
         ar_coeffs = np.full(len(close), np.nan)
         residual_stds = np.full(len(close), np.nan)
-        
+
         for i in range(self.window + self.order - 1, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) >= self.order + 5:  # Need enough data for AR estimation
                 try:
                     # Simple AR(1) estimation using OLS
@@ -1197,18 +1197,18 @@ class ARCoefficientsGenerator(VectorizedFeatureGenerator):
                         if len(y) > 1 and np.std(x) > 0:
                             coeff = np.corrcoef(x, y)[0, 1] * (np.std(y) / np.std(x))
                             ar_coeffs[i] = coeff
-                            
+
                             # Calculate residual standard deviation
                             residuals = y - coeff * x
                             residual_stds[i] = np.std(residuals, ddof=1)
                 except:
                     pass
-        
+
         return pd.Series(ar_coeffs, index=data.index)
 
 class LjungBoxTestGenerator(VectorizedFeatureGenerator):
     """Generator for Ljung-Box p-value on returns (autocorrelation presence)."""
-    
+
     def __init__(self, window: int = 20, lags: int = 10):
         config = FeatureConfig(
             name=f"ljung_box_pvalue_{window}_{lags}",
@@ -1225,26 +1225,26 @@ class LjungBoxTestGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.lags = lags
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + self.lags:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate Ljung-Box p-values
         p_values = np.full(len(close), np.nan)
-        
+
         for i in range(self.window + self.lags - 1, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) >= self.lags + 5:  # Need enough data
                 try:
                     # Simple autocorrelation-based Ljung-Box approximation
@@ -1254,18 +1254,18 @@ class LjungBoxTestGenerator(VectorizedFeatureGenerator):
                             corr = np.corrcoef(valid_returns[:-lag], valid_returns[lag:])[0, 1]
                             if not np.isnan(corr):
                                 autocorrs.append(corr)
-                    
+
                     if len(autocorrs) > 0:
                         # Simplified Ljung-Box statistic
                         n = len(valid_returns)
                         lb_stat = n * (n + 2) * sum([(ac**2) / (n - lag) for lag, ac in enumerate(autocorrs, 1)])
-                        
+
                         # Approximate p-value (simplified)
                         # In practice, you'd use scipy.stats.chi2.sf
                         p_values[i] = max(0.001, min(0.999, 1 - (lb_stat / (self.lags * 10))))
                 except:
                     pass
-        
+
         return pd.Series(p_values, index=data.index)
 
 def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
@@ -1281,60 +1281,60 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
             'kurtosis': [20],
             'sharpe_ratio': [20]
         }
-    
+
     generators = []
-    
+
     # Log returns generators
     for period in periods.get('log_returns', [1, 5, 10]):
         generators.append(LogReturnsGenerator(period))
-    
+
     # Simple returns generators
     for period in periods.get('simple_returns', [1, 5, 10]):
         generators.append(SimpleReturnsGenerator(period))
-    
+
     # Cumulative returns generators
     for window in periods.get('cumulative_returns', [10, 20]):
         generators.append(CumulativeReturnsGenerator(window))
-    
+
     # Rolling returns generators
     for window in periods.get('rolling_returns', [10, 20]):
         generators.append(RollingReturnsGenerator(window))
-    
+
     # Volatility generators
     for window in periods.get('volatility', [20]):
         generators.append(ReturnsVolatilityGenerator(window))
-    
+
     # Skewness generators
     for window in periods.get('skewness', [20]):
         generators.append(ReturnsSkewnessGenerator(window))
-    
+
     # Kurtosis generators
     for window in periods.get('kurtosis', [20]):
         generators.append(ReturnsKurtosisGenerator(window))
-    
+
     # Sharpe ratio generators
     for window in periods.get('sharpe_ratio', [20]):
         generators.append(SharpeRatioGenerator(window))
-    
+
     # NEW FEATURES - Advanced Returns Analysis
     # Advanced cumulative returns generators
     for window in periods.get('advanced_cumulative_returns', [10, 20]):
         generators.append(AdvancedCumulativeReturnsGenerator(window))
-    
+
     # Rolling z-score returns generators
     for window in periods.get('rolling_zscore_returns', [20]):
         generators.append(RollingZScoreReturnsGenerator(window))
-    
+
     # AR coefficients generators
     for order in periods.get('ar_coefficients', [1]):
         for window in periods.get('ar_windows', [20]):
             generators.append(ARCoefficientsGenerator(order, window))
-    
+
     # Ljung-Box test generators
     for window in periods.get('ljung_box_windows', [20]):
         for lags in periods.get('ljung_box_lags', [10]):
             generators.append(LjungBoxTestGenerator(window, lags))
-    
+
     return generators
 
 class ReturnGenerator(SimpleReturnsGenerator):
@@ -1348,20 +1348,20 @@ def create_default_returns_generators() -> List[FeatureGenerator]:
 class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
     """
     Comprehensive VectorBT-optimized returns feature generator.
-    
+
     This generator uses both VectorBTRollingOptimizer and UnifiedVectorizationManager
     for maximum performance in returns feature generation.
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        
+
         # Initialize VectorBT components
         self.rolling_optimizer = None
         self.unified_manager = None
-        
+
         # Initialize VectorBT Rolling Optimizer
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
@@ -1369,7 +1369,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 self.logger.info("✅ VectorBTRollingOptimizer initialized for optimized returns features")
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
-        
+
         # Initialize Unified Vectorization Manager
         if UNIFIED_VECTORIZATION_MANAGER_AVAILABLE:
             try:
@@ -1377,7 +1377,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 self.logger.info("✅ UnifiedVectorizationManager initialized for optimized returns features")
             except Exception as e:
                 self.logger.warning(f"⚠️ UnifiedVectorizationManager initialization failed: {e}")
-        
+
         # Performance tracking
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -1388,7 +1388,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             'total_operations': 0,
             'total_time': 0.0
         }
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -1410,14 +1410,14 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     def generate_comprehensive_returns_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Generate comprehensive returns features using VectorBT optimization.
-        
+
         Args:
             data: Input OHLCV data
-            
+
         Returns:
             DataFrame with comprehensive returns features
         """
@@ -1430,7 +1430,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                     data_dimensions=data.shape,
                     memory_budget_mb=2048.0
                 )
-                
+
                 # Prepare comprehensive feature configuration
                 feature_configs = self._create_comprehensive_feature_configs()
                 batch_data = {
@@ -1438,29 +1438,29 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                     'feature_configs': feature_configs,
                     'feature_type': 'comprehensive_returns'
                 }
-                
+
                 result = self.unified_manager.optimize_operation(
                     OperationType.FEATURE_ENGINEERING,
                     batch_data,
                     config
                 )
-                
+
                 if hasattr(result, 'result') and result.result is not None:
                     self.performance_stats['unified_manager_operations'] += 1
                     return result.result
                 else:
                     return self._fallback_comprehensive_features(data)
-                    
+
             except Exception as e:
                 self.logger.warning(f"Unified Vectorization Manager comprehensive features failed: {e}, using fallback")
                 return self._fallback_comprehensive_features(data)
         else:
             return self._fallback_comprehensive_features(data)
-    
+
     def _create_comprehensive_feature_configs(self) -> List[Dict[str, Any]]:
         """Create comprehensive feature configurations for returns analysis."""
         configs = []
-        
+
         # Simple returns
         for period in [1, 5, 10, 20]:
             configs.append({
@@ -1468,7 +1468,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'period': period,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Log returns
         for period in [1, 5, 10]:
             configs.append({
@@ -1476,7 +1476,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'period': period,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Cumulative returns
         for window in [10, 20]:
             configs.append({
@@ -1484,7 +1484,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Rolling returns
         for window in [10, 20]:
             configs.append({
@@ -1492,7 +1492,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Returns volatility
         for window in [20]:
             configs.append({
@@ -1500,7 +1500,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Returns skewness
         for window in [20]:
             configs.append({
@@ -1508,7 +1508,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Returns kurtosis
         for window in [20]:
             configs.append({
@@ -1516,7 +1516,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         # Sharpe ratio
         for window in [20]:
             configs.append({
@@ -1524,13 +1524,13 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
                 'window': window,
                 'base_calculation': 'price_returns'
             })
-        
+
         return configs
-    
+
     def _fallback_comprehensive_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Fallback comprehensive features using individual generators."""
         results = {}
-        
+
         # Generate features using individual optimized generators
         generators = [
             ReturnsFeatureGenerator(),
@@ -1550,7 +1550,7 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             ReturnsKurtosisGenerator(window=20),
             SharpeRatioGenerator(window=20)
         ]
-        
+
         for generator in generators:
             try:
                 feature_result = generator.generate_feature(data)
@@ -1561,16 +1561,16 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             except Exception as e:
                 self.logger.warning(f"Feature generation failed for {generator.__class__.__name__}: {e}")
                 continue
-        
+
         return pd.DataFrame(results, index=data.index)
-    
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         stats = self.performance_stats.copy()
-        
+
         if stats['total_operations'] > 0:
             stats['vectorbt_usage_percentage'] = (
-                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) / 
+                (stats['vectorbt_operations'] + stats['rolling_optimizer_operations']) /
                 stats['total_operations'] * 100
             )
             stats['unified_manager_usage_percentage'] = (
@@ -1587,16 +1587,16 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
             stats['unified_manager_usage_percentage'] = 0
             stats['batch_operations_percentage'] = 0
             stats['pandas_fallback_percentage'] = 0
-        
+
         return stats
 
 def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
     """Create VectorBT-optimized returns feature generators."""
     generators = []
-    
+
     # Add the comprehensive VectorBT-optimized generator
     generators.append(VectorBTOptimizedReturnsGenerator())
-    
+
     # Add individual optimized generators
     generators.extend([
         ReturnsFeatureGenerator(),
@@ -1616,21 +1616,21 @@ def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
         ReturnsKurtosisGenerator(window=20),
         SharpeRatioGenerator(window=20)
     ])
-    
+
     return generators
-    
+
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1649,8 +1649,8 @@ def create_vectorbt_optimized_returns_generators() -> List[FeatureGenerator]:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

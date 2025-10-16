@@ -10,7 +10,7 @@ VECTORBT OPTIMIZATIONS:
 - Enhanced entropy calculation with multiple methods (variance, quantile, IQR)
 - Automatic fallback to pandas/numpy when VectorBT unavailable
 - Memory-efficient chunked processing for large datasets
-- 
+-
 - Parallel processing for multi-core systems
 
 PERFORMANCE IMPROVEMENTS:
@@ -80,73 +80,73 @@ except ImportError:
     OperationConfig = None
 
 except ImportError:
-    
+
     cp = None
 
 # OPTIMIZED: Enhanced vectorized entropy calculation function using VectorBT
 def calculate_vectorized_entropy(series: pd.Series, window: int, use_vectorbt: bool = True) -> pd.Series:
     """
     Calculate entropy using optimized VectorBT operations for maximum performance.
-    
+
     This function uses VectorBTRollingOptimizer for high-performance rolling operations
     and provides multiple entropy calculation methods.
     """
     if len(series) < window:
         return pd.Series(np.zeros(len(series)), index=series.index)
-    
+
     # Use VectorBT optimization if available
     if use_vectorbt and VECTORBT_OPTIMIZATION_AVAILABLE:
         try:
             optimizer = get_vectorbt_rolling_optimizer(enable_parallel=True, memory_efficient=True)
-            
+
             # Method 1: Variance-based entropy (fastest)
             rolling_var = optimizer.rolling_var(series, window=window)
             entropy_approx = np.log(rolling_var + 1e-8)
-            
+
             # Method 2: Enhanced entropy using rolling statistics
             rolling_std = optimizer.rolling_std(series, window=window)
             rolling_mean = optimizer.rolling_mean(series, window=window)
-            
+
             # Calculate normalized entropy
             normalized_entropy = entropy_approx / (rolling_std + 1e-8)
-            
+
             # Method 3: Quantile-based entropy for better distribution characterization
             rolling_q25 = optimizer.rolling_quantile(series, window=window, q=0.25)
             rolling_q75 = optimizer.rolling_quantile(series, window=window, q=0.75)
             iqr_entropy = np.log((rolling_q75 - rolling_q25) + 1e-8)
-            
+
             # Combine methods for robust entropy estimation
             combined_entropy = (normalized_entropy + iqr_entropy) / 2
-            
+
             # Normalize to [0, 1] range
             entropy_normalized = np.clip(combined_entropy, 0, 1)
-            
+
             return entropy_normalized.fillna(0)
-            
+
         except Exception as e:
             logger.warning(f"VectorBT entropy calculation failed: {e}, using fallback")
             use_vectorbt = False
-    
+
     # Fallback to optimized pandas implementation
     if not use_vectorbt:
         # Use variance approximation for entropy (much faster than histogram)
         rolling_var = series.rolling(window=window).var()
         entropy_approx = np.log(rolling_var + 1e-8)
-        
+
         # Normalize entropy to reasonable range
         entropy_normalized = entropy_approx / (entropy_approx.rolling(window=window*2).std() + 1e-8)
         entropy_normalized = np.clip(entropy_normalized, 0, 1)
-        
+
         return entropy_normalized.fillna(0)
 
 # Base class for all entropy generators with VectorBT optimization
 class BaseEntropyGenerator(VectorizedFeatureGenerator):
     """Base class for entropy generators with VectorBT optimization."""
-    
+
     def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True, enable_vectorization_optimization: bool = True):
         super().__init__(config, enable_matrix_ops=enable_matrix_ops, enable_vectorization_optimization=enable_vectorization_optimization)
         self._initialize_vectorbt_optimization()
-    
+
     def _initialize_vectorbt_optimization(self):
         """Initialize VectorBT optimization components."""
         if VECTORBT_OPTIMIZATION_AVAILABLE:
@@ -170,12 +170,12 @@ class BaseEntropyGenerator(VectorizedFeatureGenerator):
 
 class EntropyFeatureGenerator(BaseEntropyGenerator):
     """Feature generator for entropy-based features with VectorBT optimization."""
-    
+
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         return FeatureConfig(
@@ -194,11 +194,11 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     @classmethod
     def create_default(cls) -> 'EntropyFeatureGenerator':
         return cls()
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Use UnifiedVectorizationManager for optimal processing
         if self.unified_manager and VECTORBT_OPTIMIZATION_AVAILABLE:
@@ -219,26 +219,26 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
                         memory_budget_mb=256.0
                     )
                 )
-                
+
                 if hasattr(entropy_result, 'result'):
                     return entropy_result.result
             except Exception as e:
                 logger.warning(f"UnifiedVectorizationManager failed: {e}, using fallback")
-        
+
         # Fallback to optimized entropy calculation
         close_prices = data['close']
         entropy = calculate_vectorized_entropy(close_prices, window=20, use_vectorbt=self.use_vectorbt)
         return entropy
-    
-    def generate_optimized_entropy_features(self, data: pd.DataFrame, 
+
+    def generate_optimized_entropy_features(self, data: pd.DataFrame,
                                           feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
         Generate multiple entropy features using optimized batch processing.
-        
+
         Args:
             data: OHLCV data
             feature_configs: List of feature configuration dictionaries
-            
+
         Returns:
             DataFrame with generated entropy features
         """
@@ -266,7 +266,7 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
                 return self._process_entropy_features_individually(data, feature_configs)
         else:
             return self._process_entropy_features_individually(data, feature_configs)
-    
+
     def _process_entropy_features_individually(self, data: pd.DataFrame, feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """Process entropy features individually as fallback when batch processing fails."""
         results = {}
@@ -274,35 +274,35 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
             feature_name = config['name']
             feature_type = config.get('type', 'entropy')
             params = config.get('params', {})
-            
+
             try:
                 if feature_type == 'entropy':
                     window = params.get('window', 20)
                     column = params.get('column', 'close')
-                    
+
                     if column in data.columns:
                         series_data = data[column]
                         entropy = calculate_vectorized_entropy(series_data, window, use_vectorbt=self.use_vectorbt)
                         results[feature_name] = entropy
-                
+
             except Exception as e:
                 logger.warning(f"Entropy feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
-        
+
         return pd.DataFrame(results, index=data.index)
 
 # Price Entropy Generator
-    
+
 class PriceEntropyGenerator(BaseEntropyGenerator):
     """Generator for price entropy features with VectorBT optimization."""
-    
+
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"price_entropy_{window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -316,14 +316,14 @@ class PriceEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         data = self.optimize_dataframe_processing(data)
 
         """Generate price entropy - OPTIMIZED with VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use optimized entropy calculation with VectorBT
         price_entropy = calculate_vectorized_entropy(base_values, self.window, use_vectorbt=self.use_vectorbt)
         return price_entropy
@@ -332,14 +332,14 @@ class PriceEntropyGenerator(BaseEntropyGenerator):
 
 class VolumeEntropyGenerator(BaseEntropyGenerator):
     """Generator for volume entropy features with VectorBT optimization."""
-    
+
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"volume_entropy_{window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -353,30 +353,30 @@ class VolumeEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         data = self.optimize_dataframe_processing(data)
 
         """Generate volume entropy - OPTIMIZED with VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use optimized entropy calculation with VectorBT
         volume_entropy = calculate_vectorized_entropy(base_values, self.window, use_vectorbt=self.use_vectorbt)
         return volume_entropy
 
 # Return Entropy Generator
-    
+
 class ReturnEntropyGenerator(BaseEntropyGenerator):
     """Generator for return entropy features."""
-    
+
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"return_entropy_{window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -390,7 +390,7 @@ class ReturnEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -398,23 +398,23 @@ class ReturnEntropyGenerator(BaseEntropyGenerator):
 
         """Generate return entropy - OPTIMIZED with VectorBT."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Use optimized entropy calculation with VectorBT
         return_entropy = calculate_vectorized_entropy(base_values, self.window, use_vectorbt=self.use_vectorbt)
         return return_entropy
 
 # Price Entropy MA Generator
-    
+
 class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for price entropy moving average features."""
-    
+
     def __init__(self, window: int = 20, ma_window: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"price_entropy_ma_{window}_{ma_window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -429,7 +429,7 @@ class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -437,24 +437,24 @@ class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
 
         """Generate price entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         price_entropy = calculate_vectorized_entropy(base_values, self.window)
         price_entropy_ma = price_entropy.rolling(window=self.ma_window).mean()
         return price_entropy_ma
 
 # Volume Entropy MA Generator
-    
+
 class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for volume entropy moving average features."""
-    
+
     def __init__(self, window: int = 20, ma_window: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"volume_entropy_ma_{window}_{ma_window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -469,7 +469,7 @@ class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -477,24 +477,24 @@ class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
 
         """Generate volume entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         volume_entropy = calculate_vectorized_entropy(base_values, self.window)
         volume_entropy_ma = volume_entropy.rolling(window=self.ma_window).mean()
         return volume_entropy_ma
 
 # Return Entropy MA Generator
-    
+
 class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for return entropy moving average features."""
-    
+
     def __init__(self, window: int = 20, ma_window: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"return_entropy_ma_{window}_{ma_window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -509,7 +509,7 @@ class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -517,24 +517,24 @@ class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
 
         """Generate return entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return_entropy = calculate_vectorized_entropy(base_values, self.window)
         return_entropy_ma = return_entropy.rolling(window=self.ma_window).mean()
         return return_entropy_ma
 
 # High-Low Entropy Generator
-    
+
 class HighLowEntropyGenerator(BaseEntropyGenerator):
     """Generator for high-low range entropy features."""
-    
+
     def __init__(self, window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = ["high", "low", "close"]
-        
+
         config = FeatureConfig(
             name=f"hl_entropy_{window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -548,7 +548,7 @@ class HighLowEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -556,23 +556,23 @@ class HighLowEntropyGenerator(BaseEntropyGenerator):
 
         """Generate high-low range entropy - OPTIMIZED with VectorBT."""
         hl_range = (data['high'] - data['low']) / data['close']
-        
+
         # Use optimized entropy calculation with VectorBT
         hl_entropy = calculate_vectorized_entropy(hl_range, self.window, use_vectorbt=self.use_vectorbt)
         return hl_entropy
 
 # Volatility Entropy Generator
-    
+
 class VolatilityEntropyGenerator(BaseEntropyGenerator):
     """Generator for volatility entropy features."""
-    
+
     def __init__(self, window: int = 20, volatility_window: int = 10, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"volatility_entropy_{window}_{volatility_window}_{base_calculation.value}",
             category=FeatureCategory.ENTROPY,
@@ -587,7 +587,7 @@ class VolatilityEntropyGenerator(BaseEntropyGenerator):
         self.window = window
         self.volatility_window = volatility_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -596,16 +596,16 @@ class VolatilityEntropyGenerator(BaseEntropyGenerator):
         """Generate volatility entropy - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         volatility = base_values.rolling(window=self.volatility_window).std()
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         volatility_entropy = calculate_vectorized_entropy(volatility, self.window)
         return volatility_entropy
 
 # Add 6 more entropy generators to reach 15 total
-    
+
 class MomentumEntropyGenerator(BaseEntropyGenerator):
     """Generator for momentum entropy features."""
-    
+
     def __init__(self, window: int = 20, momentum_period: int = 5):
         config = FeatureConfig(
             name=f"momentum_entropy_{window}_{momentum_period}",
@@ -620,7 +620,7 @@ class MomentumEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.momentum_period = momentum_period
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -628,13 +628,13 @@ class MomentumEntropyGenerator(BaseEntropyGenerator):
 
         """Generate momentum entropy - OPTIMIZED."""
         momentum = data['close'].pct_change(self.momentum_period)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(momentum, self.window)
 
 class RSIEntropyGenerator(BaseEntropyGenerator):
     """Generator for RSI entropy features."""
-    
+
     def __init__(self, window: int = 20, rsi_period: int = 14):
         config = FeatureConfig(
             name=f"rsi_entropy_{window}_{rsi_period}",
@@ -649,7 +649,7 @@ class RSIEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.rsi_period = rsi_period
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -661,13 +661,13 @@ class RSIEntropyGenerator(BaseEntropyGenerator):
         loss = (-delta.where(delta < 0, 0)).rolling(window=self.rsi_period).mean()
         rs = gain / (loss + 1e-8)
         rsi = 100 - (100 / (1 + rs))
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(rsi, self.window)
 
 class MACDEntropyGenerator(BaseEntropyGenerator):
     """Generator for MACD entropy features."""
-    
+
     def __init__(self, window: int = 20, fast: int = 12, slow: int = 26):
         config = FeatureConfig(
             name=f"macd_entropy_{window}_{fast}_{slow}",
@@ -683,7 +683,7 @@ class MACDEntropyGenerator(BaseEntropyGenerator):
         self.window = window
         self.fast = fast
         self.slow = slow
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -693,13 +693,13 @@ class MACDEntropyGenerator(BaseEntropyGenerator):
         ema_fast = data['close'].ewm(span=self.fast).mean()
         ema_slow = data['close'].ewm(span=self.slow).mean()
         macd = ema_fast - ema_slow
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(macd, self.window)
 
 class BollingerBandsEntropyGenerator(BaseEntropyGenerator):
     """Generator for Bollinger Bands position entropy features."""
-    
+
     def __init__(self, window: int = 20, bb_period: int = 20, bb_std: float = 2.0):
         config = FeatureConfig(
             name=f"bb_entropy_{window}_{bb_period}_{bb_std}",
@@ -715,7 +715,7 @@ class BollingerBandsEntropyGenerator(BaseEntropyGenerator):
         self.window = window
         self.bb_period = bb_period
         self.bb_std = bb_std
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -727,13 +727,13 @@ class BollingerBandsEntropyGenerator(BaseEntropyGenerator):
         upper_band = sma + (std * self.bb_std)
         lower_band = sma - (std * self.bb_std)
         bb_position = (data['close'] - lower_band) / (upper_band - lower_band + 1e-8)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(bb_position, self.window)
 
 class CrossAssetEntropyGenerator(BaseEntropyGenerator):
     """Generator for cross-asset correlation entropy features."""
-    
+
     def __init__(self, window: int = 20, correlation_window: int = 10):
         config = FeatureConfig(
             name=f"cross_asset_entropy_{window}_{correlation_window}",
@@ -748,7 +748,7 @@ class CrossAssetEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.correlation_window = correlation_window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -758,13 +758,13 @@ class CrossAssetEntropyGenerator(BaseEntropyGenerator):
         price_returns = data['close'].pct_change()
         volume_returns = data['volume'].pct_change()
         correlation = price_returns.rolling(window=self.correlation_window).corr(volume_returns)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(correlation, self.window)
 
 class RegimeEntropyGenerator(BaseEntropyGenerator):
     """Generator for regime transition entropy features."""
-    
+
     def __init__(self, window: int = 20, regime_window: int = 50):
         config = FeatureConfig(
             name=f"regime_entropy_{window}_{regime_window}",
@@ -779,7 +779,7 @@ class RegimeEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.regime_window = regime_window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -787,9 +787,9 @@ class RegimeEntropyGenerator(BaseEntropyGenerator):
 
         """Generate regime transition entropy - OPTIMIZED."""
         volatility = data['close'].rolling(window=20).std()
-        regime = pd.cut(volatility.rolling(window=self.regime_window).rank(pct=True), 
+        regime = pd.cut(volatility.rolling(window=self.regime_window).rank(pct=True),
                        bins=3, labels=[0, 1, 2]).astype(float)
-        
+
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(regime, self.window)
 
@@ -797,7 +797,7 @@ class RegimeEntropyGenerator(BaseEntropyGenerator):
 
 class ShannonEntropyGenerator(BaseEntropyGenerator):
     """Generator for Shannon entropy of discretized returns."""
-    
+
     def __init__(self, window: int = 20, q_bins: int = 10):
         config = FeatureConfig(
             name=f"shannon_entropy_{window}_{q_bins}",
@@ -814,48 +814,48 @@ class ShannonEntropyGenerator(BaseEntropyGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.q_bins = q_bins
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate Shannon entropy
         shannon_entropy = np.full(len(close), np.nan)
         for i in range(self.window, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) > 1:
                 # Discretize returns into q_bins
                 bins = np.linspace(np.min(valid_returns), np.max(valid_returns), self.q_bins + 1)
                 digitized = np.digitize(valid_returns, bins) - 1
                 digitized = np.clip(digitized, 0, self.q_bins - 1)
-                
+
                 # Calculate probabilities
                 counts = np.bincount(digitized, minlength=self.q_bins)
                 probabilities = counts / len(valid_returns)
-                
+
                 # Calculate Shannon entropy
                 entropy = 0
                 for p in probabilities:
                     if p > 0:
                         entropy -= p * np.log2(p)
-                
+
                 shannon_entropy[i] = entropy
-        
+
         return pd.Series(shannon_entropy, index=data.index)
 
 class PermutationEntropyGenerator(BaseEntropyGenerator):
     """Generator for permutation entropy on returns."""
-    
+
     def __init__(self, window: int = 20, embedding_dim: int = 3, delay: int = 1):
         config = FeatureConfig(
             name=f"permutation_entropy_{window}_{embedding_dim}_{delay}",
@@ -873,25 +873,25 @@ class PermutationEntropyGenerator(BaseEntropyGenerator):
         self.window = window
         self.embedding_dim = embedding_dim
         self.delay = delay
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + self.embedding_dim * self.delay:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate permutation entropy
         perm_entropy = np.full(len(close), np.nan)
         for i in range(self.window + self.embedding_dim * self.delay - 1, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) >= self.embedding_dim:
                 # Create embedding vectors
                 vectors = []
@@ -899,7 +899,7 @@ class PermutationEntropyGenerator(BaseEntropyGenerator):
                     vector = valid_returns[j:j + self.embedding_dim * self.delay:self.delay]
                     if len(vector) == self.embedding_dim:
                         vectors.append(vector)
-                
+
                 if len(vectors) > 0:
                     # Calculate permutation patterns
                     patterns = []
@@ -907,24 +907,24 @@ class PermutationEntropyGenerator(BaseEntropyGenerator):
                         # Get permutation pattern
                         pattern = np.argsort(vector)
                         patterns.append(tuple(pattern))
-                    
+
                     # Calculate probabilities
                     unique_patterns, counts = np.unique(patterns, return_counts=True)
                     probabilities = counts / len(patterns)
-                    
+
                     # Calculate permutation entropy
                     entropy = 0
                     for p in probabilities:
                         if p > 0:
                             entropy -= p * np.log2(p)
-                    
+
                     perm_entropy[i] = entropy
-        
+
         return pd.Series(perm_entropy, index=data.index)
 
 class SampleEntropyGenerator(BaseEntropyGenerator):
     """Generator for sample entropy on returns."""
-    
+
     def __init__(self, window: int = 20, m: int = 2, r: float = 0.2):
         config = FeatureConfig(
             name=f"sample_entropy_{window}_{m}_{r}",
@@ -942,69 +942,69 @@ class SampleEntropyGenerator(BaseEntropyGenerator):
         self.window = window
         self.m = m
         self.r = r
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + self.m:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate sample entropy
         sample_entropy = np.full(len(close), np.nan)
         for i in range(self.window + self.m - 1, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) >= self.m + 1:
                 # Calculate sample entropy
                 entropy = self._calculate_sample_entropy(valid_returns, self.m, self.r)
                 sample_entropy[i] = entropy
-        
+
         return pd.Series(sample_entropy, index=data.index)
-    
+
     def _calculate_sample_entropy(self, data: np.ndarray, m: int, r: float) -> float:
         """Calculate sample entropy."""
         N = len(data)
         if N < m + 1:
             return 0.0
-        
+
         # Create template vectors
         def _maxdist(xi, xj, m):
             return max([abs(ua - va) for ua, va in zip(xi, xj)])
-        
+
         def _get_template_vectors(data, m):
             return [data[i:i + m] for i in range(N - m + 1)]
-        
+
         # Calculate phi(m) and phi(m+1)
         def _calculate_phi(data, m):
             template_vectors = _get_template_vectors(data, m)
             N = len(template_vectors)
             C = np.zeros(N)
-            
+
             for i in range(N):
                 template_i = template_vectors[i]
                 for j in range(N):
                     if i != j:
                         if _maxdist(template_i, template_vectors[j], m) <= r:
                             C[i] += 1
-            
+
             phi = np.sum(np.log(C / (N - 1))) / N
             return phi
-        
+
         phi_m = _calculate_phi(data, m)
         phi_m1 = _calculate_phi(data, m + 1)
-        
+
         return phi_m - phi_m1
 
 class LempelZivComplexityGenerator(VectorizedFeatureGenerator):
     """Generator for Lempel-Ziv complexity of up/down sequence."""
-    
+
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"lempel_ziv_complexity_{window}",
@@ -1020,38 +1020,38 @@ class LempelZivComplexityGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns and up/down sequence
         returns = np.diff(close) / close[:-1]
         up_down = np.where(returns > 0, 1, 0)  # 1 for up, 0 for down
         up_down = np.concatenate([[0], up_down])  # Add initial value
-        
+
         # Calculate Lempel-Ziv complexity
         lz_complexity = np.full(len(close), np.nan)
         for i in range(self.window, len(close)):
             sequence = up_down[i - self.window + 1:i + 1]
             complexity = self._calculate_lz_complexity(sequence)
             lz_complexity[i] = complexity
-        
+
         return pd.Series(lz_complexity, index=data.index)
-    
+
     def _calculate_lz_complexity(self, sequence: np.ndarray) -> float:
         """Calculate Lempel-Ziv complexity."""
         if len(sequence) == 0:
             return 0.0
-        
+
         # Convert to string for LZ algorithm
         s = ''.join(map(str, sequence))
         n = len(s)
-        
+
         # Lempel-Ziv complexity calculation
         c = 1
         i = 0
@@ -1062,12 +1062,12 @@ class LempelZivComplexityGenerator(VectorizedFeatureGenerator):
             else:
                 i += c
                 c = 1
-        
+
         return c
 
 class EntropyRateGenerator(VectorizedFeatureGenerator):
     """Generator for entropy rate of 2-state Markov chain for sign(returns)."""
-    
+
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"entropy_rate_{window}",
@@ -1083,63 +1083,63 @@ class EntropyRateGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns and signs
         returns = np.diff(close) / close[:-1]
         signs = np.sign(returns)
         signs = np.concatenate([[0], signs])  # Add initial value
-        
+
         # Calculate entropy rate
         entropy_rate = np.full(len(close), np.nan)
         for i in range(self.window, len(close)):
             sequence = signs[i - self.window + 1:i + 1]
             rate = self._calculate_entropy_rate(sequence)
             entropy_rate[i] = rate
-        
+
         return pd.Series(entropy_rate, index=data.index)
-    
+
     def _calculate_entropy_rate(self, sequence: np.ndarray) -> float:
         """Calculate entropy rate of 2-state Markov chain."""
         if len(sequence) < 2:
             return 0.0
-        
+
         # Count transitions
         transitions = {
             (1, 1): 0, (1, -1): 0, (1, 0): 0,
             (-1, 1): 0, (-1, -1): 0, (-1, 0): 0,
             (0, 1): 0, (0, -1): 0, (0, 0): 0
         }
-        
+
         for i in range(len(sequence) - 1):
             transition = (int(sequence[i]), int(sequence[i + 1]))
             if transition in transitions:
                 transitions[transition] += 1
-        
+
         # Calculate transition probabilities
         total_transitions = sum(transitions.values())
         if total_transitions == 0:
             return 0.0
-        
+
         # Calculate entropy rate
         entropy_rate = 0.0
         for count in transitions.values():
             if count > 0:
                 p = count / total_transitions
                 entropy_rate -= p * np.log2(p)
-        
+
         return entropy_rate
 
 class SpectralEntropyGenerator(BaseEntropyGenerator):
     """Generator for spectral entropy of returns (normalized PSD)."""
-    
+
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"spectral_entropy_{window}",
@@ -1155,47 +1155,47 @@ class SpectralEntropyGenerator(BaseEntropyGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
-        
+
         close = data['close'].values
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
-        
+
         # Calculate returns
         returns = np.diff(close) / close[:-1]
         returns = np.concatenate([[np.nan], returns])
-        
+
         # Calculate spectral entropy
         spectral_entropy = np.full(len(close), np.nan)
         for i in range(self.window, len(close)):
             window_returns = returns[i - self.window + 1:i + 1]
             valid_returns = window_returns[np.isfinite(window_returns)]
-            
+
             if len(valid_returns) > 4:  # Need enough data for FFT
                 entropy = self._calculate_spectral_entropy(valid_returns)
                 spectral_entropy[i] = entropy
-        
+
         return pd.Series(spectral_entropy, index=data.index)
-    
+
     def _calculate_spectral_entropy(self, data: np.ndarray) -> float:
         """Calculate spectral entropy from power spectral density."""
         try:
             # Calculate FFT
             fft = np.fft.fft(data)
             psd = np.abs(fft) ** 2
-            
+
             # Normalize PSD
             psd = psd / np.sum(psd)
-            
+
             # Calculate spectral entropy
             entropy = 0.0
             for p in psd:
                 if p > 0:
                     entropy -= p * np.log2(p)
-            
+
             return entropy
         except:
             return 0.0
@@ -1204,9 +1204,9 @@ def create_default_entropy_generators() -> List[FeatureGenerator]:
     """Create default entropy feature generators."""
     windows = [5, 10, 20]
     ma_windows = [5, 10]
-    
+
     generators = []
-    
+
     # Create generators for each window
     for window in windows:
         generators.extend([
@@ -1214,7 +1214,7 @@ def create_default_entropy_generators() -> List[FeatureGenerator]:
             VolumeEntropyGenerator(window),
             ReturnEntropyGenerator(window),
         ])
-        
+
         # Create MA generators
         for ma_window in ma_windows:
             generators.extend([
@@ -1222,43 +1222,43 @@ def create_default_entropy_generators() -> List[FeatureGenerator]:
                 VolumeEntropyMAGenerator(window, ma_window),
                 ReturnEntropyMAGenerator(window, ma_window),
             ])
-    
+
     # NEW FEATURES - Advanced Entropy Analysis
     # Shannon entropy generators
     for window in [20]:
         for q_bins in [10]:
             generators.append(ShannonEntropyGenerator(window, q_bins))
-    
+
     # Permutation entropy generators
     for window in [20]:
         for embedding_dim in [3]:
             for delay in [1]:
                 generators.append(PermutationEntropyGenerator(window, embedding_dim, delay))
-    
+
     # Sample entropy generators
     for window in [20]:
         for m in [2]:
             for r in [0.2]:
                 generators.append(SampleEntropyGenerator(window, m, r))
-    
+
     # Lempel-Ziv complexity generators
     for window in [20]:
         generators.append(LempelZivComplexityGenerator(window))
-    
+
     # Entropy rate generators
     for window in [20]:
         generators.append(EntropyRateGenerator(window))
-    
+
     # Spectral entropy generators
     for window in [20]:
         generators.append(SpectralEntropyGenerator(window))
-    
+
     return generators
 
 def create_entropy_generators() -> List[FeatureGenerator]:
     """Create all 15 entropy feature generators."""
     generators = []
-    
+
     # Original 7 generators
     generators.append(PriceEntropyGenerator(window=20))
     generators.append(VolumeEntropyGenerator(window=20))
@@ -1266,7 +1266,7 @@ def create_entropy_generators() -> List[FeatureGenerator]:
     generators.append(PriceEntropyMAGenerator(window=20, ma_window=5))
     generators.append(VolumeEntropyMAGenerator(window=20, ma_window=5))
     generators.append(ReturnEntropyMAGenerator(window=20, ma_window=5))
-    
+
     # New 8 generators to reach 15 total
     generators.append(HighLowEntropyGenerator(window=20))
     generators.append(VolatilityEntropyGenerator(window=20, volatility_window=10))
@@ -1276,6 +1276,6 @@ def create_entropy_generators() -> List[FeatureGenerator]:
     generators.append(BollingerBandsEntropyGenerator(window=20, bb_period=20, bb_std=2.0))
     generators.append(CrossAssetEntropyGenerator(window=20, correlation_window=10))
     generators.append(RegimeEntropyGenerator(window=20, regime_window=50))
-    
+
     return generators
 # Note: Custom VectorBT methods removed - now using VectorBTRollingOptimizer

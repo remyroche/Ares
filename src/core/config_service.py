@@ -1,12 +1,12 @@
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 import asyncio
 import importlib
 import json
 import os
 import time
-from dataclasses import asdict, dataclass
-from datetime import datetime
-from pathlib import Path
-from typing import Any
 import yaml
 try:
     from ..utils.logger import system_logger
@@ -144,7 +144,7 @@ class ConfigurationService:
         self.encryption_key: str | None = None
         self.load_times: list[float] = []
         self.last_load_time: float = 0
-        
+
         # Initialize unified config service for backward compatibility
         self.unified_service = UnifiedConfigService()
 
@@ -440,7 +440,7 @@ class ConfigurationService:
             self.logger.info('Configuration service shutdown completed')
         except Exception as e:
             self.logger.exception(f'Error during shutdown: {e}')
-    
+
     # Unified config service integration methods
     def load_config(self, config_path: str) -> dict[str, Any]:
         """Load configuration using unified service (backward compatibility)."""
@@ -449,7 +449,7 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f'Error loading config from unified service: {e}')
             return {}
-    
+
     def load_environment_config(self, environment: str) -> dict[str, Any]:
         """Load environment-specific configuration."""
         try:
@@ -457,7 +457,7 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f'Error loading environment config: {e}')
             return {}
-    
+
     def load_feature_config(self, feature_name: str) -> dict[str, Any]:
         """Load feature-specific configuration."""
         try:
@@ -465,7 +465,7 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f'Error loading feature config: {e}')
             return {}
-    
+
     def load_version_config(self) -> dict[str, Any]:
         """Load version configuration."""
         try:
@@ -473,7 +473,7 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f'Error loading version config: {e}')
             return {}
-    
+
     def list_available_configs(self) -> dict[str, list]:
         """List all available configurations."""
         try:

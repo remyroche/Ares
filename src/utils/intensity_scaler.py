@@ -66,17 +66,17 @@ def apply_intensity_scaling(config: Dict[str, Any], intensity_percentage: Option
     """Apply intensity scaling to a configuration dictionary."""
     if intensity_percentage is None:
         intensity_percentage = get_intensity_from_environment()
-    
+
     if intensity_percentage >= 1.0:
         # Full intensity, no scaling needed
         return config
-    
+
     scaled_config = config.copy()
-    
+
     # Scale model training parameters
     if "model_training" in scaled_config:
         model_config = scaled_config["model_training"]
-        
+
         # Scale trials and epochs
         if "max_trials" in model_config:
             model_config["max_trials"] = scale_parameter(model_config["max_trials"], intensity_percentage, min_value=1)
@@ -92,7 +92,7 @@ def apply_intensity_scaling(config: Dict[str, Any], intensity_percentage: Option
             model_config["cross_validation_folds"] = scale_parameter(model_config["cross_validation_folds"], intensity_percentage, min_value=2)
         if "ensemble_models" in model_config:
             model_config["ensemble_models"] = scale_parameter(model_config["ensemble_models"], intensity_percentage, min_value=1)
-        
+
         # Scale neural network parameters
         if "nn_hidden_layers" in model_config:
             # Reduce hidden layer sizes
@@ -100,50 +100,50 @@ def apply_intensity_scaling(config: Dict[str, Any], intensity_percentage: Option
             if isinstance(original_layers, list):
                 scaled_layers = [max(int(layer * intensity_percentage), 16) for layer in original_layers]
                 model_config["nn_hidden_layers"] = scaled_layers
-        
+
         # Scale gradient boosting parameters
         if "gb_max_depth" in model_config:
             model_config["gb_max_depth"] = scale_parameter(model_config["gb_max_depth"], intensity_percentage, min_value=2)
         if "gb_n_estimators" in model_config:
             model_config["gb_n_estimators"] = scale_parameter(model_config["gb_n_estimators"], intensity_percentage, min_value=10)
-        
+
         # Scale random forest parameters
         if "rf_max_depth" in model_config:
             model_config["rf_max_depth"] = scale_parameter(model_config["rf_max_depth"], intensity_percentage, min_value=2)
         if "rf_n_estimators" in model_config:
             model_config["rf_n_estimators"] = scale_parameter(model_config["rf_n_estimators"], intensity_percentage, min_value=10)
-    
+
     # Scale validation parameters
     if "validation" in scaled_config:
         validation_config = scaled_config["validation"]
-        
+
         if "monte_carlo_samples" in validation_config:
             validation_config["monte_carlo_samples"] = scale_parameter(validation_config["monte_carlo_samples"], intensity_percentage, min_value=10)
         if "ab_test_rounds" in validation_config:
             validation_config["ab_test_rounds"] = scale_parameter(validation_config["ab_test_rounds"], intensity_percentage, min_value=1)
         if "validation_splits" in validation_config:
             validation_config["validation_splits"] = scale_parameter(validation_config["validation_splits"], intensity_percentage, min_value=2)
-    
+
     # Scale optimization parameters
     if "optimization" in scaled_config:
         opt_config = scaled_config["optimization"]
-        
+
         if "optuna_trials" in opt_config:
             opt_config["optuna_trials"] = scale_parameter(opt_config["optuna_trials"], intensity_percentage, min_value=1)
         if "optuna_timeout" in opt_config:
             opt_config["optuna_timeout"] = scale_parameter(opt_config["optuna_timeout"], intensity_percentage, min_value=60)
         if "max_optimization_time" in opt_config:
             opt_config["max_optimization_time"] = scale_parameter(opt_config["max_optimization_time"], intensity_percentage, min_value=60)
-    
+
     # Scale feature engineering parameters
     if "feature_engineering" in scaled_config:
         fe_config = scaled_config["feature_engineering"]
-        
+
         if "max_interactions" in fe_config:
             fe_config["max_interactions"] = scale_parameter(fe_config["max_interactions"], intensity_percentage, min_value=1)
         if "feature_selection_samples" in fe_config:
             fe_config["feature_selection_samples"] = scale_parameter(fe_config["feature_selection_samples"], intensity_percentage, min_value=1000)
-    
+
     logger.info(f"🔧 Applied intensity scaling: {intensity_percentage*100:.0f}% intensity")
     return scaled_config
 
@@ -151,9 +151,9 @@ def get_intensity_config(intensity_percentage: Optional[float] = None) -> Intens
     """Get intensity configuration for the current mode."""
     if intensity_percentage is None:
         intensity_percentage = get_intensity_from_environment()
-    
+
     training_mode = get_training_mode_from_environment()
-    
+
     # Base parameters (full intensity)
     base_max_trials = 200
     base_n_trials = 100
@@ -166,7 +166,7 @@ def get_intensity_config(intensity_percentage: Optional[float] = None) -> Intens
     base_cv_folds = 5
     base_ensemble_models = 10
     base_early_stopping_patience = 20
-    
+
     return IntensityConfig(
         intensity_percentage=intensity_percentage,
         training_mode=training_mode,
@@ -187,10 +187,10 @@ def log_intensity_info(intensity_percentage: Optional[float] = None):
     """Log intensity information for debugging."""
     if intensity_percentage is None:
         intensity_percentage = get_intensity_from_environment()
-    
+
     training_mode = get_training_mode_from_environment()
     config = get_intensity_config(intensity_percentage)
-    
+
     logger.info("=" * 60)
     logger.info(f"🎯 INTENSITY CONFIGURATION: {training_mode.upper()} MODE")
     logger.info("=" * 60)

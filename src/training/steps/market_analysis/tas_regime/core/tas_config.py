@@ -18,7 +18,6 @@ import json
 from pathlib import Path
 import numpy as np
 
-
 # General TAS enums
 class TreeModelType(Enum):
     """Tree model types for TAS."""
@@ -37,7 +36,6 @@ class TreeModelType(Enum):
     DEEPGBM = "deepgbm"
     NODE = "node"
 
-
 class SearchMethod(Enum):
     """Search methods for TAS."""
     RANDOM = "random"
@@ -47,7 +45,6 @@ class SearchMethod(Enum):
     REINFORCEMENT = "reinforcement"
     META_LEARNING = "meta_learning"
     HYBRID = "hybrid"
-
 
 class OptimizationObjective(Enum):
     """Optimization objectives for TAS."""
@@ -69,7 +66,6 @@ class OptimizationObjective(Enum):
     EFFICIENCY = "efficiency"
     INTERPRETABILITY = "interpretability"
 
-
 # Trading-specific enums
 class TASArchitectureType(Enum):
     """TAS architecture types for advanced trading."""
@@ -79,7 +75,6 @@ class TASArchitectureType(Enum):
     NEURAL_ONLY = "neural_only"
     ENSEMBLE_HIERARCHICAL = "ensemble_hierarchical"
     META_LEARNING = "meta_learning"
-
 
 class MicroRegimeType(Enum):
     """Micro-regime types for subtle market changes."""
@@ -92,7 +87,6 @@ class MicroRegimeType(Enum):
     VOLATILITY_SPIKE = "volatility_spike"
     MOMENTUM_SHIFT = "momentum_shift"
     LIQUIDITY_CHANGE = "liquidity_change"
-
 
 class TradingObjective(Enum):
     """Advanced trading-specific optimization objectives."""
@@ -108,7 +102,6 @@ class TradingObjective(Enum):
     TRADING_VIABILITY = "trading_viability"
     MICRO_REGIME_ACCURACY = "micro_regime_accuracy"
     PREDICTION_CONFIDENCE = "prediction_confidence"
-
 
 class MarketRegime(Enum):
     """Advanced market regime types for trading."""
@@ -129,7 +122,6 @@ class MarketRegime(Enum):
     ACCELERATION_MICRO = "acceleration_micro"
     DECELERATION_MICRO = "deceleration_micro"
 
-
 class ClusteringStrategy(Enum):
     """Clustering strategies for tree-based regime detection."""
     COMPLEMENTARY = "complementary"  # Feature selection + ensemble
@@ -137,7 +129,6 @@ class ClusteringStrategy(Enum):
     SEQUENTIAL = "sequential"  # Tree-first approach with refinement
     SINGLE = "single"  # Single best tree model
     AUTO = "auto"  # Data-driven strategy selection
-
 
 class ClusteringMetric(Enum):
     """Clustering quality metrics."""
@@ -148,18 +139,17 @@ class ClusteringMetric(Enum):
     ADJUSTED_RAND = "adjusted_rand_score"
     MUTUAL_INFO = "mutual_info_score"
 
-
 @dataclass
 class TASConfig:
     """Advanced configuration for Tree Architecture Search with trading optimizations."""
-    
+
     # Architecture type and components
     architecture_type: TASArchitectureType = TASArchitectureType.HYBRID_TREE_NEURAL
     enable_micro_regime_detection: bool = True
     enable_neural_components: bool = True
     enable_hierarchical_ensembles: bool = True
     enable_meta_learning: bool = True
-    
+
     # Model settings
     model_types: List[TreeModelType] = field(default_factory=lambda: [
         TreeModelType.RANDOM_FOREST,
@@ -173,7 +163,7 @@ class TASConfig:
         TreeModelType.DEEPGBM,
         TreeModelType.NODE
     ])
-    
+
     # Tree architecture constraints
     min_trees: int = 10
     max_trees: int = 1000
@@ -183,14 +173,14 @@ class TASConfig:
     max_samples_split: int = 1000
     min_samples_leaf: int = 1
     max_samples_leaf: int = 100
-    
+
     # Feature selection
     min_features: int = 1
     max_features: Union[int, float, str] = "auto"
     feature_selection_methods: List[str] = field(default_factory=lambda: [
         "auto", "sqrt", "log2", "none"
     ])
-    
+
     # Optimization settings
     primary_objective: OptimizationObjective = OptimizationObjective.ACCURACY
     secondary_objectives: List[OptimizationObjective] = field(default_factory=lambda: [
@@ -198,42 +188,42 @@ class TASConfig:
         OptimizationObjective.EFFICIENCY
     ])
     objective_weights: List[float] = field(default_factory=lambda: [0.6, 0.2, 0.2])
-    
+
     # Search settings
     search_method: SearchMethod = SearchMethod.BAYESIAN
     max_iterations: int = 100
     max_time_seconds: int = 3600
     early_stopping_patience: int = 10
     min_improvement_threshold: float = 0.001
-    
+
     # Validation settings
     validation_method: str = "holdout"  # "holdout", "cross_validation", "time_series_split"
     validation_split: float = 0.2
     cv_folds: int = 5
     time_series_gap: int = 0
-    
+
     # Performance settings
     n_jobs: int = -1
     random_state: int = 42
     verbose: bool = True
-    
+
     # Advanced settings
     enable_pruning: bool = True
     enable_feature_importance: bool = True
     enable_early_stopping: bool = True
     enable_hyperparameter_tuning: bool = True
-    
+
     # Output settings
     save_intermediate_results: bool = True
     save_best_models: bool = True
     output_dir: str = "tas_output"
-    
+
     # Timeframe configuration
     primary_timeframe: str = "15m"
     micro_timeframe: str = "5m"
     regime_detection_window: int = 100  # Data points for regime detection
     adaptation_interval_minutes: int = 15
-    
+
     # Regime configuration
     n_regimes: int = 12
     min_regime_duration: int = 15  # Minimum 15 minutes
@@ -257,7 +247,7 @@ class TASConfig:
     complexity_threshold: float = 0.8
     volatility_threshold: float = 0.3
     volume_ratio_threshold: float = 2.0
-    
+
     # Micro-regime configuration
     micro_regime_types: List[MicroRegimeType] = field(default_factory=lambda: [
         MicroRegimeType.BREAKOUT,
@@ -269,7 +259,7 @@ class TASConfig:
     ])
     micro_regime_sensitivity: float = 0.7
     micro_regime_detection_threshold: float = 0.6
-    
+
     # Multi-objective optimization
     trading_objectives: List[TradingObjective] = field(default_factory=lambda: [
         TradingObjective.PROFITABILITY,
@@ -279,20 +269,20 @@ class TASConfig:
         TradingObjective.TRADING_VIABILITY
     ])
     trading_objective_weights: List[float] = field(default_factory=lambda: [0.25, 0.2, 0.15, 0.2, 0.2])
-    
+
     # Economic significance and validation
     economic_significance_threshold: float = 0.7
     trading_viability_threshold: float = 0.6
     regime_transition_cost: float = 0.05
     min_position_size: float = 0.01
     max_position_size: float = 0.1
-    
+
     # Risk management
     max_drawdown_threshold: float = 0.15
     risk_adjusted_return_threshold: float = 0.1
     transaction_cost_penalty: float = 0.001
     slippage_assumption: float = 0.0005
-    
+
     # Model configuration
     min_model_confidence: float = 0.6
     max_model_complexity: int = 100
@@ -300,7 +290,7 @@ class TASConfig:
         'RandomForest', 'XGBoost', 'LightGBM', 'ExtraTrees',
         'NeuralNetwork', 'LSTM', 'Attention', 'NeuralODE'
     ])
-    
+
     # Advanced search parameters
     search_space_config: Dict[str, Any] = field(default_factory=dict)
     enable_bayesian_optimization: bool = True
@@ -310,7 +300,7 @@ class TASConfig:
     population_size: int = 20
     mutation_rate: float = 0.1
     crossover_rate: float = 0.8
-    
+
     # CVLSA-specific parameters
     enable_cvlSA_architecture: bool = True
     cvlSA_cascade_depth: int = 3
@@ -320,34 +310,34 @@ class TASConfig:
     ])
     cvlSA_feature_ensemble_method: str = "intersection"
     cvlSA_optimization_objective: str = "cascade_efficiency"
-    
+
     # Hardware acceleration
     enable_hardware_acceleration: bool = True
     enable_gpu_acceleration: bool = True
     enable_batch_processing: bool = True
     batch_size: int = 1000
     max_memory_usage: float = 0.8
-    
+
     # Meta-learning
     meta_learning_enabled: bool = True
     regime_similarity_threshold: float = 0.8
     adaptation_history_length: int = 100
     transfer_learning_enabled: bool = True
-    
+
     # Performance tracking
     enable_performance_tracking: bool = True
     performance_tracking_interval: int = 60
     save_model_snapshots: bool = True
     enable_uncertainty_quantification: bool = True
-    
+
     # Integration settings
     integrate_with_nas_clustering: bool = True
     use_existing_regime_detection: bool = True
     output_format: str = "comprehensive"
-    
+
     # Validation settings
     validation_config: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
@@ -456,7 +446,7 @@ class TASConfig:
             'output_format': self.output_format,
             'validation_config': self.validation_config
         }
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'TASConfig':
         """Create config from dictionary."""
@@ -482,42 +472,41 @@ class TASConfig:
 
         return cls(**config_dict)
 
-
 @dataclass
 class TASSearchConfig:
     """Configuration for TAS search strategies."""
-    
+
     # Search strategy settings
     search_strategy: SearchMethod = SearchMethod.BAYESIAN
     search_budget: int = 100
     search_time_limit: int = 3600
-    
+
     # Bayesian optimization settings
     bayesian_acquisition_function: str = "expected_improvement"  # "expected_improvement", "upper_confidence_bound", "probability_improvement"
     bayesian_n_initial_points: int = 10
     bayesian_n_restarts_optimizer: int = 5
     bayesian_alpha: float = 1e-6
-    
+
     # Evolutionary algorithm settings
     evolutionary_population_size: int = 50
     evolutionary_generations: int = 100
     evolutionary_mutation_rate: float = 0.1
     evolutionary_crossover_rate: float = 0.8
     evolutionary_elite_size: int = 5
-    
+
     # Reinforcement learning settings
     rl_algorithm: str = "ppo"  # "ppo", "a2c", "dqn"
     rl_episodes: int = 1000
     rl_learning_rate: float = 0.001
     rl_discount_factor: float = 0.99
     rl_epsilon: float = 0.1
-    
+
     # Meta-learning settings
     meta_learning_rate: float = 0.001
     meta_inner_steps: int = 5
     meta_outer_steps: int = 100
     meta_batch_size: int = 32
-    
+
     # Hybrid search settings
     hybrid_strategies: List[SearchMethod] = field(default_factory=lambda: [
         SearchMethod.BAYESIAN,
@@ -525,12 +514,12 @@ class TASSearchConfig:
     ])
     hybrid_weights: List[float] = field(default_factory=lambda: [0.6, 0.4])
     hybrid_switch_iteration: int = 50
-    
+
     # Performance settings
     parallel_evaluations: int = 4
     memory_limit_gb: float = 8.0
     cache_evaluations: bool = True
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
@@ -563,54 +552,53 @@ class TASSearchConfig:
             'cache_evaluations': self.cache_evaluations
         }
 
-
 @dataclass
 class TASOptimizationConfig:
     """Configuration for TAS optimization."""
-    
+
     # Multi-objective optimization
     enable_multi_objective: bool = True
     multi_objective_algorithm: str = "nsga2"  # "nsga2", "spea2", "moea_d"
     pareto_front_size: int = 100
     diversity_metric: str = "crowding_distance"
-    
+
     # Regime-aware optimization
     enable_regime_aware: bool = True
     regime_detection_method: str = "clustering"  # "clustering", "changepoint", "hmm"
     regime_stability_threshold: float = 0.7
     regime_transition_cost: float = 0.1
-    
+
     # Real-time optimization
     enable_real_time: bool = False
     adaptation_frequency: int = 100  # Adapt every N samples
     adaptation_threshold: float = 0.05  # Performance degradation threshold
     adaptation_method: str = "incremental"  # "incremental", "retrain", "meta_learning"
-    
+
     # Continual learning
     enable_continual_learning: bool = False
     memory_size: int = 1000
     forgetting_rate: float = 0.1
     replay_method: str = "random"  # "random", "importance", "diversity"
-    
+
     # Hardware optimization
     enable_hardware_optimization: bool = True
     target_device: str = "auto"  # "auto", "cpu", "gpu", "m1"
     memory_optimization: bool = True
     parallel_processing: bool = True
-    
+
     # Uncertainty estimation
     enable_uncertainty_estimation: bool = True
     uncertainty_method: str = "ensemble"  # "ensemble", "dropout", "bayesian"
     uncertainty_samples: int = 100
     confidence_threshold: float = 0.8
-    
+
     # Robustness optimization
     enable_robustness_optimization: bool = True
     robustness_perturbations: List[str] = field(default_factory=lambda: [
         "noise", "adversarial", "distribution_shift"
     ])
     robustness_weight: float = 0.1
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary."""
         return {
@@ -643,7 +631,6 @@ class TASOptimizationConfig:
             'robustness_weight': self.robustness_weight
         }
 
-
 # Configuration presets
 def create_quick_config() -> TASConfig:
     """Create a quick search configuration."""
@@ -653,7 +640,6 @@ def create_quick_config() -> TASConfig:
         search_method=SearchMethod.RANDOM,
         enable_hyperparameter_tuning=False
     )
-
 
 def create_comprehensive_config() -> TASConfig:
     """Create a comprehensive search configuration."""
@@ -665,7 +651,6 @@ def create_comprehensive_config() -> TASConfig:
         enable_pruning=True,
         enable_feature_importance=True
     )
-
 
 def create_regime_aware_config() -> TASConfig:
     """Create a regime-aware search configuration."""
@@ -679,7 +664,6 @@ def create_regime_aware_config() -> TASConfig:
             OptimizationObjective.EFFICIENCY
         ]
     )
-
 
 def create_real_time_config() -> TASConfig:
     """Create a real-time search configuration."""

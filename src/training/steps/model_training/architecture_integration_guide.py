@@ -18,7 +18,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 # 1. CLVSA Integration
 def integrate_clvsa_architecture():
     """Integrate CLVSA into existing training pipeline."""
@@ -59,7 +58,6 @@ def _create_clvsa_model(self, model_config: ModelConfig) -> Any:
 """
 
     return integration_code
-
 
 # 2. MultiScaleNBEATS Integration
 def integrate_multiscale_nbeats():
@@ -104,7 +102,6 @@ def _create_enhanced_nbeats_model(self, model_config: ModelConfig) -> Any:
 
     return integration_code
 
-
 # 3. Enhanced Regime-Specific HPO Integration
 def integrate_regime_hpo():
     """Integrate Enhanced Regime-Specific HPO."""
@@ -147,7 +144,6 @@ def enhanced_regime_specific_hpo(X_train, y_train, model_factory, regime_id, mod
 """
 
     return integration_code
-
 
 # 4. RegimeNAS Integration
 def integrate_regime_nas():
@@ -197,7 +193,6 @@ def regime_nas_training(X_train, y_train, regime_type, validation_data=None):
 
     return integration_code
 
-
 # 5. Hierarchical Regime Detection Integration
 def integrate_hierarchical_regime_detection():
     """Integrate 4D Hierarchical Regime Detection."""
@@ -239,7 +234,6 @@ def hierarchical_regime_detection(data_dict, config=None):
 
     return integration_code
 
-
 # Usage Examples
 def usage_examples():
     """Complete usage examples for all components."""
@@ -263,7 +257,6 @@ clvsa_config = {
 
 clvsa_model = get_clvsa_model({'clvsa_params': clvsa_config})
 
-
 # 2. MultiScaleNBEATS Usage (Replace existing NBEATS)
 from src.training.steps.model_training.multiscale_nbeats import get_multiscale_nbeats_model
 
@@ -278,7 +271,6 @@ multiscale_config = {
 
 multiscale_model = get_multiscale_nbeats_model({'nbeats_params': multiscale_config})
 
-
 # 3. Enhanced HPO Usage (Replace existing HPO)
 from src.training.steps.model_training.regime_hyperparam_optimizer import optimize_model_hyperparameters
 
@@ -292,7 +284,6 @@ def optimize_for_regime(X_train, y_train, regime_id, model_type):
     )
     return best_params
 
-
 # 4. RegimeNAS Usage (Replace per-regime training)
 from src.training.steps.model_training.regime_nas import search_optimal_architecture
 
@@ -302,7 +293,6 @@ optimal_arch = search_optimal_architecture(
 )
 
 # Use this architecture for similar regimes instead of training separate models
-
 
 # 5. 4D Hierarchical Regime Detection Usage
 from src.training.steps.model_training.hierarchical_regime_detection import create_hierarchical_regime_detector
@@ -324,7 +314,6 @@ future_regimes = detector.predict_regime(regime_data, horizon=2, return_uncertai
 """
 
     return examples
-
 
 # Integration Benefits Summary
 def integration_benefits():
@@ -384,7 +373,6 @@ def integration_benefits():
 
     return benefits
 
-
 # Migration Strategy
 def migration_strategy():
     """Step-by-step migration strategy."""
@@ -429,7 +417,6 @@ def migration_strategy():
 """
 
     return strategy
-
 
 if __name__ == "__main__":
     print("🔧 Architecture Integration Guide")

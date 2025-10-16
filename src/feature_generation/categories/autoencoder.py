@@ -45,7 +45,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-    
+
     cp = None
 
 from ..base_calculations import (
@@ -56,26 +56,26 @@ from ..base_calculations import (
 class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
     """
     Feature generator for autoencoder-based features.
-    
+
     This generator creates various autoencoder indicators including:
     - Encoded features (latent representations)
     - Reconstruction error
     - Deep learning features
     - Dimensionality reduction features
     """
-    
+
     def __init__(self, config: Optional[FeatureConfig] = None):
         """
         Initialize the autoencoder feature generator.
-        
+
         Args:
             config: Feature configuration (uses default if None)
         """
         if config is None:
             config = self._create_default_config()
-        
+
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-    
+
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
         """Create default configuration for autoencoder features."""
@@ -96,11 +96,11 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-    
+
     @classmethod
     def create_default(cls) -> 'AutoencoderFeatureGenerator':
         return cls()
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -115,7 +115,7 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
 
 class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder encoded features."""
-    
+
     def __init__(self,
                  encoding_dimension: int = 10,
                  window: int = 20,
@@ -123,7 +123,7 @@ class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder encoded generator.
-        
+
         Args:
             encoding_dimension: Dimension of the encoded representation
             window: Rolling window for autoencoder calculations
@@ -132,13 +132,13 @@ class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_encoded_{encoding_dimension}_{window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -158,7 +158,7 @@ class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
         self.encoding_dimension = encoding_dimension
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -166,27 +166,27 @@ class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder encoded feature."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Simulate autoencoder encoding using PCA-like transformation
         # In practice, this would use a trained autoencoder model
         encoded_feature = base_values.rolling(window=self.window).apply(
             lambda x: np.mean(x) + np.std(x) * np.sin(self.encoding_dimension * np.pi * x.index / len(x))
         )
-        
+
         return encoded_feature
 
 # Autoencoder Reconstruction Error Generator
 
 class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             base_calculation: Base calculation type
@@ -194,13 +194,13 @@ class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_{window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -218,7 +218,7 @@ class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -226,19 +226,19 @@ class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Simulate reconstruction error using rolling mean as reconstruction
         # In practice, this would use a trained autoencoder model
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         return reconstruction_error
 
 # Autoencoder Reconstruction Error MA Generator
 
 class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error moving average features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  ma_window: int = 10,
@@ -246,7 +246,7 @@ class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error MA generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             ma_window: Moving average window
@@ -255,13 +255,13 @@ class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_ma_{window}_{ma_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -281,7 +281,7 @@ class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -289,21 +289,21 @@ class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error MA."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate moving average of reconstruction error
         reconstruction_error_ma = reconstruction_error.rolling(window=self.ma_window).mean()
-        
+
         return reconstruction_error_ma
 
 # Autoencoder Reconstruction Error Std Generator
 
 class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error standard deviation features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  std_window: int = 10,
@@ -311,7 +311,7 @@ class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error std generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             std_window: Standard deviation window
@@ -320,13 +320,13 @@ class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_std_{window}_{std_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -346,7 +346,7 @@ class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.std_window = std_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -354,21 +354,21 @@ class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error std."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate standard deviation of reconstruction error
         reconstruction_error_std = reconstruction_error.rolling(window=self.std_window).std()
-        
+
         return reconstruction_error_std
 
 # Autoencoder Reconstruction Error Skew Generator
 
 class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error skewness features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  skew_window: int = 10,
@@ -376,7 +376,7 @@ class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error skew generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             skew_window: Skewness window
@@ -385,13 +385,13 @@ class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_skew_{window}_{skew_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -411,7 +411,7 @@ class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.skew_window = skew_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -419,21 +419,21 @@ class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error skew."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate skewness of reconstruction error
         reconstruction_error_skew = reconstruction_error.rolling(window=self.skew_window).skew()
-        
+
         return reconstruction_error_skew
 
 # Autoencoder Reconstruction Error Kurtosis Generator
 
 class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error kurtosis features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  kurtosis_window: int = 10,
@@ -441,7 +441,7 @@ class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error kurtosis generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             kurtosis_window: Kurtosis window
@@ -450,13 +450,13 @@ class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_kurtosis_{window}_{kurtosis_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -476,7 +476,7 @@ class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator
         self.window = window
         self.kurtosis_window = kurtosis_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -484,21 +484,21 @@ class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator
 
         """Generate autoencoder reconstruction error kurtosis."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate kurtosis of reconstruction error
         reconstruction_error_kurtosis = reconstruction_error.rolling(window=self.kurtosis_window).kurt()
-        
+
         return reconstruction_error_kurtosis
 
 # Autoencoder Reconstruction Error Ratio Generator
 
 class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error ratio features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  ratio_window: int = 10,
@@ -506,7 +506,7 @@ class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error ratio generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             ratio_window: Ratio window
@@ -515,13 +515,13 @@ class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_ratio_{window}_{ratio_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -541,7 +541,7 @@ class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.ratio_window = ratio_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -549,22 +549,22 @@ class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error ratio."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate ratio of reconstruction error to its moving average
         reconstruction_error_ma = reconstruction_error.rolling(window=self.ratio_window).mean()
         reconstruction_error_ratio = reconstruction_error / reconstruction_error_ma.replace(0, 1)
-        
+
         return reconstruction_error_ratio
 
 # Autoencoder Reconstruction Error Diff Generator
 
 class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error difference features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  diff_window: int = 10,
@@ -572,7 +572,7 @@ class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error diff generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             diff_window: Difference window
@@ -581,13 +581,13 @@ class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_diff_{window}_{diff_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -607,7 +607,7 @@ class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.diff_window = diff_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -615,21 +615,21 @@ class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error diff."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate difference of reconstruction error
         reconstruction_error_diff = reconstruction_error.diff(periods=self.diff_window)
-        
+
         return reconstruction_error_diff
 
 # Autoencoder Reconstruction Error Product Generator
 
 class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error product features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  product_window: int = 10,
@@ -637,7 +637,7 @@ class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator)
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error product generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             product_window: Product window
@@ -646,13 +646,13 @@ class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator)
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_product_{window}_{product_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -672,7 +672,7 @@ class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator)
         self.window = window
         self.product_window = product_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -680,29 +680,29 @@ class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator)
 
         """Generate autoencoder reconstruction error product."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate product of reconstruction error with its lagged version
         reconstruction_error_lagged = reconstruction_error.shift(self.product_window)
         reconstruction_error_product = reconstruction_error * reconstruction_error_lagged
-        
+
         return reconstruction_error_product
 
 # Autoencoder Reconstruction Error Squared Generator
 
 class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error squared features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error squared generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             base_calculation: Base calculation type
@@ -710,13 +710,13 @@ class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator)
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_squared_{window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -734,7 +734,7 @@ class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator)
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -742,28 +742,28 @@ class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator)
 
         """Generate autoencoder reconstruction error squared."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate squared reconstruction error
         reconstruction_error_squared = reconstruction_error ** 2
-        
+
         return reconstruction_error_squared
 
 # Autoencoder Reconstruction Error Cubed Generator
 
 class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cubed features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error cubed generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             base_calculation: Base calculation type
@@ -771,13 +771,13 @@ class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_cubed_{window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -795,7 +795,7 @@ class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -803,21 +803,21 @@ class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error cubed."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate cubed reconstruction error
         reconstruction_error_cubed = reconstruction_error ** 3
-        
+
         return reconstruction_error_cubed
 
 # Autoencoder Reconstruction Error Cross Timeframe Generator
 
 class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cross timeframe features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  cross_timeframe: int = 5,
@@ -825,7 +825,7 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGen
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error cross timeframe generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             cross_timeframe: Cross timeframe period
@@ -834,13 +834,13 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGen
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_cross_timeframe_{window}_{cross_timeframe}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -860,7 +860,7 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGen
         self.window = window
         self.cross_timeframe = cross_timeframe
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -868,21 +868,21 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGen
 
         """Generate autoencoder reconstruction error cross timeframe."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate cross timeframe reconstruction error
         reconstruction_error_cross_timeframe = reconstruction_error.rolling(window=self.cross_timeframe).mean()
-        
+
         return reconstruction_error_cross_timeframe
 
 # Autoencoder Reconstruction Error Regime Generator
 
 class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error regime features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  regime_window: int = 10,
@@ -890,7 +890,7 @@ class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error regime generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             regime_window: Regime window
@@ -899,13 +899,13 @@ class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_regime_{window}_{regime_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -925,7 +925,7 @@ class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
         self.window = window
         self.regime_window = regime_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -933,23 +933,23 @@ class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
 
         """Generate autoencoder reconstruction error regime."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate regime-based reconstruction error
         reconstruction_error_regime = reconstruction_error.rolling(window=self.regime_window).apply(
             lambda x: np.mean(x) + np.std(x) * np.sin(2 * np.pi * x.index / len(x))
         )
-        
+
         return reconstruction_error_regime
 
 # Autoencoder Reconstruction Error Interaction Generator
 
 class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error interaction features."""
-    
+
     def __init__(self,
                  window: int = 20,
                  interaction_window: int = 10,
@@ -957,7 +957,7 @@ class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenera
                  **base_kwargs):
         """
         Initialize autoencoder reconstruction error interaction generator.
-        
+
         Args:
             window: Rolling window for reconstruction error calculations
             interaction_window: Interaction window
@@ -966,13 +966,13 @@ class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenera
         """
         if isinstance(base_calculation, str):
             base_calculation = BaseCalculationType(base_calculation)
-        
+
         # Create base calculator
         self.base_calculator = create_base_calculator(base_calculation, **base_kwargs)
-        
+
         # Update required columns based on base calculation
         required_columns = self.base_calculator.get_required_columns()
-        
+
         config = FeatureConfig(
             name=f"autoencoder_reconstruction_error_interaction_{window}_{interaction_window}_{base_calculation.value}",
             category=FeatureCategory.AUTOENCODER,
@@ -992,7 +992,7 @@ class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenera
         self.window = window
         self.interaction_window = interaction_window
         self.base_calculation = base_calculation
-    
+
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
@@ -1000,16 +1000,16 @@ class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenera
 
         """Generate autoencoder reconstruction error interaction."""
         base_values = self.base_calculator.calculate(data)
-        
+
         # Calculate reconstruction error
         reconstruction = base_values.rolling(window=self.window).mean()
         reconstruction_error = np.abs(base_values - reconstruction)
-        
+
         # Calculate interaction-based reconstruction error
         reconstruction_error_interaction = reconstruction_error.rolling(window=self.interaction_window).apply(
             lambda x: np.mean(x) * np.std(x) * np.cos(2 * np.pi * x.index / len(x))
         )
-        
+
         return reconstruction_error_interaction
 
 def create_autoencoder_generators(encoding_dimensions: List[int] = None, windows: List[int] = None) -> List[FeatureGenerator]:
@@ -1018,14 +1018,14 @@ def create_autoencoder_generators(encoding_dimensions: List[int] = None, windows
         encoding_dimensions = [10, 20, 30]
     if windows is None:
         windows = [5, 10, 20]
-    
+
     generators = []
-    
+
     # Create encoded feature generators
     for encoding_dim in encoding_dimensions:
         for window in windows:
             generators.append(AutoencoderEncodedGenerator(encoding_dim, window))
-    
+
     # Create reconstruction error generators
     for window in windows:
         generators.extend([
@@ -1043,7 +1043,7 @@ def create_autoencoder_generators(encoding_dimensions: List[int] = None, windows
             AutoencoderReconstructionErrorRegimeGenerator(window, 10),
             AutoencoderReconstructionErrorInteractionGenerator(window, 10)
         ])
-    
+
     return generators
 
 def create_default_autoencoder_generators() -> List[FeatureGenerator]:
@@ -1051,16 +1051,16 @@ def create_default_autoencoder_generators() -> List[FeatureGenerator]:
     return create_autoencoder_generators()
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
+        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
                 VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
         """Perform VectorBT rolling operation with fallback to pandas."""
         if not self._should_use_vectorbt(data):
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
+
         try:
             if operation == 'mean':
                 return rolling_mean(data, window=window, **kwargs)
@@ -1079,8 +1079,8 @@ def create_default_autoencoder_generators() -> List[FeatureGenerator]:
         except Exception as e:
             logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':

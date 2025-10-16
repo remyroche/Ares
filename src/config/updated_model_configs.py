@@ -12,7 +12,6 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-
 class ModelType(Enum):
     """Model types for the updated configurations."""
     LGBM = "LGBM"
@@ -21,7 +20,6 @@ class ModelType(Enum):
     LGBM_GRU = "LGBM_GRU"
     CAUSAL_TCN = "Causal_TCN"
     STACKER_LGBM_CALIBRATED = "Stacker_LGBM_Calibrated"
-
 
 @dataclass
 class PatchTSTConfig:
@@ -34,7 +32,6 @@ class PatchTSTConfig:
     include_confidence: bool = True
     include_oof_predictions: bool = True
 
-
 @dataclass
 class GRUConfig:
     """GRU configuration for tactician models."""
@@ -45,7 +42,6 @@ class GRUConfig:
     pca_dims: int = 10  # 8-12 range, using 10 as middle
     fit_pca_on_train_only: bool = True
 
-
 @dataclass
 class LGBMConfig:
     """LightGBM configuration with updated hyperparameters."""
@@ -55,7 +51,7 @@ class LGBMConfig:
     min_child_samples: int = 800  # 600-1000 range, using 800
     lambda_l2: float = 30.0  # 10-50 range, using 30
     feature_fraction: float = 0.7  # 0.6-0.8 range, using 0.7
-    
+
     # Additional parameters
     learning_rate: float = 0.05
     n_estimators: int = 500
@@ -64,7 +60,6 @@ class LGBMConfig:
     random_state: int = 42
     n_jobs: int = -1
     verbose: int = -1
-
 
 @dataclass
 class CatBoostConfig:
@@ -78,7 +73,6 @@ class CatBoostConfig:
     random_seed: int = 42
     verbose: bool = False
 
-
 @dataclass
 class CausalTCNConfig:
     """Causal Dilated TCN configuration for tactician."""
@@ -90,7 +84,6 @@ class CausalTCNConfig:
     activation: str = "relu"
     use_skip_connections: bool = True
 
-
 @dataclass
 class StackerLGBMCalibratedConfig:
     """Stacker LGBM Calibrated meta-learner configuration."""
@@ -98,11 +91,10 @@ class StackerLGBMCalibratedConfig:
     calibration_method: str = "isotonic"  # or "sigmoid"
     cv_folds: int = 5
     random_state: int = 42
-    
+
     def __post_init__(self):
         if self.base_lgbm_config is None:
             self.base_lgbm_config = LGBMConfig()
-
 
 # Analyst Models Configuration
 ANALYST_MODELS_CONFIG = {
@@ -197,26 +189,21 @@ UPDATED_MODEL_CONFIGURATIONS = {
     "trading": TRADING_CONFIG
 }
 
-
 def get_analyst_config() -> Dict[str, Any]:
     """Get analyst model configuration."""
     return ANALYST_MODELS_CONFIG
-
 
 def get_tactician_config() -> Dict[str, Any]:
     """Get tactician model configuration."""
     return TACTICIAN_MODELS_CONFIG
 
-
 def get_feature_config() -> Dict[str, Any]:
     """Get feature configuration."""
     return FEATURE_CONFIG
 
-
 def get_trading_config() -> Dict[str, Any]:
     """Get trading configuration."""
     return TRADING_CONFIG
-
 
 def get_complete_config() -> Dict[str, Any]:
     """Get complete updated configuration."""

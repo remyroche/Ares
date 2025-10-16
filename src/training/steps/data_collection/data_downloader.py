@@ -47,20 +47,20 @@ async def download_all_data_with_consolidation(
     # Use unified downloader
     try:
         from datetime import datetime, timedelta
-        
+
         downloader = UnifiedDataDownloader(data_dir or "data_cache")
-        
+
         # Calculate date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days=lookback_years * 365)
-        
+
         logger.info(f"📥 Downloading data for {symbol} on {exchange_name}")
         logger.info(f"📅 Date range: {start_date} to {end_date}")
-        
+
         # Download all data types
         success_count = 0
         total_types = 2
-        
+
         # Download klines
         klines_success, klines_data, klines_error = await downloader.download_klines(
             symbol, exchange_name, interval, start_date, end_date
@@ -70,18 +70,17 @@ async def download_all_data_with_consolidation(
             logger.info(f"✅ Downloaded {len(klines_data)} klines records")
         else:
             logger.error(f"❌ Klines download failed: {klines_error}")
-        
+
         # Skip aggtrades download as per new setup - only klines are processed
         logger.info(f"⚠️ Skipping aggtrades download for {symbol} - aggtrades downloads disabled")
         aggtrades_success, aggtrades_data, aggtrades_error = False, [], "Aggtrades downloads disabled"
-        
-        
+
         # Return success if at least one data type was downloaded successfully
         overall_success = success_count > 0
         logger.info(f"📊 Download summary: {success_count}/{total_types} data types successful")
-        
+
         return overall_success
-        
+
     except Exception as e:
         logger.exception(f"Unified downloader failed: {e}")
         return False

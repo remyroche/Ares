@@ -14,7 +14,7 @@ from .validation_orchestrator import ValidationOrchestrator, ValidationConfig
 __all__ = [
     'BacktestingEngine',
     'BacktestingConfig',
-    'WalkForwardAnalyzer', 
+    'WalkForwardAnalyzer',
     'WalkForwardConfig',
     'PerformanceAttributor',
     'AttributionConfig',

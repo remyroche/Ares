@@ -21,7 +21,6 @@ except ImportError:  # pragma: no cover - pandas is expected in prod but optiona
 
 logger = logging.getLogger(__name__)
 
-
 def _ensure_pandas_series(name: str, series: Any) -> "pd.Series":
     if not PANDAS_AVAILABLE or pd is None:  # pragma: no cover - defensive
         raise ImportError("pandas is required for turnover calculations")
@@ -33,7 +32,6 @@ def _ensure_pandas_series(name: str, series: Any) -> "pd.Series":
         return pd.Series(series)
     except Exception as exc:  # pragma: no cover - defensive
         raise TypeError(f"{name} must be convertible to a pandas Series") from exc
-
 
 def calculate_turnover_metrics(
     positions: "pd.Series",
@@ -83,7 +81,6 @@ def calculate_turnover_metrics(
         "position_stability": position_stability,
     }
 
-
 def apply_market_impact_model(
     returns: "pd.Series",
     positions: "pd.Series",
@@ -124,7 +121,6 @@ def apply_market_impact_model(
         )
 
     return net_returns
-
 
 def reject_high_turnover_configs(
     strategy_results: Dict[str, Any],

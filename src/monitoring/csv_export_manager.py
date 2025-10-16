@@ -49,48 +49,48 @@ class CSVExportManager:
     """
     Manages comprehensive CSV export functionality for monitoring data.
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         """Initialize the CSV export manager."""
         self.config = config
         self.logger = system_logger.getChild("CSVExportManager")
-        
+
         # Configuration
         self.export_config = ExportConfig(**config.get("csv_export", {}))
         self.export_dir = Path(self.export_config.export_directory)
         self.export_dir.mkdir(exist_ok = True)
-        
+
         # Export tracking
         self.export_history: List[ExportMetadata] = []
         self.last_export_time: Optional[datetime] = None
-        
+
         self.logger.info("CSV Export Manager initialized")
-    
+
     @handles_errors(default_return = False, context="csv_export_manager.export_trade_decisions")
-    async def export_trade_decisions(self, trade_decisions: List[Any], 
+    async def export_trade_decisions(self, trade_decisions: List[Any],
                                 export_id: Optional[str] = None,
                                 separate_by_mode: bool = True) -> bool:
         """Export trade decisions to CSV with comprehensive details."""
         try:
             start_time = time.time()
             export_id = export_id or f"trade_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
             if not trade_decisions:
                 self.logger.warning("No trade decisions to export")
                 return False
-            
+
             if separate_by_mode:
                 # Separate by trading mode
                 return await self._export_trade_decisions_by_mode(trade_decisions, export_id, start_time)
             else:
                 # Export all together (legacy behavior)
                 return await self._export_trade_decisions_combined(trade_decisions, export_id, start_time)
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting trade decisions: {e}")
             return False
-    
-    async def _export_trade_decisions_by_mode(self, trade_decisions: List[Any], 
+
+    async def _export_trade_decisions_by_mode(self, trade_decisions: List[Any],
                                             export_id: str, start_time: float) -> bool:
         """Export trade decisions separated by trading mode."""
         try:
@@ -101,42 +101,42 @@ class CSVExportManager:
                 if mode not in mode_groups:
                     mode_groups[mode] = []
                 mode_groups[mode].append(decision)
-            
+
             exported_files = []
             total_records = 0
-            
+
             # Export each mode separately
             for mode, decisions in mode_groups.items():
                 mode_export_id = f"{export_id}_{mode}"
-                
+
                 # Create DataFrame for this mode
                 df = await self._create_trade_decisions_dataframe(decisions)
-                
+
                 # Export main file for this mode
                 main_file = await self._export_dataframe_to_csv(
                     df, f"{mode_export_id}_main.csv", f"Trade Decisions - {mode.title()}"
                 )
-                
+
                 if main_file:
                     exported_files.append(main_file)
                     total_records += len(df)
-                
+
                 # Export detailed breakdowns for this mode
                 await self._export_trading_indicators_breakdown(decisions, mode_export_id)
                 await self._export_ensemble_breakdown(decisions, mode_export_id)
                 await self._export_model_breakdown(decisions, mode_export_id)
                 await self._export_context_analysis(decisions, mode_export_id)
-                
+
                 # Create summary statistics for this mode
                 if self.export_config.include_summary_stats:
                     await self._export_trade_decisions_summary(df, mode_export_id)
-                
+
                 self.logger.info(f"Exported {len(df)} {mode} trade decisions to {mode_export_id}")
-            
+
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             total_size = sum(f.stat().st_size for f in exported_files if f)
-            
+
             metadata = ExportMetadata(
                 export_id = export_id,
                 timestamp = datetime.now(),
@@ -146,40 +146,40 @@ class CSVExportManager:
                 export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
-            
+
             self.logger.info(
                 f"Exported {total_records} trade decisions across {len(mode_groups)} modes "
                 f"in {export_duration:.1f}ms"
             )
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting trade decisions by mode: {e}")
             return False
-    
-    async def _export_trade_decisions_combined(self, trade_decisions: List[Any], 
+
+    async def _export_trade_decisions_combined(self, trade_decisions: List[Any],
                                             export_id: str, start_time: float) -> bool:
         """Export all trade decisions in a single file (legacy behavior)."""
         try:
             # Create comprehensive DataFrame
             df = await self._create_trade_decisions_dataframe(trade_decisions)
-            
+
             # Export main file
             main_file = await self._export_dataframe_to_csv(
                 df, f"{export_id}_main.csv", "Trade Decisions Main Data"
             )
-            
+
             # Export detailed breakdowns
             await self._export_trading_indicators_breakdown(trade_decisions, export_id)
             await self._export_ensemble_breakdown(trade_decisions, export_id)
             await self._export_model_breakdown(trade_decisions, export_id)
             await self._export_context_analysis(trade_decisions, export_id)
-            
+
             # Create summary statistics
             if self.export_config.include_summary_stats:
                 await self._export_trade_decisions_summary(df, export_id)
-            
+
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
@@ -191,22 +191,22 @@ class CSVExportManager:
                 export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
-            
+
             self.logger.info(
                 f"Exported {len(df)} trade decisions to {export_id} "
                 f"in {export_duration:.1f}ms"
             )
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting combined trade decisions: {e}")
             return False
-    
+
     async def _create_trade_decisions_dataframe(self, trade_decisions: List[Any]) -> pd.DataFrame:
         """Create comprehensive DataFrame from trade decisions."""
         data = []
-        
+
         for decision in trade_decisions:
             # Base decision data
             row = {
@@ -227,7 +227,7 @@ class CSVExportManager:
                 'overall_risk_score': round(decision.overall_risk_score, self.export_config.decimal_precision),
                 'execution_time_ms': round(decision.execution_time_ms, 2),
             }
-            
+
             # HMM Regime Information
             if decision.context.hmm_regime_info:
                 hmm_info = decision.context.hmm_regime_info
@@ -239,12 +239,12 @@ class CSVExportManager:
                     'hmm_regime_duration': hmm_info.regime_duration,
                     'hmm_regime_stability_score': round(hmm_info.regime_stability_score, self.export_config.decimal_precision),
                 })
-                
+
                 # Next regime probabilities
                 if hmm_info.next_regime_probabilities:
                     for regime_id, prob in hmm_info.next_regime_probabilities.items():
                         row[f'hmm_next_regime_{regime_id}_probability'] = round(prob, self.export_config.decimal_precision)
-            
+
             # Market conditions
             if decision.context.market_conditions:
                 for key, value in decision.context.market_conditions.items():
@@ -252,7 +252,7 @@ class CSVExportManager:
                         row[f'market_{key}'] = round(value, self.export_config.decimal_precision)
                     else:
                         row[f'market_{key}'] = str(value)
-            
+
             # Ensemble decision data
             ensemble = decision.ensemble_decision
             row.update({
@@ -264,11 +264,11 @@ class CSVExportManager:
                 'consensus_score': round(ensemble.consensus_score, self.export_config.decimal_precision),
                 'disagreement_level': round(ensemble.disagreement_level, self.export_config.decimal_precision),
             })
-            
+
             # Model weights
             for model_id, weight in ensemble.model_weights.items():
                 row[f'model_weight_{model_id}'] = round(weight, self.export_config.decimal_precision)
-            
+
             # Trading indicators
             for i, indicator in enumerate(decision.trading_indicators):
                 row[f'indicator_{i}_name'] = indicator.name
@@ -277,7 +277,7 @@ class CSVExportManager:
                 row[f'indicator_{i}_confidence'] = round(indicator.confidence, self.export_config.decimal_precision)
                 row[f'indicator_{i}_risk'] = round(indicator.risk_score, self.export_config.decimal_precision)
                 row[f'indicator_{i}_description'] = indicator.description
-            
+
             # Model decisions
             for i, model_decision in enumerate(ensemble.model_decisions):
                 row[f'model_{i}_id'] = model_decision.model_id
@@ -287,7 +287,7 @@ class CSVExportManager:
                 row[f'model_{i}_risk'] = round(model_decision.risk_score, self.export_config.decimal_precision)
                 row[f'model_{i}_processing_time_ms'] = round(model_decision.processing_time_ms, 2)
                 row[f'model_{i}_version'] = model_decision.model_version
-            
+
             # Success metrics
             if decision.success_metrics:
                 for key, value in decision.success_metrics.items():
@@ -295,16 +295,16 @@ class CSVExportManager:
                         row[f'success_{key}'] = round(value, self.export_config.decimal_precision)
                     else:
                         row[f'success_{key}'] = str(value)
-            
+
             data.append(row)
-        
+
         return pd.DataFrame(data)
-    
+
     async def _export_trading_indicators_breakdown(self, trade_decisions: List[Any], export_id: str):
         """Export detailed trading indicators breakdown."""
         try:
             indicators_data = []
-            
+
             for decision in trade_decisions:
                 for indicator in decision.trading_indicators:
                     indicators_data.append({
@@ -320,21 +320,21 @@ class CSVExportManager:
                         'action': decision.action,
                         'overall_confidence': round(decision.overall_confidence, self.export_config.decimal_precision)
                     })
-            
+
             if indicators_data:
                 df = pd.DataFrame(indicators_data)
                 await self._export_dataframe_to_csv(
                     df, f"{export_id}_trading_indicators.csv", "Trading Indicators Breakdown"
                 )
-                
+
         except Exception as e:
             self.logger.error(f"Error exporting trading indicators breakdown: {e}")
-    
+
     async def _export_ensemble_breakdown(self, trade_decisions: List[Any], export_id: str):
         """Export detailed ensemble breakdown."""
         try:
             ensemble_data = []
-            
+
             for decision in trade_decisions:
                 ensemble = decision.ensemble_decision
                 ensemble_data.append({
@@ -352,28 +352,28 @@ class CSVExportManager:
                     'action': decision.action,
                     'overall_confidence': round(decision.overall_confidence, self.export_config.decimal_precision)
                 })
-                
+
                 # Model weights
                 for model_id, weight in ensemble.model_weights.items():
                     ensemble_data[-1][f'weight_{model_id}'] = round(weight, self.export_config.decimal_precision)
-            
+
             if ensemble_data:
                 df = pd.DataFrame(ensemble_data)
                 await self._export_dataframe_to_csv(
                     df, f"{export_id}_ensemble_breakdown.csv", "Ensemble Breakdown"
                 )
-                
+
         except Exception as e:
             self.logger.error(f"Error exporting ensemble breakdown: {e}")
-    
+
     async def _export_model_breakdown(self, trade_decisions: List[Any], export_id: str):
         """Export detailed model breakdown."""
         try:
             model_data = []
-            
+
             for decision in trade_decisions:
                 ensemble = decision.ensemble_decision
-                
+
                 for model_decision in ensemble.model_decisions:
                     model_data.append({
                         'decision_id': decision.decision_id,
@@ -390,26 +390,26 @@ class CSVExportManager:
                         'action': decision.action,
                         'overall_confidence': round(decision.overall_confidence, self.export_config.decimal_precision)
                     })
-                    
+
                     # Feature importance
                     if model_decision.feature_importance:
                         for feature, importance in model_decision.feature_importance.items():
                             model_data[-1][f'feature_importance_{feature}'] = round(importance, self.export_config.decimal_precision)
-            
+
             if model_data:
                 df = pd.DataFrame(model_data)
                 await self._export_dataframe_to_csv(
                     df, f"{export_id}_model_breakdown.csv", "Model Breakdown"
                 )
-                
+
         except Exception as e:
             self.logger.error(f"Error exporting model breakdown: {e}")
-    
+
     async def _export_context_analysis(self, trade_decisions: List[Any], export_id: str):
         """Export context analysis."""
         try:
             context_data = []
-            
+
             for decision in trade_decisions:
                 context_data.append({
                     'decision_id': decision.decision_id,
@@ -424,7 +424,7 @@ class CSVExportManager:
                     'overall_confidence': round(decision.overall_confidence, self.export_config.decimal_precision),
                     'overall_risk_score': round(decision.overall_risk_score, self.export_config.decimal_precision)
                 })
-                
+
                 # Market conditions
                 if decision.context.market_conditions:
                     for key, value in decision.context.market_conditions.items():
@@ -432,28 +432,28 @@ class CSVExportManager:
                             context_data[-1][f'market_{key}'] = round(value, self.export_config.decimal_precision)
                         else:
                             context_data[-1][f'market_{key}'] = str(value)
-            
+
             if context_data:
                 df = pd.DataFrame(context_data)
                 await self._export_dataframe_to_csv(
                     df, f"{export_id}_context_analysis.csv", "Context Analysis"
                 )
-                
+
         except Exception as e:
             self.logger.error(f"Error exporting context analysis: {e}")
-    
+
     async def _export_trade_decisions_summary(self, df: pd.DataFrame, export_id: str):
         """Export summary statistics for trade decisions."""
         try:
             summary_data = []
-            
+
             # Overall summary
             summary_data.append({
                 'metric': 'total_decisions',
                 'value': len(df),
                 'description': 'Total number of trade decisions'
             })
-            
+
             # Trading mode distribution
             mode_counts = df['trading_mode'].value_counts()
             for mode, count in mode_counts.items():
@@ -462,7 +462,7 @@ class CSVExportManager:
                     'value': count,
                     'description': f'Number of {mode} trading decisions'
                 })
-            
+
             # Action distribution
             action_counts = df['action'].value_counts()
             for action, count in action_counts.items():
@@ -471,7 +471,7 @@ class CSVExportManager:
                     'value': count,
                     'description': f'Number of {action} actions'
                 })
-            
+
             # Token distribution
             token_counts = df['token'].value_counts()
             for token, count in token_counts.head(10).items():  # Top 10 tokens
@@ -480,7 +480,7 @@ class CSVExportManager:
                     'value': count,
                     'description': f'Number of decisions for {token}'
                 })
-            
+
             # Performance metrics
             if 'overall_confidence' in df.columns:
                 summary_data.extend([
@@ -495,7 +495,7 @@ class CSVExportManager:
                         'description': 'Standard deviation of confidence'
                     }
                 ])
-            
+
             if 'overall_risk_score' in df.columns:
                 summary_data.extend([
                     {
@@ -509,13 +509,13 @@ class CSVExportManager:
                         'description': 'Standard deviation of risk score'
                     }
                 ])
-            
+
             # Time-based analysis
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df['hour'] = df['timestamp'].dt.hour
                 df['day_of_week'] = df['timestamp'].dt.day_name()
-                
+
                 # Hourly distribution
                 hourly_counts = df['hour'].value_counts().sort_index()
                 for hour, count in hourly_counts.items():
@@ -524,7 +524,7 @@ class CSVExportManager:
                         'value': count,
                         'description': f'Number of decisions at hour {hour}'
                     })
-                
+
                 # Daily distribution
                 daily_counts = df['day_of_week'].value_counts()
                 for day, count in daily_counts.items():
@@ -533,28 +533,28 @@ class CSVExportManager:
                         'value': count,
                         'description': f'Number of decisions on {day}'
                     })
-            
+
             # Export summary
             summary_df = pd.DataFrame(summary_data)
             await self._export_dataframe_to_csv(
                 summary_df, f"{export_id}_summary.csv", "Trade Decisions Summary"
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting trade decisions summary: {e}")
-    
+
     @handles_errors(default_return = False, context="csv_export_manager.export_daily_summaries")
-    async def export_daily_summaries(self, daily_summaries: List[Any], 
+    async def export_daily_summaries(self, daily_summaries: List[Any],
                                 export_id: Optional[str] = None) -> bool:
         """Export daily summary data to CSV."""
         try:
             start_time = time.time()
             export_id = export_id or f"daily_summaries_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
             if not daily_summaries:
                 self.logger.warning("No daily summaries to export")
                 return False
-            
+
             # Create DataFrame
             data = []
             for summary in daily_summaries:
@@ -591,24 +591,24 @@ class CSVExportManager:
                     'last_trade_time': summary.last_trade_time.strftime(self.export_config.date_format) if summary.last_trade_time else None,
                     'summary_generated_at': summary.summary_generated_at.strftime(self.export_config.date_format) if summary.summary_generated_at else None,
                 }
-                
+
                 # Add regime distribution
                 for regime_id, count in summary.regime_distribution.items():
                     row[f'regime_{regime_id}_count'] = count
-                
+
                 data.append(row)
-            
+
             df = pd.DataFrame(data)
-            
+
             # Export main file
             main_file = await self._export_dataframe_to_csv(
                 df, f"{export_id}_main.csv", "Daily Summaries"
             )
-            
+
             # Export summary statistics
             if self.export_config.include_summary_stats:
                 await self._export_daily_summary_statistics(df, export_id)
-            
+
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
@@ -620,42 +620,42 @@ class CSVExportManager:
                 export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
-            
+
             self.logger.info(
                 f"Exported {len(df)} daily summaries to {export_id} "
                 f"in {export_duration:.1f}ms"
             )
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting daily summaries: {e}")
             return False
-    
+
     async def _export_daily_summary_statistics(self, df: pd.DataFrame, export_id: str):
         """Export daily summary statistics."""
         try:
             summary_data = []
-            
+
             # Overall statistics
             summary_data.append({
                 'metric': 'total_days',
                 'value': len(df),
                 'description': 'Total number of days tracked'
             })
-            
+
             summary_data.append({
                 'metric': 'total_trades',
                 'value': df['total_trades'].sum(),
                 'description': 'Total trades across all days'
             })
-            
+
             summary_data.append({
                 'metric': 'avg_trades_per_day',
                 'value': round(df['total_trades'].mean(), self.export_config.decimal_precision),
                 'description': 'Average trades per day'
             })
-            
+
             # Performance metrics
             if 'total_pnl' in df.columns:
                 summary_data.extend([
@@ -680,7 +680,7 @@ class CSVExportManager:
                         'description': 'Worst day PnL'
                     }
                 ])
-            
+
             # Win rate statistics
             if 'win_rate' in df.columns:
                 summary_data.extend([
@@ -695,7 +695,7 @@ class CSVExportManager:
                         'description': 'Best day win rate'
                     }
                 ])
-            
+
             # Regime statistics
             regime_columns = [col for col in df.columns if col.startswith('regime_') and col.endswith('_count')]
             for col in regime_columns:
@@ -705,28 +705,28 @@ class CSVExportManager:
                     'value': df[col].sum(),
                     'description': f'Total trades in {regime_name} regime'
                 })
-            
+
             # Export summary
             summary_df = pd.DataFrame(summary_data)
             await self._export_dataframe_to_csv(
                 summary_df, f"{export_id}_summary.csv", "Daily Summary Statistics"
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting daily summary statistics: {e}")
-    
+
     @handles_errors(default_return = False, context="csv_export_manager.export_model_performances")
-    async def export_model_performances(self, model_performances: List[Any], 
+    async def export_model_performances(self, model_performances: List[Any],
                                     export_id: Optional[str] = None) -> bool:
         """Export model performance metrics to CSV."""
         try:
             start_time = time.time()
             export_id = export_id or f"model_performances_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+
             if not model_performances:
                 self.logger.warning("No model performances to export")
                 return False
-            
+
             # Create DataFrame
             data = []
             for perf in model_performances:
@@ -749,18 +749,18 @@ class CSVExportManager:
                     'data_drift_score': round(perf.data_drift_score, self.export_config.decimal_precision),
                 }
                 data.append(row)
-            
+
             df = pd.DataFrame(data)
-            
+
             # Export main file
             main_file = await self._export_dataframe_to_csv(
                 df, f"{export_id}_main.csv", "Model Performance Metrics"
             )
-            
+
             # Export summary statistics
             if self.export_config.include_summary_stats:
                 await self._export_model_performance_summary(df, export_id)
-            
+
             # Record export metadata
             export_duration = (time.time() - start_time) * 1000
             metadata = ExportMetadata(
@@ -772,36 +772,36 @@ class CSVExportManager:
                 export_duration_ms = export_duration
             )
             self.export_history.append(metadata)
-            
+
             self.logger.info(
                 f"Exported {len(df)} model performances to {export_id} "
                 f"in {export_duration:.1f}ms"
             )
-            
+
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting model performances: {e}")
             return False
-    
+
     async def _export_model_performance_summary(self, df: pd.DataFrame, export_id: str):
         """Export model performance summary statistics."""
         try:
             summary_data = []
-            
+
             # Overall statistics
             summary_data.append({
                 'metric': 'total_models',
                 'value': df['model_id'].nunique(),
                 'description': 'Total number of unique models'
             })
-            
+
             summary_data.append({
                 'metric': 'total_performance_records',
                 'value': len(df),
                 'description': 'Total number of performance records'
             })
-            
+
             # Model type distribution
             type_counts = df['model_type'].value_counts()
             for model_type, count in type_counts.items():
@@ -810,10 +810,10 @@ class CSVExportManager:
                     'value': count,
                     'description': f'Number of {model_type} model records'
                 })
-            
+
             # Performance metrics summary
             performance_metrics = ['accuracy', 'precision', 'recall', 'f1_score', 'win_rate', 'profit_factor', 'sharpe_ratio']
-            
+
             for metric in performance_metrics:
                 if metric in df.columns:
                     summary_data.extend([
@@ -838,23 +838,23 @@ class CSVExportManager:
                             'description': f'Maximum {metric}'
                         }
                     ])
-            
+
             # Export summary
             summary_df = pd.DataFrame(summary_data)
             await self._export_dataframe_to_csv(
                 summary_df, f"{export_id}_summary.csv", "Model Performance Summary"
             )
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting model performance summary: {e}")
-    
+
     @handles_errors(default_return = None, context="csv_export_manager._export_dataframe_to_csv")
-    async def _export_dataframe_to_csv(self, df: pd.DataFrame, filename: str, 
+    async def _export_dataframe_to_csv(self, df: pd.DataFrame, filename: str,
                                     description: str) -> Optional[Path]:
         """Export DataFrame to CSV file with proper formatting."""
         try:
             file_path = self.export_dir / filename
-            
+
             # Export with proper formatting
             df.to_csv(
                 file_path,
@@ -863,23 +863,23 @@ class CSVExportManager:
                 date_format = self.export_config.date_format,
                 quoting = csv.QUOTE_NONNUMERIC
             )
-            
+
             self.logger.debug(f"Exported {description}: {file_path} ({len(df)} rows)")
             return file_path
-            
+
         except Exception as e:
             self.logger.error(f"Error exporting DataFrame to CSV: {e}")
             return None
-    
+
     def get_export_stats(self) -> Dict[str, Any]:
         """Get statistics about CSV exports."""
         if not self.export_history:
             return {'total_exports': 0}
-        
+
         total_records = sum(metadata.record_count for metadata in self.export_history)
         total_size = sum(metadata.file_size_bytes for metadata in self.export_history)
         avg_duration = np.mean([metadata.export_duration_ms for metadata in self.export_history])
-        
+
         return {
             'total_exports': len(self.export_history),
             'total_records_exported': total_records,

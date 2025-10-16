@@ -41,7 +41,6 @@ from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperatio
 from ..shared_utils import get_logger
 from .iterative_optimization import ClusteringStats
 
-
 @dataclass
 class MetricsConfig:
     """Configuration for metrics calculation."""
@@ -66,7 +65,6 @@ class MetricsConfig:
     generate_detailed_reports: bool = True
     export_validation_reports: bool = True
 
-
 @dataclass
 class MetricResult:
     """Result container for individual metrics."""
@@ -74,7 +72,6 @@ class MetricResult:
     confidence_interval: Optional[Tuple[float, float]] = None
     computation_time: float = 0.0
     metadata: Optional[Dict[str, Any]] = None
-
 
 @dataclass
 class MetricsReport:
@@ -96,7 +93,6 @@ class MetricsReport:
     n_clusters: int = 0
     computation_timestamp: str = ""
     config_used: Optional[MetricsConfig] = None
-
 
 class ClusteringMetrics:
     """

@@ -16,11 +16,11 @@ class GracefulModuleHandler:
     def safe_import(self, module_name: str, fallback_class: Optional[Any]=None) -> Any:
         """
         Safely import a module with fallback handling.
-        
+
         Args:
             module_name: Name of the module to import
             fallback_class: Fallback class to use if module is not found
-            
+
         Returns:
             Imported module or fallback implementation
         """

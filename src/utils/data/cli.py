@@ -27,7 +27,6 @@ from src.utils.logger import system_logger
 from src.utils.data.gap_detector import GapDetector
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
-
 def setup_logging(verbose: bool = False):
     """Setup logging configuration."""
     if verbose:
@@ -35,7 +34,6 @@ def setup_logging(verbose: bool = False):
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-
 
 async def _get_historical_klines_unified(
     exchange_interface: Optional[ExchangeInterface],
@@ -46,7 +44,7 @@ async def _get_historical_klines_unified(
     limit: int
 ) -> List[Dict[str, Any]]:
     """Get historical klines data using unified interface for both exchange types.
-    
+
     Args:
         exchange_interface: ExchangeInterface instance
         symbol: Trading symbol
@@ -54,7 +52,7 @@ async def _get_historical_klines_unified(
         start_time_ms: Start time in milliseconds
         end_time_ms: End time in milliseconds
         limit: Maximum number of records
-        
+
     Returns:
         List of kline data dictionaries
     """
@@ -64,7 +62,7 @@ async def _get_historical_klines_unified(
             from datetime import datetime
             start_time = datetime.fromtimestamp(start_time_ms / 1000)
             end_time = datetime.fromtimestamp(end_time_ms / 1000)
-            
+
             klines_data = await exchange_interface.get_klines(
                 symbol=symbol,
                 interval=interval,
@@ -72,7 +70,7 @@ async def _get_historical_klines_unified(
                 end_time=end_time,
                 limit=limit
             )
-            
+
             # Convert KlineData objects to dict format
             result = []
             for kline in klines_data:
@@ -104,7 +102,6 @@ async def _get_historical_klines_unified(
     except Exception as e:
         print(f"Error getting historical klines: {e}")
         return []
-
 
 async def download_command(args):
     """Handle download command."""
@@ -142,7 +139,6 @@ async def download_command(args):
         return 1
 
     return 0
-
 
 async def download_standardized_command(args):
     """Handle download-standardized command with enforced format consistency."""
@@ -262,7 +258,6 @@ async def download_standardized_command(args):
         print(f"❌ Standardized download failed: {e}")
         return 1
 
-
 def format_check_command(args):
     """Handle format check command."""
     print(f"🔍 Checking data format for {args.symbol} ({args.data_type})...")
@@ -291,7 +286,6 @@ def format_check_command(args):
         return 1
 
     return 0
-
 
 def fix_timezone_command(args):
     """Handle timezone fix command."""
@@ -365,54 +359,49 @@ def fix_timezone_command(args):
         traceback.print_exc()
         return 1
 
-
-
-
 async def gap_check_command(args):
     """Handle gap check command."""
     print(f"🔍 Checking for gaps in {args.symbol} data...")
-    
+
     pipeline = HistoricalDataPipeline(args.data_dir)
-    
+
     # Detect gaps
     gaps = pipeline.gap_detector.detect_gaps(
         args.symbol, "1m", args.max_gap_minutes
     )
-    
+
     if gaps:
         print(f"⚠️ Found {len(gaps)} gaps:")
         for i, gap in enumerate(gaps, 1):
             print(f"  Gap {i}: {gap['gap_start']} to {gap['gap_end']} ({gap['gap_minutes']:.1f} minutes)")
-        
+
         if args.fill:
             print("🔧 Filling gaps...")
             results = await pipeline.gap_detector.fill_gaps(gaps, args.api_key, args.api_secret)
             print(f"✅ Gap filling completed: {results}")
     else:
         print("✅ No gaps found")
-    
-    return 0
 
+    return 0
 
 async def process_command(args):
     """Handle process command."""
     print(f"🔧 Processing {args.symbol} data with basic returns feature engineering...")
-    
+
     pipeline = HistoricalDataPipeline(args.data_dir)
-    
+
     # Process data
     results = pipeline.basic_returns_engineer.process_symbol_data(
         args.symbol, "1m", args.intervals
     )
-    
+
     if results["success"]:
         print(f"✅ Processing completed: {results}")
     else:
         print(f"❌ Processing failed: {results.get('error', 'Unknown error')}")
         return 1
-    
-    return 0
 
+    return 0
 
 async def pipeline_command(args):
     """Handle complete pipeline command with comprehensive processing."""
@@ -624,43 +613,41 @@ async def pipeline_command(args):
         traceback.print_exc()
         return 1
 
-
 def status_command(args):
     """Handle status command."""
     print(f"📊 Checking status for {args.symbol}...")
-    
+
     pipeline = HistoricalDataPipeline(args.data_dir)
     status = pipeline.get_pipeline_status(args.symbol)
-    
+
     print(f"\nStatus for {status['symbol']}:")
     print(f"  Raw data available: {status['raw_data_available']}")
-    
+
     if status['raw_data_available']:
         print(f"  Raw data summary: {status['data_summary']['raw']}")
-        
+
         print(f"  Processed data available:")
         for interval, available in status['processed_data_available'].items():
             print(f"    {interval}: {available}")
-        
+
         if status['recommendations']:
             print(f"  Recommendations:")
             for rec in status['recommendations']:
                 print(f"    - {rec}")
     else:
         print("  No raw data found - run download first")
-    
-    return 0
 
+    return 0
 
 def info_command(args):
     """Handle info command."""
     print(f"📋 Getting detailed info for {args.symbol} {args.interval}...")
-    
+
     manager = get_klines_manager(args.data_dir)
-    
+
     # Get data info
     info = manager.get_data_info(args.symbol, args.interval, args.data_type)
-    
+
     if info["available"]:
         print(f"\nData info for {args.symbol} {args.interval} ({args.data_type}):")
         print(f"  Files: {info['files_count']}")
@@ -671,26 +658,24 @@ def info_command(args):
     else:
         print(f"❌ No {args.data_type} data found for {args.symbol} {args.interval}")
         return 1
-    
-    return 0
 
+    return 0
 
 def list_command(args):
     """Handle list command."""
     print("📋 Listing available data...")
-    
+
     manager = get_klines_manager(args.data_dir)
     available_data = manager.list_available_data()
-    
+
     if available_data:
         print("\nAvailable data:")
         for symbol, intervals in available_data.items():
             print(f"  {symbol}: {', '.join(intervals)}")
     else:
         print("No data found")
-    
-    return 0
 
+    return 0
 
 def comprehensive_data_checker(args):
     """Handle comprehensive data validation command."""
@@ -930,7 +915,6 @@ def comprehensive_data_checker(args):
         print(f"❌ Validation failed with error: {e}")
         return 1
 
-
 async def enhanced_pipeline_command(args):
     """Handle enhanced pipeline command with comprehensive per-month logging."""
     print(f"🚀 Running enhanced pipeline for {args.symbol} with per-month logging...")
@@ -1114,7 +1098,6 @@ async def enhanced_pipeline_command(args):
         print(f"❌ Enhanced pipeline failed: {e}")
         return 1
 
-
 def main():
     """Main CLI function."""
     parser = argparse.ArgumentParser(
@@ -1165,7 +1148,7 @@ Examples:
   python cli.py download-standardized --symbol ETHUSDT --years 3
         """
     )
-    
+
     parser.add_argument(
         "--data-dir",
         default="historical_data",
@@ -1186,9 +1169,9 @@ Examples:
         action="store_true",
         help="Enable verbose logging"
     )
-    
+
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
+
     # Download command
     download_parser = subparsers.add_parser("download", help="Download historical data")
     download_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
@@ -1199,18 +1182,17 @@ Examples:
     download_std_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     download_std_parser.add_argument("--years", type=int, default=3, help="Number of years to download")
 
-    
     # Gap check command
     gap_parser = subparsers.add_parser("gap-check", help="Check for gaps in data")
     gap_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     gap_parser.add_argument("--max-gap-minutes", type=int, default=1, help="Maximum allowed gap in minutes")
     gap_parser.add_argument("--fill", action="store_true", help="Fill detected gaps")
-    
+
     # Process command
     process_parser = subparsers.add_parser("process", help="Process data with feature engineering")
     process_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     process_parser.add_argument("--intervals", nargs="+", default=["5m", "15m", "30m", "1h"], help="Target intervals")
-    
+
     # Pipeline command
     pipeline_parser = subparsers.add_parser("pipeline", help="Run complete pipeline")
     pipeline_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
@@ -1218,17 +1200,17 @@ Examples:
     pipeline_parser.add_argument("--intervals", nargs="+", default=["5m", "15m", "30m", "1h"], help="Target intervals")
     pipeline_parser.add_argument("--max-gap-minutes", type=int, default=1, help="Maximum allowed gap in minutes for gap detection")
     pipeline_parser.add_argument("--validate", action="store_true", help="Run comprehensive validation after pipeline completion")
-    
+
     # Status command
     status_parser = subparsers.add_parser("status", help="Check pipeline status")
     status_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
-    
+
     # Info command
     info_parser = subparsers.add_parser("info", help="Get detailed data info")
     info_parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     info_parser.add_argument("--interval", default="1m", help="Data interval")
     info_parser.add_argument("--data-type", choices=["raw", "processed"], default="raw", help="Data type")
-    
+
     # List command
     subparsers.add_parser("list", help="List available data")
 
@@ -1257,16 +1239,16 @@ Examples:
     format_parser.add_argument("--interval", default="1m", help="Data interval (for processed data)")
     format_parser.add_argument("--fix", action="store_true", help="Automatically fix format issues")
     format_parser.add_argument("--validate-only", action="store_true", help="Only validate without fixing")
-    
+
     args = parser.parse_args()
-    
+
     if not args.command:
         parser.print_help()
         return 1
-    
+
     # Setup logging
     setup_logging(args.verbose)
-    
+
     # Execute command
     try:
         if args.command == "download":
@@ -1302,7 +1284,6 @@ Examples:
     except Exception as e:
         print(f"❌ Error: {e}")
         return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

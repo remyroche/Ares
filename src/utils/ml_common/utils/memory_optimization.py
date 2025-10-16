@@ -59,7 +59,6 @@ except ImportError:
     DASK_AVAILABLE = False
     logger.warning("Dask not available - limited distributed computing capabilities")
 
-
 class MemoryEfficientTraining:
     """Memory-efficient ML training utilities."""
 
@@ -68,7 +67,7 @@ class MemoryEfficientTraining:
         self.logger = logger.getChild('MemoryOptimization')
         self.logger.info("🚀 Initializing MemoryEfficientTraining...")
         start_time = time.time()
-        
+
         self.config = config or {}
         self.logger.info(f"📊 Configuration loaded with {len(self.config)} parameters")
 
@@ -78,7 +77,7 @@ class MemoryEfficientTraining:
         self.enable_gpu_memory_pool = self.config.get('enable_gpu_memory_pool', True)
         self.gc_interval_seconds = self.config.get('gc_interval_seconds', 300)
         self.temp_dir = self.config.get('temp_dir', tempfile.gettempdir())
-        
+
         self.logger.info(f"📊 Chunk size: {self.chunk_size_mb} MB")
         self.logger.info(f"📊 Max memory usage: {self.max_memory_usage*100:.1f}%")
         self.logger.info(f"📊 GPU memory pool: {self.enable_gpu_memory_pool}")
@@ -91,7 +90,7 @@ class MemoryEfficientTraining:
             self.logger.debug("✅ GPU manager initialized")
         else:
             self.logger.debug("ℹ️ GPU manager not initialized (PyTorch not available)")
-            
+
         self.logger.debug("🔧 Initializing memory optimizer...")
         self.memory_optimizer = M1MemoryOptimizer() if TORCH_AVAILABLE else None
         if self.memory_optimizer:
@@ -111,7 +110,7 @@ class MemoryEfficientTraining:
             self.logger.debug("✅ GPU memory pool initialized")
         else:
             self.logger.debug("ℹ️ GPU memory pool not initialized")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ MemoryEfficientTraining initialized in {init_time:.3f}s")
 
@@ -610,15 +609,14 @@ class MemoryEfficientTraining:
             self.logger.warning(f"GPU memory pool initialization failed: {e}")
             return None
 
-
 class MemoryEfficientProcessor:
     """Memory efficient processor for feature selection operations."""
-    
+
     def __init__(self):
         """Initialize memory efficient processor."""
         self.logger = system_logger.getChild('MemoryEfficientProcessor')
         self.memory_optimizer = M1MemoryOptimizer()
-    
+
     def process_dataframe(self, df: pd.DataFrame, operation: str = "optimize") -> pd.DataFrame:
         """Process dataframe with memory optimization."""
         try:
@@ -629,7 +627,7 @@ class MemoryEfficientProcessor:
         except Exception as e:
             self.logger.warning(f"Memory optimization failed: {e}")
             return df
-    
+
     def batch_process(self, data: List[pd.DataFrame], batch_size: int = 1000) -> List[pd.DataFrame]:
         """Process data in batches for memory efficiency."""
         results = []
@@ -638,7 +636,6 @@ class MemoryEfficientProcessor:
             processed_batch = [self.process_dataframe(df) for df in batch]
             results.extend(processed_batch)
         return results
-
 
 class GPUMemoryPool:
     """GPU memory pool manager for efficient memory usage."""

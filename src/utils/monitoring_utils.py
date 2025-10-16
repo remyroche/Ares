@@ -48,7 +48,7 @@ class UnifiedPerformanceMonitor:
         try:
             with self._lock:
                 self.call_count += 1
-                
+
                 call_record = FunctionCall(
                     function_name=func_name,
                     execution_time=execution_time,
@@ -59,14 +59,14 @@ class UnifiedPerformanceMonitor:
                     error_message=error,
                     memory_usage=memory_usage
                 )
-                
+
                 self.call_history.append(call_record)
-                
+
                 if success:
                     self.success_count += 1
                 else:
                     self.error_count += 1
-                
+
                 # Update performance metrics
                 if func_name not in self.performance_metrics:
                     self.performance_metrics[func_name] = {
@@ -78,21 +78,21 @@ class UnifiedPerformanceMonitor:
                         'error_count': 0,
                         'success_count': 0
                     }
-                
+
                 metrics = self.performance_metrics[func_name]
                 metrics['call_count'] += 1
                 metrics['total_time'] += execution_time
                 metrics['avg_time'] = metrics['total_time'] / metrics['call_count']
                 metrics['min_time'] = min(metrics['min_time'], execution_time)
                 metrics['max_time'] = max(metrics['max_time'], execution_time)
-                
+
                 if success:
                     metrics['success_count'] += 1
                 else:
                     metrics['error_count'] += 1
-                
+
                 logger.debug(f"Tracked call to {func_name}: {execution_time:.4f}s")
-                
+
         except Exception as e:
             logger.error(f"Error tracking function call: {e}")
 
@@ -153,19 +153,19 @@ class UnifiedPerformanceMonitor:
 
 class FunctionTracker:
     """Function call tracking decorator."""
-    
+
     def __init__(self, monitor: Optional[UnifiedPerformanceMonitor] = None):
         self.monitor = monitor or global_monitor
-    
+
     def __call__(self, func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             start_time = time.time()
             start_memory = self._get_memory_usage()
-            
+
             success = True
             error_message = None
-            
+
             try:
                 result = func(*args, **kwargs)
                 return result
@@ -176,10 +176,10 @@ class FunctionTracker:
             finally:
                 end_time = time.time()
                 end_memory = self._get_memory_usage()
-                
+
                 execution_time = end_time - start_time
                 memory_usage = end_memory - start_memory
-                
+
                 self.monitor.track_function_call(
                     func_name=func.__name__,
                     execution_time=execution_time,
@@ -189,9 +189,9 @@ class FunctionTracker:
                     error=error_message,
                     memory_usage=memory_usage
                 )
-        
+
         return wrapper
-    
+
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""
         try:
@@ -203,24 +203,24 @@ class FunctionTracker:
 
 class LoggingPatterns:
     """Standardized logging patterns."""
-    
+
     @staticmethod
     def log_function_start(func_name: str, args: tuple = (), kwargs: dict = None) -> None:
         """Log function start."""
         kwargs = kwargs or {}
         logger.debug(f"🚀 Starting {func_name} with {len(args)} args, {len(kwargs)} kwargs")
-    
+
     @staticmethod
     def log_function_end(func_name: str, execution_time: float, success: bool = True) -> None:
         """Log function end."""
         status = "✅" if success else "❌"
         logger.debug(f"{status} Completed {func_name} in {execution_time:.4f}s")
-    
+
     @staticmethod
     def log_function_error(func_name: str, error: Exception) -> None:
         """Log function error."""
         logger.error(f"❌ Error in {func_name}: {error}")
-    
+
     @staticmethod
     def log_performance_metrics(metrics: Dict[str, Any]) -> None:
         """Log performance metrics."""

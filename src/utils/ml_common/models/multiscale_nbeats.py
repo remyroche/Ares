@@ -39,7 +39,6 @@ except ImportError:
     TORCH_AVAILABLE = False
     logger.warning("⚠️ PyTorch not available, MultiScaleNBEATS will use fallback implementations")
 
-
 class MultiScaleNBEATSConfig:
     """Configuration for MultiScaleNBEATS architecture."""
 
@@ -93,7 +92,6 @@ class MultiScaleNBEATSConfig:
         self.ensemble_size = ensemble_size
         self.dropout = dropout
         self.use_batch_norm = use_batch_norm
-
 
 class NBEATSBlock(nn.Module):
     """Single NBEATS block for time series decomposition."""
@@ -188,7 +186,6 @@ class NBEATSBlock(nn.Module):
 
         return backcast, forecast
 
-
 class MultiTimeframeNBEATS(nn.Module):
     """Multi-timeframe NBEATS model."""
 
@@ -250,7 +247,6 @@ class MultiTimeframeNBEATS(nn.Module):
             predictions['fused'] = fused_predictions
 
         return predictions
-
 
 class SingleTimeframeNBEATS(nn.Module):
     """NBEATS model for a single timeframe."""
@@ -356,7 +352,6 @@ class SingleTimeframeNBEATS(nn.Module):
 
         return predictions
 
-
 class MultiTimeframeAttention(nn.Module):
     """Attention mechanism for multi-timeframe fusion."""
 
@@ -410,7 +405,6 @@ class MultiTimeframeAttention(nn.Module):
         fused_predictions = self.output_projection(attended_values)
 
         return fused_predictions
-
 
 class MultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
     """MultiScaleNBEATS regressor for multi-timeframe prediction."""
@@ -692,7 +686,6 @@ class MultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
             'final_val_loss': self.history['val_loss'][-1] if self.history['val_loss'] else None
         }
 
-
 class MultiTimeframeDataset(torch.utils.data.Dataset):
     """Dataset for multi-timeframe data."""
 
@@ -717,7 +710,6 @@ class MultiTimeframeDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return {tf: x_tensor[idx] for tf, x_tensor in self.X_dict.items()}, self.y[idx]
 
-
 # Factory functions for creating MultiScaleNBEATS models
 def create_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRegressor:
     """Create MultiScaleNBEATS model from configuration."""
@@ -732,7 +724,6 @@ def create_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRe
         learning_rate=model_config.get('learning_rate', 1e-3),
         early_stopping_patience=model_config.get('early_stopping_patience', 15)
     )
-
 
 # Fallback implementation for when PyTorch is not available
 class FallbackMultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
@@ -752,7 +743,6 @@ class FallbackMultiScaleNBEATSRegressor(BaseEstimator, RegressorMixin):
             raise ValueError("Model not fitted")
         # Return zero predictions as fallback
         return np.zeros((len(X[list(X.keys())[0]]), 4))
-
 
 def get_multiscale_nbeats_model(config: Dict[str, Any]) -> MultiScaleNBEATSRegressor:
     """Get MultiScaleNBEATS model with fast fail - no fallback."""

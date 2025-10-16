@@ -16,10 +16,8 @@ from src.utils.tprint import (
     tprint_timer,
 )
 
-
 class RegimeDataError(FileNotFoundError):
     """Raised when regime data cannot be located."""
-
 
 def get_clustering_directory(data_cache_path: Path, symbol: str) -> Path:
     """Return the directory containing cached clustering data for a symbol."""
@@ -28,14 +26,12 @@ def get_clustering_directory(data_cache_path: Path, symbol: str) -> Path:
         raise RegimeDataError(f"Clustering directory not found: {clustering_dir}")
     return clustering_dir
 
-
 def find_latest_regime_file(clustering_dir: Path) -> Path:
     """Locate the most recent regime assignment parquet file in a directory."""
     regime_files = list(clustering_dir.glob("nas_tas_regime_assignments_*.parquet"))
     if not regime_files:
         raise RegimeDataError(f"No regime assignment files found in {clustering_dir}")
     return max(regime_files, key=lambda path: path.stat().st_mtime)
-
 
 def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
     """Load the parquet file containing regime assignments and cached features."""
@@ -71,18 +67,15 @@ def load_regime_assignments(regime_file: Path) -> pd.DataFrame:
 
         return frame
 
-
 def extract_regime_labels(regime_frame: pd.DataFrame) -> np.ndarray:
     """Extract regime labels from the cached dataframe with validation."""
     labels = regime_frame["regime_id"].to_numpy()
     labels = validate_numeric_array(labels, "regime_labels")
     return labels.astype(int, copy=False)
 
-
 def _candidate_feature_columns(columns: Iterable[str], feature_set: str) -> Sequence[str]:
     prefix = f"{feature_set}_feature_"
     return [name for name in columns if name.startswith(prefix)]
-
 
 def _extract_feature_matrix(
     regime_frame: pd.DataFrame,
@@ -177,13 +170,12 @@ def _extract_feature_matrix(
         f"   The file should have columns like: nas_feature_0, nas_feature_1, ...\n"
         f"   or a column 'nas_features' containing arrays."
     )
-    
+
     raise RegimeDataError(
         f"No cached features found for '{feature_set.upper()}' in regime assignments. "
         f"Available columns: {list(regime_frame.columns)}. "
         f"The clustering pipeline must be updated to save features!"
     )
-
 
 def _standardize_features(
     features: np.ndarray,
@@ -223,7 +215,6 @@ def _standardize_features(
 
     return standardized
 
-
 def load_nas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load NAS regime features and labels from the cached assignments.
@@ -256,7 +247,6 @@ def load_nas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray
             f"Available columns: {list(regime_frame.columns)}"
         ) from e
 
-
 def load_tas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load TAS regime features and labels from the cached assignments.
@@ -288,7 +278,6 @@ def load_tas_dataset(regime_frame: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray
             "Re-run clustering step to generate features. "
             f"Available columns: {list(regime_frame.columns)}"
         ) from e
-
 
 def load_regime_datasets(
     data_cache_path: Path,

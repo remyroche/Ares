@@ -6,7 +6,7 @@ from multiple previous modules into a single, comprehensive framework.
 
 Consolidated from:
 - enhanced_data_quality_validator.py
-- data_quality_framework.py  
+- data_quality_framework.py
 - data_qualification_base.py (validation parts)
 """
 
@@ -62,11 +62,11 @@ class UnifiedMemoryConfig:
     # Memory thresholds (percentage of available memory)
     threshold_percentage: float = 0.8  # 80% of available memory
     threshold_absolute_gb: float = 4.0  # 4GB absolute limit
-    
+
     # Cleanup and garbage collection
     cleanup_frequency: int = 100  # operations
     gc_frequency: int = 50  # operations
-    
+
     # Component-specific overrides
     component_overrides: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
         'DataStreamingManager': {'threshold_percentage': 0.8},
@@ -74,13 +74,13 @@ class UnifiedMemoryConfig:
         'FeatureSelection': {'threshold_percentage': 0.75},
         'HMMRegimeDetection': {'threshold_percentage': 0.85}
     })
-    
+
     def get_effective_threshold(self, component_name: str = None, available_memory_gb: float = None) -> float:
         """Get the effective memory threshold for a component."""
         if available_memory_gb is None:
             import psutil
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        
+
         # Get component-specific overrides
         if component_name and component_name in self.component_overrides:
             overrides = self.component_overrides[component_name]
@@ -89,27 +89,27 @@ class UnifiedMemoryConfig:
         else:
             threshold_percentage = self.threshold_percentage
             threshold_absolute_gb = self.threshold_absolute_gb
-        
+
         # Return the more restrictive threshold
         percentage_limit = available_memory_gb * threshold_percentage
         return min(percentage_limit, threshold_absolute_gb)
-    
+
     def should_cleanup(self, component_name: str, operation_count: int) -> bool:
         """Check if cleanup should be performed based on operation count."""
         if component_name in self.component_overrides:
             cleanup_freq = self.component_overrides[component_name].get('cleanup_frequency', self.cleanup_frequency)
         else:
             cleanup_freq = self.cleanup_frequency
-        
+
         return operation_count % cleanup_freq == 0
-    
+
     def should_gc(self, component_name: str, operation_count: int) -> bool:
         """Check if garbage collection should be performed."""
         if component_name in self.component_overrides:
             gc_freq = self.component_overrides[component_name].get('gc_frequency', self.gc_frequency)
         else:
             gc_freq = self.gc_frequency
-        
+
         return operation_count % gc_freq == 0
 
 @dataclass
@@ -156,7 +156,7 @@ class QualityResult:
 
 class DataQualityFramework:
     """Unified data quality framework with validation, cleaning, and profiling."""
-    
+
     _instance = None
     _initialized = False
 
@@ -170,7 +170,7 @@ class DataQualityFramework:
         """Initialize data quality framework (only once due to singleton)."""
         if self._initialized:
             return
-        
+
         start_time = time.time()
         self.logger = system_logger.getChild('DataQualityFramework')
         self.thresholds = thresholds or QualityThresholds()
@@ -233,7 +233,7 @@ class DataQualityFramework:
 
         self.logger.info('🔧 Unified Data Quality Framework initialized (singleton)')
         self._initialized = True
-        
+
         # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
         try:
@@ -247,15 +247,15 @@ class DataQualityFramework:
         """Validate DataFrame quality with comprehensive checks."""
         start_time = time.time()
         result = QualityResult()
-        
+
         if df is None or df.empty:
             result.add_issue('empty_data', 'DataFrame is None or empty')
             return result
-            
+
         result.add_metric('rows', len(df))
         result.add_metric('columns', len(df.columns))
         result.add_metric('memory_mb', df.memory_usage(deep=True).sum() / 1024 / 1024)
-        
+
         # Run all validation checks
         self._validate_nan_values(df, result)
         self._validate_infinite_values(df, result)
@@ -268,7 +268,7 @@ class DataQualityFramework:
         # Run comprehensive duplicate analysis if available
         if self.quality_policies.get('duplicate_analysis_enabled', False) and self.duplicate_analyzer:
             self._validate_duplicate_timestamps(df, result)
-        
+
         # Store result for quality score calculation
         self._last_validation_result = result.metrics
 
@@ -395,16 +395,16 @@ class DataQualityFramework:
         """Validate infinite values in DataFrame."""
         infinite_counts = {}
         total_infinites = 0
-        
+
         for col in df.select_dtypes(include=[np.number]).columns:
             infinite_count = np.isinf(df[col]).sum()
             if infinite_count > 0:
                 infinite_counts[col] = infinite_count
                 total_infinites += infinite_count
-                
+
         result.add_metric('infinite_count', total_infinites)
         result.add_metric('infinite_columns', infinite_counts)
-        
+
         if total_infinites > self.thresholds.max_infinite_count:
             # Auto-fix infinite values in volume-related columns
             fixed_columns = []
@@ -444,10 +444,10 @@ class DataQualityFramework:
         """Validate constant features in DataFrame with metadata awareness."""
         # Define metadata columns that are expected to be constant
         metadata_columns = {
-            'exchange', 'symbol', 'timeframe', 'source', 'data_type', 
+            'exchange', 'symbol', 'timeframe', 'source', 'data_type',
             'version', 'collection_method', 'instrument_type'
         }
-        
+
         # Define configuration columns that may be constant but are important
         # Note: aggtrades-derived features may be constant when aggtrades data is missing
         config_columns = {
@@ -461,19 +461,19 @@ class DataQualityFramework:
             'trade_volume', 'trade_count', 'avg_price',
             'min_price', 'max_price', 'volume_ratio'
         }
-        
+
         # Define data columns that should have variance
         data_columns = {
             'open', 'high', 'low', 'close', 'volume', 'price', 'quantity',
             'timestamp', 'trade_id', 'is_buyer_maker', 'quote_asset_volume',
             'number_of_trades', 'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume'
         }
-        
+
         constant_features = []
         low_variance_features = []
         expected_constants = []
         problematic_constants = []
-        
+
         for col in df.columns:
             unique_count = df[col].nunique()
 
@@ -510,13 +510,13 @@ class DataQualityFramework:
                     constant_features.append(col)
                 elif unique_count < 5:
                     low_variance_features.append(col)
-                
+
         # Add metrics with categorization
         result.add_metric('constant_features', constant_features)
         result.add_metric('low_variance_features', low_variance_features)
         result.add_metric('expected_constants', expected_constants)
         result.add_metric('problematic_constants', problematic_constants)
-        
+
         # Only report issues for problematic constants, not expected ones
         if problematic_constants:
             result.add_issue('problematic_constants', f'Found {len(problematic_constants)} problematic constant data columns: {", ".join(problematic_constants)}')
@@ -534,7 +534,7 @@ class DataQualityFramework:
             if len(low_variance_features) > 5:
                 warning_msg += f" ... and {len(low_variance_features) - 5} more"
             result.add_warning('low_variance_features', warning_msg)
-        
+
         # Log expected constants as info, not issues
         if expected_constants:
             result.add_info('expected_constants', f'Found {len(expected_constants)} expected constant metadata columns: {", ".join(expected_constants)}')
@@ -556,20 +556,20 @@ class DataQualityFramework:
         price_columns = [col for col in ['open', 'high', 'low', 'close'] if col in df.columns]
         if not price_columns:
             return
-            
+
         anomalies = []
         for i in range(len(df)):
             row = df.iloc[i]
             for col in price_columns:
                 if row[col] < -self.thresholds.price_tolerance:
                     anomalies.append({'row': i, 'column': col, 'value': row[col], 'type': 'negative_price'})
-                    
+
             if all(col in price_columns for col in ['open', 'high', 'low', 'close']):
                 if row['high'] < row['low']:
                     anomalies.append({'row': i, 'type': 'high_low_inversion', 'high': row['high'], 'low': row['low']})
                 if row['close'] > row['high'] or row['close'] < row['low']:
                     anomalies.append({'row': i, 'type': 'close_outside_range', 'close': row['close'], 'high': row['high'], 'low': row['low']})
-                    
+
         result.add_metric('price_anomalies', anomalies)
         if anomalies:
             result.add_issue('price_anomalies', f'Found {len(anomalies)} price anomalies')
@@ -711,7 +711,7 @@ class DataQualityFramework:
                         issues.append({'column': col, 'expected': 'numeric', 'actual': str(df[col].dtype)})
             except Exception as e:
                 issues.append({'column': col, 'error': f'Type validation error: {e}'})
-                
+
         result.add_metric('data_type_issues', issues)
         if issues:
             result.add_issue('data_type_issues', f'Found {len(issues)} data type issues')
@@ -814,7 +814,7 @@ class DataQualityFramework:
                        (col1 == 'close_time' and col2 == 'open_time'):
                         continue
                     filtered_pairs.append(pair)
-                
+
                 if filtered_pairs:
                     # Create detailed warning message with specific pairs
                     warning_msg = f'Found {len(filtered_pairs)} highly correlated column pairs (after excluding known correlated features):'
@@ -895,11 +895,11 @@ class DataQualityFramework:
         """Calculate overall data quality score (0-100)."""
         try:
             score = 100.0
-            
+
             # Penalize NaN values
             null_percentage = df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100
             score -= null_percentage * 0.5
-            
+
             # Penalize duplicates (use enhanced duplicate analysis if available)
             duplicate_percentage = df.duplicated().sum() / len(df) * 100
 
@@ -911,20 +911,20 @@ class DataQualityFramework:
                 duplicate_percentage = max(duplicate_percentage, enhanced_dup_pct)
 
             score -= duplicate_percentage * 0.3
-            
+
             # Penalize infinite values
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             if len(numeric_cols) > 0:
                 infinite_ratio = np.isinf(df[numeric_cols]).sum().sum() / (len(df) * len(numeric_cols))
                 score -= infinite_ratio * 100
-            
+
             # Penalize negative prices
             price_cols = ['open', 'high', 'low', 'close']
             for col in price_cols:
                 if col in df.columns:
                     negative_ratio = (df[col] < 0).sum() / len(df)
                     score -= negative_ratio * 20
-                    
+
             return max(0.0, score)
         except Exception as e:
             self.logger.exception(f'Error calculating quality score: {e}')
@@ -934,13 +934,13 @@ class DataQualityFramework:
         """Log validation results."""
         status = 'PASSED' if result.passed else 'FAILED'
         self.logger.info(f'Quality validation for {context}: {status} ({len(result.issues)} issues, {len(result.warnings)} warnings)')
-        
+
         if result.issues:
             for issue in result.issues[:3]:
                 self.logger.warning(f'  - {issue}')
             if len(result.issues) > 3:
                 self.logger.warning(f'  ... and {len(result.issues) - 3} more issues')
-                
+
         if result.warnings:
             for warning in result.warnings[:3]:
                 self.logger.info(f'  - {warning}')
@@ -951,7 +951,7 @@ class DataQualityFramework:
         """Validate data according to specified validation rules."""
         if validation_rules is None:
             validation_rules = list(self.validation_rules.keys())
-            
+
         validation_results = {
             'overall_passed': True,
             'passed_rules': 0,
@@ -965,22 +965,22 @@ class DataQualityFramework:
             'errors': [],
             'warnings': []
         }
-        
+
         for rule_name in validation_rules:
             if rule_name not in self.validation_rules:
                 validation_results['warnings'].append(f'Unknown validation rule: {rule_name}')
                 continue
-                
+
             rule = self.validation_rules[rule_name]
             rule_result = self._apply_validation_rule(data, rule, rule_name)
             validation_results['rule_results'][rule_name] = rule_result
-            
+
             if rule_result['passed']:
                 validation_results['passed_rules'] += 1
             else:
                 validation_results['failed_rules'] += 1
                 validation_results['overall_passed'] = False
-                
+
                 for issue in rule_result['issues']:
                     severity = issue.get('severity', 'medium')
                     if severity == 'critical':
@@ -991,17 +991,17 @@ class DataQualityFramework:
                         validation_results['medium_issues'] += 1
                     elif severity == 'low':
                         validation_results['low_issues'] += 1
-                        
+
         if not self._check_quality_policy_compliance(validation_results):
             validation_results['overall_passed'] = False
-            
+
         self._log_validation_results_summary(validation_results)
         return validation_results
 
     def _apply_validation_rule(self, data: pd.DataFrame, rule: Dict[str, Any], rule_name: str) -> Dict[str, Any]:
         """Apply a specific validation rule to data."""
         rule_result = {'passed': True, 'issues': [], 'warnings': []}
-        
+
         try:
             # Check required columns
             missing_columns = set(rule['required_columns']) - set(data.columns)
@@ -1013,7 +1013,7 @@ class DataQualityFramework:
                     'message': f'Missing required columns: {missing_columns}',
                     'details': list(missing_columns)
                 })
-                
+
             # Check data types
             for column, expected_type in rule['data_types'].items():
                 if column in data.columns:
@@ -1025,7 +1025,7 @@ class DataQualityFramework:
                             'message': f"Column '{column}' has type {actual_type}, expected {expected_type}",
                             'details': {'column': column, 'actual': actual_type, 'expected': expected_type}
                         })
-                        
+
             # Check constraints
             for column, constraints in rule['constraints'].items():
                 if column in data.columns:
@@ -1048,7 +1048,7 @@ class DataQualityFramework:
                                 'message': f"Column '{column}' has {max_violations} values above maximum {constraints['max']}",
                                 'details': {'column': column, 'violations': max_violations, 'max': constraints['max']}
                             })
-                            
+
             # Check for infinite values
             numeric_columns = data.select_dtypes(include=[np.number]).columns
             for column in numeric_columns:
@@ -1061,13 +1061,13 @@ class DataQualityFramework:
                             'message': f"Column '{column}' has {infinite_count} infinite values",
                             'details': {'column': column, 'count': infinite_count}
                         })
-                        
+
             # Special OHLC validation
             if rule_name == 'klines_schema' and all(col in data.columns for col in ['open', 'high', 'low', 'close']):
-                ohlc_violations = ((data['high'] < data['low']) | 
-                                 (data['high'] < data['open']) | 
-                                 (data['high'] < data['close']) | 
-                                 (data['low'] > data['open']) | 
+                ohlc_violations = ((data['high'] < data['low']) |
+                                 (data['high'] < data['open']) |
+                                 (data['high'] < data['close']) |
+                                 (data['low'] > data['open']) |
                                  (data['low'] > data['close'])).sum()
                 if ohlc_violations > 0:
                     rule_result['issues'].append({
@@ -1076,10 +1076,10 @@ class DataQualityFramework:
                         'message': f'OHLC data has {ohlc_violations} inconsistent rows',
                         'details': {'violations': ohlc_violations}
                     })
-                    
+
             if rule_result['issues']:
                 rule_result['passed'] = False
-                
+
         except Exception as e:
             rule_result['passed'] = False
             rule_result['issues'].append({
@@ -1088,7 +1088,7 @@ class DataQualityFramework:
                 'message': f'Error during validation: {str(e)}',
                 'details': {'error': str(e)}
             })
-            
+
         return rule_result
 
     def _check_quality_policy_compliance(self, validation_results: Dict[str, Any]) -> bool:
@@ -1125,10 +1125,10 @@ def check_dataframe_health(df: pd.DataFrame) -> Dict[str, Any]:
     """Quick health check of DataFrame."""
     if df is None or df.empty:
         return {'healthy': False, 'reason': 'DataFrame is None or empty'}
-        
+
     nan_ratio = df.isnull().sum().sum() / (len(df) * len(df.columns)) if len(df) > 0 and len(df.columns) > 0 else 0
     infinite_count = sum((np.isinf(df[col]).sum() for col in df.select_dtypes(include=[np.number]).columns))
-    
+
     health_status = {
         'healthy': True,
         'shape': df.shape,
@@ -1137,45 +1137,45 @@ def check_dataframe_health(df: pd.DataFrame) -> Dict[str, Any]:
         'infinite_count': infinite_count,
         'issues': []
     }
-    
+
     if nan_ratio > 0.1:
         health_status['healthy'] = False
         health_status['issues'].append('High NaN ratio')
     if infinite_count > 0:
         health_status['healthy'] = False
         health_status['issues'].append('Infinite values present')
-        
+
     return health_status
 
 class UnifiedMemoryManager:
     """Unified memory management across all components."""
-    
+
     def __init__(self, config: UnifiedMemoryConfig = None):
         self.config = config or UnifiedMemoryConfig()
         self.logger = logging.getLogger(f"{__name__}.UnifiedMemoryManager")
         self.operation_counts = {}  # Track operations per component
-        
+
     def get_memory_threshold(self, component_name: str) -> float:
         """Get memory threshold for a specific component."""
         try:
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
             threshold = self.config.get_effective_threshold(component_name, available_memory_gb)
-            
+
             self.logger.debug(f"Memory threshold for {component_name}: {threshold:.2f}GB (available: {available_memory_gb:.2f}GB)")
             return threshold
         except ImportError:
             self.logger.warning("psutil not available, using default threshold")
             return self.config.threshold_absolute_gb
-    
+
     def check_memory_usage(self, component_name: str) -> Dict[str, Any]:
         """Check current memory usage and return status."""
         try:
             memory = psutil.virtual_memory()
             threshold = self.get_memory_threshold(component_name)
-            
+
             usage_gb = (memory.total - memory.available) / (1024**3)
             usage_percentage = memory.percent / 100
-            
+
             status = {
                 'component': component_name,
                 'usage_gb': usage_gb,
@@ -1187,33 +1187,33 @@ class UnifiedMemoryManager:
                 'near_limit': usage_gb > threshold * 0.9,  # 90% of threshold
                 'over_limit': usage_gb > threshold
             }
-            
+
             if status['over_limit']:
                 self.logger.warning(f"⚠️ {component_name} memory usage ({usage_gb:.2f}GB) exceeds threshold ({threshold:.2f}GB)")
             elif status['near_limit']:
                 self.logger.info(f"ℹ️ {component_name} memory usage ({usage_gb:.2f}GB) approaching threshold ({threshold:.2f}GB)")
-            
+
             return status
-            
+
         except ImportError:
             self.logger.warning("psutil not available for memory monitoring")
             return {'component': component_name, 'error': 'psutil not available'}
-    
+
     def should_cleanup(self, component_name: str) -> bool:
         """Check if component should perform cleanup."""
         if component_name not in self.operation_counts:
             self.operation_counts[component_name] = 0
-        
+
         self.operation_counts[component_name] += 1
         return self.config.should_cleanup(component_name, self.operation_counts[component_name])
-    
+
     def should_gc(self, component_name: str) -> bool:
         """Check if component should perform garbage collection."""
         if component_name not in self.operation_counts:
             self.operation_counts[component_name] = 0
-        
+
         return self.config.should_gc(component_name, self.operation_counts[component_name])
-    
+
     def perform_cleanup(self, component_name: str, cleanup_func: callable = None) -> bool:
         """Perform cleanup if needed."""
         if self.should_cleanup(component_name):
@@ -1231,7 +1231,7 @@ class UnifiedMemoryManager:
                 gc.collect()
                 return True
         return False
-    
+
     def get_memory_status_summary(self) -> Dict[str, Any]:
         """Get memory status summary for all tracked components."""
         summary = {
@@ -1239,25 +1239,25 @@ class UnifiedMemoryManager:
             'components': {},
             'overall_status': 'healthy'
         }
-        
+
         for component_name in self.operation_counts.keys():
             status = self.check_memory_usage(component_name)
             summary['components'][component_name] = status
-            
+
             if status.get('over_limit', False):
                 summary['overall_status'] = 'critical'
             elif status.get('near_limit', False) and summary['overall_status'] == 'healthy':
                 summary['overall_status'] = 'warning'
-        
+
         return summary
 
 class SimpleSchemaValidator:
     """Simple schema usage validation without complexity."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.SimpleSchemaValidator")
         self.field_usage = {}  # Track field usage: {schema_name: {field_name: [operations]}}
-        
+
     def track_field_usage(self, schema_name: str, field_name: str, operation: str):
         """Track how a field is used."""
         if schema_name not in self.field_usage:
@@ -1265,24 +1265,24 @@ class SimpleSchemaValidator:
         if field_name not in self.field_usage[schema_name]:
             self.field_usage[schema_name][field_name] = []
         self.field_usage[schema_name][field_name].append(operation)
-        
+
     def validate_schema_usage(self, schema_name: str, schema_definition: Dict[str, Any]) -> Dict[str, Any]:
         """Validate schema usage with simple checks."""
         usage = self.field_usage.get(schema_name, {})
         required_fields = schema_definition.get('required_columns', [])
         optional_fields = schema_definition.get('optional_columns', [])
         all_schema_fields = set(required_fields + optional_fields)
-        
+
         # Find unused required fields
         unused_required = [field for field in required_fields if field not in usage]
-        
+
         # Find used fields not in schema
         used_fields = set(usage.keys())
         missing_from_schema = used_fields - all_schema_fields
-        
+
         # Calculate usage coverage
         coverage = len(usage) / len(required_fields) if required_fields else 1.0
-        
+
         result = {
             'schema_name': schema_name,
             'unused_required_fields': unused_required,
@@ -1292,7 +1292,7 @@ class SimpleSchemaValidator:
             'used_fields': len(usage),
             'recommendations': []
         }
-        
+
         # Generate simple recommendations
         if unused_required:
             result['recommendations'].append(f"Consider removing unused required fields: {unused_required}")
@@ -1300,9 +1300,9 @@ class SimpleSchemaValidator:
             result['recommendations'].append(f"Add missing fields to schema: {list(missing_from_schema)}")
         if coverage < 0.8:
             result['recommendations'].append(f"Low field usage coverage ({coverage:.1%}), review schema design")
-        
+
         return result
-    
+
     def get_usage_summary(self) -> Dict[str, Any]:
         """Get summary of all schema usage."""
         summary = {
@@ -1311,14 +1311,14 @@ class SimpleSchemaValidator:
             'total_schemas': len(self.field_usage),
             'total_fields_tracked': sum(len(fields) for fields in self.field_usage.values())
         }
-        
+
         for schema_name, fields in self.field_usage.items():
             summary['schemas'][schema_name] = {
                 'fields_used': len(fields),
                 'total_operations': sum(len(ops) for ops in fields.values()),
                 'most_used_fields': sorted(fields.items(), key=lambda x: len(x[1]), reverse=True)[:5]
             }
-        
+
         return summary
 
 # Create global instance for backwards compatibility
@@ -1329,7 +1329,6 @@ schema_validator = SimpleSchemaValidator()
 # Alias for backwards compatibility
 DataQualityAnalyzer = DataQualityFramework
 
-
 # Convenience functions for duplicate analysis
 def analyze_duplicates_enhanced(df: pd.DataFrame, timestamp_column: str = 'timestamp'):
     """Convenience function for enhanced duplicate analysis."""
@@ -1337,7 +1336,6 @@ def analyze_duplicates_enhanced(df: pd.DataFrame, timestamp_column: str = 'times
         return analyze_duplicates_comprehensive(df, timestamp_column)
     else:
         raise ImportError("Comprehensive duplicate analyzer not available")
-
 
 def resolve_duplicates_enhanced(df: pd.DataFrame, strategy: str = 'manual_review',
                                timestamp_column: str = 'timestamp'):
@@ -1350,11 +1348,9 @@ def resolve_duplicates_enhanced(df: pd.DataFrame, strategy: str = 'manual_review
     else:
         raise ImportError("Comprehensive duplicate analyzer not available")
 
-
 def validate_with_duplicate_analysis(df: pd.DataFrame, context: str = '') -> QualityResult:
     """Validate dataframe quality including comprehensive duplicate analysis."""
     return data_quality_framework.validate_dataframe_quality(df, context)
-
 
 # Enhanced quality check with duplicate focus
 def check_duplicate_quality(df: pd.DataFrame, context: str = '') -> Dict[str, Any]:

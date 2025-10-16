@@ -27,13 +27,11 @@ except Exception as e:
     _LOGGER = logging.getLogger("MLCommon.CV")
     _LOGGER.setLevel(logging.INFO)
 
-
 @dataclass
 class PurgedSplitConfig:
     n_splits: int = 5
     purge_minutes: int = 30
     embargo_minutes: int = 15
-
 
 def purged_time_series_splits(
     X: pd.DataFrame,
@@ -47,7 +45,7 @@ def purged_time_series_splits(
     _LOGGER.info(f"🔄 Starting purged time series splits...")
     _LOGGER.info(f"📊 Parameters - Splits: {config.n_splits}, Purge: {config.purge_minutes}min, Embargo: {config.embargo_minutes}min")
     _LOGGER.info(f"📊 Data shape: {X.shape}")
-    
+
     if PurgedKFoldTime is None:
         _LOGGER.warning("⚠️ PurgedKFoldTime not available, using naive sequential splits")
         n = len(X)
@@ -75,7 +73,6 @@ def purged_time_series_splits(
         yield tr, va
     _LOGGER.info(f"✅ Purged time series splits completed - {config.n_splits} folds")
 
-
 def analyze_splits(
     X: pd.DataFrame,
     y: pd.Series,
@@ -84,18 +81,18 @@ def analyze_splits(
     """Return per-fold diagnostics: sizes, class counts, temporal ordering checks."""
     _LOGGER.info(f"🔍 Starting split analysis for {len(splits)} folds...")
     _LOGGER.info(f"📊 Data shape: {X.shape}, Target shape: {y.shape}")
-    
+
     results: Dict[str, Any] = {"folds": []}
     is_time = isinstance(X.index, pd.DatetimeIndex)
     _LOGGER.debug(f"📊 Time series data: {is_time}")
 
     for i, (tr, va) in enumerate(splits):
         _LOGGER.debug(f"📊 Analyzing fold {i+1}/{len(splits)} - Train: {len(tr)}, Val: {len(va)}")
-        
+
         fold: Dict[str, Any] = {"fold": i}
         fold["train_samples"] = int(len(tr))
         fold["val_samples"] = int(len(va))
-        
+
         try:
             u, c = np.unique(y.iloc[tr], return_counts=True)
             fold["train_class_counts"] = {int(k): int(v) for k, v in zip(u, c)}
@@ -103,7 +100,7 @@ def analyze_splits(
         except Exception as e:
             _LOGGER.warning(f"Failed to analyze train class counts for fold {i}: {e}")
             fold["train_class_counts"] = {}  # Continue without class counts
-            
+
         try:
             u, c = np.unique(y.iloc[va], return_counts=True)
             fold["val_class_counts"] = {int(k): int(v) for k, v in zip(u, c)}
@@ -111,7 +108,7 @@ def analyze_splits(
         except Exception as e:
             _LOGGER.warning(f"Failed to analyze val class counts for fold {i}: {e}")
             fold["val_class_counts"] = {}  # Continue without class counts
-            
+
         if is_time and len(tr) > 0 and len(va) > 0:
             temporal_ok = bool(X.index[tr][-1] < X.index[va][0])
             fold["temporal_ok"] = temporal_ok
@@ -119,19 +116,18 @@ def analyze_splits(
                 _LOGGER.warning(f"⚠️ Temporal ordering violation in fold {i}")
             else:
                 _LOGGER.debug(f"✅ Temporal ordering OK for fold {i}")
-                
+
         results["folds"].append(fold)
 
     # Aggregate
     results["n_folds"] = len(splits)
     results["min_train"] = int(min(f["train_samples"] for f in results["folds"])) if splits else 0
     results["min_val"] = int(min(f["val_samples"] for f in results["folds"])) if splits else 0
-    
+
     _LOGGER.info(f"✅ Split analysis completed - {len(splits)} folds analyzed")
     _LOGGER.info(f"📊 Summary - Min train: {results['min_train']}, Min val: {results['min_val']}")
-    
-    return results
 
+    return results
 
 def validate_cv_integrity(
     X: pd.DataFrame,
@@ -145,7 +141,7 @@ def validate_cv_integrity(
     _LOGGER.info(f"🔍 Starting CV integrity validation...")
     _LOGGER.info(f"📊 Parameters - Min train: {min_train}, Min val: {min_val}, Require two classes: {require_two_classes}")
     _LOGGER.info(f"📊 Validating {len(splits)} folds")
-    
+
     issues: List[str] = []
     fold_ok: List[bool] = []
     is_time = isinstance(X.index, pd.DatetimeIndex)
@@ -153,7 +149,7 @@ def validate_cv_integrity(
 
     for i, (tr, va) in enumerate(splits):
         _LOGGER.debug(f"📊 Validating fold {i+1}/{len(splits)} - Train: {len(tr)}, Val: {len(va)}")
-        
+
         ok = True
         if len(tr) < min_train:
             ok = False
@@ -185,7 +181,7 @@ def validate_cv_integrity(
                 issues.append(issue_msg)
                 _LOGGER.warning(f"⚠️ {issue_msg}")
         fold_ok.append(ok)
-        
+
         if ok:
             _LOGGER.debug(f"✅ Fold {i+1} validation passed")
         else:
@@ -194,7 +190,7 @@ def validate_cv_integrity(
     is_valid = all(fold_ok) if fold_ok else False
     _LOGGER.info(f"✅ CV integrity validation completed")
     _LOGGER.info(f"📊 Results - Valid: {is_valid}, Issues: {len(issues)}, Valid folds: {sum(fold_ok)}/{len(splits)}")
-    
+
     if issues:
         _LOGGER.warning(f"⚠️ Found {len(issues)} validation issues")
     else:
@@ -207,12 +203,9 @@ def validate_cv_integrity(
         'n_folds': len(splits),
     }
 
-
 __all__ = [
     'PurgedSplitConfig',
     'purged_time_series_splits',
     'analyze_splits',
     'validate_cv_integrity',
 ]
-
-

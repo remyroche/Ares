@@ -7,7 +7,6 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-
 def discover_and_register_services(container: Any, base_path: str) -> None:
     """
     Discover and register services automatically.

@@ -87,7 +87,7 @@ class FunctionCallMonitor:
     def __init__(self, enable_performance_monitoring: bool=True, enable_memory_monitoring: bool=True, enable_cpu_monitoring: bool=True, enable_parameter_validation: bool=True, enable_nested_call_tracking: bool=True, log_level: str='INFO', generate_detailed_report: bool=True, report_file_path: Optional[str]=None) -> None:
         """
         Initialize the function call monitor.
-        
+
         Args:
             enable_performance_monitoring: Track timing and performance metrics
             enable_memory_monitoring: Track memory usage
@@ -356,7 +356,7 @@ class FunctionCallMonitor:
 def monitor_function_calls(enable_performance_monitoring: bool=True, enable_memory_monitoring: bool=True, enable_cpu_monitoring: bool=True, enable_parameter_validation: bool=True, enable_nested_call_tracking: bool=True, log_level: str='INFO', generate_detailed_report: bool=True, report_file_path: Optional[str]=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Decorator factory for comprehensive function call monitoring.
-    
+
     Args:
         enable_performance_monitoring: Track timing and performance metrics
         enable_memory_monitoring: Track memory usage
@@ -366,7 +366,7 @@ def monitor_function_calls(enable_performance_monitoring: bool=True, enable_memo
         log_level: Logging level for monitoring output
         generate_detailed_report: Generate detailed execution report
         report_file_path: Path to save detailed reports
-    
+
     Returns:
         Decorator function for monitoring function calls
     """

@@ -51,14 +51,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-
 class PerRegimeTrainingStep(BaseTrainingStep):
     """
     Enhanced base class for per-regime training steps with comprehensive ML utilities.
-    
+
     This class provides common functionality for training models on a per-regime basis,
     including regime analysis, data preparation, and per-regime model training.
-    
+
     Enhanced Features:
     - Overfitting prevention and detection
     - Lookahead bias detection and prevention
@@ -68,22 +67,22 @@ class PerRegimeTrainingStep(BaseTrainingStep):
     - Walk-forward validation
     - Ensemble diversity monitoring
     """
-    
+
     def __init__(self, config: PerRegimeTrainingConfig):
         """
         Initialize enhanced per-regime training step.
-        
+
         Args:
             config: Per-regime training configuration
         """
         super().__init__(config)
         self.config = config
         self.logger = logger.getChild(self.__class__.__name__)
-        
+
         # Per-regime specific results
         self.regime_models = {}
         self.regime_metadata = {}
-        
+
         # Enhanced training utilities
         self.enhanced_training_available = ENHANCED_TRAINING_AVAILABLE
         self.training_enhancer = None
@@ -103,7 +102,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             self._initialize_universal_validation_integration()
 
         self.logger.info("✅ Enhanced Per-Regime Training Step initialized")
-    
+
     def _initialize_enhanced_training_utilities(self):
         """Initialize enhanced training utilities for per-regime training (inherited from BaseTrainingStep)."""
         # Enhanced training utilities are already available from base class
@@ -120,12 +119,12 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 enable_overfitting_monitoring=True,
                 model_type='auto'
             )
-            
+
             # Initialize training enhancer
             self.training_enhancer = TrainingStepEnhancer(self.enhanced_training_config)
-            
+
             self.logger.info("✅ Enhanced training utilities initialized successfully")
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Enhanced training utilities initialization failed: {e}")
             self.enhanced_training_config = None
@@ -162,7 +161,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             self.logger.warning(f"⚠️ Universal validation integration initialization failed: {e}")
             self.validation_config = None
             self.validation_integrator = None
-    
+
     def train_regime_models(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
@@ -171,12 +170,12 @@ class PerRegimeTrainingStep(BaseTrainingStep):
     ) -> Dict[str, Any]:
         """
         Train models for each regime with enhanced overfitting prevention.
-        
+
         Args:
             regime_data: Prepared data for each regime
             feature_names: Names of input features
             timestamps: Optional timestamps for temporal validation
-            
+
         Returns:
             Dictionary containing training results for each regime
         """
@@ -187,7 +186,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         else:
             self.logger.info("🔄 Using standard training (enhanced utilities not available)")
             return self._train_regime_models_standard(regime_data, feature_names)
-    
+
     def _train_regime_models_enhanced(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
@@ -203,21 +202,21 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             'overfitting_warnings': [],
             'ensemble_diversity': None
         }
-        
+
         trained_models = []
-        
+
         for regime, data in regime_data.items():
             if data.get('use_global', False):
                 self.logger.info(f"⏭️ Skipping regime {regime} (insufficient data, will use global model)")
                 continue
-            
+
             self.logger.info(f"🎯 Training enhanced models for regime {regime} ({data['samples']} samples)...")
-            
+
             # Extract data for this regime
             X = data['X']
             y = data['y']
             timestamps_regime = timestamps.get(regime) if timestamps else None
-            
+
             # Validate temporal data for lookahead bias
             if timestamps_regime is not None:
                 self.logger.info(f"🔍 Validating temporal data for regime {regime}...")
@@ -231,45 +230,45 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 if not is_valid:
                     self.logger.error(f"❌ Temporal data validation failed for regime {regime}")
                     continue
-            
+
             # Train each model type for this regime
             regime_model_results = {}
-            
+
             for model_type in self.config.model_types:
                 try:
                     self.logger.info(f"🔄 Training {model_type} for regime {regime} with enhanced utilities...")
-                    
+
                     # Create model instance
                     model = self.training_utils.create_model(model_type)
-                    
+
                     # Apply enhanced regularization
                     model = self.training_enhancer.enhanced_utils.apply_enhanced_regularization(
                         model, model_type
                     )
-                    
+
                     # Train with early stopping and overfitting monitoring
                     trained_model, metadata = self.training_enhancer.enhance_training_step(
                         X, y, model, timestamps_regime, f"{model_type}_regime_{regime}"
                     )
-                    
+
                     regime_model_results[model_type] = {
                         'model': trained_model,
                         'metadata': metadata
                     }
                     trained_models.append(trained_model)
-                    
+
                     # Check for overfitting warnings
                     if metadata.get('overfitting_detected', False):
                         warning_msg = f"Overfitting detected in {model_type} for regime {regime}"
                         results['overfitting_warnings'].append(warning_msg)
                         self.logger.warning(f"⚠️ {warning_msg}")
-                    
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to train {model_type} for regime {regime}: {e}")
                     continue
-            
+
             results['models'][regime] = regime_model_results
-            
+
             # Add regime analysis
             results['regime_analysis'][regime] = {
                 'samples': data['samples'],
@@ -280,24 +279,24 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                     for mt in results['models'][regime]
                 )
             }
-        
+
         # Calculate ensemble diversity if multiple models
         if len(trained_models) > 1:
             self.logger.info("📊 Calculating ensemble diversity...")
             # Combine all regime data for diversity calculation
             all_X = np.vstack([data['X'] for data in regime_data.values() if not data.get('use_global', False)])
             all_y = np.hstack([data['y'] for data in regime_data.values() if not data.get('use_global', False)])
-            
+
             diversity_metrics = self.training_enhancer.enhanced_utils.calculate_ensemble_diversity(
                 trained_models, all_X, all_y
             )
             results['ensemble_diversity'] = diversity_metrics
-            
+
             if diversity_metrics.get('diversity_score', 0) < 0.1:
                 self.logger.warning("⚠️ Low ensemble diversity detected")
             else:
                 self.logger.info("✅ Good ensemble diversity")
-        
+
         # Add enhanced training metadata
         results['enhanced_training_metadata'] = {
             'overfitting_prevention_enabled': True,
@@ -308,10 +307,10 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             'total_warnings': len(results['overfitting_warnings']),
             'regimes_processed': len([r for r in regime_data.values() if not r.get('use_global', False)])
         }
-        
+
         self.logger.info("✅ Enhanced regime training completed successfully")
         return results
-    
+
     def _train_regime_models_standard(
         self,
         regime_data: Dict[int, Dict[str, np.ndarray]],
@@ -320,20 +319,20 @@ class PerRegimeTrainingStep(BaseTrainingStep):
         """Train models using standard training (fallback)."""
         regime_models = {}
         regime_metadata = {}
-        
+
         for regime, data in regime_data.items():
             if data.get('use_global', False):
                 self.logger.info(f"⏭️ Skipping regime {regime} (insufficient data, will use global model)")
                 continue
-            
+
             self.logger.info(f"🔄 Training models for regime {regime} ({data['samples']} samples)...")
-            
+
             # Train each model type for this regime
             regime_model_results = {}
-            
+
             for model_type in self.config.model_types:
                 self.logger.info(f"🔄 Training {model_type} for regime {regime}...")
-                
+
                 # Perform HPO if enabled
                 if self.config.enable_hpo:
                     search_space = self.config.hpo_search_spaces.get(model_type, {})
@@ -351,11 +350,11 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                         y=data['y'],
                         model_name=f"{self.config.model_name}_{model_type.lower()}_regime_{regime}"
                     )
-                
+
                 regime_model_results[model_type] = optimized_model
-            
+
             regime_models[regime] = regime_model_results
-            
+
             # Store regime metadata
             regime_metadata[regime] = {
                 'samples': data['samples'],
@@ -364,14 +363,14 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 'models_trained': list(regime_model_results.keys()),
                 'training_time': time.time()
             }
-            
+
             self.logger.info(f"✅ Regime {regime} models trained: {list(regime_model_results.keys())}")
-        
+
         return {
             'models': regime_models,
             'metadata': regime_metadata
         }
-    
+
     def evaluate_regime_models(
         self,
         regime_results: Dict[str, Any],
@@ -382,14 +381,14 @@ class PerRegimeTrainingStep(BaseTrainingStep):
     ) -> Dict[str, Any]:
         """
         Evaluate model performance per regime.
-        
+
         Args:
             regime_results: Training results for each regime
             X: Input features
             y: Target values
             regime_labels: Regime labels for each sample
             is_classification: Whether this is a classification task
-            
+
         Returns:
             Dictionary containing evaluation results per regime
         """
@@ -402,7 +401,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             metrics=self.config.evaluation_metrics,
             is_classification=is_classification
         )
-    
+
     def save_regime_models(
         self,
         regime_results: Dict[str, Any],
@@ -412,22 +411,22 @@ class PerRegimeTrainingStep(BaseTrainingStep):
     ) -> Dict[int, List[str]]:
         """
         Save trained models for each regime.
-        
+
         Args:
             regime_results: Training results for each regime
             symbol: Optional symbol identifier
             exchange: Optional exchange identifier
             timeframe: Optional timeframe identifier
-            
+
         Returns:
             Dictionary containing saved model paths for each regime
         """
         saved_paths = {}
-        
+
         for regime, models in regime_results['models'].items():
             # Extract models from results
             model_dict = {model_type: result['model'] for model_type, result in models.items()}
-            
+
             # Save models for this regime
             model_paths = self.save_models(
                 models=model_dict,
@@ -437,9 +436,9 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 timeframe=timeframe,
                 regime=regime
             )
-            
+
             saved_paths[regime] = model_paths
-            
+
             # Save regime metadata
             regime_metadata = regime_results['metadata'][regime]
             self.save_metadata(
@@ -450,7 +449,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 timeframe=timeframe,
                 regime=regime
             )
-        
+
         return saved_paths
 
     def train_regime_models_vectorized(
@@ -1106,7 +1105,7 @@ class PerRegimeTrainingStep(BaseTrainingStep):
     ) -> Dict[str, Any]:
         """
         Execute per-regime training step.
-        
+
         Args:
             X: Input features
             y: Target values
@@ -1114,23 +1113,23 @@ class PerRegimeTrainingStep(BaseTrainingStep):
             feature_names: Names of input features
             hmm_states: HMM cluster/regime states
             **kwargs: Additional arguments
-            
+
         Returns:
             Dictionary containing training results and metadata
         """
         self.logger.info("🚀 Starting per-regime training step")
         start_time = time.time()
-        
+
         try:
             # Step 1: Analyze regimes and prepare data
             self.logger.info("🔄 Step 1: Analyzing regimes and preparing data...")
             regime_analysis = self.analyze_regimes(regime_labels)
             regime_data = self.prepare_regime_data(X, y, regime_labels, regime_analysis, hmm_states)
-            
+
             # Step 2: Train models for each regime
             self.logger.info("🔄 Step 2: Training models for each regime...")
             regime_results = self.train_regime_models(regime_data, feature_names)
-            
+
             # Step 3: Save models
             if self.config.save_models:
                 self.logger.info("🔄 Step 3: Saving trained models...")
@@ -1138,17 +1137,17 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 exchange = kwargs.get('exchange')
                 timeframe = kwargs.get('timeframe', self.config.timeframe)
                 self.save_regime_models(regime_results, symbol, exchange, timeframe)
-            
+
             # Step 4: Evaluate performance
             if self.config.enable_evaluation:
                 self.logger.info("🔄 Step 4: Evaluating model performance...")
                 evaluation_results = self.evaluate_regime_models(
-                    regime_results, X, y, regime_labels, 
+                    regime_results, X, y, regime_labels,
                     is_classification=kwargs.get('is_classification', True)
                 )
             else:
                 evaluation_results = {}
-            
+
             # Create final results
             total_time = time.time() - start_time
             results = self._create_final_results(
@@ -1158,14 +1157,14 @@ class PerRegimeTrainingStep(BaseTrainingStep):
                 training_time=total_time,
                 additional_results={'regime_analysis': regime_analysis}
             )
-            
+
             self.training_results = results
-            
+
             # Log summary
             n_models = sum(len(models) for models in regime_results['models'].values())
             self._log_training_summary(results, f"Per-regime {self.config.model_name}", n_models)
-            
+
             return results
-            
+
         except Exception as e:
             return self._handle_training_error(e, "per-regime training")

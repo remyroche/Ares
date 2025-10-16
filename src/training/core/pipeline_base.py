@@ -3,7 +3,6 @@
 from typing import Any, Dict
 from src.utils.logger import system_logger
 
-
 class TrainingPipeline:
     """Base training pipeline class for dependency injection."""
 

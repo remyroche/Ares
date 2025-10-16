@@ -1,6 +1,5 @@
 from src.utils.tprint import tprint
 
-
 from typing import Any
 import pandas as pd
 import numpy as np
@@ -55,11 +54,11 @@ class RegimeSpecificTPSLOptimizer:
         self.logger = system_logger.getChild('RegimeSpecificTPSLOptimizer')
         self.logger.info("🚀 Initializing RegimeSpecificTPSLOptimizer...")
         start_time = time.time()
-        
+
         self.config = config
         self.print = self.logger.info
         self.logger.info('ℹ️ Meta-labeling system removed - using only HMM market regimes for labeling')
-        
+
         # Initialize meta labeling system (optional, for backward compatibility)
         try:
             from .analyst.meta_labeling_system import MetaLabelingSystem
@@ -67,7 +66,7 @@ class RegimeSpecificTPSLOptimizer:
         except ImportError:
             self.logger.warning('MetaLabelingSystem not available, will use HMM regimes only')
             self.meta_labeling_system = None
-            
+
         self.regime_parameters = {'hmm_cluster_0': {'target_pct': 0.5, 'stop_pct': 0.2, 'risk_reward_ratio': 2.5, 'avg_duration_minutes': 45.0, 'success_rate': 7.0, 'frequency_score': 100.0}, 'hmm_cluster_1': {'target_pct': 0.4, 'stop_pct': 0.15, 'risk_reward_ratio': 2.67, 'avg_duration_minutes': 35.0, 'success_rate': 6.5, 'frequency_score': 80.0}, 'hmm_cluster_2': {'target_pct': 0.3, 'stop_pct': 0.2, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 60.0, 'success_rate': 7.5, 'frequency_score': 100.0}, 'hmm_cluster_3': {'target_pct': 0.6, 'stop_pct': 0.15, 'risk_reward_ratio': 4.0, 'avg_duration_minutes': 30.0, 'success_rate': 6.0, 'frequency_score': 70.0}, 'hmm_cluster_4': {'target_pct': 0.35, 'stop_pct': 0.2, 'risk_reward_ratio': 1.75, 'avg_duration_minutes': 25.0, 'success_rate': 5.5, 'frequency_score': 60.0}, 'hmm_cluster_5': {'target_pct': 0.5, 'stop_pct': 0.15, 'risk_reward_ratio': 3.33, 'avg_duration_minutes': 20.0, 'success_rate': 5.5, 'frequency_score': 70.0}, 'hmm_cluster_6': {'target_pct': 0.25, 'stop_pct': 0.2, 'risk_reward_ratio': 1.25, 'avg_duration_minutes': 90.0, 'success_rate': 6.0, 'frequency_score': 90.0}, 'hmm_cluster_7': {'target_pct': 0.5, 'stop_pct': 0.25, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 35.0, 'success_rate': 5.8, 'frequency_score': 70.0}, 'VOLATILE': {'target_pct': 0.6, 'stop_pct': 0.4, 'risk_reward_ratio': 1.5, 'avg_duration_minutes': 45.0, 'success_rate': 6.0, 'frequency_score': 100.0}, 'SIDEWAYS_RANGE': {'target_pct': 0.5, 'stop_pct': 0.3, 'risk_reward_ratio': 1.67, 'avg_duration_minutes': 67.4, 'success_rate': 7.81, 'frequency_score': 100.0}, 'DEFAULT': {'target_pct': 0.4, 'stop_pct': 0.2, 'risk_reward_ratio': 2.0, 'avg_duration_minutes': 40.0, 'success_rate': 6.5, 'frequency_score': 100.0}}
         self.optimization_config = config.get('regime_specific_tpsl_optimizer', {})
         self.n_trials = self.optimization_config.get('n_trials', 100)

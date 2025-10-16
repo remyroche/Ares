@@ -17,16 +17,16 @@ logger = logging.getLogger(__name__)
 class OptimizedOptimizer(OptimizationMixin, PerformanceMixin, VectorBTMixin, ValidationMixin, CachingMixin, MonitoringMixin):
     """
     Optimized optimizer with all mixins for maximum performance.
-    
+
     This class combines all available mixins to provide comprehensive
     optimization capabilities with automatic fallback handling.
     """
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.config = get_unified_config()
         self._initialize_components()
-    
+
     def _initialize_components(self):
         """Initialize all components."""
         try:
@@ -38,7 +38,7 @@ class OptimizedOptimizer(OptimizationMixin, PerformanceMixin, VectorBTMixin, Val
             self._initialize_monitoring()
         except Exception as e:
             logger.warning(f"Failed to initialize some components: {e}")
-    
+
     def optimize(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """Optimize data using the best available method."""
         try:
@@ -51,36 +51,36 @@ class OptimizedOptimizer(OptimizationMixin, PerformanceMixin, VectorBTMixin, Val
         except Exception as e:
             logger.error(f"Optimization failed: {e}")
             return data
-    
+
     def _standard_optimize(self, data: pd.DataFrame, **kwargs) -> pd.DataFrame:
         """Standard optimization fallback."""
         return data
 
 class OptimizerFactory:
     """Factory for creating optimized optimizers."""
-    
+
     def __init__(self):
         self.config = get_unified_config()
         self.available_optimizers = {
             'optimized': OptimizedOptimizer,
         }
-    
+
     def create_optimizer(self, optimizer_type: str = 'optimized', **kwargs) -> OptimizedOptimizer:
         """Create an optimizer instance."""
         if optimizer_type not in self.available_optimizers:
             raise ValueError(f"Unknown optimizer type: {optimizer_type}")
-        
+
         return self.available_optimizers[optimizer_type](**kwargs)
-    
+
     def get_available_optimizers(self) -> List[str]:
         """Get list of available optimizer types."""
         return list(self.available_optimizers.keys())
-    
+
     def get_optimizer_info(self, optimizer_type: str) -> Dict[str, Any]:
         """Get information about a specific optimizer type."""
         if optimizer_type not in self.available_optimizers:
             raise ValueError(f"Unknown optimizer type: {optimizer_type}")
-        
+
         return {
             'type': optimizer_type,
             'class': self.available_optimizers[optimizer_type],

@@ -27,7 +27,6 @@ except ImportError:
     def invalid(message: str) -> str:
         return f"INVALID: {message}"
 
-
 class PositionCloser:
     """
     Position Closer that handles position closure based on dual model confidence scores

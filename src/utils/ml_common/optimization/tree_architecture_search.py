@@ -119,7 +119,6 @@ from ...hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class TreeArchitectureConfig:
     """Configuration for tree architecture search."""
@@ -175,7 +174,6 @@ class TreeArchitectureConfig:
     n_bootstrap_samples: int = 100
     confidence_level: float = 0.95
 
-
 @dataclass
 class TreeArchitectureCandidate:
     """A candidate tree architecture."""
@@ -218,7 +216,6 @@ class TreeArchitectureCandidate:
     is_hierarchical: bool = False
     hierarchy_levels: List[Dict[str, Any]] = field(default_factory=list)
     ensemble_type: str = "single"  # single, cascade, parallel, adaptive
-
 
 class TreeArchitectureSearch:
     """Main Tree Architecture Search implementation."""
@@ -1363,7 +1360,6 @@ class TreeArchitectureSearch:
 
         self.candidates.append(mutated)
         return mutated
-
 
 # Convenience function
 def search_tree_architecture(X_train: np.ndarray,

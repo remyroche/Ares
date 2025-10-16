@@ -63,7 +63,7 @@ from .feature_generation_final_validation_step import (
 __all__ = [
     # Step classes
     "FeatureGenerationDataValidationStep",
-    "FeatureGenerationFeatureGenerationStep", 
+    "FeatureGenerationFeatureGenerationStep",
     "FeatureGenerationFeatureSelectionStep",
     "FeatureGenerationPeriodOptimizationStep",
     "FeatureGenerationLookbackOptimizationStep",
@@ -71,7 +71,7 @@ __all__ = [
     "FeatureGenerationVectorizationStep",
     "FeatureGenerationLabelingIntegrationStep",
     "FeatureGenerationFinalValidationStep",
-    
+
     # Result classes
     "DataValidationResult",
     "FeatureGenerationResult",
@@ -82,7 +82,7 @@ __all__ = [
     "VectorizationResult",
     "LabelingIntegrationResult",
     "FinalValidationResult",
-    
+
     # Command handlers
     "handle_feature_generation_data_validation_step",
     "handle_feature_generation_feature_generation_step",

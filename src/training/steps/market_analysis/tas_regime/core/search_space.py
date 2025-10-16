@@ -13,7 +13,6 @@ from enum import Enum
 from .tas_config import TreeModelType, OptimizationObjective
 from .tree_architecture import TreeArchitectureCandidate
 
-
 class SearchSpaceType(Enum):
     """Types of search spaces for TAS."""
     CONTINUOUS = "continuous"
@@ -21,11 +20,10 @@ class SearchSpaceType(Enum):
     CATEGORICAL = "categorical"
     MIXED = "mixed"
 
-
 @dataclass
 class ParameterRange:
     """Range definition for a parameter."""
-    
+
     name: str
     param_type: SearchSpaceType
     min_value: Optional[Union[int, float]] = None
@@ -33,7 +31,7 @@ class ParameterRange:
     choices: Optional[List[Any]] = None
     step: Optional[Union[int, float]] = None
     log_scale: bool = False
-    
+
     def sample(self) -> Any:
         """Sample a value from the parameter range."""
         if self.param_type == SearchSpaceType.CONTINUOUS:
@@ -43,42 +41,41 @@ class ParameterRange:
                 return np.exp(random.uniform(min_log, max_log))
             else:
                 return random.uniform(self.min_value, self.max_value)
-        
+
         elif self.param_type == SearchSpaceType.DISCRETE:
             if self.step:
                 return random.randrange(
-                    int(self.min_value), 
-                    int(self.max_value) + 1, 
+                    int(self.min_value),
+                    int(self.max_value) + 1,
                     int(self.step)
                 )
             else:
                 return random.randint(self.min_value, self.max_value)
-        
+
         elif self.param_type == SearchSpaceType.CATEGORICAL:
             return random.choice(self.choices)
-        
+
         else:
             raise ValueError(f"Unknown parameter type: {self.param_type}")
-    
+
     def is_valid(self, value: Any) -> bool:
         """Check if a value is valid for this parameter range."""
         if self.param_type == SearchSpaceType.CONTINUOUS:
             return self.min_value <= value <= self.max_value
-        
+
         elif self.param_type == SearchSpaceType.DISCRETE:
             return self.min_value <= value <= self.max_value and isinstance(value, int)
-        
+
         elif self.param_type == SearchSpaceType.CATEGORICAL:
             return value in self.choices
-        
+
         else:
             return False
-
 
 @dataclass
 class TreeSearchSpace:
     """Search space for tree architectures."""
-    
+
     # Model type choices
     model_types: List[TreeModelType] = field(default_factory=lambda: [
         TreeModelType.RANDOM_FOREST,
@@ -92,22 +89,22 @@ class TreeSearchSpace:
         TreeModelType.DEEPGBM,
         TreeModelType.NODE
     ])
-    
+
     # Parameter ranges
     parameter_ranges: Dict[str, ParameterRange] = field(default_factory=dict)
-    
+
     # Constraints
     constraints: List[Callable[[TreeArchitectureCandidate], bool]] = field(default_factory=list)
-    
+
     # Search space metadata
     space_type: SearchSpaceType = SearchSpaceType.MIXED
     dimensionality: int = 0
-    
+
     def __post_init__(self):
         """Initialize search space."""
         self._initialize_parameter_ranges()
         self._calculate_dimensionality()
-    
+
     def _initialize_parameter_ranges(self):
         """Initialize default parameter ranges."""
         if not self.parameter_ranges:
@@ -229,35 +226,35 @@ class TreeSearchSpace:
                     choices=['pinball', 'huber']
                 )
             }
-    
+
     def _calculate_dimensionality(self):
         """Calculate search space dimensionality."""
         self.dimensionality = len(self.parameter_ranges) + 1  # +1 for model_type
-    
+
     def sample_architecture(self) -> TreeArchitectureCandidate:
         """Sample a random architecture from the search space."""
         # Sample model type
         model_type = random.choice(self.model_types)
-        
+
         # Sample parameters
         hyperparams = {}
         for param_name, param_range in self.parameter_ranges.items():
             hyperparams[param_name] = param_range.sample()
-        
+
         # Create architecture candidate
         architecture = TreeArchitectureCandidate(
             model_type=model_type,
             **hyperparams
         )
-        
+
         # Apply constraints
         for constraint in self.constraints:
             if not constraint(architecture):
                 # If constraint fails, try sampling again
                 return self.sample_architecture()
-        
+
         return architecture
-    
+
     def sample_architectures(self, n: int) -> List[TreeArchitectureCandidate]:
         """Sample multiple architectures from the search space."""
         architectures = []
@@ -265,57 +262,57 @@ class TreeSearchSpace:
             architecture = self.sample_architecture()
             architectures.append(architecture)
         return architectures
-    
+
     def is_valid_architecture(self, architecture: TreeArchitectureCandidate) -> bool:
         """Check if an architecture is valid in the search space."""
         # Check model type
         if architecture.model_type not in self.model_types:
             return False
-        
+
         # Check parameter ranges
         for param_name, param_range in self.parameter_ranges.items():
             param_value = getattr(architecture, param_name, None)
             if param_value is not None and not param_range.is_valid(param_value):
                 return False
-        
+
         # Check constraints
         for constraint in self.constraints:
             if not constraint(architecture):
                 return False
-        
+
         return True
-    
+
     def get_parameter_bounds(self) -> Dict[str, Tuple[float, float]]:
         """Get parameter bounds for optimization algorithms."""
         bounds = {}
-        
+
         for param_name, param_range in self.parameter_ranges.items():
             if param_range.param_type == SearchSpaceType.CONTINUOUS:
                 bounds[param_name] = (param_range.min_value, param_range.max_value)
             elif param_range.param_type == SearchSpaceType.DISCRETE:
                 bounds[param_name] = (float(param_range.min_value), float(param_range.max_value))
-        
+
         return bounds
-    
+
     def get_categorical_parameters(self) -> Dict[str, List[Any]]:
         """Get categorical parameters for optimization algorithms."""
         categorical = {}
-        
+
         for param_name, param_range in self.parameter_ranges.items():
             if param_range.param_type == SearchSpaceType.CATEGORICAL:
                 categorical[param_name] = param_range.choices
-        
+
         return categorical
-    
+
     def add_constraint(self, constraint: Callable[[TreeArchitectureCandidate], bool]):
         """Add a constraint to the search space."""
         self.constraints.append(constraint)
-    
+
     def remove_constraint(self, constraint: Callable[[TreeArchitectureCandidate], bool]):
         """Remove a constraint from the search space."""
         if constraint in self.constraints:
             self.constraints.remove(constraint)
-    
+
     def get_space_info(self) -> Dict[str, Any]:
         """Get information about the search space."""
         return {
@@ -339,43 +336,42 @@ class TreeSearchSpace:
             ]
         }
 
-
 @dataclass
 class TreeArchitectureSpace:
     """Extended architecture space with advanced features."""
-    
+
     # Base search space
     base_space: TreeSearchSpace
-    
+
     # Advanced features
     enable_feature_selection: bool = True
     enable_ensemble_methods: bool = True
     enable_regularization: bool = True
-    
+
     # Feature selection options
     feature_selection_methods: List[str] = field(default_factory=lambda: [
         'auto', 'sqrt', 'log2', 'none'
     ])
-    
+
     # Ensemble options
     ensemble_methods: List[str] = field(default_factory=lambda: [
         'voting', 'stacking', 'bagging', 'boosting'
     ])
-    
+
     # Regularization options
     regularization_methods: List[str] = field(default_factory=lambda: [
         'l1', 'l2', 'elastic_net', 'dropout'
     ])
-    
+
     def sample_advanced_architecture(self) -> TreeArchitectureCandidate:
         """Sample an advanced architecture with additional features."""
         # Start with base architecture
         architecture = self.base_space.sample_architecture()
-        
+
         # Add feature selection if enabled
         if self.enable_feature_selection:
             architecture.max_features = random.choice(self.feature_selection_methods)
-        
+
         # Add regularization if enabled
         if self.enable_regularization:
             reg_method = random.choice(self.regularization_methods)
@@ -386,9 +382,9 @@ class TreeArchitectureSpace:
             elif reg_method == 'elastic_net':
                 architecture.reg_alpha = random.uniform(0.0, 1.0)
                 architecture.reg_lambda = random.uniform(0.0, 1.0)
-        
+
         return architecture
-    
+
     def get_advanced_space_info(self) -> Dict[str, Any]:
         """Get information about the advanced search space."""
         base_info = self.base_space.get_space_info()
@@ -402,69 +398,65 @@ class TreeArchitectureSpace:
         })
         return base_info
 
-
 # Predefined search spaces
 def create_quick_search_space() -> TreeSearchSpace:
     """Create a quick search space for fast exploration."""
     space = TreeSearchSpace()
-    
+
     # Reduce parameter ranges for quick search
     space.parameter_ranges['n_trees'].max_value = 100
     space.parameter_ranges['max_depth'].max_value = 10
     space.parameter_ranges['min_samples_split'].max_value = 20
     space.parameter_ranges['min_samples_leaf'].max_value = 10
-    
-    return space
 
+    return space
 
 def create_comprehensive_search_space() -> TreeSearchSpace:
     """Create a comprehensive search space for thorough exploration."""
     space = TreeSearchSpace()
-    
+
     # Expand parameter ranges for comprehensive search
     space.parameter_ranges['n_trees'].max_value = 2000
     space.parameter_ranges['max_depth'].max_value = 30
     space.parameter_ranges['min_samples_split'].max_value = 200
     space.parameter_ranges['min_samples_leaf'].max_value = 100
-    
+
     # Add more model types
     space.model_types.extend([
         TreeModelType.GRADIENT_BOOSTING,
         TreeModelType.ADABOOST,
         TreeModelType.BAGGING
     ])
-    
-    return space
 
+    return space
 
 def create_regime_aware_search_space() -> TreeSearchSpace:
     """Create a regime-aware search space."""
     space = TreeSearchSpace()
-    
+
     # Add regime-specific constraints
     def regime_constraint(arch: TreeArchitectureCandidate) -> bool:
         # Ensure architectures are robust to regime changes
         return arch.n_trees >= 50 and arch.max_depth >= 3
-    
-    space.add_constraint(regime_constraint)
-    
-    return space
 
+    space.add_constraint(regime_constraint)
+
+    return space
 
 def create_real_time_search_space() -> TreeSearchSpace:
     """Create a real-time search space for fast adaptation."""
     space = TreeSearchSpace()
-    
+
     # Limit complexity for real-time performance
     space.parameter_ranges['n_trees'].max_value = 200
     space.parameter_ranges['max_depth'].max_value = 8
-    
+
     # Add real-time constraints
     def real_time_constraint(arch: TreeArchitectureCandidate) -> bool:
         # Ensure architectures can be trained quickly
         complexity = arch.n_trees * (2 ** arch.max_depth)
         return complexity <= 10000
-    
+
     space.add_constraint(real_time_constraint)
-    
+
     return space

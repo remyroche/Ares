@@ -11,33 +11,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-
-# Import enhanced utilities
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, ensure_directory,
-    safe_file_exists, timed_operation, format_bytes,
-    safe_dataframe_operation, validate_dataframe_columns,
-    safe_convert_dtypes, safe_merge_dataframes,
-    safe_drop_columns, safe_rename_columns,
-    safe_timestamp_conversion, validate_timestamp_column,
-    optimize_dataframe_dtypes, calculate_data_quality_metrics,
-    get_dataframe_info, create_data_quality_report,
-    safe_to_parquet, safe_read_parquet, list_parquet_files,
-    safe_resample, align_dataframes, validate_dataframe_schema
-)
-from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_finite,
-    validate_positive, validate_range, safe_correlation,
-    validate_numeric_array, MathValidationError
-)
-from src.utils.serialization_utils import UniversalSerializer
-
-# Import data utilities
-try:
-    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
-    from src.utils.data.processing.data_processing import DataProcessor
-    from src.utils.data.quality.data_quality import DataQualityAnalyzer
-    from src.utils.data.validation.validators import DataValidator
+import warnings
 
 # VectorBT imports for native optimization
 try:
@@ -65,9 +39,32 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
+# Import enhanced utilities
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, ensure_directory,
+    safe_file_exists, timed_operation, format_bytes,
+    safe_dataframe_operation, validate_dataframe_columns,
+    safe_convert_dtypes, safe_merge_dataframes,
+    safe_drop_columns, safe_rename_columns,
+    safe_timestamp_conversion, validate_timestamp_column,
+    optimize_dataframe_dtypes, calculate_data_quality_metrics,
+    get_dataframe_info, create_data_quality_report,
+    safe_to_parquet, safe_read_parquet, list_parquet_files,
+    safe_resample, align_dataframes, validate_dataframe_schema
+)
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_finite,
+    validate_positive, validate_range, safe_correlation,
+    validate_numeric_array, MathValidationError
+)
+from src.utils.serialization_utils import UniversalSerializer
 
-    cp = None
+# Import data utilities
+try:
+    from src.utils.data.klines_parquet import KlinesParquetManager, get_klines_manager
+    from src.utils.data.processing.data_processing import DataProcessor
+    from src.utils.data.quality.data_quality import DataQualityAnalyzer
+    from src.utils.data.validation.validators import DataValidator
     DATA_UTILS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Data utilities not available: {e}")

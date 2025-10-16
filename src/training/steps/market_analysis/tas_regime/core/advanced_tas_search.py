@@ -21,6 +21,53 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 from collections import defaultdict
+import warnings
+
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs): print(*args)
+    def tprint_debug(*args, **kwargs): print(f"[DEBUG] {args[0] if args else ''}")
+    def tprint_info(*args, **kwargs): print(f"[INFO] {args[0] if args else ''}")
+    def tprint_warning(*args, **kwargs): print(f"[WARNING] {args[0] if args else ''}")
+    def tprint_error(*args, **kwargs): print(f"[ERROR] {args[0] if args else ''}")
+    def tprint_success(*args, **kwargs): print(f"[SUCCESS] {args[0] if args else ''}")
+    def tprint_progress(*args, **kwargs): print(f"[PROGRESS] {args[0] if args else ''}")
+    def tprint_performance(*args, **kwargs): print(f"[PERFORMANCE] {args[0] if args else ''}")
+    def tprint_timer(*args, **kwargs): print(f"[TIMER] {args[0] if args else ''}")
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 from .tas_config import TASConfig, TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from ..components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
@@ -670,35 +717,6 @@ class AdvancedTradingArchitectureSearch:
             # Use unsupervised learning to detect regimes
             from sklearn.ensemble import RandomForestClassifier
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
             # KMeans clustering removed - will be handled in subsequent step
 
             # Try different numbers of regimes

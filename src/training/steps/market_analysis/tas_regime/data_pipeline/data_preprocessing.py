@@ -13,7 +13,56 @@ import logging
 from datetime import datetime, timedelta
 from enum import Enum
 import warnings
+import time
+import json
+from pathlib import Path
 warnings.filterwarnings('ignore')
+
+# Import tprint for comprehensive logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+        tprint_success, tprint_progress, tprint_performance, tprint_timer
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    # Fallback functions
+    def tprint(*args, **kwargs): print(*args)
+    def tprint_debug(*args, **kwargs): print(f"[DEBUG] {args[0] if args else ''}")
+    def tprint_info(*args, **kwargs): print(f"[INFO] {args[0] if args else ''}")
+    def tprint_warning(*args, **kwargs): print(f"[WARNING] {args[0] if args else ''}")
+    def tprint_error(*args, **kwargs): print(f"[ERROR] {args[0] if args else ''}")
+    def tprint_success(*args, **kwargs): print(f"[SUCCESS] {args[0] if args else ''}")
+    def tprint_progress(*args, **kwargs): print(f"[PROGRESS] {args[0] if args else ''}")
+    def tprint_performance(*args, **kwargs): print(f"[PERFORMANCE] {args[0] if args else ''}")
+    def tprint_timer(*args, **kwargs): print(f"[TIMER] {args[0] if args else ''}")
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Import existing utilities from the codebase
 try:
@@ -920,37 +969,6 @@ class DataPreprocessor:
 
             # Save metadata
             metadata_file = output_dir / f"preprocessing_metadata_{timestamp}.json"
-            import json
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
             metadata = {
                 'data_shape': result.data_shape,
                 'preprocessing_steps_applied': result.preprocessing_steps_applied,

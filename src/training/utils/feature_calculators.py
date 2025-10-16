@@ -11,26 +11,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List, Union
 import logging
-
-# Import advanced matrix operations
-try:
-    from src.utils.matrix_operations import (
-        get_enhanced_matrix_operations, get_vectorized_processing_core,
-        get_batch_matrix_processor, compute_trading_indicators,
-        optimize_matrix_operation_with_hardware, safe_matrix_multiply,
-        safe_correlation_matrix, safe_matrix_inverse, gpu_matrix_multiply,
-        correlation_matrix_gpu, eigendecomposition_gpu, batch_matrix_multiply,
-        batch_feature_transformation, batch_correlation_analysis,
-        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config
-    )
-    MATRIX_OPS_AVAILABLE = True
-except ImportError as e:
-    MATRIX_OPS_AVAILABLE = False
-    logging.warning(f"Advanced matrix operations not available: {e}")
-
-# Import common operations for enhanced functionality
-try:
-    from src.utils.common_operations import (
+import warnings
 
 # VectorBT imports for native optimization
 try:
@@ -58,9 +39,25 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
+# Import advanced matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_enhanced_matrix_operations, get_vectorized_processing_core,
+        get_batch_matrix_processor, compute_trading_indicators,
+        optimize_matrix_operation_with_hardware, safe_matrix_multiply,
+        safe_correlation_matrix, safe_matrix_inverse, gpu_matrix_multiply,
+        correlation_matrix_gpu, eigendecomposition_gpu, batch_matrix_multiply,
+        batch_feature_transformation, batch_correlation_analysis,
+        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config
+    )
+    MATRIX_OPS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPS_AVAILABLE = False
+    logging.warning(f"Advanced matrix operations not available: {e}")
 
-    cp = None
+# Import common operations for enhanced functionality
+try:
+    from src.utils.common_operations import (
         safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
         validate_finite, get_memory_usage, timed_operation
     )

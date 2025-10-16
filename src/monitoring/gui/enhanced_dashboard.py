@@ -1,17 +1,19 @@
 """
-from ...utils.logger import system_logger
 Enhanced Monitoring Dashboard with Visualization
 
 A comprehensive GUI dashboard that combines data display and visualization
 for enhanced ML monitoring with HMM regime analysis.
 """
+import logging
+import typing
+from typing import Dict, Any, Optional
+import pandas as pd
+import tkinter as tk
+from tkinter import ttk, messagebox
+
 from ...utils.logger import system_logger
 from .monitoring_dashboard import MonitoringDashboard
 from .data_visualization import MonitoringVisualization, VisualizationControlPanel
-
-import logging
-import typing
-import pandas as pd
 
 class EnhancedMonitoringDashboard(MonitoringDashboard):
     """

@@ -1,20 +1,23 @@
 """
-from ...utils.logger import system_logger
-import warnings
 Data Visualization Components for Monitoring Dashboard
 
 Provides charts and visualizations for monitoring data including
 trade performance, regime analysis, and daily summaries.
 """
-from tkinter import ttk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
-from ...utils.logger import system_logger
-import numpy as np
-import pandas as pd
+import warnings
 import logging
 import time
 import typing
+from typing import Optional
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from tkinter import tk, ttk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
+
+from ...utils.logger import system_logger
 
 # VectorBT imports for native optimization
 try:
@@ -362,7 +365,7 @@ class VisualizationControlPanel:
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
@@ -392,5 +395,5 @@ class VisualizationControlPanel:
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)

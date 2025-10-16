@@ -286,7 +286,11 @@ class RegimeSpecificTripleBarrierOptimizer:
                             for param_name, param_value in category_params.items():
                                 mlflow.log_param(f'{regime_name}_{category}_{param_name}', param_value)
                 # Save regime optimization results using centralized reporting system
-                from src.training.reports import save_training_report
+                try:
+                    from src.training.reports import save_training_report
+                except ImportError:
+                    def save_training_report(*args, **kwargs):
+                        return None
 
 # VectorBT imports for native optimization
 try:
@@ -313,10 +317,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
                 # Get symbol and timeframe from config or use defaults
                 symbol = getattr(self, 'symbol', 'UNKNOWN')

@@ -1880,10 +1880,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 from src.utils.version_manager import get_version_manager
 
     def _should_use_vectorbt(self, data) -> bool:

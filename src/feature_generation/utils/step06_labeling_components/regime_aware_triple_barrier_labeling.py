@@ -612,8 +612,15 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
         labeled_data['labeling_method'] = 'regime_aware_with_barriers'
         labeled_data['barrier_map_source'] = str(barrier_map_or_path) if isinstance(barrier_map_or_path, str) else 'dict'
         return labeled_data
-    except Exception as e:
-        import logging
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')
+            data_copy = data.copy()
+            data_copy['label'] = 0
+            data_copy['labeling_method'] = 'error_fallback'
+            data_copy['labeling_error'] = str(e)
+            return data_copy
 
 # VectorBT imports for native optimization
 try:
@@ -640,10 +647,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
         logger = logging.getLogger(__name__)
         logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')

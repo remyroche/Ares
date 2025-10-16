@@ -288,6 +288,10 @@ class LookbackOptimizer:
 
         try:
             from sklearn.metrics import roc_auc_score
+            auc = roc_auc_score(binary_targets, clean_features)
+            return auc if not pd.isna(auc) else 0.5
+        except Exception:
+            return 0.5
 
 # VectorBT imports for native optimization
 try:
@@ -314,11 +318,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-            auc = roc_auc_score(binary_targets, clean_features)
             return auc if not pd.isna(auc) else 0.5
         except Exception:
             return 0.5

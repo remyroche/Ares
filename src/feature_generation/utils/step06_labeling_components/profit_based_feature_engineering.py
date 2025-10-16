@@ -322,9 +322,9 @@ class ProfitBasedFeatureEngineering:
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks {correlation_id}")
                 return self._chunked_profit_feature_engineering(data, feature_categories, correlation_id)
 
-            # Use
+            # Use GPU acceleration if available
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info(f"🎯 Using
+                self.logger.info(f"🎯 Using GPU acceleration for profit features")
                 return self._gpu_accelerated_profit_features(data, feature_categories, correlation_id)
 
             # Standard M1-optimized processing

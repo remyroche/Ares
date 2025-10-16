@@ -291,6 +291,8 @@ class RegimeSpecificTripleBarrierOptimizer:
                 except ImportError:
                     def save_training_report(*args, **kwargs):
                         return None
+        except Exception as e:
+            self.logger.error(f"Failed to log to MLflow: {e}")
 
 # VectorBT imports for native optimization
 try:
@@ -317,27 +319,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-                # Get symbol and timeframe from config or use defaults
-                symbol = getattr(self, 'symbol', 'UNKNOWN')
-                timeframe = getattr(self, 'timeframe', '1m')
-
-                report_path = save_training_report(
-                    data=optimization_results,
-                    step_name='step06_labeling_components',
-                    report_type='regime_optimization_results',
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    file_format='json'
-                )
-
-                self.logger.info(f'💾 Regime optimization results saved to: {report_path}')
-
-                # Still log to MLflow for backward compatibility
-                mlflow.log_artifact(report_path, 'regime_optimization')
-                self.logger.info('✅ Regime optimization results logged to MLflow')
-        except Exception as e:
-            self.logger.exception(f'Failed to log to MLflow: {e}')
 
     async def get_regime_optimization_status(self) -> dict[str, Any]:
         """Get current status of regime-specific optimization."""

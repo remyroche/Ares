@@ -6,6 +6,10 @@ from typing import Dict, List, Optional, Union, Any, Tuple, Callable
 import functools
 import time
 import inspect
+import logging
+
+# Create logger for decorators
+_decorator_logger = logging.getLogger(__name__)
 
 def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None, fallback: str = None, context: str = None) -> Callable:
     """Enhanced decorator for handling errors in training functions."""
@@ -18,17 +22,15 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
                 except exceptions as e:
                     # Try to import error classes for better handling
                     try:
-                        from src.utils.logger import system_logger
-
                         error_msg = f"Error in {func.__name__}"
                         if context:
                             error_msg += f" (context: {context})"
                         error_msg += f": {str(e)}"
 
                         if fallback:
-                            system_logger.error(f"{fallback}: {error_msg}")
+                            _decorator_logger.error(f"{fallback}: {error_msg}")
                         else:
-                            system_logger.error(error_msg)
+                            _decorator_logger.error(error_msg)
 
                         if default_return is not None:
                             return default_return
@@ -57,9 +59,9 @@ def handles_errors(exceptions: tuple = (Exception,), default_return: Any = None,
                         error_msg += f": {str(e)}"
 
                         if fallback:
-                            system_logger.error(f"{fallback}: {error_msg}")
+                            _decorator_logger.error(f"{fallback}: {error_msg}")
                         else:
-                            system_logger.error(error_msg)
+                            _decorator_logger.error(error_msg)
 
                         if default_return is not None:
                             return default_return
@@ -82,14 +84,14 @@ def traced(span_name: str = None) -> Callable:
         def wrapper(*args, **kwargs) -> Any:
             try:
                 name = span_name or func.__name__
-                system_logger.debug(f"Starting {name}")
+                _decorator_logger.debug(f"Starting {name}")
                 start_time = time.time()
 
                 result = func(*args, **kwargs)
 
                 end_time = time.time()
                 duration = end_time - start_time
-                system_logger.debug(f"Completed {name} in {duration:.3f}s")
+                _decorator_logger.debug(f"Completed {name} in {duration:.3f}s")
 
                 return result
             except ImportError:
@@ -116,7 +118,7 @@ def validates(validation_func: Callable = None) -> Callable:
                 try:
 
                     error_msg = f"Validation failed in {func.__name__}: {str(e)}"
-                    system_logger.error(error_msg)
+                    _decorator_logger.error(error_msg)
                     raise
 
                 except ImportError:
@@ -153,7 +155,7 @@ def log_execution_time(log_level: str = "info") -> Callable:
                 end_time = time.time()
                 duration = end_time - start_time
 
-                log_method = getattr(system_logger, log_level, system_logger.info)
+                log_method = getattr(_decorator_logger, log_level, _decorator_logger.info)
                 log_method(f"{func.__name__} executed in {duration:.3f}s")
 
                 return result
@@ -174,7 +176,7 @@ def log_call(log_level: str = "debug") -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs) -> Any:
             try:
-                log_method = getattr(system_logger, log_level, system_logger.debug)
+                log_method = getattr(_decorator_logger, log_level, _decorator_logger.debug)
                 log_method(f"Calling {func.__name__}")
                 return func(*args, **kwargs)
             except ImportError:
@@ -205,7 +207,7 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
 
             if circuit_open:
                 try:
-                    system_logger.warning(f"Circuit breaker open for {func.__name__}")
+                    _decorator_logger.warning(f"Circuit breaker open for {func.__name__}")
                 except ImportError:
                     tprint(f"Circuit breaker open for {func.__name__}")
                 raise Exception(f"Circuit breaker is open for {func.__name__}")
@@ -221,7 +223,7 @@ def circuit_breaker(failure_threshold: int = 5, recovery_timeout: int = 60) -> C
                 if failure_count >= failure_threshold:
                     circuit_open = True
                     try:
-                        system_logger.warning(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
+                        _decorator_logger.warning(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
                     except ImportError:
                         tprint(f"Circuit breaker opened for {func.__name__} after {failure_count} failures")
 
@@ -237,7 +239,7 @@ def span_event(event_name: str = None) -> Callable:
         def wrapper(*args, **kwargs) -> Any:
             try:
                 name = event_name or func.__name__
-                system_logger.debug(f"Span event: {name}")
+                _decorator_logger.debug(f"Span event: {name}")
                 return func(*args, **kwargs)
             except ImportError:
                 # Fallback if logger not available

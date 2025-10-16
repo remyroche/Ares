@@ -12,9 +12,9 @@ from .feature_generation_data_validation_step import (
 )
 
 from .feature_generation_feature_generation_step import (
-    FeatureGenerationFeatureGenerationStep,
+    FeatureGenerationStep,
     FeatureGenerationResult,
-    handle_feature_generation_feature_generation_step
+    handle_feature_generation_step
 )
 
 from .feature_generation_feature_selection_step import (
@@ -63,7 +63,7 @@ from .feature_generation_final_validation_step import (
 __all__ = [
     # Step classes
     "FeatureGenerationDataValidationStep",
-    "FeatureGenerationFeatureGenerationStep",
+    "FeatureGenerationStep",
     "FeatureGenerationFeatureSelectionStep",
     "FeatureGenerationPeriodOptimizationStep",
     "FeatureGenerationLookbackOptimizationStep",
@@ -85,7 +85,7 @@ __all__ = [
 
     # Command handlers
     "handle_feature_generation_data_validation_step",
-    "handle_feature_generation_feature_generation_step",
+    "handle_feature_generation_step",
     "handle_feature_generation_feature_selection_step",
     "handle_feature_generation_period_optimization_step",
     "handle_feature_generation_lookback_optimization_step",
@@ -111,7 +111,7 @@ STEP_EXECUTION_ORDER = [
 STEP_DESCRIPTIONS = {
     "feature_generation_data_validation_step": "Data validation and quality assessment",
     "feature_generation_labeling_integration_step": "Analyst/Tactician labeling integration (moved to step 2)",
-    "feature_generation_feature_generation_step": "Feature Bank only feature generation",
+    "feature_generation_feature_generation_step": "Feature Bank generation (16 categories: momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick, entropy, order_flow, acceleration, cross_timeframe, interaction, microstructure, advanced_statistical, spectral_wavelet)",
     "feature_generation_feature_selection_step": "Intelligent feature selection (4-45 features, -10% early pruning)",
     "feature_generation_period_lookback_optimization_step": "Concurrent period + lookback optimization (min 2 periods per feature, no recency bias)",
     "feature_generation_interaction_generation_step": "Feature interaction generation (X² max, log relationships, ML generators, max 100 features)",

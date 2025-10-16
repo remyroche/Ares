@@ -45,9 +45,13 @@ except ImportError:
     clip = None
     quantile = None
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
 
 class VectorBTOptimizationMixin:
     """Mixin class that provides VectorBT optimization capabilities."""
@@ -171,35 +175,38 @@ class VectorBTOptimizationMixin:
 
     def _execute_vectorbt_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
-        """Execute VectorBT operation using native functions."""
+        """Execute VectorBT operation using pandas rolling interface."""
+        # VectorBT 0.28+ uses pandas rolling interface
+        rolling_obj = data.rolling(window=window, **kwargs)
+        
         if operation == 'mean':
-            return vbt.rolling_mean(data, window=window, **kwargs)
+            return rolling_obj.mean()
         elif operation == 'std':
-            return vbt.rolling_std(data, window=window, **kwargs)
+            return rolling_obj.std()
         elif operation == 'var':
-            return vbt.rolling_var(data, window=window, **kwargs)
+            return rolling_obj.var()
         elif operation == 'min':
-            return vbt.rolling_min(data, window=window, **kwargs)
+            return rolling_obj.min()
         elif operation == 'max':
-            return vbt.rolling_max(data, window=window, **kwargs)
+            return rolling_obj.max()
         elif operation == 'sum':
-            return vbt.rolling_sum(data, window=window, **kwargs)
+            return rolling_obj.sum()
         elif operation == 'corr':
             other = kwargs.get('other')
             if other is not None:
-                return vbt.rolling_corr(data, other, window=window, **kwargs)
+                return rolling_obj.corr(other)
             else:
                 raise ValueError("Correlation operation requires 'other' parameter")
         elif operation == 'cov':
             other = kwargs.get('other')
             if other is not None:
-                return vbt.rolling_cov(data, other, window=window, **kwargs)
+                return rolling_obj.cov(other)
             else:
                 raise ValueError("Covariance operation requires 'other' parameter")
         elif operation == 'apply':
             func = kwargs.get('func')
             if func is not None:
-                return vbt.rolling_apply(data, func, window=window, **kwargs)
+                return rolling_obj.apply(func)
             else:
                 raise ValueError("Apply operation requires 'func' parameter")
         else:
@@ -243,13 +250,13 @@ class VectorBTOptimizationMixin:
 
         try:
             if indicator == 'sma':
-                return rolling_mean(data['close'], window=kwargs.get('window', 20))
+                return data['close'].rolling(window=kwargs.get('window', 20)).mean()
             elif indicator == 'ema':
                 return data['close'].ewm(span=kwargs.get('window', 20)).mean()
             elif indicator == 'wma':
                 window = kwargs.get('window', 20)
                 weights = np.arange(1, window + 1)
-                return rolling_apply(data['close'], lambda x: np.average(x, weights=weights), window=window)
+                return data['close'].rolling(window=window).apply(lambda x: np.average(x, weights=weights))
             elif indicator == 'rsi':
                 return self._calculate_rsi_vectorbt(data, kwargs.get('window', 14))
             elif indicator == 'macd':
@@ -292,8 +299,8 @@ class VectorBTOptimizationMixin:
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
 
-            avg_gain = vbt.rolling_mean(gain, window=window)
-            avg_loss = vbt.rolling_mean(loss, window=window)
+            avg_gain = gain.rolling(window=window).mean()
+            avg_loss = loss.rolling(window=window).mean()
 
             rs = avg_gain / avg_loss.replace(0, 1e-8)  # Avoid division by zero
             rsi = 100 - (100 / (1 + rs))
@@ -332,8 +339,8 @@ class VectorBTOptimizationMixin:
             # Fallback to manual calculation
             close = data['close']
 
-            sma = vbt.rolling_mean(close, window=window)
-            std = vbt.rolling_std(close, window=window)
+            sma = close.rolling(window=window).mean()
+            std = close.rolling(window=window).std()
 
             upper_band = sma + (std * std_dev)
             lower_band = sma - (std * std_dev)
@@ -359,7 +366,7 @@ class VectorBTOptimizationMixin:
             tr3 = abs(low - close.shift(1))
 
             true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            atr = vbt.rolling_mean(true_range, window=window)
+            atr = true_range.rolling(window=window).mean()
 
             return atr
 

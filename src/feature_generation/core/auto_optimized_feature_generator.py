@@ -28,35 +28,24 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                  auto_optimization_config: Optional[AutoOptimizationConfig] = None,
                  **kwargs):
         try:
-            tprint(f"🔧 Initializing AutoOptimizedFeatureGenerator: {config.name}")
-
             # Initialize base classes
-            tprint("📦 Initializing base classes...")
             super().__init__(config)
 
             # Initialize mixins
-            tprint("🔧 Initializing optimization mixins...")
             OptimizationMixin.__init__(self)
             RollingOperationsMixin.__init__(self)
             VectorBTOptimizationMixin.__init__(self)
-            tprint("✅ All mixins initialized")
 
             # Auto-optimization configuration
-            tprint("⚙️ Setting up auto-optimization configuration...")
             self.auto_optimization_config = auto_optimization_config or AutoOptimizationConfig()
-            tprint(f"✅ Auto-optimization config: {self.auto_optimization_config.optimization_level.value}")
 
             # Apply level-specific settings
-            tprint("🔧 Applying level-specific settings...")
             self._apply_level_settings()
 
             # Initialize optimization strategy
-            tprint("🎯 Creating optimization strategy...")
             self.optimization_strategy = self._create_optimization_strategy()
-            tprint(f"✅ Strategy created: {self.optimization_strategy.__class__.__name__}")
 
             # Performance tracking
-            tprint("📊 Initializing performance tracking...")
             self.auto_optimization_stats = {
                 'total_optimizations': 0,
                 'total_optimization_time': 0.0,
@@ -68,12 +57,11 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
             if self.auto_optimization_config.enable_optimization_logging:
                 self.logger.info(f"Auto-optimization enabled with {self.auto_optimization_config.optimization_level.value} strategy")
-                tprint(f"📝 Optimization logging enabled for {config.name}")
 
-            tprint(f"✅ AutoOptimizedFeatureGenerator '{config.name}' initialized successfully")
+            self.logger.debug(f"AutoOptimizedFeatureGenerator '{config.name}' initialized successfully")
 
         except Exception as e:
-            tprint(f"❌ Error initializing AutoOptimizedFeatureGenerator '{config.name}': {e}")
+            self.logger.error(f"Error initializing AutoOptimizedFeatureGenerator '{config.name}': {e}")
             raise
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -98,7 +86,6 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
     def _apply_level_settings(self):
         """Apply settings based on optimization level."""
         try:
-            tprint(f"🔧 Applying level settings for {self.auto_optimization_config.optimization_level.value}...")
             level_settings = self.auto_optimization_config.get_settings_for_level()
 
             applied_count = 0
@@ -106,63 +93,69 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 if hasattr(self.auto_optimization_config, key):
                     setattr(self.auto_optimization_config, key, value)
                     applied_count += 1
-                    tprint(f"   ✅ Applied {key} = {value}")
                 else:
-                    tprint(f"   ⚠️ Setting {key} not found in config, skipping")
+                    self.logger.warning(f"Setting {key} not found in config, skipping")
 
-            tprint(f"✅ Applied {applied_count} level settings")
+            self.logger.debug(f"Applied {applied_count} level settings for {self.auto_optimization_config.optimization_level.value}")
 
         except Exception as e:
-            tprint(f"❌ Error applying level settings: {e}")
+            self.logger.error(f"Error applying level settings: {e}")
             raise
 
     def _create_optimization_strategy(self) -> OptimizationStrategy:
         """Create optimization strategy based on configuration."""
         try:
-            tprint(f"🎯 Creating optimization strategy for {self.auto_optimization_config.optimization_level.value}...")
-
             if self.auto_optimization_config.optimization_level == OptimizationLevel.CONSERVATIVE:
-                tprint("📊 Creating conservative strategy...")
                 strategy = ConservativeOptimizationStrategy(self.auto_optimization_config)
             elif self.auto_optimization_config.optimization_level == OptimizationLevel.BALANCED:
-                tprint("📊 Creating balanced strategy...")
                 strategy = BalancedOptimizationStrategy(self.auto_optimization_config)
             elif self.auto_optimization_config.optimization_level == OptimizationLevel.AGGRESSIVE:
-                tprint("📊 Creating aggressive strategy...")
                 strategy = AggressiveOptimizationStrategy(self.auto_optimization_config)
             else:
-                tprint("⚠️ Unknown optimization level, defaulting to balanced...")
+                self.logger.warning(f"Unknown optimization level {self.auto_optimization_config.optimization_level.value}, defaulting to balanced")
                 strategy = BalancedOptimizationStrategy(self.auto_optimization_config)
 
-            tprint(f"✅ Strategy created: {strategy.__class__.__name__}")
+            self.logger.debug(f"Created optimization strategy: {strategy.__class__.__name__}")
             return strategy
 
         except Exception as e:
-            tprint(f"❌ Error creating optimization strategy: {e}")
-            tprint("🔄 Falling back to balanced strategy...")
+            self.logger.error(f"Error creating optimization strategy: {e}")
+            self.logger.info("Falling back to balanced strategy")
             return BalancedOptimizationStrategy(self.auto_optimization_config)
 
     def generate(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
         """Generate feature with automatic optimization."""
         try:
-            tprint(f"🚀 Starting feature generation for '{self.config.name}' with auto-optimization...")
             start_time = time.time()
+
+            # DEBUG: Check data quality at the start of generate
+            import numpy as np
+            print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - Data shape: {data.shape}")
+            print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+            for col in data.select_dtypes(include=[np.number]).columns:
+                non_finite = (~np.isfinite(data[col])).sum()
+                if non_finite > 0:
+                    print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - {col}: {non_finite} non-finite values")
 
             # Log optimization start
             if self.auto_optimization_config.enable_optimization_logging:
                 self.logger.debug(f"Starting auto-optimization for {self.config.name}")
-                tprint(f"📝 Optimization logging enabled for {self.config.name}")
 
             # Apply automatic optimization
             if self.auto_optimization_config.enable_auto_optimization:
-                tprint(f"🔧 Applying auto-optimization ({self.auto_optimization_config.optimization_level.value})...")
+                self.logger.debug(f"Applying auto-optimization ({self.auto_optimization_config.optimization_level.value})")
                 data = self._auto_optimize_data(data)
-                tprint("✅ Auto-optimization completed")
+                # DEBUG: Check data quality after optimization
+                print(f"🔍 [DEBUG] After _auto_optimize_data - Data shape: {data.shape}")
+                print(f"🔍 [DEBUG] After _auto_optimize_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+                for col in data.select_dtypes(include=[np.number]).columns:
+                    non_finite = (~np.isfinite(data[col])).sum()
+                    if non_finite > 0:
+                        print(f"🔍 [DEBUG] After _auto_optimize_data - {col}: {non_finite} non-finite values")
             else:
-                tprint("⚠️ Auto-optimization disabled, using original data")
+                self.logger.debug("Auto-optimization disabled, using original data")
 
             # Call parent generate method
-            tprint("📊 Generating feature...")
             result = super().generate(data, **kwargs)
 
             # Update auto-optimization stats
@@ -170,8 +163,7 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             self.auto_optimization_stats['total_optimizations'] += 1
             self.auto_optimization_stats['total_optimization_time'] += optimization_time
 
-            tprint(f"✅ Feature generation completed in {optimization_time:.3f}s")
-            tprint(f"📊 Success: {result.success}")
+            self.logger.debug(f"Feature generation completed in {optimization_time:.3f}s, success: {result.success}")
 
             # Add optimization info to result metadata
             if result.metadata is None:
@@ -184,11 +176,9 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 'optimization_stats': self.optimization_strategy.get_stats()
             })
 
-            tprint(f"📈 Feature '{self.config.name}' generated successfully")
             return result
 
         except Exception as e:
-            tprint(f"❌ Error generating feature '{self.config.name}': {e}")
             self.logger.error(f"Error generating feature '{self.config.name}': {e}")
             # Create a failed result
             from .feature_generator import FeatureResult
@@ -205,36 +195,30 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
         """Apply automatic optimization using the configured strategy."""
         try:
             if not self.auto_optimization_config.enable_auto_optimization:
-                tprint("⚠️ Auto-optimization disabled, returning original data")
+                self.logger.debug("Auto-optimization disabled, returning original data")
                 return data
 
-            tprint(f"🔧 Applying {self.optimization_strategy.__class__.__name__} optimization...")
-            tprint(f"📊 Input data shape: {data.shape}")
+            self.logger.debug(f"Applying {self.optimization_strategy.__class__.__name__} optimization, input shape: {data.shape}")
 
             # Use the configured optimization strategy
             optimized_data = self.optimization_strategy.optimize_data(data, self)
 
-            tprint(f"✅ Optimization strategy completed")
-            tprint(f"📊 Output data shape: {optimized_data.shape}")
+            self.logger.debug(f"Optimization strategy completed, output shape: {optimized_data.shape}")
 
             # Update memory savings stats
             if hasattr(self, 'get_optimization_stats'):
                 opt_stats = self.get_optimization_stats()
                 memory_saved = opt_stats.get('memory_saved_mb', 0.0)
                 self.auto_optimization_stats['memory_savings_mb'] += memory_saved
-                tprint(f"💾 Memory saved this optimization: {memory_saved:.2f}MB")
+                self.logger.debug(f"Memory saved this optimization: {memory_saved:.2f}MB")
 
             if self.auto_optimization_config.enable_optimization_logging:
                 self.logger.debug(f"Auto-optimization completed for {self.config.name}")
-                tprint(f"📝 Optimization logging completed for {self.config.name}")
 
-            tprint("✅ Auto-optimization completed successfully")
             return optimized_data
 
         except Exception as e:
-            tprint(f"❌ Auto-optimization failed: {e}")
             self.logger.warning(f"Auto-optimization failed: {e}, using original data")
-            tprint("🔄 Falling back to original data")
             return data
 
     def set_optimization_strategy(self, level: Union[str, OptimizationLevel]):

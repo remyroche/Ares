@@ -241,8 +241,9 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 self.logger.warning(f"VectorBT returns calculation failed: {e}, using numpy fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
 
-        # Fallback to numpy
-        returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
+        # Fallback to numpy - use safe division
+        shifted_prices = np.roll(prices, period)
+        returns = (prices - shifted_prices) / shifted_prices.replace(0, np.nan)
         returns[:period] = np.nan
         return returns
 
@@ -654,8 +655,8 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
 
-        # Calculate returns using vectorized operations
-        returns = np.diff(values) / values[:-1]
+        # Calculate returns using vectorized operations - use safe division
+        returns = np.diff(values) / values[:-1].replace(0, np.nan)
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
 
         # Vectorized rolling cumulative returns calculation
@@ -800,8 +801,8 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
         if len(values) < self.window + 1:
             return pd.Series(np.full(len(values), np.nan), index=data.index)
 
-        # Calculate returns using vectorized operations
-        returns = np.diff(values) / values[:-1]
+        # Calculate returns using vectorized operations - use safe division
+        returns = np.diff(values) / values[:-1].replace(0, np.nan)
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
 
         # Vectorized rolling volatility calculation

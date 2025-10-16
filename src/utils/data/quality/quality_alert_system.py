@@ -79,14 +79,14 @@ class QualityAlertManager:
         """Generate alerts based on validation results."""
         alerts = []
         if validation_result.quality_score:
-            score = validation_result.quality_score.overall
-            grade = validation_result.quality_score.grade
+            score = validation_result.quality_score.overall_score
+            grade = validation_result.quality_score.level.value
             if score < 0.6:
                 alerts.append(Alert(level='CRITICAL', message = f'Critical data quality issue: Quality score {score:.3f} (Grade {grade})', timestamp = datetime.now(), action_required = True, details={'quality_score': score, 'grade': grade}))
             elif score < 0.8:
                 alerts.append(Alert(level='WARNING', message = f'Data quality warning: Quality score {score:.3f} (Grade {grade})', timestamp = datetime.now(), action_required = False, details={'quality_score': score, 'grade': grade}))
-        if validation_result.drift_report:
-            drift_issues = validation_result.drift_report.issues
+        if validation_result.drift_issues:
+            drift_issues = validation_result.drift_issues
             if len(drift_issues) > 0:
                 alerts.append(Alert(level='ERROR', message = f'Data drift detected: {len(drift_issues)} drift issues found', timestamp = datetime.now(), action_required = True, details={'drift_issues': drift_issues}))
         if validation_result.correlation_issues:

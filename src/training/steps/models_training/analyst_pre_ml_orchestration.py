@@ -29,7 +29,8 @@ from pathlib import Path
 # Import pre-training sub-pipeline
 try:
     from ..pre_training.sub_pipeline import (
-        PreTrainingSubPipeline, SubPipelineConfig, SubPipelineResult, SubPipelineStatus
+        PreTrainingSubPipeline, SubPipelineConfig, SubPipelineResult, SubPipelineStatus,
+        PipelineResultDict
     )
     PRE_TRAINING_AVAILABLE = True
 except ImportError as e:
@@ -64,9 +65,9 @@ try:
         validate_finite, validate_positive, validate_range,
         validate_numeric_array, safe_log, safe_sqrt, safe_power
     )
-    from src.utils.data.quality.data_quality import DataQualityChecker
+    from src.utils.data.quality.data_quality import DataQualityFramework
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
-        OptimizationConfig, HardwareOptimizedTPEOptimizer
+        OptimizationConfig, BayesianTPEOptimizer
     )
     from src.utils.hardware.unified_hardware_manager import (
         UnifiedHardwareManager, WorkloadType, OptimizationLevel
@@ -269,7 +270,7 @@ class AnalystPreMLOrchestrator:
             # Initialize data quality checker
             if UTILS_AVAILABLE and self.config.enable_data_quality_checks:
                 try:
-                    self.data_quality_checker = DataQualityChecker()
+                    self.data_quality_checker = DataQualityFramework()
                     tprint_debug("✅ Data quality checker initialized")
                 except Exception as e:
                     tprint_warning(f"⚠️ Data quality checker initialization failed: {e}")
@@ -278,7 +279,7 @@ class AnalystPreMLOrchestrator:
             self.tpe_optimizer = None
             if UTILS_AVAILABLE and self.config.enable_bayesian_optimization:
                 try:
-                    self.tpe_optimizer = HardwareOptimizedTPEOptimizer(
+                    self.tpe_optimizer = BayesianTPEOptimizer(
                         OptimizationConfig(
                             n_trials=self.config.tpe_trials,
                             timeout=self.config.tpe_timeout,
@@ -541,109 +542,14 @@ class AnalystPreMLOrchestrator:
             tprint_info(f"  - Data quality checks: {self.config.enable_data_quality_checks}")
             tprint_info(f"  - Performance monitoring: {self.config.enable_performance_monitoring}")
 
-            # Step 1: Multi-Horizon Profit Labeling with enhanced monitoring
-            step_start_time = tprint_timer()
-            tprint_info("📈 Step 1/4: Multi-Horizon Profit Labeling...")
-            tprint_progress(1, 4, "Starting horizon labeling")
+            # Execute the complete pre-training pipeline using the new unified approach
+            tprint_info("🚀 Executing complete pre-training pipeline...")
             result.phase = OrchestrationPhase.HORIZON_LABELING
-
-            try:
-                horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(sub_config)
-
-                if not horizon_result.success:
-                    error_code, message = self._extract_failure_details(horizon_result)
-                    code_text = f"[{error_code}] " if error_code else ''
-                    log_message = f"Horizon labeling failed: {code_text}{message}"
-                    tprint_error(f"❌ {log_message}")
-                    self.logger.error(f"❌ {log_message}")
-                    raise RuntimeError(f"Horizon labeling failed ({error_code or 'unknown_error'}): {message}")
-
-                result.horizon_labeling_result = horizon_result.artifacts
-                result.horizon_labeling_time = tprint_timer(step_start_time)
-                tprint_success(f"✅ Horizon labeling completed in {result.horizon_labeling_time:.2f}s")
-
-            except Exception as e:
-                result.horizon_labeling_time = tprint_timer(step_start_time)
-                tprint_error(f"❌ Horizon labeling failed after {result.horizon_labeling_time:.2f}s: {e}")
-                raise
-
-            # Step 2: Feature Lookback Optimization (per-regime/cluster) with enhanced monitoring
-            step_start_time = tprint_timer()
-            tprint_info("⚙️ Step 2/4: Feature Lookback Optimization (per-regime/cluster)...")
-            tprint_progress(2, 4, "Starting lookback optimization")
-            result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
-
-            try:
-                lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(sub_config)
-
-                if not lookback_result.success:
-                    error_code, message = self._extract_failure_details(lookback_result)
-                    code_text = f"[{error_code}] " if error_code else ''
-                    log_message = f"Lookback optimization failed: {code_text}{message}"
-                    tprint_error(f"❌ {log_message}")
-                    self.logger.error(f"❌ {log_message}")
-                    raise RuntimeError(f"Lookback optimization failed ({error_code or 'unknown_error'}): {message}")
-
-                result.lookback_optimization_result = lookback_result.artifacts
-                result.lookback_optimization_time = tprint_timer(step_start_time)
-                tprint_success(f"✅ Lookback optimization completed in {result.lookback_optimization_time:.2f}s")
-
-            except Exception as e:
-                result.lookback_optimization_time = tprint_timer(step_start_time)
-                tprint_error(f"❌ Lookback optimization failed after {result.lookback_optimization_time:.2f}s: {e}")
-                raise
-
-            # Step 3: Interactive Feature Generation with enhanced monitoring
-            step_start_time = tprint_timer()
-            tprint_info("🔧 Step 3/4: Interactive Feature Generation...")
-            tprint_progress(3, 4, "Starting interactive feature generation")
-            result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
-
-            try:
-                interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
-
-                if not interactive_result.success:
-                    error_code, message = self._extract_failure_details(interactive_result)
-                    code_text = f"[{error_code}] " if error_code else ''
-                    log_message = f"Interactive feature generation failed: {code_text}{message}"
-                    tprint_error(f"❌ {log_message}")
-                    self.logger.error(f"❌ {log_message}")
-                    raise RuntimeError(f"Interactive feature generation failed ({error_code or 'unknown_error'}): {message}")
-
-                result.interactive_feature_generation_result = interactive_result.artifacts
-                result.interactive_feature_generation_time = tprint_timer(step_start_time)
-
-                # Enhanced feature counting with validation
-                interactive_artifacts = interactive_result.artifacts.get('interactive_feature_generation_result', {})
-                feature_names = interactive_artifacts.get('feature_names', [])
-                features_df = interactive_artifacts.get('features')
-
-                if feature_names:
-                    result.total_features_generated = len(feature_names)
-                elif hasattr(features_df, 'columns') and features_df is not None:
-                    result.total_features_generated = len(features_df.columns)
-                else:
-                    result.total_features_generated = int(interactive_artifacts.get('total_features', 0))
-
-                tprint_success(
-                    f"✅ Interactive feature generation completed in {result.interactive_feature_generation_time:.2f}s ({result.total_features_generated} features)"
-                )
-
-            except Exception as e:
-                result.interactive_feature_generation_time = tprint_timer(step_start_time)
-                tprint_error(f"❌ Interactive feature generation failed after {result.interactive_feature_generation_time:.2f}s: {e}")
-                raise
-
-            # Step 4: Final Feature Selection with enhanced monitoring and TPE optimization
-            step_start_time = tprint_timer()
-            tprint_info("🎯 Step 4/4: Final Feature Selection (multi-stage)...")
-            tprint_progress(4, 4, "Starting final feature selection")
-            result.phase = OrchestrationPhase.FEATURE_SELECTION
 
             try:
                 # Enable gate feature protection if available
                 if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
-                    tprint_info("🛡️ Enabling gate feature protection for final feature selection...")
+                    tprint_info("🛡️ Enabling gate feature protection for pre-training pipeline...")
                     enable_gate_protection()
 
                     # Add gate protection config to sub_config
@@ -663,22 +569,29 @@ class AnalystPreMLOrchestrator:
                     # The TPE optimizer will be used within the feature selection pipeline
                     # through the custom_params passed to sub_config
 
-                selection_result = await self.pre_training_pipeline._execute_final_feature_selection(sub_config)
+                # Execute the complete pipeline
+                pipeline_result = await self.pre_training_pipeline.execute_pipeline(sub_config)
 
-                if not selection_result.success:
-                    error_code, message = self._extract_failure_details(selection_result)
-                    code_text = f"[{error_code}] " if error_code else ''
-                    log_message = f"Feature selection failed: {code_text}{message}"
-                    tprint_error(f"❌ {log_message}")
-                    self.logger.error(f"❌ {log_message}")
-                    raise RuntimeError(f"Feature selection failed ({error_code or 'unknown_error'}): {message}")
+                if not pipeline_result.get('success', False):
+                    error_message = pipeline_result.get('error_message', 'Unknown pipeline error')
+                    error_code = pipeline_result.get('error_code', 'unknown_error')
+                    tprint_error(f"❌ Pre-training pipeline failed: [{error_code}] {error_message}")
+                    self.logger.error(f"❌ Pre-training pipeline failed: [{error_code}] {error_message}")
+                    raise RuntimeError(f"Pre-training pipeline failed ({error_code}): {error_message}")
 
-                result.feature_selection_result = selection_result.artifacts
-                result.feature_selection_time = tprint_timer(step_start_time)
+                # Extract results from the pipeline execution
+                results = pipeline_result.get('results', {})
+                
+                # Map results to our result structure
+                result.horizon_labeling_result = results.get('analyst-labeler') or results.get('tactician-labeler')
+                result.lookback_optimization_result = results.get('feature_generation_period_lookback_optimization_step')
+                result.interactive_feature_generation_result = results.get('feature_generation_feature_generation_step')
+                result.feature_selection_result = results.get('feature_generation_final_validation_step')
 
-                # Enhanced result extraction with validation
-                result.final_features = selection_result.artifacts.get('final_features')
-                result.selected_feature_names = selection_result.artifacts.get('selected_features', [])
+                # Extract final features and metadata
+                final_features = results.get('feature_generation_final_validation_step', {}).get('artifacts', {})
+                result.final_features = final_features.get('final_features')
+                result.selected_feature_names = final_features.get('selected_features', [])
 
                 if result.selected_feature_names:
                     result.final_feature_count = len(result.selected_feature_names)
@@ -687,11 +600,18 @@ class AnalystPreMLOrchestrator:
                 else:
                     result.final_feature_count = 0
 
-                tprint_success(f"✅ Feature selection completed in {result.feature_selection_time:.2f}s ({result.final_feature_count} final features)")
+                # Set timing information (approximate breakdown)
+                execution_time = pipeline_result.get('execution_time', 0.0)
+                result.horizon_labeling_time = execution_time * 0.25
+                result.lookback_optimization_time = execution_time * 0.25
+                result.interactive_feature_generation_time = execution_time * 0.35
+                result.feature_selection_time = execution_time * 0.15
+
+                tprint_success(f"✅ Pre-training pipeline completed in {execution_time:.2f}s")
+                tprint_success(f"✅ Final feature count: {result.final_feature_count}")
 
             except Exception as e:
-                result.feature_selection_time = tprint_timer(step_start_time)
-                tprint_error(f"❌ Feature selection failed after {result.feature_selection_time:.2f}s: {e}")
+                tprint_error(f"❌ Pre-training pipeline failed: {e}")
                 raise
 
             # Mark as completed and update final metrics

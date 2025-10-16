@@ -84,7 +84,7 @@ class EnhancedMatrixAccelerator:
                 logger.warning(f"⚠️ Failed to initialize matrix operations: {e}")
                 self.matrix_ops = None
         else:
-            logger.warning("⚠️ Matrix operations not available")
+            logger.warning("⚠️ VectorBTRollingOptimizer not available")
             self.matrix_ops = None
 
     def batch_rolling_calculations(self, data: pd.DataFrame, windows: List[int],

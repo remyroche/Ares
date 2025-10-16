@@ -339,7 +339,7 @@ class AdvancedFilters15m:
                 tprint_warning(f"⚠️ Converting {col} to numeric")
                 data = safe_dataframe_operation(data, pd.to_numeric, col, errors='coerce')
 
-        # Validate OHLC relationships using math validation
+        # Validate OHLC relationships using math validation (lenient)
         try:
             high_low_valid = (data['high'] >= data['low']).all()
             high_open_valid = (data['high'] >= data['open']).all()
@@ -349,8 +349,15 @@ class AdvancedFilters15m:
 
             if not all([high_low_valid, high_open_valid, high_close_valid, low_open_valid, low_close_valid]):
                 tprint_warning("⚠️ Found invalid OHLC relationships - data may need cleaning")
+                # Don't fail the pipeline, just warn and continue
+                tprint_info("ℹ️ Continuing with data cleaning to fix OHLC relationships...")
+                # Basic data cleaning
+                data['high'] = data[['high', 'open', 'close']].max(axis=1)
+                data['low'] = data[['low', 'open', 'close']].min(axis=1)
+                tprint_success("✅ OHLC relationships corrected")
         except Exception as e:
             tprint_warning(f"⚠️ Error validating OHLC relationships: {e}")
+            tprint_info("ℹ️ Continuing with data processing despite validation errors...")
 
         # Analyze data quality
         data_quality = create_data_quality_report(data)

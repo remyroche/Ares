@@ -353,9 +353,10 @@ class BayesianTPEOptimizer:
                 if self.config.vectorbt_memory_limit_gb:
                     vbt.settings.array_wrapper['freq'] = '1min'
 
-                # Configure parallel processing
-                if self.config.vectorbt_enable_parallel:
-                    vbt.settings.parallel['threading'] = True
+                # Configure parallel processing (VectorBT 0.28.1 handles this automatically)
+                # Note: Parallel settings removed in VectorBT 0.28.1 as it's handled automatically
+                # if self.config.vectorbt_enable_parallel:
+                #     vbt.settings.parallel['threading'] = True
 
                 # Configure GPU usage
                 if self.config.vectorbt_use_gpu:
@@ -1992,8 +1993,9 @@ class BayesianTPEOptimizer:
                             if hasattr(objective, '__vectorized__'):
                                 chunk_results = objective.vectorized_evaluate(chunk_params)
                             else:
-                                # Parallel evaluation using VectorBT's threading
-                                vbt.settings.threading['num_threads'] = self.config.vectorbt_parallel_workers
+                                # Parallel evaluation (VectorBT 0.28.1 handles threading automatically)
+                                # Note: threading settings removed in VectorBT 0.28.1 as it's handled automatically
+                                # vbt.settings.threading['num_threads'] = self.config.vectorbt_parallel_workers
                                 for params in chunk_params:
                                     try:
                                         value = objective(params)

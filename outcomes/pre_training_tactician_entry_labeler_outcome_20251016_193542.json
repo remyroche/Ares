@@ -1,0 +1,138 @@
+{
+  "stage": "pre_training",
+  "sub_pipeline": "tactician_entry_labeler",
+  "timestamp": "2025-10-16T19:35:42.056199",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "component": "tactician_entry_labeler",
+    "timeframe": "15m",
+    "artifacts": {
+      "multi_horizon_labeling_result": {
+        "labeled_data": "                     tactician_entry_target\ntimestamp                                  \n2024-11-10 00:00:00                0.000000\n2024-11-10 00:15:00                0.000000\n2024-11-10 00:30:00                0.000000\n2024-11-10 00:45:00                0.000000\n2024-11-10 01:00:00                0.908863\n...                                     ...\n2024-11-29 22:30:00                0.000000\n2024-11-29 22:45:00                0.000000\n2024-11-29 23:00:00                0.000000\n2024-11-29 23:15:00                0.000000\n2024-11-29 23:30:00                0.000000\n\n[1919 rows x 1 columns]",
+        "labeled_data_file": "artifacts/tactician_labeled_data_ETHUSDT_binance_15m_20251016_193541.parquet",
+        "labels": "                     tactician_entry_target\ntimestamp                                  \n2024-11-10 00:00:00                0.000000\n2024-11-10 00:15:00                0.000000\n2024-11-10 00:30:00                0.000000\n2024-11-10 00:45:00                0.000000\n2024-11-10 01:00:00                0.908863\n...                                     ...\n2024-11-29 22:30:00                0.000000\n2024-11-29 22:45:00                0.000000\n2024-11-29 23:00:00                0.000000\n2024-11-29 23:15:00                0.000000\n2024-11-29 23:30:00                0.000000\n\n[1919 rows x 1 columns]",
+        "confidence_scores": "                     tactician_entry_target_confidence\ntimestamp                                             \n2024-11-10 00:00:00                           0.000000\n2024-11-10 00:15:00                           0.000000\n2024-11-10 00:30:00                           0.000000\n2024-11-10 00:45:00                           0.000000\n2024-11-10 01:00:00                           0.908863\n...                                                ...\n2024-11-29 22:30:00                           0.000000\n2024-11-29 22:45:00                           0.000000\n2024-11-29 23:00:00                           0.000000\n2024-11-29 23:15:00                           0.000000\n2024-11-29 23:30:00                           0.000000\n\n[1919 rows x 1 columns]",
+        "eligibility_masks": "                     tactician_entry_target_eligibility\ntimestamp                                              \n2024-11-10 00:00:00                                   0\n2024-11-10 00:15:00                                   0\n2024-11-10 00:30:00                                   0\n2024-11-10 00:45:00                                   0\n2024-11-10 01:00:00                                   1\n...                                                 ...\n2024-11-29 22:30:00                                   0\n2024-11-29 22:45:00                                   0\n2024-11-29 23:00:00                                   0\n2024-11-29 23:15:00                                   0\n2024-11-29 23:30:00                                   0\n\n[1919 rows x 1 columns]",
+        "quality_scores": {
+          "tactician_entry_target": {
+            "overall_quality": 0.5570873986163167,
+            "predictability": 0.7020402873108851,
+            "stability": 0.817923247666854,
+            "balance": 0.21886399166232412,
+            "auc_mean": 0.7020402873108851,
+            "class_balance": 0.21886399166232412
+          }
+        },
+        "normalization_factors": {
+          "scaling_reference": "Entry quality normalized scoring",
+          "quality_threshold": 0.0,
+          "balance_factor": 0.21886399166232412
+        },
+        "processing_time": 9.403810977935791,
+        "n_samples": 1919,
+        "n_targets": 1,
+        "n_horizons": 1,
+        "method": "tactician_entry_labeling",
+        "metadata": {
+          "symbol": "ETHUSDT",
+          "exchange": "binance",
+          "timeframe": "15m",
+          "label_focus": "entry_timing",
+          "regime_aware": false,
+          "processing_time": 9.403810977935791,
+          "n_samples": 1919,
+          "n_targets": 1,
+          "n_horizons": 1,
+          "source": "all_market_data"
+        }
+      },
+      "labeling_report": {
+        "status": "completed",
+        "timestamp": "2025-10-16T19:35:41.991254",
+        "method": "tactician_entry_labeling",
+        "summary": {
+          "labeling_coverage": 0.21886399166232412,
+          "entry_density": 0.21886399166232412,
+          "avg_entry_quality": 0.7020402873108851,
+          "min_entry_quality": 0.38622671637876593,
+          "max_entry_quality": 1.0,
+          "entry_quality_std": 0.182076752333146,
+          "overall_quality": 0.5570873986163167
+        },
+        "entry_points": 420,
+        "regime_aware": false
+      }
+    },
+    "n_entry_points": 420,
+    "quality_metrics": {
+      "labeling_coverage": 0.21886399166232412,
+      "entry_density": 0.21886399166232412,
+      "avg_entry_quality": 0.7020402873108851,
+      "min_entry_quality": 0.38622671637876593,
+      "max_entry_quality": 1.0,
+      "entry_quality_std": 0.182076752333146,
+      "overall_quality": 0.5570873986163167
+    },
+    "direction_settings": {
+      "enable_long_positions": true,
+      "enable_short_positions": false
+    },
+    "run_metadata": {},
+    "quality_thresholds": {
+      "label_imbalance": 0.75,
+      "nan_rate": 0.05,
+      "duplicate_index": 0.02
+    }
+  },
+  "artifacts": {},
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    },
+    "direction_type": "long"
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "feature_lookback_optimization",
+      "interactive_feature_generation",
+      "final_feature_selection"
+    ]
+  }
+}

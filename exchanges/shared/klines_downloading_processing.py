@@ -29,10 +29,9 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
 )
-from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.utils.data.klines_parquet import KlinesParquetManager
-from exchanges.shared.unified_ohlcv_standardizer import UnifiedExchangeStandardizer, ExchangeType
-from src.utils.data.gap_detector import GapDetector
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer, ExchangeType
+# GapDetector import removed to break circular dependency
 
 
 class KlinesDataProcessingPipeline:
@@ -50,13 +49,11 @@ class KlinesDataProcessingPipeline:
         self.logger = system_logger.getChild(f"KlinesDataProcessingPipeline-{self.exchange.upper()}")
 
         # Initialize components
-        self.historical_pipeline = HistoricalDataPipeline(data_dir)
-        self.gap_detector = GapDetector(data_dir)
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
         # Initialize standardized data managers
         self.parquet_manager = KlinesParquetManager(data_dir, self.exchange)
-        self.data_standardizer = UnifiedExchangeStandardizer()
+        self.data_standardizer = UnifiedOHLCVStandardizer()
 
         # Quality checker will be initialized when first used
         self._quality_checker = None
@@ -407,21 +404,28 @@ class KlinesDataProcessingPipeline:
 
             # Step 1: Download data using HistoricalDataPipeline
             self.logger.info(f"📥 Step 1: Downloading {years} years of {symbol} {interval} data")
-            download_results = await self.historical_pipeline.run_complete_pipeline(
-                symbol=symbol,
-                years=years,
-                api_key=api_key,
-                api_secret=api_secret,
-                target_intervals=[interval] if interval != "1m" else []
-            )
+            try:
+                from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+                historical_pipeline = HistoricalDataPipeline(self.data_dir)
+                download_results = await historical_pipeline.run_complete_pipeline(
+                    symbol=symbol,
+                    years=years,
+                    api_key=api_key,
+                    api_secret=api_secret,
+                    target_intervals=[interval] if interval != "1m" else []
+                )
 
-            if download_results.get("pipeline_success", False):
-                results["steps_completed"].append("download")
-                results["summary"]["download"] = download_results
-                self.logger.info("✅ Data download completed")
-            else:
-                results["errors"].extend(download_results.get("errors", []))
-                self.logger.error("❌ Data download failed")
+                if download_results.get("pipeline_success", False):
+                    results["steps_completed"].append("download")
+                    results["summary"]["download"] = download_results
+                    self.logger.info("✅ Data download completed")
+                else:
+                    results["errors"].extend(download_results.get("errors", []))
+                    self.logger.error("❌ Data download failed")
+                    return results
+            except Exception as e:
+                self.logger.error(f"❌ Failed to import or run HistoricalDataPipeline: {e}")
+                results["errors"].append(f"Data download failed: {e}")
                 return results
 
             # Step 2: Remove unwanted columns
@@ -438,11 +442,19 @@ class KlinesDataProcessingPipeline:
 
             # Step 3: Detect and fill gaps > 1m
             self.logger.info("🔍 Step 3: Detecting gaps > 1m and re-downloading if needed")
-            gap_results = await self.handle_gaps_with_column_removal(
-                symbol, interval, max_gap_minutes, api_key, api_secret
-            )
-            results["steps_completed"].append("gap_handling")
-            results["summary"]["gap_handling"] = gap_results
+            try:
+                from src.utils.data.gap_detector import GapDetector
+                gap_detector = GapDetector(self.data_dir)
+                gaps = gap_detector.detect_gaps(symbol, interval, max_gap_minutes)
+                if gaps:
+                    gap_results = await gap_detector.fill_gaps(gaps, api_key, api_secret)
+                else:
+                    gap_results = {"gaps_detected": 0, "gaps_filled": 0, "message": "No gaps to fill"}
+                results["steps_completed"].append("gap_handling")
+                results["summary"]["gap_handling"] = gap_results
+            except Exception as e:
+                self.logger.error(f"❌ Gap handling failed: {e}")
+                results["errors"].append(f"Gap handling failed: {e}")
 
             # Step 4: Handle duplicates (warn on false, remove true)
             self.logger.info("🔍 Step 4: Analyzing and handling duplicate timestamps")
@@ -683,8 +695,12 @@ class KlinesDataProcessingPipeline:
         try:
             self.logger.info(f"🔍 Detecting gaps in {symbol} {interval} data (max_gap: {max_gap_minutes}m)")
 
+            # Import GapDetector locally to avoid circular dependency
+            from src.utils.data.gap_detector import GapDetector
+            gap_detector = GapDetector(self.data_dir)
+
             # Detect gaps
-            gaps = self.gap_detector.detect_gaps(symbol, interval, max_gap_minutes)
+            gaps = gap_detector.detect_gaps(symbol, interval, max_gap_minutes)
 
             if not gaps:
                 self.logger.info("✅ No gaps detected")
@@ -693,7 +709,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"⚠️ Found {len(gaps)} gaps > {max_gap_minutes} minutes")
 
             # Fill gaps
-            gap_fill_results = await self.gap_detector.fill_gaps(gaps, api_key, api_secret)
+            gap_fill_results = await gap_detector.fill_gaps(gaps, api_key, api_secret)
 
             # Remove unwanted columns and add required columns from newly downloaded data
             if gap_fill_results.get("filled_gaps", 0) > 0:

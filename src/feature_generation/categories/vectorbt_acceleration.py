@@ -29,6 +29,7 @@ import pandas as pd
 import logging
 from typing import List, Optional, Dict, Any, Union
 from scipy import stats
+from src.utils.tprint import tprint
 
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.feature_generator import FeatureConfig, FeatureCategory, VectorizedFeatureGenerator, FeatureGenerator
@@ -187,6 +188,22 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
             'memory_usage_mb': 0.0,
             'optimization_success_rate': 0.0
         }
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate acceleration-based features using VectorBT optimization."""
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='acceleration_feature')
+        
+        # Default implementation - calculate simple price acceleration
+        if 'close' in data.columns:
+            close = data['close']
+            # Calculate second derivative (acceleration) of price
+            price_change = close.diff()
+            acceleration = price_change.diff()
+            return acceleration.fillna(0)
+        else:
+            # Fallback for data without close price
+            return pd.Series(0, index=data.index, name='acceleration_feature')
 
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -1418,6 +1435,24 @@ class OptimizedAccelerationBatchGenerator:
                 return 0
 
         return base_values.rolling(window=period).apply(calculate_trend_consistency, raw=False)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate acceleration features using VectorBT optimization."""
+        try:
+            # Use the comprehensive feature generation method
+            features_df = self.generate_features(data, **kwargs)
+            
+            # Return the first feature as a representative series
+            if not features_df.empty:
+                first_feature_name = features_df.columns[0]
+                return features_df[first_feature_name]
+            else:
+                # Return a default series if no features were generated
+                return pd.Series(np.zeros(len(data)), index=data.index)
+                
+        except Exception as e:
+            self.logger.warning(f"Acceleration feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
 
     def _individual_generator_processing(self, data: pd.DataFrame,
                                       feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:

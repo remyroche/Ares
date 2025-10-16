@@ -8,6 +8,8 @@ feature generation system.
 
 import logging
 import warnings
+import pandas as pd
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +23,8 @@ warnings.warn(
 
 try:
     # Try to import from the new unified feature generation system
-    from ..feature_generation import FeatureGenerators as NewFeatureGenerators
-    logger.info("✅ Successfully imported FeatureGenerators from new unified system")
+    from ..core.feature_bank import FeatureBank as NewFeatureGenerators
+    logger.info("✅ Successfully imported FeatureBank from new unified system")
 
     # Export the new class as the old name for compatibility
     FeatureGenerators = NewFeatureGenerators
@@ -30,29 +32,94 @@ try:
 except ImportError as e:
     logger.warning(f"⚠️ Failed to import from new system: {e}")
 
-    # Try simple compatibility layer
+    # Fallback to original implementation if available
     try:
-        from ..feature_generation.compatibility.simple_hmm_compatibility import FeatureGenerators as SimpleFeatureGenerators
-        logger.info("✅ Using simple HMM compatibility layer")
-        FeatureGenerators = SimpleFeatureGenerators
-
+        from .feature_generators import FeatureGenerators as OriginalFeatureGenerators
+        FeatureGenerators = OriginalFeatureGenerators
     except ImportError as e2:
-        logger.warning(f"⚠️ Simple compatibility layer also failed: {e2}")
-
-        # Fallback to original implementation if available
-        try:
-            from .feature_generators import FeatureGenerators as OriginalFeatureGenerators
-            FeatureGenerators = OriginalFeatureGenerators
-        except ImportError as e3:
-            logger.error(f"❌ All FeatureGenerators compatibility layers failed: {e3}")
-            raise ImportError("No compatible FeatureGenerators implementation found")
+        logger.error(f"❌ All FeatureGenerators compatibility layers failed: {e2}")
+        raise ImportError("No compatible FeatureGenerators implementation found")
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # VectorBT 0.28.1 has different API - use pandas rolling operations as fallback
     VECTORBT_AVAILABLE = True
+    
+    # Create wrapper functions for compatibility
+    def rolling_mean(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).mean()
+        return None
+    
+    def rolling_std(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).std()
+        return None
+    
+    def rolling_var(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).var()
+        return None
+    
+    def rolling_min(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).min()
+        return None
+    
+    def rolling_max(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).max()
+        return None
+    
+    def rolling_sum(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).sum()
+        return None
+    
+    def rolling_apply(data, window, func, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).apply(func)
+        return None
+    
+    def rolling_corr(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).corr()
+        return None
+    
+    def rolling_cov(data, window, **kwargs):
+        if hasattr(data, 'rolling'):
+            return data.rolling(window, **kwargs).cov()
+        return None
+    
+    # Statistical functions - use numpy/pandas equivalents
+    def scale(data, **kwargs):
+        import numpy as np
+        return (data - np.mean(data)) / np.std(data)
+    
+    def rank(data, **kwargs):
+        if hasattr(data, 'rank'):
+            return data.rank(**kwargs)
+        return None
+    
+    def zscore(data, **kwargs):
+        import numpy as np
+        return (data - np.mean(data)) / np.std(data)
+    
+    def winsorize(data, limits=None, **kwargs):
+        import numpy as np
+        if limits is None:
+            limits = (0.05, 0.05)
+        return np.clip(data, np.quantile(data, limits[0]), np.quantile(data, 1-limits[1]))
+    
+    def clip(data, min_val=None, max_val=None, **kwargs):
+        import numpy as np
+        return np.clip(data, min_val, max_val)
+    
+    def quantile(data, q, **kwargs):
+        import numpy as np
+        return np.quantile(data, q)
+        
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -81,25 +148,8 @@ except ImportError:
     cp = None
     CUPY_AVAILABLE = False
 
-try:
-    logger.warning("⚠️ Using original FeatureGenerators as fallback")
-    FeatureGenerators = OriginalFeatureGenerators
-
-except ImportError as e3:
-    logger.error(f"❌ Original FeatureGenerators also not available: {e3}")
-
-    # Create a minimal fallback class
-    class FeatureGenerators:
-        """Minimal fallback FeatureGenerators class."""
-
-        def __init__(self):
-            self.logger = logger.getChild('FeatureGenerators')
-            self.logger.warning("⚠️ Using minimal fallback FeatureGenerators")
-
-        def generate_features_for_hmm(self, data):
-            """Minimal fallback implementation."""
-            self.logger.info("📊 Minimal fallback: returning data as-is")
-            return data
+# Remove this problematic fallback since we already have NewFeatureGenerators working
+# The FeatureGenerators is already set to NewFeatureGenerators above
 
 # Export the class
 __all__ = ['FeatureGenerators']

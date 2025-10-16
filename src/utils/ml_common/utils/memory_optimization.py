@@ -57,7 +57,7 @@ try:
     DASK_AVAILABLE = True
 except ImportError:
     DASK_AVAILABLE = False
-    logger.warning("Dask not available - limited distributed computing capabilities")
+    logger.debug("⚠️ Dask not available - limited distributed computing capabilities")
 
 class MemoryEfficientTraining:
     """Memory-efficient ML training utilities."""

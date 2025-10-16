@@ -30,6 +30,7 @@ except ImportError:
     np = None
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.common_operations import safe_read_parquet
 from src.utils.logger import system_logger
 import time
 
@@ -575,7 +576,7 @@ class StandardizedParquetHandler:
                 return None
 
             # Read the file
-            df = pd.read_parquet(file_path)
+            df = safe_read_parquet(file_path)
 
             if df is None or df.empty:
                 self.logger.warning(f"File is empty: {file_path}")
@@ -743,17 +744,23 @@ class StandardizedParquetHandler:
 
             # Try to get Parquet-specific info
             try:
-                df_sample = pd.read_parquet(file_path, nrows=1)
-                file_info.update({
-                    'columns': list(df_sample.columns),
-                    'column_count': len(df_sample.columns),
-                    'dtypes': df_sample.dtypes.to_dict()
-                })
+                df_sample = safe_read_parquet(file_path, nrows=1)
+                if df_sample is None:
+                    file_info['parquet_info_error'] = 'Unable to read sample rows from parquet file'
+                else:
+                    file_info.update({
+                        'columns': list(df_sample.columns),
+                        'column_count': len(df_sample.columns),
+                        'dtypes': df_sample.dtypes.to_dict()
+                    })
 
-                # Get full row count (this might be expensive for large files)
-                if stat.st_size < 100 * 1024 * 1024:  # Only for files < 100MB
-                    df_full = pd.read_parquet(file_path)
-                    file_info['row_count'] = len(df_full)
+                    # Get full row count (this might be expensive for large files)
+                    if stat.st_size < 100 * 1024 * 1024:  # Only for files < 100MB
+                        df_full = safe_read_parquet(file_path)
+                        if df_full is not None:
+                            file_info['row_count'] = len(df_full)
+                        else:
+                            file_info['parquet_info_error'] = 'Unable to read full parquet file for row count'
 
             except Exception as e:
                 file_info['parquet_info_error'] = str(e)

@@ -1,0 +1,32 @@
+================================================================================
+  TACTICIAN ENTRY LABELER - EXECUTION SUMMARY
+================================================================================
+
+📋 CONFIGURATION
+   Symbol:          ETHUSDT
+   Exchange:        binance
+   Timeframe:       15m
+   Mode:            light
+   Direction:       long
+   Intensity:       0.5
+
+📊 EXECUTION STATUS
+   Status:          completed
+   Timestamp:       2025-10-16T19:35:42.056199
+
+📊 RESULTS
+   component: tactician_entry_labeler
+   timeframe: 15m
+   n_entry_points: 420
+
+➡️  NEXT STAGE REQUIREMENTS
+   Required Files: labels.parquet, features.parquet
+   Required Artifacts: feature_metadata
+   Sub-pipelines: feature_lookback_optimization, interactive_feature_generation, final_feature_selection
+
+================================================================================
+✅ TACTICIAN ENTRY LABELER COMPLETED SUCCESSFULLY
+================================================================================
+
+📄 JSON Details: pre_training_tactician_entry_labeler_outcome_20251016_193542.json
+📄 This Summary: pre_training_tactician_entry_labeler_outcome_20251016_193542_SUMMARY.txt

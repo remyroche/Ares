@@ -24,8 +24,7 @@ from .data_drift_detector import (
     detect_data_drift, get_drifted_features
 )
 
-# Import existing HMM tooling (legacy detector has been deprecated)
-from src.utils.hmm import EnhancedHMMCompositeManager
+# HMM tooling has been deprecated and removed
 
 # Import system utilities
 from ..logger import get_logger
@@ -46,9 +45,7 @@ class IntegratedAnalysisConfig:
     warning_threshold: float = 0.1
     critical_threshold: float = 0.2
 
-    # HMM settings
-    hmm_n_components: int = 4
-    hmm_covariance_type: str = "full"
+    # HMM settings have been removed
 
     # Output settings
     save_results: bool = True
@@ -87,17 +84,9 @@ class IntegratedAnalysisPipeline:
         )
         self.drift_detector = DataDriftDetector(drift_config)
 
-        # HMM regime detector (deprecated) – fall back to composite manager if enhanced APIs exist
-        try:
-            self.hmm_manager = EnhancedHMMCompositeManager()
-        except Exception as exc:  # pragma: no cover - defensive logging
-            self.hmm_manager = None
-            self.logger.warning(f"⚠️ Unable to initialize EnhancedHMMCompositeManager: {exc}")
-        self._regime_detection_available = bool(
-            self.hmm_manager and hasattr(self.hmm_manager, 'detect_regimes')
-        )
-        if not self._regime_detection_available:
-            self.logger.info("ℹ️ HMMRegimeDetector deprecated; using fallback regime detection heuristics.")
+        # Regime detection using alternative methods (HMM deprecated)
+        self._regime_detection_available = True
+        self.logger.info("ℹ️ Using alternative regime detection methods (HMM deprecated).")
 
     def analyze_comprehensive(self,
                             current_data: pd.DataFrame,
@@ -124,8 +113,8 @@ class IntegratedAnalysisPipeline:
             self.logger.info("⏭️ Step 2: Skipping drift detection (no reference data)")
             results['drift_detection'] = {'status': 'skipped', 'reason': 'no_reference_data'}
 
-        # 3. HMM Regime Detection
-        self.logger.info("🔍 Step 3: HMM Regime Detection")
+        # 3. Regime Detection (using alternative methods)
+        self.logger.info("🔍 Step 3: Regime Detection (using alternative methods)")
         regime_results = self._detect_regimes(current_data)
         results['regime_detection'] = regime_results
 
@@ -204,63 +193,64 @@ class IntegratedAnalysisPipeline:
             return {'status': 'error', 'error': str(e)}
 
     def _detect_regimes(self, data: pd.DataFrame) -> Dict[str, Any]:
-        """Detect market regimes using HMM."""
+        """Detect market regimes using alternative methods."""
+        # Using volatility-based regime detection (HMM deprecated)
         try:
-            # Prepare data for HMM
-            numeric_data = data.select_dtypes(include=[np.number])
+            # Simple regime detection based on price movements and volatility
+            returns = data['close'].pct_change().fillna(0)
+            volatility = returns.rolling(window=20).std()
 
-            if len(numeric_data.columns) == 0:
-                return {'status': 'error', 'error': 'No numeric columns available'}
+            # Define regimes based on volatility thresholds
+            high_vol_threshold = volatility.quantile(0.75)
+            low_vol_threshold = volatility.quantile(0.25)
 
-            # Attempt to use enhanced manager if it exposes a detection interface
-            if self._regime_detection_available:
-                try:
-                    raw_detection = self.hmm_manager.detect_regimes(  # type: ignore[attr-defined]
-                        data=numeric_data,
-                        n_components=self.config.hmm_n_components,
-                        covariance_type=self.config.hmm_covariance_type,
-                    )
-                    if hasattr(raw_detection, 'to_dict'):
-                        detection_result = raw_detection.to_dict()  # type: ignore[attr-defined]
-                    elif isinstance(raw_detection, dict):
-                        detection_result = raw_detection
-                    else:
-                        detection_result = dict(raw_detection) if hasattr(raw_detection, 'items') else {}
-                    regime_labels = detection_result.get('regime_labels', [])
-                    if regime_labels and isinstance(regime_labels[0], np.integer):
-                        regime_labels = [int(label) for label in regime_labels]
-                    return {
-                        'status': 'success',
-                        'n_regimes': detection_result.get('n_regimes', self.config.hmm_n_components),
-                        'regime_labels': regime_labels,
-                        'regime_distribution': detection_result.get('regime_distribution', {}),
-                        'regime_stability': detection_result.get('regime_stability'),
-                        'detection_quality': detection_result.get('detection_quality'),
-                    }
-                except Exception as exc:
-                    self.logger.warning(
-                        f"⚠️ Enhanced HMM composite manager does not support detect_regimes or failed with: {exc}. "
-                        "Falling back to simulated regime detection."
-                    )
+            regimes = []
+            current_regime = None
+            regime_start = 0
 
-            # Simulated fallback regime detection when no dedicated detector is available
-            n_samples = len(numeric_data)
-            n_regimes = self.config.hmm_n_components
-            rng = np.random.default_rng()
-            regime_labels = rng.integers(0, n_regimes, n_samples)
+            for i in range(len(data)):
+                if volatility.iloc[i] > high_vol_threshold:
+                    regime = 'high_volatility'
+                elif volatility.iloc[i] < low_vol_threshold:
+                    regime = 'low_volatility'
+                else:
+                    regime = 'normal_volatility'
+
+                if regime != current_regime:
+                    if current_regime is not None:
+                        regimes.append({
+                            'regime': current_regime,
+                            'start_idx': regime_start,
+                            'end_idx': i - 1,
+                            'duration': i - regime_start
+                        })
+                    current_regime = regime
+                    regime_start = i
+
+            # Add the last regime
+            if current_regime is not None:
+                regimes.append({
+                    'regime': current_regime,
+                    'start_idx': regime_start,
+                    'end_idx': len(data) - 1,
+                    'duration': len(data) - regime_start
+                })
 
             return {
                 'status': 'success',
-                'n_regimes': n_regimes,
-                'regime_labels': regime_labels.tolist(),
-                'regime_distribution': {str(i): int(np.sum(regime_labels == i)) for i in range(n_regimes)},
-                'regime_stability': 0.85,  # Simulated stability score
-                'detection_quality': 0.92  # Simulated quality score
+                'regimes': regimes,
+                'n_regimes': len(set(r['regime'] for r in regimes)),
+                'method': 'volatility_based'
             }
 
-        except Exception as e:
-            self.logger.error(f"❌ Regime detection failed: {e}")
-            return {'status': 'error', 'error': str(e)}
+        except Exception as exc:
+            self.logger.error(f"❌ Basic regime detection failed: {exc}")
+            return {
+                'status': 'error',
+                'error': str(exc),
+                'regimes': None,
+                'method': 'failed'
+            }
 
     def _integrate_analysis(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Integrate all analysis results."""

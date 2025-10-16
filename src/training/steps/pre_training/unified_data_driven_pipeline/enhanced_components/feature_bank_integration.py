@@ -173,7 +173,8 @@ class FeatureBankIntegration:
 
         # Initialize feature bank
         if FEATURE_BANK_AVAILABLE:
-            self.feature_bank = FeatureBank()
+            from src.feature_generation.core.feature_bank import get_global_feature_bank
+            self.feature_bank = get_global_feature_bank()
             tprint_success("✅ Feature Bank initialized")
         else:
             self.feature_bank = None

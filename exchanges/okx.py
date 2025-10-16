@@ -40,7 +40,7 @@ from .shared import (
     # Wallet
     BalanceManager, WalletManager,
     # Reliability
-    RateLimitManager, RetryManager, AuditLogger, SystemStatusManager
+    RateLimitManager, AuditLogger, SystemStatusManager
 )
 
 

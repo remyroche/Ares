@@ -143,7 +143,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     vbt.settings['parallel']['enabled'] = True
                 if hasattr(vbt.settings, 'parallel') and 'n_threads' in vbt.settings['parallel']:
                     vbt.settings['parallel']['n_threads'] = min(8, os.cpu_count())  # Limit threads for memory efficiency
-                logger.info("✅ VectorBT parallel processing enabled")
+                logger.debug("✅ VectorBT parallel processing enabled")
             except Exception as e:
                 logger.warning(f"⚠️ Parallel processing not available: {e}")
                 self.enable_parallel = False

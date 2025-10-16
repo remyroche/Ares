@@ -8,7 +8,7 @@ using SHAP/LIME for trade decisions across backtesting, paper trading, and live 
 
 import json
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -139,16 +139,16 @@ class ModelPerformanceMetrics:
     auc_score: Optional[float] = None
 
     # Trading performance
-    win_rate: float
-    profit_factor: float
-    sharpe_ratio: float
-    max_drawdown: float
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    sharpe_ratio: float = 0.0
+    max_drawdown: float = 0.0
 
     # Model stability
-    prediction_confidence_std: float
-    feature_importance_stability: float
-    concept_drift_score: float
-    data_drift_score: float
+    prediction_confidence_std: float = 0.0
+    feature_importance_stability: float = 0.0
+    concept_drift_score: float = 0.0
+    data_drift_score: float = 0.0
 
 @dataclass
 class EnsemblePerformanceMetrics:
@@ -157,19 +157,19 @@ class EnsemblePerformanceMetrics:
     timestamp: datetime
 
     # Overall performance
-    accuracy: float
-    win_rate: float
-    profit_factor: float
-    sharpe_ratio: float
+    accuracy: float = 0.0
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    sharpe_ratio: float = 0.0
 
     # Ensemble-specific metrics
-    model_diversity_score: float
-    consensus_quality: float
-    disagreement_impact: float
-    weight_stability: float
+    model_diversity_score: float = 0.0
+    consensus_quality: float = 0.0
+    disagreement_impact: float = 0.0
+    weight_stability: float = 0.0
 
     # Individual model contributions
-    model_contributions: Dict[str, float]
+    model_contributions: Dict[str, float] = field(default_factory=dict)
 
 class EnhancedMLMonitor:
     """

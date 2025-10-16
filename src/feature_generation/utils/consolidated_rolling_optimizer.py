@@ -457,8 +457,14 @@ def batch_rolling_operations(data: Union[pd.Series, pd.DataFrame],
 # Global instance for easy access
 _global_optimizer = None
 
-def get_global_rolling_optimizer() -> ConsolidatedRollingOptimizer:
-    """Get the global rolling optimizer instance."""
+def get_global_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bool = True, **kwargs) -> ConsolidatedRollingOptimizer:
+    """Get the global rolling optimizer instance.
+    
+    Args:
+        enable_gpu: GPU acceleration flag (ignored for compatibility)
+        enable_parallel: Parallel processing flag (ignored for compatibility)
+        **kwargs: Additional arguments (ignored for compatibility)
+    """
     global _global_optimizer
     if _global_optimizer is None:
         _global_optimizer = create_rolling_optimizer()

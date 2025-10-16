@@ -65,23 +65,14 @@ except ImportError as e:
     print(f"⚠️ Warning: analyst_pre_ml_orchestration not available: {e}")
     ANALYST_PRE_ML_AVAILABLE = False
 
-# Import per-regime training integration
-try:
-    from .per_regime_training_integration import (
-        PerRegimeTrainingIntegration, PerRegimeTrainingResult,
-        get_per_regime_integration, train_analyst_per_regime_models,
-        train_tactician_per_regime_models, get_model_selector_for_trading
-    )
-    PER_REGIME_TRAINING_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: per_regime_training_integration not available: {e}")
-    PER_REGIME_TRAINING_AVAILABLE = False
-    PerRegimeTrainingIntegration = None
-    PerRegimeTrainingResult = None
-    get_per_regime_integration = None
-    train_analyst_per_regime_models = None
-    train_tactician_per_regime_models = None
-    get_model_selector_for_trading = None
+# Per-regime training integration is no longer used
+PER_REGIME_TRAINING_AVAILABLE = False
+PerRegimeTrainingIntegration = None
+PerRegimeTrainingResult = None
+get_per_regime_integration = None
+train_analyst_per_regime_models = None
+train_tactician_per_regime_models = None
+get_model_selector_for_trading = None
 
 try:
     from .analyst_training_pipeline import (

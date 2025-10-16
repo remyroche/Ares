@@ -175,7 +175,7 @@ class MainPipelineConfig:
     exchange: str = "binance"
     timeframe: str = "15m"
     data_dir: str = "historical_data"
-    direction: DirectionType = DirectionType.BOTH
+    direction: DirectionType = DirectionType.LONGS
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -230,7 +230,7 @@ class MainPipelineConfig:
     training_mode_config: Optional[Dict[str, Any]] = None
 
     # Direction control for trading (longs, shorts, or both)
-    direction_type: DirectionType = DirectionType.BOTH  # Default to both directions
+    direction_type: DirectionType = DirectionType.LONGS  # Default to long positions
 
     # Single stage execution control
     single_stage_only: bool = False  # Control whether to execute only the requested stage
@@ -913,10 +913,10 @@ class MainTrainingPipeline:
             for sub_result in stage_results:
                 total_sub_pipelines += 1
                 self.logger.info(f"   Sub-pipeline: {sub_result.sub_pipeline_name}, Status: {sub_result.status.value}")
-                # Use enum comparison instead of string comparison for accuracy
-                if sub_result.status == SubPipelineStatus.COMPLETED:
+                # Use success attribute for accurate success rate calculation
+                if sub_result.success:
                     completed_sub_pipelines += 1
-                elif sub_result.status == SubPipelineStatus.FAILED:
+                elif sub_result.status == SubPipelineStatus.FAILED or not sub_result.success:
                     failed_sub_pipelines += 1
 
         result.total_sub_pipelines = total_sub_pipelines

@@ -127,3 +127,21 @@ class UniversalSerializer:
         else:
             # Try pickle as default
             return PickleSerializer.load(filepath)
+
+def safe_serialize(data: Any, filepath: str, format: str = 'auto') -> bool:
+    """Safely serialize data to file with error handling."""
+    try:
+        serializer = UniversalSerializer()
+        return serializer.save(data, filepath, format)
+    except Exception as e:
+        logger.error(f"Failed to serialize data: {e}")
+        return False
+
+def safe_deserialize(filepath: str) -> Optional[Any]:
+    """Safely deserialize data from file with error handling."""
+    try:
+        serializer = UniversalSerializer()
+        return serializer.load(filepath)
+    except Exception as e:
+        logger.error(f"Failed to deserialize data: {e}")
+        return None

@@ -34,9 +34,15 @@ class ValidationResult:
 class CrossStepValidator:
     """Validator for cross-step operations."""
 
+    _init_done = False
+
     def __init__(self):
+        if CrossStepValidator._init_done:
+            return
+
         self.validation_results: List[ValidationResult] = []
         self.step_data: Dict[str, Any] = {}
+        CrossStepValidator._init_done = True
 
     def validate_data_consistency(self, step1_data: Any, step2_data: Any, tolerance: float = 1e-6) -> ValidationResult:
         """Validate data consistency between steps."""

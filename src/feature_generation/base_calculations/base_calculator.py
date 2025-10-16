@@ -236,7 +236,17 @@ class ReturnsVWAPCalculator(BaseCalculator):
 
         # Calculate VWAP
         vwap_period = self.config.vwap_period
-        vwap = (typical_price * volume).rolling(window=vwap_period).sum() / self._vectorbt_rolling_operation(volume, "sum", vwap_period)
+        # Use pandas rolling operations for consistency
+        volume_sum = volume.rolling(window=vwap_period).sum()
+        # Use safe division to prevent division by zero - replace zeros and NaN with forward fill
+        volume_sum_safe = volume_sum.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
+        
+        # Calculate numerator with safe handling
+        numerator = (typical_price * volume).rolling(window=vwap_period).sum()
+        # For the first vwap_period-1 rows, use the current typical_price as VWAP
+        numerator_safe = numerator.fillna(typical_price)
+        
+        vwap = numerator_safe / volume_sum_safe
 
         return vwap
 
@@ -327,7 +337,10 @@ class VolumeWeightedCalculator(BaseCalculator):
         volume = data[self.config.volume_column]
 
         # Calculate volume-weighted price
-        volume_weighted = (price * volume) / volume.rolling(window=self.config.vwap_period).sum()
+        volume_sum = volume.rolling(window=self.config.vwap_period).sum()
+        # Use safe division to prevent division by zero - replace zeros and NaN with forward fill
+        volume_sum_safe = volume_sum.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
+        volume_weighted = (price * volume) / volume_sum_safe
 
         return volume_weighted
 

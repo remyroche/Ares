@@ -180,7 +180,7 @@ from .representation_learning import (
     AutoencoderRepresentationGenerator,
     ContrastiveLearningGenerator
 )
-from .microstructure_features import create_default_order_flow_generators
+from .order_flow import create_default_order_flow_generators
 from .cross_timeframe import create_default_cross_timeframe_generators
 # regime.py deleted - replaced by advanced HMM regime system
 # from .legacy import create_default_legacy_generators  # File doesn't exist
@@ -194,7 +194,7 @@ from .advanced_statistical import (
     MaxDrawdownGenerator,
     RollingSkewnessKurtosisGenerator,
     TrendPersistenceGenerator,
-    create_default_advanced_statistical_generators
+    create_advanced_statistical_generators
 )
 
 from .spectral_wavelet import (
@@ -354,7 +354,7 @@ __all__ = [
     "MaxDrawdownGenerator",
     "RollingSkewnessKurtosisGenerator",
     "TrendPersistenceGenerator",
-    "create_default_advanced_statistical_generators",
+    "create_advanced_statistical_generators",
     "WaveletEnergyGenerator",
     "BandLimitedVolatilityGenerator",
     "CycleLengthGenerator",

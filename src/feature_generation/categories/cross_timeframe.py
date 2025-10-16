@@ -28,28 +28,57 @@ from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 # VectorBT imports for optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    # VectorBT 0.28+ uses pandas rolling interface instead of separate functions
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Unified Vectorization Manager imports
+try:
+    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OperationConfig
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OperationConfig = None
+    warnings.warn("UnifiedVectorizationManager not available. Some optimizations may not work")
+
+# Helper functions for VectorBT rolling operations using pandas interface
+def rolling_mean(data, window, **kwargs):
+    """VectorBT-compatible rolling mean using pandas interface"""
+    return data.rolling(window=window, **kwargs).mean()
+
+def rolling_std(data, window, **kwargs):
+    """VectorBT-compatible rolling std using pandas interface"""
+    return data.rolling(window=window, **kwargs).std()
+
+def rolling_var(data, window, **kwargs):
+    """VectorBT-compatible rolling variance using pandas interface"""
+    return data.rolling(window=window, **kwargs).var()
+
+def rolling_min(data, window, **kwargs):
+    """VectorBT-compatible rolling min using pandas interface"""
+    return data.rolling(window=window, **kwargs).min()
+
+def rolling_max(data, window, **kwargs):
+    """VectorBT-compatible rolling max using pandas interface"""
+    return data.rolling(window=window, **kwargs).max()
+
+def rolling_sum(data, window, **kwargs):
+    """VectorBT-compatible rolling sum using pandas interface"""
+    return data.rolling(window=window, **kwargs).sum()
+
+def rolling_apply(data, window, func, **kwargs):
+    """VectorBT-compatible rolling apply using pandas interface"""
+    return data.rolling(window=window, **kwargs).apply(func)
+
+def rolling_corr(data1, data2, window, **kwargs):
+    """VectorBT-compatible rolling correlation using pandas interface"""
+    return data1.rolling(window=window, **kwargs).corr(data2)
 
 # VectorBT Rolling Optimizer
 try:
@@ -90,7 +119,7 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
 
         # Initialize VectorBT rolling optimizer with enhanced settings
         if ROLLING_OPTIMIZER_AVAILABLE:
@@ -305,7 +334,7 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
 
 # Cross-Timeframe Momentum Generator
 
-class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixin):
+class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe momentum features with VectorBT optimization."""
 
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -327,7 +356,7 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixi
             matrix_optimized=True,
             gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
 
@@ -416,7 +445,7 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator, VectorBTOptimizationMixi
 
 # Cross-Timeframe Volatility Generator
 
-class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMixin):
+class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe volatility features with VectorBT optimization."""
 
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -438,7 +467,7 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
             matrix_optimized=True,
             gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
 
@@ -522,7 +551,7 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
 
 # Cross-Timeframe Volume Generator
 
-class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin):
+class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
     """Generator for cross-timeframe volume features with VectorBT optimization."""
 
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS, **base_kwargs):
@@ -543,7 +572,7 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin)
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs},
             gpu_accelerated=True
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
 
@@ -627,7 +656,7 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin)
 
 # Cross-Timeframe Trend Generator
 
-class CrossTimeframeTrendGenerator(FeatureGenerator):
+class CrossTimeframeTrendGenerator(VectorizedFeatureGenerator):
     """Generator for cross-timeframe trend features."""
 
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -647,7 +676,7 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
 
@@ -674,7 +703,7 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
 
 # Cross-Timeframe High-Low Generator
 
-class CrossTimeframeHighLowGenerator(FeatureGenerator):
+class CrossTimeframeHighLowGenerator(VectorizedFeatureGenerator):
     """Generator for cross-timeframe high-low range features."""
 
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_LEVELS, **base_kwargs):
@@ -694,7 +723,7 @@ class CrossTimeframeHighLowGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
 
@@ -709,7 +738,7 @@ class CrossTimeframeHighLowGenerator(FeatureGenerator):
 
 # Cross-Timeframe Ratio Generator
 
-class CrossTimeframeRatioGenerator(FeatureGenerator):
+class CrossTimeframeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for cross-timeframe ratio features."""
 
     def __init__(self, short_timeframe: int = 5, long_timeframe: int = 20, feature_type: str = "momentum", base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -729,7 +758,7 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
             max_lookback=long_timeframe,
             parameters={'short_timeframe': short_timeframe, 'long_timeframe': long_timeframe, 'feature_type': feature_type, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.short_timeframe = short_timeframe
         self.long_timeframe = long_timeframe
         self.feature_type = feature_type
@@ -762,7 +791,7 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
 
 # Cross-Timeframe Correlation Generator
 
-class CrossTimeframeCorrelationGenerator(FeatureGenerator):
+class CrossTimeframeCorrelationGenerator(VectorizedFeatureGenerator):
     """Generator for cross-timeframe correlation features."""
 
     def __init__(self, timeframe1: int = 5, timeframe2: int = 15, feature_type: str = "momentum", correlation_window: int = 20, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -782,7 +811,7 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
             max_lookback=max(timeframe1, timeframe2, correlation_window),
             parameters={'timeframe1': timeframe1, 'timeframe2': timeframe2, 'feature_type': feature_type, 'correlation_window': correlation_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframe1 = timeframe1
         self.timeframe2 = timeframe2
         self.feature_type = feature_type
@@ -813,7 +842,7 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
 
 # Cross-Timeframe Divergence Generator
 
-class CrossTimeframeDivergenceGenerator(FeatureGenerator):
+class CrossTimeframeDivergenceGenerator(VectorizedFeatureGenerator):
     """Generator for cross-timeframe divergence features."""
 
     def __init__(self, short_timeframe: int = 5, long_timeframe: int = 20, feature_type: str = "momentum", base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -833,7 +862,7 @@ class CrossTimeframeDivergenceGenerator(FeatureGenerator):
             max_lookback=long_timeframe,
             parameters={'short_timeframe': short_timeframe, 'long_timeframe': long_timeframe, 'feature_type': feature_type, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.short_timeframe = short_timeframe
         self.long_timeframe = long_timeframe
         self.feature_type = feature_type
@@ -909,7 +938,7 @@ def create_default_cross_timeframe_generators() -> List[FeatureGenerator]:
 
 # Enhanced Cross-Timeframe Generators for Better Aggregation
 
-class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
+class CrossTimeframeFractionalChangeGenerator(VectorizedFeatureGenerator):
     """Generator for fractional change features across timeframes."""
 
     def __init__(self, fast_tf: int = 5, slow_tf: int = 15, feature_type: str = "volatility"):
@@ -924,7 +953,7 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
             max_lookback=max(fast_tf, slow_tf),
             parameters={"fast_tf": fast_tf, "slow_tf": slow_tf, "feature_type": feature_type}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.fast_tf = fast_tf
         self.slow_tf = slow_tf
         self.feature_type = feature_type
@@ -956,7 +985,7 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
 
         return fractional_change.fillna(0)
 
-class CrossTimeframeAlignmentGenerator(FeatureGenerator):
+class CrossTimeframeAlignmentGenerator(VectorizedFeatureGenerator):
     """Generator for properly aligned cross-timeframe features."""
 
     def __init__(self, source_tf: int = 1, target_tf: int = 5, alignment_method: str = "lag"):
@@ -970,7 +999,7 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
             max_lookback=target_tf,
             parameters={"source_tf": source_tf, "target_tf": target_tf, "alignment_method": alignment_method}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.source_tf = source_tf
         self.target_tf = target_tf
         self.alignment_method = alignment_method
@@ -998,7 +1027,7 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
         else:
             return pd.Series(np.zeros(len(data)), index=data.index)
 
-class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
+class CrossTimeframeLearnedProjectionGenerator(VectorizedFeatureGenerator):
     """Generator for learned projections across timeframes using PCA/dimensionality reduction."""
 
     def __init__(self, timeframes: List[int] = [1, 5, 15], n_components: int = 3):
@@ -1013,7 +1042,7 @@ class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
             max_lookback=max(timeframes) * 20,
             parameters={"timeframes": timeframes, "n_components": n_components}
         )
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
         self.timeframes = timeframes
         self.n_components = n_components
 
@@ -1065,7 +1094,7 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        super().__init__(config)
 
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -1365,6 +1394,12 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         except Exception as e:
             return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
 
+try:
+    import vectorbt as vbt
+    # VectorBT cp attribute might not be available in all versions
+    cp = getattr(vbt, 'cp', None)
+    if cp is None:
+        warnings.warn("VectorBT cp attribute not available in this version")
 except ImportError:
-
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
     cp = None

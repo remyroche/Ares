@@ -18,8 +18,31 @@ import threading
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass
 
-from src.utils.logger import system_logger
+import logging
+
+class MissingValueStrategy(Enum):
+    """Strategies for handling missing values."""
+    INTERPOLATE = "interpolate"
+    FORWARD_FILL = "forward_fill"
+    BACKWARD_FILL = "backward_fill"
+    DROP = "drop"
+    ZERO = "zero"
+    MEAN = "mean"
+    MEDIAN = "median"
+
+class OutlierStrategy(Enum):
+    """Strategies for handling outliers."""
+    IQR = "iqr"
+    ZSCORE = "zscore"
+    ISOLATION_FOREST = "isolation_forest"
+    LOCAL_OUTLIER_FACTOR = "local_outlier_factor"
+    ONE_CLASS_SVM = "one_class_svm"
+    REMOVE = "remove"
+    CAP = "cap"
+    TRANSFORM = "transform"
+    CLIP = "clip"
 
 # Import UnifiedGapFiller for critical gap handling
 try:
@@ -29,6 +52,57 @@ except ImportError:
     UNIFIED_GAP_FILLER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class CleaningConfig:
+    """Configuration for data cleaning operations."""
+    
+    # Missing value handling
+    missing_value_strategy: str = "interpolate"  # interpolate, forward_fill, backward_fill, drop
+    max_missing_ratio: float = 0.1
+    interpolate_method: str = "linear"
+    
+    # Outlier detection
+    outlier_detection_enabled: bool = True
+    outlier_method: str = "iqr"  # iqr, zscore, isolation_forest
+    outlier_strategy: str = "clip"  # clip, cap, remove, transform
+    outlier_threshold: float = 3.0
+    
+    # Data quality thresholds
+    min_data_quality_score: float = 0.8
+    max_gap_seconds: int = 3600
+    
+    # Performance settings
+    parallel_processing: bool = True
+    max_workers: int = 4
+    memory_limit_mb: int = 1024
+    
+    # Validation settings
+    strict_validation: bool = True
+    skip_validation: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert config to dictionary."""
+        return {
+            'missing_value_strategy': self.missing_value_strategy,
+            'max_missing_ratio': self.max_missing_ratio,
+            'interpolate_method': self.interpolate_method,
+            'outlier_detection_enabled': self.outlier_detection_enabled,
+            'outlier_method': self.outlier_method,
+            'outlier_threshold': self.outlier_threshold,
+            'min_data_quality_score': self.min_data_quality_score,
+            'max_gap_seconds': self.max_gap_seconds,
+            'parallel_processing': self.parallel_processing,
+            'max_workers': self.max_workers,
+            'memory_limit_mb': self.memory_limit_mb,
+            'strict_validation': self.strict_validation,
+            'skip_validation': self.skip_validation
+        }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'CleaningConfig':
+        """Create config from dictionary."""
+        return cls(**data)
 
 class GapType(Enum):
     """Types of data gaps."""
@@ -146,10 +220,11 @@ class DataSchema:
 class DataCleaner:
     """Unified data cleaning with missing value handling and outlier detection."""
 
-    def __init__(self, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True, data_type: str = 'klines') -> None:
+    def __init__(self, config: CleaningConfig = None, max_forward_fill_gap: int = 5, download_threshold: int = 5, raise_errors: bool = True, log_details: bool = True, data_type: str = 'klines') -> None:
         """Initialize data cleaner with data-type specific gap thresholds.
 
         Args:
+            config: CleaningConfig for data cleaning operations
             max_forward_fill_gap: Maximum gap size for forward fill (seconds)
             download_threshold: Threshold for triggering data download (seconds)
             raise_errors: Whether to raise errors on critical issues
@@ -157,7 +232,11 @@ class DataCleaner:
             data_type: Type of data ('klines', 'aggtrades', 'futures') for gap thresholds
         """
         start_time = time.time()
-        self.logger = system_logger.getChild('DataCleaner')
+        self.logger = logging.getLogger('DataCleaner')
+        
+        # Initialize config
+        self.config = config or CleaningConfig()
+        
         self.max_forward_fill_gap = max_forward_fill_gap
         self.download_threshold = download_threshold
         self.raise_errors = raise_errors
@@ -1013,6 +1092,133 @@ class DataCleaner:
             if self.raise_errors:
                 raise ValueError(error_msg)
 
+    def handle_outliers_with_strategy(self, data: pd.DataFrame, strategy: OutlierStrategy, 
+                                    threshold: float = 3.0, columns: List[str] = None) -> pd.DataFrame:
+        """Handle outliers using specified strategy."""
+        if columns is None:
+            columns = data.select_dtypes(include=[np.number]).columns.tolist()
+        
+        cleaned_data = data.copy()
+        
+        if strategy == OutlierStrategy.CLIP:
+            return self._clip_outliers(cleaned_data, threshold, columns)
+        elif strategy == OutlierStrategy.CAP:
+            return self._cap_outliers(cleaned_data, threshold, columns)
+        elif strategy == OutlierStrategy.REMOVE:
+            return self._remove_outliers(cleaned_data, threshold, columns)
+        elif strategy == OutlierStrategy.TRANSFORM:
+            return self._transform_outliers(cleaned_data, threshold, columns)
+        else:
+            self.logger.warning(f"Unsupported outlier strategy: {strategy}")
+            return cleaned_data
+
+    def _clip_outliers(self, data: pd.DataFrame, threshold: float, columns: List[str]) -> pd.DataFrame:
+        """Clip outliers to threshold using z-score method."""
+        cleaned_data = data.copy()
+        
+        for column in columns:
+            if column not in data.columns or not np.issubdtype(data[column].dtype, np.number):
+                continue
+                
+            # Calculate z-scores
+            mean_val = data[column].mean()
+            std_val = data[column].std()
+            
+            if std_val == 0:
+                continue
+                
+            z_scores = np.abs((data[column] - mean_val) / std_val)
+            
+            # Clip values that exceed threshold
+            upper_bound = mean_val + threshold * std_val
+            lower_bound = mean_val - threshold * std_val
+            
+            # Apply clipping
+            cleaned_data[column] = np.clip(data[column], lower_bound, upper_bound)
+            
+            # Log clipping information
+            clipped_count = np.sum(z_scores > threshold)
+            if clipped_count > 0:
+                self.logger.info(f"📊 Clipped {clipped_count} outliers in column '{column}' using threshold {threshold}")
+        
+        return cleaned_data
+
+    def _cap_outliers(self, data: pd.DataFrame, threshold: float, columns: List[str]) -> pd.DataFrame:
+        """Cap outliers using IQR method."""
+        cleaned_data = data.copy()
+        
+        for column in columns:
+            if column not in data.columns or not np.issubdtype(data[column].dtype, np.number):
+                continue
+                
+            Q1 = data[column].quantile(0.25)
+            Q3 = data[column].quantile(0.75)
+            IQR = Q3 - Q1
+            
+            # Calculate bounds
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+            
+            # Apply capping
+            cleaned_data[column] = np.clip(data[column], lower_bound, upper_bound)
+            
+            # Log capping information
+            capped_count = np.sum((data[column] < lower_bound) | (data[column] > upper_bound))
+            if capped_count > 0:
+                self.logger.info(f"📊 Capped {capped_count} outliers in column '{column}' using IQR method")
+        
+        return cleaned_data
+
+    def _remove_outliers(self, data: pd.DataFrame, threshold: float, columns: List[str]) -> pd.DataFrame:
+        """Remove rows containing outliers."""
+        cleaned_data = data.copy()
+        
+        for column in columns:
+            if column not in data.columns or not np.issubdtype(data[column].dtype, np.number):
+                continue
+                
+            # Calculate z-scores
+            mean_val = data[column].mean()
+            std_val = data[column].std()
+            
+            if std_val == 0:
+                continue
+                
+            z_scores = np.abs((data[column] - mean_val) / std_val)
+            
+            # Remove outliers
+            outlier_mask = z_scores > threshold
+            cleaned_data = cleaned_data[~outlier_mask]
+            
+            # Log removal information
+            removed_count = np.sum(outlier_mask)
+            if removed_count > 0:
+                self.logger.info(f"📊 Removed {removed_count} rows with outliers in column '{column}'")
+        
+        return cleaned_data
+
+    def _transform_outliers(self, data: pd.DataFrame, threshold: float, columns: List[str]) -> pd.DataFrame:
+        """Transform outliers using log transformation."""
+        cleaned_data = data.copy()
+        
+        for column in columns:
+            if column not in data.columns or not np.issubdtype(data[column].dtype, np.number):
+                continue
+                
+            # Apply log transformation to reduce outlier impact
+            # Add small constant to avoid log(0)
+            min_val = data[column].min()
+            if min_val <= 0:
+                constant = abs(min_val) + 1
+            else:
+                constant = 0
+                
+            cleaned_data[column] = np.log1p(data[column] + constant)
+            
+            self.logger.info(f"📊 Applied log transformation to column '{column}' to reduce outlier impact")
+        
+        return cleaned_data
+
     def validate_data_schema(self, data: pd.DataFrame, schema_name: str) -> Dict[str, Any]:
         """Validate data against a standard schema."""
         if schema_name not in self.standard_schemas:
@@ -1198,7 +1404,25 @@ class DataCleaner:
                         else:
                             self.logger.warning("⚠️ Missing symbol/exchange parameters - cannot trigger data collection hook")
 
-            # 4. Final validation
+            # 4. Handle outliers if enabled in config
+            if self.config.outlier_detection_enabled:
+                self.logger.info("🔍 Handling outliers...")
+                try:
+                    # Get outlier strategy from config
+                    outlier_strategy = getattr(self.config, 'outlier_strategy', OutlierStrategy.CLIP)
+                    outlier_threshold = getattr(self.config, 'outlier_threshold', 3.0)
+                    
+                    # Apply outlier handling
+                    cleaned_data = self.handle_outliers_with_strategy(
+                        cleaned_data, 
+                        outlier_strategy, 
+                        outlier_threshold
+                    )
+                    self.logger.info(f"✅ Outlier handling completed using {outlier_strategy.value} strategy")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Outlier handling failed: {e}")
+
+            # 5. Final validation
             final_columns = set(cleaned_data.columns)
             removed_columns.extend(original_columns - final_columns)
 
@@ -1301,6 +1525,7 @@ class DataCleanerManager:
 
     _instance = None
     _lock = threading.Lock()
+    _init_done = False
 
     def __new__(cls):
         if cls._instance is None:
@@ -1311,10 +1536,11 @@ class DataCleanerManager:
         return cls._instance
 
     def __init__(self):
-        if not hasattr(self, '_initialized') or not self._initialized:
-            self.logger = system_logger.getChild('DataCleanerManager')
+        if not DataCleanerManager._init_done:
+            self.logger = logging.getLogger('DataCleanerManager')
             self._cleaners: Dict[str, DataCleaner] = {}
             self._initialized = True
+            DataCleanerManager._init_done = True
             self.logger.info("🔧 DataCleanerManager initialized (singleton)")
 
     def get_cleaner(self, data_type: str = 'klines', **kwargs) -> DataCleaner:
@@ -1353,3 +1579,4 @@ _data_cleaner_manager = DataCleanerManager()
 def get_data_cleaner(data_type: str = 'klines', **kwargs) -> DataCleaner:
     """Get DataCleaner instance through centralized manager."""
     return _data_cleaner_manager.get_cleaner(data_type, **kwargs)
+

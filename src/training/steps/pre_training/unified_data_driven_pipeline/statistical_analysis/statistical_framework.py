@@ -51,7 +51,7 @@ try:
         DataLeakageDetector
     )
     from src.utils.ml_common.validation.enhanced_validation import (
-        EnhancedValidationFramework
+        EnhancedValidator
     )
     from src.utils.ml_common.validation.stability import (
         StabilityAnalyzer
@@ -85,7 +85,7 @@ except ImportError as e:
         def __init__(self, *args, **kwargs):
             raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
 
-    class EnhancedValidationFramework:
+    class EnhancedValidator:
         def __init__(self, *args, **kwargs):
             raise ImportError("ML Commons validation utilities not available. Install required dependencies.")
 
@@ -379,7 +379,7 @@ class StatisticalAnalysisFramework:
         if self.use_ml_commons:
             self.unified_cv = UnifiedCrossValidator()
             self.data_leakage_detector = DataLeakageDetector()
-            self.enhanced_validation = EnhancedValidationFramework()
+            self.enhanced_validation = EnhancedValidator()
             self.stability_analyzer = StabilityAnalyzer()
             self.overfitting_monitor = OverfittingMonitor()
             tprint_info("✅ ML Commons validation utilities initialized")

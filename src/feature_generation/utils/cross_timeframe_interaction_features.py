@@ -2,23 +2,9 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 
 # Data-driven period selection - REMOVED (interaction_feature_generator no longer used)
-# try:
-#     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.data_driven_periods import (
-#         DataDrivenPeriodSelector, PeriodAnalysisResult
-#     )
-#     from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.enhanced_data_driven_period_selector import (
-#         EnhancedDataDrivenPeriodSelector, EnhancedPeriodSelectionConfig
-#     )
-#     DATA_DRIVEN_PERIODS_AVAILABLE = True
-#     ENHANCED_PERIOD_SELECTION_AVAILABLE = True
-# except ImportError:
-#     DATA_DRIVEN_PERIODS_AVAILABLE = False
 DATA_DRIVEN_PERIODS_AVAILABLE = False
 ENHANCED_PERIOD_SELECTION_AVAILABLE = False
 DataDrivenPeriodSelector = None
-#     PeriodAnalysisResult = None
-#     EnhancedDataDrivenPeriodSelector = None
-#     EnhancedPeriodSelectionConfig = None
 #
 # Data-driven interaction generation (deprecated)
 DATA_DRIVEN_INTERACTIONS_AVAILABLE = False
@@ -143,31 +129,8 @@ class CrossTimeframeFeatureGenerator:
         self.period_selector = None
         self.enhanced_period_selector = None
 
-        if ENHANCED_PERIOD_SELECTION_AVAILABLE:
-            # Use enhanced period selector with economic evaluation
-            enhanced_config = EnhancedPeriodSelectionConfig(
-                min_period=1,
-                max_period=50,  # Optimized for 15m timeframe
-                max_periods=8,
-                min_data_points=100,
-                enable_economic_evaluation=True,
-                min_economic_score=0.4,
-                economic_weight=0.6,
-                statistical_weight=0.4
-            )
-            self.enhanced_period_selector = EnhancedDataDrivenPeriodSelector(enhanced_config)
-            self.logger.info("✅ Enhanced data-driven period selector with economic evaluation initialized")
-        elif DATA_DRIVEN_PERIODS_AVAILABLE:
-            # Fallback to basic data-driven period selector
-            self.period_selector = DataDrivenPeriodSelector(
-                min_period=1,
-                max_period=50,  # Optimized for 15m timeframe
-                max_periods=8,
-                min_data_points=100
-            )
-            self.logger.info("✅ Basic data-driven period selector initialized")
-        else:
-            self.logger.warning("⚠️ No data-driven period selector available, using default periods")
+        # Data-driven period selectors have been removed
+        self.logger.warning("⚠️ No data-driven period selector available, using default periods")
 
         # Initialize data-driven interaction generator
         self.interaction_generator = None

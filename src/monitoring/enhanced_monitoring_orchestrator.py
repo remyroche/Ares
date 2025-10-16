@@ -100,8 +100,8 @@ class ComprehensiveTradeDecision:
     lime_explanations: Optional[Dict[str, Any]] = None
 
     # Final decision
-    action: str  # "buy", "sell", "hold"
-    position_size: float
+    action: str = "hold"  # "buy", "sell", "hold"
+    position_size: float = 0.0
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
 

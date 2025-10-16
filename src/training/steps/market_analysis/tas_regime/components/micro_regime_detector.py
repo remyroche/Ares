@@ -1,5 +1,4 @@
 """
-import warnings
 Micro-Regime Detector for Advanced TAS
 
 This module provides sophisticated micro-regime detection capabilities for:
@@ -12,6 +11,7 @@ This module provides sophisticated micro-regime detection capabilities for:
 - Liquidity changes
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any

@@ -26,7 +26,7 @@ from src.utils.math_validation import (
 try:
     from src.utils.tprint import (
         tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
-        tprint_debug, tprint_performance
+        tprint_debug, tprint_performance, tprint_step
     )
     TPRINT_AVAILABLE = True
 except ImportError:
@@ -38,6 +38,7 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
 
 logger = logging.getLogger(__name__)
 

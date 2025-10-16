@@ -54,9 +54,9 @@ from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 
 # Try to import ML utilities (some may not be available)
 try:
-    from src.utils.data.quality.data_quality import DataQualityChecker
+    from src.utils.data.quality.data_quality import DataQualityFramework
 except ImportError:
-    DataQualityChecker = None
+    DataQualityFramework = None
 
 try:
     from src.utils.data.validation.validators import DataValidator
@@ -190,7 +190,7 @@ class NASTASClusteringComponent:
             tprint("🧠 Initializing ML utilities...", "INFO")
 
             # Initialize data quality and validation (if available)
-            self.data_quality_checker = DataQualityChecker() if DataQualityChecker else None
+            self.data_quality_checker = DataQualityFramework() if DataQualityFramework else None
             self.data_validator = DataValidator() if DataValidator else None
 
             # Initialize data leakage prevention (if available)

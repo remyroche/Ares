@@ -120,7 +120,13 @@ class EnhancedFeatureEngineering:
         """Initialize enhanced feature engineering with utility integration."""
         self.config = config
         self.logger = logger
-        self.feature_config = config.get('step06_feature_engineering', {})
+        # Handle both dict and dataclass config objects
+        if hasattr(config, 'get'):
+            # Dictionary-like config
+            self.feature_config = config.get('step06_feature_engineering', {})
+        else:
+            # Dataclass config - use default empty dict for now
+            self.feature_config = {}
 
         # Initialize utility configuration
         self.utility_config = utility_config or UtilityConfig(

@@ -318,7 +318,8 @@ trained_model, metadata = training_enhancer.enhance_training_step(
 )
 
 # 4. Regime Analysis Usage (Manual if needed)
-from src.training.steps.model_training.enhanced_regime_aware_hpo import RegimeAnalyzer
+# RegimeAnalyzer is no longer available
+RegimeAnalyzer = None
 
 regime_analyzer = RegimeAnalyzer()
 regime_stats = regime_analyzer.analyze_regime_characteristics(X, y, regime_labels)
@@ -328,7 +329,8 @@ for regime, stats in regime_stats.items():
           f"trend={stats.trend_strength".3f"}, noise={stats.noise_level".3f"}")
 
 # 5. Enhanced CV Strategies Usage (Manual if needed)
-from src.training.steps.model_training.enhanced_regime_aware_hpo import EnhancedCVStrategies
+# EnhancedCVStrategies is no longer available
+EnhancedCVStrategies = None
 
 cv_strategies = EnhancedCVStrategies()
 splits = cv_strategies.regime_aware_time_series_split(X, regime_labels, n_splits=5)

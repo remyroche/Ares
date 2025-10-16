@@ -24,10 +24,16 @@ class DataCleaner:
     - Data normalization and standardization
     - Time series specific cleaning
     """
+    _init_done = False
+
     @log_important_calls
 
     def __init__(self, logger: logging.Logger = None) -> None:
+        if DataCleaner._init_done:
+            return
+
         self.logger = logger or system_logger.getChild('DataCleaner')
+        DataCleaner._init_done = True
 
     def remove_duplicates(self, df: pd.DataFrame, subset: Optional[list[str]]=None, keep: str='first') -> pd.DataFrame:
         """

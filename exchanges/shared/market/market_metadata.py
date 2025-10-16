@@ -45,11 +45,13 @@ class InstrumentSpec:
     tick_size: float
     lot_size: float
     min_notional: float
-    max_notional: Optional[float] = None
     
     # Precision
     price_precision: int
     quantity_precision: int
+    
+    # Optional trading specifications
+    max_notional: Optional[float] = None
     
     # Risk specifications
     max_leverage: Optional[float] = None

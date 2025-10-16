@@ -109,7 +109,7 @@ def create_feature_bank_with_defaults() -> FeatureBank:
     Returns:
         Feature bank with default generators
     """
-    bank = FeatureBank()
+    bank = get_global_feature_bank()
 
     # Register default generators from categories
     try:

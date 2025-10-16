@@ -131,7 +131,7 @@ class WaveletEnergyGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 64, wavelet: str = 'db4'):
         config = FeatureConfig(
             name="wavelet_energy",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Wavelet energy analysis for frequency domain features",
             required_columns=["close"],
             default_lookback=window,
@@ -241,7 +241,7 @@ class BandLimitedVolatilityGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 32, low_freq: float = 0.1, high_freq: float = 0.5):
         config = FeatureConfig(
             name="band_limited_volatility",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Band-limited volatility using spectral analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -335,7 +335,7 @@ class CycleLengthGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 64, min_cycle: int = 4, max_cycle: int = 32):
         config = FeatureConfig(
             name="cycle_length",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Cycle length detection using spectral analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -441,7 +441,7 @@ class FractalDimensionGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 32):
         config = FeatureConfig(
             name="fractal_dimension",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Fractal dimension analysis for complexity measurement",
             required_columns=["close"],
             default_lookback=window,
@@ -564,7 +564,7 @@ class DFASlopesGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 64, min_scale: int = 4, max_scale: int = 32):
         config = FeatureConfig(
             name="dfa_slopes",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Detrended Fluctuation Analysis slopes for long-range correlation",
             required_columns=["close"],
             default_lookback=window,
@@ -695,7 +695,7 @@ class VectorBTSpectralWaveletBatchGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 64):
         config = FeatureConfig(
             name="vectorbt_spectral_wavelet_batch",
-            category=FeatureCategory.SPECTRAL,
+            category=FeatureCategory.SPECTRAL_WAVELET,
             description="Batch spectral and wavelet features using VectorBT optimization",
             required_columns=["close"],
             default_lookback=window,
@@ -845,11 +845,166 @@ class VectorBTSpectralWaveletBatchGenerator(VectorizedFeatureGenerator):
             return 1.0
 
 # ============================================================================
+# SPECTRAL FEATURE GENERATOR CLASS
+# ============================================================================
+
+class SpectralFeatureGenerator(VectorizedFeatureGenerator):
+    """
+    Main spectral feature generator that combines multiple spectral analysis techniques.
+    
+    This generator provides a unified interface for spectral analysis features
+    including wavelet energy, band-limited volatility, cycle detection, and more.
+    """
+    
+    def __init__(self, window: int = 64):
+        config = FeatureConfig(
+            name="spectral_features",
+            category=FeatureCategory.SPECTRAL_WAVELET,
+            description="Comprehensive spectral analysis features",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=32,
+            max_lookback=256,
+            parameters={"window": window}
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        
+        # Initialize sub-generators
+        self.wavelet_generator = WaveletEnergyGenerator(window)
+        self.volatility_generator = BandLimitedVolatilityGenerator(window)
+        self.cycle_generator = CycleLengthGenerator(window)
+        self.fractal_generator = FractalDimensionGenerator(window)
+        self.dfa_generator = DFASlopesGenerator(window)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate comprehensive spectral features."""
+        try:
+            # Generate wavelet energy as primary feature
+            wavelet_energy = self.wavelet_generator._generate_feature(data, **kwargs)
+            return wavelet_energy
+        except Exception as e:
+            warnings.warn(f"Spectral feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+class WaveletFeatureGenerator(VectorizedFeatureGenerator):
+    """
+    Wavelet feature generator for frequency domain analysis.
+    
+    This generator focuses specifically on wavelet-based features
+    for time-frequency analysis of financial time series.
+    """
+    
+    def __init__(self, window: int = 64, wavelet: str = 'db4'):
+        config = FeatureConfig(
+            name="wavelet_features",
+            category=FeatureCategory.SPECTRAL_WAVELET,
+            description="Wavelet-based frequency domain features",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=32,
+            max_lookback=256,
+            parameters={"window": window, "wavelet": wavelet}
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.wavelet = wavelet
+        
+        # Initialize wavelet generator
+        self.wavelet_energy_generator = WaveletEnergyGenerator(window, wavelet)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate wavelet features."""
+        try:
+            # Generate wavelet energy as primary feature
+            wavelet_energy = self.wavelet_energy_generator._generate_feature(data, **kwargs)
+            return wavelet_energy
+        except Exception as e:
+            warnings.warn(f"Wavelet feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+class DetrendedFluctuationAnalysisGenerator(VectorizedFeatureGenerator):
+    """
+    Detrended Fluctuation Analysis (DFA) generator.
+    
+    This generator provides DFA-based features for analyzing
+    long-range correlations in financial time series.
+    """
+    
+    def __init__(self, window: int = 64, min_scale: int = 4, max_scale: int = 32):
+        config = FeatureConfig(
+            name="detrended_fluctuation_analysis",
+            category=FeatureCategory.SPECTRAL_WAVELET,
+            description="Detrended Fluctuation Analysis for long-range correlation",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=32,
+            max_lookback=256,
+            parameters={"window": window, "min_scale": min_scale, "max_scale": max_scale}
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.min_scale = min_scale
+        self.max_scale = max_scale
+        
+        # Initialize DFA generator
+        self.dfa_generator = DFASlopesGenerator(window, min_scale, max_scale)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate DFA features."""
+        try:
+            # Generate DFA slopes as primary feature
+            dfa_slopes = self.dfa_generator._generate_feature(data, **kwargs)
+            return dfa_slopes
+        except Exception as e:
+            warnings.warn(f"DFA feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+class VectorBTSpectralFeatureGenerator(VectorizedFeatureGenerator):
+    """
+    VectorBT-optimized spectral feature generator.
+    
+    This generator provides VectorBT-optimized spectral analysis features
+    for high-performance frequency domain analysis.
+    """
+    
+    def __init__(self, window: int = 64):
+        config = FeatureConfig(
+            name="vectorbt_spectral_features",
+            category=FeatureCategory.SPECTRAL_WAVELET,
+            description="VectorBT-optimized spectral analysis features",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=32,
+            max_lookback=256,
+            parameters={"window": window}
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        
+        # Initialize VectorBT batch generator
+        self.batch_generator = VectorBTSpectralWaveletBatchGenerator(window)
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate VectorBT-optimized spectral features."""
+        try:
+            # Generate batch features and return the first one
+            features = self.batch_generator.generate_features(data, **kwargs)
+            if features:
+                first_feature_name = list(features.keys())[0]
+                return pd.Series(features[first_feature_name], index=data.index[:len(features[first_feature_name])])
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+        except Exception as e:
+            warnings.warn(f"VectorBT spectral feature generation failed: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+# ============================================================================
 # FACTORY FUNCTIONS
 # ============================================================================
 
-def create_spectral_feature_generators() -> List[FeatureGenerator]:
-    """Create all spectral feature generators."""
+def create_default_spectral_generators() -> List[FeatureGenerator]:
+    """Create default spectral feature generators."""
     generators = []
 
     for window in [32, 64, 128]:
@@ -861,6 +1016,39 @@ def create_spectral_feature_generators() -> List[FeatureGenerator]:
         generators.append(VectorBTSpectralWaveletBatchGenerator(window))
 
     return generators
+
+def create_default_wavelet_generators() -> List[FeatureGenerator]:
+    """Create default wavelet feature generators."""
+    generators = []
+
+    for window in [32, 64, 128]:
+        generators.append(WaveletEnergyGenerator(window))
+        generators.append(WaveletFeatureGenerator(window))
+
+    return generators
+
+def create_default_fractal_generators() -> List[FeatureGenerator]:
+    """Create default fractal dimension generators."""
+    generators = []
+
+    for window in [32, 64, 128]:
+        generators.append(FractalDimensionGenerator(window))
+
+    return generators
+
+def create_default_dfa_generators() -> List[FeatureGenerator]:
+    """Create default DFA generators."""
+    generators = []
+
+    for window in [32, 64, 128]:
+        generators.append(DFASlopesGenerator(window))
+        generators.append(DetrendedFluctuationAnalysisGenerator(window))
+
+    return generators
+
+def create_spectral_feature_generators() -> List[FeatureGenerator]:
+    """Create all spectral feature generators."""
+    return create_default_spectral_generators()
 
 def process_spectral_features_batch(data: pd.DataFrame,
                                   generators: Optional[List[FeatureGenerator]] = None,
@@ -918,12 +1106,20 @@ def _process_spectral_features_sequential(data: pd.DataFrame,
         return pd.DataFrame(index=data.index)
 
 __all__ = [
+    'SpectralFeatureGenerator',
+    'WaveletFeatureGenerator',
+    'DetrendedFluctuationAnalysisGenerator',
+    'VectorBTSpectralFeatureGenerator',
     'WaveletEnergyGenerator',
     'BandLimitedVolatilityGenerator',
     'CycleLengthGenerator',
     'FractalDimensionGenerator',
     'DFASlopesGenerator',
     'VectorBTSpectralWaveletBatchGenerator',
+    'create_default_spectral_generators',
+    'create_default_wavelet_generators',
+    'create_default_fractal_generators',
+    'create_default_dfa_generators',
     'create_spectral_feature_generators',
     'process_spectral_features_batch'
 ]

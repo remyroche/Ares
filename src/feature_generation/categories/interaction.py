@@ -226,7 +226,7 @@ class MomentumDivergenceGenerator(OptimizedInteractionFeatureGenerator):
 
 # Momentum Volume Generator
 
-class MomentumVolumeGenerator(FeatureGenerator):
+class MomentumVolumeGenerator(VectorizedFeatureGenerator):
     """Generator for momentum-volume interaction."""
 
     def __init__(self, period: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS, **base_kwargs):
@@ -1048,7 +1048,7 @@ class FeatureRatioGenerator(OptimizedInteractionFeatureGenerator):
         ratio = numerator / (denominator + 1e-8)  # Add small epsilon to prevent division by zero
         return ratio
 
-class PolynomialFeatureGenerator(FeatureGenerator):
+class PolynomialFeatureGenerator(VectorizedFeatureGenerator):
     """Generator for polynomial transformations of features."""
 
     def __init__(self, column: str = "close", degree: int = 2, include_bias: bool = False):
@@ -1232,10 +1232,16 @@ __all__ = [
     # They are referenced but not defined - removed from exports to prevent import errors
 ]
 
-warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
+try:
+    import vectorbt as vbt
+    # VectorBT cp attribute might not be available in all versions
+    cp = getattr(vbt, 'cp', None)
+    if cp is None:
+        warnings.warn("VectorBT cp attribute not available in this version")
+    VECTORBT_AVAILABLE = True
 except ImportError:
-
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
     cp = None
 
 def _should_use_vectorbt(self, data) -> bool:

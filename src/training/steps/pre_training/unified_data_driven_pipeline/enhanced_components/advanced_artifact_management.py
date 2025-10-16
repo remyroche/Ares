@@ -360,7 +360,7 @@ class AdvancedArtifactManager:
                 'exchange': pipeline_state.get('exchange', 'UNKNOWN'),
                 'timeframe': pipeline_state.get('timeframe', 'UNKNOWN'),
                 'execution_mode': pipeline_state.get('execution_mode', 'UNKNOWN'),
-                'optimization_direction': pipeline_state.get('direction', 'both')
+                'optimization_direction': pipeline_state.get('direction', 'longs')
             }
 
         # Summary statistics
@@ -424,7 +424,7 @@ class AdvancedArtifactManager:
                 'exchange': pipeline_state.get('exchange', 'UNKNOWN') if pipeline_state else 'UNKNOWN',
                 'timeframe': pipeline_state.get('timeframe', 'UNKNOWN') if pipeline_state else 'UNKNOWN',
                 'execution_mode': pipeline_state.get('execution_mode', 'UNKNOWN') if pipeline_state else 'UNKNOWN',
-                'optimization_direction': pipeline_state.get('direction', 'both') if pipeline_state else 'both'
+                'optimization_direction': pipeline_state.get('direction', 'longs') if pipeline_state else 'longs'
             },
             'results': {
                 'summary': {

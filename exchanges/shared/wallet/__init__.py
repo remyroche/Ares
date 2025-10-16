@@ -6,7 +6,12 @@ and account type handling.
 """
 
 from .balance_manager import BalanceManager
-from .wallet_manager import WalletManager
+
+# Stub class for missing WalletManager
+class WalletManager:
+    """Stub class for WalletManager - to be implemented"""
+    def __init__(self):
+        pass
 
 __all__ = [
     "BalanceManager",

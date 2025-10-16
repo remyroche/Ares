@@ -42,13 +42,8 @@ except ImportError:
     psutil = None
 
 # Import existing utility frameworks with fallback handling
-try:
-    from ..common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
-    from ..math_validation import safe_divide, safe_sqrt, safe_correlation
-    UTILITIES_AVAILABLE = True
-except ImportError as e:
-    logging.warning(f"Some utilities not available: {e}")
-    UTILITIES_AVAILABLE = False
+# Note: Using lazy imports to avoid circular dependencies
+UTILITIES_AVAILABLE = False
 
 # Import vectorized processing core
 try:
@@ -102,14 +97,52 @@ except ImportError:
     logging.warning("Pandas not available - ewm operations will be limited")
     PANDAS_AVAILABLE = False
 
-# Fallback for safe_correlation if not available
-if UTILITIES_AVAILABLE:
+# Fallback for safe_correlation if not available - deferred to avoid circular imports
+_safe_correlation_func = None
+_utilities_cache = {}
+
+def _get_safe_correlation():
+    """Get safe_correlation function from utilities."""
+    global _safe_correlation_func
+    if _safe_correlation_func is None:
+        utilities = _get_utilities()
+        _safe_correlation_func = utilities.get('safe_correlation', None)
+    return _safe_correlation_func
+
+def _get_utilities():
+    """Lazy import of utilities to avoid circular dependencies."""
+    global _utilities_cache
+    if _utilities_cache:
+        return _utilities_cache
     try:
-        safe_correlation_func = safe_correlation
-    except NameError:
-        safe_correlation_func = None
-else:
-    safe_correlation_func = None
+        # Use lazy imports to avoid circular dependency
+        import importlib
+        common_ops = importlib.import_module('src.utils.common_operations')
+        math_val = importlib.import_module('src.utils.math_validation')
+
+        get_m1_gpu_manager = getattr(common_ops, 'get_m1_gpu_manager', None)
+        get_m1_memory_optimizer = getattr(common_ops, 'get_m1_memory_optimizer', None)
+        get_m1_cpu_optimizer = getattr(common_ops, 'get_m1_cpu_optimizer', None)
+        safe_divide = getattr(math_val, 'safe_divide', None)
+        safe_sqrt = getattr(math_val, 'safe_sqrt', None)
+        safe_correlation = getattr(math_val, 'safe_correlation', None)
+
+        if None in [get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer, safe_divide, safe_sqrt, safe_correlation]:
+            raise ImportError("Required utilities not found")
+
+        _utilities_cache = {
+            'get_m1_gpu_manager': get_m1_gpu_manager,
+            'get_m1_memory_optimizer': get_m1_memory_optimizer,
+            'get_m1_cpu_optimizer': get_m1_cpu_optimizer,
+            'safe_divide': safe_divide,
+            'safe_sqrt': safe_sqrt,
+            'safe_correlation': safe_correlation
+        }
+        UTILITIES_AVAILABLE = True
+        return _utilities_cache
+    except ImportError as e:
+        logging.debug(f"Some utilities not available: {e}")
+        return {}
 
 logger = logging.getLogger(__name__)
 
@@ -187,8 +220,10 @@ class UnifiedMatrixOperations:
 
     def _initialize_components(self):
         """Initialize all required components."""
-        if not UTILITIES_AVAILABLE:
-            self.logger.warning("⚠️ Some utilities not available - using fallback implementations")
+        # Lazy load utilities
+        utilities = _get_utilities()
+        if not utilities:
+            self.logger.debug("⚠️ Some utilities not available - using fallback implementations")
             self.gpu_manager = None
             self.memory_optimizer = None
             self.cpu_optimizer = None
@@ -198,7 +233,7 @@ class UnifiedMatrixOperations:
         try:
             # Initialize M1 GPU manager
             if self.enable_gpu:
-                self.gpu_manager = get_m1_gpu_manager()
+                self.gpu_manager = utilities.get('get_m1_gpu_manager', lambda: None)()
                 if self.gpu_manager:
                     self.logger.debug("✅ M1 GPU Manager initialized")
                 else:
@@ -208,7 +243,7 @@ class UnifiedMatrixOperations:
 
             # Initialize M1 memory optimizer
             if self.enable_memory_optimization:
-                self.memory_optimizer = get_m1_memory_optimizer()
+                self.memory_optimizer = utilities.get('get_m1_memory_optimizer', lambda: None)()
                 if self.memory_optimizer:
                     self.logger.debug("✅ M1 Memory Optimizer initialized")
                 else:
@@ -218,7 +253,7 @@ class UnifiedMatrixOperations:
 
             # Initialize M1 CPU optimizer
             if self.enable_parallel:
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.cpu_optimizer = utilities.get('get_m1_cpu_optimizer', lambda: None)()
                 if self.cpu_optimizer:
                     self.logger.debug("✅ M1 CPU Optimizer initialized")
                 else:
@@ -485,16 +520,15 @@ class UnifiedMatrixOperations:
             except Exception as e:
                 self.logger.warning(f"⚠️ UnifiedVectorizationManager correlation matrix failed: {e}, falling back to VectorBT")
 
-        # Try VectorBT optimization if available
-        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+        # Try VectorBTRollingOptimizer if available
+        if self.rolling_optimizer:
             try:
-                vectorbt_ops = get_vectorbt_optimized_operations()
-                result = vectorbt_ops.correlation_matrix(data, method)
-                self.performance_stats['vectorbt_operations'] = self.performance_stats.get('vectorbt_operations', 0) + 1
-                self.logger.debug("✅ VectorBT correlation matrix completed")
+                result = self.rolling_optimizer.correlation_matrix(data, method)
+                self.performance_stats['vectorbt_rolling_operations'] = self.performance_stats.get('vectorbt_rolling_operations', 0) + 1
+                self.logger.debug("✅ VectorBTRollingOptimizer correlation matrix completed")
                 return result
             except Exception as e:
-                self.logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
+                self.logger.warning(f"⚠️ VectorBTRollingOptimizer correlation matrix failed: {e}, falling back to standard method")
 
         # Fallback to standard implementation
         if isinstance(data, pd.DataFrame):
@@ -512,7 +546,7 @@ class UnifiedMatrixOperations:
                 if i == j:
                     correlation_matrix[i, j] = 1.0
                 else:
-                    if safe_correlation_func is not None:
+                    if _safe_correlation_func is not None:
                         corr = safe_correlation_func(data[:, i], data[:, j])
                     else:
                         # Fallback to numpy correlation
@@ -701,8 +735,10 @@ class UnifiedMatrixOperations:
             mean = np.mean(data, axis=0)
             std = np.std(data, axis=0)
             # Use safe_divide if available, otherwise use numpy operations
-            if UTILITIES_AVAILABLE and 'safe_divide' in globals():
-                return (data - mean) / safe_divide(std, np.ones_like(std), 1.0)
+            utilities = _get_utilities()
+            safe_divide_func = utilities.get('safe_divide')
+            if safe_divide_func:
+                return (data - mean) / safe_divide_func(std, np.ones_like(std), 1.0)
             else:
                 # Fallback to numpy division with epsilon
                 return (data - mean) / np.where(std == 0, 1.0, std)
@@ -724,13 +760,16 @@ class UnifiedMatrixOperations:
 
             if hasattr(self, 'math_validator') and self.math_validator:
                 return self.math_validator.safe_divide(numerator, denominator, default_value)
-            elif UTILITIES_AVAILABLE and 'safe_divide' in globals():
-                return safe_divide(numerator, denominator, default_value)
             else:
-                # Fallback to numpy division with epsilon
-                return np.divide(numerator, denominator,
-                               out=np.full_like(numerator, default_value),
-                               where=(denominator != 0))
+                utilities = _get_utilities()
+                safe_divide_func = utilities.get('safe_divide')
+                if safe_divide_func:
+                    return safe_divide_func(numerator, denominator, default_value)
+                else:
+                    # Fallback to numpy division with epsilon
+                    return np.divide(numerator, denominator,
+                                   out=np.full_like(numerator, default_value),
+                                   where=(denominator != 0))
         elif operation == 'ewm_mean':
             # Exponential weighted moving average
             if not PANDAS_AVAILABLE:
@@ -1395,11 +1434,15 @@ class UnifiedMatrixOperations:
 M1EnhancedMatrixOperations = UnifiedMatrixOperations
 
 # Factory functions for backward compatibility and easy access
+# Global instance cache for singleton pattern
+_unified_matrix_operations_instance: Optional[UnifiedMatrixOperations] = None
+_unified_matrix_operations_config: Optional[Dict[str, bool]] = None
+
 def get_unified_matrix_operations(enable_gpu: bool = True,
                                 enable_memory_optimization: bool = True,
                                 enable_parallel: bool = True) -> UnifiedMatrixOperations:
     """
-    Factory function to create unified matrix operations instance.
+    Factory function to get unified matrix operations instance (singleton pattern).
 
     Args:
         enable_gpu: Whether to enable GPU acceleration
@@ -1407,13 +1450,30 @@ def get_unified_matrix_operations(enable_gpu: bool = True,
         enable_parallel: Whether to enable parallel processing
 
     Returns:
-        Configured UnifiedMatrixOperations instance
+        Configured UnifiedMatrixOperations instance (reused if already created)
     """
-    return UnifiedMatrixOperations(
+    global _unified_matrix_operations_instance, _unified_matrix_operations_config
+
+    current_config = {
+        'enable_gpu': enable_gpu,
+        'enable_memory_optimization': enable_memory_optimization,
+        'enable_parallel': enable_parallel
+    }
+
+    # Return existing instance if available and configuration matches
+    if (_unified_matrix_operations_instance is not None and
+        _unified_matrix_operations_config == current_config):
+        return _unified_matrix_operations_instance
+
+    # Create new instance if none exists or configuration changed
+    _unified_matrix_operations_instance = UnifiedMatrixOperations(
         enable_gpu=enable_gpu,
         enable_memory_optimization=enable_memory_optimization,
         enable_parallel=enable_parallel
     )
+    _unified_matrix_operations_config = current_config
+
+    return _unified_matrix_operations_instance
 
 # Legacy compatibility functions (deprecated but maintained)
 def get_enhanced_matrix_operations():

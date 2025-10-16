@@ -368,8 +368,8 @@ class TrainingStepEnhancer:
                 if regime_labels is not None and len(np.unique(regime_labels)) > 1:
                     # Use regime-aware CV strategies
                     try:
-                        from src.training.steps.model_training.enhanced_regime_aware_hpo import EnhancedCVStrategies
-                        cv_strategies = EnhancedCVStrategies()
+                        # Enhanced CV strategies are no longer available
+                        cv_strategies = None
 
                         # Use regime-aware time series split
                         splits = cv_strategies.regime_aware_time_series_split(

@@ -18,13 +18,82 @@ import gc
 import psutil
 from pathlib import Path
 
-# Common utilities
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
-    safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
-    safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
-    format_datetime, validate_file_path, get_file_size, check_disk_space
-)
+# Common utilities - use lazy imports to avoid circular dependencies
+try:
+    from src.utils.common_operations import (
+        safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
+        safe_mean, safe_std, safe_float, safe_int, get_current_datetime,
+        safe_append, safe_extend, safe_dict_get, safe_lower, safe_upper,
+        format_datetime, get_file_size, check_disk_space
+    )
+    from src.utils.lazy_imports import validate_file_path
+except ImportError as e:
+    # Fallback implementations
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Using fallback implementations for common operations: {e}")
+    
+    def safe_json_dump(*args, **kwargs):
+        import json
+        return json.dump(*args, **kwargs)
+    
+    def safe_json_load(*args, **kwargs):
+        import json
+        return json.load(*args, **kwargs)
+    
+    def safe_file_exists(*args, **kwargs):
+        import os
+        return os.path.exists(*args, **kwargs)
+    
+    def ensure_directory(*args, **kwargs):
+        import os
+        return os.makedirs(*args, exist_ok=True)
+    
+    def safe_mean(*args, **kwargs):
+        import numpy as np
+        return np.mean(*args, **kwargs)
+    
+    def safe_std(*args, **kwargs):
+        import numpy as np
+        return np.std(*args, **kwargs)
+    
+    def safe_float(*args, **kwargs):
+        return float(*args, **kwargs)
+    
+    def safe_int(*args, **kwargs):
+        return int(*args, **kwargs)
+    
+    def get_current_datetime(*args, **kwargs):
+        from datetime import datetime
+        return datetime.now()
+    
+    def safe_append(*args, **kwargs):
+        return args[0].append(*args[1:], **kwargs)
+    
+    def safe_extend(*args, **kwargs):
+        return args[0].extend(*args[1:], **kwargs)
+    
+    def safe_dict_get(*args, **kwargs):
+        return args[0].get(*args[1:], **kwargs)
+    
+    def safe_lower(*args, **kwargs):
+        return str(*args).lower()
+    
+    def safe_upper(*args, **kwargs):
+        return str(*args).upper()
+    
+    def format_datetime(*args, **kwargs):
+        return str(*args)
+    
+    def get_file_size(*args, **kwargs):
+        import os
+        return os.path.getsize(*args, **kwargs)
+    
+    def check_disk_space(*args, **kwargs):
+        import shutil
+        return shutil.disk_usage(*args, **kwargs)
+    
+    from src.utils.lazy_imports import validate_file_path
 from src.utils.math_validation import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     validate_positive, validate_range, safe_kelly_calculation,

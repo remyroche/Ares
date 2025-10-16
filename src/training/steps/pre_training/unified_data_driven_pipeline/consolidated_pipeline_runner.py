@@ -694,6 +694,12 @@ class ConsolidatedPipelineRunner:
                                           custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Run pipeline up to labeling integration step."""
         try:
+            # Debug: Check what custom_overrides contains
+            self.logger.info(f"Debug: custom_overrides type: {type(custom_overrides)}")
+            if isinstance(custom_overrides, pd.DataFrame):
+                self.logger.warning("custom_overrides is a DataFrame, this might cause issues")
+                custom_overrides = None
+            
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
@@ -821,7 +827,20 @@ class ConsolidatedPipelineRunner:
         Returns:
             Target series from previous steps, or None if not found
         """
-        if not pipeline_state:
+        # Handle different types of pipeline_state
+        if pipeline_state is None:
+            return None
+        
+        # If pipeline_state is a DataFrame, return None (no labels available)
+        if isinstance(pipeline_state, pd.DataFrame):
+            return None
+        
+        # If pipeline_state is not a dict, return None
+        if not isinstance(pipeline_state, dict):
+            return None
+        
+        # Check if pipeline_state is empty (only for dictionaries)
+        if isinstance(pipeline_state, dict) and not pipeline_state:
             return None
 
         # Try to get labels from various possible sources in pipeline state

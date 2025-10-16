@@ -131,7 +131,7 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 50, min_periods: int = 20):
         config = FeatureConfig(
             name="hurst_exponent",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Hurst exponent for long-range dependence analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -254,7 +254,7 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20, threshold: float = 3.0):
         config = FeatureConfig(
             name="jump_indicators",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Jump detection indicators for volatility analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -364,7 +364,7 @@ class CVaRGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20, confidence_level: float = 0.05):
         config = FeatureConfig(
             name="cvar",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Conditional Value at Risk (CVaR) for tail risk analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -457,7 +457,7 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 50):
         config = FeatureConfig(
             name="max_drawdown",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Maximum drawdown for risk analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -540,7 +540,7 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name="rolling_skewness_kurtosis",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Rolling skewness and kurtosis for distribution analysis",
             required_columns=["close"],
             default_lookback=window,
@@ -612,7 +612,7 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name="trend_persistence",
-            category=FeatureCategory.STATISTICAL,
+            category=FeatureCategory.ADVANCED_STATISTICAL,
             description="Trend persistence analysis using autocorrelation",
             required_columns=["close"],
             default_lookback=window,
@@ -662,8 +662,8 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
 # FACTORY FUNCTIONS
 # ============================================================================
 
-def create_advanced_statistical_generators() -> List[FeatureGenerator]:
-    """Create all advanced statistical feature generators."""
+def create_default_advanced_statistical_generators() -> List[FeatureGenerator]:
+    """Create default advanced statistical feature generators."""
     generators = []
 
     for window in [20, 30, 50]:
@@ -675,6 +675,10 @@ def create_advanced_statistical_generators() -> List[FeatureGenerator]:
         generators.append(TrendPersistenceGenerator(window))
 
     return generators
+
+def create_advanced_statistical_generators() -> List[FeatureGenerator]:
+    """Create all advanced statistical feature generators."""
+    return create_default_advanced_statistical_generators()
 
 def process_advanced_statistical_features_batch(data: pd.DataFrame,
                                              generators: Optional[List[FeatureGenerator]] = None,
@@ -738,6 +742,7 @@ __all__ = [
     'MaxDrawdownGenerator',
     'RollingSkewnessKurtosisGenerator',
     'TrendPersistenceGenerator',
+    'create_default_advanced_statistical_generators',
     'create_advanced_statistical_generators',
     'process_advanced_statistical_features_batch'
 ]

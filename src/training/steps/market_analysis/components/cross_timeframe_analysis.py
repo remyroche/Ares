@@ -16,9 +16,9 @@ This is a compatibility wrapper that maintains the same interface while using
 the new interactive feature generation system.
 """
 
-# Import the new interactive feature generation component
-from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation import (
-    InteractiveFeatureGenerationComponent as _InteractiveFeatureGenerationComponent
+# Import the battle-tested interactive feature generation component
+from src.feature_generation.utils.enhanced_data_driven_interaction_generator import (
+    EnhancedDataDrivenInteractionGenerator as _InteractiveFeatureGenerationComponent
 )
 
 # Import base component for compatibility

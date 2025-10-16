@@ -453,20 +453,12 @@ try:
         EnhancedErrorDetector
     )
 
-    # Enhanced HPO integration
-    from src.training.steps.model_training.enhanced_regime_aware_hpo import (
-        enhance_existing_hpo_pipeline, EnhancedCVStrategies, RegimeType, RegimeCharacteristics
-    )
-
-    # Enhanced regime-aware HPO system
-    ENHANCED_HPO_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: Enhanced HPO utilities not available: {e}")
+    # Enhanced HPO integration is no longer used
     ENHANCED_HPO_AVAILABLE = False
-    EnhancedErrorDetector = None
-    # Fallback functions
-    def enhance_existing_hpo_pipeline(*args, **kwargs):
-        return None
+    enhance_existing_hpo_pipeline = None
+    EnhancedCVStrategies = None
+    RegimeType = None
+    RegimeCharacteristics = None
     def EnhancedCVStrategies(*args, **kwargs):
         return None
     def RegimeType(*args, **kwargs):

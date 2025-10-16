@@ -1,11 +1,11 @@
 """
-import warnings
 Comprehensive Trade Monitor
 
 Advanced monitoring system for trading operations with detailed metrics,
 ML model explanations, SHAP/LIME analysis, and comprehensive reporting.
 """
 
+import warnings
 import asyncio
 import logging
 import json
@@ -29,6 +29,22 @@ from ..utils.validation import validate_trading_config
 from ..utils.helpers import format_trading_metrics, save_trading_data
 
 logger = system_logger.getChild('ComprehensiveTradeMonitor')
+
+# Stub classes for missing components
+class EnhancedMonitoringOrchestrator:
+    """Stub class for EnhancedMonitoringOrchestrator - to be implemented"""
+    def __init__(self):
+        pass
+
+class ExplainabilityIntegrator:
+    """Stub class for ExplainabilityIntegrator - to be implemented"""
+    def __init__(self):
+        pass
+
+class ExplainabilityOrchestrator:
+    """Stub class for ExplainabilityOrchestrator - to be implemented"""
+    def __init__(self):
+        pass
 
 @dataclass
 class DetailedTradeMetrics:

@@ -1,11 +1,11 @@
 """
-import warnings
 Autoencoder Feature Generator
 
 This module provides feature generators for autoencoder-based indicators,
 including encoded features, reconstruction error, and deep learning features.
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union

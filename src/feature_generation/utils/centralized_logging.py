@@ -41,7 +41,7 @@ class FeatureGenerationLogger:
             )
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+            self.logger.setLevel(logging.WARNING)
 
     def info(self, message: str, **kwargs):
         """Log info message with tprint if available."""
@@ -105,18 +105,25 @@ def tprint(message: str, level: str = "info", **kwargs):
         level: Log level (info, debug, warning, error, critical)
         **kwargs: Additional arguments for tprint
     """
-    if level == "info":
-        _feature_logger.info(message, **kwargs)
-    elif level == "debug":
-        _feature_logger.debug(message, **kwargs)
-    elif level == "warning":
-        _feature_logger.warning(message, **kwargs)
-    elif level == "error":
-        _feature_logger.error(message, **kwargs)
-    elif level == "critical":
-        _feature_logger.critical(message, **kwargs)
-    else:
-        _feature_logger.info(message, **kwargs)
+    # Check if the message should be printed based on log level
+    log_levels = {"debug": logging.DEBUG, "info": logging.INFO, "warning": logging.WARNING, 
+                  "error": logging.ERROR, "critical": logging.CRITICAL}
+    message_level = log_levels.get(level, logging.INFO)
+    
+    # Only print if the message level is >= current log level
+    if message_level >= _feature_logger.logger.level:
+        if level == "info":
+            _feature_logger.info(message, **kwargs)
+        elif level == "debug":
+            _feature_logger.debug(message, **kwargs)
+        elif level == "warning":
+            _feature_logger.warning(message, **kwargs)
+        elif level == "error":
+            _feature_logger.error(message, **kwargs)
+        elif level == "critical":
+            _feature_logger.critical(message, **kwargs)
+        else:
+            _feature_logger.info(message, **kwargs)
 
 def log_function_call(func_name: str, **kwargs):
     """Log function call with parameters."""

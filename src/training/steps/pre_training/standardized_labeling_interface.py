@@ -43,8 +43,8 @@ from .column_naming import (
 )
 
 try:  # Pandera is required for schema enforcement; keep import guarded for tests.
-    import pandera as pa
-    from pandera import Check, DataFrameSchema
+    import pandera as pa  # type: ignore[import-untyped]
+    from pandera import Check, DataFrameSchema  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover - defensive fallback
     pa = None  # type: ignore[assignment]
     DataFrameSchema = None  # type: ignore[assignment]

@@ -15,11 +15,14 @@ from src.utils.logger import system_logger
 from src.interfaces.base_interfaces import MarketData
 
 from .base_exchange import BaseExchange
-from .okx import create_okx_exchange, OkxExchange
-from .shared import (
-    AuthenticationManager, MarketMetadataManager, PriceManager, OHLCVManager,
-    OrderManager, RiskCalculator, BalanceManager, RateLimitManager
-)
+# from .okx import create_okx_exchange, OkxExchange  # Commented out to avoid circular import
+from .shared.auth import AuthenticationManager
+from .shared.market import MarketMetadataManager
+from .shared.pricing import PriceManager, OHLCVManager
+from .shared.orders import OrderManager
+from .shared.risk import RiskCalculator
+from .shared.wallet import BalanceManager
+from .shared.reliability import RateLimitManager
 
 
 class ExchangeType(Enum):

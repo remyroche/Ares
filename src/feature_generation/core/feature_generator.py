@@ -176,9 +176,10 @@ class FeatureGenerator(ABC):
         Args:
             config: Feature configuration with VectorBT settings
         """
-        tprint(f"Initializing {self.__class__.__name__} with config: {config.name}")
         self.config = config
         self.logger = logger.getChild(f'{self.__class__.__name__}')
+        # Only log initialization for debug level or if there's an issue
+        self.logger.debug(f"Initializing {self.__class__.__name__} with config: {config.name}")
 
         # VectorBT configuration
         self.use_vectorbt = config.use_vectorbt and VECTORBT_AVAILABLE
@@ -618,6 +619,15 @@ class FeatureGenerator(ABC):
         """
         tprint(f"Validating data for {self.config.name}", level="debug")
 
+        # DEBUG: Check data quality before validation
+        import numpy as np
+        print(f"🔍 [DEBUG] FeatureGenerator._validate_data - Data shape: {data.shape}")
+        print(f"🔍 [DEBUG] FeatureGenerator._validate_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+        for col in data.select_dtypes(include=[np.number]).columns:
+            non_finite = (~np.isfinite(data[col])).sum()
+            if non_finite > 0:
+                print(f"🔍 [DEBUG] FeatureGenerator._validate_data - {col}: {non_finite} non-finite values")
+
         # Use centralized validation functions
         validate_required_columns(data, self.config.required_columns)
 
@@ -631,6 +641,7 @@ class FeatureGenerator(ABC):
         # Check for finite values in required columns
         for col in self.config.required_columns:
             if col in data.columns:
+                print(f"🔍 [DEBUG] Validating column: {col}")
                 validate_finite_values(data[col], col)
 
         tprint(f"Data validation passed for {self.config.name}", level="debug")
@@ -836,35 +847,35 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         self.enable_matrix_ops = enable_matrix_ops
         self.enable_vectorization_optimization = enable_vectorization_optimization
 
-        # Initialize matrix operations if available
+        # Initialize VectorBTRollingOptimizer if available
         if enable_matrix_ops:
             try:
-                from src.feature_generation.utils.matrix_operations import get_unified_matrix_operations
-                self.matrix_ops = get_unified_matrix_operations()
-                self.logger.debug("Matrix operations enabled")
+                from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+                self.logger.debug("VectorBTRollingOptimizer enabled")
             except ImportError:
-                self.matrix_ops = None
+                self.vectorbt_rolling_optimizer = None
                 self.enable_matrix_ops = False
-                self.logger.warning("Matrix operations not available")
+                self.logger.warning("⚠️ VectorBTRollingOptimizer not available")
         else:
-            self.matrix_ops = None
+            self.vectorbt_rolling_optimizer = None
 
-        # Initialize vectorization optimizer if available
+        # Initialize UnifiedVectorizationManager if available
         if enable_vectorization_optimization:
             try:
-                from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
-                self.vectorization_optimizer = get_vectorization_optimizer()
-                self.logger.debug("Vectorization optimizer enabled")
+                from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+                self.unified_vectorization_manager = get_unified_vectorization_manager()
+                self.logger.debug("UnifiedVectorizationManager enabled")
             except ImportError:
-                self.vectorization_optimizer = None
+                self.unified_vectorization_manager = None
                 self.enable_vectorization_optimization = False
-                self.logger.warning("Vectorization optimizer not available")
+                self.logger.warning("⚠️ UnifiedVectorizationManager not available")
         else:
-            self.vectorization_optimizer = None
+            self.unified_vectorization_manager = None
 
     def _vectorized_operation(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """
-        Perform vectorized operation using matrix operations framework.
+        Perform vectorized operation using VectorBTRollingOptimizer and UnifiedVectorizationManager.
 
         Args:
             operation: Operation to perform
@@ -874,19 +885,27 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         Returns:
             Result of the operation
         """
-        if not self.enable_matrix_ops or self.matrix_ops is None:
+        if not self.enable_matrix_ops or self.vectorbt_rolling_optimizer is None:
             # Fallback to numpy operations
             return self._numpy_fallback(operation, data, **kwargs)
 
         try:
-            return self.matrix_ops.batch_process(data, operation, **kwargs)
+            # Use VectorBTRollingOptimizer for rolling operations
+            if hasattr(self.vectorbt_rolling_optimizer, operation):
+                return getattr(self.vectorbt_rolling_optimizer, operation)(data, **kwargs)
+            else:
+                # Use UnifiedVectorizationManager for other operations
+                if self.unified_vectorization_manager is not None:
+                    return self.unified_vectorization_manager.optimize_operation(operation, data, **kwargs)
+                else:
+                    return self._numpy_fallback(operation, data, **kwargs)
         except Exception as e:
-            self.logger.warning(f"Matrix operation failed, using numpy fallback: {e}")
+            self.logger.warning(f"VectorBTRollingOptimizer/UnifiedVectorizationManager operation failed, using numpy fallback: {e}")
             return self._numpy_fallback(operation, data, **kwargs)
 
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Optimize DataFrame for vectorized processing using the vectorization optimizer.
+        Optimize DataFrame for vectorized processing using UnifiedVectorizationManager.
 
         This method provides automatic optimization of DataFrames for efficient vectorized
         processing. It includes memory optimization, data type optimization, and VectorBT
@@ -910,8 +929,8 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             >>> optimized_data = generator.optimize_dataframe_processing(data)
             >>> # Use optimized_data for feature generation
         """
-        if self.enable_vectorization_optimization and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        if self.enable_vectorization_optimization and self.unified_vectorization_manager:
+            return self.unified_vectorization_manager.optimize_dataframe_processing(data)
         else:
             return data
 

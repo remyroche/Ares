@@ -95,6 +95,16 @@ except ImportError as e:
     UnifiedDataQualityValidator = None
     QualityThresholds = None
 
+# Import pre-training subpipeline
+try:
+    from src.training.steps.pre_training.sub_pipeline import SubPipeline, SubPipelineConfig
+    PRE_TRAINING_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"⚠️ Pre-training subpipeline not available: {e}")
+    PRE_TRAINING_AVAILABLE = False
+    SubPipeline = None
+    SubPipelineConfig = None
+
 # Import optimization utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
@@ -167,7 +177,7 @@ class OrchestratorConfig:
     subsequent_minutes: int = 45  # Minutes to include after signal for training window
 
     # Direction configuration
-    direction_mode: str = "both"  # Options: "both", "long_only", "short_only"
+    direction_mode: str = "long_only"  # Options: "both", "long_only", "short_only"
     separate_directional_features: bool = True  # Train separate models for long/short
     directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
         'long': 'long_',
@@ -378,66 +388,128 @@ class TacticianPreMLOrchestrator:
     """
 
     COMPONENT_FACTORY_KEYS: Dict[str, str] = {
-        'feature_optimization': 'feature_lookback_optimization',
-        'interactive_feature_generation': 'interactive_feature_generation',
-        'interactive_generation': 'interactive_feature_generation',  # Alias for consistency
-        'horizon_labeling': 'multi_horizon_profit_labeler',
-        'feature_selection': 'final_feature_selection',
+        'tactician_labeling': 'tactician-labeler',
+        'data_validation': 'feature_generation_data_validation_step',
+        'labeling_integration': 'feature_generation_labeling_integration_step',
+        'feature_generation': 'feature_generation_feature_generation_step',
+        'feature_selection': 'feature_generation_feature_selection_step',
+        'period_lookback_optimization': 'feature_generation_period_lookback_optimization_step',
+        'interaction_generation': 'feature_generation_interaction_generation_step',
+        'vectorization': 'feature_generation_vectorization_step',
+        'final_validation': 'feature_generation_final_validation_step',
     }
 
     COMPONENT_HINTS: Dict[str, str] = {
-        'feature_optimization': (
-            "Ensure the 'feature_lookback_optimization' component is available in the PRE_TRAINING pipeline."
+        'tactician_labeling': (
+            "Ensure the 'tactician-labeler' component is available in the PRE_TRAINING pipeline."
         ),
-        'interactive_feature_generation': (
-            "Ensure the 'interactive_feature_generation' component is available in the PRE_TRAINING pipeline."
+        'data_validation': (
+            "Ensure the 'feature_generation_data_validation_step' component is available in the PRE_TRAINING pipeline."
         ),
-        'horizon_labeling': (
-            "Ensure the 'multi_horizon_profit_labeler' component is available in the PRE_TRAINING pipeline."
+        'labeling_integration': (
+            "Ensure the 'feature_generation_labeling_integration_step' component is available in the PRE_TRAINING pipeline."
+        ),
+        'feature_generation': (
+            "Ensure the 'feature_generation_feature_generation_step' component is available in the PRE_TRAINING pipeline."
         ),
         'feature_selection': (
-            "Ensure the 'final_feature_selection' component is available in the PRE_TRAINING pipeline."
+            "Ensure the 'feature_generation_feature_selection_step' component is available in the PRE_TRAINING pipeline."
+        ),
+        'period_lookback_optimization': (
+            "Ensure the 'feature_generation_period_lookback_optimization_step' component is available in the PRE_TRAINING pipeline."
+        ),
+        'interaction_generation': (
+            "Ensure the 'feature_generation_interaction_generation_step' component is available in the PRE_TRAINING pipeline."
+        ),
+        'vectorization': (
+            "Ensure the 'feature_generation_vectorization_step' component is available in the PRE_TRAINING pipeline."
+        ),
+        'final_validation': (
+            "Ensure the 'feature_generation_final_validation_step' component is available in the PRE_TRAINING pipeline."
         ),
     }
 
     COMPONENT_CONFIG_MAPPING: Dict[str, Dict[str, str]] = {
-        'feature_optimization': {
-            'max_lookback_periods': 'max_lookback_periods',
-            'max_interaction_features': 'max_interaction_features',
-            'max_polynomial_features': 'max_polynomial_features',
-            'max_cross_timeframe_features': 'max_cross_timeframe_features',
-            'direction_mode': 'direction_mode',
-            'separate_directional_features': 'separate_directional_features',
-            'directional_feature_prefixes': 'directional_feature_prefixes',
-        },
-        'pid_generation': {
-            'synergy_threshold': 'synergy_threshold',
-            'redundancy_threshold': 'redundancy_threshold',
-            'unique_info_threshold': 'unique_info_threshold',
-            'max_interaction_features': 'max_interaction_features',
-            'max_polynomial_features': 'max_polynomial_features',
-            'max_cross_timeframe_features': 'max_cross_timeframe_features',
-            'enable_parallel_processing': 'enable_parallel_processing',
-            'enable_gpu_acceleration': 'enable_gpu_acceleration',
-            'memory_limit_gb': 'memory_limit_gb',
-        },
-        'horizon_labeling': {
+        'tactician_labeling': {
             'profit_targets': 'profit_targets',
             'time_horizons': 'time_horizons',
             'direction_mode': 'direction_mode',
-            'separate_directional_targets': 'separate_directional_features',
-            'directional_target_prefixes': 'directional_feature_prefixes',
-        },
-        'feature_selection': {
-            'initial_features': 'initial_features',
-            'stage_1_target': 'stage_1_target',
-            'stage_2_target': 'stage_2_target',
-            'stage_3_target': 'stage_3_target',
-            'direction_mode': 'direction_mode',
             'separate_directional_features': 'separate_directional_features',
             'directional_feature_prefixes': 'directional_feature_prefixes',
+        },
+        'data_validation': {
+            'validate_input_data': 'validate_input_data',
+            'strict_data_validation': 'strict_data_validation',
+            'enable_domain_checks': 'enable_domain_checks',
+            'correlation_threshold': 'correlation_threshold',
+            'stability_threshold': 'stability_threshold',
+        },
+        'labeling_integration': {
+            'enable_labeling_optimization': 'enable_labeling_optimization',
+            'labeling_quality_threshold': 'labeling_quality_threshold',
+            'direction_mode': 'direction_mode',
+            'separate_directional_features': 'separate_directional_features',
+        },
+        'feature_generation': {
+            'enable_period_optimization': 'enable_period_optimization',
+            'enable_feature_lookback_optimization': 'enable_feature_lookback_optimization',
+            'enable_interaction_generation': 'enable_interaction_generation',
+            'enable_htf_interactions': 'enable_htf_interactions',
+            'max_interactions': 'max_interactions',
+            'min_utility_threshold': 'min_utility_threshold',
+            'max_correlation_threshold': 'max_correlation_threshold',
+        },
+        'feature_selection': {
+            'selection_strategy': 'selection_strategy',
+            'max_features': 'max_features',
+            'min_features': 'min_features',
+            'max_feature_cost': 'max_feature_cost',
+            'enable_nested_cv': 'enable_nested_cv',
+            'enable_direction_optimization': 'enable_direction_optimization',
+            'enable_bayesian_optimization': 'enable_bayesian_optimization',
             'output_directory': 'output_directory',
             'save_analysis': 'save_intermediate_results',
+        },
+        'period_lookback_optimization': {
+            'min_period': 'min_period',
+            'max_period': 'max_period',
+            'period_step': 'period_step',
+            'min_lookback': 'min_lookback',
+            'max_lookback': 'max_lookback',
+            'step_size': 'step_size',
+            'enable_parallel': 'enable_parallel',
+            'max_workers': 'max_workers',
+            'optimization_strategy': 'optimization_strategy',
+        },
+        'interaction_generation': {
+            'max_interactions': 'max_interactions',
+            'min_utility_threshold': 'min_utility_threshold',
+            'max_correlation_threshold': 'max_correlation_threshold',
+            'min_interaction_significance': 'min_interaction_significance',
+            'min_interaction_stability': 'min_interaction_stability',
+            'enable_batch_processing': 'enable_batch_processing',
+            'batch_size': 'batch_size',
+            'enable_htf_interactions': 'enable_htf_interactions',
+            'htf_interaction_ratio': 'htf_interaction_ratio',
+        },
+        'vectorization': {
+            'enable_vectorbt': 'enable_vectorbt',
+            'vectorbt_strategy': 'vectorbt_strategy',
+            'enable_gpu': 'enable_gpu',
+            'enable_parallel': 'enable_parallel',
+            'memory_efficient': 'memory_efficient',
+            'max_memory_gb': 'max_memory_gb',
+            'chunk_size': 'chunk_size',
+            'enable_caching': 'enable_caching',
+            'cache_size': 'cache_size',
+        },
+        'final_validation': {
+            'validate_input_data': 'validate_input_data',
+            'strict_data_validation': 'strict_data_validation',
+            'enable_domain_checks': 'enable_domain_checks',
+            'correlation_threshold': 'correlation_threshold',
+            'stability_threshold': 'stability_threshold',
+            'save_intermediate_results': 'save_intermediate_results',
         },
     }
 
@@ -885,7 +957,7 @@ class TacticianPreMLOrchestrator:
         **kwargs
     ) -> OrchestratorResult:
         """
-        Orchestrate the complete pre-ML training pipeline for Tactician.
+        Orchestrate the complete pre-ML training pipeline for Tactician using the unified pipeline.
 
         Args:
             analyst_signals: DataFrame with Analyst signals and confidence scores
@@ -903,156 +975,57 @@ class TacticianPreMLOrchestrator:
 
         result = OrchestratorResult()
         result.feature_generation_status = "in_progress"
-        result.lookback_optimization_enabled = self.config.enable_feature_optimization
-        result.interactive_feature_generation_enabled = self.config.enable_interactive_generation
-        result.pid_feature_generation_enabled = self.config.enable_interactive_generation  # Alias
-        result.horizon_labeling_enabled = self.config.enable_horizon_labeling
-        result.feature_selection_enabled = self.config.enable_feature_selection
         result.feature_names = feature_names
 
         try:
-            # Step 0: Validate input data
-            if self.config.enable_data_validation:
-                tprint_info("🔍 Step 0: Validating input data...")
-                validation_result = self._validate_input_data(
-                    analyst_signals, market_data, feature_names
-                )
+            if not PRE_TRAINING_AVAILABLE:
+                raise RuntimeError("Pre-training subpipeline not available")
 
-                if not validation_result['valid']:
-                    raise ValueError(f"Input validation failed: {validation_result['errors']}")
-
-                result.data_quality_score = validation_result['quality_score']
-                tprint_success(f"✅ Input validation passed (quality: {validation_result['quality_score']:.3f})")
-            else:
-                tprint_info("⏭️ Skipping input validation (disabled in config)")
-
-            # Memory check
-            self._check_memory_and_cleanup()
-
+            # Step 1: Prepare data for unified pipeline
+            tprint_info("📊 Step 1: Preparing data for unified pipeline...")
+            
+            # Merge analyst signals with market data
+            prepared_data = self._prepare_data_for_pipeline(analyst_signals, market_data, feature_names)
+            
             # Store analyst signals count
             result.analyst_signals_count = len(analyst_signals)
-            # Step 1: Separate Analyst signals into long/short with confidence filtering
-            tprint_info("📊 Step 1: Separating Analyst signals by direction...")
-            signal_separation_result = await self._separate_analyst_signals(
-                analyst_signals, market_data
+            result.tagged_market_data = prepared_data
+            
+            tprint_success(f"✅ Data preparation completed: {len(prepared_data)} samples")
+
+            # Step 2: Configure and run unified pipeline
+            tprint_info("🔧 Step 2: Configuring unified pipeline...")
+            
+            # Create pipeline configuration
+            pipeline_config = self._create_pipeline_config()
+            
+            # Initialize the subpipeline
+            subpipeline = SubPipeline(config=pipeline_config)
+            
+            tprint_success("✅ Pipeline configuration completed")
+
+            # Step 3: Execute unified pipeline
+            tprint_info("🚀 Step 3: Executing unified pipeline...")
+            
+            # Run the pipeline
+            pipeline_result = await subpipeline.run_pipeline(
+                data=prepared_data,
+                feature_names=feature_names,
+                timeframe='15m'  # Tactician uses 15m timeframe
             )
+            
+            if not pipeline_result.success:
+                raise RuntimeError(f"Pipeline execution failed: {pipeline_result.error_message}")
 
-            if not signal_separation_result['success']:
-                raise ValueError(f"Signal separation failed: {signal_separation_result['error']}")
+            # Step 4: Extract results from pipeline
+            tprint_info("📋 Step 4: Extracting pipeline results...")
+            
+            # Extract processed data and features
+            result = self._extract_pipeline_results(result, pipeline_result, prepared_data)
+            
+            tprint_success(f"✅ Pipeline results extracted: {result.total_long_samples} long, {result.total_short_samples} short samples")
 
-            result.tagged_market_data = signal_separation_result['tagged_market_data']
-            result.long_signals = signal_separation_result['long_signals']
-            result.short_signals = signal_separation_result['short_signals']
-            result.combined_signals = signal_separation_result['combined_signals']
-            result.long_signals_count = signal_separation_result.get('long_count', 0)
-            result.short_signals_count = signal_separation_result.get('short_count', 0)
-            result.long_data_quality_score = signal_separation_result.get('long_quality_score', 0.0)
-            result.short_data_quality_score = signal_separation_result.get('short_quality_score', 0.0)
-            result.signal_separation_completed = True
-
-            tprint_success(f"✅ Signal tagging completed: {signal_separation_result['long_tagged_count']} long, {signal_separation_result['short_tagged_count']} short tagged samples")
-            tprint_info(f"🔄 Using tagging approach - full lookback periods preserved for indicator calculations")
-
-            # Memory check after signal separation
-            self._check_memory_and_cleanup()
-
-            # Step 2: Optimize feature lookback periods for each signal type
-            if self.feature_optimizer:
-                tprint_info("🔍 Step 2: Optimizing feature lookback periods...")
-                # Use tagged market data which includes full lookback periods
-                lookback_result = await self._optimize_feature_lookbacks(
-                    result.tagged_market_data, result.tagged_market_data, result.tagged_market_data, feature_names
-                )
-
-                result.long_optimized_lookbacks = lookback_result['long_lookbacks']
-                result.short_optimized_lookbacks = lookback_result['short_lookbacks']
-                result.feature_optimization_completed = True
-
-                tprint_success(f"✅ Feature lookback optimization completed: {len(result.long_optimized_lookbacks)} long, {len(result.short_optimized_lookbacks)} short periods")
-            else:
-                tprint_warning("⚠️ Skipping feature lookback optimization - component not available")
-
-            # Step 3: Generate interactive features for each signal type
-            if self.interactive_generator:
-                tprint_info("🎯 Step 3: Generating interactive features...")
-
-                # Include HMM and Analyst outputs in feature names
-                extended_feature_names = feature_names.copy()
-                extended_feature_names.extend([
-                    'hmm_regime', 'hmm_regime_prob', 'hmm_regime_confidence',
-                    'analyst_signal', 'analyst_confidence', 'analyst_prediction',
-                    'analyst_long_prob', 'analyst_short_prob', 'analyst_neutral_prob'
-                ])
-
-                pid_result = await self._generate_pid_features(
-                    result.tagged_market_data, result.tagged_market_data,
-                    result.tagged_market_data, extended_feature_names,
-                    result.long_optimized_lookbacks, result.short_optimized_lookbacks
-                )
-
-                result.long_pid_features = pid_result['long_features']
-                result.short_pid_features = pid_result['short_features']
-                result.pid_generation_completed = True
-
-                tprint_success(f"✅ Interactive feature generation completed: {result.long_interactive_features.total_features_generated} long, {result.short_interactive_features.total_features_generated} short features")
-            else:
-                tprint_warning("⚠️ Skipping interactive feature generation - component not available")
-
-            # Step 4: Apply multi-horizon profit labeling for each signal type
-            if self.horizon_labeler:
-                tprint_info("🏷️ Step 4: Applying multi-horizon profit labeling...")
-                labeling_result = await self._apply_horizon_labeling(
-                    result.tagged_market_data, result.tagged_market_data,
-                    result.tagged_market_data, result.long_pid_features, result.short_pid_features
-                )
-
-                result.long_labeled_targets = labeling_result['long_targets']
-                result.short_labeled_targets = labeling_result['short_targets']
-                result.horizon_labeling_completed = True
-
-                tprint_success(f"✅ Horizon labeling completed: {len(result.long_labeled_targets)} long, {len(result.short_labeled_targets)} short target sets")
-            else:
-                tprint_warning("⚠️ Skipping horizon labeling - component not available")
-
-            # Step 5: Select final features for each signal type
-            if self.feature_selector:
-                tprint_info("🎯 Step 5: Selecting final features...")
-                selection_result = await self._select_final_features(
-                    result.tagged_market_data, result.tagged_market_data,
-                    result.long_pid_features, result.short_pid_features,
-                    result.long_labeled_targets, result.short_labeled_targets
-                )
-
-                result.long_selected_features = selection_result['long_features']
-                result.short_selected_features = selection_result['short_features']
-                result.feature_selection_completed = True
-
-                tprint_success(f"✅ Feature selection completed: {len(result.long_selected_features)} long, {len(result.short_selected_features)} short features")
-            else:
-                tprint_warning("⚠️ Skipping feature selection - component not available")
-
-            # Step 6: Prepare training data for both signal types
-            tprint_info("📚 Step 6: Preparing training data...")
-            training_data_result = await self._prepare_training_data(
-                result.tagged_market_data, result.tagged_market_data,
-                result.long_pid_features, result.short_pid_features,
-                result.long_labeled_targets, result.short_labeled_targets,
-                result.long_selected_features, result.short_selected_features
-            )
-
-            result.long_training_data = training_data_result['long_data']
-            result.short_training_data = training_data_result['short_data']
-            result.total_long_samples = len(result.long_training_data)
-            result.total_short_samples = len(result.short_training_data)
-
-            if self.config.direction_mode == 'both':
-                tprint_success(f"✅ Training data prepared: {result.total_long_samples} long, {result.total_short_samples} short samples")
-            elif self.config.direction_mode == 'long_only':
-                tprint_success(f"✅ Training data prepared: {result.total_long_samples} long samples only")
-            elif self.config.direction_mode == 'short_only':
-                tprint_success(f"✅ Training data prepared: {result.total_short_samples} short samples only")
-
-            # Step 7: Save intermediate results
+            # Step 5: Save intermediate results
             if self.config.save_intermediate_results:
                 tprint_info("💾 Saving intermediate results...")
                 await self._save_intermediate_results(result)
@@ -1072,6 +1045,208 @@ class TacticianPreMLOrchestrator:
             result.feature_generation_status = "failed"
             tprint_error(f"❌ Tactician pre-ML orchestration failed: {e}")
             tprint_error(f"Error details: {traceback.format_exc()}")
+            raise
+
+    def _prepare_data_for_pipeline(
+        self,
+        analyst_signals: pd.DataFrame,
+        market_data: pd.DataFrame,
+        feature_names: List[str]
+    ) -> pd.DataFrame:
+        """Prepare data for the unified pipeline by merging analyst signals with market data."""
+        try:
+            tprint_info("🔗 Preparing data for unified pipeline...")
+            
+            # Ensure timestamp columns exist
+            if 'timestamp' not in analyst_signals.columns:
+                raise ValueError("Analyst signals must contain 'timestamp' column")
+            if 'timestamp' not in market_data.columns:
+                raise ValueError("Market data must contain 'timestamp' column")
+            
+            # Merge analyst signals with market data on timestamp
+            prepared_data = market_data.copy()
+            
+            # Add analyst signal columns to market data
+            analyst_columns = [col for col in analyst_signals.columns if col != 'timestamp']
+            for col in analyst_columns:
+                prepared_data[col] = 0.0  # Initialize with default values
+            
+            # Fill in actual analyst signal values where timestamps match
+            for idx, row in analyst_signals.iterrows():
+                signal_timestamp = row['timestamp']
+                # Find matching timestamp in market data
+                mask = prepared_data['timestamp'] == signal_timestamp
+                if mask.any():
+                    for col in analyst_columns:
+                        prepared_data.loc[mask, col] = row[col]
+            
+            # Add feature names as columns if they don't exist
+            for feature_name in feature_names:
+                if feature_name not in prepared_data.columns:
+                    prepared_data[feature_name] = 0.0
+            
+            tprint_success(f"✅ Data preparation completed: {len(prepared_data)} samples with {len(analyst_columns)} analyst signals")
+            return prepared_data
+            
+        except Exception as e:
+            tprint_error(f"❌ Data preparation failed: {e}")
+            raise
+
+    def _create_pipeline_config(self) -> SubPipelineConfig:
+        """Create configuration for the unified pipeline."""
+        try:
+            tprint_info("⚙️ Creating pipeline configuration...")
+            
+            # Create base configuration
+            config = SubPipelineConfig()
+            
+            # Configure enabled steps based on orchestrator config
+            config.enabled_steps = []
+            
+            # Add tactician labeling step
+            if self.config.enable_horizon_labeling:
+                config.enabled_steps.append('tactician-labeler')
+            
+            # Add data validation step
+            if self.config.enable_data_validation:
+                config.enabled_steps.append('feature_generation_data_validation_step')
+            
+            # Add labeling integration step
+            config.enabled_steps.append('feature_generation_labeling_integration_step')
+            
+            # Add feature generation step
+            if self.config.enable_interactive_generation:
+                config.enabled_steps.append('feature_generation_feature_generation_step')
+            
+            # Add feature selection step
+            if self.config.enable_feature_selection:
+                config.enabled_steps.append('feature_generation_feature_selection_step')
+            
+            # Add period and lookback optimization step
+            if self.config.enable_feature_optimization:
+                config.enabled_steps.append('feature_generation_period_lookback_optimization_step')
+            
+            # Add interaction generation step
+            if self.config.enable_interactive_generation:
+                config.enabled_steps.append('feature_generation_interaction_generation_step')
+            
+            # Add vectorization step
+            config.enabled_steps.append('feature_generation_vectorization_step')
+            
+            # Add final validation step
+            config.enabled_steps.append('feature_generation_final_validation_step')
+            
+            # Configure step parameters
+            config.step_parameters = {
+                'tactician-labeler': {
+                    'profit_targets': getattr(self.config, 'profit_targets', [0.02, 0.05, 0.10]),
+                    'time_horizons': getattr(self.config, 'time_horizons', [15, 30, 60]),
+                    'direction_mode': self.config.direction_mode,
+                    'separate_directional_features': self.config.separate_directional_features,
+                    'directional_feature_prefixes': getattr(self.config, 'directional_feature_prefixes', ['long_', 'short_'])
+                },
+                'feature_generation_data_validation_step': {
+                    'validate_input_data': self.config.enable_data_validation,
+                    'strict_data_validation': getattr(self.config, 'strict_data_validation', True),
+                    'enable_domain_checks': getattr(self.config, 'enable_domain_checks', True),
+                    'correlation_threshold': getattr(self.config, 'correlation_threshold', 0.95),
+                    'stability_threshold': getattr(self.config, 'stability_threshold', 0.8)
+                },
+                'feature_generation_feature_selection_step': {
+                    'selection_strategy': getattr(self.config, 'selection_strategy', 'multi_objective'),
+                    'max_features': self.config.max_features,
+                    'min_features': getattr(self.config, 'min_features', 4),
+                    'max_feature_cost': getattr(self.config, 'max_feature_cost', 100.0),
+                    'enable_nested_cv': getattr(self.config, 'enable_nested_cv', True),
+                    'enable_direction_optimization': getattr(self.config, 'enable_direction_optimization', True),
+                    'enable_bayesian_optimization': getattr(self.config, 'enable_bayesian_optimization', True),
+                    'output_directory': self.config.output_directory,
+                    'save_analysis': self.config.save_intermediate_results
+                }
+            }
+            
+            tprint_success(f"✅ Pipeline configuration created with {len(config.enabled_steps)} steps")
+            return config
+            
+        except Exception as e:
+            tprint_error(f"❌ Pipeline configuration creation failed: {e}")
+            raise
+
+    def _extract_pipeline_results(
+        self,
+        result: OrchestratorResult,
+        pipeline_result: Any,
+        prepared_data: pd.DataFrame
+    ) -> OrchestratorResult:
+        """Extract results from the unified pipeline execution."""
+        try:
+            tprint_info("📋 Extracting pipeline results...")
+            
+            # Extract processed data
+            if hasattr(pipeline_result, 'processed_data') and pipeline_result.processed_data is not None:
+                processed_data = pipeline_result.processed_data
+                
+                # Separate into long and short based on direction mode
+                if self.config.direction_mode == 'both':
+                    # For 'both' mode, we need to separate the data
+                    long_mask = processed_data.get('signal_direction', '') == 'long'
+                    short_mask = processed_data.get('signal_direction', '') == 'short'
+                    
+                    result.long_training_data = processed_data[long_mask] if long_mask.any() else pd.DataFrame()
+                    result.short_training_data = processed_data[short_mask] if short_mask.any() else pd.DataFrame()
+                    
+                    result.total_long_samples = len(result.long_training_data)
+                    result.total_short_samples = len(result.short_training_data)
+                    
+                elif self.config.direction_mode == 'long_only':
+                    result.long_training_data = processed_data
+                    result.short_training_data = pd.DataFrame()
+                    result.total_long_samples = len(processed_data)
+                    result.total_short_samples = 0
+                    
+                elif self.config.direction_mode == 'short_only':
+                    result.long_training_data = pd.DataFrame()
+                    result.short_training_data = processed_data
+                    result.total_long_samples = 0
+                    result.total_short_samples = len(processed_data)
+                
+                # Set completion flags
+                result.signal_separation_completed = True
+                result.feature_optimization_completed = True
+                result.pid_generation_completed = True
+                result.horizon_labeling_completed = True
+                result.feature_selection_completed = True
+                
+                # Extract feature information
+                if hasattr(pipeline_result, 'selected_features'):
+                    result.long_selected_features = pipeline_result.selected_features
+                    result.short_selected_features = pipeline_result.selected_features
+                
+                # Extract quality scores
+                if hasattr(pipeline_result, 'data_quality_score'):
+                    result.data_quality_score = pipeline_result.data_quality_score
+                    result.long_data_quality_score = pipeline_result.data_quality_score
+                    result.short_data_quality_score = pipeline_result.data_quality_score
+                
+            else:
+                # Fallback: use prepared data as training data
+                result.long_training_data = prepared_data
+                result.short_training_data = prepared_data
+                result.total_long_samples = len(prepared_data)
+                result.total_short_samples = len(prepared_data)
+                
+                # Set basic completion flags
+                result.signal_separation_completed = True
+                result.feature_optimization_completed = False
+                result.pid_generation_completed = False
+                result.horizon_labeling_completed = False
+                result.feature_selection_completed = False
+            
+            tprint_success(f"✅ Pipeline results extracted successfully")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Pipeline result extraction failed: {e}")
             raise
 
     async def _separate_analyst_signals(

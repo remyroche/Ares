@@ -144,18 +144,25 @@ class BatchMatrixProcessor:
         start_time = time.time()
         logger.info(f"🔄 Processing {len(matrices_a)} matrix multiplications")
 
-        # Try VectorBT optimization first if available
-        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+        # Try VectorBTRollingOptimizer first if available
+        if self.rolling_optimizer:
             try:
-                vectorbt_ops = get_vectorbt_optimized_operations()
-                results = vectorbt_ops.batch_process(
-                    matrices_a, 'batch_matrix_multiply', matrices_b=matrices_b
-                )
+                results = self.rolling_optimizer.batch_matrix_multiply(matrices_a, matrices_b)
                 processing_time = time.time() - start_time
-                logger.info(f"✅ VectorBT batch processing completed in {processing_time:.2f}s")
+                logger.info(f"✅ VectorBTRollingOptimizer batch processing completed in {processing_time:.2f}s")
                 return results
             except Exception as e:
-                logger.warning(f"⚠️ VectorBT batch processing failed: {e}, falling back to standard method")
+                logger.warning(f"⚠️ VectorBTRollingOptimizer batch processing failed: {e}, falling back to standard method")
+
+        # Try UnifiedVectorizationManager if available
+        if self.vectorization_manager:
+            try:
+                results = self.vectorization_manager.optimize_batch_operation('matrix_multiply', matrices_a, matrices_b)
+                processing_time = time.time() - start_time
+                logger.info(f"✅ UnifiedVectorizationManager batch processing completed in {processing_time:.2f}s")
+                return results
+            except Exception as e:
+                logger.warning(f"⚠️ UnifiedVectorizationManager batch processing failed: {e}, falling back to standard method")
 
         # Determine processing strategy
         total_memory_mb = sum(a.nbytes + b.nbytes for a, b in zip(matrices_a, matrices_b)) / (1024 * 1024)

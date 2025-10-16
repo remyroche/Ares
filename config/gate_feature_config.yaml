@@ -1,0 +1,116 @@
+# Gate Feature Integration Configuration
+# This configuration file defines settings for gate feature protection and integration
+
+# Core Gate Feature Settings
+gate_features:
+  # Enable/disable gate feature protection
+  enable_gate_protection: true
+  
+  # Maximum number of gate features per base feature set
+  max_gate_features_per_base: 3
+  
+  # Minimum information coefficient improvement required
+  min_gate_ic_improvement: 0.005
+  
+  # Minimum gate stability threshold
+  min_gate_stability: 0.4
+
+# Quality Thresholds
+quality_thresholds:
+  # Maximum NaN ratio allowed in features
+  max_nan_ratio: 0.3
+  
+  # Minimum variance threshold for features
+  min_variance_threshold: 1e-8
+  
+  # Maximum correlation threshold between features
+  max_correlation_threshold: 0.95
+  
+  # Minimum number of data points required
+  min_data_points: 100
+
+# Performance Thresholds
+performance_thresholds:
+  # Minimum information coefficient threshold
+  min_ic_threshold: 0.01
+  
+  # Maximum IC decay allowed
+  max_ic_decay: 0.5
+  
+  # Minimum Sharpe ratio threshold
+  min_sharpe_ratio: 0.5
+
+# Feature Selection Settings
+feature_selection:
+  # Enable feature importance-based gate selection
+  enable_feature_importance_gates: true
+  
+  # Enable correlation-based gate selection
+  enable_correlation_gates: true
+  
+  # Enable variance-based gate selection
+  enable_variance_gates: true
+  
+  # Enable outlier-based gate selection
+  enable_outlier_gates: true
+
+# Monitoring Settings
+monitoring:
+  # Enable gate feature monitoring
+  enable_gate_monitoring: true
+  
+  # Frequency of gate monitoring (every N evaluations)
+  gate_monitoring_frequency: 100
+  
+  # Enable gate feature reporting
+  enable_gate_reporting: true
+
+# Persistence Settings
+persistence:
+  # Enable gate state persistence
+  enable_gate_persistence: true
+  
+  # Gate state file path
+  gate_state_file: "gate_feature_state.json"
+
+# Integration Settings
+integration:
+  # Enable gate feature integration with pre-training pipeline
+  enable_gate_integration: true
+  
+  # Frequency of gate evaluation (every N pipeline steps)
+  evaluation_frequency: 1
+  
+  # Threshold for gate failure (0.0 to 1.0)
+  failure_threshold: 0.5
+  
+  # Enable automatic corrective measures
+  enable_corrective_measures: true
+
+# Advanced Settings
+advanced:
+  # Enable custom gate validators
+  enable_custom_validators: false
+  
+  # Enable gate feature caching
+  enable_gate_caching: true
+  
+  # Cache size limit
+  cache_size_limit: 1000
+  
+  # Enable parallel gate evaluation
+  enable_parallel_evaluation: true
+  
+  # Maximum number of parallel workers
+  max_parallel_workers: 4
+
+# Logging Settings
+logging:
+  # Enable detailed gate logging
+  enable_detailed_logging: true
+  
+  # Log level for gate features
+  log_level: "INFO"
+  
+  # Enable gate performance metrics
+  enable_performance_metrics: true

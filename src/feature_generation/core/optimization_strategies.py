@@ -13,7 +13,11 @@ class OptimizationStrategy(ABC):
 
     def __init__(self, config: 'AutoOptimizationConfig'):
         try:
-            tprint(f"🔧 Initializing {self.__class__.__name__}...")
+            # Reduce verbosity - only log on first initialization
+            if not hasattr(self.__class__, '_initialization_logged'):
+                tprint(f"🔧 Initializing {self.__class__.__name__}...")
+                self.__class__._initialization_logged = True
+            
             self.config = config
             self.logger = logger.getChild(self.__class__.__name__)
             self.stats = {
@@ -22,7 +26,11 @@ class OptimizationStrategy(ABC):
                 'memory_saved_mb': 0.0,
                 'strategy_name': self.__class__.__name__
             }
-            tprint(f"✅ {self.__class__.__name__} initialized successfully")
+            
+            # Only log success on first initialization
+            if not hasattr(self.__class__, '_success_logged'):
+                tprint(f"✅ {self.__class__.__name__} initialized successfully")
+                self.__class__._success_logged = True
 
         except Exception as e:
             tprint(f"❌ Error initializing {self.__class__.__name__}: {e}")
@@ -80,6 +88,10 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
                     tprint(f"📊 Original memory usage: {original_memory:.2f}MB")
 
                     optimized_data = generator.optimize_dataframe_processing(data)
+                    
+                    # Clean any non-finite values introduced by optimization
+                    optimized_data = self._clean_non_finite_values(optimized_data)
+                    
                     optimized_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
 
                     self.stats['optimizations_applied'] += 1
@@ -98,6 +110,9 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
             else:
                 tprint("⚠️ Memory optimization disabled or not available")
 
+            # Final data cleaning to ensure no non-finite values
+            optimized_data = self._clean_non_finite_values(optimized_data)
+            
             self.stats['total_time'] += time.time() - start_time
             tprint(f"✅ Conservative optimization completed in {self.stats['total_time']:.3f}s")
             return optimized_data
@@ -107,6 +122,33 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
             self.logger.error(f"Error in conservative optimization: {e}")
             # Return original data on error
             return data
+    
+    def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Clean non-finite values from the DataFrame."""
+        import numpy as np
+        
+        # Check for non-finite values in numeric columns
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        
+        for col in numeric_columns:
+            if col in data.columns:
+                # Count non-finite values
+                non_finite_mask = ~np.isfinite(data[col])
+                non_finite_count = non_finite_mask.sum()
+                
+                if non_finite_count > 0:
+                    # Log the issue
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                    
+                    # Replace non-finite values with the last valid value (forward fill)
+                    data[col] = data[col].replace([np.inf, -np.inf], np.nan)
+                    data[col] = data[col].fillna(method='ffill')
+                    
+                    # If there are still NaN values at the beginning, fill with 0
+                    data[col] = data[col].fillna(0)
+        
+        return data
 
 class BalancedOptimizationStrategy(OptimizationStrategy):
     """Balanced optimization - good performance/quality tradeoff."""
@@ -114,7 +156,10 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
     def optimize_data(self, data: pd.DataFrame, generator) -> pd.DataFrame:
         """Apply balanced optimization."""
         try:
-            tprint("🔧 Starting balanced optimization...")
+            # Only log once per optimization session to reduce verbosity
+            if not hasattr(self, '_optimization_logged'):
+                tprint("🔧 Starting balanced optimization...")
+                self._optimization_logged = True
             start_time = time.time()
             optimized_data = data
 
@@ -122,19 +167,22 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
             if (self.config.enable_memory_optimization and
                 hasattr(generator, 'optimize_dataframe_processing')):
                 try:
-                    tprint("💾 Applying memory optimization...")
+                    # Reduce verbosity - only log significant memory savings
                     original_memory = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
-                    tprint(f"📊 Original memory usage: {original_memory:.2f}MB")
-
                     optimized_data = generator.optimize_dataframe_processing(data)
+                    
+                    # Clean any non-finite values introduced by optimization
+                    optimized_data = self._clean_non_finite_values(optimized_data)
+                    
                     optimized_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
 
                     self.stats['optimizations_applied'] += 1
                     memory_saved = max(0, original_memory - optimized_memory)
                     self.stats['memory_saved_mb'] += memory_saved
 
-                    tprint(f"✅ Memory optimization applied: {original_memory:.2f}MB -> {optimized_memory:.2f}MB")
-                    tprint(f"💾 Memory saved: {memory_saved:.2f}MB")
+                    # Only log if significant memory was saved
+                    if memory_saved > 10:  # Only log if more than 10MB saved
+                        tprint(f"💾 Memory optimization: {original_memory:.2f}MB -> {optimized_memory:.2f}MB (saved {memory_saved:.2f}MB)")
 
                     if self.config.enable_optimization_logging:
                         self.logger.debug(f"Memory optimization applied: {original_memory:.2f}MB -> {optimized_memory:.2f}MB")
@@ -150,17 +198,20 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
                 len(optimized_data) > self.config.vectorbt_threshold and
                 hasattr(generator, '_should_use_vectorbt')):
                 try:
-                    tprint(f"⚡ Checking VectorBT optimization (threshold: {self.config.vectorbt_threshold})...")
+                    # Reduce verbosity - only log when VectorBT is actually applied
                     if generator._should_use_vectorbt(optimized_data):
-                        tprint("🚀 Applying VectorBT optimization...")
                         optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
+                        
+                        # Clean any non-finite values introduced by VectorBT optimization
+                        optimized_data = self._clean_non_finite_values(optimized_data)
+                        
                         self.stats['optimizations_applied'] += 1
-                        tprint(f"✅ VectorBT optimization applied for {len(optimized_data)} rows")
+                        # Only log if significant dataset size
+                        if len(optimized_data) > 10000:
+                            tprint(f"🚀 VectorBT optimization applied for {len(optimized_data)} rows")
 
                         if self.config.enable_optimization_logging:
                             self.logger.debug(f"VectorBT optimization applied for {len(optimized_data)} rows")
-                    else:
-                        tprint("⚠️ VectorBT optimization not recommended for this dataset")
 
                 except Exception as e:
                     tprint(f"❌ VectorBT optimization failed: {e}")
@@ -190,6 +241,9 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
             else:
                 tprint("⚠️ Rolling operations optimization disabled or not available")
 
+            # Final data cleaning to ensure no non-finite values
+            optimized_data = self._clean_non_finite_values(optimized_data)
+            
             self.stats['total_time'] += time.time() - start_time
             tprint(f"✅ Balanced optimization completed in {self.stats['total_time']:.3f}s")
             tprint(f"📊 Total optimizations applied: {self.stats['optimizations_applied']}")
@@ -206,6 +260,33 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
         # This would include VectorBT-specific data preparation
         # For now, just return the data as-is
         return data
+    
+    def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Clean non-finite values from the DataFrame."""
+        import numpy as np
+        
+        # Check for non-finite values in numeric columns
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        
+        for col in numeric_columns:
+            if col in data.columns:
+                # Count non-finite values
+                non_finite_mask = ~np.isfinite(data[col])
+                non_finite_count = non_finite_mask.sum()
+                
+                if non_finite_count > 0:
+                    # Log the issue
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                    
+                    # Replace non-finite values with the last valid value (forward fill)
+                    data[col] = data[col].replace([np.inf, -np.inf], np.nan)
+                    data[col] = data[col].fillna(method='ffill')
+                    
+                    # If there are still NaN values at the beginning, fill with 0
+                    data[col] = data[col].fillna(0)
+        
+        return data
 
 class AggressiveOptimizationStrategy(OptimizationStrategy):
     """Aggressive optimization - maximum performance."""
@@ -221,6 +302,10 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
             try:
                 original_memory = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
                 optimized_data = generator.optimize_dataframe_processing(data)
+                
+                # Clean any non-finite values introduced by optimization
+                optimized_data = self._clean_non_finite_values(optimized_data)
+                
                 optimized_memory = optimized_data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
 
                 self.stats['optimizations_applied'] += 1
@@ -256,6 +341,10 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
             try:
                 if generator._should_use_vectorbt(optimized_data):
                     optimized_data = self._apply_vectorbt_optimizations(optimized_data, generator)
+                    
+                    # Clean any non-finite values introduced by VectorBT optimization
+                    optimized_data = self._clean_non_finite_values(optimized_data)
+                    
                     self.stats['optimizations_applied'] += 1
 
                     if self.config.enable_optimization_logging:
@@ -279,6 +368,9 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
             except Exception as e:
                 self.logger.warning(f"Rolling operations optimization failed: {e}")
 
+        # Final data cleaning to ensure no non-finite values
+        optimized_data = self._clean_non_finite_values(optimized_data)
+        
         self.stats['total_time'] += time.time() - start_time
         return optimized_data
 
@@ -286,4 +378,31 @@ class AggressiveOptimizationStrategy(OptimizationStrategy):
         """Apply aggressive VectorBT optimizations."""
         # This would include aggressive VectorBT optimizations
         # For now, just return the data as-is
+        return data
+    
+    def _clean_non_finite_values(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Clean non-finite values from the DataFrame."""
+        import numpy as np
+        
+        # Check for non-finite values in numeric columns
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        
+        for col in numeric_columns:
+            if col in data.columns:
+                # Count non-finite values
+                non_finite_mask = ~np.isfinite(data[col])
+                non_finite_count = non_finite_mask.sum()
+                
+                if non_finite_count > 0:
+                    # Log the issue
+                    if hasattr(self, 'logger'):
+                        self.logger.warning(f"Found {non_finite_count} non-finite values in column '{col}' after optimization")
+                    
+                    # Replace non-finite values with the last valid value (forward fill)
+                    data[col] = data[col].replace([np.inf, -np.inf], np.nan)
+                    data[col] = data[col].fillna(method='ffill')
+                    
+                    # If there are still NaN values at the beginning, fill with 0
+                    data[col] = data[col].fillna(0)
+        
         return data

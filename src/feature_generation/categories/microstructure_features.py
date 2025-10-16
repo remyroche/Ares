@@ -1808,6 +1808,10 @@ def create_analyst_microstructure_generators() -> List[FeatureGenerator]:
 
     return generators
 
+def create_default_microstructure_generators() -> List[FeatureGenerator]:
+    """Create default microstructure feature generators."""
+    return create_microstructure_feature_generators()
+
 def process_microstructure_features_batch(data: pd.DataFrame,
                                         generators: Optional[List[FeatureGenerator]] = None,
                                         use_vectorbt: bool = True,
@@ -1904,5 +1908,6 @@ __all__ = [
     'create_core_microstructure_generators',
     'create_vectorbt_microstructure_generators',
     'create_analyst_microstructure_generators',
+    'create_default_microstructure_generators',
     'process_microstructure_features_batch'
 ]

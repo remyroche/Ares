@@ -30,13 +30,36 @@ except ImportError:
     SCIPY_AVAILABLE = False
     sparse = None
 
-# Import the unified modules
-from .unified_operations import (
-    get_unified_matrix_operations,
-    safe_matrix_multiply as _safe_matrix_multiply,
-    safe_correlation_matrix as _safe_correlation_matrix,
-    safe_matrix_inverse as _safe_matrix_inverse
-)
+# Import the unified modules with lazy loading to avoid circular imports
+try:
+    from .unified_operations import (
+        get_unified_matrix_operations,
+        safe_matrix_multiply as _safe_matrix_multiply,
+        safe_matrix_inverse as _safe_matrix_inverse
+    )
+    UNIFIED_OPERATIONS_IMPORTED = True
+except ImportError as e:
+    UNIFIED_OPERATIONS_IMPORTED = False
+    _safe_matrix_multiply = None
+    _safe_matrix_inverse = None
+    get_unified_matrix_operations = None
+
+# Import correlation matrix function locally to avoid circular import
+def _safe_correlation_matrix(*args, **kwargs):
+    """Local wrapper to avoid circular import."""
+    try:
+        from .unified_operations import safe_correlation_matrix
+        return safe_correlation_matrix(*args, **kwargs)
+    except ImportError:
+        # Fallback implementation
+        import numpy as np
+        if NUMPY_AVAILABLE and len(args) > 0:
+            data = args[0]
+            if hasattr(data, 'corr'):
+                return data.corr()
+            elif isinstance(data, np.ndarray):
+                return np.corrcoef(data)
+        raise NotImplementedError("safe_correlation_matrix not available")
 
 # Import VectorBT optimizations
 try:
@@ -57,34 +80,120 @@ except ImportError:
     vectorbt_rolling_features = None
     vectorbt_batch_processing = None
 
-from .vectorized_core import (
-    get_vectorized_processing_core,
-    optimize_dataframe as _optimize_dataframe,
-    vectorized_rolling_features as _vectorized_rolling_features,
-    matrix_correlation_analysis as _matrix_correlation_analysis,
-    OptimizedPipelineExecutor,
-    PipelineExecutionMode,
-    PipelineExecutionResult
-)
+# Lazy imports to avoid circular dependencies
+def _get_vectorized_core():
+    try:
+        from .vectorized_core import get_vectorized_processing_core
+        return get_vectorized_processing_core()
+    except ImportError:
+        return None
 
-from .batch_operations import (
-    get_batch_matrix_processor,
-    batch_matrix_multiply as _batch_matrix_multiply,
-    batch_feature_transformation as _batch_feature_transformation,
-    batch_correlation_analysis as _batch_correlation_analysis
-)
+def _optimize_dataframe(df):
+    try:
+        from .vectorized_core import optimize_dataframe as _optimize_dataframe_impl
+        return _optimize_dataframe_impl(df)
+    except ImportError:
+        return df
 
-from .enhanced_operations import (
-    OperationComplexity,
-    get_enhanced_matrix_operations,
-    gpu_matrix_multiply as _gpu_matrix_multiply,
-    correlation_matrix_gpu as _correlation_matrix_gpu,
-    eigendecomposition_gpu as _eigendecomposition_gpu,
-    svd_gpu as _svd_gpu,
-    optimize_batch_size as _optimize_batch_size,
-    record_batch_performance as _record_batch_performance,
-    get_batch_optimization_stats as _get_batch_optimization_stats
-)
+def _vectorized_rolling_features(data, windows, features):
+    try:
+        from .vectorized_core import vectorized_rolling_features as _vectorized_rolling_features_impl
+        return _vectorized_rolling_features_impl(data, windows, features)
+    except ImportError:
+        return data
+
+def _matrix_correlation_analysis(data, method):
+    try:
+        from .vectorized_core import matrix_correlation_analysis as _matrix_correlation_analysis_impl
+        return _matrix_correlation_analysis_impl(data, method)
+    except ImportError:
+        return None, None
+
+# Lazy imports for batch operations
+def _get_batch_matrix_processor():
+    try:
+        from .batch_operations import get_batch_matrix_processor
+        return get_batch_matrix_processor()
+    except ImportError:
+        return None
+
+def _batch_matrix_multiply(matrices_a, matrices_b):
+    try:
+        from .batch_operations import batch_matrix_multiply
+        return batch_matrix_multiply(matrices_a, matrices_b)
+    except ImportError:
+        return []
+
+def _batch_feature_transformation(data, transformations):
+    try:
+        from .batch_operations import batch_feature_transformation
+        return batch_feature_transformation(data, transformations)
+    except ImportError:
+        return data
+
+def _batch_correlation_analysis(data, method):
+    try:
+        from .batch_operations import batch_correlation_analysis
+        return batch_correlation_analysis(data, method)
+    except ImportError:
+        return None, None
+
+# Lazy imports for enhanced operations
+def _get_enhanced_matrix_operations():
+    try:
+        from .enhanced_operations import get_enhanced_matrix_operations
+        return get_enhanced_matrix_operations()
+    except ImportError:
+        return None
+
+def _gpu_matrix_multiply(a, b):
+    try:
+        from .enhanced_operations import gpu_matrix_multiply
+        return gpu_matrix_multiply(a, b)
+    except ImportError:
+        return a @ b
+
+def _correlation_matrix_gpu(data):
+    try:
+        from .enhanced_operations import correlation_matrix_gpu
+        return correlation_matrix_gpu(data)
+    except ImportError:
+        return None
+
+def _eigendecomposition_gpu(matrix):
+    try:
+        from .enhanced_operations import eigendecomposition_gpu
+        return eigendecomposition_gpu(matrix)
+    except ImportError:
+        return None, None
+
+def _svd_gpu(matrix, k):
+    try:
+        from .enhanced_operations import svd_gpu
+        return svd_gpu(matrix, k)
+    except ImportError:
+        return None, None, None
+
+def _optimize_batch_size(operation_name, data_shape, complexity, available_memory_mb):
+    try:
+        from .enhanced_operations import optimize_batch_size
+        return optimize_batch_size(operation_name, data_shape, complexity, available_memory_mb)
+    except ImportError:
+        return 1000
+
+def _record_batch_performance(operation_name, batch_size, execution_time, memory_usage, data_processed):
+    try:
+        from .enhanced_operations import record_batch_performance
+        return record_batch_performance(operation_name, batch_size, execution_time, memory_usage, data_processed)
+    except ImportError:
+        return None
+
+def _get_batch_optimization_stats():
+    try:
+        from .enhanced_operations import get_batch_optimization_stats
+        return get_batch_optimization_stats()
+    except ImportError:
+        return {}
 
 # Matrix operations convenience functions
 def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
@@ -96,7 +205,15 @@ def safe_matrix_multiply(A: 'np.ndarray', B: 'np.ndarray') -> 'np.ndarray':
         except Exception as e:
             logger.warning(f"⚠️ VectorBT matrix multiplication failed: {e}, falling back to standard method")
 
-    return _safe_matrix_multiply(A, B)
+    # Fallback to unified operations if available
+    if UNIFIED_OPERATIONS_IMPORTED and _safe_matrix_multiply:
+        return _safe_matrix_multiply(A, B)
+
+    # Final fallback to basic numpy implementation
+    if NUMPY_AVAILABLE:
+        return np.dot(A, B)
+    else:
+        raise ImportError("Neither unified operations nor numpy available for matrix multiplication")
 
 def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.ndarray':
     """Safe correlation matrix computation with VectorBT optimization."""
@@ -107,11 +224,29 @@ def safe_correlation_matrix(data: Union['np.ndarray', 'pd.DataFrame']) -> 'np.nd
         except Exception as e:
             logger.warning(f"⚠️ VectorBT correlation matrix failed: {e}, falling back to standard method")
 
-    return _safe_correlation_matrix(data)
+    # Fallback to local implementation (avoids circular import)
+    try:
+        return _safe_correlation_matrix(data)
+    except Exception as e:
+        logger.warning(f"⚠️ Local correlation matrix failed: {e}, falling back to standard method")
+
+    # Final fallback to basic numpy implementation
+    if NUMPY_AVAILABLE:
+        return np.corrcoef(data.T)
+    else:
+        raise ImportError("Neither unified operations nor numpy available for correlation matrix computation")
 
 def safe_matrix_inverse(matrix: 'np.ndarray') -> 'np.ndarray':
     """Safe matrix inversion."""
-    return _safe_matrix_inverse(matrix)
+    # Fallback to unified operations if available
+    if UNIFIED_OPERATIONS_IMPORTED and _safe_matrix_inverse:
+        return _safe_matrix_inverse(matrix)
+
+    # Final fallback to basic numpy implementation
+    if NUMPY_AVAILABLE:
+        return np.linalg.inv(matrix)
+    else:
+        raise ImportError("Neither unified operations nor numpy available for matrix inversion")
 
 def gpu_matrix_multiply(a: 'np.ndarray', b: 'np.ndarray') -> 'np.ndarray':
     """GPU-accelerated matrix multiplication."""
@@ -156,8 +291,10 @@ def parallel_feature_engineering(data: 'pd.DataFrame',
                                feature_functions: List[Callable[['pd.DataFrame'], 'pd.Series']],
                                max_workers: Optional[int] = None) -> 'pd.DataFrame':
     """Parallel feature engineering."""
-    core = get_vectorized_processing_core()
-    return core.parallel_feature_engineering(data, feature_functions, max_workers)
+    core = _get_vectorized_core()
+    if core:
+        return core.parallel_feature_engineering(data, feature_functions, max_workers)
+    return data
 
 # Batch operations convenience functions
 def batch_matrix_multiply(matrices_a: List['np.ndarray'], matrices_b: List['np.ndarray']) -> List['np.ndarray']:
@@ -186,59 +323,77 @@ def sparse_matrix_multiply(a: Union['sparse.spmatrix', 'np.ndarray'],
                           b: Union['sparse.spmatrix', 'np.ndarray'],
                           format: str = 'csr') -> 'sparse.spmatrix':
     """Sparse matrix multiplication with GPU acceleration."""
-    ops = get_enhanced_matrix_operations()
-    return ops.sparse_matrix_multiply(a, b, format)
+    ops = _get_enhanced_matrix_operations()
+    if ops:
+        return ops.sparse_matrix_multiply(a, b, format)
+    return None
 
 def sparse_svd(matrix: 'sparse.spmatrix', k: Optional[int] = None,
               solver: str = 'arpack') -> Tuple['np.ndarray', 'np.ndarray', 'np.ndarray']:
     """Sparse SVD decomposition."""
-    ops = get_enhanced_matrix_operations()
-    return ops.sparse_svd(matrix, k, solver)
+    ops = _get_enhanced_matrix_operations()
+    if ops:
+        return ops.sparse_svd(matrix, k, solver)
+    return None, None, None
 
 def sparse_eigen(matrix: 'sparse.spmatrix', k: int = 10,
                 which: str = 'LM') -> Tuple['np.ndarray', 'np.ndarray']:
     """Sparse eigenvalue decomposition."""
-    ops = get_enhanced_matrix_operations()
-    return ops.sparse_eigen(matrix, k, which)
+    ops = _get_enhanced_matrix_operations()
+    if ops:
+        return ops.sparse_eigen(matrix, k, which)
+    return None, None
 
 def create_sparse_matrix(matrix: 'np.ndarray',
                         sparsity_threshold: float = 0.1) -> Union['sparse.spmatrix', 'np.ndarray']:
     """Create sparse matrix from dense matrix if beneficial."""
-    ops = get_enhanced_matrix_operations()
-    return ops.create_sparse_from_dense(matrix, sparsity_threshold)
+    ops = _get_enhanced_matrix_operations()
+    if ops:
+        return ops.create_sparse_from_dense(matrix, sparsity_threshold)
+    return matrix
 
 def sparse_solve(a: 'sparse.spmatrix', b: 'np.ndarray',
                 solver: str = 'spsolve') -> 'np.ndarray':
     """Solve sparse linear system."""
-    ops = get_enhanced_matrix_operations()
-    return ops.sparse_solve_linear(a, b, solver)
+    ops = _get_enhanced_matrix_operations()
+    if ops:
+        return ops.sparse_solve_linear(a, b, solver)
+    return None
 
 # Pipeline operations convenience functions
 def create_ml_pipeline(stages_config: List[Dict[str, Any]]) -> 'OptimizedPipelineExecutor':
     """Create an optimized ML processing pipeline."""
-    core = get_vectorized_processing_core()
-    return core.create_optimized_pipeline(stages_config)
+    core = _get_vectorized_core()
+    if core:
+        return core.create_optimized_pipeline(stages_config)
+    return None
 
 def execute_ml_pipeline(data: 'pd.DataFrame',
                        pipeline_config: List[Dict[str, Any]],
                        execution_mode: 'PipelineExecutionMode' = None) -> 'PipelineExecutionResult':
     """Execute a complete ML processing pipeline with optimization."""
-    core = get_vectorized_processing_core()
-    if execution_mode is None:
-        from .vectorized_core import PipelineExecutionMode
-        execution_mode = PipelineExecutionMode.HYBRID
-    return core.execute_ml_pipeline(data, pipeline_config, execution_mode)
+    core = _get_vectorized_core()
+    if core:
+        if execution_mode is None:
+            from .vectorized_core import PipelineExecutionMode
+            execution_mode = PipelineExecutionMode.HYBRID
+        return core.execute_ml_pipeline(data, pipeline_config, execution_mode)
+    return None
 
 def optimize_pipeline_config(pipeline_config: List[Dict[str, Any]],
                            data_sample: 'pd.DataFrame') -> Dict[str, Any]:
     """Analyze and optimize pipeline execution strategy."""
-    core = get_vectorized_processing_core()
-    return core.optimize_pipeline_execution(pipeline_config, data_sample)
+    core = _get_vectorized_core()
+    if core:
+        return core.optimize_pipeline_execution(pipeline_config, data_sample)
+    return {}
 
 def get_pipeline_executor() -> 'OptimizedPipelineExecutor':
     """Get the global pipeline executor instance."""
-    core = get_vectorized_processing_core()
-    return core.pipeline_executor
+    core = _get_vectorized_core()
+    if core:
+        return core.pipeline_executor
+    return None
 
 # Optimization utilities convenience functions
 def optimize_batch_size(operation_name: str, data_shape: Tuple[int, ...],
@@ -271,8 +426,10 @@ def compute_trading_indicators(data: 'pd.DataFrame',
         except Exception as e:
             logger.warning(f"⚠️ VectorBT trading indicators failed: {e}, falling back to standard method")
 
-    core = get_vectorized_processing_core()
-    return core.compute_trading_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core.compute_trading_indicators(data, config)
+    return data
 
 def compute_moving_averages(data: 'pd.DataFrame',
                            sma_periods: List[int] = None,
@@ -288,8 +445,10 @@ def compute_moving_averages(data: 'pd.DataFrame',
         'ema_periods': ema_periods
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_moving_averages(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_moving_averages(data, config)
+    return data
 
 def compute_momentum_indicators(data: 'pd.DataFrame',
                                rsi_period: int = 14,
@@ -304,8 +463,10 @@ def compute_momentum_indicators(data: 'pd.DataFrame',
         'macd_signal': macd_signal
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_momentum_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_momentum_indicators(data, config)
+    return data
 
 def compute_volatility_indicators(data: 'pd.DataFrame',
                                  bb_period: int = 20,
@@ -318,8 +479,10 @@ def compute_volatility_indicators(data: 'pd.DataFrame',
         'atr_period': atr_period
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_volatility_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_volatility_indicators(data, config)
+    return data
 
 def compute_volume_indicators(data: 'pd.DataFrame',
                              volume_sma_period: int = 20,
@@ -330,8 +493,10 @@ def compute_volume_indicators(data: 'pd.DataFrame',
         'obv_smooth': obv_smooth
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_volume_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_volume_indicators(data, config)
+    return data
 
 def compute_trend_indicators(data: 'pd.DataFrame',
                             adx_period: int = 14) -> 'pd.DataFrame':
@@ -340,8 +505,10 @@ def compute_trend_indicators(data: 'pd.DataFrame',
         'adx_period': adx_period
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_trend_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_trend_indicators(data, config)
+    return data
 
 def compute_oscillator_indicators(data: 'pd.DataFrame',
                                  stoch_k: int = 14,
@@ -356,19 +523,25 @@ def compute_oscillator_indicators(data: 'pd.DataFrame',
         'cci_period': cci_period
     }
 
-    core = get_vectorized_processing_core()
-    return core._compute_oscillator_indicators(data, config)
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_oscillator_indicators(data, config)
+    return data
 
 def compute_pattern_indicators(data: 'pd.DataFrame') -> 'pd.DataFrame':
     """Compute pattern recognition indicators."""
-    core = get_vectorized_processing_core()
-    return core._compute_pattern_indicators(data, {})
+    core = _get_vectorized_core()
+    if core:
+        return core._compute_pattern_indicators(data, {})
+    return data
 
 # Hardware optimization convenience functions
 def get_hardware_performance_report() -> Optional[Dict[str, Any]]:
     """Get comprehensive hardware performance report."""
-    core = get_vectorized_processing_core()
-    return core.get_hardware_performance_report()
+    core = _get_vectorized_core()
+    if core:
+        return core.get_hardware_performance_report()
+    return None
 
 def optimize_matrix_operation_with_hardware(data: Union['np.ndarray', 'pd.DataFrame'],
                                           operation_func: Callable,
@@ -383,13 +556,16 @@ def optimize_matrix_operation_with_hardware(data: Union['np.ndarray', 'pd.DataFr
 
 def cleanup_hardware_resources():
     """Cleanup hardware resources."""
-    core = get_vectorized_processing_core()
-    core.cleanup_hardware_resources()
+    core = _get_vectorized_core()
+    if core:
+        core.cleanup_hardware_resources()
 
 def get_processing_performance_stats() -> Dict[str, Any]:
     """Get comprehensive processing performance statistics."""
-    core = get_vectorized_processing_core()
-    return core.get_processing_stats()
+    core = _get_vectorized_core()
+    if core:
+        return core.get_processing_stats()
+    return {}
 
 # Additional convenience functions for common operations
 def matrix_multiply(a: 'np.ndarray', b: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':
@@ -419,8 +595,9 @@ def matrix_inverse(matrix: 'np.ndarray', use_gpu: bool = True) -> 'np.ndarray':
     """Convenient matrix inversion with GPU option."""
     if use_gpu:
         try:
-            ops = get_enhanced_matrix_operations()
-            return ops.matrix_inverse(matrix, use_gpu=True)
+            ops = _get_enhanced_matrix_operations()
+            if ops:
+                return ops.matrix_inverse(matrix, use_gpu=True)
         except Exception:
             # Fallback to safe CPU inversion
             return safe_matrix_inverse(matrix)
@@ -478,21 +655,23 @@ def get_performance_stats() -> Dict[str, Any]:
 
     # Get stats from vectorized core
     try:
-        core = get_vectorized_processing_core()
-        stats['vectorized_core'] = core.get_processing_stats()
+        core = _get_vectorized_core()
+        if core:
+            stats['vectorized_core'] = core.get_processing_stats()
     except Exception as e:
         stats['vectorized_core_error'] = str(e)
 
     # Get stats from enhanced operations
     try:
-        enhanced_ops = get_enhanced_matrix_operations()
-        stats['enhanced_operations'] = enhanced_ops.get_performance_stats()
+        enhanced_ops = _get_enhanced_matrix_operations()
+        if enhanced_ops:
+            stats['enhanced_operations'] = enhanced_ops.get_performance_stats()
     except Exception as e:
         stats['enhanced_operations_error'] = str(e)
 
     # Get batch optimization stats
     try:
-        stats['batch_optimization'] = get_batch_optimization_stats()
+        stats['batch_optimization'] = _get_batch_optimization_stats()
     except Exception as e:
         stats['batch_optimization_error'] = str(e)
 

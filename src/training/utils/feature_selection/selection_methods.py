@@ -47,7 +47,7 @@ try:
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
     MATRIX_OPERATIONS_AVAILABLE = False
-    tprint("⚠️ Optimization utilities not available - using standard operations")
+    # Silently use standard operations as fallback
 
 # Import common operations utilities
 try:

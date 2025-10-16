@@ -62,7 +62,7 @@ from .contextual_feature_labeling import (
     ContextualFeatureConfig,
     create_feature_enhanced_labels
 )
-from src.research2.profit_labeling.backtesting_integrated_validator import (
+from src.research.profit_labeling.backtesting_integrated_validator import (
     BacktestingIntegratedValidator,
     BacktestingConfig,
     validate_labels_through_backtesting

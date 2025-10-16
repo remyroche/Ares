@@ -88,16 +88,16 @@ class AutoOptimizationConfig:
     def get_settings_for_level(self) -> Dict[str, Any]:
         """Get settings for current optimization level."""
         try:
-            tprint(f"🔍 Getting settings for {self.optimization_level.value} optimization level...")
+            # Reduce verbosity - only log once per session
+            if not hasattr(self, '_settings_logged'):
+                tprint(f"🔍 Getting settings for {self.optimization_level.value} optimization level...")
+                self._settings_logged = True
 
             if self.optimization_level == OptimizationLevel.CONSERVATIVE:
-                tprint("📊 Returning conservative settings")
                 return self.conservative_settings
             elif self.optimization_level == OptimizationLevel.BALANCED:
-                tprint("📊 Returning balanced settings")
                 return self.balanced_settings
             elif self.optimization_level == OptimizationLevel.AGGRESSIVE:
-                tprint("📊 Returning aggressive settings")
                 return self.aggressive_settings
             else:
                 tprint("⚠️ Unknown optimization level, defaulting to balanced")

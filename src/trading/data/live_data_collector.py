@@ -24,7 +24,14 @@ from src.utils.enhanced_error_handler import get_enhanced_error_handler
 from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
 from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
 from src.utils.data.processing.data_processing import optimize_dataframe_dtypes
-from src.exchange.binance import BinanceExchange
+# Import BinanceExchange from the parent-level binance.py module (not the binance package)
+import importlib.util
+import os
+binance_module_path = os.path.join(os.path.dirname(__file__), '../../../exchanges/binance.py')
+spec = importlib.util.spec_from_file_location("exchanges.binance_module", binance_module_path)
+binance_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(binance_module)
+BinanceExchange = binance_module.BinanceExchange
 from src.config.config import get_static_config
 
 logger = system_logger.getChild('LiveDataCollector')

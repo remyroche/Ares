@@ -721,7 +721,9 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibili
 
     try:
         # Lazy initialization to avoid circular import issues
+        # Only create new instance if none exists, ignore parameters for singleton behavior
         if _m1_memory_optimizer_instance is None or not _m1_initialized:
+            logger.info("🧠 M1 Memory Optimizer initialized for M1")
             _m1_memory_optimizer_instance = M1MemoryOptimizer(
                 memory_limit_gb=memory_limit_gb,
                 compatibility_mode=compatibility_mode
@@ -729,14 +731,7 @@ def get_m1_memory_optimizer(memory_limit_gb: Optional[float] = None, compatibili
             m1_memory_optimizer = _m1_memory_optimizer_instance
             _m1_initialized = True
         else:
-            # If a memory limit is specified and it's different from the current instance, create a new one
-            if memory_limit_gb and (not hasattr(_m1_memory_optimizer_instance, 'memory_limit_gb') or
-                                   _m1_memory_optimizer_instance.memory_limit_gb != memory_limit_gb):
-                _m1_memory_optimizer_instance = M1MemoryOptimizer(
-                    memory_limit_gb=memory_limit_gb,
-                    compatibility_mode=compatibility_mode
-                )
-                m1_memory_optimizer = _m1_memory_optimizer_instance
+            logger.debug("🔄 Reusing existing M1 Memory Optimizer instance")
 
         return _m1_memory_optimizer_instance
 

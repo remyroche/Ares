@@ -53,6 +53,38 @@ except ImportError:
 except Exception as e:
     print(f"⚠️ [IMPORTS] TensorFlow configuration warning: {e}")
 
+# Optimize threading and memory for M1 Macs
+print("🔧 [IMPORTS] Optimizing threading and memory for M1...")
+# Set threading limits early to prevent memory pressure
+os.environ.setdefault('OMP_NUM_THREADS', '4')
+os.environ.setdefault('MKL_NUM_THREADS', '4')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '4')
+os.environ.setdefault('VECLIB_MAXIMUM_THREADS', '4')
+
+# PyTorch threading optimization
+try:
+    import torch
+    torch.set_num_threads(4)
+    print("✅ [IMPORTS] PyTorch threading optimized for M1")
+except ImportError:
+    print("ℹ️ [IMPORTS] PyTorch not available, skipping threading optimization")
+except Exception as e:
+    print(f"⚠️ [IMPORTS] PyTorch threading optimization failed: {e}")
+
+# Reduce generator set size when memory pressure is high
+try:
+    import psutil
+    memory_gb = psutil.virtual_memory().total / (1024**3)
+    if memory_gb < 16:  # Less than 16GB RAM
+        os.environ.setdefault('ARES_MAX_FEATURE_GENERATORS', '200')  # Limit generators
+        print(f"✅ [IMPORTS] Limited feature generators due to memory constraints: {memory_gb:.1f}GB")
+except ImportError:
+    print("ℹ️ [IMPORTS] psutil not available, using default generator limits")
+except Exception as e:
+    print(f"⚠️ [IMPORTS] Memory optimization failed: {e}")
+
+print("✅ [IMPORTS] M1 optimizations applied")
+
 # Temporarily use simple logger to bypass initialization issues
 print("🔧 [IMPORTS] Setting up additional paths...")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -650,7 +682,13 @@ class AresLauncher:
             return await self._execute_stage(stage, config)
         elif mode == LauncherMode.SEQUENTIAL:
             tprint(f"🚀 [EXECUTE_PIPELINE] Executing sequential pipeline")
-            return await self._execute_sequential_pipeline(pipeline_type, config, start_from_step, stop_at_step)
+            return await self._execute_sequential_pipeline(
+                pipeline_type,
+                config,
+                start_from_step,
+                stop_at_step,
+                target_sub_pipeline=sub_pipeline
+            )
         else:
             tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
             return await self._execute_full_pipeline(config)
@@ -784,7 +822,7 @@ class AresLauncher:
         tprint(f"✅ [STAGE_CONFIG] Filtered config: {list(filtered_config.keys())}")
 
         # Use the provided timeframe for all stages
-        tprint(f"📊 [STAGE_CONFIG] Using timeframe for {stage.value}: {filtered_config.get('timeframe', '1m')}")
+        tprint(f"📊 [STAGE_CONFIG] Using timeframe for {stage.value}: {filtered_config.get('timeframe', '15m')}")
 
         # Get configuration based on execution mode using centralized configuration
         tprint("🎭 [STAGE_CONFIG] Getting base configuration...")
@@ -875,14 +913,14 @@ class AresLauncher:
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
                     tprint(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
                 else:
-                    # Fallback to current date if data info is not available
-                    tprint("⚠️ Could not get data info, using current date as fallback")
-                    end_date = datetime.now()
+                    # Fallback to a fixed date range that matches available data (2025)
+                    tprint("⚠️ Could not get data info, using fixed date range from 2025")
+                    end_date = datetime(2025, 7, 31)  # Use end of available data
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
             except Exception as e:
                 tprint(f"⚠️ Error detecting last available data date: {e}")
-                tprint("⚠️ Falling back to current date")
-                end_date = datetime.now()
+                tprint("⚠️ Falling back to fixed date range from 2025")
+                end_date = datetime(2025, 7, 31)  # Use end of available data
                 start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
@@ -917,14 +955,14 @@ class AresLauncher:
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
                     tprint(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
                 else:
-                    # Fallback to current date if data info is not available
-                    tprint("⚠️ Could not get data info, using current date as fallback")
-                    end_date = datetime.now()
+                    # Fallback to a fixed date range that matches available data (2025)
+                    tprint("⚠️ Could not get data info, using fixed date range from 2025")
+                    end_date = datetime(2025, 7, 31)  # Use end of available data
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
             except Exception as e:
                 tprint(f"⚠️ Error detecting last available data date: {e}")
-                tprint("⚠️ Falling back to current date")
-                end_date = datetime.now()
+                tprint("⚠️ Falling back to fixed date range from 2025")
+                end_date = datetime(2025, 7, 31)  # Use end of available data
                 start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
@@ -948,8 +986,8 @@ class AresLauncher:
 
         # Set 15m as default for NAS sub-pipelines
         if sub_pipeline in nas_sub_pipelines:
-            original_timeframe = filtered_config.get('timeframe', '1m')
-            if original_timeframe == '1m':  # Only override if using default
+            original_timeframe = filtered_config.get('timeframe', '15m')
+            if original_timeframe == '15m':  # Only override if using default
                 filtered_config['timeframe'] = '15m'
                 tprint(f"🎯 [SUB_PIPELINE_CONFIG] NAS sub-pipeline detected: {sub_pipeline}")
                 tprint(f"🎯 [SUB_PIPELINE_CONFIG] Setting default timeframe: {original_timeframe} → 15m")
@@ -957,7 +995,7 @@ class AresLauncher:
             else:
                 tprint(f"📊 [SUB_PIPELINE_CONFIG] Using specified timeframe for {sub_pipeline}: {original_timeframe}")
         else:
-            tprint(f"📊 [SUB_PIPELINE_CONFIG] Using timeframe for {sub_pipeline}: {filtered_config.get('timeframe', '1m')}")
+            tprint(f"📊 [SUB_PIPELINE_CONFIG] Using timeframe for {sub_pipeline}: {filtered_config.get('timeframe', '15m')}")
 
         tprint(f"✅ [SUB_PIPELINE_CONFIG] Filtered config: {list(filtered_config.keys())}")
 
@@ -1065,6 +1103,11 @@ class AresLauncher:
             tprint("✅ [SUB_PIPELINE_CONFIG] Intensity parameters added")
         else:
             tprint("⚠️ [SUB_PIPELINE_CONFIG] No training mode config available")
+
+        # Add use_existing_data parameter to avoid API downloads
+        tprint("🔧 [SUB_PIPELINE_CONFIG] Adding use_existing_data parameter...")
+        config.use_existing_data = True
+        tprint("✅ [SUB_PIPELINE_CONFIG] use_existing_data set to True - will use pre-loaded data only")
 
         tprint("✅ [SUB_PIPELINE_CONFIG] Sub-pipeline configuration completed successfully")
         return config
@@ -1342,7 +1385,14 @@ class AresLauncher:
 
         return result
 
-    async def _execute_sequential_pipeline(self, pipeline_type: str, config: MainPipelineConfig, start_from_step: int = 1, stop_at_step: Optional[int] = None) -> MainPipelineResult:
+    async def _execute_sequential_pipeline(
+        self,
+        pipeline_type: str,
+        config: MainPipelineConfig,
+        start_from_step: int = 1,
+        stop_at_step: Optional[int] = None,
+        target_sub_pipeline: Optional[str] = None
+    ) -> MainPipelineResult:
         """Execute multiple sub-pipelines sequentially with parameter consistency."""
         tprint(f"🚀 [SEQUENTIAL] Starting sequential pipeline execution: {pipeline_type}")
 
@@ -1356,6 +1406,17 @@ class AresLauncher:
             step for i, step in enumerate(all_steps, 1)
             if i >= start_from_step and (stop_at_step is None or i <= stop_at_step)
         ]
+
+        if target_sub_pipeline:
+            filtered_steps = [step for step in steps if step['sub_pipeline'] == target_sub_pipeline]
+            if not filtered_steps:
+                available = ', '.join(step['sub_pipeline'] for step in all_steps)
+                raise ValueError(
+                    f"Requested sub-pipeline '{target_sub_pipeline}' is not part of the sequential "
+                    f"pipeline ({pipeline_type}). Available: {available}"
+                )
+            steps = filtered_steps
+            tprint(f"🎯 [SEQUENTIAL] Filtering steps to requested sub-pipeline: {target_sub_pipeline}")
 
         if not steps:
             raise ValueError(f"No steps to execute with start_from_step={start_from_step}, stop_at_step={stop_at_step}")
@@ -1376,12 +1437,14 @@ class AresLauncher:
         failed_steps = 0
         total_execution_time = 0.0
 
-        tprint(f"📋 [SEQUENTIAL] Executing {len(steps)} steps sequentially")
+        total_steps_to_execute = len(steps)
+        tprint(f"📋 [SEQUENTIAL] Executing {total_steps_to_execute} step{'s' if total_steps_to_execute != 1 else ''} sequentially")
         tprint(f"   Start from step: {start_from_step}")
         if stop_at_step:
             tprint(f"   Stop at step: {stop_at_step}")
         else:
-            tprint(f"   Stop at step: {len(all_steps)} (all steps)")
+            inferred_stop = start_from_step + total_steps_to_execute - 1
+            tprint(f"   Stop at step: {inferred_stop}")
         tprint(f"   Symbol: {config.symbol}")
         tprint(f"   Execution Mode: {config.execution_mode}")
         tprint(f"   Exchange: {config.exchange}")
@@ -1402,7 +1465,7 @@ class AresLauncher:
                 step_duration = (datetime.now() - step_start_time).total_seconds()
                 total_execution_time += step_duration
 
-                if step_result.status == PipelineStatus.COMPLETED:
+                if step_result.status == SubPipelineStatus.COMPLETED:
                     successful_steps += 1
                     tprint(f"✅ [SEQUENTIAL] Step {i} completed successfully in {step_duration:.2f}s")
 
@@ -1447,6 +1510,9 @@ class AresLauncher:
                 failed_steps += 1
                 error_msg = f"Exception during step execution: {str(e)}"
                 tprint(f"❌ [SEQUENTIAL] Step {i} failed with exception: {error_msg}")
+                import traceback
+                tprint(f"📋 [SEQUENTIAL] Traceback:")
+                traceback.print_exc()
 
                 # Add failed step result
                 if not hasattr(result, 'step_results'):
@@ -1501,43 +1567,80 @@ class AresLauncher:
 
             # Get the step class
             step_class_name = ''.join(word.capitalize() for word in sub_pipeline.split('_'))
+            
+            # Handle redundant naming for feature generation steps
+            if step_class_name == 'FeatureGenerationFeatureGenerationStep':
+                step_class_name = 'FeatureGenerationStep'
+            elif step_class_name == 'FeatureGenerationFeatureSelectionStep':
+                step_class_name = 'FeatureGenerationFeatureSelectionStep'
+            elif step_class_name == 'FeatureGenerationPeriodLookbackOptimizationStep':
+                step_class_name = 'FeatureGenerationPeriodLookbackOptimizationStep'
+            elif step_class_name == 'FeatureGenerationInteractionGenerationStep':
+                step_class_name = 'FeatureGenerationInteractionGenerationStep'
+            elif step_class_name == 'FeatureGenerationVectorizationStep':
+                step_class_name = 'FeatureGenerationVectorizationStep'
+            elif step_class_name == 'FeatureGenerationFinalValidationStep':
+                step_class_name = 'FeatureGenerationFinalValidationStep'
+            elif step_class_name == 'FeatureGenerationDataValidationStep':
+                step_class_name = 'FeatureGenerationDataValidationStep'
+            elif step_class_name == 'FeatureGenerationLabelingIntegrationStep':
+                step_class_name = 'FeatureGenerationLabelingIntegrationStep'
+            
             step_class = getattr(step_module, step_class_name)
 
             # Create step instance
             step = step_class()
 
-            # Execute the step
+            # Load market data for the step
+            from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
+            data_loader = UnifiedDataLoader()
+            
+            # Load the market data
+            market_data = await data_loader.load_unified_data(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                start_date=config.start_date,
+                end_date=config.end_date
+            )
+            
+            # DEBUG: Check data quality after loading
+            import numpy as np
+            print(f"🔍 [DEBUG] Data loaded: {market_data.shape}")
+            print(f"🔍 [DEBUG] Non-finite values after loading: {(~np.isfinite(market_data.select_dtypes(include=[np.number])).values).sum()}")
+            for col in market_data.select_dtypes(include=[np.number]).columns:
+                non_finite = (~np.isfinite(market_data[col])).sum()
+                if non_finite > 0:
+                    print(f"🔍 [DEBUG] {col}: {non_finite} non-finite values")
+            
+            # Execute the step with the actual market data
             result = await step.execute(
-                data=config.data,
+                data=market_data,
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
-                intensity=config.execution_mode,
-                lookback_days=config.lookback_days,
-                start_date=config.start_date,
-                end_date=config.end_date,
-                exchange=config.exchange
+                custom_overrides={}
             )
 
             # Create MainPipelineResult
             pipeline_result = MainPipelineResult(
                 pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                status=SubPipelineStatus.COMPLETED if result.get('success', False) else SubPipelineStatus.FAILED,
+                status=SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED,
                 start_time=datetime.now(),
                 end_time=datetime.now(),
                 duration_seconds=0.0,
-                error_message=result.get('error', None) if not result.get('success', False) else None
+                error_message=result.error_message if not result.success else None
             )
 
             # Add artifacts
-            pipeline_result.artifacts = result.get('artifacts', {})
+            pipeline_result.artifacts = result.artifacts if hasattr(result, 'artifacts') else {}
 
             tprint(f"✅ [FEATURE_GENERATION] Feature generation step completed: {sub_pipeline}")
             return pipeline_result
 
         except Exception as e:
             error_msg = f"Feature generation step {sub_pipeline} failed: {e}"
-            tprint_error(f"❌ {error_msg}")
+            tprint(f"❌ {error_msg}")
 
             return MainPipelineResult(
                 pipeline_id=f"feature_generation_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -2052,8 +2155,8 @@ Examples:
 
     parser.add_argument(
         '--timeframe',
-        default='1m',
-        help='Data timeframe (default: 1m; use 15m for both Analyst and Tactician steps)'
+        default='15m',
+        help='Data timeframe (default: 15m; use 1m for high-frequency analysis)'
     )
 
     parser.add_argument(
@@ -2124,14 +2227,14 @@ Examples:
         '--analyst-labeler',
         dest='shortcut_sub_pipeline',
         action='store_const',
-        const='analyst_profit_labeler',
+        const='analyst-labeler',
         help='Shortcut for Analyst profit labeler sub-pipeline.'
     )
     shortcut_group.add_argument(
         '--tactician-labeler',
         dest='shortcut_sub_pipeline',
         action='store_const',
-        const='tactician_entry_labeler',
+        const='tactician-labeler',
         help='Shortcut for Tactician entry labeler sub-pipeline.'
     )
     shortcut_group.add_argument(
@@ -2193,7 +2296,12 @@ Examples:
         '--start-from-step',
         type=int,
         default=1,
-        help='Start sequential execution from this step number (1-based). Default: 1'
+        help='Start sequential execution from this step number (1-based). Default: 1. Alternative: use --start-from-step-name with step names.'
+    )
+
+    parser.add_argument(
+        '--start-from-step-name',
+        help='Start sequential execution from this step name. Alternative to --start-from-step. Available: feature_generation_data_validation_step, feature_generation_labeling_integration_step, feature_generation_feature_generation_step, feature_generation_feature_selection_step, feature_generation_period_lookback_optimization_step, feature_generation_interaction_generation_step, feature_generation_vectorization_step, feature_generation_final_validation_step'
     )
 
     parser.add_argument(
@@ -2221,7 +2329,7 @@ Examples:
     parser.add_argument(
         '--list-feature-generation-steps',
         action='store_true',
-        help='List all available feature generation pipeline steps for sequential execution.'
+        help='List available feature generation pipeline steps with step names and numbers'
     )
 
     return parser
@@ -2308,6 +2416,9 @@ async def main():
     if shortcut_sub_pipeline:
         mode = LauncherMode.SUB_PIPELINE
         tprint("🎯 [MAIN] Launcher mode overridden to sub_pipeline due to shortcut flag")
+    elif selected_sub_pipeline and mode != LauncherMode.SEQUENTIAL:
+        mode = LauncherMode.SUB_PIPELINE
+        tprint("🎯 [MAIN] Launcher mode overridden to sub_pipeline due to --sub-pipeline argument")
 
     tprint(f"✅ [MAIN] Launcher mode converted: {mode.value}")
 
@@ -2341,6 +2452,30 @@ async def main():
     else:
         tprint("📋 [MAIN] No specific sub-pipeline provided")
 
+    # Handle step name conversion for sequential mode
+    actual_start_from_step = args.start_from_step if hasattr(args, 'start_from_step') else 1
+    if hasattr(args, 'start_from_step_name') and args.start_from_step_name and mode == LauncherMode.SEQUENTIAL:
+        tprint(f"🔄 [MAIN] Converting step name to step number: {args.start_from_step_name}")
+
+        # Map step names to step numbers for feature generation pipeline
+        step_name_to_number = {
+            'feature_generation_data_validation_step': 1,
+            'feature_generation_labeling_integration_step': 2,
+            'feature_generation_feature_generation_step': 3,
+            'feature_generation_feature_selection_step': 4,
+            'feature_generation_period_lookback_optimization_step': 5,
+            'feature_generation_interaction_generation_step': 6,
+            'feature_generation_vectorization_step': 7,
+            'feature_generation_final_validation_step': 8
+        }
+
+        if args.start_from_step_name in step_name_to_number:
+            actual_start_from_step = step_name_to_number[args.start_from_step_name]
+            tprint(f"✅ [MAIN] Step name converted: {args.start_from_step_name} -> step {actual_start_from_step}")
+        else:
+            available_steps = ', '.join(step_name_to_number.keys())
+            parser.error(f"Unknown step name: {args.start_from_step_name}. Available steps: {available_steps}")
+
     # Execute pipeline
     tprint("🚀 [MAIN] Starting pipeline execution...")
     try:
@@ -2356,7 +2491,7 @@ async def main():
             execution_mode=execution_mode,
             custom_config=custom_config,
             pipeline_type=args.pipeline_type if hasattr(args, 'pipeline_type') else 'feature_generation',
-            start_from_step=args.start_from_step if hasattr(args, 'start_from_step') else 1,
+            start_from_step=actual_start_from_step,
             stop_at_step=args.stop_at_step if hasattr(args, 'stop_at_step') else None
         )
         tprint("✅ [MAIN] Pipeline execution completed successfully")

@@ -238,13 +238,12 @@ class TrainingUtils:
         # Map string model type to ModelType enum
         model_type_enum = self._map_string_to_model_type(model_type)
 
-        # Enhanced HPO integration
+        # Enhanced HPO integration is no longer used
         if enable_enhanced_hpo and regime_labels is not None and X_regime is not None and y_regime is not None:
             try:
-                # Import enhanced HPO system
-                from src.training.steps.model_training.enhanced_regime_aware_hpo import (
-                    enhance_existing_hpo_pipeline, EnhancedCVStrategies
-                )
+                # Enhanced HPO system is no longer available
+                enhance_existing_hpo_pipeline = None
+                EnhancedCVStrategies = None
 
                 # Create enhanced HPO system
                 enhanced_hpo_config = {

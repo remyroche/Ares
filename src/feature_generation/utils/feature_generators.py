@@ -1,5 +1,4 @@
 """
-import warnings
 Enhanced Feature Generators for Lookback Optimization
 
 This module provides comprehensive feature generator functions for all
@@ -8,6 +7,7 @@ pipeline. Each generator function is optimized for hardware acceleration
 and includes safe math operations.
 """
 
+import warnings
 import pandas as pd
 import numpy as np
 from typing import Dict, Callable, Any, Optional, List, Tuple

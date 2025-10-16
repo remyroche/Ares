@@ -309,6 +309,18 @@ class ComprehensiveQualityScorer:
             # Check how recent the data is
             latest_timestamp = valid_timestamps.max()
             now = pd.Timestamp.now()
+            
+            # Ensure both timestamps have the same timezone awareness
+            if latest_timestamp.tz is not None and now.tz is None:
+                # If latest_timestamp is timezone-aware but now is not, make now timezone-aware
+                now = now.tz_localize('UTC')
+            elif latest_timestamp.tz is None and now.tz is not None:
+                # If now is timezone-aware but latest_timestamp is not, make latest_timestamp timezone-aware
+                latest_timestamp = latest_timestamp.tz_localize('UTC')
+            elif latest_timestamp.tz is not None and now.tz is not None:
+                # If both are timezone-aware, ensure they're in the same timezone
+                if latest_timestamp.tz != now.tz:
+                    latest_timestamp = latest_timestamp.tz_convert(now.tz)
 
             # Calculate age of latest data
             age = now - latest_timestamp

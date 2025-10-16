@@ -764,7 +764,19 @@ class VectorBTOptimizedOperations:
         start_time = time.time()
 
         try:
-            # Try UnifiedVectorizationManager first if available
+            # Try VectorBTRollingOptimizer first if available
+            if self.rolling_optimizer and self._should_use_rolling_optimizer_for_batch(data, operation):
+                try:
+                    result = self.rolling_optimizer.batch_process(data, operation, **kwargs)
+                    self.performance_stats['vectorbt_rolling_operations'] += 1
+                    self.logger.debug("✅ VectorBTRollingOptimizer batch processing completed")
+                    execution_time = time.time() - start_time
+                    self._update_performance_stats(execution_time)
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBTRollingOptimizer batch processing failed: {e}, falling back to UnifiedVectorizationManager")
+
+            # Try UnifiedVectorizationManager if available
             if self.vectorization_manager and self._should_use_vectorization_manager_for_batch(data, operation):
                 try:
                     result = self.vectorization_manager.batch_process(data, operation, **kwargs)

@@ -132,10 +132,12 @@ class VectorBTEnsembleOptimizer:
 
     def _configure_vectorbt(self):
         """Configure VectorBT global settings."""
-        if self.config.enable_parallel:
-            vbt.settings.parallel['threading'] = True
+        # Note: Parallel settings removed in VectorBT 0.28.1 as it's handled automatically
+        # if self.config.enable_parallel:
+        #     vbt.settings.parallel['threading'] = True
 
-        vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
+        if hasattr(vbt.settings, 'array_wrapper'):
+            vbt.settings.array_wrapper['freq'] = self.config.vectorbt_freq
 
     def optimize_ensemble(self,
                          X: Union[np.ndarray, pd.DataFrame],

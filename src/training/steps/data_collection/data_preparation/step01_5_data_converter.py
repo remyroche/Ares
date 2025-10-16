@@ -25,6 +25,42 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 from src.utils.pipeline_standards import PipelineStandards
 
+# Import utility managers
+try:
+    from src.utils.enhanced_artifact_manager import get_artifact_manager
+    from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
+    from src.utils.version_manager import get_version_manager
+except ImportError:
+    get_artifact_manager = None
+    get_artifact_pickup_utils = None
+    get_version_manager = None
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
 REQUIRED_MODULES = ['pandas', 'numpy', 'src.core.decorators', 'src.utils.logger', 'src.training.steps.data_downloader', 'pyarrow']
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 enhanced_decorators = PipelineStandards.safe_import('src.core.decorators', None)
@@ -829,6 +865,7 @@ class UnifiedDataConverter:
     async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
         try:
             self.logger.info('🔍 Running enhanced quality validation...')
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
             manager = EnhancedDataQualityManager(str(self.data_cache_dir))
             results = await manager.comprehensive_quality_check(symbol = symbol, exchange = exchange, timeframe = timeframe, check_gaps = True, fill_gaps = True, validate_format = True)
             if results.get('success', False):
@@ -1263,14 +1300,34 @@ class UnifiedDataConverter:
             ohlc_map = {}
             if 'timestamp' in unified.columns and all(col in unified.columns for col in ['open', 'high', 'low', 'close']):
                 self.logger.info(f"🔧 Creating OHLC mapping from {len(unified)} unified rows")
+                
+                # Validate and clean OHLC data before creating mapping
+                ohlc_columns = ['open', 'high', 'low', 'close']
+                for col in ohlc_columns:
+                    if col in unified.columns:
+                        # Check for non-finite values
+                        non_finite_mask = ~np.isfinite(unified[col])
+                        non_finite_count = non_finite_mask.sum()
+                        if non_finite_count > 0:
+                            self.logger.warning(f"🔧 Found {non_finite_count} non-finite values in {col} column")
+                            # Clean non-finite values using forward fill, then backward fill, then 0
+                            unified[col] = unified[col].replace([np.inf, -np.inf], np.nan)
+                            unified[col] = unified[col].fillna(method='ffill').fillna(method='bfill').fillna(0)
+                            self.logger.info(f"🔧 Cleaned {col} column: replaced {non_finite_count} non-finite values")
+                
                 for _, row in unified.iterrows():
-                    ohlc_map[row['timestamp']] = {
-                        'open': row['open'],
-                        'high': row['high'],
-                        'low': row['low'],
-                        'close': row['close']
-                    }
-                self.logger.info(f"🔧 Created OHLC mapping for {len(ohlc_map)} timestamps")
+                    # Double-check that OHLC values are finite before adding to mapping
+                    if all(np.isfinite(row[col]) for col in ohlc_columns if col in row):
+                        ohlc_map[row['timestamp']] = {
+                            'open': row['open'],
+                            'high': row['high'],
+                            'low': row['low'],
+                            'close': row['close']
+                        }
+                    else:
+                        self.logger.warning(f"🔧 Skipping timestamp {row['timestamp']} due to non-finite OHLC values")
+                
+                self.logger.info(f"🔧 Created OHLC mapping for {len(ohlc_map)} timestamps (cleaned from {len(unified)} rows)")
             else:
                 self.logger.warning("🔧 OHLC columns not available in unified data for mapping")
 
@@ -1838,50 +1895,6 @@ if __name__ == '__main__':
 
         return pd.Series(pct_change, index=series.index)
 
-        return pd.Series(pct_change, index=series.index)
-
-    async def _main() -> None:
-        ok = await run_step(symbol = args.symbol, exchange = args.exchange, timeframe = args.timeframe, data_dir = args.data_dir, force_rerun = args.force_rerun)
-        tprint('✅ Step 1.5: Data Converter completed successfully' if ok else '❌ Step 1.5: Data Converter failed')
-        gc.collect()
-    try:
-        asyncio.run(_main())
-    except KeyboardInterrupt:
-        pass
-    except Exception:
-        pass
-    finally:
-        gc.collect()
-from src.utils.enhanced_artifact_manager import get_artifact_manager
-from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-from src.utils.version_manager import get_version_manager
-
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
@@ -1910,12 +1923,13 @@ from src.utils.version_manager import get_version_manager
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            import logging
+            logging.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
+        """Perform pandas rolling operation as fallback."""
         if operation == 'mean':
             return data.rolling(window=window).mean()
         elif operation == 'std':
@@ -1940,5 +1954,21 @@ from src.utils.version_manager import get_version_manager
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            import logging
+            logging.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+
+async def _main() -> None:
+    ok = await run_step(symbol = args.symbol, exchange = args.exchange, timeframe = args.timeframe, data_dir = args.data_dir, force_rerun = args.force_rerun)
+    tprint('✅ Step 1.5: Data Converter completed successfully' if ok else '❌ Step 1.5: Data Converter failed')
+    gc.collect()
+
+try:
+    asyncio.run(_main())
+except KeyboardInterrupt:
+    pass
+except Exception:
+    pass
+finally:
+    gc.collect()

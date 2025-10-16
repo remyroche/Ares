@@ -70,6 +70,8 @@ class FeatureImportanceConfig:
     min_importance_threshold: float = 0.01
     correlation_threshold: float = 0.95
     verbose: bool = True
+    save_results: bool = True
+    output_directory: Optional[str] = None
 
 @dataclass
 class FeatureImportanceResult:
@@ -112,7 +114,7 @@ class FeatureImportanceAnalyzer:
         # Validate configuration
         self._validate_config()
 
-        tprint(f"🔍 FeatureImportanceAnalyzer initialized with methods: {[m.value for m in self.config.methods]}")
+        tprint(f"🔍 FeatureImportanceAnalyzer initialized with methods: {[m.value if hasattr(m, 'value') else m for m in self.config.methods]}")
 
     def _validate_config(self) -> None:
         """Validate the configuration."""

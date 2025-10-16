@@ -9,17 +9,30 @@ import logging
 import traceback
 import inspect
 import warnings
+import os
 from typing import Dict, List, Optional, Set
 from collections import defaultdict
 from datetime import datetime
 
 from .feature_generator import FeatureGenerator, FeatureCategory
 
-# VectorBT imports for native optimization
+# VectorBT imports for native optimization - use centralized detection
 try:
-    import vectorbt as vbt
-    from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
-    VECTORBT_AVAILABLE = True
+    # Import centralized VectorBT detection
+    from ...utils.matrix_operations import VECTORBT_AVAILABLE
+
+    if VECTORBT_AVAILABLE:
+        import vectorbt as vbt
+        from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
+    else:
+        vbt = None
+        RSI = None
+        MACD = None
+        ATR = None
+        BBANDS = None
+        STOCH = None
+        OBV = None
+        MA = None
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -30,7 +43,6 @@ except ImportError:
     STOCH = None
     OBV = None
     MA = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
 
@@ -47,8 +59,16 @@ class FeatureRegistry:
     or specific feature name.
     """
 
+    _init_done = False
+    _logged_overwrites: Set[str] = set()  # Class-level to prevent duplicate warnings
+
     def __init__(self):
         """Initialize the feature registry."""
+        if FeatureRegistry._init_done:
+            # Return early if already initialized
+            self.logger = logger.getChild('FeatureRegistry')
+            return
+
         self.logger = logger.getChild('FeatureRegistry')
 
         # Registry storage
@@ -60,7 +80,30 @@ class FeatureRegistry:
         self._registration_info: Dict[str, Dict[str, any]] = {}
         self._registration_count: int = 0
 
+        FeatureRegistry._init_done = True
         self.logger.info("FeatureRegistry initialized")
+
+    def _check_registration_limit(self) -> bool:
+        """Check if we're approaching the registration limit."""
+        max_generators = int(os.environ.get('ARES_MAX_FEATURE_GENERATORS', '1000'))
+        return self._registration_count >= max_generators
+
+    def _should_skip_registration(self, generator: FeatureGenerator) -> bool:
+        """Determine if this generator should be skipped due to limits or duplicates."""
+        # Check registration limit
+        if self._check_registration_limit():
+            self.logger.warning(f"⚠️ Registration limit ({os.environ.get('ARES_MAX_FEATURE_GENERATORS', '1000')}) reached, skipping {generator.config.name}")
+            return True
+
+        # Check for existing generator with same name and class
+        name = generator.config.name
+        if name in self._generators_by_name:
+            old_info = self._registration_info.get(name, {})
+            old_generator_class = old_info.get('generator_class', '')
+            if old_generator_class == generator.__class__.__name__:
+                return True  # Skip duplicate
+
+        return False
 
     def register(self, generator: FeatureGenerator) -> None:
         """
@@ -69,6 +112,10 @@ class FeatureRegistry:
         Args:
             generator: Feature generator to register
         """
+        # Skip registration if limits or duplicates dictate
+        if self._should_skip_registration(generator):
+            return
+
         name = generator.config.name
         category = generator.config.category
         self._registration_count += 1
@@ -76,10 +123,16 @@ class FeatureRegistry:
         # Capture registration context
         registration_context = self._capture_registration_context()
 
-        # Check for duplicate names and provide enhanced warning
-        if name in self._generators_by_name:
-            old_info = self._registration_info.get(name, {})
-            self._log_overwrite_warning(name, old_info, registration_context)
+        # Check if generator with same name already exists
+        existing_generator = self._generators_by_name.get(name)
+
+        if existing_generator:
+            if existing_generator.__class__ == generator.__class__:
+                # Same generator class - log as warning
+                self.logger.warning(f"⚠️ Overwriting existing generator: {name} (was: {existing_generator.__class__.__name__}, from: {registration_context.get('filename', 'unknown')})")
+            else:
+                # Different generator class - allow overwrite but log it as debug instead of warning
+                self.logger.debug(f"🔄 Overwriting {name} with different generator class: {generator.__class__.__name__}")
         else:
             # First registration - log with context
             self.logger.debug(f"📝 First registration of generator: {name} ({category.value})")
@@ -146,15 +199,8 @@ class FeatureRegistry:
     def _log_overwrite_warning(self, name: str, old_info: Dict[str, any], new_context: Dict[str, str]) -> None:
         """Log enhanced warning for overwriting existing generators."""
         # Extract key information
-        old_timestamp = old_info.get('timestamp', 'unknown')
         old_class = old_info.get('generator_class', 'unknown')
-        old_config = old_info.get('config', {})
-        old_period = old_config.get('period', 'unknown')
-        old_base_calc = old_config.get('base_calculation', 'unknown')
-
         new_filename = new_context.get('filename', 'unknown')
-        new_function = new_context.get('function', 'unknown')
-        new_line = new_context.get('line', 0)
 
         # Extract filename for cleaner logging
         if '/' in new_filename:
@@ -162,18 +208,10 @@ class FeatureRegistry:
         elif '\\' in new_filename:
             new_filename = new_filename.split('\\')[-1]
 
-        # Enhanced warning message
+        # Simplified warning message
         warning_msg = (
-            f"⚠️ Overwriting existing generator: {name}\n"
-            f"   📊 Previous registration:\n"
-            f"      - Class: {old_class}\n"
-            f"      - Period: {old_period}\n"
-            f"      - Base Calculation: {old_base_calc}\n"
-            f"      - Timestamp: {old_timestamp}\n"
-            f"   🔄 New registration from:\n"
-            f"      - File: {new_filename}\n"
-            f"      - Function: {new_function}\n"
-            f"      - Line: {new_line}"
+            f"⚠️ Overwriting existing generator: {name} "
+            f"(was: {old_class}, from: {new_filename})"
         )
 
         self.logger.warning(warning_msg)

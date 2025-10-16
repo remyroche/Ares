@@ -1266,15 +1266,21 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
         if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 avg_volume = self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
-                return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+                # Use safe division - replace zeros and NaN with forward fill, then small positive number
+                avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
+                return volume / avg_volume_safe
             except Exception as e:
                 # Fallback to pandas
                 avg_volume = volume.rolling(window=self.period).mean()
-                return volume / avg_volume.replace(0, 1)
+                # Use safe division - replace zeros and NaN with forward fill, then small positive number
+                avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
+                return volume / avg_volume_safe
         else:
             # Fallback to pandas
             avg_volume = volume.rolling(window=self.period).mean()
-            return volume / avg_volume.replace(0, 1)
+            # Use safe division - replace zeros and NaN with forward fill, then small positive number
+            avg_volume_safe = avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())
+            return volume / avg_volume_safe
 
         if data.empty or 'volume' not in data.columns:
             return pd.Series(dtype=float, index=data.index, name=f'volume_ratio_{self.period}')
@@ -1285,7 +1291,7 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
         if self.rolling_optimizer:
             try:
                 avg_volume = self.rolling_optimizer.rolling_mean(volume, window=self.period)
-                volume_ratio = volume / avg_volume.replace(0, 1)  # Avoid division by zero
+                volume_ratio = volume / avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())  # Avoid division by zero
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_ratio
             except Exception as e:
@@ -1296,7 +1302,7 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
         if VECTORBT_AVAILABLE:
             try:
                 avg_volume = rolling_mean(volume, window=self.period)
-                volume_ratio = volume / avg_volume.replace(0, 1)  # Avoid division by zero
+                volume_ratio = volume / avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())  # Avoid division by zero
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_ratio
             except Exception as e:
@@ -1305,7 +1311,7 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin
 
         # Final fallback to pandas
         avg_volume = volume.rolling(window=self.period).mean()
-        return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+        return volume / avg_volume.replace(0, np.nan).fillna(method='ffill').fillna(volume.mean())  # Avoid division by zero
 
 # Volume Rate of Change
 

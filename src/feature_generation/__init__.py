@@ -31,18 +31,32 @@ Usage:
         EnhancedFeatureEngineering
     )
 
-    # Initialize feature bank
-    bank = FeatureBank()
+    # Initialize feature bank (using global singleton pattern)
+    # bank = get_feature_bank()  # Access the global feature bank when needed
 
     # Generate features by category
-    features = bank.generate_features(
-        data=df,
-        categories=['returns', 'momentum', 'volume'],
-        lookback_optimization=True
-    )
+    # features = bank.generate_features(
+    #     data=df,
+    #     categories=['returns', 'momentum', 'volume'],
+    #     lookback_optimization=True
+    # )
 """
 
 import logging
+
+# Configure tprint to reduce verbosity for feature generation
+try:
+    from src.utils.tprint import configure_tprint, TPrintConfig, LogLevel
+    # Set tprint to only show WARNING and above to reduce verbosity
+    tprint_config = TPrintConfig(
+        min_log_level=LogLevel.WARNING,
+        output_to_console=True,
+        use_colors=True
+    )
+    configure_tprint(tprint_config)
+except ImportError:
+    # tprint not available, continue without configuration
+    pass
 
 # Core framework imports
 try:

@@ -46,10 +46,41 @@ from ..math_validation import (
 from ..common_operations import create_fallback_logger, safe_dataframe_operation
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.ml_common.utils import ParallelProcessor
-from ..matrix_operations import (
-    safe_correlation_matrix, m1_matrix_multiply, safe_matrix_multiply,
-    safe_matrix_inverse, get_unified_matrix_operations
-)
+# Matrix operations - use lazy imports to avoid circular dependencies
+try:
+    from ..matrix_operations import (
+        m1_matrix_multiply, safe_matrix_multiply,
+        safe_matrix_inverse, get_unified_matrix_operations
+    )
+    from src.utils.lazy_imports import safe_correlation_matrix
+except ImportError as e:
+    tprint(f"⚠️ Matrix operations not available: {e}. Using fallback implementations.")
+    # Fallback implementations
+    def m1_matrix_multiply(*args, **kwargs):
+        import numpy as np
+        return np.dot(*args, **kwargs)
+    
+    def safe_matrix_multiply(*args, **kwargs):
+        import numpy as np
+        return np.dot(*args, **kwargs)
+    
+    def safe_matrix_inverse(*args, **kwargs):
+        import numpy as np
+        return np.linalg.inv(*args, **kwargs)
+    
+    def get_unified_matrix_operations(*args, **kwargs):
+        return None
+    
+    def safe_correlation_matrix(*args, **kwargs):
+        import numpy as np
+        import pandas as pd
+        try:
+            if isinstance(args[0], pd.DataFrame):
+                return args[0].corr(**kwargs)
+            else:
+                return np.corrcoef(args[0], **kwargs)
+        except Exception:
+            return np.eye(min(args[0].shape) if hasattr(args[0], 'shape') else 2)
 from ..performance_utils import PerformanceMonitor, performance_timer, get_memory_usage
 from ..caching import intelligent_caching
 from .optimization.memory_optimization import MemoryEfficientTraining

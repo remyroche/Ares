@@ -113,8 +113,15 @@ class UnifiedVectorizationManager:
     for various machine learning and trading operations.
     """
 
+    _init_done = False
+
     def __init__(self, strategy_config: Optional[StrategySelectionConfig] = None):
         """Initialize the unified vectorization manager."""
+        if UnifiedVectorizationManager._init_done:
+            # Return early if already initialized
+            self.logger = logging.getLogger(__name__)
+            return
+
         tprint("🚀 Initializing Unified Vectorization Manager...")
         self.logger = logging.getLogger(__name__)
 
@@ -138,21 +145,30 @@ class UnifiedVectorizationManager:
         tprint("✅ Unified Vectorization Manager initialized")
         self.logger.info("✅ Unified Vectorization Manager initialized")
 
+        # Mark as initialized to prevent re-initialization
+        UnifiedVectorizationManager._init_done = True
+
     def _initialize_components(self):
         """Initialize all optimization components."""
         tprint("🔄 Initializing optimization components...")
         # Import and initialize optimization modules
         try:
-            # Matrix operations
-            tprint("🔄 Loading matrix operations...")
-            from ..matrix_operations import get_unified_matrix_operations
-            self.matrix_ops = get_unified_matrix_operations()
-            self.matrix_ops_available = True
-            tprint("✅ Matrix operations loaded")
+            # VectorBTRollingOptimizer - use registry pattern to prevent repeated initialization
+            if not hasattr(UnifiedVectorizationManager, '_vectorbt_rolling_initialized'):
+                tprint("🔄 Loading VectorBTRollingOptimizer...")
+                from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+                UnifiedVectorizationManager._vectorbt_rolling_initialized = True
+                UnifiedVectorizationManager._vectorbt_rolling_instance = self.vectorbt_rolling_optimizer
+                tprint("✅ VectorBTRollingOptimizer loaded")
+            else:
+                tprint("ℹ️ VectorBTRollingOptimizer already initialized, reusing instance")
+                self.vectorbt_rolling_optimizer = UnifiedVectorizationManager._vectorbt_rolling_instance
+            self.vectorbt_rolling_available = self.vectorbt_rolling_optimizer is not None
         except Exception as e:
-            tprint(f"⚠️ Matrix operations not available: {e}")
-            self.matrix_ops = None
-            self.matrix_ops_available = False
+            tprint(f"⚠️ VectorBTRollingOptimizer not available: {e}")
+            self.vectorbt_rolling_optimizer = None
+            self.vectorbt_rolling_available = False
 
         try:
             # Vectorized backtesting
@@ -168,24 +184,36 @@ class UnifiedVectorizationManager:
 
         # VectorBT components
         try:
-            # VectorBT backtesting engine
-            tprint("🔄 Loading VectorBT backtesting engine...")
-            from .vectorbt_backtesting_engine import VectorBTBacktestingEngine, BacktestMode as VectorBTBacktestMode
-            self.vectorbt_backtesting_engine = VectorBTBacktestingEngine()
-            self.vectorbt_backtesting_available = True
-            tprint("✅ VectorBT backtesting engine loaded")
+            # VectorBT backtesting engine - use registry pattern to prevent repeated initialization
+            if not hasattr(UnifiedVectorizationManager, '_vectorbt_backtesting_initialized'):
+                tprint("🔄 Loading VectorBT backtesting engine...")
+                from .vectorbt_backtesting_engine import VectorBTBacktestingEngine, BacktestMode as VectorBTBacktestMode
+                self.vectorbt_backtesting_engine = VectorBTBacktestingEngine()
+                UnifiedVectorizationManager._vectorbt_backtesting_initialized = True
+                UnifiedVectorizationManager._vectorbt_backtesting_instance = self.vectorbt_backtesting_engine
+                tprint("✅ VectorBT backtesting engine loaded")
+            else:
+                tprint("ℹ️ VectorBT backtesting engine already initialized, reusing instance")
+                self.vectorbt_backtesting_engine = UnifiedVectorizationManager._vectorbt_backtesting_instance
+            self.vectorbt_backtesting_available = self.vectorbt_backtesting_engine is not None
         except Exception as e:
             tprint(f"⚠️ VectorBT backtesting engine not available: {e}")
             self.vectorbt_backtesting_engine = None
             self.vectorbt_backtesting_available = False
 
         try:
-            # VectorBT financial metrics
-            tprint("🔄 Loading VectorBT financial metrics...")
-            from .vectorbt_financial_metrics import VectorBTFinancialMetrics
-            self.vectorbt_metrics = VectorBTFinancialMetrics()
-            self.vectorbt_metrics_available = True
-            tprint("✅ VectorBT financial metrics loaded")
+            # VectorBT financial metrics - use registry pattern to prevent repeated initialization
+            if not hasattr(UnifiedVectorizationManager, '_vectorbt_metrics_initialized'):
+                tprint("🔄 Loading VectorBT financial metrics...")
+                from .vectorbt_financial_metrics import VectorBTFinancialMetrics
+                self.vectorbt_metrics = VectorBTFinancialMetrics()
+                UnifiedVectorizationManager._vectorbt_metrics_initialized = True
+                UnifiedVectorizationManager._vectorbt_metrics_instance = self.vectorbt_metrics
+                tprint("✅ VectorBT financial metrics loaded")
+            else:
+                tprint("ℹ️ VectorBT financial metrics already initialized, reusing instance")
+                self.vectorbt_metrics = UnifiedVectorizationManager._vectorbt_metrics_instance
+            self.vectorbt_metrics_available = self.vectorbt_metrics is not None
         except Exception as e:
             tprint(f"⚠️ VectorBT financial metrics not available: {e}")
             self.vectorbt_metrics = None
@@ -239,17 +267,10 @@ class UnifiedVectorizationManager:
             self.technical_indicators = None
             self.technical_indicators_available = False
 
-        try:
-            # HMM operations
-            tprint("🔄 Loading HMM operations...")
-            from src.utils.hmm import EnhancedHMMCompositeManager
-            self.hmm_manager = EnhancedHMMCompositeManager()
-            self.hmm_available = True
-            tprint("✅ HMM operations loaded")
-        except Exception as e:
-            tprint(f"⚠️ HMM operations not available: {e}")
-            self.hmm_manager = None
-            self.hmm_available = False
+        # HMM operations have been deprecated and removed
+        tprint("ℹ️ HMM operations deprecated - using alternative methods")
+        self.hmm_manager = None
+        self.hmm_available = False
 
         # Hardware detection
         tprint("🔄 Detecting hardware capabilities...")
@@ -494,10 +515,10 @@ class UnifiedVectorizationManager:
         """Execute operation with GPU acceleration."""
         metadata = {'gpu_accelerated': True}
 
-        if operation_type == OperationType.MATRIX_MULTIPLICATION and self.matrix_ops:
-            # Use matrix operations for matrix multiplication
-            result = self.matrix_ops.matrix_multiply(data['a'], data['b'])
-            metadata['matrix_ops_used'] = True
+        if operation_type == OperationType.MATRIX_MULTIPLICATION and self.vectorbt_rolling_optimizer:
+            # Use VectorBTRollingOptimizer for matrix multiplication
+            result = self.vectorbt_rolling_optimizer.optimize_matrix_operations(data['a'], data['b'])
+            metadata['vectorbt_rolling_used'] = True
 
         elif operation_type == OperationType.HMM_TRAINING and self.hmm_available:
             # Use GPU-accelerated HMM training
@@ -1006,7 +1027,7 @@ class UnifiedVectorizationManager:
         stats = self.optimization_stats.copy()
         stats['hardware_capabilities'] = self.hardware_caps.copy()
         stats['available_optimizations'] = {
-            'matrix_operations': self.matrix_ops_available,
+            'vectorbt_rolling_optimizer': self.vectorbt_rolling_available,
             'backtesting': self.backtesting_available,
             'cross_validation': self.cv_available,
             'feature_selection': self.feature_selection_available,

@@ -330,11 +330,18 @@ class UnifiedLogger:
 # =============================================================================
 
 _unified_logger: Optional[UnifiedLogger] = None
+_logging_setup_done: bool = False
 
 def setup_unified_logging(config: LoggingConfig = None) -> UnifiedLogger:
     """Setup unified logging system."""
-    global _unified_logger
+    global _unified_logger, _logging_setup_done
+
+    # Prevent multiple setups
+    if _logging_setup_done:
+        return _unified_logger
+
     _unified_logger = UnifiedLogger(config)
+    _logging_setup_done = True
     return _unified_logger
 
 def get_unified_logger() -> Optional[UnifiedLogger]:

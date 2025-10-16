@@ -402,7 +402,7 @@ class VectorBTMemoryOptimizer:
             # Check if parallel settings are available in this VectorBT version
             if hasattr(vbt.settings, 'parallel') and 'enabled' in vbt.settings['parallel']:
                 vbt.settings['parallel']['enabled'] = True
-                logger.info("VectorBT parallel processing enabled")
+                logger.debug("VectorBT parallel processing enabled")
         except Exception as e:
             logger.warning(f"VectorBT parallel processing not available: {e}")
 

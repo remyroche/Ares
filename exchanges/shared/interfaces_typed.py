@@ -20,6 +20,52 @@ R = TypeVar('R')
 logger = logging.getLogger(__name__)
 
 
+# Async error handling decorator
+def handle_async_errors(
+    default_return: Any = None,
+    log_errors: bool = True,
+    reraise: bool = False
+) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
+    """Decorator for async error handling with tprint."""
+    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
+        async def wrapper(*args, **kwargs) -> Any:
+            try:
+                return await func(*args, **kwargs)
+            except Exception as e:
+                if log_errors:
+                    logger.error(f"Error in {func.__name__}: {e}")
+                    tprint(f"❌ ERROR in {func.__name__}: {e}", "ERROR")
+                
+                if reraise:
+                    raise
+                return default_return
+        return wrapper
+    return decorator
+
+
+# Sync error handling decorator  
+def handle_errors(
+    default_return: Any = None,
+    log_errors: bool = True,
+    reraise: bool = False
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """Decorator for sync error handling with tprint."""
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        def wrapper(*args, **kwargs) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if log_errors:
+                    logger.error(f"Error in {func.__name__}: {e}")
+                    tprint(f"❌ ERROR in {func.__name__}: {e}", "ERROR")
+                
+                if reraise:
+                    raise
+                return default_return
+        return wrapper
+    return decorator
+
+
 def tprint(message: str, level: str = "INFO") -> None:
     """Enhanced print function with error handling."""
     try:
@@ -432,27 +478,6 @@ def handle_errors(
         def wrapper(*args: Any, **kwargs: Any) -> T:
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
-                if log_errors:
-                    tprint(f"Error in {func.__name__}: {str(e)}", "ERROR")
-                if reraise:
-                    raise
-                return default_return
-        return wrapper
-    return decorator
-
-
-# Async error handling decorator
-def handle_async_errors(
-    default_return: Any = None,
-    log_errors: bool = True,
-    reraise: bool = False
-) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
-    """Decorator for async error handling with tprint."""
-    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
-        async def wrapper(*args: Any, **kwargs: Any) -> T:
-            try:
-                return await func(*args, **kwargs)
             except Exception as e:
                 if log_errors:
                     tprint(f"Error in {func.__name__}: {str(e)}", "ERROR")

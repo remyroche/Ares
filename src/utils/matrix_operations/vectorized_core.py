@@ -349,6 +349,63 @@ class VectorizedProcessingCore:
         except ImportError:
             pass
 
+        # Initialize hardware optimizations
+        self.m1_gpu_manager = None
+        self.m1_memory_optimizer = None
+        self.m1_cpu_optimizer = None
+
+        if hardware_config is None:
+            hardware_config = HardwareConfig()
+
+        # Initialize M1 optimizations if available
+        try:
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        except ImportError:
+            pass
+
+        # Initialize performance monitoring
+        try:
+            from ...monitoring.performance_monitor import PerformanceMonitor
+            self.performance_monitor = PerformanceMonitor(
+                enable_memory_tracking=True,
+                enable_performance_monitoring=True
+            )
+        except ImportError:
+            # Create a dummy performance monitor if not available
+            class DummyPerformanceMonitor:
+                def get_memory_usage(self): return 0
+                def get_cpu_usage(self): return 0
+                def get_performance_metrics(self): return {}
+            self.performance_monitor = DummyPerformanceMonitor()
+
+    def optimize_dataframe_for_processing(self, df):
+        """Optimize DataFrame for processing."""
+        try:
+            # Basic optimization - return the DataFrame as-is for now
+            # This is a placeholder implementation
+            return df
+        except Exception as e:
+            self.logger.warning(f"DataFrame optimization failed: {e}")
+            return df
+
+    def get_hardware_performance_report(self):
+        """Get hardware performance report."""
+        try:
+            return {
+                'memory_usage': self.performance_monitor.get_memory_usage() if hasattr(self.performance_monitor, 'get_memory_usage') else 0,
+                'cpu_usage': self.performance_monitor.get_cpu_usage() if hasattr(self.performance_monitor, 'get_cpu_usage') else 0,
+                'performance_metrics': self.performance_monitor.get_performance_metrics() if hasattr(self.performance_monitor, 'get_performance_metrics') else {}
+            }
+        except Exception as e:
+            self.logger.warning(f"Failed to get hardware performance report: {e}")
+            return {
+                'memory_usage': 0,
+                'cpu_usage': 0,
+                'performance_metrics': {}
+            }
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -472,9 +529,10 @@ class VectorizedCore:
             for col in df.select_dtypes(include=[np.number if np is not None else 'number']):
                 if NUMPY_AVAILABLE and np is not None:
                     if hasattr(df[col], 'dtype') and df[col].dtype == np.float64:
-                        # Check if float32 is sufficient
+                        # Check if float32 is sufficient and no non-finite values
                         if (df[col].max() < np.finfo(np.float32).max and
-                            df[col].min() > np.finfo(np.float32).min):
+                            df[col].min() > np.finfo(np.float32).min and
+                            np.isfinite(df[col]).all()):
                             df[col] = df[col].astype(np.float32)
                     elif hasattr(df[col], 'dtype') and df[col].dtype == np.int64:
                         # Check if smaller integer type is sufficient
@@ -485,8 +543,9 @@ class VectorizedCore:
                     if hasattr(df[col], 'dtype'):
                         if 'float64' in str(df[col].dtype):
                             try:
-                                # Try to convert to float32 if values are within range
-                                if df[col].max() < 3.4e38 and df[col].min() > -3.4e38:
+                                # Try to convert to float32 if values are within range and finite
+                                if (df[col].max() < 3.4e38 and df[col].min() > -3.4e38 and
+                                    df[col].notna().all() and not df[col].isin([np.inf, -np.inf]).any()):
                                     df[col] = df[col].astype('float32')
                             except (ValueError, OverflowError):
                                 pass
@@ -985,37 +1044,6 @@ class VectorizedCore:
             self.hardware_processor.cleanup()
             self.logger.info("🧹 Hardware resources cleaned up")
 
-# Global instance for easy access
-_vectorized_core = None
-
-def get_vectorized_processing_core() -> VectorizedProcessingCore:
-    """Get global vectorized processing core instance."""
-    global _vectorized_core
-    if _vectorized_core is None:
-        _vectorized_core = VectorizedProcessingCore()
-    return _vectorized_core
-
-# Convenience functions
-def optimize_dataframe(df: 'pd.DataFrame') -> 'pd.DataFrame':
-    """Optimize DataFrame for processing."""
-    core = get_vectorized_processing_core()
-    return core.optimize_dataframe_for_processing(df)
-
-def vectorized_rolling_features(data: 'pd.DataFrame',
-                              windows: List[int] = None,
-                              features: List[str] = None) -> 'pd.DataFrame':
-    """Create vectorized rolling features."""
-    if windows is None:
-        windows = [5, 10, 20, 50]
-    core = get_vectorized_processing_core()
-    return core.vectorized_rolling_features(data, windows, features)
-
-def matrix_correlation_analysis(data: 'pd.DataFrame',
-                              method: str = 'pearson') -> Tuple['np.ndarray', 'pd.DataFrame']:
-    """Compute matrix-based correlation analysis."""
-    core = get_vectorized_processing_core()
-    return core.matrix_correlation_analysis(data, method)
-
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
@@ -1076,3 +1104,34 @@ def matrix_correlation_analysis(data: 'pd.DataFrame',
         except Exception as e:
             self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+# Global instance for easy access
+_vectorized_core = None
+
+def get_vectorized_processing_core() -> VectorizedProcessingCore:
+    """Get global vectorized processing core instance."""
+    global _vectorized_core
+    if _vectorized_core is None:
+        _vectorized_core = VectorizedProcessingCore()
+    return _vectorized_core
+
+# Convenience functions
+def optimize_dataframe(df: 'pd.DataFrame') -> 'pd.DataFrame':
+    """Optimize DataFrame for processing."""
+    core = get_vectorized_processing_core()
+    return core.optimize_dataframe_for_processing(df)
+
+def vectorized_rolling_features(data: 'pd.DataFrame',
+                              windows: List[int] = None,
+                              features: List[str] = None) -> 'pd.DataFrame':
+    """Create vectorized rolling features."""
+    if windows is None:
+        windows = [5, 10, 20, 50]
+    core = get_vectorized_processing_core()
+    return core.vectorized_rolling_features(data, windows, features)
+
+def matrix_correlation_analysis(data: 'pd.DataFrame',
+                              method: str = 'pearson') -> Tuple['np.ndarray', 'pd.DataFrame']:
+    """Compute matrix-based correlation analysis."""
+    core = get_vectorized_processing_core()
+    return core.matrix_correlation_analysis(data, method)

@@ -6,7 +6,6 @@ from src.training.steps.standardized_parquet_handler import standardized_parquet
 import numpy as np
 
 """Unified Data Loader for Step1_5 Data.
-from src.utils.logger import system_logger
 
 This module provides secure, decorated access to data created by step1_5_data_converter.
 It includes comprehensive validation for file paths, data formats, sizes, and string sanitization.
@@ -30,12 +29,8 @@ from src.utils.common_operations import (
     safe_copy
 )
 
-# Import logger with fallback
-try:
-    from src.utils.logger import get_logger
-    system_logger = get_logger(__name__)
-except ImportError:
-    system_logger = logging.getLogger(__name__)
+# Create a logger for UnifiedDataLoader
+unified_data_loader_logger = logging.getLogger('UnifiedDataLoader')
 
 # Import core domain functions with fallbacks
 try:
@@ -99,7 +94,8 @@ class UnifiedDataLoader:
             config: Configuration dictionary
         """
         self.config = config or {}
-        self.logger = system_logger.getChild('UnifiedDataLoader')
+        # Use the fallback logger
+        self.logger = unified_data_loader_logger
         self.expected_schema = {
             'timestamp': 'int64',
             'open': 'float64',
@@ -159,8 +155,8 @@ class UnifiedDataLoader:
             timeframe = sanitize_string(timeframe)
             data_dir = sanitize_string(data_dir)
 
-            # Construct data path
-            data_path = Path(data_dir) / 'unified' / exchange / symbol / timeframe
+            # Construct data path - data is in historical_data/{exchange}/{symbol}/processed/{symbol}_{timeframe}/
+            data_path = Path(data_dir) / exchange.lower() / symbol.lower() / 'processed' / f"{symbol.lower()}_{timeframe}"
 
             if not data_path.exists():
                 self.logger.error(f"Data path does not exist: {data_path}")
@@ -172,13 +168,63 @@ class UnifiedDataLoader:
                 self.logger.error(f"No parquet files found in {data_path}")
                 return None
 
-            # Load the most recent file
-            latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
-
-            # Load data
-            data = await self._load_data_file(latest_file, columns)
-            if data is None:
-                return None
+            # Load data from multiple files if date filters are applied
+            if start_date or end_date:
+                # Load all files and combine them for date filtering
+                all_data = []
+                for file_path in parquet_files:
+                    file_data = await self._load_data_file(file_path, columns)
+                    if file_data is not None and not file_data.empty:
+                        all_data.append(file_data)
+                
+                if not all_data:
+                    self.logger.error("No data loaded from any parquet files")
+                    return None
+                
+                # DEBUG: Check data quality before concatenation
+                import numpy as np
+                print(f"🔍 [DEBUG] UnifiedDataLoader - About to concatenate {len(all_data)} files")
+                total_non_finite_before = 0
+                for i, df in enumerate(all_data):
+                    non_finite = (~np.isfinite(df.select_dtypes(include=[np.number])).values).sum()
+                    total_non_finite_before += non_finite
+                    print(f"🔍 [DEBUG] UnifiedDataLoader - File {i}: shape={df.shape}, non-finite={non_finite}")
+                    if non_finite > 0:
+                        for col in df.select_dtypes(include=[np.number]).columns:
+                            col_non_finite = (~np.isfinite(df[col])).sum()
+                            if col_non_finite > 0:
+                                print(f"🔍 [DEBUG] UnifiedDataLoader - File {i} {col}: {col_non_finite} non-finite values")
+                                # Find the exact rows with non-finite values
+                                non_finite_mask = ~np.isfinite(df[col])
+                                non_finite_rows = df[non_finite_mask].index.tolist()
+                                print(f"🔍 [DEBUG] UnifiedDataLoader - File {i} {col}: Non-finite values at rows: {non_finite_rows[:5]}")
+                
+                # Combine all data
+                data = pd.concat(all_data, ignore_index=True)
+                
+                # DEBUG: Check data quality after concatenation
+                total_non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+                print(f"🔍 [DEBUG] UnifiedDataLoader - After concat: shape={data.shape}, non-finite={total_non_finite_after}")
+                if total_non_finite_after != total_non_finite_before:
+                    print(f"🔍 [DEBUG] UnifiedDataLoader - WARNING: Non-finite values changed during concatenation: {total_non_finite_before} -> {total_non_finite_after}")
+                if total_non_finite_after > 0:
+                    for col in data.select_dtypes(include=[np.number]).columns:
+                        col_non_finite = (~np.isfinite(data[col])).sum()
+                        if col_non_finite > 0:
+                            print(f"🔍 [DEBUG] UnifiedDataLoader - After concat {col}: {col_non_finite} non-finite values")
+                            # Find the exact rows with non-finite values
+                            non_finite_mask = ~np.isfinite(data[col])
+                            non_finite_rows = data[non_finite_mask].index.tolist()
+                            print(f"🔍 [DEBUG] UnifiedDataLoader - After concat {col}: Non-finite values at rows: {non_finite_rows[:5]}")
+                # Remove duplicates based on timestamp
+                if 'timestamp' in data.columns:
+                    data = data.drop_duplicates(subset=['timestamp'], keep='first')
+            else:
+                # Load the most recent file only
+                latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
+                data = await self._load_data_file(latest_file, columns)
+                if data is None:
+                    return None
 
             # Apply date filters if provided
             if start_date or end_date:
@@ -199,7 +245,10 @@ class UnifiedDataLoader:
                 if duplicates_removed > 0:
                     self.logger.warning(f"🧹 Removed {duplicates_removed} duplicate timestamps during data loading")
 
-            self.logger.info(f"Successfully loaded {len(data)} rows from {latest_file}")
+            if start_date or end_date:
+                self.logger.info(f"Successfully loaded {len(data)} rows from {len(parquet_files)} files")
+            else:
+                self.logger.info(f"Successfully loaded {len(data)} rows from {latest_file}")
             return data
 
         except Exception as e:
@@ -214,19 +263,63 @@ class UnifiedDataLoader:
             else:
                 data = safe_read_parquet(file_path)
 
-            if data is None or len(data) == 0:
+            if data is None or data.empty:
                 self.logger.error(f"No data loaded from {file_path}")
                 return None
+
+            # DEBUG: Check data quality immediately after parquet read
+            import numpy as np
+            non_finite = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+            if non_finite > 0:
+                print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite} non-finite values IMMEDIATELY after parquet read")
+                for col in data.select_dtypes(include=[np.number]).columns:
+                    col_non_finite = (~np.isfinite(data[col])).sum()
+                    if col_non_finite > 0:
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: {col_non_finite} non-finite values")
+                        # Find the exact rows with non-finite values
+                        non_finite_mask = ~np.isfinite(data[col])
+                        non_finite_rows = data[non_finite_mask].index.tolist()
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: Non-finite values at rows: {non_finite_rows[:10]}")
+                        # Show the actual values
+                        non_finite_values = data.loc[non_finite_mask, col].tolist()
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: Non-finite values: {non_finite_values[:10]}")
+                        # Show context around the first non-finite value
+                        if len(non_finite_rows) > 0:
+                            first_bad_row = non_finite_rows[0]
+                            bad_positions = np.flatnonzero(non_finite_mask)
+                            if bad_positions.size > 0:
+                                first_bad_pos = int(bad_positions[0])
+                                start_idx = max(0, first_bad_pos - 2)
+                                end_idx = min(len(data), first_bad_pos + 3)
+                                context_cols = [c for c in ['timestamp', 'open', 'high', 'low', 'close', 'volume'] if c in data.columns]
+                                context_window = data.iloc[start_idx:end_idx]
+                                if context_cols:
+                                    context_window = context_window[context_cols]
+                                print(
+                                    f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: "
+                                    f"Context around index {first_bad_row} (position {first_bad_pos}):"
+                                )
+                                print(f"🔍 [DEBUG] Context:\n{context_window}")
 
             # Convert timestamp index to column if it exists
             if data.index.name == 'timestamp' or (hasattr(data.index, 'name') and data.index.name == 'timestamp'):
                 data = data.reset_index()
                 self.logger.info("Converted timestamp index to column")
+                # DEBUG: Check if timestamp conversion introduced non-finite values
+                non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+                if non_finite_after > non_finite:
+                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
             elif 'timestamp' not in data.columns and hasattr(data.index, 'dtype') and 'datetime' in str(data.index.dtype):
                 # If the index is datetime but not named 'timestamp', rename it
                 data = data.reset_index()
                 data = data.rename(columns={'index': 'timestamp'})
                 self.logger.info("Converted datetime index to timestamp column")
+                # DEBUG: Check if timestamp conversion introduced non-finite values
+                non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
+                if non_finite_after > non_finite:
+                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
+
+            data = self._inject_partition_metadata(data, file_path)
 
             if len(data) > self.max_rows:
                 self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
@@ -237,8 +330,81 @@ class UnifiedDataLoader:
         except Exception as e:
             self.logger.exception(f"Error loading file {file_path}: {e}")
             return None
-    @log_all_calls
+    def _extract_metadata_from_path(self, file_path: Path) -> Dict[str, Any]:
+        """Extract partition metadata (exchange, symbol, timeframe, year, month, day) from file path."""
+        metadata: Dict[str, Any] = {}
+        parts = file_path.parts
 
+        try:
+            root_idx = parts.index('historical_data')
+        except ValueError:
+            root_idx = None
+
+        if root_idx is not None:
+            if len(parts) > root_idx + 1:
+                metadata['exchange'] = parts[root_idx + 1].upper()
+            if len(parts) > root_idx + 2:
+                metadata['symbol'] = parts[root_idx + 2].upper()
+            if len(parts) > root_idx + 4:
+                dataset_part = parts[root_idx + 4]
+                timeframe_value = dataset_part.split('_', 1)[1] if '_' in dataset_part else dataset_part
+                metadata['timeframe'] = timeframe_value
+
+        for part in parts:
+            if part.startswith('year='):
+                value = part.split('=', 1)[1]
+                try:
+                    metadata['year'] = int(value)
+                except ValueError:
+                    self.logger.warning(f"Invalid year partition value '{value}' in {file_path}")
+            elif part.startswith('month='):
+                value = part.split('=', 1)[1]
+                try:
+                    metadata['month'] = int(value)
+                except ValueError:
+                    self.logger.warning(f"Invalid month partition value '{value}' in {file_path}")
+            elif part.startswith('day='):
+                value = part.split('=', 1)[1]
+                try:
+                    metadata['day'] = int(value)
+                except ValueError:
+                    self.logger.warning(f"Invalid day partition value '{value}' in {file_path}")
+
+        return metadata
+
+    def _inject_partition_metadata(self, data: pd.DataFrame, file_path: Path) -> pd.DataFrame:
+        """Ensure required metadata columns are present using partition information and timestamps."""
+        metadata = self._extract_metadata_from_path(file_path)
+
+        for column, value in metadata.items():
+            if value is None:
+                continue
+
+            value_to_assign = str(value) if column in {'exchange', 'symbol', 'timeframe'} else value
+            if column in data.columns:
+                if data[column].isna().all():
+                    data[column] = value_to_assign
+            else:
+                data[column] = value_to_assign
+
+        if 'day' not in data.columns or data['day'].isna().all():
+            if 'timestamp' in data.columns:
+                timestamp_series = data['timestamp']
+                if timestamp_series.dtype.kind in {'i', 'u'}:
+                    ts = pd.to_datetime(timestamp_series, unit='ms', errors='coerce', utc=True)
+                else:
+                    ts = pd.to_datetime(timestamp_series, errors='coerce', utc=True)
+
+                if ts.notna().any():
+                    day_values = ts.dt.day
+                    if not day_values.isna().any():
+                        data['day'] = day_values.astype('int8')
+                    else:
+                        data['day'] = day_values
+
+        return data
+
+    @log_all_calls
     def _apply_date_filters(self, data: pd.DataFrame, start_date: Optional[str], end_date: Optional[str]) -> pd.DataFrame:
         """Apply date filters to the data."""
         try:
@@ -248,17 +414,17 @@ class UnifiedDataLoader:
 
             # Convert timestamp to datetime if needed
             if data['timestamp'].dtype.kind in ['i', 'f']:
-                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms')
+                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms', utc=True)
             elif data['timestamp'].dtype.kind != 'M':
-                data['timestamp'] = pd.to_datetime(data['timestamp'])
+                data['timestamp'] = pd.to_datetime(data['timestamp'], utc=True)
 
-            # Apply filters
+            # Apply filters - ensure timezone consistency
             if start_date:
-                start_dt = pd.to_datetime(start_date)
+                start_dt = pd.to_datetime(start_date, utc=True)
                 data = data[data['timestamp'] >= start_dt]
 
             if end_date:
-                end_dt = pd.to_datetime(end_date)
+                end_dt = pd.to_datetime(end_date, utc=True)
                 data = data[data['timestamp'] <= end_dt]
 
             return data

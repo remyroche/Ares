@@ -115,10 +115,20 @@ except ImportError as e:
 
 # Convenience functions for common operations
 try:
+    # Import safe_correlation_matrix directly from unified_operations to avoid circular import
+    # Use lazy import to avoid circular dependency issues
+    _safe_correlation_matrix = None
+
+    def safe_correlation_matrix(data):
+        """Lazy import and call safe_correlation_matrix to avoid circular imports."""
+        global _safe_correlation_matrix
+        if _safe_correlation_matrix is None:
+            from .unified_operations import safe_correlation_matrix as _safe_correlation_matrix
+        return _safe_correlation_matrix(data)
+
     from .convenience import (
         # Matrix operations
         safe_matrix_multiply,
-        safe_correlation_matrix,
         safe_matrix_inverse,
         safe_matrix_operations,
         validate_matrix_properties,
@@ -220,14 +230,28 @@ except ImportError as e:
     VECTORIZED_CORRELATIONS_AVAILABLE = False
     logger.warning(f"Vectorized correlations not available: {e}")
 
-# VectorBT optimizations
-try:
-    import vectorbt as vbt
-    VECTORBT_AVAILABLE = True
-except ImportError as e:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    logger.warning(f"VectorBT not available: {e}")
+# VectorBT detection - single source of truth to prevent inconsistency
+def _detect_vectorbt_availability():
+    """Detect VectorBT availability once and cache the result."""
+    if hasattr(_detect_vectorbt_availability, '_cached_result'):
+        return _detect_vectorbt_availability._cached_result
+
+    try:
+        import vectorbt as vbt
+        result = True
+    except ImportError as e:
+        result = False
+        vbt = None
+        # Only log warning once per session to reduce noise
+        if not hasattr(logger, '_vectorbt_warned'):
+            logger.warning(f"VectorBT not available: {e}")
+            logger._vectorbt_warned = True
+
+    _detect_vectorbt_availability._cached_result = result
+    return result
+
+# VectorBT optimizations - only warn once
+VECTORBT_AVAILABLE = _detect_vectorbt_availability()
 
 # VectorBT optimized operations
 try:

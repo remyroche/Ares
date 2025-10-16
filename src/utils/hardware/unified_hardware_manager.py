@@ -449,7 +449,14 @@ class AdaptiveTaskScheduler:
 class UnifiedHardwareManager:
     """Unified hardware management system."""
 
+    _init_done = False
+
     def __init__(self, config: Optional[HardwareConfig] = None):
+        if UnifiedHardwareManager._init_done:
+            # Return early if already initialized
+            self.logger = logger.getChild('UnifiedHardwareManager')
+            return
+
         self.config = config or HardwareConfig()
         self.logger = logger.getChild('UnifiedHardwareManager')
 
@@ -486,6 +493,9 @@ class UnifiedHardwareManager:
 
             self.is_initialized = True
             self.logger.info("✅ Unified Hardware Manager fully initialized")
+
+            # Mark as initialized to prevent re-initialization
+            UnifiedHardwareManager._init_done = True
             return True
 
         except Exception as e:

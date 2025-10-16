@@ -125,7 +125,8 @@ class SimplifiedConfig:
         self.config.feature_selection.multi_objective.max_generations = 20  # Reduced from 100
         self.config.feature_selection.multi_objective.population_size = 10  # Reduced from 50
         self.config.feature_selection.cv_config.n_splits = 2  # Reduced from 5
-        self.config.feature_selection.cv_config.test_size = 0.4  # Larger test set
+        self.config.feature_selection.cv_config.test_size = 0.3  # Larger test set
+        self.config.feature_selection.cv_config.train_size = 0.6  # Ensure fractions don't exceed 1
         self.config.feature_selection.max_computation_time = 120.0  # 2 minutes
 
         # Light vectorization - same structure, reduced parameters

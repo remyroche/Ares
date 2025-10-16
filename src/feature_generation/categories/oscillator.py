@@ -1714,7 +1714,8 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
             return natr
 
-# PFE (Polarized Fractal Efficiency)class PFEGenerator(VectorizedFeatureGenerator):
+# PFE (Polarized Fractal Efficiency)
+class PFEGenerator(VectorizedFeatureGenerator):
     """Generator for PFE (Polarized Fractal Efficiency) with different base calculations."""
 
     def __init__(self,
@@ -1779,7 +1780,8 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
         return pfe
 
-# T3 (T3 Moving Average)class T3Generator(VectorizedFeatureGenerator):
+# T3 (T3 Moving Average)
+class T3Generator(VectorizedFeatureGenerator):
     """Generator for T3 (T3 Moving Average) with different base calculations."""
 
     def __init__(self,
@@ -1841,7 +1843,8 @@ class NATRGenerator(VectorizedFeatureGenerator):
 
         return t3
 
-# KAMA (Kaufman's Adaptive Moving Average)class KAMAGenerator(VectorizedFeatureGenerator):
+# KAMA (Kaufman's Adaptive Moving Average)
+class KAMAGenerator(VectorizedFeatureGenerator):
     """Generator for KAMA (Kaufman's Adaptive Moving Average) with different base calculations."""
 
     def __init__(self,

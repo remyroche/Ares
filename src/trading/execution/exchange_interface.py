@@ -35,8 +35,8 @@ from exchanges.shared import (
     HighLevelRiskManager, HighLevelBalanceManager, HighLevelRateLimitManager
 )
 
-from ...exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
-from ...exchanges.shared import (
+from exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
+from exchanges.shared import (
     # Auth
     AuthenticationManager, APIKeyManager, TimeSyncManager, SubaccountManager,
     # Market
@@ -54,7 +54,7 @@ from ...exchanges.shared import (
     # Reliability
     RateLimitManager, RetryManager, AuditLogger, SystemStatusManager
 )
-from ...exchanges.shared.interfaces_typed import (
+from exchanges.shared.interfaces_typed import (
     IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
     IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager,
     tprint, DataSource, ValidationResult
@@ -1200,6 +1200,12 @@ class ExchangeInterface:
 
         except Exception as e:
             tprint(f"❌ Error in error handler: {e}", "ERROR")
+
+class SimulatedExchange:
+    """Stub class for SimulatedExchange - to be implemented"""
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        pass
 
 # Factory function for creating exchange interfaces
 def create_exchange_interface(config: Dict[str, Any]) -> ExchangeInterface:

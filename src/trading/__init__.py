@@ -31,7 +31,7 @@ from .data import *
 from .utils import *
 from .sizing import *
 from .signal_generation import *
-from .backtesting import *
+# from .backtesting import *  # Module not found - commented out
 from .reporting import *
 from .integration import *
 

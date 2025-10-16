@@ -41,11 +41,18 @@ try:
     from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
     from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
     from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.matrix_operations import get_unified_matrix_operations
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    logger.warning("⚠️ Optimization utilities not available - using standard operations")
+    logger.debug("⚠️ Hardware optimization utilities not available - using standard operations")
+
+# Import matrix operations separately to handle circular imports
+try:
+    from src.utils.matrix_operations import get_unified_matrix_operations
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPERATIONS_AVAILABLE = False
+    logger.debug("⚠️ Matrix operations not available - using standard operations")
 
 # Import common operations utilities
 try:
@@ -103,7 +110,7 @@ class TemporalAnalyzer:
             self.cpu_optimizer = None
 
         try:
-            if OPTIMIZATION_AVAILABLE and MATRIX_OPERATIONS_AVAILABLE:
+            if MATRIX_OPERATIONS_AVAILABLE:
                 self.matrix_ops = get_unified_matrix_operations()
                 _LOGGER.info("✅ Unified matrix operations initialized for temporal analysis")
             else:

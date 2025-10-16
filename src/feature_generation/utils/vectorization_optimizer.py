@@ -134,9 +134,10 @@ class VectorizationOptimizer:
         # Optimize numeric columns
         for col in optimized_df.select_dtypes(include=[np.number]).columns:
             if optimized_df[col].dtype == np.float64:
-                # Check if float32 is sufficient
+                # Check if float32 is sufficient and no non-finite values
                 if (optimized_df[col].max() < np.finfo(np.float32).max and
-                    optimized_df[col].min() > np.finfo(np.float32).min):
+                    optimized_df[col].min() > np.finfo(np.float32).min and
+                    np.isfinite(optimized_df[col]).all()):
                     optimized_df[col] = optimized_df[col].astype(np.float32)
             elif optimized_df[col].dtype == np.int64:
                 # Check if int32 is sufficient

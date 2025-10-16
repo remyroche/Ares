@@ -920,7 +920,7 @@ class FeatureGenerationOptimizer:
                         from ..categories.interaction import InteractionFeatureGenerator
 
                         # Factory functions for complex generators
-                        from ..categories.microstructure import create_default_microstructure_generators
+                        from ..categories.microstructure_features import create_default_microstructure_generators
                         from ..categories.order_flow import create_default_order_flow_generators
                         from ..categories.cross_timeframe import create_default_cross_timeframe_generators
                         from ..categories.entropy import create_default_entropy_generators

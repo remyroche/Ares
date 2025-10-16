@@ -76,7 +76,7 @@ class CoverageConstrainedClusteringComponent(BaseMarketAnalysisComponent):
 				"target_coverage": cfg.target_coverage,
 			}
 
-			return ComponentResult(success=True, artifacts=artifacts, metadata=metadata)
+			return ComponentResult(success=True, metadata={**metadata, 'artifacts': artifacts})
 		except Exception as e:
 			self.logger.exception(f"Coverage-constrained clustering failed: {e}")
-			return ComponentResult(success=False, artifacts={}, error_message=str(e))
+			return ComponentResult(success=False, metadata={'artifacts': {}}, error_message=str(e))

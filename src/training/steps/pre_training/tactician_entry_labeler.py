@@ -67,18 +67,19 @@ from src.utils.matrix_operations import (
 )
 
 # Import VectorBT optimizer for enhanced performance
-from .profit_labeling.vectorbt_optimizer import (
-    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean,
-    optimized_rolling_std, optimized_volatility, optimized_returns
-)
+# from .profit_labeling.vectorbt_optimizer import (
+#     get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean,
+#     optimized_rolling_std, optimized_volatility, optimized_returns
+# )
 from src.utils.ml_common.optimization.grid_utils import (
     generate_grid,
     build_coarse_grid_from_search_space,
     GridSearchOptimizer
 )
-from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentResult
+from src.training.steps.pre_training.components.component_factory import ComponentConfig
 from src.training.steps.pre_training.components.contracts import PipelineState
-from src.training.steps.pre_training.components.component_factory import register_component
+from src.training.steps.pre_training.components import ComponentFactory
 from src.training.steps.pre_training.validation.schemas import validate_raw_ohlcv, SchemaValidationException
 
 @dataclass
@@ -103,13 +104,20 @@ class TacticianLabelingConfig:
     # Regime-aware settings
     enable_regime_adaptive_labeling: bool = True
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    
+    # VectorBT configuration
+    vectorbt_config: Dict[str, Any] = field(default_factory=lambda: {
+        'enabled': True,
+        'threshold': 1000,
+        'optimization_level': 'balanced'
+    })
 
     # Trading direction settings
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
 
     # VectorBT optimization settings
-    vectorbt_config: Optional[VectorBTConfig] = None
+    # vectorbt_config: Optional[VectorBTConfig] = None
 
 class TacticianDifferentiatedLabeler:
     """Create differentiated entry timing labels for the Tactician pipeline."""
@@ -126,14 +134,15 @@ class TacticianDifferentiatedLabeler:
         tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
 
         # Initialize VectorBT optimizer for enhanced performance
-        vectorbt_config = self.config.vectorbt_config or VectorBTConfig(
-            enable_vectorbt=True,
-            vectorbt_threshold=1000,
-            performance_monitoring=True,
-            memory_efficiency_mode=True
-        )
-        self.vectorbt_optimizer = get_vectorbt_optimizer(vectorbt_config)
-        tprint_info(f"⚡ VectorBT optimizer initialized: {self.vectorbt_optimizer.__class__.__name__}")
+        # vectorbt_config = self.config.vectorbt_config or VectorBTConfig(
+        #     enable_vectorbt=True,
+        #     vectorbt_threshold=1000,
+        #     performance_monitoring=True,
+        #     memory_efficiency_mode=True
+        # )
+        # self.vectorbt_optimizer = get_vectorbt_optimizer(vectorbt_config)
+        # tprint_info(f"⚡ VectorBT optimizer initialized: {self.vectorbt_optimizer.__class__.__name__}")
+        self.vectorbt_optimizer = None
 
         # Initialize M1 optimizations if available
         self.m1_integration = integrate_with_m1_optimizers()
@@ -211,7 +220,7 @@ class TacticianDifferentiatedLabeler:
 
         # Validate input data format and constraints
         try:
-            data = validate_raw_ohlcv(data, context='tactician_entry_labeler.input_validation')
+            data = validate_raw_ohlcv(data)
             tprint_info(f"✅ Input data validated: {len(data)} rows, {len(data.columns)} columns")
         except SchemaValidationException as e:
             tprint_error(f"❌ Input data validation failed: {e}")
@@ -285,7 +294,7 @@ class TacticianDifferentiatedLabeler:
         scores = np.zeros(len(entry_indices))
 
         # Use VectorBT for optimized rolling operations if data is large enough
-        if len(data) >= self.vectorbt_optimizer.config.vectorbt_threshold:
+        if self.vectorbt_optimizer is not None and len(data) >= self.vectorbt_optimizer.config.vectorbt_threshold:
             tprint_info(f"⚡ Using VectorBT optimization for {len(data)} samples")
             scores = self._calculate_vectorized_quality_scores(
                 data, entry_indices, future_window_starts, future_window_ends,
@@ -362,7 +371,7 @@ class TacticianDifferentiatedLabeler:
         tprint_info(f"📈 Score range: {scores.min():.4f} - {scores.max():.4f}")
 
         # Use VectorBT for optimized peak detection on large datasets
-        if len(scores) >= self.vectorbt_optimizer.config.vectorbt_threshold:
+        if self.vectorbt_optimizer is not None and len(scores) >= self.vectorbt_optimizer.config.vectorbt_threshold:
             tprint_info(f"⚡ Using VectorBT optimization for peak detection on {len(scores)} scores")
             filtered_labels = self._vectorbt_peak_filtering(labels, scores, indices)
         else:
@@ -772,7 +781,6 @@ class TacticianDifferentiatedLabeler:
             'min_favorable_movement_pct': self.config.min_favorable_movement_pct
         }
 
-@register_component('tactician_entry_labeler')
 class TacticianEntryLabelerComponent(BasePreTrainingComponent):
     """
     Component wrapper for Tactician Entry Labeler.
@@ -781,7 +789,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
     and handles proper error handling, reporting, and pipeline state management.
     """
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the Tactician entry labeler component."""
         tprint_info("🚀 Initializing TacticianEntryLabelerComponent")
         super().__init__(config)
@@ -792,8 +800,8 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
         tprint_info("⚙️ Created default Tactician labeling configuration")
 
         # Override with custom parameters if provided
-        if self.config and self.config.custom_params:
-            custom_params = self.config.custom_params
+        if self.config and isinstance(self.config, dict) and self.config.get('custom_params'):
+            custom_params = self.config.get('custom_params', {})
             tprint_info(f"🔧 Applying {len(custom_params)} custom parameters")
 
             # Update parameters
@@ -806,18 +814,18 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     tprint_info(f"   → {key}: {custom_params[key]}")
 
             # Handle VectorBT configuration
-            if 'vectorbt_config' in custom_params:
-                vectorbt_params = custom_params['vectorbt_config']
-                tactician_config.vectorbt_config = VectorBTConfig(**vectorbt_params)
-                tprint_info("⚡ Applied custom VectorBT configuration")
-            elif 'enable_vectorbt' in custom_params:
-                # Create VectorBT config with basic settings
-                tactician_config.vectorbt_config = VectorBTConfig(
-                    enable_vectorbt=custom_params.get('enable_vectorbt', True),
-                    vectorbt_threshold=custom_params.get('vectorbt_threshold', 1000),
-                    performance_monitoring=custom_params.get('performance_monitoring', True)
-                )
-                tprint_info("⚡ Created basic VectorBT configuration")
+            # if 'vectorbt_config' in custom_params:
+            #     vectorbt_params = custom_params['vectorbt_config']
+            #     tactician_config.vectorbt_config = VectorBTConfig(**vectorbt_params)
+            #     tprint_info("⚡ Applied custom VectorBT configuration")
+            # elif 'enable_vectorbt' in custom_params:
+            #     # Create VectorBT config with basic settings
+            #     tactician_config.vectorbt_config = VectorBTConfig(
+            #         enable_vectorbt=custom_params.get('enable_vectorbt', True),
+            #         vectorbt_threshold=custom_params.get('vectorbt_threshold', 1000),
+            #         performance_monitoring=custom_params.get('performance_monitoring', True)
+            #     )
+            #     tprint_info("⚡ Created basic VectorBT configuration")
 
         # Create the labeler
         try:
@@ -944,9 +952,9 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'n_horizons': 1,
                     'method': 'tactician_entry_labeling',
                     'metadata': {
-                        'symbol': self.config.symbol if self.config else 'UNKNOWN',
-                        'exchange': self.config.exchange if self.config else 'UNKNOWN',
-                        'timeframe': self.config.timeframe if self.config else '15m',
+                        'symbol': pipeline_state.get('symbol', 'UNKNOWN'),
+                        'exchange': pipeline_state.get('exchange', 'UNKNOWN'),
+                        'timeframe': pipeline_state.get('timeframe', '15m'),
                         'label_focus': 'entry_timing',
                         'regime_aware': bool(regime_assignments is not None),
                         'processing_time': processing_time,
@@ -969,11 +977,11 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             # Create result
             result = ComponentResult(
                 success=True,
-                data=label_df,
-                artifacts=artifacts,
+                processed_data=label_df,
                 metadata={
                     'component': 'tactician_entry_labeler',
-                    'timeframe': self.config.timeframe if self.config else '15m',
+                    'timeframe': self.config.get('parameters', {}).get('timeframe', '15m') if self.config and isinstance(self.config, dict) else '15m',
+                    'artifacts': artifacts,
                     'n_entry_points': int((labels > 0).sum()),
                     'quality_metrics': quality_metrics,
                     'direction_settings': {
@@ -1066,7 +1074,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'component': 'tactician_entry_labeler',
                     'timestamp': datetime.now().isoformat(),
                     'execution_time': processing_time,
-                    'timeframe': self.config.timeframe if self.config else '15m',
+                    'timeframe': self.config.get('parameters', {}).get('timeframe', '15m') if self.config and isinstance(self.config, dict) else '15m',
                     'configuration': {
                         'min_entry_window_minutes': self.labeler.config.min_entry_window_minutes,
                         'max_entry_window_minutes': self.labeler.config.max_entry_window_minutes,
@@ -1079,9 +1087,9 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'enable_penalty_system': self.labeler.config.enable_penalty_system,
                         'risk_aversion': self.labeler.config.risk_aversion,
                         'vectorbt_config': {
-                            'enable_vectorbt': self.labeler.config.vectorbt_config.enable_vectorbt if self.labeler.config.vectorbt_config else False,
-                            'vectorbt_threshold': self.labeler.config.vectorbt_config.vectorbt_threshold if self.labeler.config.vectorbt_config else 1000,
-                            'performance_monitoring': self.labeler.config.vectorbt_config.performance_monitoring if self.labeler.config.vectorbt_config else False,
+                            'enable_vectorbt': self.labeler.config.vectorbt_config.get('enabled', False) if self.labeler.config.vectorbt_config else False,
+                            'vectorbt_threshold': self.labeler.config.vectorbt_config.get('threshold', 1000) if self.labeler.config.vectorbt_config else 1000,
+                            'performance_monitoring': self.labeler.config.vectorbt_config.get('optimization_level', 'balanced') if self.labeler.config.vectorbt_config else 'balanced',
                         } if self.labeler.config.vectorbt_config else None,
                     },
                     'results': {
@@ -1114,7 +1122,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'eligible_samples': int(eligibility_df.iloc[:, 0].sum()) if len(eligibility_df) > 0 else 0,
                         'eligibility_rate': float(eligibility_df.iloc[:, 0].sum() / len(eligibility_df) * 100) if len(eligibility_df) > 0 else 0.0,
                     },
-                    'vectorbt_performance': self.labeler.vectorbt_optimizer.get_performance_summary() if hasattr(self.labeler, 'vectorbt_optimizer') else None,
+                    'vectorbt_performance': self.labeler.vectorbt_optimizer.get_performance_summary() if hasattr(self.labeler, 'vectorbt_optimizer') and self.labeler.vectorbt_optimizer is not None else None,
                     'status': 'success'
                 }
 
@@ -1151,11 +1159,88 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             )
             return result
 
+    def process(self, data: Any) -> Any:
+        """Process the input data and return the result."""
+        try:
+            # Extract required data from the input
+            if hasattr(data, 'data') and hasattr(data, 'regime_assignments'):
+                # Data is already in the expected format
+                return self.execute_tactician_entry_labeling(data.data, data.regime_assignments)
+            elif isinstance(data, dict) and 'data' in data and 'regime_assignments' in data:
+                # Data is a dictionary with the required keys
+                return self.execute_tactician_entry_labeling(data['data'], data['regime_assignments'])
+            else:
+                # Try to extract data and regime_assignments from the input
+                if hasattr(data, 'data'):
+                    data_obj = data.data
+                else:
+                    data_obj = data
+                
+                if hasattr(data, 'regime_assignments'):
+                    regime_assignments = data.regime_assignments
+                else:
+                    # Try to get regime assignments from the data object
+                    if hasattr(data_obj, 'regime_assignments'):
+                        regime_assignments = data_obj.regime_assignments
+                    else:
+                        raise ValueError("Could not find regime_assignments in the input data")
+                
+                return self.execute_tactician_entry_labeling(data_obj, regime_assignments)
+        except Exception as e:
+            self.logger.error(f"Error processing data in TacticianEntryLabelerComponent: {e}")
+            raise
+
+    def validate(self, data: Any) -> bool:
+        """Validate the input data."""
+        try:
+            # Check if data is not None
+            if data is None:
+                self.logger.warning("Input data is None")
+                return False
+            
+            # Check if we can extract the required data
+            if hasattr(data, 'data') and hasattr(data, 'regime_assignments'):
+                # Data is already in the expected format
+                return True
+            elif isinstance(data, dict) and 'data' in data and 'regime_assignments' in data:
+                # Data is a dictionary with the required keys
+                return True
+            else:
+                # Try to extract data and regime_assignments from the input
+                if hasattr(data, 'data'):
+                    data_obj = data.data
+                else:
+                    data_obj = data
+                
+                if hasattr(data, 'regime_assignments'):
+                    regime_assignments = data.regime_assignments
+                else:
+                    # Try to get regime assignments from the data object
+                    if hasattr(data_obj, 'regime_assignments'):
+                        regime_assignments = data_obj.regime_assignments
+                    else:
+                        self.logger.warning("Could not find regime_assignments in the input data")
+                        return False
+                
+                # Validate that we have the required data
+                if data_obj is None:
+                    self.logger.warning("Data object is None")
+                    return False
+                
+                if regime_assignments is None:
+                    self.logger.warning("Regime assignments are None")
+                    return False
+                
+                return True
+        except Exception as e:
+            self.logger.error(f"Error validating data in TacticianEntryLabelerComponent: {e}")
+            return False
+
 # Register component with factory
 def _register_tactician_entry_labeler():
     """Register the tactician entry labeler component with the factory."""
     try:
-        from ..components.component_factory import ComponentFactory
+        from src.training.steps.pre_training.components import ComponentFactory
         ComponentFactory.register_component(
             'tactician_entry_labeler',
             TacticianEntryLabelerComponent

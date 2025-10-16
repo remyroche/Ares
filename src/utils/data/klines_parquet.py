@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-from src.utils.logger import system_logger
+import logging
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
 from src.utils.tprint import tprint
@@ -32,7 +32,7 @@ class KlinesParquetManager:
         self.exchange = exchange.lower()
         self.raw_data_dir = self.data_dir / self.exchange
         self.processed_data_dir = self.data_dir / self.exchange
-        self.logger = system_logger.getChild("KlinesParquetManager")
+        self.logger = logging.getLogger("KlinesParquetManager")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
 
@@ -292,9 +292,30 @@ class KlinesParquetManager:
             }
 
             if date_ranges:
-                min_date = min(dt[0] for dt in date_ranges)
-                max_date = max(dt[1] for dt in date_ranges)
-                info["date_range"] = (min_date, max_date)
+                # Normalize timezone-aware and timezone-naive timestamps to prevent comparison errors
+                normalized_ranges = []
+                for dt in date_ranges:
+                    try:
+                        # Convert to timezone-naive if needed
+                        start_dt = dt[0]
+                        end_dt = dt[1]
+                        
+                        # Handle timezone-aware timestamps by converting to UTC and removing timezone info
+                        if hasattr(start_dt, 'tz') and start_dt.tz is not None:
+                            start_dt = start_dt.tz_convert('UTC').tz_localize(None)
+                        if hasattr(end_dt, 'tz') and end_dt.tz is not None:
+                            end_dt = end_dt.tz_convert('UTC').tz_localize(None)
+                            
+                        normalized_ranges.append((start_dt, end_dt))
+                    except Exception as e:
+                        self.logger.warning(f"Could not normalize date range {dt}: {e}")
+                        # Skip problematic date ranges
+                        continue
+                
+                if normalized_ranges:
+                    min_date = min(dt[0] for dt in normalized_ranges)
+                    max_date = max(dt[1] for dt in normalized_ranges)
+                    info["date_range"] = (min_date, max_date)
 
             return info
 
@@ -1446,7 +1467,7 @@ def process_klines_data(
         return processed_df
 
     except Exception as e:
-        logger = system_logger.getChild("process_klines_data")
+        logger = logging.getLogger("process_klines_data")
         logger.warning(f"Error processing klines data: {e}")
         return df
 

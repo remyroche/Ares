@@ -414,8 +414,9 @@ class VectorBTMemoryOptimizer(MemoryOptimizer):
 
         try:
             # Configure VectorBT for memory efficiency
-            original_parallel = vbt.settings.parallel['enabled']
-            vbt.settings.parallel['enabled'] = True  # Enable parallel processing
+            # Note: Parallel settings removed in VectorBT 0.28.1 as it's handled automatically
+            # original_parallel = vbt.settings.parallel['enabled']
+            # vbt.settings.parallel['enabled'] = True  # Enable parallel processing
 
             # Process with memory monitoring
             def vectorbt_processor(df):
@@ -432,8 +433,9 @@ class VectorBTMemoryOptimizer(MemoryOptimizer):
 
         finally:
             # Restore original settings
-            if VECTORBT_AVAILABLE:
-                vbt.settings.parallel['enabled'] = original_parallel
+            # Note: Parallel settings removed in VectorBT 0.28.1 as it's handled automatically
+            # if VECTORBT_AVAILABLE:
+            #     vbt.settings.parallel['enabled'] = original_parallel
 
 # Global optimizer instances
 _global_memory_optimizer = None

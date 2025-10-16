@@ -1,0 +1,18 @@
+================================================================================
+  ANALYST PROFIT LABELER - EXECUTION SUMMARY
+================================================================================
+
+📋 CONFIGURATION
+   Symbol:          ETHUSDT
+   Exchange:        binance
+   Timeframe:       15m
+   Mode:            light
+   Direction:       longs
+   Intensity:       0.5
+
+📊 EXECUTION STATUS
+   Status:          failed
+   Timestamp:       2025-10-16T19:35:42.055581
+
+🎯 LABELING RESULTS
+   Timeframe:               N/A

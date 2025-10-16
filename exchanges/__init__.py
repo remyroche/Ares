@@ -24,12 +24,12 @@ from .base_exchange import (
 from .factory import ExchangeFactory
 
 # Import exchange implementations
-from .binance import BinanceExchange
-from .bingx import BingXExchange, create_bingx_exchange
-from .gateio import GateioExchange
-from .mexc import MexcExchange
-from .okx import OkxExchange, create_okx_exchange
-from .phemex import PhemexExchange
+# from .binance import BinanceExchange  # Commented out to avoid circular import
+# from .bingx import BingXExchange, create_bingx_exchange  # Commented out due to import issues
+# from .gateio import GateioExchange  # Commented out due to import issues
+# from .mexc import MexcExchange  # Commented out due to import issues
+# from .okx import OkxExchange, create_okx_exchange  # Commented out due to import issues
+# from .phemex import PhemexExchange  # Commented out due to import issues
 
 # Import exchange dispatcher
 from .exchange_dispatcher import (
@@ -53,14 +53,14 @@ __all__ = [
     "MessageHandler",
     "ResponseHandler",
     "ExchangeFactory",
-    "BinanceExchange",
-    "BingXExchange",
-    "create_bingx_exchange",
-    "GateioExchange",
-    "MexcExchange",
-    "OkxExchange",
-    "create_okx_exchange",
-    "PhemexExchange",
+    # "BinanceExchange",  # Commented out to avoid circular import
+    # "BingXExchange",  # Commented out due to import issues
+    # "create_bingx_exchange",  # Commented out due to import issues
+    # "GateioExchange",  # Commented out due to import issues
+    # "MexcExchange",  # Commented out due to import issues
+    # "OkxExchange",  # Commented out due to import issues
+    # "create_okx_exchange",  # Commented out due to import issues
+    # "PhemexExchange",  # Commented out due to import issues
     "ExchangeDispatcher",
     "ExchangeConfig",
     "ExchangeType",

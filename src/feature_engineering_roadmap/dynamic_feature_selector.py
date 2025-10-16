@@ -48,13 +48,7 @@ except ImportError:
     tprint_warning("⚠️  feature_generation not available")
 
 # Lookback optimization - REMOVED
-# try:
-#     from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization import (
-#         FeatureLookbackOptimizer
-#     )
-#     LOOKBACK_OPT_AVAILABLE = True
-# except ImportError:
-#     LOOKBACK_OPT_AVAILABLE = False
+LOOKBACK_OPT_AVAILABLE = False
 
 # Roadmap transforms & interactions
 from .transforms import TransformRouter, create_default_transform_config
@@ -126,16 +120,12 @@ class DynamicRoadmapPipeline:
 
         # Initialize components if available
         if FEATURE_GENERATION_AVAILABLE:
-            self.feature_bank = FeatureBank()
+            from src.feature_generation.core.feature_bank import get_global_feature_bank
+            self.feature_bank = get_global_feature_bank()
         else:
             self.feature_bank = None
 
-        # if LOOKBACK_OPT_AVAILABLE:  # REMOVED
-        #     self.lookback_optimizer = FeatureLookbackOptimizer(
-        #         use_bayesian=self.config.use_bayesian_opt
-        #     )
-        # else:
-        #     self.lookback_optimizer = None
+        # Lookback optimization has been removed
         self.lookback_optimizer = None
 
         tprint_info(f"🚀 DynamicRoadmapPipeline initialized: "

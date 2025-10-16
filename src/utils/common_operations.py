@@ -14,6 +14,7 @@ import time
 import functools
 import shutil
 import warnings
+import multiprocessing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
 from contextlib import contextmanager
@@ -21,6 +22,12 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, date
 import concurrent.futures
+
+# Optional imports with fallbacks
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 # Import core utilities
 from .core.common import create_fallback_logger, create_fallback_decorator
@@ -704,10 +711,16 @@ def optimize_memory_usage() -> Dict[str, Any]:
         Dictionary containing memory optimization statistics
     """
     try:
-        from .matrix_operations.convenience import optimize_memory_usage as matrix_optimize
-        return matrix_optimize()
-    except ImportError as e:
-        logger.warning(f"⚠️ Matrix operations not available for memory optimization: {e}")
+        # Use lazy import to avoid circular dependency
+        import importlib
+        matrix_ops = importlib.import_module('src.utils.matrix_operations.convenience')
+        matrix_optimize = getattr(matrix_ops, 'optimize_memory_usage', None)
+        if matrix_optimize:
+            return matrix_optimize()
+        else:
+            raise ImportError("optimize_memory_usage not found")
+    except (ImportError, AttributeError) as e:
+        logger.warning(f"⚠️ VectorBTRollingOptimizer not available for memory optimization: {e}")
         # Return a fallback dictionary
         return {
             'status': 'unavailable',
@@ -986,6 +999,31 @@ def safe_to_parquet(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> 
         logger.error(f"❌ Error saving DataFrame to parquet {file_path}: {e}")
         return False
 
+def _parquet_reader_worker(file_path: str, kwargs: Dict[str, Any], conn) -> None:
+    """Worker process entry point to read parquet safely."""
+    try:
+        import pandas as pd  # Local import for subprocess isolation
+
+        df = pd.read_parquet(file_path, **kwargs)
+        conn.send(("success", df))
+    except Exception as exc:  # pragma: no cover - defensive
+        conn.send(("error", repr(exc)))
+    finally:
+        conn.close()
+
+
+def read_parquet_safe(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
+    """Safely read DataFrame from parquet format with proper None/empty checking."""
+    try:
+        df = pd.read_parquet(file_path, **kwargs)
+        if df is None or df.empty:
+            return None
+        return df
+    except Exception as e:
+        logger.exception(f"❌ Read failed for {file_path}: {e}")
+        return None
+
+
 def safe_read_parquet(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
     """Safely read DataFrame from parquet format."""
     try:
@@ -996,7 +1034,47 @@ def safe_read_parquet(file_path: Union[str, Path], **kwargs) -> Optional[pd.Data
             logger.warning(f"⚠️ Parquet file does not exist: {file_path}")
             return None
 
-        df = pd.read_parquet(file_path, **kwargs)
+        read_kwargs = dict(kwargs)
+        ctx = multiprocessing.get_context("spawn")
+        parent_conn, child_conn = ctx.Pipe(duplex=False)
+        process = ctx.Process(
+            target=_parquet_reader_worker,
+            args=(str(file_path), read_kwargs, child_conn),
+            daemon=True,
+        )
+
+        process.start()
+        child_conn.close()
+
+        try:
+            if not parent_conn.poll(120):
+                logger.error(f"❌ Timeout while reading parquet file: {file_path}")
+                process.terminate()
+                process.join(timeout=5)
+                return None
+
+            status, payload = parent_conn.recv()
+        except EOFError:
+            logger.error(f"❌ Reader process ended unexpectedly while reading {file_path}")
+            status, payload = ("error", None)
+        finally:
+            parent_conn.close()
+            process.join(timeout=5)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=1)
+
+        if status != "success" or process.exitcode not in (0, None):
+            logger.error(
+                f"❌ Error reading DataFrame from parquet {file_path}: "
+                f"{payload if payload else f'process exit code {process.exitcode}'}"
+            )
+            return None
+
+        df = payload
+        # Apply the same None/empty check as read_parquet_safe
+        if df is None or df.empty:
+            return None
         logger.info(f"✅ Successfully read DataFrame from {file_path}")
         return df
     except Exception as e:
@@ -1391,24 +1469,82 @@ def optimize_memory() -> Dict[str, Any]:
             'success': False
         }
 
-def get_memory_usage() -> float:
-    """Get current memory usage in bytes.
+def get_system_memory_usage() -> int:
+    """Get current system memory usage in bytes.
 
     Returns:
-        Current memory usage in bytes
+        Current system memory usage in bytes
     """
+    if psutil is None:
+        return 0
     try:
-        import psutil
         return psutil.virtual_memory().used
-    except ImportError:
+    except Exception as e:
+        logger.warning(f"⚠️ Error getting system memory usage: {e}")
         return 0
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
+    # VectorBT API has changed - use pandas rolling functions instead
+    import pandas as pd
+    import numpy as np
+    
+    # Define rolling functions using pandas
+    def rolling_mean(series, window, **kwargs):
+        return series.rolling(window, **kwargs).mean()
+    
+    def rolling_std(series, window, **kwargs):
+        return series.rolling(window, **kwargs).std()
+    
+    def rolling_var(series, window, **kwargs):
+        return series.rolling(window, **kwargs).var()
+    
+    def rolling_min(series, window, **kwargs):
+        return series.rolling(window, **kwargs).min()
+    
+    def rolling_max(series, window, **kwargs):
+        return series.rolling(window, **kwargs).max()
+    
+    def rolling_sum(series, window, **kwargs):
+        return series.rolling(window, **kwargs).sum()
+    
+    def rolling_apply(series, window, func, **kwargs):
+        return series.rolling(window, **kwargs).apply(func)
+    
+    def rolling_corr(series, other, window, **kwargs):
+        return series.rolling(window, **kwargs).corr(other)
+    
+    def rolling_cov(series, other, window, **kwargs):
+        return series.rolling(window, **kwargs).cov(other)
+    
+    # Statistical functions using numpy/pandas
+    def scale(series, **kwargs):
+        return (series - series.mean()) / series.std()
+    
+    def rank(series, **kwargs):
+        return series.rank(**kwargs)
+    
+    def zscore(series, **kwargs):
+        return (series - series.mean()) / series.std()
+    
+    def winsorize(series, limits=(0.05, 0.05), **kwargs):
+        from scipy.stats import mstats
+        return pd.Series(mstats.winsorize(series, limits=limits), index=series.index)
+    
+    def clip(series, lower=None, upper=None, **kwargs):
+        return series.clip(lower=lower, upper=upper, **kwargs)
+    
+    def quantile(series, q, **kwargs):
+        return series.quantile(q, **kwargs)
+    
+    # Use centralized VectorBT detection with lazy import to avoid circular dependency
+    try:
+        import importlib
+        matrix_ops = importlib.import_module('src.utils.matrix_operations')
+        VECTORBT_AVAILABLE = getattr(matrix_ops, 'VECTORBT_AVAILABLE', False)
+    except (ImportError, AttributeError):
+        VECTORBT_AVAILABLE = False
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -1439,10 +1575,13 @@ except ImportError:
 
 def get_memory_usage() -> float:
     """Get current memory usage in bytes."""
+    if psutil is None:
+        logger.warning("⚠️ psutil not available for memory monitoring")
+        return 0.0
     try:
         return psutil.Process().memory_info().rss
-    except ImportError:
-        logger.warning("⚠️ psutil not available for memory monitoring")
+    except Exception as e:
+        logger.warning(f"⚠️ Error getting memory usage: {e}")
         return 0.0
 
 def validate_file_path(file_path: Union[str, Path]) -> bool:

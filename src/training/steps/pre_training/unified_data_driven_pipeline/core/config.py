@@ -366,7 +366,7 @@ class LookbackOptimizationConfig:
     enable_bayesian_optimization: bool = True
     bayesian_trials: int = 50
     enable_direction_optimization: bool = True
-    optimization_direction: str = 'both'  # 'longs', 'shorts', 'both'
+    optimization_direction: str = 'longs'  # 'longs', 'shorts', 'both'
 
     # Walk-forward validation
     walk_forward: WalkForwardConfig = field(default_factory=WalkForwardConfig)
@@ -544,6 +544,9 @@ class PerformanceConfig:
     # Optimization
     enable_auto_optimization: bool = True
     optimization_threshold: float = 0.1  # 10% improvement threshold
+    
+    # GPU acceleration
+    enable_gpu: bool = True
 
 @dataclass
 class UnifiedPipelineConfig:

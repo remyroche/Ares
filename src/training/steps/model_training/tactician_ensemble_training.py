@@ -454,9 +454,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             cleaning_config = CleaningConfig(
                 missing_value_strategy=MissingValueStrategy.INTERPOLATE,
                 outlier_strategy=OutlierStrategy.CLIP,
-                outlier_threshold=3.0,
-                enable_gap_detection=True,
-                enable_async_processing=False
+                outlier_threshold=3.0
             )
             tprint_success("✅ Data cleaner initialized")
             return DataCleaner(cleaning_config)

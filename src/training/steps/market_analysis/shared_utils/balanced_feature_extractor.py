@@ -197,7 +197,8 @@ class BalancedFeatureExtractor:
         self.feature_optimizer = None
         if FEATURE_GENERATION_AVAILABLE and self.config.enable_pid_features:
             try:
-                self.feature_bank = FeatureBank()
+                from src.feature_generation.core.feature_bank import get_global_feature_bank
+                self.feature_bank = get_global_feature_bank()
                 self.feature_optimizer = get_feature_optimizer()
                 tprint("✅ Feature generation system initialized", color="green")
             except Exception as e:

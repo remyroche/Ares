@@ -217,9 +217,21 @@ class VectorBTPortfolioOptimizer:
     def _configure_vectorbt(self):
         """Configure VectorBT global settings."""
         if self.config.enable_parallel:
-            vbt.settings.parallel['threading'] = True
+            try:
+                # Try to set parallel settings if available
+                if hasattr(vbt.settings, 'parallel') and hasattr(vbt.settings.parallel, '__setitem__'):
+                    vbt.settings.parallel['threading'] = True
+                elif hasattr(vbt.settings, 'threading') and hasattr(vbt.settings.threading, '__setitem__'):
+                    vbt.settings.threading['enabled'] = True
+                else:
+                    logger.debug("Parallel settings not available in this VectorBT version")
+            except (AttributeError, KeyError, TypeError) as e:
+                logger.debug(f"Parallel settings not available in this VectorBT version: {e}")
 
-        vbt.settings.array_wrapper['freq'] = '1min'
+        try:
+            vbt.settings.array_wrapper['freq'] = '1min'
+        except (AttributeError, KeyError) as e:
+            logger.debug(f"Array wrapper settings not available: {e}")
 
     def optimize_portfolio(self,
                           returns: Union[np.ndarray, pd.DataFrame],

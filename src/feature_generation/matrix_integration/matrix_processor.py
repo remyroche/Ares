@@ -65,19 +65,24 @@ class MatrixFeatureProcessor:
         self.enable_gpu = enable_gpu
         self.enable_parallel = enable_parallel
 
-        # Initialize matrix operations
+        # Initialize VectorBTRollingOptimizer and UnifiedVectorizationManager
         try:
-            from ...utils.matrix_operations import get_unified_matrix_operations
-            self.matrix_ops = get_unified_matrix_operations(
-                enable_gpu=enable_gpu,
-                enable_parallel=enable_parallel
-            )
-            self.matrix_available = True
-            self.logger.info("✅ Matrix operations initialized")
+            from ...utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+            self.logger.info("✅ VectorBTRollingOptimizer initialized")
         except ImportError:
-            self.matrix_ops = None
-            self.matrix_available = False
-            self.logger.warning("⚠️ Matrix operations not available")
+            self.vectorbt_rolling_optimizer = None
+            self.logger.warning("⚠️ VectorBTRollingOptimizer not available")
+
+        try:
+            from ...utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+            self.unified_vectorization_manager = get_unified_vectorization_manager()
+            self.logger.info("✅ UnifiedVectorizationManager initialized")
+        except ImportError:
+            self.unified_vectorization_manager = None
+            self.logger.warning("⚠️ UnifiedVectorizationManager not available")
+
+        self.matrix_available = self.vectorbt_rolling_optimizer is not None or self.unified_vectorization_manager is not None
 
     def process_features(self,
                         generators: List[FeatureGenerator],
@@ -95,7 +100,7 @@ class MatrixFeatureProcessor:
             List of feature results
         """
         if not self.matrix_available:
-            self.logger.warning("Matrix operations not available, using fallback")
+            self.logger.warning("VectorBTRollingOptimizer not available, using fallback")
             return self._fallback_processing(generators, data, **kwargs)
 
         self.logger.info(f"Processing {len(generators)} features with matrix optimization")
@@ -269,12 +274,12 @@ class MatrixFeatureProcessor:
         # Extract common data
         close_prices = data['close'].values
 
-        # Use matrix operations for batch rolling
-        if self.matrix_ops:
+        # Use VectorBTRollingOptimizer for batch rolling
+        if self.vectorbt_rolling_optimizer:
             try:
-                # Batch rolling mean
-                rolling_mean = self.matrix_ops.batch_process(
-                    close_prices.reshape(-1, 1), 'rolling_mean', window=window
+                # Batch rolling mean using VectorBTRollingOptimizer
+                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(
+                    close_prices, window=window
                 )
 
                 # Create results for each generator
@@ -368,14 +373,22 @@ class VectorizedFeatureGenerator:
         Returns:
             Result of the operation
         """
-        if not self.enable_matrix_ops or self.matrix_ops is None:
+        if not self.enable_matrix_ops or self.vectorbt_rolling_optimizer is None:
             # Fallback to numpy operations
             return self._numpy_fallback(operation, data, **kwargs)
 
         try:
-            return self.matrix_ops.batch_process(data, operation, **kwargs)
+            # Use VectorBTRollingOptimizer for batch operations
+            if hasattr(self.vectorbt_rolling_optimizer, operation):
+                return getattr(self.vectorbt_rolling_optimizer, operation)(data, **kwargs)
+            else:
+                # Use UnifiedVectorizationManager for other operations
+                if self.unified_vectorization_manager:
+                    return self.unified_vectorization_manager.optimize_operation(operation, data, **kwargs)
+                else:
+                    return self._numpy_fallback(operation, data, **kwargs)
         except Exception as e:
-            self.logger.warning(f"Matrix operation failed, using numpy fallback: {e}")
+            self.logger.warning(f"VectorBTRollingOptimizer operation failed, using numpy fallback: {e}")
             return self._numpy_fallback(operation, data, **kwargs)
 
     def _numpy_fallback(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:

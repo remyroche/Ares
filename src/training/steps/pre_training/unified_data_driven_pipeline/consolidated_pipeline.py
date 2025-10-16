@@ -39,7 +39,13 @@ try:
     )
     TPRINT_AVAILABLE = True
 except ImportError as e:
-    raise ImportError(f"Required tprint utilities not available: {e}") from e
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
 # Import core components
 from .core.config import UnifiedPipelineConfig, create_default_config
@@ -60,9 +66,20 @@ from .core.template_interaction_generator import (
     create_template_interaction_generator
 )
 
+# Import battle-tested components
+from .enhanced_components.battle_tested_feature_selection import (
+    BattleTestedFeatureSelector, FeatureSelectionConfig as BattleTestedFeatureSelectionConfig
+)
+from .enhanced_components.battle_tested_interaction_generation import (
+    BattleTestedInteractionGenerator, InteractionConfig as BattleTestedInteractionConfig
+)
+from .enhanced_components.battle_tested_period_lookback_optimization import (
+    BattleTestedPeriodLookbackOptimizer, PeriodLookbackConfig as BattleTestedPeriodLookbackConfig
+)
+
 # Import common logic components
 from .enhanced_components.common_feature_logic import (
-    CommonFeatureGenerator, FeatureGenerationConfig,
+    CommonFeatureGenerator, FeatureGenerationConfig as CommonFeatureGenerationConfig,
     create_common_feature_generator
 )
 from .enhanced_components.common_lookback_optimizer import (
@@ -318,7 +335,7 @@ except ImportError as e:
 try:
     from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
     from src.feature_generation.utils.unified_vectorization_manager import UnifiedVectorizationManager
-    from src.features_common.config.vectorbt_config import VectorizationConfig
+    from src.feature_generation.utils.unified_vectorization_manager import VectorizationConfig
     VECTORBT_UTILITIES_AVAILABLE = True
     VECTORBT_AVAILABLE = True
     tprint_info("✅ VectorBT utilities imported successfully")
@@ -394,17 +411,19 @@ class LabelingAdapter:
 
         self.labeling_system = "tactician_analyst"
 
-        if self.config.labeling_type == "analyst":
+        # Handle missing labeling_type attribute with default
+        labeling_type = getattr(self.config, 'labeling_type', 'tactician')
+        if labeling_type == "analyst":
             tprint_info("🏷️ Initializing Analyst labeling system")
             self.labeler = create_enhanced_analyst_labeler()
             self.labeling_type = LabelDefinitionType.ANALYST
-        elif self.config.labeling_type == "tactician":
+        elif labeling_type == "tactician":
             tprint_info("🏷️ Initializing Tactician labeling system")
             self.labeler = create_enhanced_tactician_labeler()
             self.labeling_type = LabelDefinitionType.TACTICIAN
         else:
             # Fast fail instead of fallback to Triple Barrier
-            raise ValueError(f"Invalid labeling type: {self.config.labeling_type}. Must be 'analyst' or 'tactician'. No fallback to Triple Barrier method.")
+            raise ValueError(f"Invalid labeling type: {labeling_type}. Must be 'analyst' or 'tactician'. No fallback to Triple Barrier method.")
 
     def generate_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None,
                        existing_artifacts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -669,32 +688,43 @@ class UnifiedDataDrivenPipeline:
         Args:
             config: Pipeline configuration (uses default if None)
         """
-        self.config = config or create_default_config()
+        try:
+            tprint_info("🔧 Starting UnifiedDataDrivenPipeline initialization")
+            self.config = config or create_default_config()
+            
+            # Initialize unified_cv as None first to prevent attribute errors
+            self.unified_cv = None
 
-        # Initialize utility systems first
-        self._initialize_utility_systems()
+            # Initialize utility systems first
+            self._initialize_utility_systems()
 
-        # Initialize labeling adapter
-        self._initialize_labeling_adapter()
+            # Initialize labeling adapter
+            self._initialize_labeling_adapter()
 
-        # Initialize all components
-        self._initialize_core_components()
-        self._initialize_enhanced_components()
-        self._initialize_ml_common_utilities()
-        self._initialize_validation_components()
-        self._initialize_performance_tracking()
-        self._initialize_advanced_infrastructure()
+            # Initialize all components
+            self._initialize_core_components()
+            self._initialize_enhanced_components()
+            tprint_info("🔧 About to call _initialize_ml_common_utilities")
+            self._initialize_ml_common_utilities()
+            tprint_info("🔧 _initialize_ml_common_utilities completed")
+            self._initialize_validation_components()
+            self._initialize_performance_tracking()
+            self._initialize_advanced_infrastructure()
 
-        tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
-        tprint_info(f"📊 Configuration: {self.config}")
-        if FEATURE_GENERATION_AVAILABLE:
-            tprint_success("✅ Feature generation utilities integrated")
-        if FEATURES_COMMON_AVAILABLE:
-            tprint_success("✅ Features common utilities integrated")
-        if TACTICIAN_ANALYST_LABELING_AVAILABLE:
-            tprint_success(f"✅ Tactician/Analyst labeling integrated ({self.config.labeling_type})")
-        else:
-            tprint_error("❌ Tactician/Analyst labeling not available - pipeline cannot function")
+            tprint_info("🚀 Consolidated Unified Data-Driven Pipeline initialized")
+            tprint_info(f"📊 Configuration: {self.config}")
+            if FEATURE_GENERATION_AVAILABLE:
+                tprint_success("✅ Feature generation utilities integrated")
+            if FEATURES_COMMON_AVAILABLE:
+                tprint_success("✅ Features common utilities integrated")
+            if TACTICIAN_ANALYST_LABELING_AVAILABLE:
+                labeling_type = getattr(self.config, 'labeling_type', 'tactician')
+                tprint_success(f"✅ Tactician/Analyst labeling integrated ({labeling_type})")
+            else:
+                tprint_error("❌ Tactician/Analyst labeling not available - pipeline cannot function")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize UnifiedDataDrivenPipeline: {e}")
+            raise
 
     def _initialize_labeling_adapter(self):
         """Initialize the labeling adapter for tactician/analyst labeling."""
@@ -703,7 +733,10 @@ class UnifiedDataDrivenPipeline:
         try:
             tprint_info("📋 Creating labeling adapter with config")
             self.labeling_adapter = LabelingAdapter(self.config)
-            tprint_success(f"✅ Labeling adapter initialized: {self.config.labeling_system}/{self.config.labeling_type}")
+            # Handle missing labeling_system attribute
+            labeling_system = getattr(self.config, 'labeling_system', 'tactician_analyst')
+            labeling_type = getattr(self.config, 'labeling_type', 'tactician')
+            tprint_success(f"✅ Labeling adapter initialized: {labeling_system}/{labeling_type}")
 
             # Validate the adapter is functional
             if hasattr(self.labeling_adapter, 'validate_configuration'):
@@ -1115,7 +1148,7 @@ class UnifiedDataDrivenPipeline:
 
                     # Initialize enhanced feature engineering
                     tprint_debug("🔧 Creating enhanced feature engineering")
-                    self.enhanced_feature_engineering = EnhancedFeatureEngineering()
+                    self.enhanced_feature_engineering = EnhancedFeatureEngineering(self.config)
                     tprint_success("✅ Enhanced feature engineering initialized")
 
                     # Initialize feature optimization
@@ -1179,9 +1212,7 @@ class UnifiedDataDrivenPipeline:
                         enable_gpu=gpu_enabled,
                         enable_parallel=True,
                         memory_efficient=True,
-                        batch_size=1000,
                         chunk_size=1000,
-                        max_memory_gb=8.0,
                         enable_monitoring=True
                     )
                     self.unified_vectorization_manager = UnifiedVectorizationManager(
@@ -1272,8 +1303,7 @@ class UnifiedDataDrivenPipeline:
 
         # Multi-objective feature selector
         self.feature_selector = MultiObjectiveFeatureSelector(
-            objectives=create_default_objectives(),
-            cv_splitter=self.cv_splitter
+            objectives=create_default_objectives()
         )
 
         # Economic evaluator
@@ -1422,7 +1452,7 @@ class UnifiedDataDrivenPipeline:
         self.enhanced_feature_generator = EnhancedFeatureGenerator(feature_gen_config)
 
         # Common feature generation logic
-        common_feature_config = FeatureGenerationConfig(
+        common_feature_config = CommonFeatureGenerationConfig(
             min_lookback=5,
             max_lookback=100,
             lookback_step=5,
@@ -1498,6 +1528,7 @@ class UnifiedDataDrivenPipeline:
     def _initialize_ml_common_utilities(self):
         """Initialize ML Common utilities for enhanced validation and ensemble methods."""
         tprint_debug("Initializing ML Common utilities")
+        tprint_info("🔧 _initialize_ml_common_utilities called")
 
         self._validate_dependency_available("ML Common utilities", ML_COMMON_AVAILABLE)
 
@@ -1608,6 +1639,7 @@ class UnifiedDataDrivenPipeline:
             tprint_success("✅ Integrated analysis pipeline initialized")
 
             # Unified cross-validator for advanced CV strategies
+            tprint_debug("🔧 Creating UnifiedCrossValidator...")
             self.unified_cv = UnifiedCrossValidator()
             tprint_success("✅ Unified cross-validator initialized")
 
@@ -1621,8 +1653,12 @@ class UnifiedDataDrivenPipeline:
         tprint_debug("Initializing validation components")
 
         # Modular architecture
-        (self.input_validator, self.error_handler, self.performance_monitor,
-         self.memory_manager, self.hardware_accelerator) = create_modular_architecture("ConsolidatedPipeline")
+        self.modular_architecture = create_modular_architecture("ConsolidatedPipeline")
+        self.input_validator = self.modular_architecture.validator
+        self.error_handler = self.modular_architecture.error_handler
+        self.performance_monitor = self.modular_architecture.performance_monitor
+        self.memory_manager = self.modular_architecture.memory_manager
+        self.hardware_accelerator = self.modular_architecture.hardware_accelerator
 
         # Enhanced walk-forward validation
         self.walk_forward_validator = AdvancedWalkForwardValidator(
@@ -1679,6 +1715,11 @@ class UnifiedDataDrivenPipeline:
     def _initialize_advanced_infrastructure(self):
         """Initialize advanced infrastructure components."""
         tprint_debug("Initializing advanced infrastructure components")
+        
+        # Debug: Check if logger exists
+        if not hasattr(self, 'logger'):
+            tprint_error("❌ Logger not found, creating one")
+            self.logger = logging.getLogger(__name__)
 
         # Advanced validation
         self.advanced_validator = AdvancedInputValidator(logger=self.logger)
@@ -2676,7 +2717,7 @@ class UnifiedDataDrivenPipeline:
             # Create outcome report
             outcome_report = self.advanced_artifact_manager.create_outcome_report(
                 combined_results,
-                self.advanced_performance_monitor.get_performance_summary(),
+                self.advanced_performance_monitor.get_performance_summary() if self.advanced_performance_monitor is not None else None,
                 pipeline_state
             )
 
@@ -2687,7 +2728,7 @@ class UnifiedDataDrivenPipeline:
                     'optimization_status': 'completed',
                     'total_features_optimized': len(combined_results.get('selected_features', [])),
                     'validation_summary': validation_summary.__dict__ if 'validation_summary' in locals() else None,
-                    'performance_metrics': self.advanced_performance_monitor.get_performance_summary(),
+                    'performance_metrics': self.advanced_performance_monitor.get_performance_summary() if self.advanced_performance_monitor is not None else None,
                     'outcome_report': outcome_report
                 }
             )
@@ -4584,8 +4625,8 @@ class UnifiedDataDrivenPipeline:
             else:
                 tprint_info("🧭 Nested walk-forward CV unavailable, using single-pass optimization")
 
-            # Get optimization direction from pipeline state (default to 'both')
-            optimization_direction = pipeline_state.get('direction', 'both') if pipeline_state else 'both'
+            # Get optimization direction from pipeline state (default to 'longs')
+            optimization_direction = pipeline_state.get('direction', 'longs') if pipeline_state else 'longs'
             tprint_info(f"🎯 Optimization direction: {optimization_direction}")
 
             # Select optimal target columns for long/short directions
@@ -6382,7 +6423,7 @@ class UnifiedDataDrivenPipeline:
         # Add advanced infrastructure stats
         stats['advanced_validator'] = self.advanced_validator.get_validation_stats()
         stats['advanced_error_handler'] = self.advanced_error_handler.get_error_stats()
-        stats['advanced_performance_monitor'] = self.advanced_performance_monitor.get_performance_summary()
+        stats['advanced_performance_monitor'] = self.advanced_performance_monitor.get_performance_summary() if self.advanced_performance_monitor is not None else None
         stats['advanced_data_loader'] = self.advanced_data_loader.get_cache_metrics()
         stats['advanced_artifact_manager'] = {
             'artifact_registry_size': len(self.advanced_artifact_manager.get_artifact_registry()),

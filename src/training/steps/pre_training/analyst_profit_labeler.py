@@ -53,7 +53,7 @@ from src.utils.ml_common.optimization.grid_utils import (
 )
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.training.steps.pre_training.components.contracts import PipelineState
-from src.training.steps.pre_training.components.component_factory import register_component
+from src.training.steps.pre_training.components import ComponentFactory
 from src.training.steps.pre_training.validation.schemas import validate_raw_ohlcv, SchemaValidationException
 
 # Import the volatility-aware labeler
@@ -84,21 +84,11 @@ try:
     )
     ADVANCED_FILTERS_AVAILABLE = True
 except (ImportError, SyntaxError):
-    # Fallback to old location for backward compatibility
-    try:
-        from src.training.steps.pre_training.profit_labeling.advanced_filters_15m import (
-            AdvancedFilters15m,
-            AdvancedFiltersConfig,
-            FilterResult,
-            apply_advanced_filters_15m,
-        )
-        ADVANCED_FILTERS_AVAILABLE = True
-    except (ImportError, SyntaxError):
-        ADVANCED_FILTERS_AVAILABLE = False
-        AdvancedFilters15m = None
-        AdvancedFiltersConfig = None
-        FilterResult = None
-        apply_advanced_filters_15m = None
+    ADVANCED_FILTERS_AVAILABLE = False
+    AdvancedFilters15m = None
+    AdvancedFiltersConfig = None
+    FilterResult = None
+    apply_advanced_filters_15m = None
 
 @dataclass
 class AnalystProfitLabelerConfig:
@@ -110,13 +100,14 @@ class AnalystProfitLabelerConfig:
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    # Updated for 15m timeframe: 1h, 2h, 4h, 6h
-    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360])  # 1h, 2h, 4h, 6h in minutes
+    # Single horizon: 90 minutes (6 periods of 15m)
+    horizons: List[int] = field(default_factory=lambda: [90])  # 90 minutes = 6 * 15m periods
 
-    # Profit targets (percentage) - Multi-size opportunity logic
-    # 0.5% minimum entry threshold, with 0.7% and 1.0% as higher confidence levels
+    # Profit targets (percentage points) - Multi-size opportunity logic
+    # 0.5% minimum entry threshold, with 0.7%, 1.0%, and 1.3% as higher confidence levels
     # Aligned with multi-size opportunity detection logic
-    target_profits: List[float] = field(default_factory=lambda: [0.5, 0.7, 1.0, 1.5, 2.0, 2.5])
+    # Note: These are percentage points, not fractional returns (0.005 = 0.5%)
+    target_profits: List[float] = field(default_factory=lambda: [0.5, 0.7, 1.0, 1.3])
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -423,18 +414,18 @@ class AnalystProfitLabeler:
             tprint_info("✅ Disabled noise gating for OHLCV data")
 
             # Configure timeframe and horizons
-            tprint_info(f"⏰ Configuring timeframe and horizons: {self.config.timeframe}, {self.config.horizons}")
-            labeler_config.timeframe = self.config.timeframe
-            labeler_config.multi_target.horizons = self.config.horizons
-            labeler_config.multi_target.target_profits = self.config.target_profits
+            tprint_info(f"⏰ Configuring timeframe and horizons: {self.labeler.config.timeframe}, {self.labeler.config.horizons}")
+            labeler_config.timeframe = self.labeler.config.timeframe
+            # Note: Single-horizon labeler doesn't use multi_target config
+            # Horizons will be handled by the adapter loop in generate_labels
             # Configure multi-target to use very lenient quality thresholds
             labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
-            tprint_info(f"✅ Multi-target: {len(self.config.horizons)} horizons, {len(self.config.target_profits)} targets, LQS=0.01")
+            tprint_info(f"✅ Multi-target: {len(self.labeler.config.horizons)} horizons, {len(self.labeler.config.target_profits)} targets, LQS=0.01")
 
             # Configure volatility settings
-            tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
-            labeler_config.volatility.enabled = self.config.use_volatility_normalization
-            labeler_config.volatility.window = self.config.volatility_window
+            tprint_info(f"📈 Configuring volatility: enabled={self.labeler.config.use_volatility_normalization}, window={self.labeler.config.volatility_window}")
+            labeler_config.volatility.enabled = self.labeler.config.use_volatility_normalization
+            labeler_config.volatility.window = self.labeler.config.volatility_window
 
             # Configure quality scoring - disable for initial labeling to ensure labels are generated
             # Quality filtering can be applied during feature selection/training
@@ -454,14 +445,18 @@ class AnalystProfitLabeler:
                 labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
                 labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
                 labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
-                labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
-                labeler_config.optimal_entry_detection.horizons = self.config.horizons
-                labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
-                labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
-                labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
+                labeler_config.optimal_entry_detection.entry_point_strategy = self.labeler.config.entry_point_strategy
+                labeler_config.optimal_entry_detection.horizons = self.labeler.config.horizons
+                labeler_config.optimal_entry_detection.target_profits = self.labeler.config.target_profits
+                labeler_config.optimal_entry_detection.multi_size_thresholds = self.labeler.config.multi_size_thresholds
+                labeler_config.optimal_entry_detection.max_windows = self.labeler.config.max_windows
                 tprint_info(f"✅ Entry detection: enabled={self.config.enable_optimal_entry_detection}, threshold={self.config.entry_threshold}")
             else:
                 tprint_warning("⚠️ Optimal entry detection not available in labeler config")
+
+            # Store profit targets in labeler config for volatility-based labeling
+            if not hasattr(labeler_config, 'analyst_profit_targets'):
+                labeler_config.analyst_profit_targets = self.labeler.config.target_profits
 
             # Apply custom parameters
             if self.config.custom_params:
@@ -563,30 +558,88 @@ class AnalystProfitLabeler:
 
             # Use memory optimization context for label generation
             with memory_checkpoint("analyst_label_generation"):
-                # Generate labels using the underlying labeler
-                # Note: VolatilityAwareMultiHorizonLabeler.generate_labels only takes market_data
-                result = self.labeler.generate_labels(data)
+                # Generate multi-horizon labels using adapter loop
+                # The underlying labeler only supports single-horizon, but Analyst needs multi-horizon
+                tprint_info(f"🔄 Generating multi-horizon labels for {len(self.labeler.config.horizons)} horizons...")
+
+                horizon_results = []
+                for horizon_idx, horizon_minutes in enumerate(self.labeler.config.horizons):
+                    tprint_info(f"📈 Processing horizon {horizon_idx + 1}/{len(self.labeler.config.horizons)}: {horizon_minutes}min")
+
+                    # Set the lookahead period for this horizon
+                    lookahead_bars = horizon_minutes // self.labeler.config.base_period_minutes
+                    self.labeler.config.lookahead_periods = lookahead_bars
+
+                    # Generate labels for this horizon with profit targets
+                    profit_targets = getattr(self.labeler.config, 'analyst_profit_targets', None)
+                    horizon_result = self.labeler.generate_labels(data, profit_targets=profit_targets)
+
+                    if horizon_result.success and horizon_result.labels is not None:
+                        # Convert Series to DataFrame with appropriate column name
+                        horizon_col_name = f"h{horizon_minutes}"
+                        if isinstance(horizon_result.labels, pd.Series):
+                            horizon_df = horizon_result.labels.to_frame(horizon_col_name)
+                        else:
+                            horizon_df = horizon_result.labels.copy()
+                            # Ensure we have the expected column name
+                            if horizon_col_name not in horizon_df.columns:
+                                if len(horizon_df.columns) == 1:
+                                    horizon_df = horizon_df.rename(columns={horizon_df.columns[0]: horizon_col_name})
+                                else:
+                                    tprint_warning(f"⚠️ Unexpected columns in horizon result: {horizon_df.columns.tolist()}")
+
+                        horizon_results.append(horizon_df)
+                        tprint_info(f"✅ Generated {len(horizon_df)} labels for {horizon_minutes}min horizon")
+                    else:
+                        tprint_warning(f"⚠️ Failed to generate labels for {horizon_minutes}min horizon")
+                        # Create empty DataFrame with NaN values for this horizon
+                        empty_df = pd.DataFrame({f"h{horizon_minutes}": [pd.NA] * len(data)})
+                        horizon_results.append(empty_df)
+
+                # Combine all horizon results into a single DataFrame
+                if horizon_results:
+                    result = LabelingResult(
+                        labels=pd.concat(horizon_results, axis=1),
+                        metadata={
+                            'n_horizons': len(self.labeler.config.horizons),
+                            'horizons': self.labeler.config.horizons,
+                            'target_profits': self.labeler.config.target_profits,
+                            'base_period_minutes': self.labeler.config.base_period_minutes,
+                        },
+                        success=True
+                    )
+                    tprint_success(f"✅ Combined {len(horizon_results)} horizons into DataFrame with shape {result.labels.shape}")
+                else:
+                    # No horizons succeeded, return empty result
+                    result = LabelingResult(
+                        labels=pd.DataFrame(),
+                        metadata={'n_horizons': 0, 'error': 'No horizons generated successfully'},
+                        success=False,
+                        error_message="No horizon labels were generated successfully"
+                    )
+                    tprint_error("❌ No horizon labels were generated successfully")
 
                 # Apply filter mask to results if filters were used
                 if filter_result is not None and hasattr(result, 'labels') and result.labels is not None:
-                    # Apply eligibility mask to labels
-                    if isinstance(result.labels, pd.DataFrame):
+                    if isinstance(result.labels, pd.DataFrame) and not result.labels.empty:
+                        # Apply eligibility mask to labels
                         result.labels = result.labels[filter_result.eligibility_mask]
 
-                    # Apply eligibility mask to confidence scores if available
-                    if hasattr(result, 'confidence_scores') and result.confidence_scores is not None:
-                        if isinstance(result.confidence_scores, pd.DataFrame):
-                            result.confidence_scores = result.confidence_scores[filter_result.eligibility_mask]
+                        # Apply eligibility mask to confidence scores if available
+                        if hasattr(result, 'confidence_scores') and result.confidence_scores is not None:
+                            if isinstance(result.confidence_scores, pd.DataFrame):
+                                result.confidence_scores = result.confidence_scores[filter_result.eligibility_mask]
 
-                    # Apply eligibility mask to eligibility masks if available
-                    if hasattr(result, 'eligibility_masks') and result.eligibility_masks is not None:
-                        if isinstance(result.eligibility_masks, pd.DataFrame):
-                            result.eligibility_masks = result.eligibility_masks[filter_result.eligibility_mask]
+                        # Apply eligibility mask to eligibility masks if available
+                        if hasattr(result, 'eligibility_masks') and result.eligibility_masks is not None:
+                            if isinstance(result.eligibility_masks, pd.DataFrame):
+                                result.eligibility_masks = result.eligibility_masks[filter_result.eligibility_mask]
 
-                    # Update sample counts
-                    result.n_samples = len(result.labels) if hasattr(result.labels, '__len__') else result.n_samples
-
-                    tprint_info(f"🔍 Applied filter mask: {result.n_samples} samples after filtering")
+                        # Update sample counts
+                        result.n_samples = len(result.labels) if hasattr(result.labels, '__len__') else result.n_samples
+                        tprint_info(f"🔍 Applied filter mask: {result.n_samples} samples after filtering")
+                    else:
+                        tprint_warning("⚠️ Filter mask not applied - result labels is not a DataFrame or is empty")
 
             # Validate minimum sample count for training
             self._validate_labeling_result(result)
@@ -606,6 +659,9 @@ class AnalystProfitLabeler:
                 f"✅ Analyst labels generated: {result.n_samples} samples, "
                 f"{result.n_targets} targets, {result.n_horizons} horizons"
             )
+
+            # Generate comprehensive outcome report
+            self._generate_comprehensive_report(result, data)
 
             return result
 
@@ -630,7 +686,7 @@ class AnalystProfitLabeler:
 
         tprint_success(f"✅ Sample count validation passed: {result.n_samples} >= {MIN_TOTAL_SAMPLES}")
 
-        if result.n_targets > 0:
+        if result.n_targets is not None and result.n_targets > 0:
             samples_per_target = result.n_samples / result.n_targets
             tprint_info(f"📊 Samples per target: {samples_per_target:.1f} (minimum recommended: {MIN_SAMPLES_PER_TARGET})")
 
@@ -651,6 +707,396 @@ class AnalystProfitLabeler:
 
         tprint_success("✅ Labeling result validation completed successfully")
 
+    def _generate_comprehensive_report(self, result: LabelingResult, original_data: pd.DataFrame) -> None:
+        """Generate comprehensive analysis report of the labeling outcome."""
+        tprint_info("📊 Generating comprehensive labeling outcome report...")
+
+        try:
+            # Create report data structure
+            report = {
+                'execution_summary': self._get_execution_summary(result, original_data),
+                'data_quality_analysis': self._get_data_quality_analysis(original_data),
+                'labeling_performance': self._get_labeling_performance_metrics(result),
+                'horizon_analysis': self._get_horizon_analysis(result),
+                'target_analysis': self._get_target_analysis(result),
+                'quality_metrics': self._get_quality_metrics_analysis(result),
+                'recommendations': self._get_recommendations(result)
+            }
+
+            # Print comprehensive report (skip if there are issues)
+            try:
+                self._print_comprehensive_report(report)
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to print comprehensive report: {e}")
+                # Continue without the printed report
+
+            # Save detailed report to JSON file
+            self._save_detailed_report(report)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate comprehensive report: {e}")
+            # Continue without the report
+
+    def _get_execution_summary(self, result: LabelingResult, original_data: pd.DataFrame) -> Dict[str, Any]:
+        """Get execution summary metrics."""
+        return {
+            'input_data_shape': original_data.shape,
+            'input_data_memory_mb': round(original_data.memory_usage(deep=True).sum() / 1024 / 1024, 2),
+            'input_date_range': {
+                'start': str(original_data.index.min()),
+                'end': str(original_data.index.max()),
+                'duration_days': round((original_data.index.max() - original_data.index.min()).total_seconds() / 86400, 1)
+            },
+            'output_labels_shape': result.labels.shape if hasattr(result.labels, 'shape') else (0, 0),
+            'output_labels_memory_mb': round(result.labels.memory_usage(deep=True).sum() / 1024 / 1024, 2) if hasattr(result.labels, 'memory_usage') else 0,
+            'processing_time_seconds': result.processing_time,
+            'success_rate': 100.0 if result.success else 0.0
+        }
+
+    def _get_data_quality_analysis(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Analyze data quality metrics."""
+        return {
+            'missing_values_total': int(data.isna().sum().sum()),
+            'missing_values_percentage': round(data.isna().sum().sum() / (data.shape[0] * data.shape[1]) * 100, 2),
+            'duplicate_timestamps': int(data.index.duplicated().sum()),
+            'data_completeness': round((1 - data.isna().sum().sum() / (data.shape[0] * data.shape[1])) * 100, 2),
+            'price_volatility': round(data['close'].pct_change().std() * 100, 2) if 'close' in data.columns else None,
+            'volume_analysis': {
+                'mean_volume': int(data['volume'].mean()) if 'volume' in data.columns else None,
+                'volume_std': int(data['volume'].std()) if 'volume' in data.columns else None,
+                'zero_volume_count': int((data['volume'] == 0).sum()) if 'volume' in data.columns else None
+            }
+        }
+
+    def _get_labeling_performance_metrics(self, result: LabelingResult) -> Dict[str, Any]:
+        """Get performance metrics for the labeling process."""
+        return {
+            'total_samples_processed': result.n_samples,
+            'total_targets_generated': result.n_targets or 0,
+            'total_horizons_processed': result.n_horizons,
+            'labels_per_sample': round(result.n_targets / max(result.n_samples, 1), 2) if result.n_targets else 0,
+            'samples_per_horizon': round(result.n_samples / max(result.n_horizons, 1), 2),
+            'processing_efficiency': round(result.n_samples / max(result.processing_time, 0.001), 2) if result.processing_time else 0,
+            'memory_efficiency_mb_per_sample': round(getattr(result.labels, 'memory_usage', lambda: [0])().sum() / 1024 / 1024 / max(result.n_samples, 1), 4) if hasattr(result.labels, 'memory_usage') and result.n_samples > 0 else 0
+        }
+
+    def _get_horizon_analysis(self, result: LabelingResult) -> Dict[str, Any]:
+        """Analyze results by horizon."""
+        if not hasattr(result.labels, 'columns') or result.labels is None:
+            return {'error': 'No horizon data available'}
+
+        horizon_analysis = {}
+        for col in result.labels.columns:
+            if col.startswith('h'):
+                horizon_minutes = int(col[1:])  # Extract minutes from 'h60' format
+                horizon_data = result.labels[col]
+
+                horizon_analysis[f"{horizon_minutes}min"] = {
+                    'horizon_minutes': horizon_minutes,
+                    'horizon_bars': horizon_minutes // 15,
+                    'total_labels': len(horizon_data),
+                    'positive_labels': int((horizon_data == 1).sum()) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
+                    'negative_labels': int((horizon_data == 0).sum()) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
+                    'neutral_labels': int((horizon_data == -1).sum()) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
+                    'nan_labels': int(horizon_data.isna().sum()),
+                    'label_balance': round(abs((horizon_data == 1).sum() - (horizon_data == 0).sum()) / len(horizon_data), 3) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
+                    'positive_rate': round((horizon_data == 1).sum() / len(horizon_data) * 100, 2) if pd.api.types.is_numeric_dtype(horizon_data) else 0
+                }
+
+        return horizon_analysis
+
+    def _get_target_analysis(self, result: LabelingResult) -> Dict[str, Any]:
+        """Analyze results by target profit levels."""
+        if not hasattr(result.labels, 'columns') or result.labels is None:
+            return {'error': 'No target data available'}
+
+        target_analysis = {}
+        for col in result.labels.columns:
+            if col.startswith('h'):
+                horizon_minutes = int(col[1:])
+                target_data = result.labels[col]
+
+                if pd.api.types.is_numeric_dtype(target_data):
+                    # Calculate distribution across different label values
+                    value_counts = target_data.value_counts()
+                    target_analysis[f"{horizon_minutes}min"] = {
+                        'horizon_minutes': horizon_minutes,
+                        'unique_values': int(target_data.nunique()),
+                        'value_distribution': {str(k): int(v) for k, v in value_counts.to_dict().items()},
+                        'most_common_label': str(target_data.mode().iloc[0]) if len(target_data.mode()) > 0 else 'N/A',
+                        'label_entropy': round(-sum((count/len(target_data)) * (count/len(target_data)) for count in value_counts) / len(value_counts), 3) if len(value_counts) > 0 else 0
+                    }
+
+        return target_analysis
+
+    def _get_quality_metrics_analysis(self, result: LabelingResult) -> Dict[str, Any]:
+        """Analyze quality metrics if available."""
+        if not result.quality_scores:
+            return {'status': 'No quality scores available'}
+
+        quality_analysis = {'overall_status': 'Quality metrics available'}
+        for target_name, quality in result.quality_scores.items():
+            quality_analysis[target_name] = {
+                'overall_quality': round(getattr(quality, 'overall_quality', 0), 4),
+                'predictability': round(getattr(quality, 'predictability', 0), 4),
+                'stability': round(getattr(quality, 'stability', 0), 4),
+                'balance': round(getattr(quality, 'balance', 0), 4),
+                'quality_passes_threshold': getattr(quality, 'overall_quality', 0) >= self.labeler.config.min_label_quality,
+                'predictability_passes_threshold': getattr(quality, 'predictability', 0) >= self.labeler.config.min_predictability
+            }
+
+        return quality_analysis
+
+    def _get_recommendations(self, result: LabelingResult) -> List[str]:
+        """Generate recommendations based on the labeling results."""
+        recommendations = []
+
+        # Check sample count
+        if result.n_samples < 1000:
+            recommendations.append("⚠️ Low sample count - consider expanding data range or adjusting labeling parameters")
+
+        # Check target count
+        if result.n_targets is not None and result.n_targets < 2:
+            recommendations.append("⚠️ Very few targets generated - may indicate overly strict quality thresholds")
+
+        # Check horizon distribution
+        if hasattr(result.labels, 'columns'):
+            positive_cols = sum(1 for col in result.labels.columns if (result.labels[col] == 1).sum() > 0)
+            if positive_cols == 0:
+                recommendations.append("❌ No positive labels found - labeling may be too conservative")
+
+        # Check quality scores
+        if result.quality_scores:
+            avg_quality = sum(getattr(q, 'overall_quality', 0) for q in result.quality_scores.values()) / len(result.quality_scores)
+            if avg_quality < 0.5:
+                recommendations.append("⚠️ Low average quality scores - consider adjusting quality thresholds")
+
+        if not recommendations:
+            recommendations.append("✅ Labeling results look good - all metrics within acceptable ranges")
+
+        return recommendations
+
+    def _print_comprehensive_report(self, report: Dict[str, Any]) -> None:
+        """Print the comprehensive report in a readable format."""
+        tprint_info("🎯 COMPREHENSIVE LABELING OUTCOME REPORT")
+        tprint_info("=" * 60)
+
+        # Execution Summary
+        tprint_info("📋 EXECUTION SUMMARY:")
+        exec_summary = report['execution_summary']
+        tprint_info(f"   📊 Input Data: {exec_summary['input_data_shape']} shape, {exec_summary['input_data_memory_mb']}MB")
+        tprint_info(f"   📅 Date Range: {exec_summary['input_date_range']['start']} to {exec_summary['input_date_range']['end']}")
+        tprint_info(f"   ⏱️  Duration: {exec_summary['input_date_range']['duration_days']} days")
+        tprint_info(f"   📈 Output Labels: {exec_summary['output_labels_shape']} shape, {exec_summary['output_labels_memory_mb']}MB")
+        tprint_info(f"   ⚡ Processing Time: {exec_summary['processing_time_seconds']:.2f}s")
+        tprint_info(f"   ✅ Success Rate: {exec_summary['success_rate']:.1f}%")
+
+        # Data Quality Analysis
+        tprint_info("\n🔍 DATA QUALITY ANALYSIS:")
+        data_quality = report['data_quality_analysis']
+        tprint_info(f"   📉 Missing Values: {data_quality['missing_values_total']} ({data_quality['missing_values_percentage']}%)")
+        tprint_info(f"   ✅ Completeness: {data_quality['data_completeness']:.1f}%")
+        tprint_info(f"   🔄 Duplicates: {data_quality['duplicate_timestamps']} timestamp duplicates")
+
+        if data_quality['volume_analysis']['mean_volume']:
+            vol_analysis = data_quality['volume_analysis']
+            tprint_info(f"   📊 Volume: μ={vol_analysis['mean_volume']:,}, σ={vol_analysis['volume_std']:,}")
+            tprint_info(f"   💹 Price Volatility: {data_quality['price_volatility']:.2f}%")
+
+        # Labeling Performance
+        tprint_info("\n⚡ LABELING PERFORMANCE:")
+        perf_metrics = report['labeling_performance']
+        tprint_info(f"   🎯 Samples Processed: {perf_metrics['total_samples_processed']:,}")
+        tprint_info(f"   🏆 Targets Generated: {perf_metrics['total_targets_generated']:,}")
+        tprint_info(f"   ⏰ Horizons Processed: {perf_metrics['total_horizons_processed']}")
+        tprint_info(f"   📊 Labels/Sample: {perf_metrics['labels_per_sample']:.2f}")
+        tprint_info(f"   ⚡ Efficiency: {perf_metrics['processing_efficiency']:.0f} samples/sec")
+
+        # Horizon Analysis
+        tprint_info("\n🌅 HORIZON ANALYSIS:")
+        horizon_analysis = report['horizon_analysis']
+        if 'error' not in horizon_analysis:
+            for horizon_name, metrics in horizon_analysis.items():
+                tprint_info(f"   📈 {horizon_name}:")
+                tprint_info(f"      📊 Total: {metrics['total_labels']:,}, Positive: {metrics['positive_labels']:,} ({metrics['positive_rate']:.1f}%)")
+                tprint_info(f"      ⚖️  Balance: {metrics['label_balance']:.3f}, NaN: {metrics['nan_labels']:,}")
+        else:
+            tprint_info(f"   ❌ {horizon_analysis['error']}")
+
+        # Quality Metrics
+        tprint_info("\n🎯 QUALITY METRICS:")
+        quality_analysis = report['quality_metrics']
+        if quality_analysis.get('status') != 'No quality scores available':
+            for target_name, metrics in quality_analysis.items():
+                if target_name != 'overall_status':
+                    tprint_info(f"   📋 {target_name}:")
+                    tprint_info(f"      🎯 Quality: {metrics['overall_quality']:.4f} {'✅' if metrics['quality_passes_threshold'] else '❌'}")
+                    tprint_info(f"      🔮 Predictability: {metrics['predictability']:.4f} {'✅' if metrics['predictability_passes_threshold'] else '❌'}")
+        else:
+            tprint_info(f"   ❌ {quality_analysis['status']}")
+
+        # Recommendations
+        tprint_info("\n💡 RECOMMENDATIONS:")
+        for rec in report['recommendations']:
+            tprint_info(f"   {rec}")
+
+        tprint_info("=" * 60)
+        tprint_success("✅ Comprehensive report generated successfully")
+
+    def _save_detailed_report(self, report: Dict[str, Any]) -> None:
+        """Save detailed report to JSON file."""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"analyst_labeling_report_{timestamp}.json"
+            report_path = self.output_dir / report_filename
+
+            # Ensure output directory exists
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Convert any non-serializable objects to strings
+            serializable_report = self._make_report_serializable(report)
+
+            with open(report_path, 'w') as f:
+                safe_json_dump(serializable_report, f, indent=2)
+
+            tprint_success(f"💾 Detailed report saved to: {report_path}")
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save detailed report: {e}")
+
+    def _make_report_serializable(self, report: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert report to JSON-serializable format."""
+        def convert_value(value):
+            if isinstance(value, (int, float, str, bool, type(None))):
+                return value
+            elif isinstance(value, (list, tuple)):
+                return [convert_value(item) for item in value]
+            elif isinstance(value, dict):
+                return {str(k): convert_value(v) for k, v in value.items()}
+            elif hasattr(value, 'isoformat'):  # datetime
+                return value.isoformat()
+            else:
+                return str(value)
+
+        return {k: convert_value(v) for k, v in report.items()}
+
+    def _save_human_readable_outcome(self, outcome_data: Dict[str, Any], json_path: Path) -> None:
+        """Save outcome data in human-readable markdown format."""
+        try:
+            # Create markdown filename from JSON filename
+            markdown_filename = json_path.stem.replace('analyst_labeler_outcome', 'analyst_labeler_report') + '.md'
+            markdown_path = json_path.parent / markdown_filename
+
+            # Generate markdown content
+            markdown_content = self._generate_human_readable_content(outcome_data)
+
+            with open(markdown_path, 'w') as f:
+                f.write(markdown_content)
+
+            tprint_success(f"📄 Human-readable report saved: {markdown_filename}")
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save human-readable outcome file: {e}")
+
+    def _generate_human_readable_content(self, outcome_data: Dict[str, Any]) -> str:
+        """Generate human-readable markdown content from outcome data."""
+        content = []
+
+        content.append("# Analyst Profit Labeler - Execution Report")
+        content.append("")
+        content.append(f"**Execution Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        content.append(f"**Status:** {'✅ SUCCESS' if outcome_data.get('status') == 'success' else '❌ FAILED'}")
+        content.append("")
+
+        # Configuration Section
+        content.append("## 🔧 Configuration")
+        config = outcome_data.get('configuration', {})
+        content.append(f"- **Timeframe:** {outcome_data.get('timeframe', 'N/A')}")
+        content.append(f"- **Horizons:** {config.get('horizons', [])} minutes")
+        content.append(f"- **Target Profits:** {config.get('target_profits', [])}%")
+        content.append(f"- **Base Period:** {config.get('base_period_minutes', 'N/A')} minutes")
+        content.append(f"- **Volatility Normalization:** {'✅ Enabled' if config.get('use_volatility_normalization') else '❌ Disabled'}")
+        content.append("")
+
+        # Results Section
+        content.append("## 📊 Results Summary")
+        results = outcome_data.get('results', {})
+        content.append(f"- **Total Samples:** {results.get('n_samples', 0):,}")
+        content.append(f"- **Total Targets:** {results.get('n_targets', 0):,}")
+        content.append(f"- **Horizons Processed:** {results.get('n_horizons', 0)}")
+        content.append(f"- **Processing Time:** {outcome_data.get('execution_time', 0):.2f} seconds")
+        content.append("")
+
+        # Quality Metrics Section
+        quality_metrics = outcome_data.get('quality_metrics', {})
+        if quality_metrics:
+            content.append("## 🎯 Quality Metrics")
+            for target_name, metrics in quality_metrics.items():
+                content.append(f"### {target_name}")
+                content.append(f"- **Overall Quality:** {metrics.get('overall_quality', 0):.4f}")
+                content.append(f"- **Predictability:** {metrics.get('predictability', 0):.4f}")
+                content.append(f"- **Stability:** {metrics.get('stability', 0):.4f}")
+                content.append(f"- **Balance:** {metrics.get('balance', 0):.4f}")
+                content.append("")
+        else:
+            content.append("## 🎯 Quality Metrics")
+            content.append("No quality scores available")
+            content.append("")
+
+        # Data Quality Section
+        data_quality = outcome_data.get('data_quality', {})
+        if data_quality:
+            content.append("## 🔍 Data Quality Analysis")
+            input_data = data_quality.get('input_data', {})
+            output_labels = data_quality.get('output_labels', {})
+
+            content.append("### Input Data")
+            content.append(f"- **Total Records:** {input_data.get('rows', 0):,}")
+            content.append(f"- **Columns:** {input_data.get('columns', 0)}")
+            content.append(f"- **Missing Values:** {input_data.get('missing_percentage', 0):.2f}%")
+            content.append(f"- **Date Range:** {input_data.get('date_range', {}).get('start', 'N/A')} to {input_data.get('date_range', {}).get('end', 'N/A')}")
+
+            content.append("### Output Labels")
+            content.append(f"- **Labels Generated:** {output_labels.get('total_generated', 0):,}")
+            content.append(f"- **Label Coverage:** {output_labels.get('label_coverage', 0):.1f}%")
+            content.append(f"- **Targets per Sample:** {output_labels.get('targets_per_sample', 0):.2f}")
+            content.append("")
+
+        # Horizon Breakdown
+        horizon_breakdown = results.get('horizon_breakdown', {})
+        if horizon_breakdown:
+            content.append("## 🌅 Horizon Analysis")
+            for horizon_name, metrics in horizon_breakdown.items():
+                content.append(f"### {horizon_name}")
+                content.append(f"- **Expected Labels:** {metrics.get('expected_labels', 0):,}")
+                content.append(f"- **Horizon Bars:** {metrics.get('horizon_bars', 0)}")
+                content.append("")
+
+        # Target Breakdown
+        target_breakdown = results.get('target_breakdown', {})
+        if target_breakdown:
+            content.append("## 🎯 Target Analysis")
+            for target_name, metrics in target_breakdown.items():
+                content.append(f"### {target_name}")
+                content.append(f"- **Expected Labels:** {metrics.get('expected_labels', 0):,}")
+                content.append("")
+
+        # Recommendations
+        if outcome_data.get('status') == 'success':
+            content.append("## 💡 Summary")
+            content.append("✅ **Analyst profit labeling completed successfully!**")
+            content.append("")
+            content.append("The labeled dataset is ready for model training. Consider:")
+            content.append("- Using the generated labels for training analyst models")
+            content.append("- Analyzing quality metrics to ensure label reliability")
+            content.append("- Reviewing horizon and target breakdowns for optimization opportunities")
+
+        content.append("")
+        content.append("---")
+        content.append(f"*Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
+
+        return "\n".join(content)
+
     def get_label_summary(self, result: LabelingResult) -> Dict[str, Any]:
         """Get a summary of the labeling results."""
         tprint_info("📊 Generating label summary...")
@@ -667,7 +1113,24 @@ class AnalystProfitLabeler:
             # Add quality scores
             if result.quality_scores:
                 tprint_info(f"📈 Processing {len(result.quality_scores)} quality scores...")
+
+                # Enhanced quality metrics logging
+                tprint_info("📊 Detailed Quality Metrics Analysis:")
                 for target_name, quality in result.quality_scores.items():
+                    tprint_info(f"  🎯 Target '{target_name}':")
+                    tprint_info(f"     📈 Overall Quality: {quality.overall_quality:.4f}")
+                    tprint_info(f"     🔮 Predictability: {quality.predictability:.4f}")
+                    tprint_info(f"     ⚖️  Stability: {quality.stability:.4f}")
+                    tprint_info(f"     📊 Balance: {quality.balance:.4f}")
+
+                    # Check against thresholds
+                    meets_quality = quality.overall_quality >= self.labeler.config.min_label_quality
+                    meets_predictability = quality.predictability >= self.labeler.config.min_predictability
+
+                    tprint_info(f"     ✅ Quality Threshold (≥{self.labeler.config.min_label_quality}): {'PASS' if meets_quality else 'FAIL'}")
+                    tprint_info(f"     🔮 Predictability Threshold (≥{self.labeler.config.min_predictability}): {'PASS' if meets_predictability else 'FAIL'}")
+                    tprint_info(f"     🎯 Overall Status: {'✅ APPROVED' if meets_quality and meets_predictability else '❌ REJECTED'}")
+
                     summary['quality_scores'][target_name] = {
                         'overall_quality': quality.overall_quality,
                         'predictability': quality.predictability,
@@ -679,6 +1142,20 @@ class AnalystProfitLabeler:
                 tprint_warning("⚠️ No quality scores available in result")
 
             tprint_success(f"✅ Label summary generated: {summary['n_samples']} samples, {summary['n_targets']} targets, {summary['n_horizons']} horizons")
+
+            # Final decision summary
+            total_expected_labels = sum(horizon['expected_labels'] for horizon in summary.get('horizon_breakdown', {}).values())
+            tprint_info("🎯 Final Labeling Decision:")
+            if total_expected_labels > 0:
+                tprint_success(f"✅ Analyst labels will be generated: {total_expected_labels} total labels")
+            else:
+                tprint_warning("❌ No analyst labels will be generated - thresholds not met")
+                tprint_info(f"   📋 Thresholds: Quality ≥{self.labeler.config.min_label_quality}, Predictability ≥{self.labeler.config.min_predictability}")
+                if result.quality_scores:
+                    tprint_info("   📊 Consider lowering thresholds or using tactician labeler for more lenient labeling")
+                else:
+                    tprint_info("   📊 No quality scores available for assessment")
+
             return summary
 
         except Exception as e:
@@ -693,7 +1170,6 @@ class AnalystProfitLabeler:
                 'error': str(e)
             }
 
-@register_component('analyst_profit_labeler')
 class AnalystProfitLabelerComponent(BasePreTrainingComponent):
     """
     Component wrapper for Analyst Profit Labeler.
@@ -776,7 +1252,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
 
             # Validate OHLCV data format and constraints
             try:
-                data = validate_raw_ohlcv(data, context='analyst_profit_labeler.input_validation')
+                data = validate_raw_ohlcv(data)
                 tprint_info(f"✅ Input data validated: {len(data)} rows, {len(data.columns)} columns")
             except SchemaValidationException as e:
                 tprint_error(f"❌ Input data validation failed: {e}")
@@ -811,12 +1287,15 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
             if isinstance(labeling_result.labels, pd.DataFrame) and not labeling_result.labels.empty:
                 labeling_result.labels.to_parquet(labeled_data_file)
                 tprint_success(f"✅ Saved labeled data to {labeled_data_file}")
+            else:
+                # No file was saved, don't include the path
+                labeled_data_file = None
 
             # GenericArtifacts just needs to be instantiated, then we add attributes
             artifacts = GenericArtifacts()
             artifacts.multi_horizon_labeling_result = {
                 'labeled_data': labeling_result.labels,  # Keep in memory for pipeline continuity
-                'labeled_data_file': str(labeled_data_file),  # Add file path for persistence
+                'labeled_data_file': str(labeled_data_file) if labeled_data_file is not None else None,  # Only add path if file exists
                 'labels': labeling_result.labels,
                 'confidence_scores': labeling_result.confidence_scores,
                 'eligibility_masks': labeling_result.eligibility_masks,
@@ -832,32 +1311,39 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 'status': 'completed',
                 'timestamp': datetime.now().isoformat(),
                 'method': 'analyst_profit_labeling',
-                'timeframe': self.labeler.config.timeframe,
-                'summary': self.labeler.get_label_summary(labeling_result),
+                'timeframe': self.labeler.config.timeframe if hasattr(self.labeler.config, 'timeframe') else '15m',
+                'summary': self.get_label_summary(labeling_result),
                 'horizons': self.labeler.config.horizons,
                 'target_profits': self.labeler.config.target_profits,
             }
 
             # Calculate additional metrics
-            opportunities_per_day = None
+            opportunities_per_day = 0.0
 
-            if labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame):
+            if labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame) and not labeling_result.labels.empty:
                 # Calculate opportunities per day (post-filtering)
-                if hasattr(labeling_result.labels.index, 'to_pydatetime'):
+                try:
                     dates = pd.to_datetime(labeling_result.labels.index)
-                    date_range_days = (dates.max() - dates.min()).days
-                    if date_range_days > 0:
-                        # Count positive labels (actual opportunities)
-                        positive_labels = (labeling_result.labels.iloc[:, 0] == 1).sum() if len(labeling_result.labels.columns) > 0 else 0
-                        opportunities_per_day = round(float(positive_labels / date_range_days), 2)
+                    if len(dates) > 1:
+                        date_range_days = (dates.max() - dates.min()).days
+                        if date_range_days > 0:
+                            # Count positive labels (actual opportunities)
+                            positive_labels = 0
+                            for col in labeling_result.labels.columns:
+                                if pd.api.types.is_numeric_dtype(labeling_result.labels[col]):
+                                    positive_labels += (labeling_result.labels[col] == 1).sum()
+                            opportunities_per_day = round(float(positive_labels / date_range_days), 2)
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to calculate opportunities per day: {e}")
+                    opportunities_per_day = 0.0
 
             # Create result
             result = ComponentResult(
                 success=True,
-                artifacts=artifacts,
                 metadata={
                     'component': 'analyst_profit_labeler',
-                    'timeframe': self.labeler.config.timeframe,
+                    'timeframe': self.labeler.config.timeframe if hasattr(self.labeler.config, 'timeframe') else '15m',
+                    'artifacts': artifacts,
                     'n_samples': labeling_result.n_samples,
                     'n_targets': labeling_result.n_targets,
                     'n_horizons': labeling_result.n_horizons,
@@ -902,14 +1388,14 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     horizon_breakdown[f"{horizon}min"] = {
                         'horizon_minutes': horizon,
                         'horizon_bars': horizon // self.labeler.config.base_period_minutes,
-                        'expected_labels': labeling_result.n_targets // len(self.labeler.config.horizons) if labeling_result.n_targets > 0 else 0,
+                        'expected_labels': getattr(labeling_result, 'n_targets', 0) // len(self.labeler.config.horizons) if getattr(labeling_result, 'n_targets', 0) > 0 else 0,
                     }
 
                 target_breakdown = {}
                 for i, target in enumerate(self.labeler.config.target_profits):
                     target_breakdown[f"{target}%"] = {
                         'target_profit_pct': target,
-                        'expected_labels': labeling_result.n_targets // len(self.labeler.config.target_profits) if labeling_result.n_targets > 0 else 0,
+                        'expected_labels': getattr(labeling_result, 'n_targets', 0) // len(self.labeler.config.target_profits) if getattr(labeling_result, 'n_targets', 0) > 0 else 0,
                     }
 
                 # Data quality assessment
@@ -936,7 +1422,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     'component': 'analyst_profit_labeler',
                     'timestamp': datetime.now().isoformat(),
                     'execution_time': labeling_result.processing_time,
-                    'timeframe': self.labeler.config.timeframe,
+                    'timeframe': self.labeler.config.timeframe if hasattr(self.labeler.config, 'timeframe') else '15m',
                     'configuration': {
                         'horizons': self.labeler.config.horizons,
                         'target_profits': self.labeler.config.target_profits,
@@ -989,6 +1475,9 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 safe_json_dump(outcome_data, str(outcome_path))
                 tprint_success(f"📄 Outcome file saved: {outcome_filename}")
 
+                # Generate human-readable outcome file
+                self._save_human_readable_outcome(outcome_data, outcome_path)
+
             except Exception as outcome_error:
                 tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
                 # Don't fail the component if outcome file generation fails
@@ -1005,6 +1494,83 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 metadata={'component': 'analyst_profit_labeler'}
             )
             return result
+
+    def process(self, data: Any) -> Any:
+        """Process the input data and return the result."""
+        try:
+            # Extract required data from the input
+            if hasattr(data, 'data') and hasattr(data, 'regime_assignments'):
+                # Data is already in the expected format
+                return self.execute_analyst_profit_labeling(data.data, data.regime_assignments)
+            elif isinstance(data, dict) and 'data' in data and 'regime_assignments' in data:
+                # Data is a dictionary with the required keys
+                return self.execute_analyst_profit_labeling(data['data'], data['regime_assignments'])
+            else:
+                # Try to extract data and regime_assignments from the input
+                if hasattr(data, 'data'):
+                    data_obj = data.data
+                else:
+                    data_obj = data
+                
+                if hasattr(data, 'regime_assignments'):
+                    regime_assignments = data.regime_assignments
+                else:
+                    # Try to get regime assignments from the data object
+                    if hasattr(data_obj, 'regime_assignments'):
+                        regime_assignments = data_obj.regime_assignments
+                    else:
+                        raise ValueError("Could not find regime_assignments in the input data")
+                
+                return self.execute_analyst_profit_labeling(data_obj, regime_assignments)
+        except Exception as e:
+            self.logger.error(f"Error processing data in AnalystProfitLabelerComponent: {e}")
+            raise
+
+    def validate(self, data: Any) -> bool:
+        """Validate the input data."""
+        try:
+            # Check if data is not None
+            if data is None:
+                self.logger.warning("Input data is None")
+                return False
+            
+            # Check if we can extract the required data
+            if hasattr(data, 'data') and hasattr(data, 'regime_assignments'):
+                # Data is already in the expected format
+                return True
+            elif isinstance(data, dict) and 'data' in data and 'regime_assignments' in data:
+                # Data is a dictionary with the required keys
+                return True
+            else:
+                # Try to extract data and regime_assignments from the input
+                if hasattr(data, 'data'):
+                    data_obj = data.data
+                else:
+                    data_obj = data
+                
+                if hasattr(data, 'regime_assignments'):
+                    regime_assignments = data.regime_assignments
+                else:
+                    # Try to get regime assignments from the data object
+                    if hasattr(data_obj, 'regime_assignments'):
+                        regime_assignments = data_obj.regime_assignments
+                    else:
+                        self.logger.warning("Could not find regime_assignments in the input data")
+                        return False
+                
+                # Validate that we have the required data
+                if data_obj is None:
+                    self.logger.warning("Data object is None")
+                    return False
+                
+                if regime_assignments is None:
+                    self.logger.warning("Regime assignments are None")
+                    return False
+                
+                return True
+        except Exception as e:
+            self.logger.error(f"Error validating data in AnalystProfitLabelerComponent: {e}")
+            return False
 
 # Convenience function for external usage
 async def execute_analyst_profit_labeling(
@@ -1052,7 +1618,7 @@ async def execute_analyst_profit_labeling(
 def _register_analyst_profit_labeler():
     """Register the analyst profit labeler component with the factory."""
     try:
-        from ..components.component_factory import ComponentFactory
+        from src.training.steps.pre_training.components import ComponentFactory
         ComponentFactory.register_component(
             'analyst_profit_labeler',
             AnalystProfitLabelerComponent

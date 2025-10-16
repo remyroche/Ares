@@ -48,6 +48,7 @@ import warnings
 from pathlib import Path
 import sys
 import os
+from dataclasses import dataclass
 
 # Import tprint utilities - required for proper logging
 from src.utils.tprint import (
@@ -114,6 +115,92 @@ from src.utils.data.quality.data_cleaning import (
 
 # Setup logging
 logger = system_logger.getChild('AnalystEnsembleTraining')
+
+@dataclass
+class AnalystEnsembleTrainingConfig:
+    """Configuration for Analyst ensemble training."""
+    # Feature integration parameters
+    enable_full_integration: bool = True
+    include_hmm_features: bool = True
+    include_nas_features: bool = True
+
+    # Training parameters
+    save_models: bool = True
+    output_directory: str = "generated/analyst_ensemble_training"
+
+    # Hardware optimization
+    enable_parallel_processing: bool = True
+    enable_gpu_acceleration: bool = True
+    memory_limit_gb: float = 8.0
+
+    # Validation parameters
+    validation_split: float = 0.2
+    min_training_samples: int = 100
+
+    # Ensemble parameters
+    base_model_types: List[str] = None
+    
+    # HPO parameters
+    enable_hpo: bool = False
+    hpo_n_trials: int = 50
+    hpo_timeout_seconds: int = 3600
+    
+    # Regime parameters
+    min_samples_per_regime: int = 100
+    
+    # Evaluation parameters
+    evaluation_metrics: List[str] = None
+    
+    # Model configuration
+    model_name: str = "analyst_ensemble"
+    timeframe: str = "15m"
+    model_save_path: str = "generated/analyst_ensemble_models"
+    
+    # Overfitting prevention
+    enable_overfitting_prevention: bool = True
+    
+    # Save format
+    save_format: str = "pkl"
+
+    def __post_init__(self):
+        """Post-initialization setup."""
+        if self.base_model_types is None:
+            self.base_model_types = [
+                "TCN",
+                "LIGHTGBM",
+                "RIDGE",
+                "ELASTIC_NET",
+                "RANDOM_FOREST",
+                "NAS",
+                "TAS"
+            ]
+        if self.evaluation_metrics is None:
+            self.evaluation_metrics = ["accuracy", "precision", "recall", "f1_score", "auc"]
+
+@dataclass
+class AnalystEnsembleTrainingResult:
+    """Result of Analyst ensemble training."""
+    # Training results
+    models: Dict[str, Any] = None
+    training_metrics: Dict[str, Any] = None
+
+    # Metadata
+    execution_time: float = 0.0
+    total_samples: int = 0
+    features_used: List[str] = None
+    feature_integration_complete: bool = False
+    metadata: Dict[str, Any] = None
+
+    def __post_init__(self):
+        """Post-initialization setup."""
+        if self.models is None:
+            self.models = {}
+        if self.training_metrics is None:
+            self.training_metrics = {}
+        if self.features_used is None:
+            self.features_used = []
+        if self.metadata is None:
+            self.metadata = {}
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
     """
@@ -223,7 +310,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         """Consolidated configuration validation using common utilities."""
         with tprint_timer("Config validation"):
             # Basic validation
-            if not config.model_types or len(config.model_types) == 0:
+            if not config.base_model_types or len(config.base_model_types) == 0:
                 raise ValueError("At least one model type required")
 
             # HPO validation using validate_positive from common_operations
@@ -260,9 +347,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             cleaning_config = CleaningConfig(
                 missing_value_strategy=MissingValueStrategy.INTERPOLATE,
                 outlier_strategy=OutlierStrategy.CLIP,
-                outlier_threshold=3.0,
-                enable_gap_detection=True,
-                enable_async_processing=False
+                outlier_threshold=3.0
             )
             tprint_success("✅ Data cleaner initialized")
             return DataCleaner(cleaning_config)
@@ -2649,3 +2734,84 @@ if __name__ == "__main__":
         except Exception as e:
             logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+async def execute_analyst_ensemble_training(
+    X: np.ndarray,
+    y: np.ndarray,
+    regime_labels: np.ndarray,
+    config: Optional[AnalystEnsembleTrainingConfig] = None,
+    feature_names: Optional[List[str]] = None,
+    base_analyst_models: Optional[Dict[str, Any]] = None,
+    hmm_regime_outputs: Optional[np.ndarray] = None,
+    nas_model_predictions: Optional[np.ndarray] = None,
+    timestamps: Optional[np.ndarray] = None,
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Execute Analyst ensemble training with full feature integration.
+
+    Args:
+        X: Base feature matrix
+        y: Target values
+        regime_labels: HMM regime labels
+        config: Optional configuration
+        feature_names: Optional feature names
+        base_analyst_models: Base models for stacking
+        hmm_regime_outputs: HMM regime outputs
+        nas_model_predictions: NAS model predictions
+        timestamps: Data timestamps
+        **kwargs: Additional parameters
+
+    Returns:
+        Dict with trained ensemble models and metrics
+    """
+    trainer = AnalystEnsembleTrainingStep(config)
+
+    # Create training data DataFrame
+    training_data = pd.DataFrame(X, columns=feature_names or [f'feature_{i}' for i in range(X.shape[1])])
+
+    # Add regime labels if provided
+    if regime_labels is not None:
+        training_data['hmm_regime'] = regime_labels
+
+    # Add HMM outputs if provided
+    if hmm_regime_outputs is not None:
+        for i, hmm_output in enumerate(hmm_regime_outputs.T):
+            training_data[f'hmm_regime_prob_{i}'] = hmm_output
+
+    # Add NAS predictions if provided
+    if nas_model_predictions is not None:
+        for i, nas_pred in enumerate(nas_model_predictions.T):
+            training_data[f'nas_prediction_{i}'] = nas_pred
+
+    # Add timestamps if provided
+    if timestamps is not None:
+        training_data['timestamp'] = timestamps
+
+    # Create sample weights (can be enhanced based on regime confidence)
+    sample_weight = np.ones(len(training_data))
+
+    # Create target columns
+    target_columns = [f'target_{i}' for i in range(y.shape[1])] if len(y.shape) > 1 else ['target']
+    for i, col in enumerate(target_columns):
+        if len(y.shape) > 1:
+            training_data[col] = y[:, i]
+        else:
+            training_data[col] = y
+
+    return await trainer.train_analyst_ensemble(
+        training_data=training_data,
+        base_models=base_analyst_models or {},
+        feature_columns=feature_names or list(training_data.columns)[:-len(target_columns)],
+        target_columns=target_columns,
+        sample_weight=sample_weight,
+        **kwargs
+    )
+
+# Export the main classes and functions
+__all__ = [
+    'AnalystEnsembleTrainingConfig',
+    'AnalystEnsembleTrainingStep', 
+    'AnalystEnsembleTrainingResult',
+    'execute_analyst_ensemble_training'
+]

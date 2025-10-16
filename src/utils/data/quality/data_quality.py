@@ -21,7 +21,7 @@ from enum import Enum
 import psutil
 
 # Import our custom utilities
-from src.utils.logger import system_logger
+import logging
 
 # Import comprehensive duplicate analyzer
 try:
@@ -159,6 +159,7 @@ class DataQualityFramework:
 
     _instance = None
     _initialized = False
+    _init_done = False
 
     def __new__(cls, thresholds: Optional[QualityThresholds] = None):
         """Singleton pattern implementation."""
@@ -168,11 +169,11 @@ class DataQualityFramework:
 
     def __init__(self, thresholds: Optional[QualityThresholds] = None) -> None:
         """Initialize data quality framework (only once due to singleton)."""
-        if self._initialized:
+        if DataQualityFramework._init_done:
             return
 
         start_time = time.time()
-        self.logger = system_logger.getChild('DataQualityFramework')
+        self.logger = logging.getLogger('DataQualityFramework')
         self.thresholds = thresholds or QualityThresholds()
 
         # Initialize duplicate analyzer if available
@@ -233,6 +234,7 @@ class DataQualityFramework:
 
         self.logger.info('🔧 Unified Data Quality Framework initialized (singleton)')
         self._initialized = True
+        DataQualityFramework._init_done = True
 
         # Add timing information (Numba-safe implementation)
         duration = time.time() - start_time
@@ -557,18 +559,61 @@ class DataQualityFramework:
         if not price_columns:
             return
 
+        # Debug: Print price range information
+        print(f"🔍 [PRICE_ANOMALY_DEBUG] Price tolerance threshold: {self.thresholds.price_tolerance}")
+        for col in price_columns:
+            if col in df.columns:
+                col_data = df[col].dropna()
+                if len(col_data) > 0:
+                    # Convert to numeric if needed
+                    try:
+                        col_data_numeric = pd.to_numeric(col_data, errors='coerce')
+                        if not col_data_numeric.isna().all():
+                            print(f"🔍 [PRICE_ANOMALY_DEBUG] {col} range: min={col_data_numeric.min():.6f}, max={col_data_numeric.max():.6f}, mean={col_data_numeric.mean():.6f}")
+                            negative_count = (col_data_numeric < -self.thresholds.price_tolerance).sum()
+                            if negative_count > 0:
+                                print(f"🔍 [PRICE_ANOMALY_DEBUG] {col} negative values: {negative_count} (below {self.thresholds.price_tolerance})")
+                        else:
+                            print(f"🔍 [PRICE_ANOMALY_DEBUG] {col} contains non-numeric data: {col_data.dtype}")
+                    except Exception as e:
+                        print(f"🔍 [PRICE_ANOMALY_DEBUG] {col} data type: {col_data.dtype}, sample: {col_data.head(3).tolist()}")
+
         anomalies = []
+        negative_price_anomalies = 0
+        high_low_inversions = 0
+        close_outside_range = 0
+        
         for i in range(len(df)):
             row = df.iloc[i]
+            
+            # Convert price columns to numeric for validation
+            numeric_row = {}
             for col in price_columns:
-                if row[col] < -self.thresholds.price_tolerance:
+                try:
+                    numeric_row[col] = pd.to_numeric(row[col], errors='coerce')
+                except:
+                    numeric_row[col] = np.nan
+            
+            # Check for negative prices
+            for col in price_columns:
+                if not pd.isna(numeric_row[col]) and numeric_row[col] < -self.thresholds.price_tolerance:
                     anomalies.append({'row': i, 'column': col, 'value': row[col], 'type': 'negative_price'})
+                    negative_price_anomalies += 1
 
+            # Check OHLC relationships if all columns are numeric
             if all(col in price_columns for col in ['open', 'high', 'low', 'close']):
-                if row['high'] < row['low']:
+                if (not pd.isna(numeric_row['high']) and not pd.isna(numeric_row['low']) and 
+                    numeric_row['high'] < numeric_row['low']):
                     anomalies.append({'row': i, 'type': 'high_low_inversion', 'high': row['high'], 'low': row['low']})
-                if row['close'] > row['high'] or row['close'] < row['low']:
+                    high_low_inversions += 1
+                if (not pd.isna(numeric_row['close']) and not pd.isna(numeric_row['high']) and not pd.isna(numeric_row['low']) and
+                    (numeric_row['close'] > numeric_row['high'] or numeric_row['close'] < numeric_row['low'])):
                     anomalies.append({'row': i, 'type': 'close_outside_range', 'close': row['close'], 'high': row['high'], 'low': row['low']})
+                    close_outside_range += 1
+
+        # Debug: Print anomaly breakdown
+        print(f"🔍 [PRICE_ANOMALY_DEBUG] Anomaly breakdown: negative_prices={negative_price_anomalies}, high_low_inversions={high_low_inversions}, close_outside_range={close_outside_range}")
+        print(f"🔍 [PRICE_ANOMALY_DEBUG] Total anomalies: {len(anomalies)}")
 
         result.add_metric('price_anomalies', anomalies)
         if anomalies:
@@ -922,8 +967,10 @@ class DataQualityFramework:
             price_cols = ['open', 'high', 'low', 'close']
             for col in price_cols:
                 if col in df.columns:
-                    negative_ratio = (df[col] < 0).sum() / len(df)
-                    score -= negative_ratio * 20
+                    # Only check for negative values if the column is numeric
+                    if pd.api.types.is_numeric_dtype(df[col]):
+                        negative_ratio = (df[col] < 0).sum() / len(df)
+                        score -= negative_ratio * 20
 
             return max(0.0, score)
         except Exception as e:

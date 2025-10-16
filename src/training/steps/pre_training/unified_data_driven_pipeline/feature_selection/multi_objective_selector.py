@@ -618,7 +618,7 @@ class MultiObjectiveFeatureSelector:
         if PURGED_KFOLD_AVAILABLE:
             self.purged_kfold = PurgedKFoldTime(
                 n_splits=self.n_splits,
-                embargo_td=pd.Timedelta(days=self.embargo_days)
+                embargo=pd.Timedelta(days=self.embargo_days)
             )
         else:
             self.purged_kfold = None

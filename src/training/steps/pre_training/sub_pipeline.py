@@ -215,7 +215,8 @@ from .logging_utils import (
 )
 
 # Import component system
-from .components import ComponentFactory, ComponentConfig
+from .components import ComponentFactory
+from .components.component_factory import ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
 from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 from src.training.steps.pre_training.validation.data_contracts import (
@@ -862,6 +863,15 @@ class SubPipelineConfig:
 
         return self.paths.config
 
+    @property
+    def enabled_steps(self) -> List[str]:
+        """Return list of enabled step names for pipeline execution."""
+        # Return the default sequence of steps from the registry
+        return [
+            spec.name for spec in STEP_REGISTRY.values()
+            if spec.enabled and spec.include_in_default_sequence
+        ]
+
 @dataclass
 class SubPipelineFailure:
     """Structured failure details for sub-pipeline execution."""
@@ -960,6 +970,10 @@ class PreTrainingSubPipeline:
 
         # Initialize memory-aware validation manager
         self.validation_manager = MemoryAwareValidationManager()
+
+        # Register all available components
+        from .components import ComponentRegistry
+        ComponentRegistry.register_all_components()
 
         self._refresh_component_registry()
 
@@ -2133,13 +2147,13 @@ class PreTrainingSubPipeline:
 #                     error_code=None,
 #                     metadata={'skipped': 'independent_execution'}
 #                 )
-#                 # Create context for logging
-#                 interactive_context = StepLogContext(
-#                     run_id=run_id,
-#                     step='interactive_feature_generation',
-#                     symbol=config.symbol,
-#                     timeframe=config.timeframe,
-#                 )
+                # Create context for logging
+                interactive_context = StepLogContext(
+                    run_id=run_id,
+                    step='interactive_feature_generation',
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                )
 #                 rows_in, rows_out = 0, 0
 #                 interactive_duration_ms = 0.0
 #             else:
@@ -2269,6 +2283,7 @@ class PreTrainingSubPipeline:
 
 #                 results['results']['interactive_feature_generation'] = merged_interactive_artifacts
             elif interactive_artifacts:
+                pass  # Legacy method removed - no action needed
 #                 self.logger.warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
 #                 try:
 #                     merged_interactive_artifacts = self._current_pipeline_state.merge_step_artifacts(
@@ -2318,6 +2333,8 @@ class PreTrainingSubPipeline:
 #             self.event_logger.step_begin(ffs_context)
 #             self.logger.info('🎯 Step 4: Final Feature Selection')
 # LEGACY METHOD CALL REMOVED
+            ffs_duration_ms = None  # Initialize to None since legacy method is removed
+#             ffs_result = None  # Initialize to None since legacy method is removed
 #             self._capture_step_timing_metrics('final_feature_selection', ffs_result, config, results)
 #             rows_in, rows_out = self._resolve_row_counts(ffs_result)
 #             ffs_context.rows_in = rows_in
@@ -2325,7 +2342,7 @@ class PreTrainingSubPipeline:
 #             if ffs_result.success:
 #                 results['completed_steps'] += 1
 #             self._record_step_metrics('final_feature_selection', ffs_result, results, metrics_sink, step_metric_records)
-#             ffs_duration_ms = self._result_duration_ms(ffs_result)
+#             ffs_duration_ms = None  # Initialize to None since legacy method is removed
 #             self._extend_pipeline_collections(results, ffs_result)
 #             if not ffs_result.success:
 #                 failure = self._resolve_failure_from_result(
@@ -2366,7 +2383,7 @@ class PreTrainingSubPipeline:
 #                             config=config,
 #                             rows_in=ffs_context.rows_in,
 #                             rows_out=ffs_context.rows_out,
-                    duration_ms=ffs_duration_ms,
+#                             duration_ms=ffs_duration_ms,
 #                             extra={
 #                                 'error_code': failure.error_code,
 #                                 'continue_on_error': True,
@@ -3049,8 +3066,9 @@ class PreTrainingSubPipeline:
             data_cache_dir = config.custom_params.get('data_cache_dir') if config.custom_params else None
             if data_cache_dir:
                 regime_cache_path = str((Path(data_cache_dir).expanduser() / 'nas_tas_clustering').resolve(strict=False))
-        if not regime_cache_path and self._settings.regime.cache_dir is not None:
-            regime_cache_path = str(self._settings.regime.cache_dir.resolved)
+        # Note: regime is a string, not an object with cache_dir attribute
+        # if not regime_cache_path and self._settings.regime.cache_dir is not None:
+        #     regime_cache_path = str(self._settings.regime.cache_dir.resolved)
 
         if regime_cache_path:
             pipeline_state['regime_cache_path'] = regime_cache_path
@@ -3361,13 +3379,12 @@ class PreTrainingSubPipeline:
 
         return dataset_metrics, alerts
 
-    async def _execute_multi_horizon_profit_labeler(
-# LEGACY METHOD REMOVED - _execute_multi_horizon_profit_labeler (lines 3450-3674)
+    async def _execute_analyst_profit_labeler(
         self,
         config: SubPipelineConfig,
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
-        """Execute analyst profit labeler (60m timeframe, strategic labeling)."""
+        """Execute analyst profit labeler (15m timeframe, strategic labeling)."""
         result = SubPipelineResult(
             sub_pipeline_name='analyst_profit_labeler',
             status=SubPipelineStatus.RUNNING,
@@ -3376,211 +3393,144 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('analyst_profit_labeler')
 
         try:
-#             # Analyst runs use 15m timeframe for tactical analysis
-#             # Normalize timeframe format (15m -> 15m for data loading)
+            # Analyst runs use 15m timeframe for tactical analysis
+            # Normalize timeframe format (15m -> 15m for data loading)
             analyst_timeframe_config = '15m'  # For component config
             analyst_timeframe_data = '15m'  # For data loading
 
-#             # Convert config to component config with analyst-specific timeframe
+            # Convert config to component config with analyst-specific timeframe
             component_config = ComponentConfig(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=analyst_timeframe_config,
-                data_dir=config.data_dir,
-                custom_params=self._build_component_custom_params(config)
+                name='analyst_profit_labeler',
+                enabled=True,
+                parameters={
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': analyst_timeframe_config,
+                    'data_dir': config.data_dir,
+                    **self._build_component_custom_params(config)
+                }
             )
 
-#             # Create component using factory
+            # Create component using factory
+            self.logger.info(f"🔍 Available components: {ComponentFactory.get_available_components()}")
             component = ComponentFactory.create_component('analyst_profit_labeler', component_config)
+            if component is None:
+                raise ValueError(f"Component 'analyst_profit_labeler' not found. Available components: {ComponentFactory.get_available_components()}")
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
-#             # Execute component
+            # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
 
-#             # Load market data directly for labeling component
-#             # analyst_profit_labeler creates labels, it doesn't consume them
+            # Load market data directly for labeling component
+            # analyst_profit_labeler creates labels, it doesn't consume them
             from src.utils.data.klines_parquet import KlinesParquetManager
 
             try:
                 klines_manager = KlinesParquetManager()
-#                 # Load all available data (don't filter by date initially)
+                # Load data respecting the configured date range (light mode = 20 days)
                 market_data = klines_manager.read_data(
                     symbol=config.symbol,
                     interval=analyst_timeframe_data,
-                    start_date=None,
-                    end_date=None
+                    start_date=config.start_date,
+                    end_date=config.end_date
                 )
-                if market_data is not None and not market_data.empty:
-                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for analyst labeling")
+                
+                if market_data is None or market_data.empty:
+                    raise ValueError(f"No market data found for {config.symbol} {analyst_timeframe_data}")
 
-#                     # Transform data to match expected OHLCV schema
-#                     # Ensure datetime index
-                    if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
-                        market_data = market_data.set_index('open_time')
-                        self.logger.info("📅 Set open_time as datetime index")
-                    elif not isinstance(market_data.index, pd.DatetimeIndex):
-#                         # Try to convert index to datetime if it's not already
-                        try:
-                            market_data.index = pd.to_datetime(market_data.index)
-                            self.logger.info("📅 Converted index to datetime")
-                        except Exception as idx_error:
-                            self.logger.warning(f"⚠️ Could not convert index to datetime: {idx_error}")
+                # Add market data to pipeline state
+                pipeline_state['market_data'] = market_data
+                
+                # Execute the component
+                component_result = await component.execute(market_data, pipeline_state)
+                
+                if component_result.success:
+                    result.status = SubPipelineStatus.COMPLETED
+                    result.success = True
+                    result.metadata = component_result.metadata
+                    result.artifacts = component_result.artifacts
+                else:
+                    result.status = SubPipelineStatus.FAILED
+                    result.error_message = component_result.error_message
+                    result.error_code = self._extract_component_error_code(
+                        component_result,
+                        self._default_step_error_code('analyst_profit_labeler'),
+                    )
 
-#                     # Ensure required columns exist
-                    required_cols = ['open', 'high', 'low', 'close', 'volume']
-                    missing_cols = [col for col in required_cols if col not in market_data.columns]
-                    if missing_cols:
-                        raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
-
-#                     # Check for and handle null values in required columns
-                    null_counts = market_data[required_cols].isnull().sum()
-                    if null_counts.any():
-                        self.logger.warning(f"⚠️ Found null values in OHLCV columns: {null_counts[null_counts > 0].to_dict()}")
-#                         # Drop rows with any null values in required columns
-                        original_len = len(market_data)
-                        market_data = market_data.dropna(subset=required_cols)
-                        self.logger.info(f"🧹 Cleaned data: {original_len} -> {len(market_data)} rows (removed {original_len - len(market_data)} rows with nulls)")
-
-#                     # Ensure columns are float type (pandera expects Float)
-                    for col in required_cols:
-                        if market_data[col].dtype not in ['float32', 'float64']:
-                            market_data[col] = market_data[col].astype('float64')
-                            self.logger.info(f"🔄 Converted {col} to float64")
-
-#                     # Select only required columns (and any extras that might be useful)
-#                     # The schema has strict=False so extra columns are allowed
-                    self.logger.info(f"📊 Data has columns: {list(market_data.columns)}")
-                    self.logger.info(f"📊 Index type: {type(market_data.index)}")
-                    self.logger.info(f"📊 Data types: {market_data[required_cols].dtypes.to_dict()}")
+                    if component_result.success:
+                        result.metadata = self._merge_run_metadata(result.metadata)
+                        result.artifacts = component_result.artifacts
+                    else:
+                        failure_context = {
+                            'component': 'analyst_profit_labeler',
+                            'symbol': config.symbol,
+                            'timeframe': analyst_timeframe_config,
+                            'error': component_result.error_message
+                        }
+                        result.failure = self._create_failure(
+                            'analyst_profit_labeler',
+                            result.error_code or self._default_step_error_code('analyst_profit_labeler'),
+                            result.error_message or 'Analyst profit labeler failed',
+                            context=failure_context,
+                        )
 
             except Exception as e:
-                self.logger.error(f"❌ Failed to load market data: {e}")
-                raise ValueError(f"Could not load market data for analyst_profit_labeler: {e}") from e
-
-            if market_data is None or market_data.empty:
-                raise ValueError("Market data is required for analyst_profit_labeler but none was loaded")
-
-            component_result = await component.execute(market_data, pipeline_state)
-            component_result.metadata = self._merge_run_metadata(component_result.metadata)
-            result.warnings = self._collect_component_warnings(component_result)
-            result.errors = self._collect_component_errors(component_result)
-
-            result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
-            result.success = component_result.success
-            result.end_time = datetime.now()
-            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            result.artifacts = component_result.artifacts
-            result.error_message = component_result.error_message
-            result.error_code = self._extract_component_error_code(
-                component_result,
-                self._default_step_error_code('analyst_profit_labeler'),
-            )
-
-            if component_result.success:
-                try:
-                    artifacts = component_result.artifacts or {}
-                    if 'multi_horizon_labeling_result' in artifacts:
-                        validated_contract = validate_multi_horizon_labeling_result(
-                            artifacts['multi_horizon_labeling_result'],
-                            context='sub_pipeline.analyst_profit_labeler',
-                        )
-                        artifacts['multi_horizon_labeling_result'] = validated_contract
-                        result.artifacts = artifacts
-                except DataContractValidationError as contract_error:
-                    self.event_logger.error(
-                        "Contract validation error",
-                        context={
-                            'run_id': self._run_metadata.get('run_id'),
-                            'step': 'analyst_profit_labeler.validation',
-                            'symbol': self._run_metadata.get('symbol'),
-                            'timeframe': self._run_metadata.get('timeframe'),
-                            'error': str(contract_error),
-                        },
-                    )
-                    return self._handle_contract_error(result, 'analyst_profit_labeler', contract_error)
-
-                quality_metrics, quality_alerts = self._analyze_component_quality(
-                    'analyst_profit_labeler',
-                    result.artifacts,
-                    config,
-                )
-                result.metadata = self._extend_with_quality_metadata(
-                    component_result.metadata,
-                    quality_metrics,
-                    quality_alerts,
-                    config,
-                )
-                if result.warnings:
-                    warnings_meta = result.metadata.setdefault('warnings', [])
-                    self._extend_messages(warnings_meta, result.warnings)
-            else:
-                result.metadata = self._merge_run_metadata(component_result.metadata or {
-                    'component_type': 'analyst_profit_labeler'
-                })
-                failure_context = {
-                    'component_metadata': component_result.metadata,
-                    'artifacts_keys': sorted((component_result.artifacts or {}).keys()),
-                }
+                result.status = SubPipelineStatus.FAILED
+                result.end_time = datetime.now()
+                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                self.logger.error(f"❌ Analyst profit labeler failed - missing dependencies: {e}")
+                result.metadata = self._merge_run_metadata(result.metadata)
+                result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_IMPORT"
                 result.failure = self._create_failure(
                     'analyst_profit_labeler',
-                    result.error_code or self._default_step_error_code('analyst_profit_labeler'),
-                    result.error_message or 'Analyst profit labeler failed',
-                    context=failure_context,
+                    result.error_code,
+                    f"Missing dependencies: {e}",
+                    context={'component': 'analyst_profit_labeler', 'error': str(e)}
                 )
-                if result.error_message:
-                    self._extend_messages(result.errors, [result.error_message])
+            except FileNotFoundError as e:
+                result.status = SubPipelineStatus.FAILED
+                result.end_time = datetime.now()
+                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                self.logger.error(f"❌ Analyst profit labeler failed - missing files: {e}")
+                result.metadata = self._merge_run_metadata(result.metadata)
+                result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_MISSING_FILE"
+                result.failure = self._create_failure(
+                    'analyst_profit_labeler',
+                    result.error_code,
+                    f"Missing files: {e}",
+                    context={'component': 'analyst_profit_labeler', 'error': str(e)}
+                )
+            except Exception as e:
+                result.status = SubPipelineStatus.FAILED
+                result.end_time = datetime.now()
+                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                self.logger.error(f"❌ Analyst profit labeler failed - unexpected error: {e}")
+                result.metadata = self._merge_run_metadata(result.metadata)
+                result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_UNEXPECTED"
+                result.failure = self._create_failure(
+                    'analyst_profit_labeler',
+                    result.error_code,
+                    f"Unexpected error: {e}",
+                    context={'component': 'analyst_profit_labeler', 'error': str(e)}
+                )
 
-        except ImportError as e:
-            result.status = SubPipelineStatus.FAILED
-            result.error_message = f"Missing dependencies: {str(e)}"
-            result.end_time = datetime.now()
-            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            self.logger.error(f"❌ Analyst profit labeler failed - missing dependencies: {e}")
-            result.metadata = self._merge_run_metadata(result.metadata)
-            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_IMPORT"
-            result.failure = self._create_failure(
-                'analyst_profit_labeler',
-                result.error_code,
-                result.error_message,
-                exception=e,
-            )
-            self._extend_messages(result.errors, [result.error_message])
-        except FileNotFoundError as e:
-            result.status = SubPipelineStatus.FAILED
-            result.error_message = f"Missing files: {str(e)}"
-            result.end_time = datetime.now()
-            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            self.logger.error(f"❌ Analyst profit labeler failed - missing files: {e}")
-            result.metadata = self._merge_run_metadata(result.metadata)
-            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_MISSING_FILE"
-            result.failure = self._create_failure(
-                'analyst_profit_labeler',
-                result.error_code,
-                result.error_message,
-                exception=e,
-            )
-            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
-            result.error_message = f"Unexpected error: {str(e)}"
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            self.logger.error(f"❌ Analyst profit labeler failed - unexpected error: {e}")
+            self.logger.error(f"❌ Analyst profit labeler failed: {e}")
             result.metadata = self._merge_run_metadata(result.metadata)
-            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_UNEXPECTED"
+            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_EXECUTION"
             result.failure = self._create_failure(
                 'analyst_profit_labeler',
                 result.error_code,
-                result.error_message,
-                exception=e,
+                f"Execution failed: {e}",
+                context={'component': 'analyst_profit_labeler', 'error': str(e)}
             )
-            self._extend_messages(result.errors, [result.error_message or str(e)])
 
-        # Store artifacts in chain for next steps (success or failure)
-        if result.artifacts:
-            self._store_artifacts_in_chain('analyst_profit_labeler', result.artifacts)
-
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
 
     async def _execute_tactician_entry_labeler(
@@ -3597,28 +3547,26 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('tactician_entry_labeler')
 
         try:
-#             # Tactician runs use 15m timeframe for tactical entry timing
+            # Tactician runs use 15m timeframe for tactical entry timing
             tactician_timeframe = '15m'
 
-#             # Convert config to component config with tactician-specific timeframe
+            # Convert config to component config with tactician-specific timeframe
             component_config = ComponentConfig(
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=tactician_timeframe,
-                data_dir=config.data_dir,
-                custom_params=self._build_component_custom_params(config)
+                name='tactician_entry_labeler',
+                enabled=True,
+                parameters=self._build_component_custom_params(config)
             )
 
-#             # Create component using factory
+            # Create component using factory
             component = ComponentFactory.create_component('tactician_entry_labeler', component_config)
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
-#             # Execute component
+            # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
 
-#             # Load market data directly for labeling component
-#             # tactician_entry_labeler creates labels, it doesn't consume them
+            # Load market data directly for labeling component
+            # tactician_entry_labeler creates labels, it doesn't consume them
             from src.utils.data.klines_parquet import KlinesParquetManager
 
             try:
@@ -4842,6 +4790,36 @@ class PreTrainingSubPipeline:
 
         return None
 
+    async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute a specific sub-pipeline."""
+        # Get the step specification
+        spec = self._get_step_spec(sub_pipeline_name)
+        if spec is None:
+            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+
+        # Execute the step
+        self.logger.info(f"🚀 Executing pre-training step: {sub_pipeline_name}")
+        
+        # Get the executor method
+        executor_method = getattr(self, spec.executor_method, None)
+        if executor_method is None:
+            raise ValueError(f"Executor method '{spec.executor_method}' not found for sub-pipeline '{sub_pipeline_name}'")
+
+        # Create run metadata
+        run_metadata = {
+            'sub_pipeline_name': sub_pipeline_name,
+            'timestamp': datetime.now().isoformat(),
+            'config': config.to_dict() if hasattr(config, 'to_dict') else {}
+        }
+
+        # Execute the method
+        result = await executor_method(config, run_metadata)
+        
+        # Store the result
+        self.results.append(result)
+        
+        return result
+
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""
         # For pre-training, execute the default enabled steps in sequence
@@ -4873,6 +4851,21 @@ class PreTrainingSubPipeline:
 
         # Return the first result (the one that was requested)
         return self.results[0] if self.results else None
+
+    def get_available_sub_pipelines(self) -> List[str]:
+        """Get list of available sub-pipelines."""
+        return [
+            'analyst-labeler',
+            'tactician-labeler',
+            'feature_generation_data_validation_step',
+            'feature_generation_labeling_integration_step',
+            'feature_generation_feature_generation_step',
+            'feature_generation_feature_selection_step',
+            'feature_generation_period_lookback_optimization_step',
+            'feature_generation_interaction_generation_step',
+            'feature_generation_vectorization_step',
+            'feature_generation_final_validation_step'
+        ]
 
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary with all results."""

@@ -612,8 +612,9 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
                     # Calculate bands
                     upper = middle + (std_val * std_dev)
                     lower = middle - (std_val * std_dev)
-                    width = (upper - lower) / middle
-                    position = (data['close'] - lower) / (upper - lower)
+                    # Use safe division to prevent division by zero
+                    width = (upper - lower) / middle.replace(0, np.nan)
+                    position = (data['close'] - lower) / (upper - lower).replace(0, np.nan)
 
                     results[f'bb_upper_{window}_{std_dev}'] = upper
                     results[f'bb_middle_{window}_{std_dev}'] = middle
@@ -667,14 +668,14 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             if atr_key in atr_features.columns:
                 atr = atr_features[atr_key]
 
-                # ATR percentage
-                results[f'atr_pct_{period}'] = atr / data['close']
+                # ATR percentage - use safe division
+                results[f'atr_pct_{period}'] = atr / data['close'].replace(0, np.nan)
 
-                # ATR ratio (current vs previous)
-                results[f'atr_ratio_{period}'] = atr / atr.shift(1)
+                # ATR ratio (current vs previous) - use safe division
+                results[f'atr_ratio_{period}'] = atr / atr.shift(1).replace(0, np.nan)
 
-                # ATR position in range
-                results[f'atr_position_{period}'] = (data['high'] - data['low']) / atr
+                # ATR position in range - use safe division
+                results[f'atr_position_{period}'] = (data['high'] - data['low']) / atr.replace(0, np.nan)
 
         # Combine ATR and additional features
         all_features = pd.concat([atr_features, pd.DataFrame(results, index=data.index)], axis=1)
@@ -933,9 +934,9 @@ class VectorBTGarmanKlassVolatilityGenerator(VectorBTFeatureGenerator):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_garman_klass_volatility_{self.period}')
 
         try:
-            # Calculate Garman-Klass volatility components
-            log_hl = np.log(data['high'] / data['low'])
-            log_co = np.log(data['close'] / data['open'])
+            # Calculate Garman-Klass volatility components - use safe log
+            log_hl = np.log(data['high'] / data['low'].replace(0, np.nan))
+            log_co = np.log(data['close'] / data['open'].replace(0, np.nan))
 
             # Garman-Klass formula: 0.5 * (log(high/low))^2 - (2*log(2)-1) * (log(close/open))^2
             gk_volatility = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
@@ -1004,8 +1005,8 @@ class VectorBTParkinsonVolatilityGenerator(VectorBTFeatureGenerator):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_parkinson_volatility_{self.period}')
 
         try:
-            # Calculate Parkinson volatility: (1/(4*ln(2))) * ln(high/low)^2
-            log_hl = np.log(data['high'] / data['low'])
+            # Calculate Parkinson volatility: (1/(4*ln(2))) * ln(high/low)^2 - use safe log
+            log_hl = np.log(data['high'] / data['low'].replace(0, np.nan))
             parkinson_volatility = (1 / (4 * np.log(2))) * log_hl**2
 
             # Use VectorBT rolling optimizer if available
@@ -1072,11 +1073,11 @@ class VectorBTRogersSatchellVolatilityGenerator(VectorBTFeatureGenerator):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_rogers_satchell_volatility_{self.period}')
 
         try:
-            # Calculate Rogers-Satchell volatility components
-            log_ho = np.log(data['high'] / data['open'])
-            log_hc = np.log(data['high'] / data['close'])
-            log_lo = np.log(data['low'] / data['open'])
-            log_lc = np.log(data['low'] / data['close'])
+            # Calculate Rogers-Satchell volatility components - use safe log
+            log_ho = np.log(data['high'] / data['open'].replace(0, np.nan))
+            log_hc = np.log(data['high'] / data['close'].replace(0, np.nan))
+            log_lo = np.log(data['low'] / data['open'].replace(0, np.nan))
+            log_lc = np.log(data['low'] / data['close'].replace(0, np.nan))
 
             # Rogers-Satchell formula
             rs_volatility = log_ho * log_hc + log_lo * log_lc
@@ -1145,20 +1146,20 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_yang_zhang_volatility_{self.period}')
 
         try:
-            # Calculate Yang-Zhang volatility components
+            # Calculate Yang-Zhang volatility components - use safe log
             # Overnight volatility
-            log_co = np.log(data['close'] / data['open'])
+            log_co = np.log(data['close'] / data['open'].replace(0, np.nan))
             overnight_vol = log_co**2
 
-            # Rogers-Satchell volatility (already calculated above)
-            log_ho = np.log(data['high'] / data['open'])
-            log_hc = np.log(data['high'] / data['close'])
-            log_lo = np.log(data['low'] / data['open'])
-            log_lc = np.log(data['low'] / data['close'])
+            # Rogers-Satchell volatility (already calculated above) - use safe log
+            log_ho = np.log(data['high'] / data['open'].replace(0, np.nan))
+            log_hc = np.log(data['high'] / data['close'].replace(0, np.nan))
+            log_lo = np.log(data['low'] / data['open'].replace(0, np.nan))
+            log_lc = np.log(data['low'] / data['close'].replace(0, np.nan))
             rs_volatility = log_ho * log_hc + log_lo * log_lc
 
-            # Garman-Klass volatility
-            log_hl = np.log(data['high'] / data['low'])
+            # Garman-Klass volatility - use safe log
+            log_hl = np.log(data['high'] / data['low'].replace(0, np.nan))
             gk_volatility = 0.5 * log_hl**2 - (2 * np.log(2) - 1) * log_co**2
 
             # Yang-Zhang formula: overnight + Rogers-Satchell + Garman-Klass
@@ -1666,12 +1667,14 @@ class VolatilityConfig:
                  volatility_windows: List[int] = [10, 20, 50],
                  enable_garch: bool = True,
                  enable_volatility_clustering: bool = True,
-                 enable_regime_detection: bool = False):
+                 enable_regime_detection: bool = False,
+                 vectorbt_threshold: int = 1000):
         self.lookback_periods = lookback_periods
         self.volatility_windows = volatility_windows
         self.enable_garch = enable_garch
         self.enable_volatility_clustering = enable_volatility_clustering
         self.enable_regime_detection = enable_regime_detection
+        self.vectorbt_threshold = vectorbt_threshold
 
 class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     """Advanced volatility features with comprehensive analysis."""

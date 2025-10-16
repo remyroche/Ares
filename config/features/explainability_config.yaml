@@ -25,10 +25,6 @@ explainability:
     explain_position_sizer: true
     explain_leverage_sizer: true
     
-  hmm:
-    explain_regime_classifier: true
-    explain_transition_predictor: true
-    explain_regime_probability: true
     
   sr:
     explain_level_detection: true
@@ -65,7 +61,6 @@ explainability:
         background: "#F8F8FF"    # Ghost White
         text: "#2F4F4F"          # Dark Slate Gray
         tactician: "#FF6B6B"     # Red
-        hmm: "#4ECDC4"           # Teal
         sr: "#45B7D1"            # Blue
         analyst: "#96CEB4"       # Green
         risk: "#FF8C94"          # Light Red
@@ -101,41 +96,6 @@ feature_groups:
       - scenario_probability
       - scenario_confidence
       - scenario_dominance
-  
-  hmm:
-    price_features:
-      - close
-      - open
-      - high
-      - low
-      - log_returns
-      - price_momentum
-    volatility_features:
-      - volatility_20
-      - volatility_5
-      - atr
-      - bb_width
-      - volatility_regime
-    volume_features:
-      - volume
-      - volume_ratio
-      - volume_momentum
-      - volume_volatility
-    technical_indicators:
-      - rsi
-      - macd
-      - macd_signal
-      - macd_histogram
-      - bb_position
-      - adx
-    regime_features:
-      - regime_probability
-      - regime_confidence
-      - regime_persistence
-    transition_features:
-      - transition_probability
-      - transition_confidence
-      - regime_stability
   
   sr:
     price_features:

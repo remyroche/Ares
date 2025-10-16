@@ -700,9 +700,14 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
+
                     ParquetWriter.write_partitioned(enhanced_features, features_file, partition_size=500_000)
 
                     # Validate saved parquet file
@@ -1211,6 +1216,10 @@ async def run_step06_comprehensive_example():
 if __name__ == "__main__":
     # Run example
     asyncio.run(run_step06_comprehensive_example())
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

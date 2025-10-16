@@ -14,8 +14,8 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 # except ImportError:
 #     DATA_DRIVEN_PERIODS_AVAILABLE = False
 DATA_DRIVEN_PERIODS_AVAILABLE = False
-    ENHANCED_PERIOD_SELECTION_AVAILABLE = False
-    DataDrivenPeriodSelector = None
+ENHANCED_PERIOD_SELECTION_AVAILABLE = False
+DataDrivenPeriodSelector = None
 #     PeriodAnalysisResult = None
 #     EnhancedDataDrivenPeriodSelector = None
 #     EnhancedPeriodSelectionConfig = None

@@ -952,9 +952,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
 
                         # Register main generators
                         generators_to_register = [
@@ -1465,6 +1469,10 @@ async def optimize_feature_lookback(
     return await optimizer.optimize_feature_lookback(
         data, feature_name, target_column, feature_generator, regime_column
     )
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

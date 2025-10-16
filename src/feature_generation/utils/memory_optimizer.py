@@ -30,9 +30,13 @@ except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
 
-# GPU acceleration removed - CuPy not supported on all platforms
-cp = None
-CUPY_AVAILABLE = False
+# GPU acceleration - CuPy support
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except ImportError:
+    cp = None
+    CUPY_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 

@@ -614,10 +614,16 @@ class EnhancedOptimizationSystem:
         regime_column: Optional[str]
     ) -> Dict[str, Any]:
         """GPU-accelerated optimization using M1 GPU."""
-        self.logger.info(f"🚀 Using
+        self.logger.info(f"🚀 Using GPU acceleration for {feature_name}")
 
         try:
             import torch
+        except ImportError:
+            self.logger.warning("PyTorch not available for GPU acceleration")
+            return await self._cpu_optimized_optimization(
+                data, feature_name, periods, optimization_method,
+                generator_func, target_column, regime_column
+            )
 
 # VectorBT imports for native optimization
 try:
@@ -646,61 +652,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-
     cp = None
-
-            # Convert data to tensor if possible
-            if target_column and target_column in data.columns:
-                target_data = torch.tensor(data[target_column].values, dtype=torch.float32)
-            else:
-                target_data = None
-
-            best_period = periods[0]
-            best_score = float('-inf')
-            scores = []
-
-            for period in periods:
-                try:
-                    # Generate feature
-                    feature_values = generator_func(data, period)
-                    feature_tensor = torch.tensor(feature_values.values, dtype=torch.float32)
-
-                    # Calculate score using GPU
-                    if target_data is not None:
-                        # Calculate correlation on GPU
-                        correlation = torch.corrcoef(torch.stack([feature_tensor, target_data]))[0, 1]
-                        score = abs(correlation.item()) if not torch.isnan(correlation) else 0
-                    else:
-                        # Use autocorrelation
-                        autocorr = torch.corrcoef(torch.stack([feature_tensor[:-1], feature_tensor[1:]]))[0, 1]
-                        score = abs(autocorr.item()) if not torch.isnan(autocorr) else 0
-
-                    scores.append(score)
-
-                    if score > best_score:
-                        best_score = score
-                        best_period = period
-
-                except Exception as e:
-                    self.logger.debug(f"GPU optimization failed for period {period}: {e}")
-                    scores.append(0)
-                    continue
-
-            return {
-                'feature_name': feature_name,
-                'optimal_lookback': best_period,
-                'optimization_method': f'gpu_accelerated_{optimization_method}',
-                'performance_score': best_score,
-                'scores': scores,
-                'hardware_used': 'M1_GPU'
-            }
-
-        except Exception as e:
-            self.logger.warning(f"GPU optimization failed, falling back to CPU: {e}")
-            return await self._cpu_optimized_optimization(
-                data, feature_name, periods, optimization_method,
-                generator_func, target_column, regime_column
-            )
 
     async def _cpu_optimized_optimization(
         self,

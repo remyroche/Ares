@@ -57,6 +57,19 @@ try:
         import statsmodels.api as sm
         from statsmodels.tsa.arima.model import ARIMA
         from statsmodels.tsa.stattools import adfuller
+        STATSMODELS_AVAILABLE = True
+    except ImportError:
+        STATSMODELS_AVAILABLE = False
+
+    OPTIMIZATION_UTILS_AVAILABLE = True
+    OPTIMIZATIONS_AVAILABLE = True
+    logger.info("✅ All optimization utilities loaded successfully")
+except ImportError as e:
+    logger.warning(f"Some optimization utilities not available: {e}")
+    TALIB_AVAILABLE = False
+    STATSMODELS_AVAILABLE = False
+    OPTIMIZATION_UTILS_AVAILABLE = False
+    OPTIMIZATIONS_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -84,16 +97,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-        STATSMODELS_AVAILABLE = True
-    except ImportError:
-        STATSMODELS_AVAILABLE = False
-
-    OPTIMIZATION_UTILS_AVAILABLE = True
-    OPTIMIZATIONS_AVAILABLE = True
-    logger.info("✅ All optimization utilities loaded successfully")
 except ImportError as e:
     logger.warning(f"Some optimization utilities not available: {e}")
     TALIB_AVAILABLE = False
@@ -180,7 +183,7 @@ class OptimizedFeatureOrchestrator:
         if OPTIMIZATIONS_AVAILABLE:
             capabilities.append("Hardware optimizations")
             if self.gpu_manager and self.gpu_manager.mps_available:
-                capabilities.append("M1
+                capabilities.append("M1 GPU")
             if self.parallel_processor:
                 capabilities.append("Parallel processing")
 
@@ -230,7 +233,7 @@ class OptimizedFeatureOrchestrator:
                 all_features = pd.concat([all_features, features], axis=1)
 
                 category_time = time.time() - category_start
-                self.logger.info(".2f")
+                self.logger.info(f"   Category {category} completed in {category_time:.2f}s")
 
             # Final validation and cleanup
             all_features = self._finalize_features(all_features, data)
@@ -240,8 +243,7 @@ class OptimizedFeatureOrchestrator:
             self.generation_stats['features_generated'] += len(all_features.columns)
             self.generation_stats['computation_time'] += generation_time
 
-            self.logger.info(".2f"
-                           f"features: {len(all_features.columns)}")
+            self.logger.info(f"✅ Generated {len(all_features.columns)} features in {generation_time:.2f}s")
 
             return all_features
 

@@ -1233,13 +1233,3 @@ __all__ = [
 ]
 
 warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-
-def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)

@@ -1364,7 +1364,3 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
 
         except Exception as e:
             return pd.Series(np.zeros(len(data)), index=data.index, name=self.config.name)
-
-except ImportError:
-
-    cp = None

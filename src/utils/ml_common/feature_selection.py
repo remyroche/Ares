@@ -432,13 +432,14 @@ class FeatureSelectionFramework:
             _LOGGER.warning(f"⚠️ GPU variance computation failed: {e}")
             return np.var(X, axis=0)
 
-    def _vectorbt_memory_optimized_processing(self, X: np.ndarray, operation: str) -> np.ndarray:
+    def _vectorbt_memory_optimized_processing(self, X: np.ndarray, operation: str, y: Optional[np.ndarray] = None) -> np.ndarray:
         """
         VectorBT memory-optimized processing with multiple techniques.
         
         Args:
             X: Feature matrix
             operation: Operation to perform ('correlation', 'variance', 'mutual_info')
+            y: Target variable (required for mutual_info operation)
             
         Returns:
             Processed result
@@ -485,6 +486,9 @@ class FeatureSelectionFramework:
                         
                     elif operation == 'mutual_info':
                         # For mutual information, use chunked processing
+                        if y is None:
+                            raise ValueError("Target variable 'y' is required for mutual information calculation")
+                        
                         chunk_size = min(self.chunk_size, X.shape[1])
                         from sklearn.feature_selection import mutual_info_regression
                         

@@ -57,7 +57,7 @@ def lazy_import(module_name: str, attribute_name: Optional[str] = None):
 def get_validate_file_path():
     """Get validate_file_path function lazily."""
     try:
-        from src.utils.common_operations import validate_file_path
+        from src.utils.base_utilities import validate_file_path
         return validate_file_path
     except ImportError:
         # Fallback implementation
@@ -75,7 +75,7 @@ def get_validate_file_path():
 def get_safe_correlation_matrix():
     """Get safe_correlation_matrix function lazily."""
     try:
-        from src.utils.matrix_operations import safe_correlation_matrix
+        from src.utils.base_matrix_operations import safe_correlation_matrix
         return safe_correlation_matrix
     except ImportError:
         # Fallback implementation
@@ -95,7 +95,7 @@ def get_safe_correlation_matrix():
 def get_create_directory_safe():
     """Get create_directory_safe function lazily."""
     try:
-        from src.utils.common_operations import create_directory_safe
+        from src.utils.base_utilities import create_directory_safe
         return create_directory_safe
     except ImportError:
         # Fallback implementation

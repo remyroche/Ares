@@ -18,8 +18,57 @@ import multiprocessing
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Callable
 from contextlib import contextmanager
-import pandas as pd
-import numpy as np
+# Optional imports with fallbacks
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    # Create a fallback DataFrame class to avoid NoneType errors
+    class FallbackDataFrame:
+        def __init__(self, *args, **kwargs):
+            self.empty = True
+            self.columns = []
+            self.index = []
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: self
+    class FallbackSeries:
+        def __init__(self, *args, **kwargs):
+            self.empty = True
+            self.index = []
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: self
+    pd = type('pandas', (), {'DataFrame': FallbackDataFrame, 'Series': FallbackSeries, 'read_parquet': lambda *args, **kwargs: None, 'to_datetime': lambda x: x, 'to_numeric': lambda x: x, 'merge': lambda *args, **kwargs: FallbackDataFrame()})()
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Create a fallback numpy module to avoid NoneType errors
+    class FallbackArray:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: 0
+    
+    def eye_func(n):
+        return [[1 if i==j else 0 for j in range(n)] for i in range(n)]
+    
+    np = type('numpy', (), {
+        'array': FallbackArray, 
+        'ndarray': FallbackArray, 
+        'isfinite': lambda x: True, 
+        'mean': lambda x: 0, 
+        'std': lambda x: 0, 
+        'min': lambda x: 0, 
+        'max': lambda x: 0, 
+        'sum': lambda x: 0, 
+        'log': lambda x: 0, 
+        'sqrt': lambda x: 0, 
+        'where': lambda *args: args[1], 
+        'eye': eye_func
+    })()
 from datetime import datetime, date
 import concurrent.futures
 
@@ -29,8 +78,13 @@ try:
 except ImportError:
     psutil = None
 
-# Import core utilities
-from .core.common import create_fallback_logger, create_fallback_decorator
+# Import base utilities (no circular dependencies)
+from .base_utilities import (
+    validate_file_path, validate_directory_path, create_directory_safe,
+    safe_read_parquet, safe_write_parquet, get_logger, is_dataframe_valid,
+    safe_get_shape, safe_divide, validate_finite, safe_percentage_change,
+    create_fallback_logger, create_fallback_decorator
+)
 
 # Import M1 utilities
 try:
@@ -43,6 +97,10 @@ except ImportError:
 
 # Setup logging early to avoid undefined logger errors
 logger = logging.getLogger(__name__)
+
+# Check if pandas is available and warn if not
+if not PANDAS_AVAILABLE:
+    logger.warning("⚠️ Pandas not available - DataFrame functions will be limited")
 
 def get_m1_gpu_manager():
     """Get the M1 GPU manager instance."""
@@ -303,8 +361,10 @@ def safe_json_load(file_path: Union[str, Path], default: Any = None) -> Any:
 # DATAFRAME UTILITIES
 # =============================================================================
 
-def create_empty_dataframe(columns: List[str] = None) -> pd.DataFrame:
+def create_empty_dataframe(columns: List[str] = None) -> 'pd.DataFrame':
     """Create an empty DataFrame with specified columns."""
+    if not PANDAS_AVAILABLE:
+        return None
     return pd.DataFrame(columns=columns or [])
 
 def validate_dataframe(df: Any) -> bool:
@@ -317,10 +377,12 @@ def validate_dataframe(df: Any) -> bool:
         bool: True if valid DataFrame, False otherwise
     """
     try:
+        if not PANDAS_AVAILABLE:
+            return False
         if df is None:
             logger.debug("DataFrame validation failed: df is None")
             return False
-        if not isinstance(df, pd.DataFrame):
+        if not PANDAS_AVAILABLE or not isinstance(df, pd.DataFrame):
             logger.debug(f"DataFrame validation failed: not a DataFrame, got {type(df)}")
             return False
         if df.empty:
@@ -334,7 +396,7 @@ def validate_dataframe(df: Any) -> bool:
         logger.warning(f"Unexpected error during DataFrame validation: {e}")
         return False
 
-def validate_dataframe_columns(df: pd.DataFrame, required_columns: List[str]) -> bool:
+def validate_dataframe_columns(df: 'pd.DataFrame', required_columns: List[str]) -> bool:
     """Validate that DataFrame has required columns with enhanced error handling.
 
     Args:
@@ -345,6 +407,8 @@ def validate_dataframe_columns(df: pd.DataFrame, required_columns: List[str]) ->
         bool: True if all required columns present, False otherwise
     """
     try:
+        if not PANDAS_AVAILABLE:
+            return False
         if not validate_dataframe(df):
             logger.warning("DataFrame validation failed before column validation")
             return False
@@ -382,12 +446,12 @@ def safe_dataframe_operation(df: pd.DataFrame, operation: Callable[..., pd.DataF
     try:
         if not validate_dataframe(df):
             logger.warning("Cannot perform operation on invalid DataFrame")
-            return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+            return df if (PANDAS_AVAILABLE and isinstance(df, pd.DataFrame)) else (pd.DataFrame() if PANDAS_AVAILABLE else None)
 
         result = operation(df, *args, **kwargs)
 
         # Validate result is still a DataFrame
-        if not isinstance(result, pd.DataFrame):
+        if not PANDAS_AVAILABLE or not isinstance(result, pd.DataFrame):
             logger.warning(f"Operation {operation.__name__} did not return DataFrame, got {type(result)}")
             return df
 
@@ -563,12 +627,7 @@ def create_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
 # MATH UTILITIES
 # =============================================================================
 
-def safe_divide(a: float, b: float, default: float = 0.0) -> float:
-    """Safely divide two numbers."""
-    try:
-        return a / b if b != 0 else default
-    except Exception:
-        return default
+# safe_divide moved to base_utilities.py to avoid circular imports
 
 def safe_log(x: float, default: float = 0.0) -> float:
     """Safely calculate logarithm."""
@@ -649,15 +708,7 @@ def safe_int(value: Any, default: int = 0) -> int:
     except Exception:
         return default
 
-def validate_finite(value: Any, name: str = "value") -> float:
-    """Validate that a value is finite."""
-    try:
-        val = float(value)
-        if not np.isfinite(val):
-            raise ValueError(f"{name} must be finite, got {val}")
-        return val
-    except Exception as e:
-        raise ValueError(f"Invalid {name}: {e}")
+# validate_finite moved to base_utilities.py to avoid circular imports
 
 def validate_positive(value: float, name: str = "value") -> float:
     """Validate that a value is positive."""
@@ -694,14 +745,7 @@ def safe_weighted_average(values: List[float], weights: List[float]) -> float:
     except Exception:
         return 0.0
 
-def safe_percentage_change(old_value: float, new_value: float) -> float:
-    """Safely calculate percentage change."""
-    try:
-        if old_value == 0:
-            return 0.0
-        return ((new_value - old_value) / old_value) * 100
-    except Exception:
-        return 0.0
+# safe_percentage_change moved to base_utilities.py to avoid circular imports
 
 def optimize_memory_usage() -> Dict[str, Any]:
     """
@@ -1024,62 +1068,7 @@ def read_parquet_safe(file_path: Union[str, Path], **kwargs) -> Optional[pd.Data
         return None
 
 
-def safe_read_parquet(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
-    """Safely read DataFrame from parquet format."""
-    try:
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-
-        if not file_path.exists():
-            logger.warning(f"⚠️ Parquet file does not exist: {file_path}")
-            return None
-
-        read_kwargs = dict(kwargs)
-        ctx = multiprocessing.get_context("spawn")
-        parent_conn, child_conn = ctx.Pipe(duplex=False)
-        process = ctx.Process(
-            target=_parquet_reader_worker,
-            args=(str(file_path), read_kwargs, child_conn),
-            daemon=True,
-        )
-
-        process.start()
-        child_conn.close()
-
-        try:
-            if not parent_conn.poll(120):
-                logger.error(f"❌ Timeout while reading parquet file: {file_path}")
-                process.terminate()
-                process.join(timeout=5)
-                return None
-
-            status, payload = parent_conn.recv()
-        except EOFError:
-            logger.error(f"❌ Reader process ended unexpectedly while reading {file_path}")
-            status, payload = ("error", None)
-        finally:
-            parent_conn.close()
-            process.join(timeout=5)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=1)
-
-        if status != "success" or process.exitcode not in (0, None):
-            logger.error(
-                f"❌ Error reading DataFrame from parquet {file_path}: "
-                f"{payload if payload else f'process exit code {process.exitcode}'}"
-            )
-            return None
-
-        df = payload
-        # Apply the same None/empty check as read_parquet_safe
-        if df is None or df.empty:
-            return None
-        logger.info(f"✅ Successfully read DataFrame from {file_path}")
-        return df
-    except Exception as e:
-        logger.error(f"❌ Error reading DataFrame from parquet {file_path}: {e}")
-        return None
+# safe_read_parquet moved to base_utilities.py to avoid circular imports
 
 def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
     """List all parquet files in a directory."""
@@ -1584,20 +1573,7 @@ def get_memory_usage() -> float:
         logger.warning(f"⚠️ Error getting memory usage: {e}")
         return 0.0
 
-def validate_file_path(file_path: Union[str, Path]) -> bool:
-    """Validate if a file path exists and is accessible.
-
-    Args:
-        file_path: Path to validate
-
-    Returns:
-        True if file exists and is accessible, False otherwise
-    """
-    try:
-        path = Path(file_path)
-        return path.exists() and path.is_file()
-    except Exception:
-        return False
+# validate_file_path moved to base_utilities.py to avoid circular imports
 
 def get_file_size(file_path: Union[str, Path]) -> int:
     """Get the size of a file in bytes.

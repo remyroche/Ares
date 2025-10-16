@@ -35,6 +35,10 @@ except ImportError:
     NUMBA_AVAILABLE = False
 try:
     import joblib
+    JOBLIB_AVAILABLE = True
+except ImportError:
+    JOBLIB_AVAILABLE = False
+    joblib = None
 
 # VectorBT imports for native optimization
 try:
@@ -61,11 +65,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-    JOBLIB_AVAILABLE = True
 except ImportError:
     JOBLIB_AVAILABLE = False
 
@@ -805,5 +804,5 @@ class SRLevelIdentifier:
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)

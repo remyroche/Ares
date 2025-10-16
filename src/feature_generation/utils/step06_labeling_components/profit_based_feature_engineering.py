@@ -141,7 +141,11 @@ class ProfitBasedFeatureEngineering:
         self.price_column = price_column
         self.use_numba = use_numba and NUMBA_AVAILABLE
         self.memory_efficient = memory_efficient
-        self.enable_m1_optimizations = enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
+        try:
+            from src.utils.m1_optimizations import M1_OPTIMIZATIONS_AVAILABLE
+            self.enable_m1_optimizations = enable_m1_optimizations and M1_OPTIMIZATIONS_AVAILABLE
+        except ImportError:
+            self.enable_m1_optimizations = False
         self.enable_gpu_acceleration = enable_gpu_acceleration and TORCH_AVAILABLE
 
         # Initialize logger
@@ -150,6 +154,7 @@ class ProfitBasedFeatureEngineering:
         # Initialize M1 optimizations
         if self.enable_m1_optimizations:
             try:
+                from src.utils.m1_optimizations import get_m1_memory_optimizer, get_unified_matrix_operations, get_memory_manager
                 self.m1_memory_optimizer = get_m1_memory_optimizer()
                 self.matrix_ops = get_unified_matrix_operations()
                 self.memory_monitor = get_memory_manager()
@@ -317,9 +322,9 @@ class ProfitBasedFeatureEngineering:
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks {correlation_id}")
                 return self._chunked_profit_feature_engineering(data, feature_categories, correlation_id)
 
-            # Use
+            # Use GPU acceleration if available
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info(f"🎯 Using
+                self.logger.info(f"🎯 Using GPU acceleration for profit features")
                 return self._gpu_accelerated_profit_features(data, feature_categories, correlation_id)
 
             # Standard M1-optimized processing
@@ -954,6 +959,34 @@ class ProfitBasedFeatureEngineering:
             # Select features based on mutual information (requires scikit-learn)
             try:
                 from sklearn.feature_selection import mutual_info_regression
+                # Filter out categorical features for mutual info
+                numerical_features = []
+                for feature in profit_features:
+                    if data[feature].dtype in ['int64', 'float64']:
+                        numerical_features.append(feature)
+
+                if numerical_features:
+                    mi_scores = mutual_info_regression(
+                        data[numerical_features].fillna(0),
+                        data[self.profit_column]
+                    )
+                    mi_series = pd.Series(mi_scores, index=numerical_features)
+                    selected = mi_series[mi_series > threshold].index.tolist()
+                else:
+                    selected = []
+            except ImportError:
+                self.logger.warning("scikit-learn not available, falling back to correlation method")
+                # Filter out categorical features for correlation
+                numerical_features = []
+                for feature in profit_features:
+                    if data[feature].dtype in ['int64', 'float64']:
+                        numerical_features.append(feature)
+
+                if numerical_features:
+                    correlations = data[numerical_features].corrwith(data[self.profit_column]).abs()
+                    selected = correlations[correlations > threshold].index.tolist()
+                else:
+                    selected = []
 
 # VectorBT imports for native optimization
 try:
@@ -980,26 +1013,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-                # Filter out categorical features for mutual info
-                numerical_features = []
-                for feature in profit_features:
-                    if data[feature].dtype in ['int64', 'float64']:
-                        numerical_features.append(feature)
-
-                if numerical_features:
-                    mi_scores = mutual_info_regression(
-                        data[numerical_features].fillna(0),
-                        data[self.profit_column]
-                    )
-                    mi_series = pd.Series(mi_scores, index=numerical_features)
-                    selected = mi_series[mi_series > threshold].index.tolist()
-                else:
-                    selected = []
-            except ImportError:
                 self.logger.warning("scikit-learn not available, falling back to correlation method")
                 # Filter out categorical features for correlation
                 numerical_features = []
@@ -1115,7 +1128,7 @@ if __name__ == "__main__":
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def _pandas_rolling_operation(self, data: pd.Series, operation: str,

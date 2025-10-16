@@ -1,11 +1,12 @@
 """
-import warnings
 Lookback Optimization System
 
 This module provides the lookback optimization system that leverages the existing
 feature generation optimization code to automatically determine optimal lookback
 periods for features.
 """
+
+import warnings
 
 import logging
 import time
@@ -17,6 +18,32 @@ import pandas as pd
 import numpy as np
 
 from ..core.feature_generator import FeatureGenerator, FeatureConfig
+
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 logger = logging.getLogger(__name__)
 
@@ -299,36 +326,6 @@ class LookbackOptimizer:
             # Parallel optimization
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
                 future_to_generator = {
                     executor.submit(self.optimize_lookback, gen, data, target_column, regime_column): gen
@@ -452,7 +449,7 @@ def get_optimization_config(**kwargs) -> FeatureOptimizationConfig:
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def _pandas_rolling_operation(self, data: pd.Series, operation: str,

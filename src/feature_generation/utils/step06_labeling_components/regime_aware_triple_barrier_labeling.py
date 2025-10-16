@@ -607,6 +607,7 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
                 config.regime_stop_loss_multipliers[regime_id] = regime_config.get('stop_loss_multiplier', 0.001)
                 config.regime_time_barrier_minutes[regime_id] = regime_config.get('time_barrier_minutes', default_time_barrier_minutes)
                 config.regime_max_lookahead[regime_id] = regime_config.get('max_lookahead', default_max_lookahead)
+        
         labeler = RegimeAwareTripleBarrierLabeling(config)
         labeled_data = labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)
         labeled_data['labeling_method'] = 'regime_aware_with_barriers'
@@ -614,6 +615,13 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(data: pd.DataFrame,
         return labeled_data
     except Exception as e:
         import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')
+        data_copy = data.copy()
+        data_copy['label'] = 0
+        data_copy['labeling_method'] = 'error_fallback'
+        data_copy['labeling_error'] = str(e)
+        return data_copy
 
 # VectorBT imports for native optimization
 try:
@@ -640,18 +648,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-
-        logger = logging.getLogger(__name__)
-        logger.error(f'❌ Error in regime-aware triple barrier labeling with barriers: {e}')
-        data_copy = data.copy()
-        data_copy['label'] = 0
-        data_copy['labeling_method'] = 'error_fallback'
-        data_copy['labeling_error'] = str(e)
-        return data_copy
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

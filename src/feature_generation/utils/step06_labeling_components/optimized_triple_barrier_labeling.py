@@ -22,7 +22,6 @@ except ImportError as e:
     tprint(f'Warning: Step06 validation framework not available: {e}')
 
     def step06_function_validator(*args, **kwargs) -> None:
-
         def decorator(func: Callable) -> None:
             return func
         return decorator
@@ -54,7 +53,22 @@ except ImportError as e:
 import datetime
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 # Import math validation functions from shared module
-from ..math_validation import safe_divide, safe_log, safe_sqrt, validate_positive
+try:
+    from ..math_validation import safe_divide, safe_log, safe_sqrt, validate_positive
+except ImportError:
+    def safe_divide(a, b, default=0):
+        return a / b if b != 0 else default
+    
+    def safe_log(x, default=0):
+        return np.log(x) if x > 0 else default
+    
+    def safe_sqrt(x, default=0):
+        return np.sqrt(x) if x >= 0 else default
+    
+    def validate_positive(x, name="value"):
+        if x <= 0:
+            raise ValueError(f"{name} must be positive, got {x}")
+        return x
 
 # Additional validation functions
 def validate_range(value, min_val, max_val, name="value"):
@@ -80,6 +94,7 @@ except ImportError:
         def decorator(func: Callable):
             return func
         return decorator
+
 try:
     from src.utils.logger import get_logger
 except ImportError:
@@ -87,8 +102,16 @@ except ImportError:
 
     def get_logger(name: Any) -> Any:
         return logging.getLogger(name)
+
 try:
     import numba
+    NUMBA_AVAILABLE = True
+except ImportError:
+    NUMBA_AVAILABLE = False
+    numba = None
+except ImportError:
+    NUMBA_AVAILABLE = False
+    numba = None
 
 # VectorBT imports for native optimization
 try:
@@ -115,13 +138,7 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-except Exception:
-    numba = None
-if 'numba' in globals() and numba is not None:
+if 'numba' in globals() and numba is not None and NUMBA_AVAILABLE:
 
     @numba.jit(nopython = True, cache = True)
     def _numba_triple_barrier_labels(close: np.ndarray, high: np.ndarray, low: np.ndarray,
@@ -755,7 +772,7 @@ if __name__ == '__main__':
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def _pandas_rolling_operation(self, data: pd.Series, operation: str,

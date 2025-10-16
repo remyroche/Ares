@@ -261,8 +261,6 @@ class EnhancedKlinesProcessingPipeline:
                 enable_validation=True
             )
             self.klines_manager = KlinesParquetManager(storage_config)
-        # Initialize KlinesParquetManager
-        self.klines_manager = KlinesParquetManager(str(self.data_dir), self.exchange)
 
         # Processing state
         self.current_symbol: Optional[str] = None

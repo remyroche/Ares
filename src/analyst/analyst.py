@@ -1,6 +1,32 @@
 from src.utils.tprint import tprint
 import warnings
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
 # src/analyst/analyst.py
 
 from datetime import datetime
@@ -378,35 +404,6 @@ class Analyst:
             self.logger.error(
                 failed(f"❌ Failed to import liquidation risk model: {e}")
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
             )
             self.liquidation_risk_model = None
         except Exception as e:
@@ -1204,15 +1201,12 @@ except ImportError:
             if "volume" not in market_data.columns:
                 return {}
 
+            volume_ma = market_data["volume"].rolling(window=20).mean().iloc[-1]
             return {
                 "current_volume": market_data["volume"].iloc[-1],
-                "volume_ma": market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1],
-                "volume_ratio": market_data["volume"].iloc[-1]
-                / market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1],
-                "volume_trend": "high"
-                if market_data["volume"].iloc[-1]
-                > market_rolling_mean(data["volume"], window=20) if VECTORBT_AVAILABLE and len(data) > 1000 else data["volume"].rolling(window=20).mean().iloc[-1]
-                else "low",
+                "volume_ma": volume_ma,
+                "volume_ratio": market_data["volume"].iloc[-1] / volume_ma if volume_ma > 0 else 1.0,
+                "volume_trend": "high" if market_data["volume"].iloc[-1] > volume_ma else "low",
             }
 
         except Exception:

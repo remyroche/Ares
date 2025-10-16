@@ -1851,6 +1851,7 @@ class PositionMonitor:
             take_profit_time_decay_modifiers = {
                 "enabled": take_profit_time_decay_enabled,
                 "time_decay_schedule": take_profit_time_decay_schedule,
+            },
             regime_bands = {
                 "trending": exit_strategy_params.get("regime_trending_profit_band", 0.75),
                 "ranging": exit_strategy_params.get("regime_ranging_profit_band", 0.55),
@@ -1914,7 +1915,7 @@ class PositionMonitor:
                     "regime_reset_strength": exit_strategy_params.get(
                         "trailing_regime_reset_strength", 0.5
                     ),
-                    "context_window": exit_strategy_params.get("trailing_context_window", 5)
+                    "context_window": exit_strategy_params.get("trailing_context_window", 5),
                     "tightening_threshold": exit_strategy_params.get("trailing_tightening_threshold", 0.02),
                     "time_decay": exit_strategy_params.get("trailing_time_decay", 0.95),
                     "ml_adjustment_weight": exit_strategy_params.get("trailing_ml_adjustment_weight", 0.3),
@@ -2012,12 +2013,6 @@ class PositionMonitor:
     def _get_optimized_trailing_stop_config(self) -> Dict[str, Any]:
         """Get optimized trailing stop configuration."""
         defaults = {
-        base_config: Dict[str, Any] = {
-        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
-            return self.optimized_parameters["trailing_stop"]
-
-        # Fallback to config or defaults
-        return self.monitor_config.get("trailing_stop", {
             "enabled": True,
             "atr_multiplier": 1.5,
             "min_distance": 0.01,
@@ -2035,67 +2030,6 @@ class PositionMonitor:
         # Fallback to config or defaults
         config = self.monitor_config.get("trailing_stop", {})
         return {**defaults, **config}
-            "metrics_timeframes": {
-                "primary": "15m",
-                "volatility": "1h",
-            },
-            "volatility_adjustment": {
-                "enabled": True,
-                "offset": 1.0,
-                "scale": 1.0,
-                "min_multiplier": 0.5,
-                "max_multiplier": 2.0,
-            },
-            "slope_adjustment": {
-                "enabled": True,
-                "offset": 1.0,
-                "scale": 1.0,
-                "min_multiplier": 0.7,
-                "max_multiplier": 1.3,
-            },
-            "momentum_adjustment": {
-                "enabled": True,
-                "long_threshold": 0.0,
-                "short_threshold": 0.0,
-                "long_multiplier": 0.9,
-                "short_multiplier": 0.9,
-            },
-            "rsi_adjustment": {
-                "enabled": True,
-                "long_threshold": 35.0,
-                "short_threshold": 65.0,
-                "long_multiplier": 0.9,
-                "short_multiplier": 0.9,
-            },
-        })
-            "profit_buffer_pct": 0.002,
-            "breakeven_buffer_pct": 0.0005,
-            "breakeven_activation_multiple": 1.0,
-            "volatility_regime_scaling": {
-                "low": 0.9,
-                "normal": 1.0,
-                "high": 1.2,
-                "extreme": 1.35,
-                "default": 1.0,
-            },
-            "sigma_tiers": [
-                {"threshold": 0.02, "multiplier": 1.05},
-                {"threshold": 0.04, "multiplier": 1.15},
-            ],
-            "tightening_tiers": [
-                {"profit_multiple": 1.5, "distance_multiplier": 0.75},
-                {"profit_multiple": 2.5, "distance_multiplier": 0.55},
-                {"profit_multiple": 3.5, "distance_multiplier": 0.4},
-            ],
-            "default_partial_size": 0.25,
-        }
-
-        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
-            optimized_config = self.optimized_parameters["trailing_stop"] or {}
-            return self._merge_trailing_configs(base_config, optimized_config)
-
-        user_config = self.monitor_config.get("trailing_stop", {})
-        return self._merge_trailing_configs(base_config, user_config)
 
     def _merge_trailing_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """Merge trailing stop configuration dictionaries with nested support."""

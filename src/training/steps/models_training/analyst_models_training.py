@@ -528,9 +528,34 @@ class AnalystModelsTrainingStep:
             X = training_data[feature_columns].values
             y = training_data[target_columns].values.ravel()
             
-            # Use VectorBT-optimized cross-validation if available
-            if UNIFIED_VECTORIZATION_AVAILABLE and self.vectorization_manager is not None:
-                tprint_info("🚀 Using VectorBT-optimized cross-validation")
+            # Use VectorBT-optimized parallel cross-validation if available
+            if self.vectorbt_rolling_optimizer is not None:
+                tprint_info("🚀 Using VectorBT parallel cross-validation")
+                
+                # Use the new parallel cross-validation method
+                cv_result = self.vectorbt_rolling_optimizer.parallel_cross_validation(
+                    X, y, lgb.LGBMRegressor, cv_folds=5,
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    random_state=42,
+                    verbosity=-1
+                )
+                
+                # Extract OOF predictions
+                oof_predictions = {
+                    'p_trade': np.where(cv_result['oof_predictions'] > 0, 1.0, 0.0).tolist(),
+                    'u_trade': cv_result['oof_predictions'].tolist(),
+                    'q_trade': (np.abs(cv_result['oof_predictions']) / (np.abs(cv_result['oof_predictions']).max() + 1e-8)).tolist(),
+                    'n_samples': len(training_data),
+                    'cv_folds': cv_result['cv_folds'],
+                    'generation_method': cv_result['method']
+                }
+                
+                tprint_success(f"✅ VectorBT parallel OOF predictions generated using {cv_result['method']}")
+                return oof_predictions
+            elif UNIFIED_VECTORIZATION_AVAILABLE and self.vectorization_manager is not None:
+                tprint_info("🚀 Using Unified Vectorization Manager cross-validation")
                 
                 # Create operation configuration for cross-validation
                 config = OperationConfig(

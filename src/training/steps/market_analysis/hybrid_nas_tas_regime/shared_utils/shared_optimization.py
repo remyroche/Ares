@@ -252,15 +252,15 @@ class SharedOptimizer:
 
                 self.logger.info(f"✅ Shared optimization completed in {processing_time:.2f}s")
                 self.logger.info(f"   Best score: {result.best_score:.4f}")
-            self.logger.info(f"   Best solution: {result.best_solution}")
+                self.logger.info(f"   Best solution: {result.best_solution}")
 
-            return result
+                return result
 
-        except Exception as e:
-            processing_time = time.time() - start_time
-            self.logger.error(f"❌ Shared optimization failed: {e}")
+            except Exception as e:
+                processing_time = time.time() - start_time
+                self.logger.error(f"❌ Shared optimization failed: {e}")
 
-            return SharedOptimizationResult(
+                return SharedOptimizationResult(
                 best_solution={},
                 best_score=0.0,
                 optimization_history=[],

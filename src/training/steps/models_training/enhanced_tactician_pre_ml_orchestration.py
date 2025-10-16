@@ -61,6 +61,10 @@ except ImportError as e:
 # Import corrected ML-based labeling
 try:
     from .corrected_ml_entry_timing_labeler import CorrectedMLEntryTimingLabeler, CorrectedMLEntryTimingConfig
+    ML_LABELING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Corrected ML-based labeling not available: {e}")
+    ML_LABELING_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -111,10 +115,6 @@ except ImportError as e:
     print(f"⚠️ WARNING: Unified Vectorization Manager not available: {e}")
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
-except ImportError:
-
-    cp = None
-    ML_LABELING_AVAILABLE = True
 except ImportError as e:
     print(f"⚠️ Corrected ML-based labeling not available: {e}")
     ML_LABELING_AVAILABLE = False

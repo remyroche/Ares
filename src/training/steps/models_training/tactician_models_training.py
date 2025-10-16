@@ -2894,8 +2894,7 @@ class TacticianModelsTrainingStep:
                     'stacker_gating_state': gating_state,
                     'stacker_calibration_state': calibration_state,
                 },
-            config = StackerLGBMCalibratedConfig()
-            model = create_stacker_lgbm_calibrated(config)
+            }
 
             formatted_predictions: Dict[str, np.ndarray] = {}
             for name, preds in base_model_oof_predictions.items():

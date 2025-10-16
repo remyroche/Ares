@@ -842,6 +842,20 @@ class Tactician5mEntryOptimizer:
             # Import Random Forest Survival model
             from sklearn.ensemble import RandomForestRegressor
 
+            # For now, return a placeholder model - in production this would load a trained model
+            # This would typically be loaded from a saved model file
+
+            model = RandomForestRegressor(**model_params)
+            tprint_info("✅ Random Forest Survival model loaded")
+            return model
+
+        except ImportError:
+            tprint_warning("⚠️ Random Forest Survival model not available")
+            return None
+        except Exception as e:
+            tprint_error(f"❌ Failed to load Random Forest Survival model: {e}")
+            return None
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -892,27 +906,8 @@ except ImportError as e:
     UNIFIED_VECTORIZATION_AVAILABLE = False
 
 except ImportError:
-
-    cp = None
-
-            # For now, return a placeholder model - in production this would load a trained model
-            # This would typically be loaded from a saved model file
-            model_params = self.config.ml_model_params.get('random_forest', {
-                'n_estimators': 100,
-                'max_depth': 10,
-                'random_state': 42
-            })
-
-            model = RandomForestRegressor(**model_params)
-            tprint_info("✅ Random Forest Survival model loaded")
-            return model
-
-        except ImportError:
-            tprint_warning("⚠️ Random Forest Survival model not available")
-            return None
-        except Exception as e:
-            tprint_error(f"❌ Failed to load Random Forest Survival model: {e}")
-            return None
+    print(f"⚠️ WARNING: Corrected ML-based labeling not available")
+    ML_LABELING_AVAILABLE = False
 
     def _load_nas_model(self):
         """Load NAS (Neural Architecture Search) model."""

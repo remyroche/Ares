@@ -744,6 +744,14 @@ class NASFinancialFeatureEngineer:
 
             with open(filepath, 'wb') as f:
                 import pickle
+                pickle.dump(state, f)
+
+            self.logger.info(f"✅ Feature engineer state saved to {filepath}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save feature engineer: {e}")
+            return False
 
 # VectorBT imports for native optimization
 try:
@@ -771,17 +779,24 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-                pickle.dump(state, f)
-
-            self.logger.info(f"✅ Feature engineer state saved to {filepath}")
-            return True
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save feature engineer: {e}")
-            return False
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT not available: {e}")
+    # Fallback functions
+    def rolling_mean(data, window, **kwargs): return data.rolling(window=window).mean()
+    def rolling_std(data, window, **kwargs): return data.rolling(window=window).std()
+    def rolling_var(data, window, **kwargs): return data.rolling(window=window).var()
+    def rolling_min(data, window, **kwargs): return data.rolling(window=window).min()
+    def rolling_max(data, window, **kwargs): return data.rolling(window=window).max()
+    def rolling_sum(data, window, **kwargs): return data.rolling(window=window).sum()
+    def rolling_apply(data, func, window, **kwargs): return data.rolling(window=window).apply(func, **kwargs)
+    def rolling_corr(data1, data2, window, **kwargs): return data1.rolling(window=window).corr(data2)
+    def rolling_cov(data1, data2, window, **kwargs): return data1.rolling(window=window).cov(data2)
+    def scale(data, **kwargs): return (data - data.mean()) / data.std()
+    def rank(data, **kwargs): return data.rank()
+    def zscore(data, **kwargs): return (data - data.mean()) / data.std()
+    def winsorize(data, **kwargs): return data.clip(data.quantile(0.05), data.quantile(0.95))
+    def clip(data, **kwargs): return data.clip(**kwargs)
+    def quantile(data, **kwargs): return data.quantile(**kwargs)
 
 def create_nas_financial_feature_engineer(config: NASFeatureConfig) -> NASFinancialFeatureEngineer:
     """Create NAS financial feature engineer instance."""

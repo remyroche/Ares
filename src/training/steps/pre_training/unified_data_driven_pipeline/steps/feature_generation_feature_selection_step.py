@@ -42,8 +42,8 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
     """Feature selection step that calls the consolidated pipeline."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
-    super().__init__(config or ComponentConfig())
         """Initialize the feature selection step."""
+        super().__init__(config or ComponentConfig())
         self.logger = logging.getLogger(__name__)
 
     async def execute(self,

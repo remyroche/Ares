@@ -184,6 +184,8 @@ class StandardizedFeatureCalculator:
 
 # Convenience functions for direct import
 def calculate_all_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate the 6 core standardized features for 15m timeframe."""
+    return StandardizedFeatureCalculator.calculate_all_features(df)
 
 # VectorBT imports for native optimization
 try:
@@ -211,11 +213,24 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-    """Calculate the 6 core standardized features for 15m timeframe."""
-    return StandardizedFeatureCalculator.calculate_all_features(df)
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT not available: {e}")
+    # Fallback functions
+    def rolling_mean(data, window, **kwargs): return data.rolling(window=window).mean()
+    def rolling_std(data, window, **kwargs): return data.rolling(window=window).std()
+    def rolling_var(data, window, **kwargs): return data.rolling(window=window).var()
+    def rolling_min(data, window, **kwargs): return data.rolling(window=window).min()
+    def rolling_max(data, window, **kwargs): return data.rolling(window=window).max()
+    def rolling_sum(data, window, **kwargs): return data.rolling(window=window).sum()
+    def rolling_apply(data, func, window, **kwargs): return data.rolling(window=window).apply(func, **kwargs)
+    def rolling_corr(data1, data2, window, **kwargs): return data1.rolling(window=window).corr(data2)
+    def rolling_cov(data1, data2, window, **kwargs): return data1.rolling(window=window).cov(data2)
+    def scale(data, **kwargs): return (data - data.mean()) / data.std()
+    def rank(data, **kwargs): return data.rank()
+    def zscore(data, **kwargs): return (data - data.mean()) / data.std()
+    def winsorize(data, **kwargs): return data.clip(data.quantile(0.05), data.quantile(0.95))
+    def clip(data, **kwargs): return data.clip(**kwargs)
+    def quantile(data, **kwargs): return data.quantile(**kwargs)
 
 def get_primary_features() -> Dict[str, List[str]]:
     """Get the 6 core features for 4D dimension-aware clustering."""

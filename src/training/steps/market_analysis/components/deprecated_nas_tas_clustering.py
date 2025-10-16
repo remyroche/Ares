@@ -3398,52 +3398,53 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 cluster_mask = assignments == cluster
                 cluster_size = np.sum(cluster_mask)
 
-                # Combine multiple stability indicators
-                local_stats = local_silhouette['cluster_local_stats'].get(cluster, {})
-                mean_local_sil = local_stats.get('mean_local_silhouette', 0.0)
+                try:
+                    # Combine multiple stability indicators
+                    local_stats = local_silhouette['cluster_local_stats'].get(cluster, {})
+                    mean_local_sil = local_stats.get('mean_local_silhouette', 0.0)
 
-                # Calculate cluster cohesion (how well points cluster together)
-                if cluster_size > 1:
-                    cluster_features = features[cluster_mask]
-                    centroid = np.mean(cluster_features, axis=0)
-                    distances_to_centroid = np.linalg.norm(cluster_features - centroid, axis=1)
-                    cohesion_score = 1.0 / (1.0 + np.mean(distances_to_centroid))
-                else:
-                    cohesion_score = 0.0
+                    # Calculate cluster cohesion (how well points cluster together)
+                    if cluster_size > 1:
+                        cluster_features = features[cluster_mask]
+                        centroid = np.mean(cluster_features, axis=0)
+                        distances_to_centroid = np.linalg.norm(cluster_features - centroid, axis=1)
+                        cohesion_score = 1.0 / (1.0 + np.mean(distances_to_centroid))
+                    else:
+                        cohesion_score = 0.0
 
-                # Calculate cluster separation (how far from other clusters)
-                other_mask = assignments != cluster
-                if np.sum(other_mask) > 0:
-                    other_features = features[other_mask]
-                    other_centroids = []
+                    # Calculate cluster separation (how far from other clusters)
+                    other_mask = assignments != cluster
+                    if np.sum(other_mask) > 0:
+                        other_features = features[other_mask]
+                        other_centroids = []
 
-                    for other_cluster in unique_clusters:
-                        if other_cluster != cluster:
-                            other_cluster_mask = assignments == other_cluster
-                            if np.sum(other_cluster_mask) > 0:
-                                other_centroid = np.mean(features[other_cluster_mask], axis=0)
-                                other_centroids.append(other_centroid)
+                        for other_cluster in unique_clusters:
+                            if other_cluster != cluster:
+                                other_cluster_mask = assignments == other_cluster
+                                if np.sum(other_cluster_mask) > 0:
+                                    other_centroid = np.mean(features[other_cluster_mask], axis=0)
+                                    other_centroids.append(other_centroid)
 
                         if other_centroids:
                             distances_to_others = [np.linalg.norm(centroid - other_cent) for other_cent in other_centroids]
                             min_distance_to_other = min(distances_to_others)
                             separation_score = min_distance_to_other
-                            else:
-                                separation_score = 0.0
                         else:
                             separation_score = 0.0
+                    else:
+                        separation_score = 0.0
 
-                        # Calculate overall stability score
-                        stability_score = (mean_local_sil * 0.4 + cohesion_score * 0.3 + separation_score * 0.3)
+                    # Calculate overall stability score
+                    stability_score = (mean_local_sil * 0.4 + cohesion_score * 0.3 + separation_score * 0.3)
 
-                        cluster_stability[cluster] = {
-                            'size': cluster_size,
-                            'local_silhouette': mean_local_sil,
-                            'cohesion_score': cohesion_score,
-                            'separation_score': separation_score,
-                            'stability_score': stability_score,
-                            'is_stable': stability_score > 0.3 and cohesion_score > 0.5
-                        }
+                    cluster_stability[cluster] = {
+                        'size': cluster_size,
+                        'local_silhouette': mean_local_sil,
+                        'cohesion_score': cohesion_score,
+                        'separation_score': separation_score,
+                        'stability_score': stability_score,
+                        'is_stable': stability_score > 0.3 and cohesion_score > 0.5
+                    }
 
                     # Classify regimes as stable vs fragile
                     stable_regimes = []
@@ -3471,22 +3472,26 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     tprint(f"Regime stability assessment failed: {e}", "ERROR")
                     return {'error': str(e)}
 
+        except Exception as e:
+            tprint(f"Regime stability assessment failed: {e}", "ERROR")
+            return {'error': str(e)}
+
     def _perform_samples_reallocation(self, features: np.ndarray, assignments: np.ndarray,
                                     neighborhood_results: Dict[str, Any]) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Perform intelligent samples reallocation using neighborhood analysis insights."""
         try:
-                    tprint("🔄 Performing samples reallocation using neighborhood insights...", "INFO")
+            tprint("🔄 Performing samples reallocation using neighborhood insights...", "INFO")
 
-                    # Step 1: Identify misclustered points for reallocation
-                    knn_results = neighborhood_results.get('knn_consistency', {})
-                    local_silhouette = neighborhood_results.get('local_silhouette', {})
-                    stability_analysis = neighborhood_results.get('stability_analysis', {})
+            # Step 1: Identify misclustered points for reallocation
+            knn_results = neighborhood_results.get('knn_consistency', {})
+            local_silhouette = neighborhood_results.get('local_silhouette', {})
+            stability_analysis = neighborhood_results.get('stability_analysis', {})
 
-                    if knn_results.get('error') or local_silhouette.get('error') or stability_analysis.get('error'):
-                        tprint("⚠️ Neighborhood analysis incomplete, skipping reallocation", "WARNING")
-                        return assignments, {'reallocation_skipped': True}
+            if knn_results.get('error') or local_silhouette.get('error') or stability_analysis.get('error'):
+                tprint("⚠️ Neighborhood analysis incomplete, skipping reallocation", "WARNING")
+                return assignments, {'reallocation_skipped': True}
 
-                    # Step 2: Reallocate misclustered points
+            # Step 2: Reallocate misclustered points
                     reallocated_assignments, reallocation_stats = self._reallocate_misclustered_points(
                         features, assignments, knn_results, local_silhouette
                     )
@@ -11084,9 +11089,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
+except ImportError as e:
+    print(f"⚠️ WARNING: Additional imports not available: {e}")
+    # Fallback if needed
 
             new_assignments = assignments.copy()
 

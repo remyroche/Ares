@@ -42,12 +42,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-#
+# Additional imports
 try:
-
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
 
 try:
     from src.utils.tprint import (

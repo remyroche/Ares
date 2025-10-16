@@ -20,6 +20,9 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from src.utils.tprint import (
+    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
+    tprint_success, tprint_progress, tprint_performance, tprint_timer
+)
 
 # VectorBT imports for native optimization
 try:
@@ -47,12 +50,18 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-    tprint, tprint_debug, tprint_info, tprint_warning, tprint_error,
-    tprint_success, tprint_progress, tprint_performance, tprint_timer
-)
+except ImportError as e:
+    print(f"⚠️ WARNING: tprint utilities not available: {e}")
+    # Fallback functions
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
 
 logger = logging.getLogger(__name__)
 

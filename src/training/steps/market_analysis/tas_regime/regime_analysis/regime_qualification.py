@@ -13,7 +13,8 @@ import logging
 from datetime import datetime, timedelta
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from scipy import stats
-from scipy.stats import kstest, jarque_bera
+from scipy.stats import kstest, jarque_bera, anderson
+from statsmodels.tsa.stattools import adfuller
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -587,6 +588,16 @@ class RegimeQualifier:
         # Q-Q plot test (simplified)
         try:
             from scipy.stats import probplot
+            _, r_value, _ = probplot(returns, dist="norm")
+            tests['qq_plot'] = {
+                'r_squared': r_value ** 2,
+                'passed': r_value ** 2 > 0.95,
+                'score': r_value ** 2
+            }
+        except:
+            tests['qq_plot'] = {'r_squared': 0.5, 'passed': False, 'score': 0.5}
+
+        return tests
 
 # VectorBT imports for native optimization
 try:
@@ -614,19 +625,24 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-            _, r_value, _ = probplot(returns, dist="norm")
-            tests['qq_plot'] = {
-                'r_squared': r_value ** 2,
-                'passed': r_value ** 2 > 0.95,
-                'score': r_value ** 2
-            }
-        except:
-            tests['qq_plot'] = {'r_squared': 0.5, 'passed': False, 'score': 0.5}
-
-        return tests
+except ImportError as e:
+    print(f"⚠️ WARNING: VectorBT not available: {e}")
+    # Fallback functions
+    def rolling_mean(data, window, **kwargs): return data.rolling(window=window).mean()
+    def rolling_std(data, window, **kwargs): return data.rolling(window=window).std()
+    def rolling_var(data, window, **kwargs): return data.rolling(window=window).var()
+    def rolling_min(data, window, **kwargs): return data.rolling(window=window).min()
+    def rolling_max(data, window, **kwargs): return data.rolling(window=window).max()
+    def rolling_sum(data, window, **kwargs): return data.rolling(window=window).sum()
+    def rolling_apply(data, func, window, **kwargs): return data.rolling(window=window).apply(func, **kwargs)
+    def rolling_corr(data1, data2, window, **kwargs): return data1.rolling(window=window).corr(data2)
+    def rolling_cov(data1, data2, window, **kwargs): return data1.rolling(window=window).cov(data2)
+    def scale(data, **kwargs): return (data - data.mean()) / data.std()
+    def rank(data, **kwargs): return data.rank()
+    def zscore(data, **kwargs): return (data - data.mean()) / data.std()
+    def winsorize(data, **kwargs): return data.clip(data.quantile(0.05), data.quantile(0.95))
+    def clip(data, **kwargs): return data.clip(**kwargs)
+    def quantile(data, **kwargs): return data.quantile(**kwargs)
 
     def _test_stationarity(self, regime_data: pd.DataFrame) -> Dict[str, Any]:
         """Test stationarity of regime data."""

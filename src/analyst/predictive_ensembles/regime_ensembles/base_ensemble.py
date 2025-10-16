@@ -1,5 +1,31 @@
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
 
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
 import logging
 import os
 import warnings
@@ -59,35 +85,6 @@ except ImportError:
 try:
     from src.training.steps.model_training.patchtst_wrapper import create_patchtst_wrapper
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
     PATCHTST_AVAILABLE = True
 except ImportError as e:
     PATCHTST_AVAILABLE = False
@@ -237,9 +234,9 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
                 self.logger.info(f"📦 Processing large dataset ({data_size_mb:.1f}MB) in chunks")
                 return self._chunked_ensemble_training(historical_features, historical_targets)
 
-            # Use
+            # Use GPU acceleration if available
             if self.enable_gpu_acceleration and self.matrix_ops:
-                self.logger.info("🎯 Using
+                self.logger.info("🎯 Using GPU acceleration for ensemble training")
                 return self._gpu_accelerated_ensemble_training(historical_features, historical_targets)
 
             # Standard M1-optimized processing

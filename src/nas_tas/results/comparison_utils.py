@@ -670,9 +670,10 @@ class ResultComparison:
                 if metric in perf_comp:
                     comp = perf_comp[metric]
                     report_lines.append(f"{metric.replace('_comparison', '').title()}:")
-                    report_lines.append(f"  Result 1: {comp.get(f'{metric.replace(\"_comparison\", \"\")}_1', 0):.3f}")
-                    report_lines.append(f"  Result 2: {comp.get(f'{metric.replace(\"_comparison\", \"\")}_2', 0):.3f}")
-                    report_lines.append(f"  Difference: {comp.get(f'{metric.replace(\"_comparison\", \"\")}_difference', 0):.3f}")
+                    metric_name = metric.replace('_comparison', '')
+                    report_lines.append(f"  Result 1: {comp.get(f'{metric_name}_1', 0):.3f}")
+                    report_lines.append(f"  Result 2: {comp.get(f'{metric_name}_2', 0):.3f}")
+                    report_lines.append(f"  Difference: {comp.get(f'{metric_name}_difference', 0):.3f}")
                     report_lines.append("")
 
         # Financial comparison

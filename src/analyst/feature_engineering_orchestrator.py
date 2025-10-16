@@ -6,15 +6,42 @@ import pandas as pd
 import pandas_ta as ta
 import pywt
 import warnings
-        # Use existing feature engineering from src.feature_generation.utils
-        from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
-        from .autoencoder_feature_generator import AutoencoderFeatureGenerator
-        from .utils.limited_microstructure_features import LimitedMicrostructureFeatures
-        from ..training.steps.data_collection.feature_generation.utils.feature_components import EntropyFeatureEngine
-        from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
 
-        # Enhanced feature engineering integration
-        from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
+# VectorBT imports for native optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
+# Use existing feature engineering from src.feature_generation.utils
+from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+from .autoencoder_feature_generator import AutoencoderFeatureGenerator
+from .utils.limited_microstructure_features import LimitedMicrostructureFeatures
+from ..training.steps.data_collection.feature_generation.utils.feature_components import EntropyFeatureEngine
+from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
+
+# Enhanced feature engineering integration
+from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
 from ..config import CONFIG
 from ..core.domain import handle_data_processing_errors, handle_file_operations
 from ..utils.logger import system_logger
@@ -80,7 +107,7 @@ class FeatureEngineeringOrchestrator:
             features_df = klines_df.copy()
             if self.enable_advanced_features:
                 self.logger.info('📊 Generating advanced features...')
-                features_df = self.advanced_feature_generation.utils.generate_features(features_df, agg_trades_df, futures_df)
+                features_df = self.advanced_feature_engineering.generate_features(features_df, agg_trades_df, futures_df)
                 self.logger.info(f'✅ Advanced features generated. Shape: {features_df.shape}')
 
                 # Add enhanced features from the new feature engineering system
@@ -142,7 +169,7 @@ class FeatureEngineeringOrchestrator:
             self.logger.info(f'📊 Total features generated: {len(features_df.columns)}')
             return features_df
         except Exception:
-            self.logger.error('❌ Error in feature generation orchestration: {e}')
+            self.logger.error(f'❌ Error in feature generation orchestration: {e}')
             return klines_df.copy()
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='microstructure feature generation')
@@ -192,7 +219,7 @@ class FeatureEngineeringOrchestrator:
             features_df = self._calculate_volatility_targeting_features(features_df)
             return self._calculate_ml_enhanced_features(features_df)
         except Exception:
-            self.logger.error('Error generating legacy features: {e}')
+            self.logger.error(f'Error generating legacy features: {e}')
             return features_df
 
     @handles_errors(exceptions=(Exception,), default_return = pd.DataFrame(), context='multi-timeframe feature calculation')
@@ -253,36 +280,6 @@ class FeatureEngineeringOrchestrator:
         try:
             from .meta_labeling_system import MetaLabelingSystem
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-
             meta_labeling = MetaLabelingSystem(self.config)
             await meta_labeling.initialize()
             analyst_labels = await meta_labeling._generate_analyst_labels(price_data, volume_data, order_flow_data)
@@ -290,7 +287,7 @@ except ImportError:
             all_labels = {**analyst_labels, **tactician_labels}
             return pd.DataFrame([all_labels])
         except Exception:
-            self.logger.error('Error calculating meta-labeling features: {e}')
+            self.logger.error(f'Error calculating meta-labeling features: {e}')
             return pd.DataFrame()
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='standard indicators calculation')
@@ -327,7 +324,7 @@ except ImportError:
             df['atr'] = ta.atr(temp_df['high'], temp_df['low'], temp_df['close'], length = 14)
             return df
         except Exception:
-            self.logger.error('Error calculating standard indicators: {e}')
+            self.logger.error(f'Error calculating standard indicators: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='time features calculation')
@@ -350,7 +347,7 @@ except ImportError:
             df['is_ny_session'] = ((df['hour'] >= 13) & (df['hour'] < 21)).astype(int)
             return df
         except Exception:
-            self.logger.error('Error calculating time features: {e}')
+            self.logger.error(f'Error calculating time features: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='volatility regime indicators calculation')
@@ -413,7 +410,7 @@ except ImportError:
             df['s1'] = 2 * df['pivot'] - df['high']
             return df
         except Exception:
-            self.logger.error('Error calculating ML enhanced features: {e}')
+            self.logger.error(f'Error calculating ML enhanced features: {e}')
             return df
 
     @handle_data_processing_errors(default_return = pd.DataFrame(), context='feature cleanup')
@@ -428,17 +425,16 @@ except ImportError:
             self.logger.info(f'Feature cleanup completed. Final shape: {df.shape}')
             return df
         except Exception:
-            self.logger.error('Error in feature cleanup: {e}')
+            self.logger.error(f'Error in feature cleanup: {e}')
             return df
 
-    @handles_errors(exceptions=(Exception,), default_return={}, context='orchestrator info retrieval')
     @handles_errors(exceptions=(Exception,), default_return={}, context='orchestrator info retrieval')
     def get_orchestrator_info(self) -> dict[str, Any]:
         """Get information about the orchestrator."""
         try:
-            return {'orchestrator_type': 'FeatureEngineeringOrchestrator', 'enable_advanced_features': self.enable_advanced_features, 'enable_autoencoder_features': self.enable_autoencoder_features, 'enable_legacy_features': self.enable_legacy_features, 'enable_entropy_features': self.enable_entropy_features, 'advanced_feature_engineering_info': self.advanced_feature_generation.utils.get_feature_statistics(), 'autoencoder_generator_info': self.autoencoder_generator.get_generator_info(), 'config': self.orchestrator_config}
+            return {'orchestrator_type': 'FeatureEngineeringOrchestrator', 'enable_advanced_features': self.enable_advanced_features, 'enable_autoencoder_features': self.enable_autoencoder_features, 'enable_legacy_features': self.enable_legacy_features, 'enable_entropy_features': self.enable_entropy_features, 'advanced_feature_engineering_info': self.advanced_feature_engineering.get_feature_statistics(), 'autoencoder_generator_info': self.autoencoder_generator.get_generator_info(), 'config': self.orchestrator_config}
         except Exception:
-            self.logger.error('Error getting orchestrator info: {e}')
+            self.logger.error(f'Error getting orchestrator info: {e}')
             return {}
 
     @handles_errors(exceptions=(Exception,), default_return={}, context='feature summary retrieval')
@@ -447,7 +443,7 @@ except ImportError:
         try:
             return {'feature_categories': ['standard_indicators', 'advanced_features', 'autoencoder_features', 'time_features', 'volatility_features', 'ml_enhanced_features', 'entropy_features'], 'total_feature_types': 7, 'orchestrator_config': self.orchestrator_config}
         except Exception:
-            self.logger.error('Error getting feature summary: {e}')
+            self.logger.error(f'Error getting feature summary: {e}')
             return {}
 
 class FeatureEngineeringEngine:
@@ -480,7 +476,7 @@ class FeatureEngineeringEngine:
         try:
             return pywt.wavedec(data, wavelet, level = level)
         except Exception:
-            self.logger.error('Error applying wavelet transforms: {e}')
+            self.logger.error(f'Error applying wavelet transforms: {e}')
             return None
 
     @handle_file_operations(default_return = False, context='train_autoencoder')
@@ -489,7 +485,7 @@ class FeatureEngineeringEngine:
         try:
             return self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
         except Exception:
-            self.logger.error('Error training autoencoder: {e}')
+            self.logger.error(f'Error training autoencoder: {e}')
             return False
 
     @handle_data_processing_errors(default_return = pd.Series(), context='apply_autoencoders')
@@ -498,7 +494,7 @@ class FeatureEngineeringEngine:
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
         except Exception:
-            self.logger.error('Error applying autoencoders: {e}')
+            self.logger.error(f'Error applying autoencoders: {e}')
             return data
 
     @handle_file_operations(default_return = False, context='load_autoencoder')
@@ -507,7 +503,7 @@ class FeatureEngineeringEngine:
         try:
             return True
         except Exception:
-            self.logger.error('Error loading autoencoder: {e}')
+            self.logger.error(f'Error loading autoencoder: {e}')
             return False
 
     def _should_use_vectorbt(self, data) -> bool:

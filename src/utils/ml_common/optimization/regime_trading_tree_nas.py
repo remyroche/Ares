@@ -239,10 +239,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-
             # Calculate clustering quality metrics
             silhouette = silhouette_score(X, y)
             calinski_harabasz = calinski_harabasz_score(X, y)
@@ -905,6 +901,9 @@ def search_regime_trading_architecture(market_data: pd.DataFrame,
 
     return combined_results
 
+class VectorBTOptimizedRegimeTradingTreeNAS(RegimeTradingTreeNAS):
+    """Regime Trading Tree NAS with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

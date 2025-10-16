@@ -539,6 +539,10 @@ class LightGBMTrainer(BaseModelTrainer):
                               'learning_rate': 0.001, 'batch_size': 32, 'epochs': 100, 'early_stopping_patience': 10}
         }
         return defaults.get(self._model_type, {})
+    
+    def __init__(self, model_type: str, **hyperparameters) -> None:
+        self._model_type = model_type
+        super().__init__(**hyperparameters)
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train model based on type."""
@@ -596,9 +600,9 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
+    def _train_xgboost(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train XGBoost model."""
+        import xgboost as xgb
         self.model = xgb.XGBClassifier(**self.hyperparameters)
         eval_set = [(X, y)]
         if validation_data is not None:
@@ -609,6 +613,9 @@ except ImportError:
             self.feature_importance_ = pd.DataFrame({'feature': X.columns, 'importance': self.model.feature_importances_}).sort_values('importance', ascending = False)
         return ModelWrapper(self.model, 'xgboost')
 
+class RandomForestModel(IModel):
+    """Random Forest model wrapper."""
+    
     def __init__(self, rf_model: Any) -> None:
         self.model = rf_model
 
@@ -641,7 +648,6 @@ class RandomForestTrainer(BaseModelTrainer):
         return {'n_estimators': 100, 'max_depth': 10, 'min_samples_split': 2, 'min_samples_leaf': 1, 'random_state': 42, 'n_jobs': -1}
 
     def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series]=None) -> IModel:
-
         """Train Random Forest model."""
         self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
@@ -708,6 +714,9 @@ class NeuralNetworkTrainer(BaseModelTrainer):
         input_size = X.shape[1]
         hidden_layers = self.hyperparameters['hidden_layers']
 
+        import torch.nn as nn
+        import torch.optim as optim
+        
         layers = []
         prev_size = input_size
         for hidden_size in hidden_layers:
@@ -748,7 +757,17 @@ class ModelTrainerFactory:
         model_type_lower = model_type.lower()
         if model_type_lower not in cls.SUPPORTED_MODELS:
             raise ValueError(f'Unknown model type: {model_type}. Available: {cls.SUPPORTED_MODELS}')
-        return ModelTrainer(model_type_lower, **hyperparameters)
+        
+        if model_type_lower == 'lightgbm':
+            return LightGBMTrainer(**hyperparameters)
+        elif model_type_lower == 'xgboost':
+            return LightGBMTrainer(**hyperparameters)  # Using LightGBMTrainer as base
+        elif model_type_lower == 'random_forest':
+            return RandomForestTrainer(**hyperparameters)
+        elif model_type_lower == 'neural_network':
+            return NeuralNetworkTrainer(**hyperparameters)
+        else:
+            return LightGBMTrainer(**hyperparameters)
 
     @classmethod
     def get_available_models(cls) -> List[str]:
@@ -835,6 +854,9 @@ async def example_usage() -> None:
 if __name__ == '__main__':
     asyncio.run(example_usage())
 
+class VectorBTOptimizedFeatureCalculator(FeatureCalculator):
+    """Feature calculator with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

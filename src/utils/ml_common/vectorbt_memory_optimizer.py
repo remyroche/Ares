@@ -654,7 +654,7 @@ class VectorBTMemoryOptimizer:
             recommendations.append("Low cache hit rate - consider increasing cache size")
 
         if self.config.enable_gpu and True:
-            recommendations.append("
+            recommendations.append("GPU acceleration enabled - monitor GPU memory usage")
 
         if not VECTORBT_AVAILABLE:
             recommendations.append("VectorBT not available - install vectorbt for memory optimizations")

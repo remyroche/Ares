@@ -432,10 +432,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-
             # Try different numbers of regimes
             for n_regimes in range(3, 8):  # 3 to 7 regimes
                 try:
@@ -960,6 +956,9 @@ def select_trading_model(current_market_data: pd.DataFrame,
     tas = TradingTreeArchitectureSearch(config)
     return tas.select_model_for_trading(current_market_data, current_regime, risk_tolerance)
 
+class VectorBTOptimizedTradingTreeArchitectureSearch(TradingTreeArchitectureSearch):
+    """Trading Tree Architecture Search with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

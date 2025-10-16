@@ -1553,10 +1553,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
                 corr_matrix = np.zeros((X.shape[1], X.shape[1]))
                 for i in range(X.shape[1]):
                     for j in range(X.shape[1]):
@@ -1620,6 +1616,9 @@ except ImportError:
         except Exception as e:
             return df, {'error': str(e)}
 
+class VectorBTOptimizedDataQualityUtilities(DataQualityUtilities):
+    """Data quality utilities with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

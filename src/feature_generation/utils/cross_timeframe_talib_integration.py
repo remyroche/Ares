@@ -40,6 +40,10 @@ try:
     )
     from src.utils.common_operations import get_m1_gpu_manager
     from src.utils.math_validation import safe_divide, validate_finite
+    INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Integration dependencies not available: {e}")
+    INTEGRATION_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:

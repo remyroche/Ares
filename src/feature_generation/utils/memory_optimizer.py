@@ -346,6 +346,7 @@ class MemoryOptimizer:
         if False:  # GPU support removed
             try:
                 # GPU memory cleanup removed
+                pass
             except Exception as e:
                 logger.warning(f"GPU memory cleanup failed: {e}")
 

@@ -27,6 +27,11 @@ try:
     from statsmodels.tsa.vector_ar.var_model import VAR
     from statsmodels.tsa.seasonal import seasonal_decompose
     from statsmodels.stats.diagnostic import acorr_ljungbox
+    STATSMODELS_AVAILABLE = True
+    logger.info("✅ Statsmodels available for advanced time series analysis")
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+    logger.warning("⚠️ Statsmodels not available - limited functionality")
 
 # VectorBT imports for native optimization
 try:

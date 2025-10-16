@@ -81,24 +81,25 @@ except ImportError:
     cp = None
     CUPY_AVAILABLE = False
 
-        logger.warning("⚠️ Using original FeatureGenerators as fallback")
-        FeatureGenerators = OriginalFeatureGenerators
+try:
+    logger.warning("⚠️ Using original FeatureGenerators as fallback")
+    FeatureGenerators = OriginalFeatureGenerators
 
-    except ImportError as e3:
-        logger.error(f"❌ Original FeatureGenerators also not available: {e3}")
+except ImportError as e3:
+    logger.error(f"❌ Original FeatureGenerators also not available: {e3}")
 
-        # Create a minimal fallback class
-        class FeatureGenerators:
-            """Minimal fallback FeatureGenerators class."""
+    # Create a minimal fallback class
+    class FeatureGenerators:
+        """Minimal fallback FeatureGenerators class."""
 
-            def __init__(self):
-                self.logger = logger.getChild('FeatureGenerators')
-                self.logger.warning("⚠️ Using minimal fallback FeatureGenerators")
+        def __init__(self):
+            self.logger = logger.getChild('FeatureGenerators')
+            self.logger.warning("⚠️ Using minimal fallback FeatureGenerators")
 
-            def generate_features_for_hmm(self, data):
-                """Minimal fallback implementation."""
-                self.logger.info("📊 Minimal fallback: returning data as-is")
-                return data
+        def generate_features_for_hmm(self, data):
+            """Minimal fallback implementation."""
+            self.logger.info("📊 Minimal fallback: returning data as-is")
+            return data
 
 # Export the class
 __all__ = ['FeatureGenerators']

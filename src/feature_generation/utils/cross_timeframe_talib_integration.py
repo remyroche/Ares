@@ -40,6 +40,10 @@ try:
     )
     from src.utils.common_operations import get_m1_gpu_manager
     from src.utils.math_validation import safe_divide, validate_finite
+    INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Integration dependencies not available: {e}")
+    INTEGRATION_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -67,9 +71,15 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
+
+try:
     INTEGRATION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Integration dependencies not available: {e}")
@@ -643,6 +653,9 @@ if __name__ == "__main__":
     print("  integration = create_crypto_trading_integration()")
     print("  result = await integration.analyze_crypto_timeframes(data_dict)")
 
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

@@ -73,30 +73,40 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
-            logger.warning("⚠️ Using original FeatureGenerators as fallback")
-            FeatureGenerators = OriginalFeatureGenerators
+    CUPY_AVAILABLE = False
 
-        except ImportError as e3:
-            logger.error(f"❌ Original FeatureGenerators also not available: {e3}")
+try:
+    logger.warning("⚠️ Using original FeatureGenerators as fallback")
+    FeatureGenerators = OriginalFeatureGenerators
 
-            # Create a minimal fallback class
-            class FeatureGenerators:
-                """Minimal fallback FeatureGenerators class."""
+except ImportError as e3:
+    logger.error(f"❌ Original FeatureGenerators also not available: {e3}")
 
-                def __init__(self):
-                    self.logger = logger.getChild('FeatureGenerators')
-                    self.logger.warning("⚠️ Using minimal fallback FeatureGenerators")
+    # Create a minimal fallback class
+    class FeatureGenerators:
+        """Minimal fallback FeatureGenerators class."""
 
-                def generate_features_for_hmm(self, data):
-                    """Minimal fallback implementation."""
-                    self.logger.info("📊 Minimal fallback: returning data as-is")
-                    return data
+        def __init__(self):
+            self.logger = logger.getChild('FeatureGenerators')
+            self.logger.warning("⚠️ Using minimal fallback FeatureGenerators")
+
+        def generate_features_for_hmm(self, data):
+            """Minimal fallback implementation."""
+            self.logger.info("📊 Minimal fallback: returning data as-is")
+            return data
 
 # Export the class
 __all__ = ['FeatureGenerators']
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

@@ -41,6 +41,11 @@ except ImportError:
 # Cross timeframe analysis imports
 try:
     from src.feature_generation.utils.optimized_cross_timeframe_analysis_integration import (
+        analyze_cross_timeframes_optimized, create_optimized_config
+    )
+    CROSS_TIMEFRAME_AVAILABLE = True
+except ImportError:
+    CROSS_TIMEFRAME_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -68,14 +73,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
-        analyze_cross_timeframes_optimized, create_optimized_config
-    )
-    CROSS_TIMEFRAME_AVAILABLE = True
-except ImportError:
-    CROSS_TIMEFRAME_AVAILABLE = False
+    CUPY_AVAILABLE = False
 
 logger = system_logger.getChild('TemporalFeatureIntegration')
 
@@ -586,6 +590,10 @@ def create_temporal_config(
         correlation_threshold=correlation_threshold,
         parallel_processing=parallel_processing
     )
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

@@ -673,36 +673,6 @@ class Step06ComprehensiveImplementation:
                     # Save enhanced features
                     features_file = Path('/tmp/step06_enhanced_features.parquet')
                     from src.utils.parquet_utils import ParquetWriter
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
                     ParquetWriter.write_partitioned(enhanced_features, features_file, partition_size=500_000)
 
                     # Validate saved parquet file
@@ -1211,6 +1181,10 @@ async def run_step06_comprehensive_example():
 if __name__ == "__main__":
     # Run example
     asyncio.run(run_step06_comprehensive_example())
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

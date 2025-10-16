@@ -14,8 +14,8 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 # except ImportError:
 #     DATA_DRIVEN_PERIODS_AVAILABLE = False
 DATA_DRIVEN_PERIODS_AVAILABLE = False
-    ENHANCED_PERIOD_SELECTION_AVAILABLE = False
-    DataDrivenPeriodSelector = None
+ENHANCED_PERIOD_SELECTION_AVAILABLE = False
+DataDrivenPeriodSelector = None
 #     PeriodAnalysisResult = None
 #     EnhancedDataDrivenPeriodSelector = None
 #     EnhancedPeriodSelectionConfig = None
@@ -173,12 +173,7 @@ class CrossTimeframeFeatureGenerator:
         self.interaction_generator = None
         if DATA_DRIVEN_INTERACTIONS_AVAILABLE:
             # DataDrivenInteractionGenerator has been removed
-            self.interaction_generator = None  # DataDrivenInteractionGenerator(
-                max_interactions=100,
-                utility_threshold=0.1,
-                correlation_threshold=0.95,
-                enable_vectorbt=True
-            )
+            self.interaction_generator = None
             self.logger.info("✅ Data-driven interaction generator initialized")
         else:
             self.logger.warning("⚠️ Data-driven interaction generator not available")
@@ -625,8 +620,12 @@ class CrossTimeframeFeatureGenerator:
                 if self._is_valid_feature(hist_diff):
                     features[f'macd_histogram_diff_{fast1}_{slow1}_{fast2}_{slow2}'] = hist_diff
 
-        return features fast < slow < len(close):
-                    macd_cache[(fast, slow)] = self._calculate_macd_vectorized(close, fast, slow)
+        return features
+
+    def _calculate_macd_vectorized(self, close: pd.Series, fast: int, slow: int) -> Dict[str, pd.Series]:
+        """Calculate MACD with vectorized operations."""
+        if fast < slow < len(close):
+            macd_cache[(fast, slow)] = self._calculate_macd_vectorized(close, fast, slow)
 
         # VECTORIZED: Compute all period combinations simultaneously
         for (fast1, slow1), macd_1 in macd_cache.items():
@@ -1559,36 +1558,6 @@ class CrossTimeframeFeatureGenerator:
             import tempfile
             import os
             from pathlib import Path
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Save data to temporary parquet file

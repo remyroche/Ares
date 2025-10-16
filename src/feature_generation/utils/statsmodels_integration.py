@@ -27,6 +27,11 @@ try:
     from statsmodels.tsa.vector_ar.var_model import VAR
     from statsmodels.tsa.seasonal import seasonal_decompose
     from statsmodels.stats.diagnostic import acorr_ljungbox
+    STATSMODELS_AVAILABLE = True
+    logger.info("✅ Statsmodels available for advanced time series analysis")
+except ImportError:
+    STATSMODELS_AVAILABLE = False
+    logger.warning("⚠️ Statsmodels not available - limited functionality")
 
 # VectorBT imports for native optimization
 try:
@@ -54,9 +59,15 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
+    CUPY_AVAILABLE = False
+
+try:
     STATSMODELS_AVAILABLE = True
     logger.info("✅ Statsmodels available for advanced time series analysis")
 except ImportError:
@@ -350,6 +361,9 @@ def create_var_features(multi_asset_data: pd.DataFrame, window: int = 50) -> pd.
 
     return features.fillna(0)
 
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

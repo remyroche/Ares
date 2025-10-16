@@ -15,6 +15,10 @@ import time
 
 from src.utils.logger import system_logger
 from src.utils.math_validation import (
+    validate_finite, validate_positive, validate_range,
+    safe_divide, safe_log, safe_sqrt, safe_power,
+    MathValidationError
+)
 
 # VectorBT imports for native optimization
 try:
@@ -42,13 +46,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# CuPy imports for GPU acceleration
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
 except ImportError:
-
     cp = None
-    validate_finite, validate_positive, validate_range,
-    safe_divide, safe_log, safe_sqrt, safe_power,
-    MathValidationError
-)
+    CUPY_AVAILABLE = False
 
 logger = system_logger.getChild('OptimizedCrossTimeframeAdvanced')
 
@@ -664,6 +668,10 @@ class OptimizedCrossTimeframeAdvanced:
             return max(0.0, score)  # Ensure non-negative score
         except:
             return 0.5  # Default score
+
+class VectorBTHelper:
+    """Helper class for VectorBT operations."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and

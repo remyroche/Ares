@@ -1065,34 +1065,6 @@ class RegimeDetector:
 
             # Save metadata
             metadata_file = output_dir / f"regime_metadata_{timestamp}.json"
-            import json
-
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
             metadata = {
                 'regime_labels': result.regime_labels.tolist(),
                 'regime_centers': {str(k): v.tolist() for k, v in result.regime_centers.items()},

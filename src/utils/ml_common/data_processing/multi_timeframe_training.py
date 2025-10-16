@@ -441,10 +441,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
     async def train_models(self, training_data: Dict[str, pd.DataFrame],
                           model_trainer: Any, model_config: Dict[str, Any]) -> bool:
         """Enhanced train models across multiple timeframes with advanced feature selection and hardware optimization.
@@ -1410,6 +1406,9 @@ except ImportError:
                 'error': str(e)
             }
 
+class VectorBTOptimizedMultiTimeframeTrainer(MultiTimeframeTrainer):
+    """Multi-timeframe trainer with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

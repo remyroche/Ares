@@ -1,14 +1,15 @@
 """
-import warnings
 Migrated Data Components
 
 This module contains the migrated data loading and preprocessing components
 that replace the monolithic data handling in the original architecture.
 """
+import warnings
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass
+from typing import Dict, Any, Optional
 from .core.interfaces import (
     BasePipelineStep, IDataStep, StepResult, StepStatus, StepConfig
 )
@@ -511,41 +512,17 @@ class DataConverterStep(BasePipelineStep, IDataStep):
         }
 
 # Register the migrated components
-from ..enhanced_interfaces import StepFactory
-
-# VectorBT imports for native optimization
 try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
+    from ..enhanced_interfaces import StepFactory
+    StepFactory.register_step('data_collection', DataCollectionStep)
+    StepFactory.register_step('data_converter', DataConverterStep)
 except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+    # Fallback if enhanced_interfaces is not available
+    pass
 
-except ImportError:
-
-    cp = None
-
-StepFactory.register_step('data_collection', DataCollectionStep)
-StepFactory.register_step('data_converter', DataConverterStep)
-
+class VectorBTOptimizedDataProcessor:
+    """Data processor with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

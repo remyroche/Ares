@@ -1,13 +1,19 @@
 from .logger import system_logger
 import numpy as np
 import warnings
-
-'\nFeature Engineering Validation Module\n\nThis module provides comprehensive validation for engineered features,\nincluding value range checks, NaN propagation analysis, and feature correctness verification.\n'
-
-from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 import logging
 import pandas as pd
 import typing
+from typing import Dict, Any, List, Callable
+
+"""
+Feature Engineering Validation Module
+
+This module provides comprehensive validation for engineered features,
+including value range checks, NaN propagation analysis, and feature correctness verification.
+"""
+
+from .utils.pipeline_standards import DataQualityLevel, ValidationIssue, ValidationResult
 
 class FeatureEngineeringValidator:
     """Validates engineered features for quality and correctness."""
@@ -296,10 +302,6 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-except ImportError:
-
-    cp = None
-
         numbers = re.findall('\\d+', ma_column_name)
         return int(numbers[0]) if numbers else 999
 
@@ -315,6 +317,9 @@ except ImportError:
         """Register a custom feature calculation for validation."""
         self.feature_calculations[feature_name] = calculation_func
 
+class VectorBTOptimizedFeatureValidator(FeatureEngineeringValidator):
+    """Feature validator with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

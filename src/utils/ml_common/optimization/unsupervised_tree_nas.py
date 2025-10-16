@@ -55,6 +55,10 @@ except ImportError:
 
 try:
     import catboost as cb
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+    cb = None
 
 # VectorBT imports for native optimization
 try:
@@ -81,14 +85,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
-    CATBOOST_AVAILABLE = True
-except ImportError:
-    CATBOOST_AVAILABLE = False
-    cb = None
 
 logger = logging.getLogger(__name__)
 
@@ -1117,6 +1113,9 @@ def search_unsupervised_regimes(market_data: pd.DataFrame,
     unsupervised_nas = UnsupervisedTreeNAS(config)
     return unsupervised_nas.search(market_data, timestamps)
 
+class VectorBTOptimizedUnsupervisedTreeNAS(UnsupervisedTreeNAS):
+    """Unsupervised Tree NAS with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

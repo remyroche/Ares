@@ -1,10 +1,10 @@
 """
-import warnings
 Enhanced data operations for advanced data processing.
 
 This module provides enhanced data processing operations including
 vectorized operations, memory optimization, and advanced data transformations.
 """
+import warnings
 
 import logging
 import pandas as pd
@@ -110,10 +110,6 @@ except ImportError:
     clip = None
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
-
-except ImportError:
-
-    cp = None
 
         if axis == 0:
             # Apply to columns
@@ -270,6 +266,9 @@ def smart_sampling(df: pd.DataFrame, sample_size: int, method: str = "random") -
         logger.error(f"Error in smart sampling: {e}")
         return df
 
+class VectorBTOptimizedDataOperations:
+    """Data operations with VectorBT optimization."""
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and

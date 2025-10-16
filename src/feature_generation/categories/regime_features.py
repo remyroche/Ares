@@ -81,10 +81,18 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 try:
-
+    from src.utils.ml_common.unified_vectorization_manager import (
+        get_unified_vectorization_manager, UnifiedVectorizationManager,
+        OperationType, OptimizationStrategy, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
 except ImportError:
-
-    cp = None
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    get_unified_vectorization_manager = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OptimizationStrategy = None
+    OperationConfig = None
 
 # Local imports
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory

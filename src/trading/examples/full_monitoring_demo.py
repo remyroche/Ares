@@ -1,5 +1,4 @@
 """
-import warnings
 Full Monitoring Demo
 
 Complete demonstration of the comprehensive trading monitoring system
@@ -642,9 +641,8 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-
     cp = None
-        traceback.print_exc()
+    traceback.print_exc()
 
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""

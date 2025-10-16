@@ -53,6 +53,17 @@ except ImportError:
 # Import logging utilities
 try:
     from src.utils.comprehensive_function_logger import (
+        log_step_functions, log_important_calls, log_all_calls
+    )
+    LOGGING_AVAILABLE = True
+except ImportError:
+    LOGGING_AVAILABLE = False
+    def log_step_functions(func):
+        return func
+    def log_important_calls(func):
+        return func
+    def log_all_calls(func):
+        return func
 
 # VectorBT imports for native optimization
 try:
@@ -81,19 +92,7 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 except ImportError:
-
     cp = None
-        log_step_functions, log_important_calls, log_all_calls
-    )
-    LOGGING_AVAILABLE = True
-except ImportError:
-    LOGGING_AVAILABLE = False
-    def log_step_functions(func):
-        return func
-    def log_important_calls(func):
-        return func
-    def log_all_calls(func):
-        return func
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,206 @@
+# Step 12 Optimized Configuration
+# This configuration file contains optimized settings for the enhanced Step 12
+
+step12_optimized:
+  # Memory Management Settings
+  memory_management:
+    max_memory_gb: 8.0
+    cleanup_threshold: 0.8
+    gc_frequency: 5  # Cleanup every 5 operations
+    cache_size_limit: 5  # Maximum cached datasets
+    
+  # Hyperparameter Optimization Settings
+  hyperparameter_optimization:
+    # Adaptive trial counts based on data size
+    base_trials: 50
+    min_trials: 10
+    max_trials: 200
+    
+    # Early stopping settings
+    early_stopping_patience: 5
+    warmup_steps: 5
+    startup_trials: 10
+    
+    # Model-specific settings
+    model_trials:
+      lightgbm: 50
+      xgboost: 50
+      random_forest: 40
+      svm: 30
+      neural_network: 25
+    
+    # Parallel processing
+    max_parallel_jobs: 2
+    svm_parallel_jobs: 1  # SVM is not thread-safe
+    
+    # Logging optimization
+    log_frequency: 10  # Log every 10th trial
+    
+  # Feature Selection Settings
+  feature_selection:
+    # Selection strategies
+    simple_threshold: 50  # Use simple selection for <= 50 features
+    batched_threshold: 200  # Use batched selection for > 200 features
+    
+    # Selection parameters
+    feature_selection_k: 20
+    batch_size: 100
+    batch_selection_k: 20  # Select top K from each batch
+    
+    # Scoring weights
+    mi_weight: 0.6
+    fscore_weight: 0.4
+    
+    # Caching
+    enable_caching: true
+    cache_size_limit: 10
+    
+  # Data Processing Settings
+  data_processing:
+    # Preprocessing options
+    normalize_features: true
+    handle_missing_values: true
+    handle_infinite_values: true
+    
+    # Data loading
+    use_chunked_loading: true
+    chunk_size: 10000
+    enable_lazy_loading: true
+    
+    # Memory optimization
+    use_memory_mapping: true
+    memory_mapping_threshold_gb: 1.0
+    
+  # Fast Fail Validation Settings
+  validation:
+    # Data quality checks
+    min_train_samples: 50
+    min_val_samples: 10
+    max_constant_feature_ratio: 0.5
+    min_target_unique_values: 2
+    
+    # Model compatibility checks
+    svm_max_features: 1000
+    neural_network_min_samples: 1000
+    max_memory_usage_gb: 8.0
+    
+    # Configuration validation
+    max_trials_limit: 200
+    max_feature_selection_k: 500
+    
+  # Performance Monitoring
+  performance_monitoring:
+    enable_monitoring: true
+    log_memory_usage: true
+    log_operation_times: true
+    memory_check_interval: 5
+    
+  # Error Handling
+  error_handling:
+    # Specific exception handling
+    handle_memory_errors: true
+    handle_timeout_errors: true
+    handle_data_quality_errors: true
+    
+    # Resource management
+    use_context_managers: true
+    proper_cleanup: true
+    
+    # Logging
+    detailed_error_logging: true
+    log_warnings: true
+    
+  # Caching Settings
+  caching:
+    # Data caching
+    enable_data_cache: true
+    data_cache_size: 5
+    
+    # Model caching
+    enable_model_cache: true
+    model_cache_size: 10
+    
+    # Feature selection caching
+    enable_feature_cache: true
+    feature_cache_size: 10
+    
+    # Preprocessing caching
+    enable_preprocessing_cache: true
+    preprocessing_cache_size: 5
+    
+  # Optimization Flags
+  optimizations:
+    # Enable/disable specific optimizations
+    enable_early_stopping: true
+    enable_model_caching: true
+    enable_feature_caching: true
+    enable_memory_optimization: true
+    enable_vectorized_processing: true
+    enable_lazy_loading: true
+    enable_batched_processing: true
+    
+    # Performance optimizations
+    reduce_logging_overhead: true
+    optimize_memory_usage: true
+    parallel_processing: true
+    adaptive_parameters: true
+    
+  # Model-Specific Optimizations
+  model_optimizations:
+    lightgbm:
+      use_early_stopping: true
+      early_stopping_rounds: 50
+      use_pruning_callback: true
+      suppress_verbose_output: true
+      
+    xgboost:
+      use_early_stopping: true
+      early_stopping_rounds: 50
+      suppress_verbose_output: true
+      
+    random_forest:
+      optimize_n_jobs: true
+      max_n_jobs: 2
+      
+    svm:
+      single_threaded: true
+      memory_efficient: true
+      
+  # Resource Limits
+  resource_limits:
+    max_memory_usage_gb: 8.0
+    max_cpu_usage_percent: 80
+    max_processing_time_minutes: 60
+    max_concurrent_operations: 4
+    
+  # Logging Configuration
+  logging:
+    level: INFO
+    log_performance_metrics: true
+    log_memory_usage: true
+    log_operation_times: true
+    reduce_verbose_logging: true
+    
+  # Integration Settings
+  integration:
+    # Financial logging
+    enable_financial_logging: true
+    
+    # Enhanced reporting
+    enable_enhanced_reporting: true
+    
+    # Pipeline integration
+    pipeline_compatible: true
+    preserve_original_interface: true
+    
+  # Development/Testing Settings
+  development:
+    # Testing mode
+    testing_mode: false
+    reduced_trials: 5
+    small_dataset_mode: false
+    
+    # Debug settings
+    enable_debug_logging: false
+    log_intermediate_results: false
+    save_debug_artifacts: false

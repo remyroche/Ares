@@ -1,0 +1,72 @@
+'\nService registry for dependency injection container configuration.\n\nThis module provides centralized service registration for all trading components, ensuring proper dependency injection throughout the system.\n'
+from typing import Any
+from .exchange.factory import ExchangeFactory
+from .analyst.analyst import Analyst
+from .components.modular_analyst import ModularAnalyst
+from .components.modular_strategist import ModularStrategist
+from .components.modular_tactician import ModularTactician
+from .core.dependency_injection import DependencyContainer, ServiceLifetime
+from .interfaces.base_interfaces import IAnalyst, IEventBus, IStrategist, ISupervisor, ITactician
+from .interfaces.event_bus import EventBus
+from .supervisor.supervisor import Supervisor
+from .strategist.strategist import Strategist
+from .tactician.tactician import Tactician
+from ..training.training_manager import TrainingManager
+from .utils.logger import system_logger
+import time
+
+class ServiceRegistry:
+    """
+    Centralized service registry for dependency injection configuration.
+    """
+
+    def __init__(self, container: DependencyContainer) -> None:
+        self.container = container
+        self.logger = system_logger.getChild('ServiceRegistry')
+
+    def register_all_services(self, config: dict[str, Any]) -> None:
+        """Register all trading system services."""
+        self.logger.info('Registering all trading system services')
+        self._register_core_services(config)
+        self._register_trading_components(config)
+        self._register_specialized_services(config)
+        self.logger.info('All services registered successfully')
+
+    def _register_core_services(self, config: dict[str, Any]) -> None:
+        """Register core infrastructure services."""
+        self.container.register(IEventBus, EventBus, lifetime = ServiceLifetime.SINGLETON, config = config.get('event_bus', {}))
+
+    def _register_trading_components(self, config: dict[str, Any]) -> None:
+        """Register trading component services."""
+        use_modular = config.get('use_modular_components', True)
+        if use_modular:
+            self.container.register(IAnalyst, ModularAnalyst, lifetime = ServiceLifetime.SINGLETON, config = config.get('analyst', {}))
+            self.container.register(IStrategist, ModularStrategist, lifetime = ServiceLifetime.SINGLETON, config = config.get('strategist', {}))
+            self.container.register(ITactician, ModularTactician, lifetime = ServiceLifetime.SINGLETON, config = config.get('tactician', {}))
+        else:
+            self.container.register(IAnalyst, Analyst, lifetime = ServiceLifetime.SINGLETON, config = config.get('analyst', {}))
+            self.container.register(IStrategist, Strategist, lifetime = ServiceLifetime.SINGLETON, config = config.get('strategist', {}))
+            self.container.register(ITactician, Tactician, lifetime = ServiceLifetime.SINGLETON, config = config.get('tactician', {}))
+        self.container.register(ISupervisor, Supervisor, lifetime = ServiceLifetime.SINGLETON, config = config.get('supervisor', {}))
+
+    def _register_specialized_services(self, config: dict[str, Any]) -> None:
+        """Register specialized services."""
+        self.container.register(TrainingManager, TrainingManager, lifetime = ServiceLifetime.SINGLETON, config = config.get('training', {}))
+        self.container.register(ExchangeFactory, ExchangeFactory, lifetime = ServiceLifetime.SINGLETON, config = config.get('exchange', {}))
+
+    def get_registered_services(self) -> dict[str, Any]:
+        """Get all registered services."""
+        return self.container.get_all_services()
+
+    def validate_registrations(self) -> bool:
+        """Validate that all required services are registered."""
+        required_services = [IEventBus, IAnalyst, IStrategist, ITactician, ISupervisor]
+        missing_services = []
+        for service in required_services:
+            if service not in self.container.get_all_services():
+                missing_services.append(service.__name__)
+        if missing_services:
+            self.logger.error(f'Missing required services: {missing_services}')
+            return False
+        self.logger.info('All required services are registered')
+        return True

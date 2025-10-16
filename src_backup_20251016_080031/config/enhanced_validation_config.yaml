@@ -1,0 +1,101 @@
+# Enhanced Data Quality Validation Configuration
+# This file contains settings for the enhanced validation system with feature-specific thresholds
+
+enhanced_validation:
+  # Feature-specific thresholds
+  feature_thresholds:
+    wavelet_features:
+      missing_warning: 0.05    # 5% - more lenient for wavelets
+      missing_error: 0.20      # 20% - more lenient for wavelets
+      variance_threshold: 1e-12
+      description: "Wavelet features naturally have edge effects and low variance"
+    
+    multi_timeframe_features:
+      missing_warning: 0.02    # 2% - moderate tolerance
+      missing_error: 0.10      # 10% - moderate tolerance
+      variance_threshold: 1e-10
+      description: "Alignment issues between timeframes can cause gaps"
+    
+    technical_indicators:
+      missing_warning: 0.01    # 1% - standard tolerance
+      missing_error: 0.05      # 5% - standard tolerance
+      variance_threshold: 1e-8
+      description: "Technical indicators should be mostly complete"
+    
+    price_features:
+      missing_warning: 0.001   # 0.1% - very strict
+      missing_error: 0.01      # 1% - very strict
+      variance_threshold: 1e-6
+      description: "Price data should be nearly complete"
+  
+  # Global thresholds
+  global_thresholds:
+    infinite_threshold: 0.05        # 5% infinite threshold
+    correlation_threshold: 0.95     # High correlation threshold
+    extreme_value_threshold: 1e6    # Extreme value threshold
+    constant_threshold: 0.99        # 99% same value
+    market_gap_threshold: 0.001     # 0.1% for market gaps
+  
+  # Auto-fix settings
+  auto_fix:
+    enable_auto_fix: true
+    enable_market_gap_detection: true
+    enable_data_type_fixes: true
+    
+    fix_strategies:
+      nan: "drop"              # or "fill", "interpolate"
+      infinite: "clip"         # or "drop", "fill"
+      zero_variance: "drop"
+      constant: "drop"
+      extreme_values: "clip"
+      data_type_issues: "convert"
+  
+  # Logging settings
+  logging:
+    enable_detailed_logging: true
+    log_feature_types: true
+    log_market_gaps: true
+    log_data_type_fixes: true
+    log_recommendations: true
+    max_issues_to_log: 10
+  
+  # Performance settings
+  performance:
+    enable_parallel_validation: false  # Can be enabled for large datasets
+    batch_size: 1000                   # Process features in batches
+    memory_limit_mb: 512               # Memory limit for validation
+
+# Market gap detection settings
+market_gap_detection:
+  enabled: true
+  min_gap_duration: 1          # Minimum gap duration to report
+  max_gap_duration: 1000       # Maximum gap duration to report
+  detect_cascading_gaps: true  # Detect gaps that affect multiple features
+  report_gap_impact: true      # Report which features are affected by gaps
+
+# Data type fix settings
+data_type_fixes:
+  enabled: true
+  convert_objects_to_numeric: true
+  convert_datetime_to_timestamp: true
+  handle_mixed_types: true
+  preserve_original_dtypes: false  # Keep original dtypes if conversion fails
+  log_conversion_errors: true
+
+# Feature type detection patterns
+feature_type_patterns:
+  wavelet_features:
+    patterns: ["wavelet", "wav", "dwt", "cwt"]
+    priority: 1
+  
+  multi_timeframe_features:
+    patterns: ["_1m_", "_5m_", "_15m_", "_1h_", "_4h_", "_1d_"]
+    priority: 2
+  
+  price_features:
+    patterns: ["price", "open", "high", "low", "close", "volume"]
+    priority: 3
+  
+  technical_indicators:
+    patterns: ["rsi", "macd", "bollinger", "sma", "ema", "atr", "stoch"]
+    priority: 4

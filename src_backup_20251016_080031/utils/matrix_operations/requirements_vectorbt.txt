@@ -1,0 +1,18 @@
+# VectorBT Optimization Requirements
+# Install these packages to enable VectorBT optimizations in matrix operations
+
+# Core VectorBT package
+vectorbt>=0.25.0
+
+# Optional dependencies for enhanced performance
+numba>=0.56.0  # JIT compilation for faster execution
+numba[extras]  # Additional numba features
+
+# Optional GPU acceleration removed (CuPy not supported on all platforms)
+
+# Optional dependencies for additional features
+scipy>=1.9.0  # For advanced mathematical functions
+scikit-learn>=1.1.0  # For mutual information calculations
+
+# Note: VectorBT will automatically detect and use available optimizations
+# No additional configuration is required for basic usage

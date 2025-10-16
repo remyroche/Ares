@@ -1,0 +1,184 @@
+# Partitioning Configuration
+# This file contains settings for parquet partitioning optimization
+
+partitioning:
+  # General partitioning settings
+  default_compression: "zstd"
+  default_max_rows_per_file: 5_000_000
+  default_min_rows_per_group: 50_000
+  
+  # Adaptive partitioning settings
+  adaptive_partitioning:
+    enabled: true
+    target_partition_size_mb: 100
+    max_partitions_per_column: 1000
+    min_partitions_per_column: 5
+  
+  # Partition strategies by data type
+  strategies:
+    klines:
+      # High-frequency data (1m, 5m)
+      high_frequency:
+        partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day", "hour"]
+        max_rows_per_file: 2_000_000
+        compression: "zstd"
+        bloom_filters: ["symbol", "timeframe"]
+      
+      # Medium-frequency data (15m, 30m, 1h)
+      medium_frequency:
+        partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+        max_rows_per_file: 5_000_000
+        compression: "zstd"
+        bloom_filters: ["symbol", "timeframe"]
+      
+      # Low-frequency data (4h, 1d)
+      low_frequency:
+        partition_columns: ["exchange", "symbol", "timeframe", "year", "month"]
+        max_rows_per_file: 10_000_000
+        compression: "zstd"
+        bloom_filters: ["symbol"]
+    
+    aggtrades:
+      # Aggregated trades data
+      default:
+        partition_columns: ["exchange", "symbol", "year", "month", "day"]
+        max_rows_per_file: 1_000_000
+        compression: "zstd"
+        bloom_filters: ["symbol"]
+    
+    futures:
+      # Futures data
+      default:
+        partition_columns: ["exchange", "symbol", "year", "month", "day"]
+        max_rows_per_file: 2_000_000
+        compression: "zstd"
+        bloom_filters: ["symbol"]
+
+  # Performance optimization settings
+  performance:
+    # Caching settings
+    cache:
+      enabled: true
+      max_cache_size: 128
+      cache_ttl_seconds: 3600
+    
+    # Partition pruning settings
+    partition_pruning:
+      enabled: true
+      max_partitions_to_scan: 1000
+      enable_statistics: true
+    
+    # Bloom filter settings
+    bloom_filters:
+      enabled: true
+      false_positive_rate: 0.01
+      max_memory_mb: 100
+
+  # Data quality and validation
+  validation:
+    # Schema validation
+    schema_validation:
+      enabled: true
+      strict_mode: false
+    
+    # Data quality checks
+    data_quality:
+      enabled: true
+      check_null_ratios: true
+      check_value_ranges: true
+      check_duplicates: true
+    
+    # Partition integrity checks
+    partition_integrity:
+      enabled: true
+      check_file_sizes: true
+      check_partition_bounds: true
+      check_metadata_consistency: true
+
+  # Maintenance and optimization
+  maintenance:
+    # Automatic optimization
+    auto_optimize:
+      enabled: false
+      schedule_hours: 24
+      min_file_size_mb: 1
+      max_file_size_mb: 100
+    
+    # Partition consolidation
+    consolidation:
+      enabled: false
+      min_partitions_to_consolidate: 10
+      max_consolidation_size_mb: 500
+    
+    # Cleanup settings
+    cleanup:
+      enabled: true
+      remove_empty_partitions: true
+      remove_orphaned_files: true
+      max_age_days: 365
+
+  # Monitoring and reporting
+  monitoring:
+    # Performance metrics
+    metrics:
+      enabled: true
+      track_query_times: true
+      track_partition_access: true
+      track_cache_hit_rates: true
+    
+    # Alerting
+    alerts:
+      enabled: true
+      large_file_threshold_mb: 100
+      slow_query_threshold_ms: 5000
+      cache_miss_threshold: 0.8
+
+# Timeframe-specific partitioning rules
+timeframe_partitioning:
+  "1m":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day", "hour"]
+    max_rows_per_file: 1_000_000
+    bloom_filters: ["symbol", "timeframe"]
+  
+  "5m":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day", "hour"]
+    max_rows_per_file: 2_000_000
+    bloom_filters: ["symbol", "timeframe"]
+  
+  "15m":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+    max_rows_per_file: 3_000_000
+    bloom_filters: ["symbol", "timeframe"]
+  
+  "30m":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+    max_rows_per_file: 4_000_000
+    bloom_filters: ["symbol", "timeframe"]
+  
+  "1h":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+    max_rows_per_file: 5_000_000
+    bloom_filters: ["symbol", "timeframe"]
+  
+  "4h":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month"]
+    max_rows_per_file: 8_000_000
+    bloom_filters: ["symbol"]
+  
+  "1d":
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month"]
+    max_rows_per_file: 10_000_000
+    bloom_filters: ["symbol"]
+
+# Exchange-specific optimizations
+exchange_optimizations:
+  BINANCE:
+    # Binance-specific settings
+    high_volume_symbols: ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+    max_rows_per_file: 3_000_000
+    
+  default:
+    # Default settings for other exchanges
+    partition_columns: ["exchange", "symbol", "timeframe", "year", "month", "day"]
+    max_rows_per_file: 5_000_000

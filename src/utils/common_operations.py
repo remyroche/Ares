@@ -64,95 +64,7 @@ def get_m1_cpu_optimizer():
         logger.warning("⚠️ M1 CPU optimizer not available")
         return None
 
-def cleanup_m1_optimizers():
-    """Clean up M1 optimizers and release resources."""
-    try:
-        # Import optimizers
-        from .hardware.m1_gpu_utils import get_m1_gpu_manager
-        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
-        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
-        # Get instances
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        cpu_optimizer = get_m1_cpu_optimizer()
-
-        # Clean up resources
-        if memory_optimizer and hasattr(memory_optimizer, 'stop_monitoring'):
-            memory_optimizer.stop_monitoring()
-
-        # Log cleanup
-        logger.info("🧠 M1 optimizers cleaned up successfully")
-
-        return True
-
-    except ImportError:
-        logger.warning("⚠️ M1 optimizers not available for cleanup")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Error during M1 optimizer cleanup: {e}")
-        return False
-
-def integrate_with_m1_optimizers() -> dict:
-    """Integrate with M1 GPU and CPU optimizers.
-
-    Returns:
-        Dictionary with integration status and component information
-    """
-    try:
-        # Import M1 utilities
-
-        # Initialize components
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        cpu_optimizer = get_m1_cpu_optimizer()
-
-        # Start memory monitoring
-        memory_optimizer.start_monitoring()
-
-        # Optimize numpy for M1
-        cpu_optimizer.optimize_numpy_operations()
-
-        # Log integration status
-        gpu_info = gpu_manager.get_gpu_info()
-        cpu_info = cpu_optimizer.get_cpu_info()
-
-        logger.info("🧠 M1 Integration Status:")
-        logger.info(f"   - M1 Hardware: {'✅ Available' if is_m1_available() else '❌ Not available'}")
-        logger.info(f"   - MPS (GPU): {'✅ Available' if is_mps_available() else '❌ Not available'}")
-        logger.info(f"   - Performance Cores: {cpu_info.get('performance_cores', 'Unknown')}")
-        logger.info(f"   - Memory Monitoring: ✅ Active")
-
-        return {
-            'integration_status': 'success',
-            'gpu_manager': is_mps_available(),
-            'memory_optimizer': True,
-            'cpu_optimizer': True,
-            'gpu_info': gpu_info,
-            'cpu_info': cpu_info,
-            'success': True
-        }
-
-    except ImportError as e:
-        logger.warning(f"⚠️ M1 utilities not available: {e}")
-        return {
-            'integration_status': 'failed',
-            'error': str(e),
-            'gpu_manager': False,
-            'memory_optimizer': False,
-            'cpu_optimizer': False,
-            'success': False
-        }
-    except Exception as e:
-        logger.error(f"❌ M1 integration failed: {e}")
-        return {
-            'integration_status': 'failed',
-            'error': str(e),
-            'gpu_manager': False,
-            'memory_optimizer': False,
-            'cpu_optimizer': False,
-            'success': False
-        }
 
 # Logging setup moved to top of file to avoid undefined logger errors
 
@@ -160,9 +72,6 @@ def integrate_with_m1_optimizers() -> dict:
 # LOGGING UTILITIES
 # =============================================================================
 
-def get_logger(name: str = None) -> logging.Logger:
-    """Get a logger instance."""
-    return logging.getLogger(name or __name__)
 
 def setup_basic_logging(level: int = logging.INFO) -> None:
     """Setup basic logging configuration."""
@@ -175,52 +84,13 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
         ]
     )
 
-def safe_log_metric(name: str, value: float) -> None:
-    """Safely log metric with proper error handling."""
-    try:
-        logger.info(f"📊 Metric {name}: {value}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log metric {name}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging metric {name}: {e}")
 
-def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters with proper error handling."""
-    try:
-        logger.info(f"⚙️ Parameters: {params}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log parameters: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging parameters: {e}")
 
-def safe_log_artifact(name: str, path: str) -> None:
-    """Safely log artifact with proper error handling."""
-    try:
-        logger.info(f"📁 Artifact {name} saved to {path}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log artifact {name}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging artifact {name}: {e}")
 
 # =============================================================================
 # DATETIME UTILITIES
 # =============================================================================
 
-def get_current_datetime() -> datetime:
-    """Get current datetime."""
-    return datetime.now()
-
-def get_today() -> date:
-    """Get today's date."""
-    return date.today()
-
-def format_datetime(dt: datetime, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """Format datetime to string."""
-    return dt.strftime(format_str)
-
-def parse_datetime(dt_str: str, format_str: str = "%Y-%m-%d %H:%M:%S") -> datetime:
-    """Parse string to datetime."""
-    return datetime.strptime(dt_str, format_str)
 
 # =============================================================================
 # FILE AND DIRECTORY UTILITIES
@@ -556,33 +426,6 @@ def create_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
 # MATH UTILITIES
 # =============================================================================
 
-def safe_divide(a: float, b: float, default: float = 0.0) -> float:
-    """Safely divide two numbers."""
-    try:
-        return a / b if b != 0 else default
-    except Exception:
-        return default
-
-def safe_log(x: float, default: float = 0.0) -> float:
-    """Safely calculate logarithm."""
-    try:
-        return np.log(x) if x > 0 else default
-    except Exception:
-        return default
-
-def safe_sqrt(x: float, default: float = 0.0) -> float:
-    """Safely calculate square root."""
-    try:
-        return np.sqrt(x) if x >= 0 else default
-    except Exception:
-        return default
-
-def safe_power(x: float, y: float, default: float = 0.0) -> float:
-    """Safely calculate power."""
-    try:
-        return x ** y
-    except Exception:
-        return default
 
 def safe_mean(series: pd.Series) -> float:
     """Safely calculate mean."""
@@ -628,19 +471,6 @@ def safe_correlation(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.nda
 
     return default
 
-def safe_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert value to float."""
-    try:
-        return float(value)
-    except Exception:
-        return default
-
-def safe_int(value: Any, default: int = 0) -> int:
-    """Safely convert value to int."""
-    try:
-        return int(value)
-    except Exception:
-        return default
 
 def validate_finite(value: Any, name: str = "value") -> float:
     """Validate that a value is finite."""
@@ -666,213 +496,30 @@ def validate_range(value: float, min_val: float = None, max_val: float = None, n
         raise ValueError(f"{name} must be <= {max_val}, got {value}")
     return value
 
-def safe_kelly_calculation(win_rate: float, avg_win: float, avg_loss: float) -> float:
-    """Safely calculate Kelly criterion."""
-    try:
-        if avg_loss <= 0:
-            return 0.0
-        return (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_loss
-    except Exception:
-        return 0.0
 
-def safe_weighted_average(values: List[float], weights: List[float]) -> float:
-    """Safely calculate weighted average."""
-    try:
-        if not values or not weights or len(values) != len(weights):
-            return 0.0
-        total_weight = sum(weights)
-        if total_weight == 0:
-            return 0.0
-        return sum(v * w for v, w in zip(values, weights)) / total_weight
-    except Exception:
-        return 0.0
 
-def safe_percentage_change(old_value: float, new_value: float) -> float:
-    """Safely calculate percentage change."""
-    try:
-        if old_value == 0:
-            return 0.0
-        return ((new_value - old_value) / old_value) * 100
-    except Exception:
-        return 0.0
-
-def optimize_memory_usage() -> Dict[str, Any]:
-    """
-    Optimize memory usage by leveraging matrix operations manager.
-    
-    Returns:
-        Dictionary containing memory optimization statistics
-    """
-    try:
-        from .matrix_operations.convenience import optimize_memory_usage as matrix_optimize
-        return matrix_optimize()
-    except ImportError as e:
-        logger.warning(f"⚠️ Matrix operations not available for memory optimization: {e}")
-        # Return a fallback dictionary
-        return {
-            'status': 'unavailable',
-            'message': 'Matrix operations module not available',
-            'memory_freed_mb': 0.0,
-            'success': False
-        }
-    except Exception as e:
-        logger.error(f"❌ Memory optimization failed: {e}")
-        return {
-            'status': 'failed',
-            'error': str(e),
-            'memory_freed_mb': 0.0,
-            'success': False
-        }
-
-def parallel_processing_optimizer(data: Any, operation: Callable, num_workers: int = None) -> Any:
-    """
-    Optimize parallel processing operations.
-    
-    Args:
-        data: Data to process
-        operation: Operation to apply
-        num_workers: Number of parallel workers (None for auto-detection)
-        
-    Returns:
-        Processed data
-    """
-    try:
-        import multiprocessing
-        if num_workers is None:
-            num_workers = max(1, multiprocessing.cpu_count() - 1)
-        
-        # Use concurrent processing for large datasets
-        if hasattr(data, '__len__') and len(data) > 1000:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                results = list(executor.map(operation, data))
-            return results
-        else:
-            # For small datasets, direct processing is faster
-            return [operation(item) for item in data]
-    except Exception as e:
-        logger.warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
-        # Fallback to sequential processing
-        return [operation(item) for item in data]
 
 # =============================================================================
 # STRING UTILITIES
 # =============================================================================
 
-def safe_lower(s: str) -> str:
-    """Safely convert string to lowercase."""
-    try:
-        return s.lower()
-    except Exception:
-        return s
-
-def safe_upper(s: str) -> str:
-    """Safely convert string to uppercase."""
-    try:
-        return s.upper()
-    except Exception:
-        return s
-
-def safe_join(iterable: List[str], separator: str = " ") -> str:
-    """Safely join strings."""
-    try:
-        return separator.join(str(item) for item in iterable)
-    except Exception:
-        return ""
 
 # =============================================================================
 # COLLECTION UTILITIES
 # =============================================================================
 
-def safe_append(lst: List[Any], item: Any) -> bool:
-    """Safely append item to list."""
-    try:
-        lst.append(item)
-        return True
-    except Exception as e:
-        logger.warning(f"⚠️ Error appending to list: {e}")
-        return False
-
-def safe_extend(lst: List[Any], items: List[Any]) -> bool:
-    """Safely extend list with items."""
-    try:
-        lst.extend(items)
-        return True
-    except Exception as e:
-        logger.warning(f"⚠️ Error extending list: {e}")
-        return False
-
-def safe_dict_get(d: Dict[Any, Any], key: Any, default: Any = None) -> Any:
-    """Safely get value from dictionary."""
-    try:
-        return d.get(key, default)
-    except Exception:
-        return default
-
-def safe_dict_items(d: Dict[Any, Any]) -> List[tuple]:
-    """Safely get dictionary items."""
-    try:
-        return list(d.items())
-    except Exception:
-        return []
 
 # =============================================================================
 # ASYNC UTILITIES
 # =============================================================================
 
-def safe_sleep(seconds: float) -> None:
-    """Safely sleep for specified seconds."""
-    try:
-        time.sleep(seconds)
-    except Exception as e:
-        logger.warning(f"⚠️ Error during sleep: {e}")
-
-async def safe_gather(*coros) -> List[Any]:
-    """Safely gather async coroutines."""
-    try:
-        return await asyncio.gather(*coros)
-    except Exception as e:
-        logger.error(f"❌ Error in async gather: {e}")
-        return []
-
-def create_async_task(coro) -> asyncio.Task:
-    """Create async task."""
-    return asyncio.create_task(coro)
 
 # =============================================================================
 # PERFORMANCE UTILITIES
 # =============================================================================
 
-def timed_operation(func: Callable) -> Callable:
-    """Decorator to time operations."""
-    def wrapper(*args, **kwargs):
-        start_time = time.time()
-        result = func(*args, **kwargs)
-        end_time = time.time()
-        logger.info(f"⏱️ Operation {func.__name__} took {end_time - start_time:.2f} seconds")
-        return result
-    return wrapper
 
-def format_bytes(bytes_value: int) -> str:
-    """Format bytes to human readable string."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes_value < 1024.0:
-            return f"{bytes_value:.1f} {unit}"
-        bytes_value /= 1024.0
-    return f"{bytes_value:.1f} PB"
 
-def chunked_iterable(iterable: List[Any], chunk_size: int):
-    """Yield chunks of iterable."""
-    for i in range(0, len(iterable), chunk_size):
-        yield iterable[i:i + chunk_size]
-
-def parallel_map(func: Callable, iterable: List[Any], max_workers: int = None) -> List[Any]:
-    """Apply function to iterable in parallel."""
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            return list(executor.map(func, iterable))
-    except Exception as e:
-        logger.error(f"❌ Error in parallel map: {e}")
-        return [func(item) for item in iterable]
 
 # =============================================================================
 # MATRIX UTILITIES
@@ -1020,63 +667,7 @@ def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
         logger.error(f"❌ Error listing parquet files in {directory}: {e}")
         return []
 
-def get_latest_outcome_file(pattern: str = "market_analysis_optimal_regime_clustering_outcome_*.json") -> Optional[Path]:
-    """Get the latest outcome file matching the given pattern from outcomes/ directory.
 
-    Args:
-        pattern: File pattern to search for (default: optimal regime clustering outcomes)
-
-    Returns:
-        Path to the latest file matching the pattern, or None if no files found
-    """
-    try:
-        outcomes_dir = Path("outcomes")
-        if not outcomes_dir.exists():
-            logger.warning(f"⚠️ Outcomes directory does not exist: {outcomes_dir}")
-            return None
-
-        # Find files matching the pattern
-        matching_files = list(outcomes_dir.glob(pattern))
-
-        if not matching_files:
-            logger.warning(f"⚠️ No files found matching pattern: {pattern}")
-            return None
-
-        # Sort by modification time (latest first)
-        matching_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-        latest_file = matching_files[0]
-        logger.info(f"✅ Found latest outcome file: {latest_file}")
-        return latest_file
-
-    except Exception as e:
-        logger.error(f"❌ Error finding latest outcome file with pattern {pattern}: {e}")
-        return None
-
-def load_latest_optimal_regime_clustering_outcome() -> Optional[Dict[str, Any]]:
-    """Load the latest optimal regime clustering outcome file.
-
-    Returns:
-        Dictionary containing the outcome data, or None if loading fails
-    """
-    try:
-        latest_file = get_latest_outcome_file("market_analysis_optimal_regime_clustering_outcome_*.json")
-
-        if not latest_file:
-            logger.warning("⚠️ No optimal regime clustering outcome file found")
-            return None
-
-        outcome_data = safe_json_load(latest_file)
-        if outcome_data:
-            logger.info(f"✅ Loaded optimal regime clustering outcome from {latest_file}")
-            return outcome_data
-        else:
-            logger.warning(f"⚠️ Failed to load outcome data from {latest_file}")
-            return None
-
-    except Exception as e:
-        logger.error(f"❌ Error loading latest optimal regime clustering outcome: {e}")
-        return None
 
 def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
     """Safely copy a file from source to destination."""
@@ -1102,306 +693,22 @@ def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
         logger.error(f"❌ Error copying {src} to {dst}: {e}")
         return False
 
-def safe_deepcopy(obj: Any) -> Any:
-    """Safely create a deep copy of an object."""
-    try:
-        import copy
-        return copy.deepcopy(obj)
-    except Exception as e:
-        logger.warning(f"⚠️ Deep copy failed: {e}, returning original object")
-        return obj
 
-def safe_resample(df: pd.DataFrame, rule: str, agg_dict: Optional[Dict[str, str]] = None) -> pd.DataFrame:
-    """Safely resample a DataFrame with error handling."""
-    try:
-        if agg_dict is None:
-            # Default aggregation for time series data
-            agg_dict = {
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }
 
-        resampled = df.resample(rule).agg(agg_dict)
 
-        # Remove any columns that are all NaN
-        resampled = resampled.dropna(axis=1, how='all')
 
-        logger.info(f"✅ Successfully resampled DataFrame from {len(df)} to {len(resampled)} rows")
-        return resampled
 
-    except Exception as e:
-        logger.error(f"❌ Error resampling DataFrame: {e}")
-        return df
 
-def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> List[pd.DataFrame]:
-    """Align multiple DataFrames by index using specified join method."""
-    try:
-        if not dfs:
-            return []
 
-        if len(dfs) == 1:
-            return list(dfs)
 
-        # Use the first DataFrame as the reference
-        reference_df = dfs[0]
-
-        aligned_dfs = [reference_df]
-
-        for df in dfs[1:]:
-            if method == "inner":
-                aligned = reference_df.join(df, how="inner")
-            elif method == "outer":
-                aligned = reference_df.join(df, how="outer")
-            elif method == "left":
-                aligned = reference_df.join(df, how="left")
-            elif method == "right":
-                aligned = reference_df.join(df, how="right")
-            else:
-                logger.warning(f"⚠️ Unknown join method: {method}, using inner")
-                aligned = reference_df.join(df, how="inner")
-
-            aligned_dfs.append(aligned)
-
-        logger.info(f"✅ Successfully aligned {len(dfs)} DataFrames using {method} join")
-        return aligned_dfs
-
-    except Exception as e:
-        logger.error(f"❌ Error aligning DataFrames: {e}")
-        return list(dfs)
-
-def validate_dataframe_schema(df: pd.DataFrame, required_columns: List[str]) -> bool:
-    """Validate that DataFrame has required columns."""
-    try:
-        missing_columns = set(required_columns) - set(df.columns)
-        if missing_columns:
-            logger.error(f"❌ Missing required columns: {missing_columns}")
-            return False
-
-        logger.info(f"✅ DataFrame schema validation passed for {len(required_columns)} required columns")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error validating DataFrame schema: {e}")
-        return False
-
-def validate_file_size(max_size_mb: int = 100):
-    """Decorator to validate file size."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Get file_path from kwargs if available
-            file_path = kwargs.get('file_path')
-            if file_path:
-                if isinstance(file_path, str):
-                    file_path = Path(file_path)
-
-                if not file_path.exists():
-                    logger.warning(f"⚠️ File does not exist: {file_path}")
-                    raise ValueError(f"File does not exist: {file_path}")
-
-                file_size_mb_actual = file_path.stat().st_size / (1024 * 1024)
-                if file_size_mb_actual > max_size_mb:
-                    logger.warning(f"⚠️ File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
-                    raise ValueError(f"File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
-
-                logger.info(f"✅ File size validation passed: {file_size_mb_actual:.2f}MB")
-
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-def guard_dataframe_nulls(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
-    """Guard against excessive null values in DataFrame."""
-    try:
-        if df is None:
-            logger.warning("⚠️ DataFrame is None")
-            return df
-
-        null_ratio = df.isnull().mean().mean()
-        if null_ratio > threshold:
-            logger.warning(f"⚠️ High null ratio: {null_ratio:.2%} (threshold: {threshold:.2%})")
-            # Fill with appropriate defaults
-            for col in df.columns:
-                if df[col].dtype in ['int64', 'float64']:
-                    df[col] = df[col].fillna(df[col].median() if not df[col].median() != df[col].median() else 0)
-                else:
-                    df[col] = df[col].fillna('')
-
-        logger.info(f"✅ DataFrame null guard passed with ratio: {null_ratio:.2%}")
-        return df
-    except Exception as e:
-        logger.error(f"❌ Error in null guard: {e}")
-        return df
-
-def secure_file_path(allowed_dirs: List[str] = None):
-    """Decorator to secure file paths."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Basic path security check
-            if 'file_path' in kwargs:
-                file_path = kwargs['file_path']
-                if isinstance(file_path, str):
-                    file_path = Path(file_path)
-                # Basic security - prevent access to parent directories
-                if '..' in str(file_path):
-                    logger.warning(f"⚠️ Potential path traversal attempt: {file_path}")
-                    raise ValueError("Path traversal not allowed")
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-def with_tracing_span(span_name: str = None):
-    """Decorator for tracing spans."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Basic tracing - just log the function call
-            logger.info(f"🔍 Tracing span: {span_name or func.__name__}")
-            try:
-                result = func(*args, **kwargs)
-                logger.info(f"✅ Tracing span completed: {span_name or func.__name__}")
-                return result
-            except Exception as e:
-                logger.error(f"❌ Tracing span failed: {span_name or func.__name__}: {e}")
-                raise
-        return wrapper
-    return decorator
-
-def sanitize_string(s: str, max_length: int = 255) -> str:
-    """Sanitize string input."""
-    try:
-        if not isinstance(s, str):
-            s = str(s)
-
-        # Remove potentially dangerous characters
-        import re
-        s = re.sub(r'[^\w\s\-_.]', '', s)
-
-        # Truncate if too long
-        if len(s) > max_length:
-            s = s[:max_length]
-
-        return s.strip()
-    except Exception as e:
-        logger.error(f"❌ Error sanitizing string: {e}")
-        return ""
 
 # =============================================================================
 # M1 OPTIMIZATION UTILITIES
 # =============================================================================
 
-def memory_checkpoint(name: str):
-    """Create a memory checkpoint context manager.
 
-    Args:
-        name: Name of the checkpoint for logging
 
-    Returns:
-        Context manager for memory checkpointing
-    """
-    from contextlib import contextmanager
 
-    @contextmanager
-    def _memory_checkpoint():
-        """Enhanced memory checkpoint with proper error handling and logging."""
-        # Try to get M1 memory optimizer with specific error handling
-        memory_optimizer = None
-        try:
-            memory_optimizer = get_m1_memory_optimizer()
-        except ImportError as e:
-            logger.debug(f"M1 memory optimizer not available: {e}")
-        except (AttributeError, RuntimeError) as e:
-            logger.warning(f"M1 memory optimizer initialization failed: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error getting M1 memory optimizer: {e}")
-
-        # Use memory checkpointing if available, otherwise just yield
-        if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
-            try:
-                with memory_optimizer.memory_checkpoint(name):
-                    yield
-            except AttributeError as e:
-                logger.warning(f"Memory checkpoint method not available: {e}")
-                yield  # Fallback: just yield without checkpointing
-            except Exception as e:
-                logger.error(f"Error during memory checkpointing: {e}")
-                yield  # Fallback: just yield without checkpointing
-        else:
-            # Fallback: just yield without checkpointing
-            logger.debug(f"Memory checkpointing not available for {name}, using fallback")
-            yield
-
-    return _memory_checkpoint()
-
-def gpu_context(name: str):
-    """Create a GPU context manager.
-
-    Args:
-        name: Name of the context for logging
-
-    Returns:
-        Context manager for GPU operations
-    """
-
-    @contextmanager
-    def _gpu_context():
-        try:
-            # Try to get M1 GPU manager
-            gpu_manager = get_m1_gpu_manager()
-            if gpu_manager and hasattr(gpu_manager, 'gpu_context'):
-                with gpu_manager.gpu_context(name):
-                    yield
-            else:
-                # Fallback: just yield without GPU context
-                yield
-        except Exception:
-            # If anything fails, just yield without GPU context
-            yield
-
-    return _gpu_context()
-
-def optimize_memory() -> Dict[str, Any]:
-    """Optimize memory usage across the system.
-
-    Returns:
-        Dictionary with memory optimization results
-    """
-    try:
-        # Try to get M1 memory optimizer
-        memory_optimizer = get_m1_memory_optimizer()
-        if memory_optimizer and hasattr(memory_optimizer, 'optimize_memory'):
-            return memory_optimizer.optimize_memory()
-        else:
-            # Fallback: basic garbage collection
-            import gc
-            collected = gc.collect()
-            return {
-                'objects_collected': collected,
-                'method': 'fallback_gc',
-                'success': True
-            }
-    except Exception as e:
-        logger.warning(f"⚠️ Memory optimization failed: {e}")
-        return {
-            'error': str(e),
-            'method': 'failed',
-            'success': False
-        }
-
-def get_memory_usage() -> float:
-    """Get current memory usage in bytes.
-
-    Returns:
-        Current memory usage in bytes
-    """
-    try:
-        import psutil
-        return psutil.virtual_memory().used
-    except ImportError:
-        return 0
 
 # VectorBT imports for native optimization
 try:
@@ -1434,181 +741,7 @@ except ImportError:
         pass
 
 except ImportError:
-    
-    cp = None
+    pass
 
-def get_memory_usage() -> float:
-    """Get current memory usage in bytes."""
-    try:
-        return psutil.Process().memory_info().rss
-    except ImportError:
-        logger.warning("⚠️ psutil not available for memory monitoring")
-        return 0.0
 
-def validate_file_path(file_path: Union[str, Path]) -> bool:
-    """Validate if a file path exists and is accessible.
 
-    Args:
-        file_path: Path to validate
-
-    Returns:
-        True if file exists and is accessible, False otherwise
-    """
-    try:
-        path = Path(file_path)
-        return path.exists() and path.is_file()
-    except Exception:
-        return False
-
-def get_file_size(file_path: Union[str, Path]) -> int:
-    """Get the size of a file in bytes.
-
-    Args:
-        file_path: Path to the file
-
-    Returns:
-        File size in bytes, or 0 if file doesn't exist or can't be accessed
-    """
-    try:
-        path = Path(file_path)
-        if path.exists() and path.is_file():
-            return path.stat().st_size
-        return 0
-    except Exception:
-        return 0
-
-def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[str, Any]:
-    """Check if there's sufficient disk space available.
-
-    Args:
-        path: Path to check disk space for
-        required_gb: Required disk space in GB
-
-    Returns:
-        Dictionary with disk space information and availability status
-    """
-    try:
-        path_obj = Path(path)
-        if not path_obj.exists():
-            path_obj = path_obj.parent if path_obj.parent.exists() else Path.home()
-
-        stat = shutil.disk_usage(str(path_obj))
-        total_gb = stat.total / (1024 ** 3)
-        free_gb = stat.free / (1024 ** 3)
-        used_gb = stat.used / (1024 ** 3)
-
-        sufficient = free_gb >= required_gb
-
-        return {
-            'total_gb': round(total_gb, 2),
-            'free_gb': round(free_gb, 2),
-            'used_gb': round(used_gb, 2),
-            'required_gb': required_gb,
-            'sufficient': sufficient,
-            'available_percentage': round((free_gb / total_gb) * 100, 2)
-        }
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to check disk space: {e}")
-        return {
-            'error': str(e),
-            'sufficient': False,
-            'total_gb': 0.0,
-            'free_gb': 0.0,
-            'used_gb': 0.0,
-            'required_gb': required_gb,
-            'available_percentage': 0.0
-        }
-
-class CommonUtilities:
-    """Common utilities class for unified operations."""
-    
-    def __init__(self):
-        """Initialize common utilities."""
-        self.logger = logging.getLogger(__name__)
-        self.m1_available = is_m1_available()
-        self.mps_available = is_mps_available()
-    
-    def get_m1_status(self):
-        """Get M1 status information."""
-        return {
-            'm1_available': self.m1_available,
-            'mps_available': self.mps_available
-        }
-    
-    def optimize_for_m1(self, data):
-        """Optimize data processing for M1."""
-        if self.m1_available:
-            # M1-specific optimizations
-            if hasattr(data, 'values'):
-                return data.values
-        return data
-    
-    def get_system_info(self):
-        """Get system information."""
-        return {
-            'm1_available': self.m1_available,
-            'mps_available': self.mps_available,
-            'platform': os.name,
-            'python_version': f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
-        }
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-    
-    def _vectorbt_apply_operation(self, data: pd.Series, func, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-        
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)

@@ -47,8 +47,30 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+# Use lazy imports to avoid circular import issues
+def get_system_logger():
+    """Lazy import of system logger to avoid circular imports."""
+    try:
+        from src.utils.logger import system_logger
+        return system_logger
+    except ImportError:
+        import logging
+        return logging.getLogger(__name__)
+
+def get_tprint_functions():
+    """Lazy import of tprint functions to avoid circular imports."""
+    try:
+        from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+        return tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+    except ImportError:
+        # Fallback functions
+        def tprint(*args, **kwargs):
+            print(*args, **kwargs)
+        return tprint, tprint, tprint, tprint, tprint
+
+# Initialize lazy imports
+system_logger = get_system_logger()
+tprint, tprint_info, tprint_warning, tprint_error, tprint_success = get_tprint_functions()
 # Import comprehensive data quality utilities from src/utils/data/quality/
 try:
     from src.utils.data.quality.comprehensive_duplicate_analyzer import (

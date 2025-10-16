@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from ...utils.logger import system_logger
-from src.core.decorators import handles_errors
 """
 Advanced Tracing System with Correlation IDs
 
@@ -8,14 +6,17 @@ This module provides comprehensive request/response tracing across all component
 of the Ares trading bot with correlation IDs for debugging and performance analysis.
 """
 
+import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import logging
-import time
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors, log_execution_time
+from .performance_monitor import PerformanceLevel
 
 class TraceLevel(Enum):
     """Trace levels for different types of tracing."""

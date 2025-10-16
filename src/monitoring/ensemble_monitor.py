@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
 """
 Ensemble Monitor for Enhanced ML Monitoring
 
@@ -9,12 +7,17 @@ with detailed tracking and analysis.
 """
 
 from collections import defaultdict, deque
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Any, Optional
 
 import numpy as np
 import datetime
 import logging
 import time
 import typing
+
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 @dataclass
 class ModelWeight:

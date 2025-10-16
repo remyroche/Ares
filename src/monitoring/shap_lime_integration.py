@@ -8,16 +8,34 @@ trade decision analysis and model interpretability.
 
 import json
 import time
+import logging
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 
+# Optional imports for SHAP and LIME
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    shap = None
+
+try:
+    import lime
+    from lime import lime_tabular
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+    lime = None
+    lime_tabular = None
+
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-import logging
 
 @dataclass
 class SHAPExplanation:

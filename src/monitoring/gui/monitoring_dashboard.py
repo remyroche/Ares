@@ -6,7 +6,7 @@ Monitoring Dashboard GUI
 A comprehensive GUI for displaying enhanced ML monitoring data including
 trade decisions, daily summaries, and HMM regime information.
 """
-from tkinter import ttk, messagebox, filedialog
+from tkinter import tk, ttk, messagebox, filedialog
 from pathlib import Path
 
 import pandas as pd

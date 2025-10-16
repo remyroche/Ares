@@ -1,16 +1,30 @@
 
-from dataclasses import dataclass
-from ...utils.logger import system_logger
-'\nSurrogate Optimization Monitoring System\n\nThis module provides comprehensive monitoring capabilities for surrogate optimization:\n- Real-time performance tracking\n- Automated reporting\n- Performance alerts\n- Historical analysis\n- Dashboard integration\n'
-from dataclasses import asdict
-from datetime import datetime
-from typing import Any
-import numpy as np
-import pandas as pd
+"""
+Surrogate Optimization Monitoring System
+
+This module provides comprehensive monitoring capabilities for surrogate optimization:
+- Real-time performance tracking
+- Automated reporting
+- Performance alerts
+- Historical analysis
+- Dashboard integration
+"""
 
 import os
 import time
 import logging
+import queue
+import threading
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from ...utils.logger import system_logger
 
 @dataclass
 class OptimizationMetrics:

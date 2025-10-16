@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """
-import warnings
 Trade Decision Context Capture System
 
 Captures comprehensive trade decision context including exchange, token, time, price,
@@ -9,9 +8,11 @@ and all relevant market conditions for enhanced monitoring and analysis.
 
 import time
 import uuid
+import warnings
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
 """
 Daily Summary Tracker for Enhanced ML Monitoring
 
@@ -8,16 +6,20 @@ Tracks daily trading statistics including trades, shorts vs longs, HMM regime,
 PnL, win rate, and other key metrics for ongoing monitoring.
 """
 
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta, date
-
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
 import collections
 import logging
 import time
+from collections import defaultdict
+from dataclasses import dataclass, asdict
+from datetime import datetime, timedelta, date
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
 import typing
 
 @dataclass

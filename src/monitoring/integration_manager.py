@@ -1,19 +1,27 @@
 #!/usr/bin/env python3
-from ...utils.logger import system_logger
-from src.core.decorators import handles_errors
 """
 Monitoring Integration Manager (minimal scaffold)
 
 Coordinates monitoring components.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ...utils.logger import system_logger
+from src.core.decorators import handles_errors
 
 if TYPE_CHECKING:
     import asyncio
-import logging
+    from .performance_dashboard import MetricsDashboard
+    from .enhanced_ml_tracker import AdvancedTracer
+    from .correlation_manager import CorrelationManager
+    from .enhanced_ml_monitoring import MLMonitor
+    from .report_scheduler import ReportScheduler
+    from .tracking_system import TrackingSystem
+    from .performance_monitor import PerformanceLevel
+    from .performance_monitor import log_execution_time
 
 @dataclass
 class MonitoringComponents:

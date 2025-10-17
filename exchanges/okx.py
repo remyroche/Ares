@@ -186,6 +186,7 @@ class OkxExchange(BaseExchange):
         try:
             if aiohttp is None:
                 self.logger.warning("⚠️ aiohttp not available, using mock session")
+                self.logger.warning("⚠️ Mock session will fast fail on API calls instead of returning mock data")
                 self.session = None
                 return
 
@@ -329,8 +330,7 @@ class OkxExchange(BaseExchange):
     async def _get_server_time(self) -> Optional[int]:
         """Get server time in milliseconds."""
         try:
-            if not self._check_session():
-                raise Exception("HTTP session not initialized")
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/public/time"
             async with self.session.get(url) as response:
@@ -359,8 +359,7 @@ class OkxExchange(BaseExchange):
     async def _get_account_info_raw(self) -> Dict[str, Any]:
         """Get raw account information from exchange."""
         try:
-            if not self._check_session():
-                raise Exception("HTTP session not initialized")
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
@@ -383,8 +382,7 @@ class OkxExchange(BaseExchange):
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
         try:
-            if not self._check_session():
-                return None
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
@@ -402,8 +400,7 @@ class OkxExchange(BaseExchange):
     async def _get_instruments(self) -> List[Dict[str, Any]]:
         """Get instrument specifications."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/public/instruments"
             params = {"instType": "SPOT"}
@@ -418,8 +415,7 @@ class OkxExchange(BaseExchange):
     async def _get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get ticker data for symbol."""
         try:
-            if not self._check_session():
-                return None
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/ticker"
             params = {"instId": symbol.upper()}
@@ -434,8 +430,7 @@ class OkxExchange(BaseExchange):
     async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
         try:
-            if not self._check_session():
-                return None
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/books"
             params = {"instId": symbol.upper(), "sz": str(limit)}
@@ -450,8 +445,7 @@ class OkxExchange(BaseExchange):
     async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/trades"
             params = {"instId": symbol.upper(), "limit": str(limit)}
@@ -466,8 +460,7 @@ class OkxExchange(BaseExchange):
     async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> List[Dict[str, Any]]:
         """Get raw kline data from exchange."""
         try:
-            if not self._check_session():
-                raise Exception("HTTP session not initialized")
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/candles"
             params = {
@@ -511,8 +504,7 @@ class OkxExchange(BaseExchange):
     ) -> List[Dict[str, Any]]:
         """Get raw historical kline data from exchange."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/history-candles"
             params = {
@@ -543,8 +535,7 @@ class OkxExchange(BaseExchange):
     ) -> List[Dict[str, Any]]:
         """Get raw historical aggregated trades from exchange."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/history-trades"
             params = {
@@ -571,8 +562,7 @@ class OkxExchange(BaseExchange):
     ) -> List[List[Any]]:
         """Get historical kline data."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/market/history-candles"
             params = {
@@ -593,8 +583,7 @@ class OkxExchange(BaseExchange):
     async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get funding rate for symbol."""
         try:
-            if not self._check_session():
-                return None
+            self._check_session()
                 
             url = f"{self.base_url}/api/v5/public/funding-rate"
             params = {"instId": symbol.upper()}
@@ -609,8 +598,7 @@ class OkxExchange(BaseExchange):
     async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
         """Get balances for account type."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
@@ -636,8 +624,7 @@ class OkxExchange(BaseExchange):
     ) -> Dict[str, Any]:
         """Create raw order on exchange."""
         try:
-            if not self._check_session():
-                return {}
+            self._check_session()
                 
             # Generate idempotency key
             idempotency_key = self.idempotency_manager.create_order_key(
@@ -745,8 +732,7 @@ class OkxExchange(BaseExchange):
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> Dict[str, Any]:
         """Cancel raw order on exchange."""
         try:
-            if not self._check_session():
-                return {"success": False, "error": "Session not initialized"}
+            self._check_session()
                 
             # Generate idempotency key
             idempotency_key = self.idempotency_manager.create_cancel_key(str(order_id), symbol)
@@ -818,8 +804,7 @@ class OkxExchange(BaseExchange):
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> Dict[str, Any]:
         """Get raw order status from exchange."""
         try:
-            if not self._check_session():
-                return {}
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", f"/api/v5/trade/order?instId={symbol}&ordId={order_id}")
             if not headers:
@@ -844,8 +829,7 @@ class OkxExchange(BaseExchange):
     async def _get_order_status_exchange(self, order_id: str, symbol: str) -> Optional[Dict[str, Any]]:
         """Get order status from exchange."""
         try:
-            if not self._check_session():
-                return None
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", f"/api/v5/trade/order?instId={symbol}&ordId={order_id}")
             if not headers:
@@ -870,8 +854,7 @@ class OkxExchange(BaseExchange):
     async def _get_open_orders_raw(self, symbol: Optional[str]) -> List[Dict[str, Any]]:
         """Get raw open orders from exchange."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/trade/orders-pending")
             if not headers:
@@ -898,8 +881,7 @@ class OkxExchange(BaseExchange):
     async def _get_open_orders_exchange(self) -> List[Dict[str, Any]]:
         """Get open orders from exchange."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/trade/orders-pending")
             if not headers:
@@ -923,8 +905,7 @@ class OkxExchange(BaseExchange):
     async def _make_request(self, method: str, url: str, params: Dict[str, Any], headers: Dict[str, str]) -> Any:
         """Make HTTP request with proper error handling."""
         try:
-            if not self._check_session():
-                raise Exception("Session not initialized")
+            self._check_session()
                 
             if method.upper() == "GET":
                 async with self.session.get(url, params=params, headers=headers) as response:
@@ -939,8 +920,8 @@ class OkxExchange(BaseExchange):
     def _check_session(self) -> bool:
         """Check if session is initialized and available."""
         if not self.session:
-            self.logger.error("HTTP session not initialized. Call _initialize_exchange() first.")
-            return False
+            self.logger.error("❌ HTTP session not initialized, fast failing API call")
+            raise Exception("HTTP session not initialized - API call cannot be completed")
         return True
     
     def _convert_interval(self, interval: str) -> str:
@@ -1063,8 +1044,7 @@ class OkxExchange(BaseExchange):
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get current positions."""
         try:
-            if not self._check_session():
-                return []
+            self._check_session()
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/positions")
             if not headers:

@@ -486,8 +486,8 @@ def create_okx_dispatcher(
 def create_binance_dispatcher(
     api_key: str,
     api_secret: str,
-    use_testnet: bool = True,
-    trade_symbol: str = "BTCUSDT"
+    trade_symbol: str,
+    use_testnet: bool = True
 ) -> ExchangeDispatcher:
     """Create a Binance exchange dispatcher."""
     config = ExchangeConfig(
@@ -504,7 +504,7 @@ def create_binance_dispatcher(
 def create_gateio_dispatcher(
     api_key: str,
     api_secret: str,
-    trade_symbol: str = "BTCUSDT"
+    trade_symbol: str
 ) -> ExchangeDispatcher:
     """Create a Gate.io exchange dispatcher."""
     config = ExchangeConfig(
@@ -520,8 +520,8 @@ def create_gateio_dispatcher(
 def create_mexc_dispatcher(
     api_key: str,
     api_secret: str,
-    use_testnet: bool = True,
-    trade_symbol: str = "BTCUSDT"
+    trade_symbol: str,
+    use_testnet: bool = True
 ) -> ExchangeDispatcher:
     """Create a MEXC exchange dispatcher."""
     config = ExchangeConfig(
@@ -538,7 +538,7 @@ def create_mexc_dispatcher(
 def create_phemex_dispatcher(
     api_key: str,
     api_secret: str,
-    trade_symbol: str = "BTCUSDT"
+    trade_symbol: str
 ) -> ExchangeDispatcher:
     """Create a Phemex exchange dispatcher."""
     config = ExchangeConfig(

@@ -50,6 +50,18 @@ except ImportError as e:
     logging.warning(f"ML Commons not available: {e}")
     ML_COMMONS_AVAILABLE = False
 
+# Import UnifiedVectorizationManager
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OperationConfig = None
+
 # Import purged K-fold
 try:
     from src.utils.purged_kfold import PurgedKFoldTime
@@ -164,6 +176,16 @@ class BattleTestedFeatureSelector:
         else:
             self.purged_kfold = None
             
+        # Initialize UnifiedVectorizationManager if available
+        self.vectorization_manager = None
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_info("✅ UnifiedVectorizationManager initialized for battle-tested feature selection")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize UnifiedVectorizationManager: {e}")
+                self.vectorization_manager = None
+            
     def select_features(self, 
                        data: pd.DataFrame, 
                        targets: pd.Series,
@@ -186,6 +208,19 @@ class BattleTestedFeatureSelector:
             # Step 1: Data validation and preparation
             tprint_info("📊 Step 1: Data validation and preparation")
             data, targets, feature_columns = self._validate_and_prepare_data(data, targets, feature_columns)
+            
+            # Use UnifiedVectorizationManager if available
+            if self.vectorization_manager:
+                with self.vectorization_manager.performance_monitoring("feature_selection"):
+                    result = self.vectorization_manager.optimize_operation(
+                        OperationType.FEATURE_SELECTION,
+                        data,
+                        targets=targets,
+                        feature_columns=feature_columns,
+                        selection_type="battle_tested"
+                    )
+                    if result:
+                        tprint_info("✅ Vectorization manager optimization completed")
             
             # Step 2: Fail-fast gates
             tprint_info("🚪 Step 2: Fail-fast validation gates")
@@ -310,8 +345,8 @@ class BattleTestedFeatureSelector:
                 # Calculate stability score
                 stability_score = self._calculate_stability_score(feature_data, aligned_targets)
                 
-                # Calculate diversity score (placeholder - will be updated after clustering)
-                diversity_score = 1.0
+                # Calculate diversity score based on feature uniqueness
+                diversity_score = self._calculate_diversity_score(feature_data, feature_name)
                 
                 # Calculate cost score (feature complexity)
                 cost_score = self._calculate_cost_score(feature_data)
@@ -396,6 +431,39 @@ class BattleTestedFeatureSelector:
             # Stability is inverse of standard deviation
             stability = 1.0 / (1.0 + np.std(correlations))
             return min(stability, 1.0)
+            
+        except Exception:
+            return 0.0
+
+    def _calculate_diversity_score(self, feature_data: pd.Series, feature_name: str) -> float:
+        """Calculate diversity score based on feature uniqueness and distribution."""
+        try:
+            if len(feature_data) < 2:
+                return 0.0
+                
+            # Calculate coefficient of variation as diversity measure
+            mean_val = feature_data.mean()
+            std_val = feature_data.std()
+            
+            if mean_val == 0 or np.isnan(mean_val) or np.isnan(std_val):
+                return 0.0
+                
+            cv = std_val / abs(mean_val)
+            
+            # Calculate unique value ratio
+            unique_ratio = feature_data.nunique() / len(feature_data)
+            
+            # Calculate entropy-based diversity
+            value_counts = feature_data.value_counts()
+            probabilities = value_counts / len(feature_data)
+            entropy = -np.sum(probabilities * np.log2(probabilities + 1e-10))
+            max_entropy = np.log2(len(value_counts)) if len(value_counts) > 1 else 1.0
+            normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
+            
+            # Combine metrics (higher is more diverse)
+            diversity_score = (cv * 0.3 + unique_ratio * 0.4 + normalized_entropy * 0.3)
+            
+            return min(diversity_score, 1.0)
             
         except Exception:
             return 0.0

@@ -28,6 +28,18 @@ except ImportError:
     rolling_mean = None
     rolling_std = None
     rolling_var = None
+
+# Import UnifiedVectorizationManager
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OperationConfig = None
     rolling_min = None
     rolling_max = None
     rolling_sum = None
@@ -79,6 +91,15 @@ class VectorBTOptimizationConfig:
     use_cupy: bool = False  # GPU support removed
     optimization_level: str = "high"  # "low", "medium", "high", "maximum"
 
+@dataclass
+class VectorBTOptimizationResult:
+    """Result from VectorBT feature optimization."""
+    optimized_features: pd.DataFrame
+    optimization_metrics: Dict[str, Any]
+    performance_stats: Dict[str, Any]
+    success: bool
+    error_message: Optional[str] = None
+
 class EnhancedVectorBTOptimizer:
     """
     Enhanced VectorBT optimizer with advanced optimizations from individual components.
@@ -103,6 +124,16 @@ class EnhancedVectorBTOptimizer:
             'total_execution_time': 0.0,
             'memory_usage': 0.0
         }
+
+        # Initialize UnifiedVectorizationManager if available
+        self.vectorization_manager = None
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_info("✅ UnifiedVectorizationManager initialized for VectorBT optimization")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize UnifiedVectorizationManager: {e}")
+                self.vectorization_manager = None
 
         tprint_info("🚀 Enhanced VectorBT Optimizer initialized")
         tprint_debug(f"📊 Configuration: {self.config}")
@@ -972,6 +1003,94 @@ class EnhancedVectorBTOptimizer:
                 'fallback': True
             }
         return results
+
+    def optimize_features(self, data: pd.DataFrame, targets: pd.Series) -> 'VectorBTOptimizationResult':
+        """
+        Optimize features using VectorBT with advanced algorithms.
+        
+        Args:
+            data: Input data with features
+            targets: Target values for optimization
+            
+        Returns:
+            VectorBTOptimizationResult with optimized features
+        """
+        start_time = time.time()
+        
+        try:
+            tprint_info("⚡ Optimizing features with VectorBT")
+            
+            # Use UnifiedVectorizationManager if available
+            if self.vectorization_manager:
+                with self.vectorization_manager.performance_monitoring("vectorbt_technical_analysis"):
+                    result = self.vectorization_manager.optimize_operation(
+                        OperationType.VECTORBT_TECHNICAL_ANALYSIS,
+                        data,
+                        targets=targets,
+                        optimization_type="feature_optimization"
+                    )
+                    if result:
+                        return VectorBTOptimizationResult(
+                            optimized_features=data,
+                            optimization_metrics={},
+                            performance_stats=self.performance_stats,
+                            success=True
+                        )
+            
+            # Fallback to comprehensive VectorBT optimization
+            optimized_features = data.copy()
+            optimization_metrics = {}
+            
+            # Perform period analysis optimization
+            if 'close' in data.columns:
+                periods = [5, 10, 20, 50, 100, 200]
+                period_results = self.optimize_period_analysis(data, periods)
+                optimization_metrics['period_analysis'] = period_results
+            
+            # Perform interaction generation optimization
+            feature_columns = [col for col in data.columns if col not in ['open', 'high', 'low', 'close', 'volume']]
+            if feature_columns:
+                interaction_results = self.optimize_interaction_generation(
+                    data[feature_columns], targets
+                )
+                optimization_metrics['interaction_generation'] = interaction_results
+                
+                # Add generated interactions to optimized features
+                for interaction in interaction_results:
+                    if 'feature_name' in interaction and 'values' in interaction:
+                        optimized_features[interaction['feature_name']] = interaction['values']
+            
+            # Perform lookback analysis optimization
+            if feature_columns:
+                lookback_periods = [5, 10, 20, 50]
+                lookback_results = self.optimize_lookback_analysis(
+                    data, feature_columns, lookback_periods
+                )
+                optimization_metrics['lookback_analysis'] = lookback_results
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['vectorbt_operations'] += 1
+            self.performance_stats['total_execution_time'] += time.time() - start_time
+            
+            return VectorBTOptimizationResult(
+                optimized_features=optimized_features,
+                optimization_metrics=optimization_metrics,
+                performance_stats=self.performance_stats,
+                success=True
+            )
+                
+        except Exception as e:
+            tprint_error(f"❌ Feature optimization failed: {e}")
+            return VectorBTOptimizationResult(
+                optimized_features=data,
+                optimization_metrics={},
+                performance_stats=self.performance_stats,
+                success=False,
+                error_message=str(e)
+            )
+        finally:
+            self.performance_stats['total_execution_time'] += time.time() - start_time
 
     def _fallback_interaction_generation(self, features: pd.DataFrame, targets: Optional[pd.Series]) -> List[Dict[str, Any]]:
         """Fallback interaction generation when VectorBT is not available."""

@@ -29,14 +29,41 @@ try:
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    # Define dummy classes for type hints
-    class RSI: pass
-    class MACD: pass
-    class ATR: pass
-    class BBANDS: pass
-    class STOCH: pass
-    class OBV: pass
-    class MA: pass
+    # Fast-fail classes when VectorBT is not available
+    class RSI:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class MACD:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class ATR:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class BBANDS:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class STOCH:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class OBV:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
+    
+    class MA:
+        @staticmethod
+        def run(*args, **kwargs):
+            raise ImportError("VectorBT not available - install with: pip install vectorbt")
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureResult, FeatureCategory
 from ..utils.math_validation import safe_divide, validate_finite, safe_percentage_change

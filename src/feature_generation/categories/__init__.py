@@ -327,8 +327,6 @@ __all__ = [
     "PolynomialFeatureGenerator",
     "CorrelationInteractionGenerator",
     "create_default_interaction_generators",
-    # Note: RegimeDependentFeatureGenerator, CointegrationResidualGenerator,
-    # StructuralRatioGenerator, PairwiseInteractionGenerator are not implemented yet
 
     # Other categories
     "create_returns_generators",
@@ -345,7 +343,6 @@ __all__ = [
     "ContrastiveLearningGenerator",
     "create_default_order_flow_generators",
     "create_default_cross_timeframe_generators",
-    "create_default_legacy_generators",
     "create_default_time_generators",
     # NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
     "HurstExponentGenerator",

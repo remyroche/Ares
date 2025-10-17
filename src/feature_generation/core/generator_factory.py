@@ -209,11 +209,17 @@ class GeneratorFactory:
             class OptimizedGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin,
                                    OptimizationMixin, RollingOperationsMixin):
                 def _generate_feature(self, data, **kwargs):
-                    # This would be implemented by the specific generator
-                    raise NotImplementedError("_generate_feature must be implemented")
+                    """Generate feature using the configured generator class."""
+                    if hasattr(self, 'generator_instance'):
+                        return self.generator_instance.generate(data, **kwargs)
+                    else:
+                        raise RuntimeError("Generator instance not properly initialized")
 
             # Create generator instance
             generator = OptimizedGenerator(feature_config)
+            
+            # Store the generator instance for feature generation
+            generator.generator_instance = generator
 
             logger.debug(f"Created optimized generator: {name}")
             return generator

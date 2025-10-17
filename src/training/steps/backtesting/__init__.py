@@ -24,6 +24,166 @@ from .improved_trading_strategies import (
     create_baseline_strategy, create_optimized_strategy
 )
 
+# Modular Component Architecture
+from .unified_data_driven_pipeline.core import (
+    ModularComponent,
+    ExampleModularComponent,
+    ValidationLevel,
+    ValidationResult,
+    ErrorInfo,
+    PerformanceMetric,
+    MetricType,
+    MetricLevel,
+    ErrorSeverity,
+    ErrorCategory,
+    create_modular_component,
+    create_backtesting_component,
+    validate_backtesting_environment,
+    ComponentAnalysis,
+    MigrationStrategy,
+    MigrationResult,
+    BacktestingComponentAnalyzer,
+    BacktestingMigrationStrategy,
+    BacktestingComponentMigrator,
+    create_backtesting_component_wrapper,
+    validate_backtesting_migration_compatibility,
+    generate_backtesting_migration_report,
+    get_backtesting_config_template,
+    validate_backtesting_config,
+    create_backtesting_component_factory
+)
+
+# Component Registry and Orchestration
+from .unified_data_driven_pipeline.core.component_registry import (
+    ComponentStatus,
+    ComponentType,
+    ComponentInfo,
+    DependencyGraph,
+    BacktestingComponentRegistry,
+    get_registry,
+    register_component,
+    get_component,
+    initialize_component,
+    start_component,
+    stop_component,
+    cleanup_component,
+    get_component_status,
+    get_all_components,
+    run_health_checks
+)
+
+from .unified_data_driven_pipeline.core.component_orchestrator import (
+    WorkflowStatus,
+    ExecutionMode,
+    WorkflowStep,
+    WorkflowDefinition,
+    WorkflowExecution,
+    BacktestingWorkflowOrchestrator,
+    get_orchestrator,
+    define_workflow,
+    execute_workflow,
+    get_workflow_status,
+    cancel_workflow
+)
+
+from .unified_data_driven_pipeline.core.component_monitor import (
+    AlertLevel,
+    MetricType,
+    Alert,
+    PerformanceMetric,
+    ComponentHealth,
+    MonitoringConfig,
+    BacktestingComponentMonitor,
+    get_monitor,
+    start_monitoring,
+    stop_monitoring,
+    get_component_health,
+    get_all_component_health,
+    get_performance_metrics,
+    get_alerts,
+    get_monitoring_dashboard_data
+)
+
+# Modular Component Architecture
+from .unified_data_driven_pipeline.core import (
+    ModularComponent,
+    ExampleModularComponent,
+    ValidationLevel,
+    ValidationResult,
+    ErrorInfo,
+    PerformanceMetric,
+    MetricType,
+    MetricLevel,
+    ErrorSeverity,
+    ErrorCategory,
+    create_modular_component,
+    create_backtesting_component,
+    validate_backtesting_environment,
+    ComponentAnalysis,
+    MigrationStrategy,
+    MigrationResult,
+    BacktestingComponentAnalyzer,
+    BacktestingMigrationStrategy,
+    BacktestingComponentMigrator,
+    create_backtesting_component_wrapper,
+    validate_backtesting_migration_compatibility,
+    generate_backtesting_migration_report,
+    get_backtesting_config_template,
+    validate_backtesting_config,
+    create_backtesting_component_factory
+)
+
+# Component Registry and Orchestration
+from .unified_data_driven_pipeline.core.component_registry import (
+    ComponentStatus,
+    ComponentType,
+    ComponentInfo,
+    DependencyGraph,
+    BacktestingComponentRegistry,
+    get_registry,
+    register_component,
+    get_component,
+    initialize_component,
+    start_component,
+    stop_component,
+    cleanup_component,
+    get_component_status,
+    get_all_components,
+    run_health_checks
+)
+
+from .unified_data_driven_pipeline.core.component_orchestrator import (
+    WorkflowStatus,
+    ExecutionMode,
+    WorkflowStep,
+    WorkflowDefinition,
+    WorkflowExecution,
+    BacktestingWorkflowOrchestrator,
+    get_orchestrator,
+    define_workflow,
+    execute_workflow,
+    get_workflow_status,
+    cancel_workflow
+)
+
+from .unified_data_driven_pipeline.core.component_monitor import (
+    AlertLevel,
+    MetricType,
+    Alert,
+    PerformanceMetric,
+    ComponentHealth,
+    MonitoringConfig,
+    BacktestingComponentMonitor,
+    get_monitor,
+    start_monitoring,
+    stop_monitoring,
+    get_component_health,
+    get_all_component_health,
+    get_performance_metrics,
+    get_alerts,
+    get_monitoring_dashboard_data
+)
+
 __all__ = [
     # Original consolidated backtesting
     'ConsolidatedBacktestingStep',
@@ -78,5 +238,77 @@ __all__ = [
     'SignalStrength',
     'TechnicalIndicators',
     'create_baseline_strategy',
-    'create_optimized_strategy'
+    'create_optimized_strategy',
+
+    # Modular Component Architecture
+    'ModularComponent',
+    'ExampleModularComponent',
+    'ValidationLevel',
+    'ValidationResult',
+    'ErrorInfo',
+    'PerformanceMetric',
+    'MetricType',
+    'MetricLevel',
+    'ErrorSeverity',
+    'ErrorCategory',
+    'create_modular_component',
+    'create_backtesting_component',
+    'validate_backtesting_environment',
+    'ComponentAnalysis',
+    'MigrationStrategy',
+    'MigrationResult',
+    'BacktestingComponentAnalyzer',
+    'BacktestingMigrationStrategy',
+    'BacktestingComponentMigrator',
+    'create_backtesting_component_wrapper',
+    'validate_backtesting_migration_compatibility',
+    'generate_backtesting_migration_report',
+    'get_backtesting_config_template',
+    'validate_backtesting_config',
+    'create_backtesting_component_factory',
+
+    # Component Registry and Orchestration
+    'ComponentStatus',
+    'ComponentType',
+    'ComponentInfo',
+    'DependencyGraph',
+    'BacktestingComponentRegistry',
+    'get_registry',
+    'register_component',
+    'get_component',
+    'initialize_component',
+    'start_component',
+    'stop_component',
+    'cleanup_component',
+    'get_component_status',
+    'get_all_components',
+    'run_health_checks',
+
+    # Workflow Orchestration
+    'WorkflowStatus',
+    'ExecutionMode',
+    'WorkflowStep',
+    'WorkflowDefinition',
+    'WorkflowExecution',
+    'BacktestingWorkflowOrchestrator',
+    'get_orchestrator',
+    'define_workflow',
+    'execute_workflow',
+    'get_workflow_status',
+    'cancel_workflow',
+
+    # Component Monitoring
+    'AlertLevel',
+    'Alert',
+    'ComponentHealth',
+    'MonitoringConfig',
+    'BacktestingComponentMonitor',
+    'get_monitor',
+    'start_monitoring',
+    'stop_monitoring',
+    'get_component_health',
+    'get_all_component_health',
+    'get_performance_metrics',
+    'get_alerts',
+    'get_monitoring_dashboard_data'
 ]

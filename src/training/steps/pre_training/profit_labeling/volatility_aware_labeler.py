@@ -73,7 +73,9 @@ class VolatilityAwareConfig:
         lookahead_periods: int = 5,
         min_volatility: float = 0.001,
         max_volatility: float = 0.1,
-        label_type: LabelDefinitionType = LabelDefinitionType.BINARY
+        label_type: LabelDefinitionType = LabelDefinitionType.BINARY,
+        enable_long_positions: bool = True,
+        enable_short_positions: bool = False
     ):
         """
         Initialize volatility-aware configuration.
@@ -84,12 +86,16 @@ class VolatilityAwareConfig:
             min_volatility: Minimum volatility threshold
             max_volatility: Maximum volatility threshold
             label_type: Type of labels to generate
+            enable_long_positions: Whether to generate long position signals
+            enable_short_positions: Whether to generate short position signals
         """
         self.volatility_threshold = volatility_threshold
         self.lookahead_periods = lookahead_periods
         self.min_volatility = min_volatility
         self.max_volatility = max_volatility
         self.label_type = label_type
+        self.enable_long_positions = enable_long_positions
+        self.enable_short_positions = enable_short_positions
         
         # Initialize additional configuration attributes
         self.label_definition_type = label_type
@@ -1443,10 +1449,16 @@ class VolatilityAwareMultiHorizonLabeler:
                 
                 # Generate labels for this target
                 if self.config.label_type == LabelDefinitionType.BINARY:
-                    # Binary classification: 1 if return > threshold (long), -1 if return < -threshold (short), 0 otherwise
-                    long_signals = (future_returns > effective_target).astype(np.int8)
-                    short_signals = (future_returns < -effective_target).astype(np.int8)
-                    target_labels = long_signals - short_signals  # 1 for long, -1 for short, 0 for no signal
+                    # Binary classification based on enabled directions
+                    target_labels = pd.Series(0, index=future_returns.index, dtype=np.int8)
+                    
+                    if self.config.enable_long_positions:
+                        long_signals = (future_returns > effective_target).astype(np.int8)
+                        target_labels += long_signals  # 1 for long signals
+                    
+                    if self.config.enable_short_positions:
+                        short_signals = (future_returns < -effective_target).astype(np.int8)
+                        target_labels -= short_signals  # -1 for short signals
                 else:
                     # Regression: use actual returns
                     target_labels = future_returns
@@ -1472,10 +1484,16 @@ class VolatilityAwareMultiHorizonLabeler:
                 k = self.config.volatility.sensitivity  # Tunable parameter
                 effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), 0.5, 2.0)
                 
-                # Generate both long and short signals
-                long_signals = (future_returns > effective_threshold).astype(np.int8)
-                short_signals = (future_returns < -effective_threshold).astype(np.int8)
-                labels = long_signals - short_signals  # 1 for long, -1 for short, 0 for no signal
+                # Generate signals based on enabled directions
+                labels = pd.Series(0, index=future_returns.index, dtype=np.int8)
+                
+                if self.config.enable_long_positions:
+                    long_signals = (future_returns > effective_threshold).astype(np.int8)
+                    labels += long_signals  # 1 for long signals
+                
+                if self.config.enable_short_positions:
+                    short_signals = (future_returns < -effective_threshold).astype(np.int8)
+                    labels -= short_signals  # -1 for short signals
                 
                 # Debug: Log return statistics
                 self.logger.info(f"DEBUG: Return stats - mean: {future_returns.mean():.6f}, std: {future_returns.std():.6f}")
@@ -1485,6 +1503,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 long_rate = (labels > 0).mean()
                 short_rate = (labels < 0).mean()
                 signal_rate = (labels != 0).mean()
+                self.logger.info(f"DEBUG: Direction config - Long: {self.config.enable_long_positions}, Short: {self.config.enable_short_positions}")
                 self.logger.info(f"DEBUG: Signal rates - Long: {long_rate:.3f}, Short: {short_rate:.3f}, Total: {signal_rate:.3f}")
                 self.logger.info(f"DEBUG: Volatility stats - mean: {volatility.mean():.6f}, std: {volatility.std():.6f}")
                 self.logger.info(f"DEBUG: Volatility sensitivity (k): {k}")

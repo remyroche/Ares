@@ -648,13 +648,24 @@ class MultiHorizonProfitLabeler:
 
     def _create_volatility_config(self) -> VolatilityAwareConfig:
         """Create volatility-aware configuration from multi-horizon config."""
+        # Get direction settings from training input if available
+        enable_long = True  # Default
+        enable_short = False  # Default
+        
+        if hasattr(self, 'training_input') and self.training_input:
+            direction_settings = self.training_input.get('direction_settings', {})
+            enable_long = direction_settings.get('enable_long_positions', True)
+            enable_short = direction_settings.get('enable_short_positions', False)
+        
         return VolatilityAwareConfig(
             min_data_points=self.config.min_data_points,
             generate_reports=self.config.generate_reports,
             save_intermediate_results=self.config.save_intermediate_results,
             min_auc_threshold=self.config.min_auc_threshold,
             max_auc_std_threshold=self.config.max_auc_std_threshold,
-            temporal_validation=self.config.temporal_validation
+            temporal_validation=self.config.temporal_validation,
+            enable_long_positions=enable_long,
+            enable_short_positions=enable_short
         )
 
     def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:

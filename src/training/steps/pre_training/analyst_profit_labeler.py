@@ -9,7 +9,7 @@ Key Features:
 - Multi-horizon profit labeling (15m to 150m, up to 10 rolling windows)
 - Optimal entry point detection - analyzes price variation over rolling windows
 - Local extrema entry - finds local minima/maxima BEFORE price action as optimal entry point
-- Multi-size opportunity logic (0.5%, 0.7%, 1.0%, 1.5% thresholds) - compatible with model_training/
+- Simplified profit targeting (0.5% base threshold modulated by volatility) - compatible with model_training/
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -103,11 +103,10 @@ class AnalystProfitLabelerConfig:
     # Single horizon: 90 minutes (6 periods of 15m)
     horizons: List[int] = field(default_factory=lambda: [90])  # 90 minutes = 6 * 15m periods
 
-    # Profit targets (percentage points) - Multi-size opportunity logic
-    # 0.5% minimum entry threshold, with 0.7%, 1.0%, and 1.3% as higher confidence levels
-    # Aligned with multi-size opportunity detection logic
-    # Note: These are percentage points, not fractional returns (0.005 = 0.5%)
-    target_profits: List[float] = field(default_factory=lambda: [0.5, 0.7, 1.0, 1.3])
+    # Profit target (percentage points) - Simplified to single 0.5% threshold modulated by volatility
+    # Note: This is a percentage point, not fractional return (0.005 = 0.5%)
+    # The threshold will be dynamically adjusted based on market volatility
+    target_profit: float = 0.5
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -138,13 +137,11 @@ class AnalystProfitLabelerConfig:
     find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
     entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
 
-    # Multi-size opportunity detection (compatible with model_training/)
-    multi_size_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        'micro': 0.5,    # 0.5% minimum for micro opportunities
-        'small': 0.7,    # 0.7% minimum for small opportunities
-        'medium': 1.0,   # 1.0% minimum for medium opportunities
-        'good': 1.5      # 1.5% minimum for good opportunities
-    })
+    # Volatility modulation settings for dynamic threshold adjustment
+    volatility_modulation: bool = True  # Enable volatility-based threshold adjustment
+    min_threshold_multiplier: float = 0.5  # Minimum threshold multiplier (0.5x base)
+    max_threshold_multiplier: float = 2.0  # Maximum threshold multiplier (2.0x base)
+    volatility_sensitivity: float = 1.5  # Volatility sensitivity factor (k)
     max_windows: int = 10  # Support up to 10 rolling windows
 
     # Custom parameters
@@ -227,10 +224,10 @@ class AnalystProfitLabelerConfig:
         tprint_info("🔍 Generating optimization search space for grid search")
 
         search_space = {
-            'target_profits': {
+            'target_profit': {
                 'type': 'float',
-                'low': 0.5,
-                'high': 5.0,
+                'low': 0.3,
+                'high': 1.0,
                 'log': False
             },
             'volatility_window': {
@@ -278,7 +275,7 @@ class AnalystProfitLabelerConfig:
                     # Create config with current parameters
                     config = AnalystProfitLabelerConfig(
                         horizons=self.horizons,
-                        target_profits=params.get('target_profits', self.target_profits),
+                        target_profit=params.get('target_profit', self.target_profit),
                         volatility_window=params.get('volatility_window', self.volatility_window),
                         min_label_quality=params.get('min_label_quality', self.min_label_quality),
                         min_predictability=params.get('min_predictability', self.min_predictability)
@@ -385,7 +382,7 @@ class AnalystProfitLabeler:
         self.output_dir = Path('artifacts') / 'analyst_reports'
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        tprint_success(f"✅ AnalystProfitLabeler initialized (consolidated mode: {len(self.config.horizons)} horizons × {len(self.config.target_profits)} targets, matrix_ops: {type(self.matrix_ops).__name__})")
+        tprint_success(f"✅ AnalystProfitLabeler initialized (consolidated mode: {len(self.config.horizons)} horizons × 1 target ({self.config.target_profit}%), matrix_ops: {type(self.matrix_ops).__name__})")
 
     def cleanup(self) -> None:
         """Clean up resources and optimize memory."""
@@ -438,7 +435,7 @@ class AnalystProfitLabeler:
             # Horizons will be handled by the adapter loop in generate_labels
             # Configure multi-target to use very lenient quality thresholds
             labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
-            tprint_info(f"✅ Multi-target: {len(self.config.horizons)} horizons, {len(self.config.target_profits)} targets, LQS=0.01")
+            tprint_info(f"✅ Single-target: {len(self.config.horizons)} horizons, 1 target ({self.config.target_profit}%), LQS=0.01")
 
             # Configure volatility settings
             tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
@@ -465,8 +462,8 @@ class AnalystProfitLabeler:
                 labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
                 labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
                 labeler_config.optimal_entry_detection.horizons = self.config.horizons
-                labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
-                labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
+                labeler_config.optimal_entry_detection.target_profits = [self.config.target_profit]
+                labeler_config.optimal_entry_detection.multi_size_thresholds = {'base': self.config.target_profit}
                 labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
                 tprint_info(f"✅ Entry detection: enabled={self.config.enable_optimal_entry_detection}, threshold={self.config.entry_threshold}")
             else:
@@ -474,7 +471,7 @@ class AnalystProfitLabeler:
 
             # Store profit targets in labeler config for volatility-based labeling
             if not hasattr(labeler_config, 'analyst_profit_targets'):
-                labeler_config.analyst_profit_targets = self.config.target_profits
+                labeler_config.analyst_profit_targets = [self.config.target_profit]
 
             # Apply custom parameters
             if self.config.custom_params:
@@ -590,7 +587,7 @@ class AnalystProfitLabeler:
             # Use memory optimization context for label generation
             with memory_checkpoint("analyst_label_generation"):
                 # Generate consolidated opportunity labels (single flag per profitable price move)
-                tprint_info(f"🔄 Generating consolidated opportunity labels across {len(self.config.horizons)} horizons and {len(self.config.target_profits)} targets...")
+                tprint_info(f"🔄 Generating consolidated opportunity labels across {len(self.config.horizons)} horizons with {self.config.target_profit}% target...")
 
                 # Check if any horizon/target combination shows a profitable opportunity
                 consolidated_labels = pd.Series([0] * len(data), index=data.index, name='opportunity')
@@ -1138,7 +1135,7 @@ class AnalystProfitLabeler:
         config = outcome_data.get('configuration', {})
         content.append(f"- **Timeframe:** {outcome_data.get('timeframe', 'N/A')}")
         content.append(f"- **Horizons:** {config.get('horizons', [])} minutes")
-        content.append(f"- **Target Profits:** {config.get('target_profits', [])}%")
+        content.append(f"- **Target Profit:** {config.get('target_profit', 0.5)}% (volatility-modulated)")
         content.append(f"- **Base Period:** {config.get('base_period_minutes', 'N/A')} minutes")
         content.append(f"- **Volatility Normalization:** {'✅ Enabled' if config.get('use_volatility_normalization') else '❌ Disabled'}")
         content.append("")

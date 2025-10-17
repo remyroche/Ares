@@ -572,7 +572,7 @@ class FeatureGenerator(ABC):
             'last_row': last_row.to_dict()
         }
 
-        if not feature_len(data) == 0:
+        if len(feature_data) != 0:
             state_update['last_feature_value'] = feature_data.iloc[-1]
 
         self.update_state(state_update)
@@ -621,12 +621,13 @@ class FeatureGenerator(ABC):
 
         # DEBUG: Check data quality before validation
         import numpy as np
-        print(f"🔍 [DEBUG] FeatureGenerator._validate_data - Data shape: {data.shape}")
-        print(f"🔍 [DEBUG] FeatureGenerator._validate_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
-        for col in data.select_dtypes(include=[np.number]).columns:
-            non_finite = (~np.isfinite(data[col])).sum()
-            if non_finite > 0:
-                print(f"🔍 [DEBUG] FeatureGenerator._validate_data - {col}: {non_finite} non-finite values")
+        if self.logger.isEnabledFor(logging.DEBUG):
+            self.logger.debug(f"FeatureGenerator._validate_data - Data shape: {data.shape}")
+            self.logger.debug(f"FeatureGenerator._validate_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+            for col in data.select_dtypes(include=[np.number]).columns:
+                non_finite = (~np.isfinite(data[col])).sum()
+                if non_finite > 0:
+                    self.logger.debug(f"FeatureGenerator._validate_data - {col}: {non_finite} non-finite values")
 
         # Use centralized validation functions
         validate_required_columns(data, self.config.required_columns)
@@ -641,7 +642,8 @@ class FeatureGenerator(ABC):
         # Check for finite values in required columns
         for col in self.config.required_columns:
             if col in data.columns:
-                print(f"🔍 [DEBUG] Validating column: {col}")
+                if self.logger.isEnabledFor(logging.DEBUG):
+                    self.logger.debug(f"Validating column: {col}")
                 validate_finite_values(data[col], col)
 
         tprint(f"Data validation passed for {self.config.name}", level="debug")
@@ -658,7 +660,7 @@ class FeatureGenerator(ABC):
         """
         tprint(f"Validating output for {self.config.name}", level="debug")
 
-        if feature_len(data) == 0:
+        if len(feature_data) == 0:
             fast_fail_error("Generated feature is empty", DataValidationError)
 
         # Check for all NaN values
@@ -790,8 +792,7 @@ class CompositeFeatureGenerator(FeatureGenerator):
             **kwargs: Additional parameters
 
         Returns:
-            Combined features as pandas Series (this is a placeholder -
-            composite generators typically return multiple features)
+            Combined features as pandas Series (concatenated from all successful sub-generators)
         """
         results = []
         for generator in self.sub_generators:
@@ -804,9 +805,14 @@ class CompositeFeatureGenerator(FeatureGenerator):
         if not results:
             raise ValueError("All sub-generators failed")
 
-        # For now, return the first successful result
-        # In practice, composite generators should handle multiple outputs differently
-        return results[0]
+        # Concatenate all successful results into a single Series
+        if len(results) == 1:
+            return results[0]
+        else:
+            # Create a combined series with all features
+            combined_data = pd.concat(results, axis=1)
+            # Return the first column as the primary feature
+            return combined_data.iloc[:, 0]
 
     def generate_all_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, FeatureResult]:
         """
@@ -951,7 +957,6 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         - Automatic fallback to pandas for smaller datasets
         - Support for multiple operations and windows in a single call
         - Memory-efficient processing with chunked operations
-        -
         - Comprehensive error handling and logging
 
         Supported Operations:
@@ -988,8 +993,8 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             return self._vectorbt_rolling_operations(data, operations, windows, columns)
 
         # Fallback to vectorization optimizer
-        if self.enable_vectorization_optimization and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
+        if self.enable_vectorization_optimization and self.unified_vectorization_manager:
+            return self.unified_vectorization_manager.vectorized_rolling_operations(
                 data, operations, windows, columns
             )
         else:

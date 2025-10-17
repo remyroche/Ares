@@ -1048,30 +1048,46 @@ class MultiObjectiveFeatureSelector:
             MultiObjectiveResult with optimized features
         """
         try:
-            tprint_info("🎯 Optimizing features with multi-objective optimization")
+            tprint_info("🎯 Starting multi-objective feature optimization")
+            tprint_debug(f"📊 Input data shape: {data.shape}")
+            tprint_debug(f"📊 Target data shape: {targets.shape if targets is not None else 'None'}")
+            tprint_debug(f"📊 Available columns: {list(data.columns)}")
+            tprint_debug(f"📊 Number of objectives: {len(self.objectives)}")
+            tprint_debug(f"📊 Objectives: {[obj.name for obj in self.objectives]}")
             
             # Use UnifiedVectorizationManager if available
             if self.vectorization_manager:
-                with self.vectorization_manager.performance_monitoring("feature_selection"):
-                    result = self.vectorization_manager.optimize_operation(
-                        OperationType.FEATURE_SELECTION,
-                        data,
-                        targets=targets,
-                        optimization_type="multi_objective"
-                    )
-                    if result:
-                        return MultiObjectiveResult(
-                            selected_features=data.columns.tolist(),
-                            feature_scores={},
-                            optimization_metrics={},
-                            success=True
+                tprint_info("🚀 Using UnifiedVectorizationManager for multi-objective optimization")
+                try:
+                    with self.vectorization_manager.performance_monitoring("feature_selection"):
+                        result = self.vectorization_manager.optimize_operation(
+                            OperationType.FEATURE_SELECTION,
+                            data,
+                            targets=targets,
+                            optimization_type="multi_objective"
                         )
+                        if result:
+                            tprint_success("✅ Vectorization manager optimization completed successfully")
+                            return MultiObjectiveResult(
+                                selected_features=data.columns.tolist(),
+                                feature_scores={},
+                                optimization_metrics={},
+                                success=True
+                            )
+                        else:
+                            tprint_warning("⚠️ Vectorization manager returned no result, falling back to standard optimization")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorization manager failed: {e}, falling back to standard optimization")
+            else:
+                tprint_info("ℹ️ UnifiedVectorizationManager not available, using standard multi-objective optimization")
             
             # Fallback to existing select_features method
+            tprint_info("🔄 Falling back to standard select_features method")
             return self.select_features(data, targets)
                 
         except Exception as e:
             tprint_error(f"❌ Feature optimization failed: {e}")
+            tprint_debug(f"🔍 Error details: {type(e).__name__}: {str(e)}")
             return MultiObjectiveResult(
                 selected_features=data.columns.tolist(),
                 feature_scores={},

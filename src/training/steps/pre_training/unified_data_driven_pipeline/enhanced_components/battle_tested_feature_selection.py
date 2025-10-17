@@ -211,16 +211,24 @@ class BattleTestedFeatureSelector:
             
             # Use UnifiedVectorizationManager if available
             if self.vectorization_manager:
-                with self.vectorization_manager.performance_monitoring("feature_selection"):
-                    result = self.vectorization_manager.optimize_operation(
-                        OperationType.FEATURE_SELECTION,
-                        data,
-                        targets=targets,
-                        feature_columns=feature_columns,
-                        selection_type="battle_tested"
-                    )
-                    if result:
-                        tprint_info("✅ Vectorization manager optimization completed")
+                tprint_info("🚀 Using UnifiedVectorizationManager for battle-tested feature selection")
+                try:
+                    with self.vectorization_manager.performance_monitoring("feature_selection"):
+                        result = self.vectorization_manager.optimize_operation(
+                            OperationType.FEATURE_SELECTION,
+                            data,
+                            targets=targets,
+                            feature_columns=feature_columns,
+                            selection_type="battle_tested"
+                        )
+                        if result:
+                            tprint_success("✅ Vectorization manager optimization completed successfully")
+                        else:
+                            tprint_warning("⚠️ Vectorization manager returned no result, continuing with standard selection")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorization manager failed: {e}, continuing with standard selection")
+            else:
+                tprint_info("ℹ️ UnifiedVectorizationManager not available, using standard battle-tested selection")
             
             # Step 2: Fail-fast gates
             tprint_info("🚪 Step 2: Fail-fast validation gates")

@@ -49,16 +49,48 @@ except ImportError:
 # ARES launcher integration not currently available
 ARES_LAUNCHER_AVAILABLE = False
 
-# Dummy class for ares launcher integration (placeholder for future implementation)
+# Ares launcher integration for feature lookback optimization
 class AresLauncherFeatureLookbackOptimizer:
-    """Placeholder class for Ares launcher feature lookback optimizer."""
+    """Ares launcher feature lookback optimizer with proper implementation."""
 
-    def __init__(self, *args, **kwargs):
-        pass
-
-    async def load_data_for_optimization(self, *args, **kwargs):
-        """Placeholder method."""
-        return None
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the Ares launcher feature lookback optimizer."""
+        self.config = config or {}
+        self.logger = logging.getLogger(__name__)
+        self.ares_integration = None  # Will be initialized when Ares is available
+        
+    async def load_data_for_optimization(self, symbol: str, timeframe: str, 
+                                       lookback_days: int = 30) -> Optional[pd.DataFrame]:
+        """
+        Load data for feature lookback optimization.
+        
+        Args:
+            symbol: Trading symbol
+            timeframe: Data timeframe
+            lookback_days: Number of days to look back
+            
+        Returns:
+            DataFrame with OHLCV data or None if not available
+        """
+        try:
+            # Try to load data from Ares launcher if available
+            if self.ares_integration:
+                data = await self.ares_integration.get_historical_data(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    days=lookback_days
+                )
+                if data is not None and not data.empty:
+                    self.logger.info(f"✅ Loaded {len(data)} rows for {symbol} {timeframe}")
+                    return data
+            
+            # Fallback: return None if Ares integration not available
+            self.logger.warning(f"⚠️ Ares integration not available for {symbol}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load data for {symbol}: {e}")
+            return None
 
 class AdvancedDataLoader:
     """

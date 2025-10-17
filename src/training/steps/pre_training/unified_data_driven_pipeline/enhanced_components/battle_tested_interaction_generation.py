@@ -606,13 +606,62 @@ class BattleTestedInteractionGenerator:
             
         except Exception:
             return 0.0
+
+    def _calculate_baseline_r2(self, data: pd.DataFrame, targets: pd.Series) -> float:
+        """Calculate baseline R2 score using simple features."""
+        try:
+            if targets is None or len(targets) == 0:
+                return 0.0
+                
+            # Use simple features for baseline R2 calculation
+            baseline_features = []
+            for col in data.columns:
+                if col in ['open', 'high', 'low', 'close', 'volume']:
+                    continue  # Skip OHLCV columns
+                if data[col].dtype in ['float64', 'int64'] and not data[col].isna().all():
+                    baseline_features.append(col)
+            
+            if not baseline_features:
+                return 0.0
+                
+            # Calculate simple linear regression R2
+            from sklearn.linear_model import LinearRegression
+            from sklearn.metrics import r2_score
+            
+            X = data[baseline_features].fillna(0)
+            y = targets.fillna(0)
+            
+            if len(X) > 1 and len(y) > 1:
+                model = LinearRegression()
+                model.fit(X, y)
+                y_pred = model.predict(X)
+                r2 = r2_score(y, y_pred)
+                return max(0.0, r2)  # Ensure non-negative
+            
+            return 0.0
+            
+        except Exception:
+            return 0.0
     
     def _calculate_ic_score(self, interaction: pd.Series, data: pd.DataFrame, template: InteractionTemplate) -> float:
         """Calculate Information Coefficient score."""
         try:
-            # Use interaction to predict target (simplified)
-            # In practice, you would use the actual target data
-            return abs(safe_correlation(interaction, interaction))  # Placeholder
+            # Calculate IC as correlation between interaction and target
+            if 'target' in data.columns:
+                target = data['target']
+                ic = safe_correlation(interaction, target)
+                return abs(ic) if not np.isnan(ic) else 0.0
+            else:
+                # Fallback: calculate IC using price data if available
+                if 'close' in data.columns:
+                    price = data['close']
+                    # Calculate returns for IC calculation
+                    returns = price.pct_change().dropna()
+                    if len(returns) > 1 and len(interaction) > 1:
+                        ic = safe_correlation(interaction, returns)
+                        return abs(ic) if not np.isnan(ic) else 0.0
+                
+            return 0.0
             
         except Exception:
             return 0.0
@@ -861,7 +910,7 @@ class BattleTestedInteractionGenerator:
         
         # Generate OOF gain data
         oof_gain_data = {
-            'baseline_r2': 0.0,  # Placeholder
+            'baseline_r2': self._calculate_baseline_r2(data, targets) if targets is not None else 0.0,
             'interaction_r2': np.mean([i.r2_score for i in interactions]) if interactions else 0.0,
             'delta_sharpe': np.mean([i.sharpe_score for i in interactions]) if interactions else 0.0,
             'interaction_count': len(interactions)

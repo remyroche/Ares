@@ -21,6 +21,18 @@ from src.utils.math_validation import (
     safe_weighted_average, safe_kelly_calculation, MathValidation
 )
 
+# Import UnifiedVectorizationManager
+try:
+    from src.utils.ml_common.unified_vectorization_manager import (
+        UnifiedVectorizationManager, OperationType, OperationConfig
+    )
+    UNIFIED_VECTORIZATION_AVAILABLE = True
+except ImportError:
+    UNIFIED_VECTORIZATION_AVAILABLE = False
+    UnifiedVectorizationManager = None
+    OperationType = None
+    OperationConfig = None
+
 # VectorBT imports for economic evaluation
 try:
     import vectorbt as vbt
@@ -101,6 +113,16 @@ class EconomicPeriodEvaluationResult:
     success: bool
     error_message: Optional[str] = None
 
+@dataclass
+class EconomicValidationResult:
+    """Result from economic feature validation."""
+    validated_features: pd.DataFrame
+    economic_scores: Dict[str, float]
+    validation_metrics: Dict[str, Any]
+    performance_stats: Dict[str, Any]
+    success: bool
+    error_message: Optional[str] = None
+
 class EconomicPeriodEvaluator:
     """
     Economic Period Evaluator with sophisticated backtesting and economic significance evaluation.
@@ -123,6 +145,16 @@ class EconomicPeriodEvaluator:
             'backtest_operations': 0,
             'vectorbt_operations': 0
         }
+
+        # Initialize UnifiedVectorizationManager if available
+        self.vectorization_manager = None
+        if UNIFIED_VECTORIZATION_AVAILABLE:
+            try:
+                self.vectorization_manager = UnifiedVectorizationManager()
+                tprint_info("✅ UnifiedVectorizationManager initialized for economic evaluation")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize UnifiedVectorizationManager: {e}")
+                self.vectorization_manager = None
 
         tprint_info("💰 Economic Period Evaluator initialized")
         tprint_debug(f"📊 Configuration: {self.config}")
@@ -201,6 +233,181 @@ class EconomicPeriodEvaluator:
         except Exception as e:
             tprint_error(f"❌ Economic evaluation failed: {e}")
             return self._create_empty_result(start_time, str(e))
+
+    def validate_features(self, data: pd.DataFrame, targets: pd.Series, 
+                         symbol: str, timeframe: str) -> 'EconomicValidationResult':
+        """
+        Validate features using economic significance evaluation.
+        
+        Args:
+            data: Input data with features
+            targets: Target values for validation
+            symbol: Trading symbol
+            timeframe: Timeframe for validation
+            
+        Returns:
+            EconomicValidationResult with validated features
+        """
+        start_time = time.time()
+        
+        try:
+            tprint_info(f"💰 Starting economic feature validation for {symbol} ({timeframe})")
+            tprint_debug(f"📊 Input data shape: {data.shape}")
+            tprint_debug(f"📊 Target data shape: {targets.shape if targets is not None else 'None'}")
+            tprint_debug(f"📊 Available columns: {list(data.columns)}")
+            
+            # Use UnifiedVectorizationManager if available
+            if self.vectorization_manager:
+                tprint_info("🚀 Using UnifiedVectorizationManager for economic validation")
+                try:
+                    with self.vectorization_manager.performance_monitoring("feature_selection"):
+                        result = self.vectorization_manager.optimize_operation(
+                            OperationType.FEATURE_SELECTION, 
+                            data, 
+                            targets=targets,
+                            symbol=symbol,
+                            timeframe=timeframe,
+                            validation_type="economic"
+                        )
+                        if result:
+                            tprint_success("✅ Vectorization manager optimization completed successfully")
+                            return EconomicValidationResult(
+                                validated_features=data,
+                                economic_scores={},
+                                validation_metrics={},
+                                performance_stats=self.performance_stats,
+                                success=True
+                            )
+                        else:
+                            tprint_warning("⚠️ Vectorization manager returned no result, falling back to standard validation")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorization manager failed: {e}, falling back to standard validation")
+            else:
+                tprint_info("ℹ️ UnifiedVectorizationManager not available, using standard validation")
+            
+            # Fallback to economic evaluation using existing methods
+            if 'close' in data.columns:
+                tprint_info("📈 Using close prices for economic validation")
+                prices = data['close']
+                candidate_periods = [5, 10, 20, 50, 100, 200]
+                tprint_debug(f"📊 Price data shape: {prices.shape}")
+                tprint_debug(f"📊 Candidate periods: {candidate_periods}")
+                
+                # Evaluate periods for economic significance
+                tprint_info("🔄 Evaluating periods for economic significance")
+                evaluation_result = self.evaluate_periods(
+                    data, candidate_periods, timeframe
+                )
+                
+                if evaluation_result.success:
+                    tprint_success(f"✅ Economic evaluation successful: {evaluation_result.successful_evaluations} periods evaluated")
+                    tprint_debug(f"📊 Top periods: {evaluation_result.top_periods}")
+                    
+                    # Select features based on economic significance
+                    tprint_info("🎯 Selecting economically significant features")
+                    validated_features = self._select_economically_significant_features(
+                        data, evaluation_result, targets
+                    )
+                    
+                    tprint_success(f"✅ Selected {len(validated_features.columns)} economically significant features")
+                    tprint_debug(f"📊 Selected features: {list(validated_features.columns)}")
+                    
+                    return EconomicValidationResult(
+                        validated_features=validated_features,
+                        economic_scores=evaluation_result.economic_scores,
+                        validation_metrics=evaluation_result.performance_metrics,
+                        performance_stats=self.performance_stats,
+                        success=True
+                    )
+                else:
+                    tprint_warning(f"⚠️ Economic evaluation failed: {evaluation_result.error_message}")
+                    # Return original data if evaluation fails
+                    return EconomicValidationResult(
+                        validated_features=data,
+                        economic_scores={},
+                        validation_metrics={},
+                        performance_stats=self.performance_stats,
+                        success=False,
+                        error_message=evaluation_result.error_message
+                    )
+            else:
+                # No price data available, return original features
+                tprint_warning("⚠️ No price data available for economic validation")
+                tprint_info("ℹ️ Returning original features without economic validation")
+                return EconomicValidationResult(
+                    validated_features=data,
+                    economic_scores={},
+                    validation_metrics={},
+                    performance_stats=self.performance_stats,
+                    success=True
+                )
+                
+        except Exception as e:
+            tprint_error(f"❌ Feature validation failed: {e}")
+            tprint_debug(f"🔍 Error details: {type(e).__name__}: {str(e)}")
+            return EconomicValidationResult(
+                validated_features=data,
+                economic_scores={},
+                validation_metrics={},
+                performance_stats=self.performance_stats,
+                success=False,
+                error_message=str(e)
+            )
+        finally:
+            execution_time = time.time() - start_time
+            self.performance_stats['total_execution_time'] += execution_time
+            tprint_debug(f"⏱️ Economic validation completed in {execution_time:.3f}s")
+
+    def _select_economically_significant_features(self, data: pd.DataFrame, 
+                                                evaluation_result: 'EconomicPeriodEvaluationResult',
+                                                targets: pd.Series) -> pd.DataFrame:
+        """Select features based on economic significance scores."""
+        try:
+            tprint_debug("🔍 Starting economically significant feature selection")
+            
+            if not evaluation_result.economic_scores:
+                tprint_warning("⚠️ No economic scores available, returning all features")
+                return data
+            
+            tprint_debug(f"📊 Economic scores available: {len(evaluation_result.economic_scores)}")
+            
+            # Get features with highest economic significance
+            significant_features = []
+            correlation_threshold = 0.1
+            tprint_debug(f"📊 Using correlation threshold: {correlation_threshold}")
+            
+            for feature in data.columns:
+                if feature in ['open', 'high', 'low', 'close', 'volume']:
+                    tprint_debug(f"⏭️ Skipping OHLCV column: {feature}")
+                    continue  # Skip OHLCV columns
+                    
+                # Calculate feature-target correlation as proxy for economic significance
+                try:
+                    correlation = safe_correlation(data[feature], targets)
+                    tprint_debug(f"📊 Feature {feature}: correlation = {correlation:.4f}")
+                    
+                    if abs(correlation) > correlation_threshold:  # Threshold for significance
+                        significant_features.append(feature)
+                        tprint_debug(f"✅ Feature {feature} selected (correlation: {correlation:.4f})")
+                    else:
+                        tprint_debug(f"❌ Feature {feature} rejected (correlation: {correlation:.4f})")
+                except Exception as e:
+                    tprint_debug(f"⚠️ Error calculating correlation for {feature}: {e}")
+                    continue
+            
+            tprint_info(f"📊 Selected {len(significant_features)} economically significant features out of {len(data.columns)}")
+            
+            if significant_features:
+                tprint_success(f"✅ Returning {len(significant_features)} significant features")
+                return data[significant_features]
+            else:
+                tprint_warning("⚠️ No significant features found, returning all features")
+                return data
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting economically significant features: {e}")
+            tprint_debug(f"🔍 Error details: {type(e).__name__}: {str(e)}")
+            return data
 
     def _validate_inputs(self, data: pd.DataFrame, candidate_periods: List[int]) -> bool:
         """Validate input data and parameters."""

@@ -271,46 +271,97 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 
             # Step 1: Battle-tested multi-stage feature selection
             self.logger.info("🔄 Stage 1: Battle-tested multi-stage feature selection")
+            tprint_info("🎯 Starting Stage 1: Battle-tested multi-stage feature selection")
+            tprint_debug(f"📊 Input data shape: {data.shape}")
+            tprint_debug(f"📊 Target data shape: {targets.shape if targets is not None else 'None'}")
+            
             advanced_result = await asyncio.to_thread(
                 self.battle_tested_selector.select_features, data, targets
             )
             
+            tprint_debug(f"📊 Stage 1 result: success={advanced_result.success}")
+            if hasattr(advanced_result, 'selected_features'):
+                tprint_debug(f"📊 Selected features count: {len(advanced_result.selected_features)}")
+            
             if not advanced_result.success:
+                tprint_error(f"❌ Stage 1 failed: {advanced_result.error_message}")
                 raise Exception(f"Advanced feature selection failed: {advanced_result.error_message}")
             
             # Normalize selected features to column names
             cols1 = _cols(advanced_result.selected_features)
             df1 = data[cols1].copy()
+            tprint_success(f"✅ Stage 1 completed: {len(cols1)} features selected")
+            tprint_debug(f"📊 Selected features: {cols1}")
             
             # Step 2: Multi-objective optimization
             self.logger.info("🎯 Stage 2: Multi-objective optimization")
+            tprint_info("🎯 Starting Stage 2: Multi-objective optimization")
+            tprint_debug(f"📊 Input data shape: {df1.shape}")
+            
             multi_objective_result = await asyncio.to_thread(
                 self.multi_objective_selector.optimize_features, df1, targets
             )
             
+            tprint_debug(f"📊 Stage 2 result: success={multi_objective_result.success}")
+            if hasattr(multi_objective_result, 'selected_features'):
+                tprint_debug(f"📊 Selected features count: {len(multi_objective_result.selected_features)}")
+            
             # Normalize multi-objective selected features
             cols2 = _cols(multi_objective_result.selected_features)
             df2 = df1[cols2].copy()
+            tprint_success(f"✅ Stage 2 completed: {len(cols2)} features selected")
+            tprint_debug(f"📊 Selected features: {cols2}")
             
             # Step 3: Economic validation
             self.logger.info("💰 Stage 3: Economic validation")
+            tprint_info("💰 Starting Stage 3: Economic validation")
+            tprint_debug(f"📊 Input data shape: {df2.shape}")
+            tprint_debug(f"📊 Symbol: {symbol}, Timeframe: {timeframe}")
+            
             economic_result = await asyncio.to_thread(
                 self.economic_evaluator.validate_features, df2, targets, symbol, timeframe
             )
             
+            tprint_debug(f"📊 Stage 3 result: success={economic_result.success}")
+            if hasattr(economic_result, 'validated_features'):
+                tprint_debug(f"📊 Validated features shape: {economic_result.validated_features.shape}")
+            
             # Normalize economic validated features
             cols3 = _cols(economic_result.validated_features)
             df3 = df2[cols3].copy()
+            tprint_success(f"✅ Stage 3 completed: {len(cols3)} features validated")
+            tprint_debug(f"📊 Validated features: {cols3}")
             
             # Step 4: VectorBT optimization
             self.logger.info("⚡ Stage 4: VectorBT optimization")
+            tprint_info("⚡ Starting Stage 4: VectorBT optimization")
+            tprint_debug(f"📊 Input data shape: {df3.shape}")
+            
             vectorbt_result = await asyncio.to_thread(
                 self.vectorbt_optimizer.optimize_features, df3, targets
             )
             
+            tprint_debug(f"📊 Stage 4 result: success={vectorbt_result.success}")
+            if hasattr(vectorbt_result, 'optimized_features'):
+                tprint_debug(f"📊 Optimized features shape: {vectorbt_result.optimized_features.shape}")
+            
             # Normalize vectorbt optimized features
             cols4 = _cols(vectorbt_result.optimized_features)
             selected_features_df = df3[cols4].copy()
+            tprint_success(f"✅ Stage 4 completed: {len(cols4)} features optimized")
+            tprint_debug(f"📊 Final optimized features: {cols4}")
+            
+            # Final summary
+            tprint_success("🎉 Feature selection pipeline completed successfully!")
+            tprint_info(f"📊 Pipeline Summary:")
+            tprint_info(f"   • Original features: {len(data.columns)}")
+            tprint_info(f"   • Battle-tested features: {len(cols1)}")
+            tprint_info(f"   • Multi-objective features: {len(cols2)}")
+            tprint_info(f"   • Economic validated features: {len(cols3)}")
+            tprint_info(f"   • VectorBT optimized features: {len(cols4)}")
+            tprint_info(f"   • Final selected features: {len(selected_features_df.columns)}")
+            tprint_info(f"   • Feature reduction: {len(data.columns) - len(selected_features_df.columns)} features removed")
+            tprint_info(f"   • Reduction percentage: {((len(data.columns) - len(selected_features_df.columns)) / len(data.columns) * 100):.1f}%")
             
             return FeatureSelectionResult(
                 success=True,

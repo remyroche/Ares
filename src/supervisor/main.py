@@ -8,10 +8,406 @@ from ..paper_trader import PaperTrader
 # from .ab_tester import ABTester  # Module not found, using mock class
 
 class ABTester:
-    """Mock ABTester class until the actual module is implemented."""
+    """
+    Mock ABTester class until the actual module is implemented.
+    
+    This class provides A/B testing functionality for trading strategies,
+    allowing comparison of different approaches and measurement of their
+    performance differences.
+    """
+    
     def __init__(self, config: dict, performance_reporter: Any) -> None:
+        """Initialize ABTester with configuration and performance reporter."""
         self.config = config
         self.performance_reporter = performance_reporter
+        
+        # A/B testing state
+        self.active_tests = {}
+        self.test_results = {}
+        self.test_counter = 0
+        
+        # Configuration
+        self.ab_testing_config = config.get('ab_testing', {})
+        self.enabled = self.ab_testing_config.get('enabled', False)
+        self.min_sample_size = self.ab_testing_config.get('min_sample_size', 100)
+        self.confidence_level = self.ab_testing_config.get('confidence_level', 0.95)
+        
+        # Performance tracking
+        self.performance_data = {
+            'strategy_a': [],
+            'strategy_b': []
+        }
+        
+        self.logger = system_logger.getChild('ABTester')
+        self.logger.info(f"ABTester initialized (enabled: {self.enabled})")
+    
+    async def start_ab_test(
+        self,
+        test_name: str,
+        strategy_a: str,
+        strategy_b: str,
+        allocation_ratio: float = 0.5
+    ) -> str:
+        """
+        Start a new A/B test comparing two strategies.
+        
+        Args:
+            test_name: Name of the A/B test
+            strategy_a: Name/ID of strategy A
+            strategy_b: Name/ID of strategy B
+            allocation_ratio: Ratio of traffic to strategy A (0.0 to 1.0)
+            
+        Returns:
+            Test ID for tracking
+        """
+        try:
+            if not self.enabled:
+                self.logger.warning("A/B testing is disabled")
+                return ""
+            
+            test_id = f"test_{self.test_counter}_{test_name}"
+            self.test_counter += 1
+            
+            test_config = {
+                'test_id': test_id,
+                'test_name': test_name,
+                'strategy_a': strategy_a,
+                'strategy_b': strategy_b,
+                'allocation_ratio': allocation_ratio,
+                'start_time': datetime.now(),
+                'status': 'active',
+                'sample_size_a': 0,
+                'sample_size_b': 0,
+                'performance_a': [],
+                'performance_b': []
+            }
+            
+            self.active_tests[test_id] = test_config
+            self.logger.info(f"Started A/B test: {test_id} ({strategy_a} vs {strategy_b})")
+            
+            return test_id
+            
+        except Exception as e:
+            self.logger.error(f"Failed to start A/B test: {e}")
+            return ""
+    
+    async def record_trade_result(
+        self,
+        test_id: str,
+        strategy_used: str,
+        trade_result: Dict[str, Any]
+    ) -> bool:
+        """
+        Record trade result for A/B test.
+        
+        Args:
+            test_id: ID of the A/B test
+            strategy_used: Which strategy was used ('strategy_a' or 'strategy_b')
+            trade_result: Trade performance data
+            
+        Returns:
+            True if recorded successfully
+        """
+        try:
+            if test_id not in self.active_tests:
+                self.logger.warning(f"A/B test not found: {test_id}")
+                return False
+            
+            test = self.active_tests[test_id]
+            
+            if strategy_used not in ['strategy_a', 'strategy_b']:
+                self.logger.error(f"Invalid strategy: {strategy_used}")
+                return False
+            
+            # Extract performance metrics
+            pnl = trade_result.get('pnl_absolute', 0.0)
+            duration = trade_result.get('duration_minutes', 0.0)
+            win = 1 if pnl > 0 else 0
+            
+            # Record performance data
+            performance_data = {
+                'timestamp': datetime.now(),
+                'pnl': pnl,
+                'duration': duration,
+                'win': win,
+                'trade_id': trade_result.get('trade_id', 'unknown')
+            }
+            
+            test[f'performance_{strategy_used}'].append(performance_data)
+            test[f'sample_size_{strategy_used}'] += 1
+            
+            # Update global performance tracking
+            self.performance_data[strategy_used].append(performance_data)
+            
+            self.logger.debug(f"Recorded trade result for {test_id}: {strategy_used}")
+            
+            # Check if test should be concluded
+            await self._check_test_completion(test_id)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to record trade result: {e}")
+            return False
+    
+    async def _check_test_completion(self, test_id: str) -> None:
+        """Check if A/B test should be concluded based on sample size."""
+        try:
+            test = self.active_tests[test_id]
+            
+            total_samples = test['sample_size_a'] + test['sample_size_b']
+            
+            if total_samples >= self.min_sample_size:
+                await self._conclude_test(test_id)
+                
+        except Exception as e:
+            self.logger.error(f"Error checking test completion: {e}")
+    
+    async def _conclude_test(self, test_id: str) -> None:
+        """Conclude A/B test and calculate results."""
+        try:
+            test = self.active_tests[test_id]
+            
+            # Calculate performance metrics for each strategy
+            performance_a = test['performance_a']
+            performance_b = test['performance_b']
+            
+            metrics_a = self._calculate_strategy_metrics(performance_a)
+            metrics_b = self._calculate_strategy_metrics(performance_b)
+            
+            # Perform statistical significance test
+            significance_result = await self._test_statistical_significance(
+                performance_a, performance_b
+            )
+            
+            # Determine winner
+            winner = self._determine_winner(metrics_a, metrics_b, significance_result)
+            
+            # Store results
+            test_result = {
+                'test_id': test_id,
+                'test_name': test['test_name'],
+                'conclusion_time': datetime.now(),
+                'duration_hours': (datetime.now() - test['start_time']).total_seconds() / 3600,
+                'sample_size_a': test['sample_size_a'],
+                'sample_size_b': test['sample_size_b'],
+                'metrics_a': metrics_a,
+                'metrics_b': metrics_b,
+                'significance_test': significance_result,
+                'winner': winner,
+                'recommendation': self._generate_recommendation(winner, significance_result)
+            }
+            
+            self.test_results[test_id] = test_result
+            test['status'] = 'completed'
+            
+            # Report results
+            await self._report_test_results(test_result)
+            
+            self.logger.info(f"A/B test concluded: {test_id} - Winner: {winner}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to conclude A/B test: {e}")
+    
+    def _calculate_strategy_metrics(self, performance_data: List[Dict[str, Any]]) -> Dict[str, float]:
+        """Calculate performance metrics for a strategy."""
+        if not performance_data:
+            return {}
+        
+        pnls = [p['pnl'] for p in performance_data]
+        wins = [p['win'] for p in performance_data]
+        durations = [p['duration'] for p in performance_data]
+        
+        return {
+            'total_trades': len(performance_data),
+            'total_pnl': sum(pnls),
+            'avg_pnl': np.mean(pnls) if pnls else 0.0,
+            'win_rate': np.mean(wins) if wins else 0.0,
+            'avg_duration': np.mean(durations) if durations else 0.0,
+            'sharpe_ratio': self._calculate_sharpe_ratio(pnls),
+            'max_drawdown': self._calculate_max_drawdown(pnls),
+            'profit_factor': self._calculate_profit_factor(pnls)
+        }
+    
+    def _calculate_sharpe_ratio(self, returns: List[float]) -> float:
+        """Calculate Sharpe ratio."""
+        if not returns or len(returns) < 2:
+            return 0.0
+        
+        mean_return = np.mean(returns)
+        std_return = np.std(returns)
+        
+        if std_return == 0:
+            return 0.0
+        
+        return mean_return / std_return
+    
+    def _calculate_max_drawdown(self, returns: List[float]) -> float:
+        """Calculate maximum drawdown."""
+        if not returns:
+            return 0.0
+        
+        cumulative = np.cumsum(returns)
+        running_max = np.maximum.accumulate(cumulative)
+        drawdown = cumulative - running_max
+        
+        return abs(np.min(drawdown)) if len(drawdown) > 0 else 0.0
+    
+    def _calculate_profit_factor(self, returns: List[float]) -> float:
+        """Calculate profit factor."""
+        if not returns:
+            return 0.0
+        
+        gross_profit = sum(r for r in returns if r > 0)
+        gross_loss = abs(sum(r for r in returns if r < 0))
+        
+        if gross_loss == 0:
+            return float('inf') if gross_profit > 0 else 0.0
+        
+        return gross_profit / gross_loss
+    
+    async def _test_statistical_significance(
+        self,
+        performance_a: List[Dict[str, Any]],
+        performance_b: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Test statistical significance between strategies."""
+        try:
+            if not performance_a or not performance_b:
+                return {'significant': False, 'p_value': 1.0, 'confidence': 0.0}
+            
+            pnls_a = [p['pnl'] for p in performance_a]
+            pnls_b = [p['pnl'] for p in performance_b]
+            
+            # Simple t-test simulation (in real implementation, use scipy.stats)
+            mean_a = np.mean(pnls_a)
+            mean_b = np.mean(pnls_b)
+            std_a = np.std(pnls_a)
+            std_b = np.std(pnls_b)
+            
+            # Calculate t-statistic (simplified)
+            n_a, n_b = len(pnls_a), len(pnls_b)
+            pooled_std = np.sqrt(((n_a - 1) * std_a**2 + (n_b - 1) * std_b**2) / (n_a + n_b - 2))
+            t_stat = (mean_a - mean_b) / (pooled_std * np.sqrt(1/n_a + 1/n_b))
+            
+            # Simulate p-value (in real implementation, use proper statistical test)
+            p_value = max(0.001, min(0.999, abs(t_stat) / 10))  # Simplified
+            significant = p_value < (1 - self.confidence_level)
+            
+            return {
+                'significant': significant,
+                'p_value': p_value,
+                'confidence': self.confidence_level,
+                't_statistic': t_stat,
+                'mean_difference': mean_a - mean_b
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in statistical significance test: {e}")
+            return {'significant': False, 'p_value': 1.0, 'confidence': 0.0}
+    
+    def _determine_winner(
+        self,
+        metrics_a: Dict[str, float],
+        metrics_b: Dict[str, float],
+        significance_result: Dict[str, Any]
+    ) -> str:
+        """Determine winner of A/B test."""
+        try:
+            # Primary metric: total PnL
+            pnl_a = metrics_a.get('total_pnl', 0.0)
+            pnl_b = metrics_b.get('total_pnl', 0.0)
+            
+            if significance_result.get('significant', False):
+                if pnl_a > pnl_b:
+                    return 'strategy_a'
+                elif pnl_b > pnl_a:
+                    return 'strategy_b'
+                else:
+                    return 'tie'
+            else:
+                # If not statistically significant, consider other metrics
+                sharpe_a = metrics_a.get('sharpe_ratio', 0.0)
+                sharpe_b = metrics_b.get('sharpe_ratio', 0.0)
+                
+                if sharpe_a > sharpe_b:
+                    return 'strategy_a'
+                elif sharpe_b > sharpe_a:
+                    return 'strategy_b'
+                else:
+                    return 'inconclusive'
+                    
+        except Exception as e:
+            self.logger.error(f"Error determining winner: {e}")
+            return 'error'
+    
+    def _generate_recommendation(
+        self,
+        winner: str,
+        significance_result: Dict[str, Any]
+    ) -> str:
+        """Generate recommendation based on test results."""
+        if winner == 'strategy_a':
+            return "Recommend implementing Strategy A"
+        elif winner == 'strategy_b':
+            return "Recommend implementing Strategy B"
+        elif winner == 'tie':
+            return "Both strategies perform similarly, consider other factors"
+        elif winner == 'inconclusive':
+            return "Results are inconclusive, consider running test longer"
+        else:
+            return "Unable to determine recommendation due to test error"
+    
+    async def _report_test_results(self, test_result: Dict[str, Any]) -> None:
+        """Report A/B test results."""
+        try:
+            if self.performance_reporter:
+                await self.performance_reporter.report_ab_test_results(test_result)
+            
+            self.logger.info(f"A/B test results reported: {test_result['test_id']}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to report A/B test results: {e}")
+    
+    async def get_test_status(self, test_id: str) -> Optional[Dict[str, Any]]:
+        """Get status of specific A/B test."""
+        if test_id in self.active_tests:
+            return self.active_tests[test_id]
+        elif test_id in self.test_results:
+            return self.test_results[test_id]
+        else:
+            return None
+    
+    def get_all_tests(self) -> Dict[str, Any]:
+        """Get all A/B tests (active and completed)."""
+        return {
+            'active_tests': self.active_tests,
+            'completed_tests': self.test_results,
+            'total_tests': len(self.active_tests) + len(self.test_results)
+        }
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance summary across all strategies."""
+        return {
+            'strategy_a_performance': self.performance_data['strategy_a'],
+            'strategy_b_performance': self.performance_data['strategy_b'],
+            'total_trades_a': len(self.performance_data['strategy_a']),
+            'total_trades_b': len(self.performance_data['strategy_b'])
+        }
+    
+    def is_enabled(self) -> bool:
+        """Check if A/B testing is enabled."""
+        return self.enabled
+    
+    def enable(self) -> None:
+        """Enable A/B testing."""
+        self.enabled = True
+        self.logger.info("A/B testing enabled")
+    
+    def disable(self) -> None:
+        """Disable A/B testing."""
+        self.enabled = False
+        self.logger.info("A/B testing disabled")
 from .dependency_container import ComponentBuilder, DependencyContainer
 from .monitoring import Monitoring
 from .performance_reporter import PerformanceReporter

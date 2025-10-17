@@ -158,22 +158,25 @@ class MultiObjectiveResult:
 class ObjectiveFunction(ABC):
     """Abstract base class for objective functions."""
 
+    @abstractmethod
     def evaluate(self, features: pd.DataFrame,
                 targets: pd.Series,
                 selected_features: List[str],
                 **kwargs) -> ObjectiveResult:
         """Evaluate the objective function."""
-        raise NotImplementedError("Subclasses must implement the evaluate method")
+        pass
 
     @property
+    @abstractmethod
     def name(self) -> str:
         """Get the name of the objective function."""
-        raise NotImplementedError("Subclasses must implement the name property")
+        pass
 
     @property
+    @abstractmethod
     def is_higher_better(self) -> bool:
         """Whether higher values are better for this objective."""
-        raise NotImplementedError("Subclasses must implement the is_higher_better property")
+        pass
 
 class OutOfSampleSharpeObjective(ObjectiveFunction):
     """Out-of-sample Sharpe ratio objective."""
@@ -198,8 +201,13 @@ class OutOfSampleSharpeObjective(ObjectiveFunction):
             if not selected_features:
                 return ObjectiveResult(value=0.0, metadata={}, is_valid=False)
 
+            # Check if selected features exist in the dataframe
+            valid_features = [f for f in selected_features if f in features.columns]
+            if not valid_features:
+                return ObjectiveResult(value=0.0, metadata={'error': 'No valid features found'}, is_valid=False)
+
             # Get selected features
-            selected_data = features[selected_features]
+            selected_data = features[valid_features]
 
             # Calculate returns (assuming targets are returns)
             returns = targets
@@ -216,14 +224,16 @@ class OutOfSampleSharpeObjective(ObjectiveFunction):
                 'mean_return': returns.mean(),
                 'std_return': returns.std(),
                 'excess_return': excess_returns.mean(),
-                'n_periods': len(returns)
+                'n_periods': len(returns),
+                'valid_features': len(valid_features),
+                'total_requested': len(selected_features)
             }
 
             return ObjectiveResult(value=sharpe_ratio, metadata=metadata, is_valid=True)
 
         except Exception as e:
             tprint_error(f"❌ Sharpe ratio calculation failed: {e}")
-            raise RuntimeError(f"Sharpe ratio calculation failed: {e}") from e
+            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
 
 class DrawdownObjective(ObjectiveFunction):
     """Maximum drawdown objective (minimize)."""

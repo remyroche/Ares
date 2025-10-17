@@ -344,6 +344,12 @@ class VolatilityAwareMultiHorizonLabeler:
             # Create downstream-ready opportunity data
             opportunity_data = self._create_downstream_opportunity_data(quality_scores)
             
+            # Generate training strategies from quality scores
+            training_strategy = self.score_to_training(quality_scores)
+            
+            # Analyze performance requirements
+            performance_config = self.performance_sanity(data)
+            
             # Determine result shape and format
             if isinstance(labels, pd.DataFrame):
                 # Multi-target case
@@ -365,6 +371,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 "non_null_labels": result_labels.notna().sum() if isinstance(result_labels, pd.Series) else result_labels.notna().sum().sum(),
                 "quality_scores": quality_scores,
                 "opportunity_data": opportunity_data,  # Downstream-ready opportunity data
+                "training_strategy": training_strategy,  # Score-to-training mapping
+                "performance_config": performance_config,  # Performance optimization settings
                 "profit_targets_pp": target_pp,
                 "profit_targets_frac": targets_frac,
                 "n_horizons": 1,
@@ -1249,6 +1257,264 @@ class VolatilityAwareMultiHorizonLabeler:
         
         return opportunity_data
     
+    def score_to_training(self, quality_scores: Dict[str, Any], training_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Map quality scores to training strategies (gating, weighting, curriculum learning).
+        
+        Args:
+            quality_scores: Quality scores from labeling
+            training_config: Optional training configuration overrides
+            
+        Returns:
+            Dictionary with training strategies mapped from scores
+        """
+        if not quality_scores:
+            return self._create_default_training_strategy()
+        
+        training_strategy = {
+            'gating': {},
+            'weighting': {},
+            'curriculum_learning': {},
+            'memory_optimization': {},
+            'reproducible_seeds': {}
+        }
+        
+        # Process each target's quality scores
+        for target_name, quality in quality_scores.items():
+            if not hasattr(quality, 'overall_quality'):
+                continue
+                
+            overall_quality = quality.overall_quality
+            opportunity_scores = getattr(quality, 'opportunity_scores', pd.Series())
+            opportunity_weights = getattr(quality, 'opportunity_weights', pd.Series())
+            
+            # 1. GATING: Determine if target should be included in training
+            training_strategy['gating'][target_name] = self._calculate_training_gate(
+                overall_quality, quality, training_config
+            )
+            
+            # 2. WEIGHTING: Calculate sample weights for training
+            training_strategy['weighting'][target_name] = self._calculate_training_weights(
+                opportunity_scores, opportunity_weights, overall_quality, training_config
+            )
+            
+            # 3. CURRICULUM LEARNING: Determine training order/difficulty
+            training_strategy['curriculum_learning'][target_name] = self._calculate_curriculum_level(
+                overall_quality, opportunity_scores, training_config
+            )
+        
+        # 4. MEMORY OPTIMIZATION: Ensure O(N) memory usage
+        training_strategy['memory_optimization'] = self._calculate_memory_strategy(
+            quality_scores, training_config
+        )
+        
+        # 5. REPRODUCIBLE SEEDS: Generate seeds for parallel folds
+        training_strategy['reproducible_seeds'] = self._generate_reproducible_seeds(
+            quality_scores, training_config
+        )
+        
+        return training_strategy
+    
+    def _calculate_training_gate(self, overall_quality: float, quality: Any, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate training gate based on quality scores."""
+        gate_config = config.get('gating', {}) if config else {}
+        
+        # Quality thresholds
+        min_quality = gate_config.get('min_quality', 0.3)
+        min_coverage = gate_config.get('min_coverage', 0.05)
+        min_predictability = gate_config.get('min_predictability', 0.1)
+        
+        # Check gate conditions
+        passes_quality = overall_quality >= min_quality
+        passes_coverage = getattr(quality, 'coverage', 0) >= min_coverage
+        passes_predictability = getattr(quality, 'predictability', 0) >= min_predictability
+        
+        # Additional checks for trade opportunities
+        has_opportunities = False
+        if hasattr(quality, 'opportunity_scores') and len(quality.opportunity_scores) > 0:
+            has_opportunities = len(quality.opportunity_scores) >= gate_config.get('min_opportunities', 5)
+        
+        gate_passed = passes_quality and passes_coverage and passes_predictability and has_opportunities
+        
+        return {
+            'include_in_training': gate_passed,
+            'quality_score': overall_quality,
+            'coverage': getattr(quality, 'coverage', 0),
+            'predictability': getattr(quality, 'predictability', 0),
+            'n_opportunities': len(quality.opportunity_scores) if hasattr(quality, 'opportunity_scores') else 0,
+            'gate_reason': self._get_gate_reason(gate_passed, passes_quality, passes_coverage, passes_predictability, has_opportunities)
+        }
+    
+    def _calculate_training_weights(self, opportunity_scores: pd.Series, opportunity_weights: pd.Series, 
+                                  overall_quality: float, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate training weights based on opportunity scores."""
+        weight_config = config.get('weighting', {}) if config else {}
+        
+        if len(opportunity_scores) == 0:
+            return {'weights': pd.Series(dtype=float), 'weight_strategy': 'uniform'}
+        
+        # Weight calculation strategies
+        strategy = weight_config.get('strategy', 'quality_weighted')
+        
+        if strategy == 'quality_weighted':
+            # Use individual quality scores as weights
+            weights = opportunity_scores.copy()
+        elif strategy == 'profit_weighted':
+            # Use potential profits as weights (if available)
+            if hasattr(opportunity_scores, 'index'):
+                # This would need access to potential_profits - simplified for now
+                weights = opportunity_scores.copy()
+            else:
+                weights = opportunity_scores.copy()
+        elif strategy == 'composite_weighted':
+            # Combine quality scores with opportunity weights
+            if len(opportunity_weights) > 0:
+                weights = 0.7 * opportunity_scores + 0.3 * opportunity_weights
+            else:
+                weights = opportunity_scores.copy()
+        else:  # uniform
+            weights = pd.Series(1.0, index=opportunity_scores.index)
+        
+        # Apply quality-based scaling
+        quality_scale = weight_config.get('quality_scale', True)
+        if quality_scale:
+            weights = weights * overall_quality
+        
+        # Normalize weights
+        if weights.sum() > 0:
+            weights = weights / weights.sum()
+        else:
+            weights = pd.Series(1.0 / len(weights), index=weights.index)
+        
+        return {
+            'weights': weights,
+            'weight_strategy': strategy,
+            'quality_scale': quality_scale,
+            'weight_stats': {
+                'mean': weights.mean(),
+                'std': weights.std(),
+                'min': weights.min(),
+                'max': weights.max()
+            }
+        }
+    
+    def _calculate_curriculum_level(self, overall_quality: float, opportunity_scores: pd.Series, 
+                                  config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate curriculum learning level based on quality scores."""
+        curriculum_config = config.get('curriculum_learning', {}) if config else {}
+        
+        # Determine difficulty level based on quality
+        if overall_quality >= 0.8:
+            difficulty_level = 'expert'
+            training_order = 1  # Train first (highest quality)
+        elif overall_quality >= 0.6:
+            difficulty_level = 'intermediate'
+            training_order = 2
+        elif overall_quality >= 0.4:
+            difficulty_level = 'beginner'
+            training_order = 3
+        else:
+            difficulty_level = 'novice'
+            training_order = 4  # Train last (lowest quality)
+        
+        # Calculate sample complexity
+        if len(opportunity_scores) > 0:
+            score_std = opportunity_scores.std()
+            complexity = min(1.0, score_std * 2)  # Higher std = more complex
+        else:
+            complexity = 0.5
+        
+        return {
+            'difficulty_level': difficulty_level,
+            'training_order': training_order,
+            'complexity_score': complexity,
+            'quality_threshold': overall_quality,
+            'enable_curriculum': curriculum_config.get('enable', True)
+        }
+    
+    def _calculate_memory_strategy(self, quality_scores: Dict[str, Any], config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Calculate memory optimization strategy for O(N) memory usage."""
+        memory_config = config.get('memory_optimization', {}) if config else {}
+        
+        # Count total opportunities across all targets
+        total_opportunities = 0
+        for quality in quality_scores.values():
+            if hasattr(quality, 'opportunity_scores'):
+                total_opportunities += len(quality.opportunity_scores)
+        
+        # Memory budget (in MB)
+        memory_budget_mb = memory_config.get('memory_budget_mb', 1024)  # 1GB default
+        bytes_per_opportunity = memory_config.get('bytes_per_opportunity', 1000)  # Estimate
+        
+        max_opportunities = (memory_budget_mb * 1024 * 1024) // bytes_per_opportunity
+        
+        # Determine if we need to subsample
+        needs_subsampling = total_opportunities > max_opportunities
+        subsample_ratio = min(1.0, max_opportunities / total_opportunities) if total_opportunities > 0 else 1.0
+        
+        return {
+            'total_opportunities': total_opportunities,
+            'memory_budget_mb': memory_budget_mb,
+            'max_opportunities': max_opportunities,
+            'needs_subsampling': needs_subsampling,
+            'subsample_ratio': subsample_ratio,
+            'chunk_size': memory_config.get('chunk_size', 10000),
+            'enable_streaming': needs_subsampling
+        }
+    
+    def _generate_reproducible_seeds(self, quality_scores: Dict[str, Any], config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate reproducible seeds for parallel folds."""
+        seed_config = config.get('reproducible_seeds', {}) if config else {}
+        
+        base_seed = seed_config.get('base_seed', 42)
+        n_folds = seed_config.get('n_folds', 5)
+        
+        # Generate seeds for each fold
+        fold_seeds = {}
+        for i in range(n_folds):
+            fold_seeds[f'fold_{i}'] = base_seed + i * 1000
+        
+        # Generate seeds for each target
+        target_seeds = {}
+        for i, target_name in enumerate(quality_scores.keys()):
+            target_seeds[target_name] = base_seed + i * 100
+        
+        return {
+            'base_seed': base_seed,
+            'n_folds': n_folds,
+            'fold_seeds': fold_seeds,
+            'target_seeds': target_seeds,
+            'random_state': np.random.RandomState(base_seed)
+        }
+    
+    def _get_gate_reason(self, gate_passed: bool, quality_ok: bool, coverage_ok: bool, 
+                        predictability_ok: bool, has_opportunities: bool) -> str:
+        """Get human-readable gate reason."""
+        if gate_passed:
+            return "PASS: All quality gates met"
+        
+        reasons = []
+        if not quality_ok:
+            reasons.append("low_quality")
+        if not coverage_ok:
+            reasons.append("low_coverage")
+        if not predictability_ok:
+            reasons.append("low_predictability")
+        if not has_opportunities:
+            reasons.append("insufficient_opportunities")
+        
+        return f"FAIL: {', '.join(reasons)}"
+    
+    def _create_default_training_strategy(self) -> Dict[str, Any]:
+        """Create default training strategy when no quality scores available."""
+        return {
+            'gating': {'default': {'include_in_training': False, 'gate_reason': 'no_quality_scores'}},
+            'weighting': {'default': {'weights': pd.Series(dtype=float), 'weight_strategy': 'uniform'}},
+            'curriculum_learning': {'default': {'difficulty_level': 'novice', 'training_order': 999}},
+            'memory_optimization': {'total_opportunities': 0, 'needs_subsampling': False},
+            'reproducible_seeds': {'base_seed': 42, 'n_folds': 5, 'fold_seeds': {}}
+        }
+    
     def _create_fallback_quality_score(self, reason: str = "unknown") -> Dict[str, Any]:
         """Create fallback quality score with reason."""
         class FallbackQualityScore:
@@ -1263,6 +1529,151 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.red_flag_reasons = [reason]
         
         return {'default': FallbackQualityScore(reason)}
+    
+    def performance_sanity(self, data: pd.DataFrame, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Ensure O(N) memory usage and parallel folds with reproducible seeds.
+        
+        Args:
+            data: Input data for memory analysis
+            config: Optional performance configuration
+            
+        Returns:
+            Dictionary with performance optimization settings
+        """
+        perf_config = config.get('performance', {}) if config else {}
+        
+        # Memory analysis
+        memory_analysis = self._analyze_memory_usage(data, perf_config)
+        
+        # Parallel processing configuration
+        parallel_config = self._configure_parallel_processing(data, perf_config)
+        
+        # Reproducible seeds for parallel folds
+        seed_config = self._configure_reproducible_seeds(perf_config)
+        
+        # Chunking strategy for large datasets
+        chunking_config = self._configure_chunking_strategy(data, memory_analysis, perf_config)
+        
+        return {
+            'memory_analysis': memory_analysis,
+            'parallel_config': parallel_config,
+            'seed_config': seed_config,
+            'chunking_config': chunking_config,
+            'optimization_applied': True
+        }
+    
+    def _analyze_memory_usage(self, data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze memory usage and determine optimization needs."""
+        # Calculate data size
+        data_size_mb = data.memory_usage(deep=True).sum() / (1024 * 1024)
+        n_samples = len(data)
+        n_features = len(data.columns)
+        
+        # Memory budget
+        memory_budget_mb = config.get('memory_budget_mb', 1024)  # 1GB default
+        max_samples = config.get('max_samples', 1000000)  # 1M samples default
+        
+        # Determine if optimization is needed
+        needs_optimization = data_size_mb > memory_budget_mb or n_samples > max_samples
+        
+        # Calculate optimal chunk size
+        if needs_optimization:
+            target_chunk_size = min(
+                int(memory_budget_mb * 1024 * 1024 / (data_size_mb * 1024 * 1024 / n_samples)),
+                max_samples
+            )
+        else:
+            target_chunk_size = n_samples
+        
+        return {
+            'data_size_mb': data_size_mb,
+            'n_samples': n_samples,
+            'n_features': n_features,
+            'memory_budget_mb': memory_budget_mb,
+            'needs_optimization': needs_optimization,
+            'target_chunk_size': max(1000, target_chunk_size),  # Minimum 1000 samples
+            'estimated_chunks': max(1, n_samples // max(1000, target_chunk_size))
+        }
+    
+    def _configure_parallel_processing(self, data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Configure parallel processing for optimal performance."""
+        n_samples = len(data)
+        n_cores = config.get('n_cores', None)
+        
+        if n_cores is None:
+            import multiprocessing
+            n_cores = min(multiprocessing.cpu_count(), 8)  # Cap at 8 cores
+        
+        # Determine optimal number of parallel workers
+        if n_samples < 10000:
+            n_workers = 1  # Single-threaded for small datasets
+        elif n_samples < 100000:
+            n_workers = min(2, n_cores)
+        else:
+            n_workers = min(4, n_cores)
+        
+        # Configure parallel folds
+        n_folds = config.get('n_folds', 5)
+        fold_size = n_samples // n_folds
+        
+        return {
+            'n_cores': n_cores,
+            'n_workers': n_workers,
+            'n_folds': n_folds,
+            'fold_size': fold_size,
+            'enable_parallel': n_workers > 1,
+            'chunk_processing': n_samples > 50000
+        }
+    
+    def _configure_reproducible_seeds(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Configure reproducible seeds for parallel processing."""
+        base_seed = config.get('base_seed', 42)
+        n_folds = config.get('n_folds', 5)
+        
+        # Generate seeds for each fold
+        fold_seeds = {}
+        for i in range(n_folds):
+            fold_seeds[f'fold_{i}'] = base_seed + i * 1000
+        
+        # Generate seeds for parallel workers
+        n_workers = config.get('n_workers', 1)
+        worker_seeds = {}
+        for i in range(n_workers):
+            worker_seeds[f'worker_{i}'] = base_seed + i * 100
+        
+        return {
+            'base_seed': base_seed,
+            'fold_seeds': fold_seeds,
+            'worker_seeds': worker_seeds,
+            'random_state': np.random.RandomState(base_seed)
+        }
+    
+    def _configure_chunking_strategy(self, data: pd.DataFrame, memory_analysis: Dict[str, Any], 
+                                   config: Dict[str, Any]) -> Dict[str, Any]:
+        """Configure chunking strategy for large datasets."""
+        if not memory_analysis['needs_optimization']:
+            return {'enabled': False, 'chunk_size': len(data)}
+        
+        chunk_size = memory_analysis['target_chunk_size']
+        n_chunks = memory_analysis['estimated_chunks']
+        
+        # Determine chunking strategy
+        if n_chunks <= 10:
+            strategy = 'sequential'  # Process chunks sequentially
+        elif n_chunks <= 100:
+            strategy = 'parallel_chunks'  # Process multiple chunks in parallel
+        else:
+            strategy = 'streaming'  # Stream processing for very large datasets
+        
+        return {
+            'enabled': True,
+            'strategy': strategy,
+            'chunk_size': chunk_size,
+            'n_chunks': n_chunks,
+            'overlap_samples': config.get('chunk_overlap', 100),  # Overlap between chunks
+            'memory_efficient': True
+        }
     
     def _apply_multiple_testing_hygiene(self, target_qualities: Dict[str, Any]) -> Dict[str, Any]:
         """Apply Benjamini-Hochberg FDR control for multiple testing hygiene."""

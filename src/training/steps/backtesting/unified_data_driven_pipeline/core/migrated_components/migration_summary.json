@@ -1,0 +1,147 @@
+{
+  "migration_date": "2025-10-17T16:22:18.793680",
+  "total_components": 6,
+  "successful_migrations": 6,
+  "failed_migrations": 0,
+  "migration_directory": "/workspace/src/training/steps/backtesting/unified_data_driven_pipeline/core/migrated_components",
+  "components": [
+    {
+      "name": "real_parameters_optimization",
+      "type": "PARAMETER_OPTIMIZER",
+      "original_file": "real_parameters_optimization.py",
+      "dependencies": [
+        "data_loader",
+        "feature_generator"
+      ],
+      "config_template": {
+        "optimization_method": "bayesian",
+        "parameter_ranges": {},
+        "convergence_threshold": 1e-06,
+        "cv_folds": 5,
+        "max_iterations": 100,
+        "n_trials": 50,
+        "random_state": 42
+      }
+    },
+    {
+      "name": "real_reporting_engine",
+      "type": "REPORTING_ENGINE",
+      "original_file": "real_reporting_engine.py",
+      "dependencies": [
+        "backtesting_engine",
+        "performance_analyzer"
+      ],
+      "config_template": {
+        "output_directory": "./reports",
+        "report_formats": [
+          "html",
+          "pdf"
+        ],
+        "template_directory": "./templates",
+        "chart_settings": {
+          "chart_types": [
+            "line",
+            "bar",
+            "scatter"
+          ],
+          "figure_size": [
+            12,
+            8
+          ],
+          "dpi": 300
+        },
+        "include_charts": true,
+        "include_tables": true,
+        "include_summary": true
+      }
+    },
+    {
+      "name": "risk_management",
+      "type": "RISK_MANAGER",
+      "original_file": "abc_testing/risk_management.py",
+      "dependencies": [
+        "data_loader"
+      ],
+      "config_template": {
+        "risk_limits": {
+          "max_drawdown": 0.2,
+          "max_volatility": 0.3,
+          "max_correlation": 0.8
+        },
+        "position_sizing": {
+          "max_position_size": 0.1,
+          "risk_per_trade": 0.02
+        },
+        "var_settings": {
+          "confidence_level": 0.95,
+          "lookback_period": 252
+        },
+        "alert_settings": {
+          "enabled": true,
+          "email_alerts": false
+        }
+      }
+    },
+    {
+      "name": "performance_monitoring",
+      "type": "PERFORMANCE_MONITOR",
+      "original_file": "abc_testing/performance_monitoring.py",
+      "dependencies": [
+        "backtesting_engine"
+      ],
+      "config_template": {
+        "monitoring_interval": 60,
+        "alert_thresholds": {
+          "max_drawdown": 0.15,
+          "min_sharpe_ratio": 1.0,
+          "max_volatility": 0.25
+        },
+        "metrics_to_track": [
+          "sharpe_ratio",
+          "max_drawdown",
+          "volatility",
+          "returns"
+        ],
+        "reporting_frequency": "daily"
+      }
+    },
+    {
+      "name": "statistical_analysis",
+      "type": "STATISTICAL_ANALYZER",
+      "original_file": "abc_testing/statistical_analysis.py",
+      "dependencies": [
+        "data_loader"
+      ],
+      "config_template": {
+        "analysis_methods": [
+          "descriptive",
+          "correlation",
+          "regression",
+          "time_series"
+        ],
+        "confidence_level": 0.95,
+        "significance_threshold": 0.05,
+        "bootstrap_samples": 1000,
+        "include_plots": true
+      }
+    },
+    {
+      "name": "final_parameters_optimization",
+      "type": "PARAMETER_OPTIMIZER",
+      "original_file": "final_parameters_optimization.py",
+      "dependencies": [
+        "data_loader",
+        "feature_generator"
+      ],
+      "config_template": {
+        "optimization_method": "genetic",
+        "parameter_ranges": {},
+        "convergence_threshold": 1e-06,
+        "population_size": 50,
+        "generations": 100,
+        "mutation_rate": 0.1,
+        "crossover_rate": 0.8
+      }
+    }
+  ]
+}

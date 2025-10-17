@@ -40,26 +40,12 @@ except ImportError:
 
 
 @dataclass
-class VectorizationResult:
-    """Enhanced result of vectorization step."""
-
-    success: bool
-    vectorized_features: int
-    vectorization_metadata: Dict[str, Any]
-    matrix_operations: Dict[str, Any]
-    vectorbt_optimizations: Dict[str, Any]
-    performance_metrics: Dict[str, Any]
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-
 class FeatureGenerationVectorizationStep(ModularComponent):
     """Enhanced vectorization step using VectorizedFeatureGenerator."""
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         """Initialize the enhanced vectorization step."""
-        # Convert ComponentConfig to dict for ModularComponent
-        config_dict = config.to_dict() if config else {}
-        super().__init__(
+        super().__init__(name, config or {}, logger)
             name="feature_generation_vectorization_step",
             config=config_dict,
             logger=logging.getLogger(__name__)
@@ -309,75 +295,3 @@ class FeatureGenerationVectorizationStep(ModularComponent):
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
 # Command handler for ares_launcher integration
-async def handle_feature_generation_vectorization_step(
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-    **kwargs
-) -> ComponentResult:
-    """
-    Handle feature generation vectorization step command.
-
-    Args:
-        symbol: Trading symbol (default: "ETHUSDT")
-        timeframe: Timeframe (default: "15m")
-        direction: Direction (default: "longs")
-        intensity: Pipeline intensity (default: "blank")
-        lookback_days: Lookback days (optional)
-        start_date: Start date (optional)
-        end_date: End date (optional)
-        exchange: Exchange (default: "binance")
-        custom_overrides: Custom configuration overrides (optional)
-        **kwargs: Additional arguments
-
-    Returns:
-        ComponentResult with vectorization results
-    """
-    # Determinism for sample data
-    rng = np.random.default_rng(seed=42)
-    sample_data = pd.DataFrame({
-        'open': rng.normal(size=1000).cumsum() + 100,
-        'high': rng.normal(size=1000).cumsum() + 105,
-        'low': rng.normal(size=1000).cumsum() + 95,
-        'close': rng.normal(size=1000).cumsum() + 100,
-        'volume': rng.integers(1000, 10000, size=1000)
-    })
-
-    training_input = {
-        'data': sample_data,
-        'symbol': symbol,
-        'timeframe': timeframe,
-        'direction': direction,
-        'intensity': intensity,
-        'lookback_days': lookback_days,
-        'start_date': start_date,
-        'end_date': end_date,
-        'exchange': exchange,
-        'custom_overrides': custom_overrides,
-    }
-
-    step = FeatureGenerationVectorizationStep()
-    pipeline_state: Dict[str, Any] = {}
-    return await step.execute(training_input, pipeline_state)
-
-# Register component with factory
-def _register_feature_generation_vectorization_step():
-    """Register the feature generation vectorization step component with the factory."""
-    try:
-        from src.training.steps.pre_training.components import ComponentFactory
-        ComponentFactory.register_component(
-            'feature_generation_vectorization_step',
-            FeatureGenerationVectorizationStep
-        )
-    except ImportError:
-        # Component factory not available, skip registration
-        pass
-
-# Register the component when module is imported
-_register_feature_generation_vectorization_step()

@@ -47,15 +47,6 @@ except ImportError:
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
 @dataclass
-class LookbackOptimizationResult:
-    """Result of lookback optimization step."""
-
-    success: bool
-    optimized_lookbacks: int
-    optimization_metadata: Dict[str, Any]
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-
 class FeatureGenerationLookbackOptimizationStep(ModularComponent):
     """Lookback optimization step that calls the consolidated pipeline."""
 
@@ -140,89 +131,3 @@ class FeatureGenerationLookbackOptimizationStep(ModularComponent):
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
     # Required utility methods for BasePreTrainingComponent
-    def safe_dataframe_operation(self, operation_func, *args, **kwargs):
-        """Safe dataframe operation wrapper."""
-        return safe_dataframe_operation(operation_func, *args, **kwargs)
-
-    def safe_matrix_multiply(self, a, b):
-        """Safe matrix multiplication."""
-        return safe_matrix_multiply(a, b)
-
-    def optimize_dataframe_for_matrix_ops(self, df):
-        """Optimize dataframe for matrix operations."""
-        return optimize_dataframe(df)
-
-# Command handler for ares_launcher integration
-async def handle_feature_generation_lookback_optimization_step(
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-    **kwargs
-) -> LookbackOptimizationResult:
-    """
-    Handle feature generation lookback optimization step command.
-
-    Args:
-        symbol: Trading symbol (default: "ETHUSDT")
-        timeframe: Timeframe (default: "15m")
-        direction: Direction (default: "longs")
-        intensity: Pipeline intensity (default: "blank")
-        lookback_days: Lookback days (optional)
-        start_date: Start date (optional)
-        end_date: End date (optional)
-        exchange: Exchange (default: "binance")
-        custom_overrides: Custom configuration overrides (optional)
-        **kwargs: Additional arguments
-
-    Returns:
-        LookbackOptimizationResult with optimization results
-    """
-    # Create sample data for optimization (in real usage, this would come from data loading)
-    sample_data = pd.DataFrame({
-        'open': np.random.randn(1000).cumsum() + 100,
-        'high': np.random.randn(1000).cumsum() + 105,
-        'low': np.random.randn(1000).cumsum() + 95,
-        'close': np.random.randn(1000).cumsum() + 100,
-        'volume': np.random.randint(1000, 10000, 1000)
-    })
-
-    # Create step instance and execute
-    step = FeatureGenerationLookbackOptimizationStep()
-
-    # Prepare training input as dict
-    training_input = dict(
-        data=sample_data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        intensity=intensity,
-        lookback_days=lookback_days,
-        start_date=start_date,
-        end_date=end_date,
-        exchange=exchange,
-        custom_overrides=custom_overrides,
-    )
-
-    return await step.execute(training_input=training_input, pipeline_state={})
-
-# Register component with factory
-def _register_feature_generation_lookback_optimization_step():
-    """Register the feature generation lookback optimization step component with the factory."""
-    try:
-        from src.training.steps.pre_training.components import ComponentFactory
-        ComponentFactory.register_component(
-            'feature_generation_lookback_optimization_step',
-            FeatureGenerationLookbackOptimizationStep
-        )
-    except ImportError:
-        # Component factory not available, skip registration
-        pass
-
-# Register the component when module is imported
-_register_feature_generation_lookback_optimization_step()

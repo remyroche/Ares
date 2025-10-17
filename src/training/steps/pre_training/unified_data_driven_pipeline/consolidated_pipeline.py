@@ -1818,6 +1818,20 @@ class UnifiedDataDrivenPipeline:
         start_time = self.advanced_performance_monitor.start_operation("process")
 
         try:
+            # Check for step-specific handling
+            if pipeline_state and pipeline_state.get('step'):
+                step = pipeline_state.get('step')
+                tprint_info(f"🎯 Executing step-specific processing: {step}")
+                
+                if step == 'period_lookback_optimization':
+                    return await self._handle_period_lookback_optimization_step(data, targets, timeframe, pipeline_state)
+                elif step == 'period_optimization':
+                    return await self._handle_period_optimization_step(data, targets, timeframe, pipeline_state)
+                elif step == 'lookback_optimization':
+                    return await self._handle_lookback_optimization_step(data, targets, timeframe, pipeline_state)
+                else:
+                    tprint_warning(f"⚠️ Unknown step: {step}, proceeding with full pipeline")
+
             # Fast fail validation - check critical requirements first
             self._validate_critical_requirements(data, targets, timeframe, pipeline_state)
 
@@ -6623,6 +6637,168 @@ class UnifiedDataDrivenPipeline:
         except Exception as e:
             tprint_error(f"❌ Ablation study failed: {e}")
             return {'error': str(e)}
+
+    async def _handle_period_lookback_optimization_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle period + lookback optimization step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_period_lookback_optimization_step
+        
+        tprint_info("🎯 Executing period + lookback optimization step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the optimization step
+            result = await run_period_lookback_optimization_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Period + lookback optimization step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_period_optimization_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle period optimization step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_period_optimization_step
+        
+        tprint_info("🎯 Executing period optimization step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the optimization step
+            result = await run_period_optimization_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Period optimization step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_lookback_optimization_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle lookback optimization step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_lookback_optimization_step
+        
+        tprint_info("🎯 Executing lookback optimization step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the optimization step
+            result = await run_lookback_optimization_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Lookback optimization step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
 
 # Convenience functions
 def create_unified_pipeline(config: Optional[UnifiedPipelineConfig] = None) -> UnifiedDataDrivenPipeline:

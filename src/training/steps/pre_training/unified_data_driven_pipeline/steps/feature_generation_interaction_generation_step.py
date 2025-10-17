@@ -7,14 +7,10 @@ by calling the consolidated pipeline at the appropriate stage.
 
 from __future__ import annotations
 
-import warnings
 import logging
-import json
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
-from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
@@ -26,24 +22,6 @@ from src.training.steps.pre_training.components.base_component import (
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
-# Import tprint utilities for enhanced logging
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_step, tprint_result
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
-    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
-    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
 @dataclass
 class InteractionGenerationResult:
@@ -65,7 +43,7 @@ class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
 
     async def execute(self,
                      training_input: Dict[str, Any],
-                     pipeline_state: Dict[str, Any]) -> ComponentResult:
+                     pipeline_state: Dict[str, Any]) -> InteractionGenerationResult:
         """Execute interaction generation step using consolidated pipeline."""
 
         self.logger.info("🔧 Starting interaction generation step using consolidated pipeline")
@@ -97,31 +75,40 @@ class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
                 custom_overrides=custom_overrides
             )
 
-            # Convert result to ComponentResult
-            component_result = ComponentResult(
-                success=result['success'],
-                artifacts=result.get('artifacts', {}),
-                metadata={
-                    'generated_interactions': result.get('generated_interactions', 0),
-                    'interaction_metadata': result.get('interaction_metadata', {}),
-                    **result.get('metadata', {})
-                },
-                error_message=result.get('error_message')
+            # Validate result structure
+            if not isinstance(result, dict):
+                raise ValueError(f"Expected dict result, got {type(result)}")
+            
+            # Safely extract values with defaults
+            success = result.get('success', False)
+            generated_interactions = result.get('generated_interactions', 0)
+            interaction_metadata = result.get('interaction_metadata', {})
+            artifacts = result.get('artifacts', {})
+            error_message = result.get('error_message')
+
+            # Convert result to InteractionGenerationResult
+            interaction_result = InteractionGenerationResult(
+                success=success,
+                generated_interactions=generated_interactions,
+                interaction_metadata=interaction_metadata,
+                artifacts=artifacts,
+                error_message=error_message
             )
 
-            if component_result.success:
-                self.logger.info(f"✅ Interaction generation completed successfully with {component_result.metadata.get('generated_interactions', 0)} generated interactions")
+            if interaction_result.success:
+                self.logger.info(f"✅ Interaction generation completed successfully with {interaction_result.generated_interactions} generated interactions")
             else:
-                self.logger.error(f"❌ Interaction generation failed: {component_result.error_message}")
+                self.logger.error(f"❌ Interaction generation failed: {interaction_result.error_message}")
 
-            return component_result
+            return interaction_result
 
         except Exception as e:
-            self.logger.error(f"❌ Interaction generation step failed with exception: {e}")
-            return ComponentResult(
+            self.logger.exception(f"❌ Interaction generation step failed with exception: {e}")
+            return InteractionGenerationResult(
                 success=False,
+                generated_interactions=0,
+                interaction_metadata={},
                 artifacts={},
-                metadata={},
                 error_message=str(e)
             )
 
@@ -169,30 +156,53 @@ async def handle_feature_generation_interaction_generation_step(
     Returns:
         InteractionGenerationResult with generation results
     """
-    # Create sample data for generation (in real usage, this would come from data loading)
-    sample_data = pd.DataFrame({
-        'open': np.random.randn(1000).cumsum() + 100,
-        'high': np.random.randn(1000).cumsum() + 105,
-        'low': np.random.randn(1000).cumsum() + 95,
-        'close': np.random.randn(1000).cumsum() + 100,
-        'volume': np.random.randint(1000, 10000, 1000)
-    })
+    # Only generate sample data if not provided
+    data = kwargs.get('data')
+    if data is None:
+        # Create sample data for generation (in real usage, this would come from data loading)
+        sample_data = pd.DataFrame({
+            'open': np.random.randn(1000).cumsum() + 100,
+            'high': np.random.randn(1000).cumsum() + 105,
+            'low': np.random.randn(1000).cumsum() + 95,
+            'close': np.random.randn(1000).cumsum() + 100,
+            'volume': np.random.randint(1000, 10000, 1000)
+        })
+    else:
+        # Validate provided data
+        if not isinstance(data, pd.DataFrame):
+            raise ValueError(f"Expected pandas DataFrame, got {type(data)}")
+        
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns: {missing_columns}")
+        
+        sample_data = data
 
-    # Create step instance and execute
+    # Validate mutually exclusive date parameters
+    if lookback_days is not None and (start_date is not None or end_date is not None):
+        raise ValueError("Cannot specify both lookback_days and start_date/end_date")
+
+    # Create step instance and execute with proper signature
     step = FeatureGenerationInteractionGenerationStep()
+    
+    # Build training_input dict and pass explicit pipeline_state
+    training_input = {
+        'data': sample_data,
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'direction': direction,
+        'intensity': intensity,
+        'lookback_days': lookback_days,
+        'start_date': start_date,
+        'end_date': end_date,
+        'exchange': exchange,
+        'custom_overrides': custom_overrides
+    }
+    
+    pipeline_state = {}
 
-    return await step.execute(
-        data=sample_data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        intensity=intensity,
-        lookback_days=lookback_days,
-        start_date=start_date,
-        end_date=end_date,
-        exchange=exchange,
-        custom_overrides=custom_overrides
-    )
+    return await step.execute(training_input, pipeline_state)
 
 # Register component with factory
 def _register_feature_generation_interaction_generation_step():

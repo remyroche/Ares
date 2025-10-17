@@ -13,6 +13,7 @@ import warnings
 import pandas as pd
 import numpy as np
 import copy
+import asyncio
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -85,9 +86,9 @@ class FeatureGenerationStep(BasePreTrainingComponent):
                 default_lookback=20,
                 min_lookback=1,
                 max_lookback=252,
-                use_vectorbt=True,
-                enable_gpu=True,
-                enable_parallel=True
+                use_vectorbt=False,  # Align with auto-optimization config
+                enable_gpu=False,  # Align with auto-optimization config
+                enable_parallel=False  # Align with auto-optimization config
             )
             
             # Create auto-optimization configuration
@@ -120,27 +121,32 @@ class FeatureGenerationStep(BasePreTrainingComponent):
 
         try:
             # DEBUG: Check data quality at the start of execute
-            import numpy as np
-            print(f"🔍 [DEBUG] Execute method - Data shape: {data.shape}")
-            print(f"🔍 [DEBUG] Execute method - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
-            for col in data.select_dtypes(include=[np.number]).columns:
-                non_finite = (~np.isfinite(data[col])).sum()
-                if non_finite > 0:
-                    print(f"🔍 [DEBUG] Execute method - {col}: {non_finite} non-finite values")
+            self.logger.debug("Execute - data shape: %s", data.shape)
+            numeric = data.select_dtypes(include=[np.number])
+            non_finite_total = (~np.isfinite(numeric)).to_numpy().sum()
+            self.logger.debug("Execute - non-finite total: %d", non_finite_total)
+            for col in numeric.columns:
+                nf = (~np.isfinite(numeric[col])).sum()
+                if nf:
+                    self.logger.debug("Execute - %s: %d non-finite", col, nf)
 
-            # Update feature configuration with actual values
+            # Clone feature configuration to avoid mutating shared config
             if FEATURE_GENERATION_AVAILABLE:
-                self.feature_config.symbol = symbol
-                self.feature_config.timeframe = timeframe
+                base_cfg = copy.deepcopy(self.feature_config)
+                base_cfg.symbol = symbol
+                base_cfg.timeframe = timeframe
+            else:
+                base_cfg = None
 
             # Validate input data
             if data is None or len(data) == 0:
                 raise ValueError("Input data is None or empty")
             
-            required_columns = ['close', 'volume']
+            # Use proper validation that matches FeatureConfig requirements
+            required_columns = getattr(self.feature_config, 'required_columns', ['open', 'high', 'low', 'close', 'volume'])
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
-                raise ValueError(f"Missing required columns: {missing_columns}. Available columns: {list(data.columns)}")
+                raise ValueError(f"Missing required columns: {missing_columns}. Available: {list(data.columns)}")
             if not FEATURE_GENERATION_AVAILABLE:
                 # Fallback to basic feature generation
                 return await self._fallback_feature_generation(
@@ -149,7 +155,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
 
             # Perform comprehensive feature generation
             generation_result = await self._perform_enhanced_feature_generation(
-                data, symbol, timeframe, direction, custom_overrides
+                data, symbol, timeframe, direction, custom_overrides, base_cfg
             )
 
             if generation_result.success:
@@ -178,19 +184,27 @@ class FeatureGenerationStep(BasePreTrainingComponent):
 
     async def _perform_enhanced_feature_generation(self, data: pd.DataFrame, symbol: str,
                                                    timeframe: str, direction: str,
-                                                   custom_overrides: Optional[Dict[str, Any]]) -> FeatureGenerationResult:
+                                                   custom_overrides: Optional[Dict[str, Any]],
+                                                   base_config: Optional[FeatureConfig] = None) -> FeatureGenerationResult:
         """Perform enhanced feature generation using AutoOptimizedFeatureGenerator."""
         
         try:
-            # Create a fresh copy of the configuration to avoid race conditions
-            feature_config = copy.deepcopy(self.feature_config)
+            # Use the provided base config or create a fresh copy
+            if base_config is not None:
+                feature_config = copy.deepcopy(base_config)
+            else:
+                feature_config = copy.deepcopy(self.feature_config)
             
             # Update configuration with custom overrides
             if custom_overrides:
                 feature_config.update_from_dict(custom_overrides)
+                # Sanity checks after overrides
+                if not getattr(feature_config, 'required_columns', None):
+                    raise ValueError("feature_config.required_columns cannot be empty after overrides.")
             
             # Generate features using auto-optimized generator with fresh config
-            feature_result = self.auto_optimized_generator.generate(
+            # Handle potential async generate method
+            res = self.auto_optimized_generator.generate(
                 data=data,
                 symbol=symbol,
                 timeframe=timeframe,
@@ -198,33 +212,48 @@ class FeatureGenerationStep(BasePreTrainingComponent):
                 config=feature_config
             )
             
+            # Check if result is a coroutine (async method)
+            if asyncio.iscoroutine(res):
+                feature_result = await res
+            else:
+                feature_result = res
+            
             # Get optimization statistics with null check
-            optimization_stats = self.auto_optimized_generator.get_optimization_stats()
-            if optimization_stats is None:
-                optimization_stats = {'status': 'unavailable', 'message': 'Optimization stats not available'}
+            try:
+                optimization_stats = self.auto_optimized_generator.get_optimization_stats()
+                if optimization_stats is None:
+                    optimization_stats = {'status': 'unavailable', 'message': 'Optimization stats not available'}
+            except Exception as e:
+                self.logger.warning(f"Failed to get optimization stats: {e}")
+                optimization_stats = {'status': 'error', 'message': f'Failed to get optimization stats: {e}'}
             
-            # Get feature categories used
-            feature_categories = [cat.value for cat in feature_config.categories]
+            # Get feature categories used - handle both singular and plural
+            if hasattr(feature_config, 'categories') and feature_config.categories:
+                feature_categories = [getattr(cat, 'value', str(cat)) for cat in feature_config.categories]
+            elif hasattr(feature_config, 'category') and feature_config.category is not None:
+                feature_categories = [getattr(feature_config.category, 'value', str(feature_config.category))]
+            else:
+                feature_categories = []
             
-            # Get VectorBT optimization details
+            # Get VectorBT optimization details with safe attribute access
             vectorbt_optimizations = {
-                'vectorbt_enabled': feature_config.enable_vectorbt,
-                'optimization_level': self.auto_optimization_config.level.value,
-                'parallel_processing': self.auto_optimization_config.enable_parallel_processing,
-                'memory_optimization': self.auto_optimization_config.enable_memory_optimization
+                'vectorbt_enabled': bool(getattr(feature_config, 'enable_vectorbt', False)),
+                'optimization_level': getattr(self.auto_optimization_config, 'optimization_level', None),
+                'parallel_processing': bool(getattr(self.auto_optimization_config, 'enable_parallel', False)),
+                'memory_optimization': bool(getattr(self.auto_optimization_config, 'enable_memory_optimization', False))
             }
             
-            # Compile comprehensive result
+            # Compile comprehensive result with safe attribute access
             return FeatureGenerationResult(
-                success=feature_result.success,
-                generated_features=feature_result.features,
-                feature_metadata=feature_result.feature_metadata,
-                generation_metrics=feature_result.metrics,
+                success=getattr(feature_result, 'success', False),
+                generated_features=getattr(feature_result, 'features', pd.DataFrame()),
+                feature_metadata=getattr(feature_result, 'feature_metadata', {}),
+                generation_metrics=getattr(feature_result, 'metrics', {}),
                 optimization_stats=optimization_stats,
                 feature_categories=feature_categories,
                 vectorbt_optimizations=vectorbt_optimizations,
                 artifacts={
-                    'feature_result': feature_result.__dict__,
+                    'feature_result': getattr(feature_result, '__dict__', {}),
                     'optimization_stats': optimization_stats,
                     'config': self._serialize_config(feature_config),
                     'auto_optimization_config': self._serialize_config(self.auto_optimization_config)
@@ -251,16 +280,16 @@ class FeatureGenerationStep(BasePreTrainingComponent):
         """Fallback feature generation when advanced components are not available."""
         
         try:
-            # Basic feature generation
+            # Basic feature generation with prefixed fallback columns
             basic_features = pd.DataFrame(index=data.index)
             
             # Simple technical indicators with proper min_periods
-            basic_features['sma_20'] = data['close'].rolling(20, min_periods=20).mean()
-            basic_features['sma_50'] = data['close'].rolling(50, min_periods=50).mean()
-            basic_features['rsi_14'] = self._calculate_rsi(data['close'], 14)
-            basic_features['bb_upper'] = data['close'].rolling(20, min_periods=20).mean() + 2 * data['close'].rolling(20, min_periods=20).std()
-            basic_features['bb_lower'] = data['close'].rolling(20, min_periods=20).mean() - 2 * data['close'].rolling(20, min_periods=20).std()
-            basic_features['volume_sma'] = data['volume'].rolling(20, min_periods=20).mean()
+            basic_features['fb_sma_20'] = data['close'].rolling(20, min_periods=20).mean()
+            basic_features['fb_sma_50'] = data['close'].rolling(50, min_periods=50).mean()
+            basic_features['fb_rsi_14'] = self._calculate_rsi(data['close'], 14)
+            basic_features['fb_bb_upper'] = data['close'].rolling(20, min_periods=20).mean() + 2 * data['close'].rolling(20, min_periods=20).std()
+            basic_features['fb_bb_lower'] = data['close'].rolling(20, min_periods=20).mean() - 2 * data['close'].rolling(20, min_periods=20).std()
+            basic_features['fb_volume_sma'] = data['volume'].rolling(20, min_periods=20).mean()
             
             # Remove NaN values
             basic_features = basic_features.dropna()
@@ -269,7 +298,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
                 success=True,
                 generated_features=basic_features,
                 feature_metadata={'method': 'fallback_basic', 'symbol': symbol, 'timeframe': timeframe},
-                generation_metrics={'feature_count': len(basic_features.columns)},
+                generation_metrics={'feature_count': len(basic_features.columns), 'shape': basic_features.shape},
                 optimization_stats={'method': 'fallback'},
                 feature_categories=['basic_technical'],
                 vectorbt_optimizations={'vectorbt_enabled': False},
@@ -303,7 +332,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
         # Guard against division by zero
         rs = avg_gain / avg_loss.replace(0, np.nan)
         rsi = 100 - (100 / (1 + rs))
-        return rsi.fillna(50)  # Neutral RSI when no data
+        return rsi.clip(0, 100).fillna(50)  # Clip to [0,100] and fill NaNs with neutral RSI
 
     # Required utility methods for BasePreTrainingComponent
     def safe_dataframe_operation(self, operation_func, *args, **kwargs):
@@ -318,19 +347,19 @@ class FeatureGenerationStep(BasePreTrainingComponent):
         """Optimize dataframe for matrix operations."""
         return optimize_dataframe(df)
 
-    def _serialize_config(self, config) -> Dict[str, Any]:
-        """Serialize configuration object to plain types for JSON serialization."""
+    def _serialize_config(self, config, _depth=0) -> Dict[str, Any]:
+        """Serialize configuration object to plain types for JSON serialization with recursion guard."""
+        if _depth > 3:  # prevent runaway recursion
+            return str(config)
+            
         serialized = {}
         for key, value in config.__dict__.items():
             if hasattr(value, 'value'):  # Enum
                 serialized[key] = value.value
+            elif isinstance(value, (list, tuple, set)):
+                serialized[key] = [self._serialize_config(x, _depth+1) for x in value]
             elif hasattr(value, '__dict__'):  # Object with __dict__
-                serialized[key] = self._serialize_config(value)
-            elif isinstance(value, (list, tuple)):
-                serialized[key] = [
-                    item.value if hasattr(item, 'value') else item 
-                    for item in value
-                ]
+                serialized[key] = self._serialize_config(value, _depth+1)
             else:
                 serialized[key] = value
         return serialized
@@ -347,7 +376,7 @@ class FeatureGenerationStep(BasePreTrainingComponent):
         # Basic validation - check if data is not None and has required columns
         if data is None:
             return False
-        if hasattr(data, 'empty') and len(data) == 0:
+        if not isinstance(data, pd.DataFrame) or data.empty:
             return False
         return True
 

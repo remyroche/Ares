@@ -4,10 +4,329 @@ from datetime import datetime
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 import asyncio
 import logging
 import time
+import uuid
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class OrderStatus(Enum):
+    """Order status enumeration"""
+    PENDING = "pending"
+    SUBMITTED = "submitted"
+    PARTIALLY_FILLED = "partially_filled"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class OrderMapping:
+    """Order mapping between internal and exchange-specific IDs"""
+    internal_id: str
+    exchange_id: str
+    exchange_name: str
+    symbol: str
+    side: str
+    order_type: str
+    quantity: float
+    price: Optional[float] = None
+    status: OrderStatus = OrderStatus.PENDING
+    created_at: datetime = field(default_factory=datetime.now)
+    updated_at: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    exchange_response: Optional[Dict[str, Any]] = None
+
+
+class OrderIdMapper:
+    """Manages order ID mapping between internal and exchange-specific IDs"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(f"{__name__}.OrderIdMapper")
+        self._order_mappings: Dict[str, OrderMapping] = {}  # internal_id -> OrderMapping
+        self._exchange_mappings: Dict[str, Dict[str, str]] = {}  # exchange_name -> {exchange_id -> internal_id}
+        self._lock = asyncio.Lock()
+    
+    async def create_mapping(
+        self,
+        exchange_name: str,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Create a new order mapping"""
+        async with self._lock:
+            internal_id = str(uuid.uuid4())
+            
+            mapping = OrderMapping(
+                internal_id=internal_id,
+                exchange_id="",  # Will be set when exchange responds
+                exchange_name=exchange_name,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                metadata=metadata or {}
+            )
+            
+            self._order_mappings[internal_id] = mapping
+            
+            # Initialize exchange mapping if needed
+            if exchange_name not in self._exchange_mappings:
+                self._exchange_mappings[exchange_name] = {}
+            
+            self.logger.debug(f"Created order mapping: {internal_id} for {exchange_name}")
+            return internal_id
+    
+    async def update_exchange_id(self, internal_id: str, exchange_id: str) -> bool:
+        """Update the exchange-specific ID for an order"""
+        async with self._lock:
+            if internal_id not in self._order_mappings:
+                self.logger.warning(f"Order mapping not found: {internal_id}")
+                return False
+            
+            mapping = self._order_mappings[internal_id]
+            old_exchange_id = mapping.exchange_id
+            
+            # Update mapping
+            mapping.exchange_id = exchange_id
+            mapping.updated_at = datetime.now()
+            
+            # Update exchange mapping
+            if old_exchange_id:
+                self._exchange_mappings[mapping.exchange_name].pop(old_exchange_id, None)
+            
+            self._exchange_mappings[mapping.exchange_name][exchange_id] = internal_id
+            
+            self.logger.debug(f"Updated exchange ID: {internal_id} -> {exchange_id}")
+            return True
+    
+    async def update_order_status(
+        self,
+        internal_id: str,
+        status: OrderStatus,
+        exchange_response: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Update order status"""
+        async with self._lock:
+            if internal_id not in self._order_mappings:
+                self.logger.warning(f"Order mapping not found: {internal_id}")
+                return False
+            
+            mapping = self._order_mappings[internal_id]
+            mapping.status = status
+            mapping.updated_at = datetime.now()
+            
+            if exchange_response:
+                mapping.exchange_response = exchange_response
+            
+            self.logger.debug(f"Updated order status: {internal_id} -> {status.value}")
+            return True
+    
+    async def get_mapping_by_internal_id(self, internal_id: str) -> Optional[OrderMapping]:
+        """Get order mapping by internal ID"""
+        return self._order_mappings.get(internal_id)
+    
+    async def get_mapping_by_exchange_id(self, exchange_name: str, exchange_id: str) -> Optional[OrderMapping]:
+        """Get order mapping by exchange ID"""
+        if exchange_name not in self._exchange_mappings:
+            return None
+        
+        internal_id = self._exchange_mappings[exchange_name].get(exchange_id)
+        if not internal_id:
+            return None
+        
+        return self._order_mappings.get(internal_id)
+    
+    async def get_orders_by_status(self, status: OrderStatus) -> List[OrderMapping]:
+        """Get all orders with a specific status"""
+        return [mapping for mapping in self._order_mappings.values() if mapping.status == status]
+    
+    async def get_orders_by_exchange(self, exchange_name: str) -> List[OrderMapping]:
+        """Get all orders for a specific exchange"""
+        return [
+            mapping for mapping in self._order_mappings.values()
+            if mapping.exchange_name == exchange_name
+        ]
+    
+    async def get_orders_by_symbol(self, symbol: str) -> List[OrderMapping]:
+        """Get all orders for a specific symbol"""
+        return [mapping for mapping in self._order_mappings.values() if mapping.symbol == symbol]
+    
+    async def remove_mapping(self, internal_id: str) -> bool:
+        """Remove an order mapping"""
+        async with self._lock:
+            if internal_id not in self._order_mappings:
+                return False
+            
+            mapping = self._order_mappings[internal_id]
+            
+            # Remove from exchange mapping
+            if mapping.exchange_id and mapping.exchange_name in self._exchange_mappings:
+                self._exchange_mappings[mapping.exchange_name].pop(mapping.exchange_id, None)
+            
+            # Remove from main mapping
+            del self._order_mappings[internal_id]
+            
+            self.logger.debug(f"Removed order mapping: {internal_id}")
+            return True
+    
+    async def get_statistics(self) -> Dict[str, Any]:
+        """Get order mapping statistics"""
+        total_orders = len(self._order_mappings)
+        status_counts = {}
+        
+        for status in OrderStatus:
+            status_counts[status.value] = len([
+                mapping for mapping in self._order_mappings.values()
+                if mapping.status == status
+            ])
+        
+        exchange_counts = {}
+        for mapping in self._order_mappings.values():
+            exchange_name = mapping.exchange_name
+            exchange_counts[exchange_name] = exchange_counts.get(exchange_name, 0) + 1
+        
+        return {
+            "total_orders": total_orders,
+            "status_counts": status_counts,
+            "exchange_counts": exchange_counts,
+            "active_exchanges": list(exchange_counts.keys())
+        }
+
+
+class ExchangeRegistry:
+    """Manages exchange registration and discovery"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(f"{__name__}.ExchangeRegistry")
+        self._exchanges: Dict[str, BaseExchange] = {}
+        self._exchange_configs: Dict[str, Dict[str, Any]] = {}
+        self._active_exchanges: Set[str] = set()
+        self._lock = asyncio.Lock()
+    
+    async def register_exchange(
+        self,
+        name: str,
+        exchange: BaseExchange,
+        config: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Register an exchange"""
+        async with self._lock:
+            self._exchanges[name] = exchange
+            self._exchange_configs[name] = config or {}
+            self._active_exchanges.add(name)
+            
+            self.logger.info(f"Registered exchange: {name}")
+    
+    async def unregister_exchange(self, name: str) -> bool:
+        """Unregister an exchange"""
+        async with self._lock:
+            if name not in self._exchanges:
+                return False
+            
+            # Close exchange connection if possible
+            exchange = self._exchanges[name]
+            if hasattr(exchange, 'close'):
+                try:
+                    await exchange.close()
+                except Exception as e:
+                    self.logger.error(f"Error closing exchange {name}: {e}")
+            
+            del self._exchanges[name]
+            self._exchange_configs.pop(name, None)
+            self._active_exchanges.discard(name)
+            
+            self.logger.info(f"Unregistered exchange: {name}")
+            return True
+    
+    async def get_exchange(self, name: str) -> Optional[BaseExchange]:
+        """Get an exchange by name"""
+        return self._exchanges.get(name)
+    
+    async def get_active_exchanges(self) -> List[str]:
+        """Get list of active exchange names"""
+        return list(self._active_exchanges)
+    
+    async def get_exchange_config(self, name: str) -> Optional[Dict[str, Any]]:
+        """Get exchange configuration"""
+        return self._exchange_configs.get(name)
+    
+    async def set_exchange_active(self, name: str, active: bool) -> bool:
+        """Set exchange active status"""
+        if name not in self._exchanges:
+            return False
+        
+        if active:
+            self._active_exchanges.add(name)
+        else:
+            self._active_exchanges.discard(name)
+        
+        self.logger.info(f"Set exchange {name} active: {active}")
+        return True
+    
+    async def get_exchange_capabilities(self, name: str) -> Dict[str, Any]:
+        """Get exchange capabilities"""
+        exchange = self._exchanges.get(name)
+        if not exchange:
+            return {}
+        
+        capabilities = {
+            "supports_market_orders": hasattr(exchange, 'create_order'),
+            "supports_limit_orders": hasattr(exchange, 'create_order'),
+            "supports_cancellation": hasattr(exchange, 'cancel_order'),
+            "supports_position_info": hasattr(exchange, 'get_position_risk'),
+            "supports_account_info": hasattr(exchange, 'get_account_info'),
+            "supports_historical_data": hasattr(exchange, 'get_historical_klines'),
+            "supports_streaming": any([
+                hasattr(exchange, 'subscribe_trades'),
+                hasattr(exchange, 'subscribe_ticker'),
+                hasattr(exchange, 'subscribe_order_book')
+            ])
+        }
+        
+        return capabilities
+    
+    async def get_best_exchange_for_symbol(self, symbol: str) -> Optional[str]:
+        """Determine the best exchange for a given symbol"""
+        # Simple implementation - return first active exchange
+        # In a real implementation, this would consider factors like:
+        # - Exchange-specific symbol support
+        # - Liquidity
+        # - Fees
+        # - Latency
+        # - Reliability
+        
+        active_exchanges = await self.get_active_exchanges()
+        if not active_exchanges:
+            return None
+        
+        # For now, prefer binance, then okx
+        preferred_order = ["binance", "okx", "gateio", "mexc"]
+        
+        for preferred in preferred_order:
+            if preferred in active_exchanges:
+                return preferred
+        
+        return active_exchanges[0]
+    
+    async def get_statistics(self) -> Dict[str, Any]:
+        """Get exchange registry statistics"""
+        return {
+            "total_exchanges": len(self._exchanges),
+            "active_exchanges": len(self._active_exchanges),
+            "exchange_names": list(self._exchanges.keys()),
+            "active_exchange_names": list(self._active_exchanges)
+        }
 
 
 class BaseExchange(IExchangeClient, ABC):
@@ -22,6 +341,8 @@ class BaseExchange(IExchangeClient, ABC):
         api_secret: str,
         trade_symbol: str,
         password: str | None = None,
+        order_mapper: Optional[OrderIdMapper] = None,
+        exchange_registry: Optional[ExchangeRegistry] = None,
     ) -> None:
         self.api_key = api_key
         self.api_secret = api_secret
@@ -29,6 +350,11 @@ class BaseExchange(IExchangeClient, ABC):
         self.password = password
         self.exchange: Any | None = None  # Will be set by subclasses
         self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
+        
+        # Order mapping and registry
+        self.order_mapper = order_mapper or OrderIdMapper()
+        self.exchange_registry = exchange_registry or ExchangeRegistry()
+        self.exchange_name = self.__class__.__name__.lower().replace('exchange', '')
 
     @abstractmethod
     async def _initialize_exchange(self) -> None:
@@ -166,8 +492,68 @@ class BaseExchange(IExchangeClient, ABC):
         quantity: float,
         price: float | None = None,
         order_type: str = "MARKET",
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+        """Create an order with order ID mapping"""
+        try:
+            # Create internal order mapping
+            internal_id = await self.order_mapper.create_mapping(
+                exchange_name=self.exchange_name,
+                symbol=symbol,
+                side=side,
+                order_type=order_type,
+                quantity=quantity,
+                price=price,
+                metadata=metadata
+            )
+            
+            # Create the order on the exchange
+            exchange_response = await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+            
+            # Extract exchange order ID from response
+            exchange_order_id = self._extract_order_id_from_response(exchange_response)
+            
+            if exchange_order_id:
+                # Update mapping with exchange order ID
+                await self.order_mapper.update_exchange_id(internal_id, exchange_order_id)
+                await self.order_mapper.update_order_status(
+                    internal_id, 
+                    OrderStatus.SUBMITTED, 
+                    exchange_response
+                )
+            
+            # Add internal ID to response
+            response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+            response['internal_order_id'] = internal_id
+            response['exchange_order_id'] = exchange_order_id
+            response['exchange_name'] = self.exchange_name
+            
+            return response
+            
+        except Exception as e:
+            self.logger.error(f"Error creating order: {e}")
+            # Update order status to rejected if mapping exists
+            if 'internal_id' in locals():
+                await self.order_mapper.update_order_status(
+                    internal_id, 
+                    OrderStatus.REJECTED, 
+                    {"error": str(e)}
+                )
+            raise
+    
+    def _extract_order_id_from_response(self, response: Any) -> Optional[str]:
+        """Extract order ID from exchange response"""
+        if not isinstance(response, dict):
+            return None
+        
+        # Try common order ID field names
+        order_id_fields = ['id', 'orderId', 'order_id', 'clientOrderId', 'client_order_id']
+        
+        for field in order_id_fields:
+            if field in response:
+                return str(response[field])
+        
+        return None
 
     @abstractmethod
     async def _create_order_raw(
@@ -273,14 +659,174 @@ class BaseExchange(IExchangeClient, ABC):
         """Get raw open orders from exchange."""
 
     async def cancel_order(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        return await self._cancel_order_raw(symbol, order_id)
+        """Cancel order with mapping support"""
+        try:
+            # Check if this is an internal order ID
+            mapping = await self.order_mapper.get_mapping_by_internal_id(str(order_id))
+            
+            if mapping:
+                # Use exchange order ID for the actual cancellation
+                exchange_order_id = mapping.exchange_id
+                if not exchange_order_id:
+                    return {
+                        "status": "error",
+                        "internal_order_id": order_id,
+                        "error": "Exchange order ID not available"
+                    }
+                
+                # Cancel order on exchange
+                exchange_response = await self._cancel_order_raw(symbol, exchange_order_id)
+                
+                # Update mapping status
+                await self.order_mapper.update_order_status(
+                    str(order_id),
+                    OrderStatus.CANCELLED,
+                    exchange_response
+                )
+                
+                # Add mapping info to response
+                response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                response['internal_order_id'] = order_id
+                response['exchange_order_id'] = exchange_order_id
+                response['exchange_name'] = self.exchange_name
+                response['mapped_status'] = OrderStatus.CANCELLED.value
+                
+                return response
+            else:
+                # Assume it's an exchange order ID
+                exchange_response = await self._cancel_order_raw(symbol, order_id)
+                
+                # Try to find mapping by exchange ID
+                mapping = await self.order_mapper.get_mapping_by_exchange_id(self.exchange_name, str(order_id))
+                if mapping:
+                    await self.order_mapper.update_order_status(
+                        mapping.internal_id,
+                        OrderStatus.CANCELLED,
+                        exchange_response
+                    )
+                    
+                    response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                    response['internal_order_id'] = mapping.internal_id
+                    response['exchange_order_id'] = order_id
+                    response['exchange_name'] = self.exchange_name
+                    response['mapped_status'] = OrderStatus.CANCELLED.value
+                    
+                    return response
+                else:
+                    # No mapping found, return raw response
+                    response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                    response['exchange_order_id'] = order_id
+                    response['exchange_name'] = self.exchange_name
+                    response['mapped_status'] = 'unknown'
+                    
+                    return response
+                    
+        except Exception as e:
+            self.logger.error(f"Error cancelling order: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "order_id": order_id
+            }
 
     @abstractmethod
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Cancel raw order on exchange."""
 
     async def get_order_status(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        return await self._get_order_status_raw(symbol, order_id)
+        """Get order status with mapping support"""
+        try:
+            # Check if this is an internal order ID
+            mapping = await self.order_mapper.get_mapping_by_internal_id(str(order_id))
+            
+            if mapping:
+                # Use exchange order ID for the actual query
+                exchange_order_id = mapping.exchange_id
+                if not exchange_order_id:
+                    return {
+                        "status": "unknown",
+                        "internal_order_id": order_id,
+                        "error": "Exchange order ID not available"
+                    }
+                
+                # Get status from exchange
+                exchange_response = await self._get_order_status_raw(symbol, exchange_order_id)
+                
+                # Update mapping with new status
+                status = self._map_exchange_status_to_internal(exchange_response)
+                await self.order_mapper.update_order_status(
+                    str(order_id),
+                    status,
+                    exchange_response
+                )
+                
+                # Add mapping info to response
+                response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                response['internal_order_id'] = order_id
+                response['exchange_order_id'] = exchange_order_id
+                response['exchange_name'] = self.exchange_name
+                response['mapped_status'] = status.value
+                
+                return response
+            else:
+                # Assume it's an exchange order ID
+                exchange_response = await self._get_order_status_raw(symbol, order_id)
+                
+                # Try to find mapping by exchange ID
+                mapping = await self.order_mapper.get_mapping_by_exchange_id(self.exchange_name, str(order_id))
+                if mapping:
+                    status = self._map_exchange_status_to_internal(exchange_response)
+                    await self.order_mapper.update_order_status(
+                        mapping.internal_id,
+                        status,
+                        exchange_response
+                    )
+                    
+                    response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                    response['internal_order_id'] = mapping.internal_id
+                    response['exchange_order_id'] = order_id
+                    response['exchange_name'] = self.exchange_name
+                    response['mapped_status'] = status.value
+                    
+                    return response
+                else:
+                    # No mapping found, return raw response
+                    response = exchange_response.copy() if isinstance(exchange_response, dict) else {}
+                    response['exchange_order_id'] = order_id
+                    response['exchange_name'] = self.exchange_name
+                    response['mapped_status'] = 'unknown'
+                    
+                    return response
+                    
+        except Exception as e:
+            self.logger.error(f"Error getting order status: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "order_id": order_id
+            }
+    
+    def _map_exchange_status_to_internal(self, exchange_response: Any) -> OrderStatus:
+        """Map exchange order status to internal status"""
+        if not isinstance(exchange_response, dict):
+            return OrderStatus.UNKNOWN
+        
+        status = exchange_response.get('status', '').lower()
+        
+        status_mapping = {
+            'new': OrderStatus.SUBMITTED,
+            'pending': OrderStatus.PENDING,
+            'partially_filled': OrderStatus.PARTIALLY_FILLED,
+            'filled': OrderStatus.FILLED,
+            'cancelled': OrderStatus.CANCELLED,
+            'canceled': OrderStatus.CANCELLED,
+            'rejected': OrderStatus.REJECTED,
+            'expired': OrderStatus.EXPIRED,
+            'done': OrderStatus.FILLED,
+            'closed': OrderStatus.FILLED,
+        }
+        
+        return status_mapping.get(status, OrderStatus.UNKNOWN)
 
     @abstractmethod
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
@@ -340,6 +886,38 @@ class BaseExchange(IExchangeClient, ABC):
         """Close the exchange connection if supported by underlying client."""
         if self.exchange and hasattr(self.exchange, "close"):
             await self.exchange.close()
+    
+    # Order mapping methods
+    async def get_order_mapping(self, internal_id: str) -> Optional[OrderMapping]:
+        """Get order mapping by internal ID"""
+        return await self.order_mapper.get_mapping_by_internal_id(internal_id)
+    
+    async def get_orders_by_status(self, status: OrderStatus) -> List[OrderMapping]:
+        """Get orders by status for this exchange"""
+        all_orders = await self.order_mapper.get_orders_by_status(status)
+        return [order for order in all_orders if order.exchange_name == self.exchange_name]
+    
+    async def get_orders_by_symbol(self, symbol: str) -> List[OrderMapping]:
+        """Get orders by symbol for this exchange"""
+        all_orders = await self.order_mapper.get_orders_by_symbol(symbol)
+        return [order for order in all_orders if order.exchange_name == self.exchange_name]
+    
+    async def get_order_statistics(self) -> Dict[str, Any]:
+        """Get order statistics for this exchange"""
+        stats = await self.order_mapper.get_statistics()
+        exchange_orders = await self.order_mapper.get_orders_by_exchange(self.exchange_name)
+        
+        exchange_stats = {
+            "exchange_name": self.exchange_name,
+            "total_orders": len(exchange_orders),
+            "status_counts": {}
+        }
+        
+        for status in OrderStatus:
+            count = len([order for order in exchange_orders if order.status == status])
+            exchange_stats["status_counts"][status.value] = count
+        
+        return exchange_stats
 
     def _convert_timestamp(self, timestamp: Any) -> datetime:
         """Convert exchange timestamp to datetime."""
@@ -369,21 +947,265 @@ class BaseExchange(IExchangeClient, ABC):
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time trade data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle trade data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for trades subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket trades
+            if hasattr(self.exchange, 'watch_trades'):
+                try:
+                    # Use WebSocket if available
+                    async for trade in self.exchange.watch_trades(market_id):
+                        trade_data = {
+                            'symbol': symbol,
+                            'id': trade.get('id'),
+                            'timestamp': trade.get('timestamp'),
+                            'datetime': trade.get('datetime'),
+                            'side': trade.get('side'),
+                            'amount': trade.get('amount'),
+                            'price': trade.get('price'),
+                            'cost': trade.get('cost'),
+                            'fee': trade.get('fee'),
+                            'info': trade.get('info', {})
+                        }
+                        await callback(trade_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket trades failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_trades(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_trades(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to trades for {symbol}: {e}")
+            raise
 
     async def subscribe_ticker(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time ticker data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle ticker data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for ticker subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket ticker
+            if hasattr(self.exchange, 'watch_ticker'):
+                try:
+                    # Use WebSocket if available
+                    async for ticker in self.exchange.watch_ticker(market_id):
+                        ticker_data = {
+                            'symbol': symbol,
+                            'timestamp': ticker.get('timestamp'),
+                            'datetime': ticker.get('datetime'),
+                            'high': ticker.get('high'),
+                            'low': ticker.get('low'),
+                            'bid': ticker.get('bid'),
+                            'bidVolume': ticker.get('bidVolume'),
+                            'ask': ticker.get('ask'),
+                            'askVolume': ticker.get('askVolume'),
+                            'vwap': ticker.get('vwap'),
+                            'open': ticker.get('open'),
+                            'close': ticker.get('close'),
+                            'last': ticker.get('last'),
+                            'previousClose': ticker.get('previousClose'),
+                            'change': ticker.get('change'),
+                            'percentage': ticker.get('percentage'),
+                            'average': ticker.get('average'),
+                            'baseVolume': ticker.get('baseVolume'),
+                            'quoteVolume': ticker.get('quoteVolume'),
+                            'info': ticker.get('info', {})
+                        }
+                        await callback(ticker_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket ticker failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_ticker(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_ticker(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to ticker for {symbol}: {e}")
+            raise
 
     async def subscribe_order_book(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time order book data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle order book data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for order book subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket order book
+            if hasattr(self.exchange, 'watch_order_book'):
+                try:
+                    # Use WebSocket if available
+                    async for order_book in self.exchange.watch_order_book(market_id):
+                        order_book_data = {
+                            'symbol': symbol,
+                            'timestamp': order_book.get('timestamp'),
+                            'datetime': order_book.get('datetime'),
+                            'nonce': order_book.get('nonce'),
+                            'bids': order_book.get('bids', []),
+                            'asks': order_book.get('asks', []),
+                            'info': order_book.get('info', {})
+                        }
+                        await callback(order_book_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket order book failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_order_book(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_order_book(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to order book for {symbol}: {e}")
+            raise
+
+    # --- Polling helper methods for subscription fallbacks ---
+    async def _poll_trades(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll trades data as fallback when WebSocket is not available."""
+        try:
+            last_trade_id = None
+            while True:
+                try:
+                    trades = await self.exchange.fetch_trades(market_id, limit=100)
+                    if trades:
+                        # Filter new trades
+                        if last_trade_id:
+                            trades = [t for t in trades if t.get('id', 0) > last_trade_id]
+                        
+                        for trade in trades:
+                            trade_data = {
+                                'symbol': symbol,
+                                'id': trade.get('id'),
+                                'timestamp': trade.get('timestamp'),
+                                'datetime': trade.get('datetime'),
+                                'side': trade.get('side'),
+                                'amount': trade.get('amount'),
+                                'price': trade.get('price'),
+                                'cost': trade.get('cost'),
+                                'fee': trade.get('fee'),
+                                'info': trade.get('info', {})
+                            }
+                            await callback(trade_data)
+                            last_trade_id = trade.get('id', last_trade_id)
+                    
+                    # Poll every 1 second
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    self.logger.warning(f"Error polling trades for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll trades for {symbol}: {e}")
+
+    async def _poll_ticker(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll ticker data as fallback when WebSocket is not available."""
+        try:
+            while True:
+                try:
+                    ticker = await self.exchange.fetch_ticker(market_id)
+                    if ticker:
+                        ticker_data = {
+                            'symbol': symbol,
+                            'timestamp': ticker.get('timestamp'),
+                            'datetime': ticker.get('datetime'),
+                            'high': ticker.get('high'),
+                            'low': ticker.get('low'),
+                            'bid': ticker.get('bid'),
+                            'bidVolume': ticker.get('bidVolume'),
+                            'ask': ticker.get('ask'),
+                            'askVolume': ticker.get('askVolume'),
+                            'vwap': ticker.get('vwap'),
+                            'open': ticker.get('open'),
+                            'close': ticker.get('close'),
+                            'last': ticker.get('last'),
+                            'previousClose': ticker.get('previousClose'),
+                            'change': ticker.get('change'),
+                            'percentage': ticker.get('percentage'),
+                            'average': ticker.get('average'),
+                            'baseVolume': ticker.get('baseVolume'),
+                            'quoteVolume': ticker.get('quoteVolume'),
+                            'info': ticker.get('info', {})
+                        }
+                        await callback(ticker_data)
+                    
+                    # Poll every 2 seconds
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    self.logger.warning(f"Error polling ticker for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll ticker for {symbol}: {e}")
+
+    async def _poll_order_book(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll order book data as fallback when WebSocket is not available."""
+        try:
+            while True:
+                try:
+                    order_book = await self.exchange.fetch_order_book(market_id, limit=20)
+                    if order_book:
+                        order_book_data = {
+                            'symbol': symbol,
+                            'timestamp': order_book.get('timestamp'),
+                            'datetime': order_book.get('datetime'),
+                            'nonce': order_book.get('nonce'),
+                            'bids': order_book.get('bids', []),
+                            'asks': order_book.get('asks', []),
+                            'info': order_book.get('info', {})
+                        }
+                        await callback(order_book_data)
+                    
+                    # Poll every 3 seconds
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    self.logger.warning(f"Error polling order book for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll order book for {symbol}: {e}")
 
     # --- Convenience polling helpers ---
     async def fetch_price(self, symbol: str) -> float | None:

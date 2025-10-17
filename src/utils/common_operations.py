@@ -1,1710 +1,1302 @@
-"""
-Unified Common Operations - Enhanced Utility Functions
-
-This module provides comprehensive utility functions for data operations,
-DataFrame processing, validation, and common data processing utilities.
-Consolidates functionality from common_operations.py and common_utilities.py.
-"""
-
-import json
-import os
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+import pandas as pd
+import numpy as np
 import logging
-import asyncio
+from functools import wraps
 import time
-import functools
-import shutil
-import warnings
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable
+import gc
+import psutil
+import os
 from contextlib import contextmanager
-# Optional imports with fallbacks
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
-    # Create a fallback DataFrame class to avoid NoneType errors
-    class FallbackDataFrame:
-        def __init__(self, *args, **kwargs):
-            self.empty = True
-            self.columns = []
-            self.index = []
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: self
-    class FallbackSeries:
-        def __init__(self, *args, **kwargs):
-            self.empty = True
-            self.index = []
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: self
-    pd = type('pandas', (), {'DataFrame': FallbackDataFrame, 'Series': FallbackSeries, 'read_parquet': lambda *args, **kwargs: None, 'to_datetime': lambda x: x, 'to_numeric': lambda x: x, 'merge': lambda *args, **kwargs: FallbackDataFrame()})()
 
-try:
-    import numpy as np
-    NUMPY_AVAILABLE = True
-except ImportError:
-    NUMPY_AVAILABLE = False
-    # Create a fallback numpy module to avoid NoneType errors
-    class FallbackArray:
-        def __init__(self, *args, **kwargs):
-            pass
-        def __getattr__(self, name):
-            return lambda *args, **kwargs: 0
-    
-    def eye_func(n):
-        return [[1 if i==j else 0 for j in range(n)] for i in range(n)]
-    
-    np = type('numpy', (), {
-        'array': FallbackArray, 
-        'ndarray': FallbackArray, 
-        'isfinite': lambda x: True, 
-        'mean': lambda x: 0, 
-        'std': lambda x: 0, 
-        'min': lambda x: 0, 
-        'max': lambda x: 0, 
-        'sum': lambda x: 0, 
-        'log': lambda x: 0, 
-        'sqrt': lambda x: 0, 
-        'where': lambda *args: args[1], 
-        'eye': eye_func
-    })()
-from datetime import datetime, date
-import concurrent.futures
-
-# Optional imports with fallbacks
-try:
-    import psutil
-except ImportError:
-    psutil = None
-
-# Import base utilities (no circular dependencies)
-from .base_utilities import (
-    validate_file_path, validate_directory_path, create_directory_safe,
-    safe_read_parquet, safe_write_parquet, get_logger, is_dataframe_valid,
-    safe_get_shape, safe_divide, validate_finite, safe_percentage_change,
-    create_fallback_logger, create_fallback_decorator
-)
-
-# Import M1 utilities
-try:
-    from .hardware.m1_gpu_utils import is_m1_available, is_mps_available
-except ImportError:
-    def is_m1_available():
-        return False
-    def is_mps_available():
-        return False
-
-# Setup logging early to avoid undefined logger errors
+# Configure logging
 logger = logging.getLogger(__name__)
 
-# Check if pandas is available and warn if not
-if not PANDAS_AVAILABLE:
-    logger.warning("⚠️ Pandas not available - DataFrame functions will be limited")
+def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
+    """Run a dataframe op with a tiny safety net."""
+    if not callable(operation_func):
+        raise TypeError("operation_func must be callable")
+    df = operation_func(*args, **kwargs)
+    if not isinstance(df, pd.DataFrame):
+        raise TypeError("operation_func must return a pandas DataFrame")
+    return df
 
-def get_m1_gpu_manager():
-    """Get the M1 GPU manager instance."""
+def get_memory_usage() -> Dict[str, float]:
+    """Get current memory usage statistics."""
+    process = psutil.Process(os.getpid())
+    memory_info = process.memory_info()
+    return {
+        'rss': memory_info.rss / 1024 / 1024,  # MB
+        'vms': memory_info.vms / 1024 / 1024,  # MB
+        'percent': process.memory_percent()
+    }
+
+def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
+    """Optimize DataFrame memory usage by downcasting numeric types."""
+    df_opt = df.copy()
+    
+    # Downcast integers
+    for col in df_opt.select_dtypes(include=['int']).columns:
+        df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+    
+    # Downcast floats
+    for col in df_opt.select_dtypes(include=['float']).columns:
+        df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+    
+    # Convert object columns to category if beneficial
+    for col in df_opt.select_dtypes(include=['object']).columns:
+        if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
+            df_opt[col] = df_opt[col].astype('category')
+    
+    return df_opt
+
+def safe_divide(a: Union[pd.Series, np.ndarray, float], 
+                b: Union[pd.Series, np.ndarray, float], 
+                fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:
+    """Safely divide two arrays/series, handling division by zero."""
+    if isinstance(a, pd.Series) and isinstance(b, pd.Series):
+        return a.div(b).fillna(fill_value)
+    elif isinstance(a, pd.Series):
+        return a.div(b).fillna(fill_value)
+    elif isinstance(b, pd.Series):
+        return a / b.fillna(1e-10)
+    else:
+        return np.divide(a, b, out=np.full_like(a, fill_value), where=b!=0)
+
+def safe_log(x: Union[pd.Series, np.ndarray], 
+             base: float = np.e, 
+             fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:
+    """Safely compute logarithm, handling zero and negative values."""
+    if isinstance(x, pd.Series):
+        return np.log(np.maximum(x, 1e-10)) / np.log(base)
+    else:
+        return np.log(np.maximum(x, 1e-10)) / np.log(base)
+
+def safe_sqrt(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
+    """Safely compute square root, handling negative values."""
+    if isinstance(x, pd.Series):
+        return np.sqrt(np.maximum(x, 0))
+    else:
+        return np.sqrt(np.maximum(x, 0))
+
+def rolling_apply_safe(df: pd.DataFrame, 
+                      func: Callable, 
+                      window: int, 
+                      min_periods: Optional[int] = None,
+                      **kwargs) -> pd.DataFrame:
+    """Apply function to rolling window with error handling."""
+    if min_periods is None:
+        min_periods = window // 2
+    
     try:
-        from .hardware.m1_gpu_utils import get_m1_gpu_manager as _get_m1_gpu_manager
-        return _get_m1_gpu_manager()
-    except ImportError:
-        logger.warning("⚠️ M1 GPU utilities not available")
-        return None
-
-def get_m1_memory_optimizer():
-    """Get the M1 memory optimizer instance."""
-    try:
-        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer as _get_m1_memory_optimizer
-        return _get_m1_memory_optimizer()
-    except ImportError:
-        logger.warning("⚠️ M1 memory optimizer not available")
-        return None
-
-def get_m1_cpu_optimizer():
-    """Get the M1 CPU optimizer instance."""
-    try:
-        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as _get_m1_cpu_optimizer
-        return _get_m1_cpu_optimizer()
-    except ImportError:
-        logger.warning("⚠️ M1 CPU optimizer not available")
-        return None
-
-def cleanup_m1_optimizers():
-    """Clean up M1 optimizers and release resources."""
-    try:
-        # Import optimizers
-        from .hardware.m1_gpu_utils import get_m1_gpu_manager
-        from .hardware.m1_memory_optimizer import get_m1_memory_optimizer
-        from .hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-
-        # Get instances
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        cpu_optimizer = get_m1_cpu_optimizer()
-
-        # Clean up resources
-        if memory_optimizer and hasattr(memory_optimizer, 'stop_monitoring'):
-            memory_optimizer.stop_monitoring()
-
-        # Log cleanup
-        logger.info("🧠 M1 optimizers cleaned up successfully")
-
-        return True
-
-    except ImportError:
-        logger.warning("⚠️ M1 optimizers not available for cleanup")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Error during M1 optimizer cleanup: {e}")
-        return False
-
-def integrate_with_m1_optimizers() -> dict:
-    """Integrate with M1 GPU and CPU optimizers.
-
-    Returns:
-        Dictionary with integration status and component information
-    """
-    try:
-        # Import M1 utilities
-
-        # Initialize components
-        gpu_manager = get_m1_gpu_manager()
-        memory_optimizer = get_m1_memory_optimizer()
-        cpu_optimizer = get_m1_cpu_optimizer()
-
-        # Start memory monitoring
-        memory_optimizer.start_monitoring()
-
-        # Optimize numpy for M1
-        cpu_optimizer.optimize_numpy_operations()
-
-        # Log integration status
-        gpu_info = gpu_manager.get_gpu_info()
-        cpu_info = cpu_optimizer.get_cpu_info()
-
-        logger.info("🧠 M1 Integration Status:")
-        logger.info(f"   - M1 Hardware: {'✅ Available' if is_m1_available() else '❌ Not available'}")
-        logger.info(f"   - MPS (GPU): {'✅ Available' if is_mps_available() else '❌ Not available'}")
-        logger.info(f"   - Performance Cores: {cpu_info.get('performance_cores', 'Unknown')}")
-        logger.info(f"   - Memory Monitoring: ✅ Active")
-
-        return {
-            'integration_status': 'success',
-            'gpu_manager': is_mps_available(),
-            'memory_optimizer': True,
-            'cpu_optimizer': True,
-            'gpu_info': gpu_info,
-            'cpu_info': cpu_info,
-            'success': True
-        }
-
-    except ImportError as e:
-        logger.warning(f"⚠️ M1 utilities not available: {e}")
-        return {
-            'integration_status': 'failed',
-            'error': str(e),
-            'gpu_manager': False,
-            'memory_optimizer': False,
-            'cpu_optimizer': False,
-            'success': False
-        }
-    except Exception as e:
-        logger.error(f"❌ M1 integration failed: {e}")
-        return {
-            'integration_status': 'failed',
-            'error': str(e),
-            'gpu_manager': False,
-            'memory_optimizer': False,
-            'cpu_optimizer': False,
-            'success': False
-        }
-
-# Logging setup moved to top of file to avoid undefined logger errors
-
-# =============================================================================
-# LOGGING UTILITIES
-# =============================================================================
-
-def get_logger(name: str = None) -> logging.Logger:
-    """Get a logger instance."""
-    return logging.getLogger(name or __name__)
-
-def setup_basic_logging(level: int = logging.INFO) -> None:
-    """Setup basic logging configuration."""
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('app.log')
-        ]
-    )
-
-def safe_log_metric(name: str, value: float) -> None:
-    """Safely log metric with proper error handling."""
-    try:
-        logger.info(f"📊 Metric {name}: {value}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log metric {name}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging metric {name}: {e}")
-
-def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters with proper error handling."""
-    try:
-        logger.info(f"⚙️ Parameters: {params}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log parameters: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging parameters: {e}")
-
-def safe_log_artifact(name: str, path: str) -> None:
-    """Safely log artifact with proper error handling."""
-    try:
-        logger.info(f"📁 Artifact {name} saved to {path}")
-    except (AttributeError, TypeError) as e:
-        logger.debug(f"Failed to log artifact {name}: {e}")
-    except Exception as e:
-        logger.warning(f"Unexpected error logging artifact {name}: {e}")
-
-# =============================================================================
-# DATETIME UTILITIES
-# =============================================================================
-
-def get_current_datetime() -> datetime:
-    """Get current datetime."""
-    return datetime.now()
-
-def get_today() -> date:
-    """Get today's date."""
-    return date.today()
-
-def format_datetime(dt: datetime, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """Format datetime to string."""
-    return dt.strftime(format_str)
-
-def parse_datetime(dt_str: str, format_str: str = "%Y-%m-%d %H:%M:%S") -> datetime:
-    """Parse string to datetime."""
-    return datetime.strptime(dt_str, format_str)
-
-# =============================================================================
-# FILE AND DIRECTORY UTILITIES
-# =============================================================================
-
-def ensure_directory(path: Union[str, Path]) -> bool:
-    """Ensure directory exists with proper error handling."""
-    try:
-        Path(path).mkdir(parents=True, exist_ok=True)
-        return True
-    except PermissionError as e:
-        logger.error(f"❌ Permission denied creating directory {path}: {e}")
-        return False
-    except OSError as e:
-        logger.error(f"❌ OS error creating directory {path}: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Unexpected error creating directory {path}: {e}")
-        return False
-
-def safe_file_exists(path: Union[str, Path]) -> bool:
-    """Safely check if file exists with proper error handling."""
-    try:
-        return Path(path).exists()
-    except (OSError, PermissionError) as e:
-        logger.debug(f"Error checking file existence for {path}: {e}")
-        return False
-    except Exception as e:
-        logger.warning(f"Unexpected error checking file existence for {path}: {e}")
-        return False
-
-def safe_json_dump(data: Any, file_path: Union[str, Path], **kwargs) -> bool:
-    """Safely dump data to JSON file with proper error handling."""
-    try:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, **kwargs)
-        return True
-    except PermissionError as e:
-        logger.error(f"❌ Permission denied writing JSON to {file_path}: {e}")
-        return False
-    except OSError as e:
-        logger.error(f"❌ OS error writing JSON to {file_path}: {e}")
-        return False
-    except (TypeError, ValueError) as e:
-        logger.error(f"❌ Data serialization error writing JSON to {file_path}: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Error saving JSON to {file_path}: {e}")
-        return False
-
-def safe_json_load(file_path: Union[str, Path], default: Any = None) -> Any:
-    """Safely load JSON data from file with proper error handling."""
-    try:
-        if not safe_file_exists(file_path):
-            logger.debug(f"JSON file not found: {file_path}")
-            return default
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except PermissionError as e:
-        logger.error(f"❌ Permission denied reading JSON from {file_path}: {e}")
-        return default
-    except OSError as e:
-        logger.error(f"❌ OS error reading JSON from {file_path}: {e}")
-        return default
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        logger.error(f"❌ JSON parsing error in {file_path}: {e}")
-        return default
-    except Exception as e:
-        logger.error(f"❌ Unexpected error loading JSON from {file_path}: {e}")
-        return default
-
-# =============================================================================
-# DATAFRAME UTILITIES
-# =============================================================================
-
-def create_empty_dataframe(columns: List[str] = None) -> 'pd.DataFrame':
-    """Create an empty DataFrame with specified columns."""
-    if not PANDAS_AVAILABLE:
-        return None
-    return pd.DataFrame(columns=columns or [])
-
-def validate_dataframe(df: Any) -> bool:
-    """Validate DataFrame with proper type checking and error handling.
-
-    Args:
-        df: Object to validate as DataFrame
-
-    Returns:
-        bool: True if valid DataFrame, False otherwise
-    """
-    try:
-        if not PANDAS_AVAILABLE:
-            return False
-        if df is None:
-            logger.debug("DataFrame validation failed: df is None")
-            return False
-        if not PANDAS_AVAILABLE or not isinstance(df, pd.DataFrame):
-            logger.debug(f"DataFrame validation failed: not a DataFrame, got {type(df)}")
-            return False
-        if df.empty:
-            logger.debug("DataFrame validation failed: DataFrame is empty")
-            return False
-        return True
-    except AttributeError as e:
-        logger.debug(f"DataFrame validation failed - attribute error: {e}")
-        return False
-    except Exception as e:
-        logger.warning(f"Unexpected error during DataFrame validation: {e}")
-        return False
-
-def validate_dataframe_columns(df: 'pd.DataFrame', required_columns: List[str]) -> bool:
-    """Validate that DataFrame has required columns with enhanced error handling.
-
-    Args:
-        df: DataFrame to validate
-        required_columns: List of required column names
-
-    Returns:
-        bool: True if all required columns present, False otherwise
-    """
-    try:
-        if not PANDAS_AVAILABLE:
-            return False
-        if not validate_dataframe(df):
-            logger.warning("DataFrame validation failed before column validation")
-            return False
-
-        if not required_columns:
-            logger.debug("No required columns specified for validation")
-            return True
-
-        missing_columns = set(required_columns) - set(df.columns)
-        if missing_columns:
-            logger.warning(f"⚠️ Missing required columns: {sorted(missing_columns)}")
-            return False
-
-        logger.debug(f"✅ All required columns present: {sorted(required_columns)}")
-        return True
-    except AttributeError as e:
-        logger.error(f"❌ Attribute error validating DataFrame columns: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"❌ Unexpected error validating DataFrame columns: {e}")
-        return False
-
-def safe_dataframe_operation(df: pd.DataFrame, operation: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
-    """Safely perform operation on DataFrame with comprehensive error handling.
-
-    Args:
-        df: DataFrame to operate on
-        operation: Function to apply to DataFrame
-        *args: Positional arguments for operation
-        **kwargs: Keyword arguments for operation
-
-    Returns:
-        pd.DataFrame: Result of operation or original DataFrame on error
-    """
-    try:
-        if not validate_dataframe(df):
-            logger.warning("Cannot perform operation on invalid DataFrame")
-            return df if (PANDAS_AVAILABLE and isinstance(df, pd.DataFrame)) else (pd.DataFrame() if PANDAS_AVAILABLE else None)
-
-        result = operation(df, *args, **kwargs)
-
-        # Validate result is still a DataFrame
-        if not PANDAS_AVAILABLE or not isinstance(result, pd.DataFrame):
-            logger.warning(f"Operation {operation.__name__} did not return DataFrame, got {type(result)}")
-            return df
-
+        result = df.rolling(window=window, min_periods=min_periods).apply(func, **kwargs)
         return result
-    except (AttributeError, TypeError) as e:
-        logger.warning(f"⚠️ Error in DataFrame operation {operation.__name__}: {e}")
-        return df
     except Exception as e:
-        logger.error(f"❌ Unexpected error in DataFrame operation {operation.__name__}: {e}")
+        logger.warning(f"Rolling apply failed: {e}, returning original DataFrame")
         return df
 
-def safe_fillna(df: pd.DataFrame, value: Any = None, method: str = None) -> pd.DataFrame:
-    """Safely fill NaN values in DataFrame."""
-    try:
-        if method:
-            # Handle deprecated fillna methods
-            if method == 'forward':
-                method = 'ffill'
-            elif method == 'backward':
-                method = 'bfill'
-            return df.fillna(method=method)
-        return df.fillna(value)
-    except Exception as e:
-        logger.warning(f"⚠️ Error filling NaN values: {e}")
-        return df
-
-def safe_convert_dtypes(df: pd.DataFrame, dtype_mapping: Dict[str, str]) -> pd.DataFrame:
-    """Safely convert DataFrame column dtypes."""
-    try:
-        for col, dtype in dtype_mapping.items():
-            if col in df.columns:
-                df[col] = df[col].astype(dtype)
-        return df
-    except Exception as e:
-        logger.warning(f"⚠️ Error converting dtypes: {e}")
-        return df
-
-def safe_merge_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, **kwargs) -> pd.DataFrame:
-    """Safely merge two DataFrames."""
-    try:
-        return pd.merge(df1, df2, **kwargs)
-    except Exception as e:
-        logger.warning(f"⚠️ Error merging DataFrames: {e}")
-        return df1
-
-def safe_drop_columns(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-    """Safely drop columns from DataFrame."""
-    try:
-        existing_columns = [col for col in columns if col in df.columns]
-        return df.drop(columns=existing_columns)
-    except Exception as e:
-        logger.warning(f"⚠️ Error dropping columns: {e}")
-        return df
-
-def safe_rename_columns(df: pd.DataFrame, column_mapping: Dict[str, str]) -> pd.DataFrame:
-    """Safely rename DataFrame columns."""
-    try:
-        return df.rename(columns=column_mapping)
-    except Exception as e:
-        logger.warning(f"⚠️ Error renaming columns: {e}")
-        return df
-
-def validate_timestamp_column(df: pd.DataFrame, column: str) -> bool:
-    """Validate that column contains valid timestamps."""
-    try:
-        if column not in df.columns:
+def validate_dataframe(df: pd.DataFrame, 
+                      required_columns: Optional[List[str]] = None,
+                      min_rows: int = 1,
+                      allow_duplicates: bool = True) -> bool:
+    """Validate DataFrame structure and content."""
+    if df is None:
+        logger.error("DataFrame is None")
+        return False
+    
+    if df.empty:
+        logger.error("DataFrame is empty")
+        return False
+    
+    if len(df) < min_rows:
+        logger.error(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
+        return False
+    
+    if required_columns:
+        missing_cols = set(required_columns) - set(df.columns)
+        if missing_cols:
+            logger.error(f"Missing required columns: {missing_cols}")
             return False
-        pd.to_datetime(df[column])
-        return True
-    except Exception:
+    
+    if not allow_duplicates and df.duplicated().any():
+        logger.error("DataFrame contains duplicate rows")
         return False
+    
+    return True
 
-def safe_timestamp_conversion(df: pd.DataFrame, column: str) -> pd.DataFrame:
-    """Safely convert column to timestamp."""
+def clean_dataframe(df: pd.DataFrame, 
+                   drop_na_threshold: float = 0.5,
+                   remove_inf: bool = True) -> pd.DataFrame:
+    """Clean DataFrame by removing problematic values."""
+    df_clean = df.copy()
+    
+    # Remove columns with too many NaN values
+    if drop_na_threshold < 1.0:
+        threshold = int(len(df_clean) * drop_na_threshold)
+        df_clean = df_clean.dropna(axis=1, thresh=threshold)
+    
+    # Replace infinite values
+    if remove_inf:
+        df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
+    
+    return df_clean
+
+def resample_dataframe(df: pd.DataFrame, 
+                      freq: str, 
+                      method: str = 'mean') -> pd.DataFrame:
+    """Resample DataFrame to different frequency."""
+    if method == 'mean':
+        return df.resample(freq).mean()
+    elif method == 'sum':
+        return df.resample(freq).sum()
+    elif method == 'last':
+        return df.resample(freq).last()
+    elif method == 'first':
+        return df.resample(freq).first()
+    else:
+        raise ValueError(f"Unknown resampling method: {method}")
+
+def calculate_returns(prices: pd.Series, 
+                     method: str = 'simple',
+                     periods: int = 1) -> pd.Series:
+    """Calculate returns from price series."""
+    if method == 'simple':
+        return prices.pct_change(periods=periods)
+    elif method == 'log':
+        return np.log(prices / prices.shift(periods))
+    else:
+        raise ValueError(f"Unknown return method: {method}")
+
+def calculate_volatility(returns: pd.Series, 
+                        window: int = 20,
+                        annualized: bool = True) -> pd.Series:
+    """Calculate rolling volatility."""
+    vol = returns.rolling(window=window).std()
+    if annualized:
+        vol = vol * np.sqrt(252)  # Assuming daily data
+    return vol
+
+def calculate_sharpe_ratio(returns: pd.Series, 
+                          risk_free_rate: float = 0.0,
+                          window: int = 20) -> pd.Series:
+    """Calculate rolling Sharpe ratio."""
+    excess_returns = returns - risk_free_rate
+    mean_return = excess_returns.rolling(window=window).mean()
+    std_return = excess_returns.rolling(window=window).std()
+    return mean_return / std_return
+
+def calculate_max_drawdown(prices: pd.Series) -> pd.Series:
+    """Calculate maximum drawdown."""
+    peak = prices.expanding().max()
+    drawdown = (prices - peak) / peak
+    return drawdown
+
+def calculate_correlation_matrix(df: pd.DataFrame, 
+                                method: str = 'pearson') -> pd.DataFrame:
+    """Calculate correlation matrix with error handling."""
     try:
-        df[column] = pd.to_datetime(df[column])
-        return df
+        return df.corr(method=method)
     except Exception as e:
-        logger.warning(f"⚠️ Error converting timestamp column {column}: {e}")
-        return df
+        logger.warning(f"Correlation calculation failed: {e}")
+        return pd.DataFrame()
 
-def optimize_dataframe_dtypes(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame data types for memory efficiency."""
+def detect_outliers(series: pd.Series, 
+                   method: str = 'iqr',
+                   threshold: float = 1.5) -> pd.Series:
+    """Detect outliers in a series."""
+    if method == 'iqr':
+        Q1 = series.quantile(0.25)
+        Q3 = series.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - threshold * IQR
+        upper_bound = Q3 + threshold * IQR
+        return (series < lower_bound) | (series > upper_bound)
+    elif method == 'zscore':
+        z_scores = np.abs((series - series.mean()) / series.std())
+        return z_scores > threshold
+    else:
+        raise ValueError(f"Unknown outlier detection method: {method}")
+
+def remove_outliers(df: pd.DataFrame, 
+                   columns: Optional[List[str]] = None,
+                   method: str = 'iqr',
+                   threshold: float = 1.5) -> pd.DataFrame:
+    """Remove outliers from DataFrame."""
+    df_clean = df.copy()
+    
+    if columns is None:
+        columns = df_clean.select_dtypes(include=[np.number]).columns
+    
+    for col in columns:
+        outliers = detect_outliers(df_clean[col], method=method, threshold=threshold)
+        df_clean = df_clean[~outliers]
+    
+    return df_clean
+
+@contextmanager
+def memory_monitor(operation_name: str = "Operation"):
+    """Context manager to monitor memory usage during operations."""
+    start_memory = get_memory_usage()
+    start_time = time.time()
+    
+    logger.info(f"🚀 Starting {operation_name} - Memory: {start_memory['rss']:.1f}MB")
+    
     try:
-        for col in df.columns:
-            if df[col].dtype == 'object':
-                # Try to convert to numeric
-                try:
-                    df[col] = pd.to_numeric(df[col], downcast='integer')
-                except Exception as e:
-                    logger.debug(f"⚠️ Could not convert column '{col}' to integer: {e}")
-                    try:
-                        df[col] = pd.to_numeric(df[col], downcast='float')
-                    except Exception as e:
-                        logger.debug(f"⚠️ Could not convert column '{col}' to float: {e}")
-            elif df[col].dtype == 'int64':
-                df[col] = pd.to_numeric(df[col], downcast='integer')
-            elif df[col].dtype == 'float64':
-                df[col] = pd.to_numeric(df[col], downcast='float')
-        return df
+        yield
+    finally:
+        end_memory = get_memory_usage()
+        end_time = time.time()
+        
+        memory_diff = end_memory['rss'] - start_memory['rss']
+        time_diff = end_time - start_time
+        
+        logger.info(f"✅ Completed {operation_name} - "
+                   f"Memory: {end_memory['rss']:.1f}MB "
+                   f"(Δ{memory_diff:+.1f}MB), "
+                   f"Time: {time_diff:.2f}s")
+
+def force_garbage_collection():
+    """Force garbage collection to free memory."""
+    collected = gc.collect()
+    logger.debug(f"🗑️ Garbage collection freed {collected} objects")
+
+def safe_merge(left: pd.DataFrame, 
+               right: pd.DataFrame, 
+               how: str = 'inner',
+               **kwargs) -> pd.DataFrame:
+    """Safely merge DataFrames with error handling."""
+    try:
+        return pd.merge(left, right, how=how, **kwargs)
     except Exception as e:
-        logger.warning(f"⚠️ Error optimizing DataFrame dtypes: {e}")
-        return df
+        logger.error(f"Merge failed: {e}")
+        return left
 
-# =============================================================================
-# DATA QUALITY UTILITIES
-# =============================================================================
-
-def calculate_data_quality_metrics(df: pd.DataFrame) -> Dict[str, Any]:
-    """Calculate data quality metrics for DataFrame."""
+def safe_concat(dataframes: List[pd.DataFrame], 
+                axis: int = 0,
+                **kwargs) -> pd.DataFrame:
+    """Safely concatenate DataFrames with error handling."""
+    if not dataframes:
+        return pd.DataFrame()
+    
     try:
-        metrics = {
-            'total_rows': len(df),
-            'total_columns': len(df.columns),
-            'missing_values': df.isnull().sum().sum(),
-            'missing_percentage': (df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100,
-            'duplicate_rows': df.duplicated().sum(),
-            'duplicate_percentage': (df.duplicated().sum() / len(df)) * 100,
-            'numeric_columns': len(df.select_dtypes(include=[np.number]).columns),
-            'categorical_columns': len(df.select_dtypes(include=['object']).columns),
-            'datetime_columns': len(df.select_dtypes(include=['datetime64']).columns)
-        }
-        return metrics
+        return pd.concat(dataframes, axis=axis, **kwargs)
     except Exception as e:
-        logger.error(f"❌ Error calculating data quality metrics: {e}")
-        return {}
+        logger.error(f"Concatenation failed: {e}")
+        return dataframes[0] if dataframes else pd.DataFrame()
 
-def get_dataframe_info(df: pd.DataFrame) -> Dict[str, Any]:
-    """Get comprehensive DataFrame information."""
-    try:
-        info = {
-            'shape': df.shape,
-            'columns': list(df.columns),
-            'dtypes': df.dtypes.to_dict(),
-            'memory_usage': df.memory_usage(deep=True).sum(),
-            'index_type': type(df.index).__name__,
-            'has_duplicates': df.duplicated().any(),
-            'missing_values': df.isnull().sum().to_dict(),
-            'numeric_columns': list(df.select_dtypes(include=[np.number]).columns),
-            'categorical_columns': list(df.select_dtypes(include=['object']).columns),
-            'datetime_columns': list(df.select_dtypes(include=['datetime64']).columns)
-        }
-        return info
-    except Exception as e:
-        logger.error(f"❌ Error getting DataFrame info: {e}")
-        return {}
+def create_lagged_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          lags: List[int]) -> pd.DataFrame:
+    """Create lagged features for time series."""
+    df_lagged = df.copy()
+    
+    for col in columns:
+        for lag in lags:
+            df_lagged[f"{col}_lag_{lag}"] = df[col].shift(lag)
+    
+    return df_lagged
 
-def create_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
-    """Create comprehensive data quality report."""
-    try:
-        report = {
-            'basic_info': get_dataframe_info(df),
-            'quality_metrics': calculate_data_quality_metrics(df),
-            'issues': []
-        }
+def create_rolling_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          windows: List[int],
+                          functions: List[str] = ['mean', 'std', 'min', 'max']) -> pd.DataFrame:
+    """Create rolling window features."""
+    df_rolling = df.copy()
+    
+    for col in columns:
+        for window in windows:
+            for func in functions:
+                if func == 'mean':
+                    df_rolling[f"{col}_rolling_{func}_{window}"] = df[col].rolling(window=window).mean()
+                elif func == 'std':
+                    df_rolling[f"{col}_rolling_{func}_{window}"] = df[col].rolling(window=window).std()
+                elif func == 'min':
+                    df_rolling[f"{col}_rolling_{func}_{window}"] = df[col].rolling(window=window).min()
+                elif func == 'max':
+                    df_rolling[f"{col}_rolling_{func}_{window}"] = df[col].rolling(window=window).max()
+    
+    return df_rolling
 
-        # Check for common data quality issues
-        if report['quality_metrics']['missing_percentage'] > 50:
-            report['issues'].append("High percentage of missing values")
+def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate common technical indicators."""
+    df_tech = df.copy()
+    
+    if 'close' in df.columns:
+        # Simple Moving Averages
+        df_tech['sma_20'] = df['close'].rolling(window=20).mean()
+        df_tech['sma_50'] = df['close'].rolling(window=50).mean()
+        
+        # Exponential Moving Averages
+        df_tech['ema_12'] = df['close'].ewm(span=12).mean()
+        df_tech['ema_26'] = df['close'].ewm(span=26).mean()
+        
+        # MACD
+        df_tech['macd'] = df_tech['ema_12'] - df_tech['ema_26']
+        df_tech['macd_signal'] = df_tech['macd'].ewm(span=9).mean()
+        df_tech['macd_histogram'] = df_tech['macd'] - df_tech['macd_signal']
+        
+        # RSI
+        delta = df['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df_tech['rsi'] = 100 - (100 / (1 + rs))
+        
+        # Bollinger Bands
+        df_tech['bb_middle'] = df['close'].rolling(window=20).mean()
+        bb_std = df['close'].rolling(window=20).std()
+        df_tech['bb_upper'] = df_tech['bb_middle'] + (bb_std * 2)
+        df_tech['bb_lower'] = df_tech['bb_middle'] - (bb_std * 2)
+        df_tech['bb_width'] = df_tech['bb_upper'] - df_tech['bb_lower']
+        df_tech['bb_position'] = (df['close'] - df_tech['bb_lower']) / df_tech['bb_width']
+    
+    return df_tech
 
-        if report['quality_metrics']['duplicate_percentage'] > 10:
-            report['issues'].append("High percentage of duplicate rows")
-
-        if len(report['basic_info']['numeric_columns']) == 0:
-            report['issues'].append("No numeric columns found")
-
-        return report
-    except Exception as e:
-        logger.error(f"❌ Error creating data quality report: {e}")
-        return {}
-
-# =============================================================================
-# MATH UTILITIES
-# =============================================================================
-
-# safe_divide moved to base_utilities.py to avoid circular imports
-
-def safe_log(x: float, default: float = 0.0) -> float:
-    """Safely calculate logarithm."""
-    try:
-        return np.log(x) if x > 0 else default
-    except Exception:
-        return default
-
-def safe_sqrt(x: float, default: float = 0.0) -> float:
-    """Safely calculate square root."""
-    try:
-        return np.sqrt(x) if x >= 0 else default
-    except Exception:
-        return default
-
-def safe_power(x: float, y: float, default: float = 0.0) -> float:
-    """Safely calculate power."""
-    try:
-        return x ** y
-    except Exception:
-        return default
-
-def safe_mean(series: pd.Series) -> float:
-    """Safely calculate mean."""
-    try:
-        return float(series.mean())
-    except Exception:
-        return 0.0
-
-def safe_std(series: pd.Series) -> float:
-    """Safely calculate standard deviation."""
-    try:
-        return float(series.std())
-    except Exception:
-        return 0.0
-
-def safe_correlation(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], default: float = 0.0) -> float:
-    """Safely compute correlation between two vectors."""
-    try:
-        x_arr = np.asarray(x, dtype=float)
-        y_arr = np.asarray(y, dtype=float)
-
-        if x_arr.ndim > 1:
-            x_arr = x_arr.reshape(-1)
-        if y_arr.ndim > 1:
-            y_arr = y_arr.reshape(-1)
-
-        valid_len = min(x_arr.size, y_arr.size)
-        if valid_len < 2:
-            return default
-
-        x_arr = x_arr[:valid_len]
-        y_arr = y_arr[:valid_len]
-
-        if not np.isfinite(x_arr).all() or not np.isfinite(y_arr).all():
-            return default
-
-        corr_matrix = np.corrcoef(x_arr, y_arr)
-        corr_value = corr_matrix[0, 1]
-        if np.isfinite(corr_value):
-            return float(corr_value)
-    except Exception:
-        return default
-
-    return default
-
-def safe_float(value: Any, default: float = 0.0) -> float:
-    """Safely convert value to float."""
-    try:
-        return float(value)
-    except Exception:
-        return default
-
-def safe_int(value: Any, default: int = 0) -> int:
-    """Safely convert value to int."""
-    try:
-        return int(value)
-    except Exception:
-        return default
-
-# validate_finite moved to base_utilities.py to avoid circular imports
-
-def validate_positive(value: float, name: str = "value") -> float:
-    """Validate that a value is positive."""
-    if value <= 0:
-        raise ValueError(f"{name} must be positive, got {value}")
-    return value
-
-def validate_range(value: float, min_val: float = None, max_val: float = None, name: str = "value") -> float:
-    """Validate that a value is in range."""
-    if min_val is not None and value < min_val:
-        raise ValueError(f"{name} must be >= {min_val}, got {value}")
-    if max_val is not None and value > max_val:
-        raise ValueError(f"{name} must be <= {max_val}, got {value}")
-    return value
-
-def safe_kelly_calculation(win_rate: float, avg_win: float, avg_loss: float) -> float:
-    """Safely calculate Kelly criterion."""
-    try:
-        if avg_loss <= 0:
-            return 0.0
-        return (win_rate * avg_win - (1 - win_rate) * avg_loss) / avg_loss
-    except Exception:
-        return 0.0
-
-def safe_weighted_average(values: List[float], weights: List[float]) -> float:
-    """Safely calculate weighted average."""
-    try:
-        if not values or not weights or len(values) != len(weights):
-            return 0.0
-        total_weight = sum(weights)
-        if total_weight == 0:
-            return 0.0
-        return sum(v * w for v, w in zip(values, weights)) / total_weight
-    except Exception:
-        return 0.0
-
-# safe_percentage_change moved to base_utilities.py to avoid circular imports
-
-def optimize_memory_usage() -> Dict[str, Any]:
-    """
-    Optimize memory usage by leveraging matrix operations manager.
-
-    Returns:
-        Dictionary containing memory optimization statistics
-    """
-    try:
-        # Use lazy import to avoid circular dependency
-        import importlib
-        matrix_ops = importlib.import_module('src.utils.matrix_operations.convenience')
-        matrix_optimize = getattr(matrix_ops, 'optimize_memory_usage', None)
-        if matrix_optimize:
-            return matrix_optimize()
-        else:
-            raise ImportError("optimize_memory_usage not found")
-    except (ImportError, AttributeError) as e:
-        logger.warning(f"⚠️ VectorBTRollingOptimizer not available for memory optimization: {e}")
-        # Return a fallback dictionary
-        return {
-            'status': 'unavailable',
-            'message': 'Matrix operations module not available',
-            'memory_freed_mb': 0.0,
-            'success': False
-        }
-    except Exception as e:
-        logger.error(f"❌ Memory optimization failed: {e}")
-        return {
-            'status': 'failed',
-            'error': str(e),
-            'memory_freed_mb': 0.0,
-            'success': False
-        }
-
-def parallel_processing_optimizer(data: Any, operation: Callable, num_workers: int = None) -> Any:
-    """
-    Optimize parallel processing operations.
-
-    Args:
-        data: Data to process
-        operation: Operation to apply
-        num_workers: Number of parallel workers (None for auto-detection)
-
-    Returns:
-        Processed data
-    """
-    try:
-        import multiprocessing
-        if num_workers is None:
-            num_workers = max(1, multiprocessing.cpu_count() - 1)
-
-        # Use concurrent processing for large datasets
-        if hasattr(data, '__len__') and len(data) > 1000:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                results = list(executor.map(operation, data))
-            return results
-        else:
-            # For small datasets, direct processing is faster
-            return [operation(item) for item in data]
-    except Exception as e:
-        logger.warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
-        # Fallback to sequential processing
-        return [operation(item) for item in data]
-
-# =============================================================================
-# STRING UTILITIES
-# =============================================================================
-
-def safe_lower(s: str) -> str:
-    """Safely convert string to lowercase."""
-    try:
-        return s.lower()
-    except Exception:
-        return s
-
-def safe_upper(s: str) -> str:
-    """Safely convert string to uppercase."""
-    try:
-        return s.upper()
-    except Exception:
-        return s
-
-def safe_join(iterable: List[str], separator: str = " ") -> str:
-    """Safely join strings."""
-    try:
-        return separator.join(str(item) for item in iterable)
-    except Exception:
-        return ""
-
-# =============================================================================
-# COLLECTION UTILITIES
-# =============================================================================
-
-def safe_append(lst: List[Any], item: Any) -> bool:
-    """Safely append item to list."""
-    try:
-        lst.append(item)
-        return True
-    except Exception as e:
-        logger.warning(f"⚠️ Error appending to list: {e}")
-        return False
-
-def safe_extend(lst: List[Any], items: List[Any]) -> bool:
-    """Safely extend list with items."""
-    try:
-        lst.extend(items)
-        return True
-    except Exception as e:
-        logger.warning(f"⚠️ Error extending list: {e}")
-        return False
-
-def safe_dict_get(d: Dict[Any, Any], key: Any, default: Any = None) -> Any:
-    """Safely get value from dictionary."""
-    try:
-        return d.get(key, default)
-    except Exception:
-        return default
-
-def safe_dict_items(d: Dict[Any, Any]) -> List[tuple]:
-    """Safely get dictionary items."""
-    try:
-        return list(d.items())
-    except Exception:
-        return []
-
-# =============================================================================
-# ASYNC UTILITIES
-# =============================================================================
-
-def safe_sleep(seconds: float) -> None:
-    """Safely sleep for specified seconds."""
-    try:
-        time.sleep(seconds)
-    except Exception as e:
-        logger.warning(f"⚠️ Error during sleep: {e}")
-
-async def safe_gather(*coros) -> List[Any]:
-    """Safely gather async coroutines."""
-    try:
-        return await asyncio.gather(*coros)
-    except Exception as e:
-        logger.error(f"❌ Error in async gather: {e}")
-        return []
-
-def create_async_task(coro) -> asyncio.Task:
-    """Create async task."""
-    return asyncio.create_task(coro)
-
-# =============================================================================
-# PERFORMANCE UTILITIES
-# =============================================================================
-
-def timed_operation(func: Callable) -> Callable:
-    """Decorator to time operations."""
+def performance_timer(func: Callable) -> Callable:
+    """Decorator to time function execution."""
+    @wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.time()
         result = func(*args, **kwargs)
         end_time = time.time()
-        logger.info(f"⏱️ Operation {func.__name__} took {end_time - start_time:.2f} seconds")
+        logger.info(f"⏱️ {func.__name__} executed in {end_time - start_time:.4f} seconds")
         return result
     return wrapper
 
-def format_bytes(bytes_value: int) -> str:
-    """Format bytes to human readable string."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes_value < 1024.0:
-            return f"{bytes_value:.1f} {unit}"
-        bytes_value /= 1024.0
-    return f"{bytes_value:.1f} PB"
+def memory_efficient_apply(df: pd.DataFrame, 
+                          func: Callable, 
+                          chunk_size: int = 1000) -> pd.DataFrame:
+    """Apply function to DataFrame in chunks to manage memory."""
+    if len(df) <= chunk_size:
+        return func(df)
+    
+    results = []
+    for i in range(0, len(df), chunk_size):
+        chunk = df.iloc[i:i+chunk_size]
+        result_chunk = func(chunk)
+        results.append(result_chunk)
+        force_garbage_collection()
+    
+    return pd.concat(results, ignore_index=True)
 
-def chunked_iterable(iterable: List[Any], chunk_size: int):
-    """Yield chunks of iterable."""
-    for i in range(0, len(iterable), chunk_size):
-        yield iterable[i:i + chunk_size]
-
-def parallel_map(func: Callable, iterable: List[Any], max_workers: int = None) -> List[Any]:
-    """Apply function to iterable in parallel."""
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            return list(executor.map(func, iterable))
-    except Exception as e:
-        logger.error(f"❌ Error in parallel map: {e}")
-        return [func(item) for item in iterable]
-
-# =============================================================================
-# MATRIX UTILITIES
-# =============================================================================
-
-def validate_correlation_matrix(corr_matrix: np.ndarray) -> bool:
-    """Validate correlation matrix."""
-    try:
-        if not isinstance(corr_matrix, np.ndarray):
-            return False
-        if corr_matrix.ndim != 2:
-            return False
-        if corr_matrix.shape[0] != corr_matrix.shape[1]:
-            return False
-        # Check if all values are between -1 and 1
-        return np.all((corr_matrix >= -1) & (corr_matrix <= 1))
-    except Exception:
+def validate_time_series(df: pd.DataFrame, 
+                        time_column: str = 'timestamp') -> bool:
+    """Validate time series DataFrame."""
+    if time_column not in df.columns:
+        logger.error(f"Time column '{time_column}' not found")
         return False
-
-def safe_matrix_inverse(matrix: np.ndarray) -> np.ndarray:
-    """Safely calculate matrix inverse."""
-    try:
-        return np.linalg.inv(matrix)
-    except np.linalg.LinAlgError:
-        # Use pseudo-inverse if regular inverse fails
-        return np.linalg.pinv(matrix)
-    except Exception:
-        return np.eye(matrix.shape[0])
-
-def math_safe(func: Callable, *args, default: Any = 0.0, **kwargs) -> Any:
-    """Safely execute math function."""
-    try:
-        return func(*args, **kwargs)
-    except Exception:
-        return default
-
-# =============================================================================
-# EXCEPTIONS
-# =============================================================================
-
-class MathValidationError(Exception):
-    """Exception raised for math validation errors."""
-    pass
-
-# =============================================================================
-# CONVENIENCE FUNCTIONS
-# =============================================================================
-
-def safe_rolling(series: pd.Series, window: int, **kwargs) -> pd.Series:
-    """Safely apply rolling operation."""
-    try:
-        return series.rolling(window=window, **kwargs)
-    except Exception as e:
-        logger.warning(f"⚠️ Error in rolling operation: {e}")
-        return series
-
-def safe_groupby_operation(df: pd.DataFrame, group_cols: List[str], agg_dict: Dict[str, str]) -> pd.DataFrame:
-    """Safely perform groupby operation."""
-    try:
-        return df.groupby(group_cols).agg(agg_dict)
-    except Exception as e:
-        logger.warning(f"⚠️ Error in groupby operation: {e}")
-        return df
-
-def safe_apply_function(df: pd.DataFrame, func: Callable, axis: int = 0) -> pd.DataFrame:
-    """Safely apply function to DataFrame."""
-    try:
-        return df.apply(func, axis=axis)
-    except Exception as e:
-        logger.warning(f"⚠️ Error applying function: {e}")
-        return df
-
-def safe_filter_dataframe(df: pd.DataFrame, condition: str) -> pd.DataFrame:
-    """Safely filter DataFrame using query condition."""
-    try:
-        return df.query(condition)
-    except Exception as e:
-        logger.warning(f"⚠️ Error filtering DataFrame: {e}")
-        return df
-
-def create_summary_statistics(df: pd.DataFrame) -> Dict[str, Any]:
-    """Create summary statistics for DataFrame."""
-    try:
-        summary = {
-            'shape': df.shape,
-            'dtypes': df.dtypes.to_dict(),
-            'memory_usage': df.memory_usage(deep=True).sum(),
-            'numeric_summary': df.describe().to_dict() if len(df.select_dtypes(include=[np.number]).columns) > 0 else {},
-            'missing_values': df.isnull().sum().to_dict(),
-            'unique_values': df.nunique().to_dict()
-        }
-        return summary
-    except Exception as e:
-        logger.error(f"❌ Error creating summary statistics: {e}")
-        return {}
-
-def safe_to_parquet(df: pd.DataFrame, file_path: Union[str, Path], **kwargs) -> bool:
-    """Safely save DataFrame to parquet format."""
-    try:
-        if isinstance(file_path, str):
-            file_path = Path(file_path)
-
-        # Ensure directory exists
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Save to parquet
-        df.to_parquet(file_path, **kwargs)
-        logger.info(f"✅ Successfully saved DataFrame to {file_path}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error saving DataFrame to parquet {file_path}: {e}")
+    
+    if not pd.api.types.is_datetime64_any_dtype(df[time_column]):
+        logger.error(f"Time column '{time_column}' is not datetime type")
         return False
-
-def _parquet_reader_worker(file_path: str, kwargs: Dict[str, Any], conn) -> None:
-    """Worker process entry point to read parquet safely."""
-    try:
-        import pandas as pd  # Local import for subprocess isolation
-
-        df = pd.read_parquet(file_path, **kwargs)
-        conn.send(("success", df))
-    except Exception as exc:  # pragma: no cover - defensive
-        conn.send(("error", repr(exc)))
-    finally:
-        conn.close()
-
-
-def read_parquet_safe(file_path: Union[str, Path], **kwargs) -> Optional[pd.DataFrame]:
-    """Safely read DataFrame from parquet format with proper None/empty checking."""
-    try:
-        df = pd.read_parquet(file_path, **kwargs)
-        if df is None or df.empty:
-            return None
-        return df
-    except Exception as e:
-        logger.exception(f"❌ Read failed for {file_path}: {e}")
-        return None
-
-
-# safe_read_parquet moved to base_utilities.py to avoid circular imports
-
-def list_parquet_files(directory: Union[str, Path]) -> List[Path]:
-    """List all parquet files in a directory."""
-    try:
-        if isinstance(directory, str):
-            directory = Path(directory)
-
-        if not directory.exists():
-            logger.warning(f"⚠️ Directory does not exist: {directory}")
-            return []
-
-        parquet_files = list(directory.glob("**/*.parquet"))
-        logger.info(f"✅ Found {len(parquet_files)} parquet files in {directory}")
-        return parquet_files
-    except Exception as e:
-        logger.error(f"❌ Error listing parquet files in {directory}: {e}")
-        return []
-
-def get_latest_outcome_file(pattern: str = "market_analysis_optimal_regime_clustering_outcome_*.json") -> Optional[Path]:
-    """Get the latest outcome file matching the given pattern from outcomes/ directory.
-
-    Args:
-        pattern: File pattern to search for (default: optimal regime clustering outcomes)
-
-    Returns:
-        Path to the latest file matching the pattern, or None if no files found
-    """
-    try:
-        outcomes_dir = Path("outcomes")
-        if not outcomes_dir.exists():
-            logger.warning(f"⚠️ Outcomes directory does not exist: {outcomes_dir}")
-            return None
-
-        # Find files matching the pattern
-        matching_files = list(outcomes_dir.glob(pattern))
-
-        if not matching_files:
-            logger.warning(f"⚠️ No files found matching pattern: {pattern}")
-            return None
-
-        # Sort by modification time (latest first)
-        matching_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-
-        latest_file = matching_files[0]
-        logger.info(f"✅ Found latest outcome file: {latest_file}")
-        return latest_file
-
-    except Exception as e:
-        logger.error(f"❌ Error finding latest outcome file with pattern {pattern}: {e}")
-        return None
-
-def load_latest_optimal_regime_clustering_outcome() -> Optional[Dict[str, Any]]:
-    """Load the latest optimal regime clustering outcome file.
-
-    Returns:
-        Dictionary containing the outcome data, or None if loading fails
-    """
-    try:
-        latest_file = get_latest_outcome_file("market_analysis_optimal_regime_clustering_outcome_*.json")
-
-        if not latest_file:
-            logger.warning("⚠️ No optimal regime clustering outcome file found")
-            return None
-
-        outcome_data = safe_json_load(latest_file)
-        if outcome_data:
-            logger.info(f"✅ Loaded optimal regime clustering outcome from {latest_file}")
-            return outcome_data
-        else:
-            logger.warning(f"⚠️ Failed to load outcome data from {latest_file}")
-            return None
-
-    except Exception as e:
-        logger.error(f"❌ Error loading latest optimal regime clustering outcome: {e}")
-        return None
-
-def safe_copy(src: Union[str, Path], dst: Union[str, Path]) -> bool:
-    """Safely copy a file from source to destination."""
-    try:
-        import shutil
-
-        if isinstance(src, str):
-            src = Path(src)
-        if isinstance(dst, str):
-            dst = Path(dst)
-
-        if not src.exists():
-            logger.warning(f"⚠️ Source file does not exist: {src}")
-            return False
-
-        # Ensure destination directory exists
-        dst.parent.mkdir(parents=True, exist_ok=True)
-
-        shutil.copy2(src, dst)
-        logger.info(f"✅ Successfully copied {src} to {dst}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error copying {src} to {dst}: {e}")
+    
+    if df[time_column].isna().any():
+        logger.error("Time column contains NaN values")
         return False
+    
+    if df[time_column].duplicated().any():
+        logger.error("Time column contains duplicate values")
+        return False
+    
+    return True
 
-def safe_deepcopy(obj: Any) -> Any:
-    """Safely create a deep copy of an object."""
-    try:
-        import copy
-        return copy.deepcopy(obj)
-    except Exception as e:
-        logger.warning(f"⚠️ Deep copy failed: {e}, returning original object")
-        return obj
-
-def safe_resample(df: pd.DataFrame, rule: str, agg_dict: Optional[Dict[str, str]] = None) -> pd.DataFrame:
-    """Safely resample a DataFrame with error handling."""
-    try:
-        if agg_dict is None:
-            # Default aggregation for time series data
-            agg_dict = {
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }
-
-        resampled = df.resample(rule).agg(agg_dict)
-
-        # Remove any columns that are all NaN
-        resampled = resampled.dropna(axis=1, how='all')
-
-        logger.info(f"✅ Successfully resampled DataFrame from {len(df)} to {len(resampled)} rows")
-        return resampled
-
-    except Exception as e:
-        logger.error(f"❌ Error resampling DataFrame: {e}")
+def resample_to_frequency(df: pd.DataFrame, 
+                         freq: str, 
+                         time_column: str = 'timestamp',
+                         method: str = 'mean') -> pd.DataFrame:
+    """Resample time series to specified frequency."""
+    if not validate_time_series(df, time_column):
         return df
+    
+    df_resampled = df.set_index(time_column).resample(freq)
+    
+    if method == 'mean':
+        return df_resampled.mean().reset_index()
+    elif method == 'sum':
+        return df_resampled.sum().reset_index()
+    elif method == 'last':
+        return df_resampled.last().reset_index()
+    elif method == 'first':
+        return df_resampled.first().reset_index()
+    else:
+        raise ValueError(f"Unknown resampling method: {method}")
 
-def align_dataframes(*dfs: pd.DataFrame, method: str = "inner") -> List[pd.DataFrame]:
-    """Align multiple DataFrames by index using specified join method."""
-    try:
-        if not dfs:
-            return []
+def calculate_rolling_statistics(df: pd.DataFrame, 
+                               columns: List[str],
+                               windows: List[int],
+                               statistics: List[str] = ['mean', 'std', 'min', 'max', 'skew', 'kurt']) -> pd.DataFrame:
+    """Calculate comprehensive rolling statistics."""
+    df_stats = df.copy()
+    
+    for col in columns:
+        if col not in df.columns:
+            continue
+            
+        for window in windows:
+            for stat in statistics:
+                if stat == 'mean':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).mean()
+                elif stat == 'std':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).std()
+                elif stat == 'min':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).min()
+                elif stat == 'max':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).max()
+                elif stat == 'skew':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).skew()
+                elif stat == 'kurt':
+                    df_stats[f"{col}_{stat}_{window}"] = df[col].rolling(window=window).kurt()
+    
+    return df_stats
 
-        if len(dfs) == 1:
-            return list(dfs)
+def safe_feature_engineering(df: pd.DataFrame, 
+                            operations: List[Callable],
+                            **kwargs) -> pd.DataFrame:
+    """Safely apply feature engineering operations."""
+    df_engineered = df.copy()
+    
+    for operation in operations:
+        try:
+            df_engineered = operation(df_engineered, **kwargs)
+        except Exception as e:
+            logger.warning(f"Feature engineering operation failed: {e}")
+            continue
+    
+    return df_engineered
 
-        # Use the first DataFrame as the reference
-        reference_df = dfs[0]
+def create_interaction_features(df: pd.DataFrame, 
+                              columns: List[str],
+                              max_degree: int = 2) -> pd.DataFrame:
+    """Create polynomial interaction features."""
+    df_interactions = df.copy()
+    
+    for i, col1 in enumerate(columns):
+        for j, col2 in enumerate(columns[i:], i):
+            if col1 != col2:
+                # Linear interaction
+                df_interactions[f"{col1}_x_{col2}"] = df[col1] * df[col2]
+                
+                # Quadratic terms if max_degree >= 2
+                if max_degree >= 2:
+                    df_interactions[f"{col1}_squared"] = df[col1] ** 2
+                    df_interactions[f"{col2}_squared"] = df[col2] ** 2
+    
+    return df_interactions
 
-        aligned_dfs = [reference_df]
+def calculate_cross_correlations(df: pd.DataFrame, 
+                               columns: List[str],
+                               max_lags: int = 10) -> pd.DataFrame:
+    """Calculate cross-correlations between columns."""
+    correlations = []
+    
+    for i, col1 in enumerate(columns):
+        for j, col2 in enumerate(columns[i+1:], i+1):
+            if col1 in df.columns and col2 in df.columns:
+                corr_data = []
+                for lag in range(-max_lags, max_lags + 1):
+                    if lag == 0:
+                        corr = df[col1].corr(df[col2])
+                    elif lag > 0:
+                        corr = df[col1].corr(df[col2].shift(lag))
+                    else:
+                        corr = df[col1].shift(-lag).corr(df[col2])
+                    
+                    corr_data.append({
+                        'col1': col1,
+                        'col2': col2,
+                        'lag': lag,
+                        'correlation': corr
+                    })
+                
+                correlations.extend(corr_data)
+    
+    return pd.DataFrame(correlations)
 
-        for df in dfs[1:]:
-            if method == "inner":
-                aligned = reference_df.join(df, how="inner")
-            elif method == "outer":
-                aligned = reference_df.join(df, how="outer")
-            elif method == "left":
-                aligned = reference_df.join(df, how="left")
-            elif method == "right":
-                aligned = reference_df.join(df, how="right")
+def detect_regime_changes(df: pd.DataFrame, 
+                         column: str,
+                         window: int = 50,
+                         threshold: float = 2.0) -> pd.Series:
+    """Detect regime changes using rolling statistics."""
+    if column not in df.columns:
+        return pd.Series(False, index=df.index)
+    
+    rolling_mean = df[column].rolling(window=window).mean()
+    rolling_std = df[column].rolling(window=window).std()
+    
+    # Z-score based regime detection
+    z_scores = (df[column] - rolling_mean) / rolling_std
+    regime_changes = np.abs(z_scores) > threshold
+    
+    return regime_changes
+
+def create_momentum_features(df: pd.DataFrame, 
+                           price_column: str = 'close',
+                           periods: List[int] = [5, 10, 20, 50]) -> pd.DataFrame:
+    """Create momentum-based features."""
+    df_momentum = df.copy()
+    
+    if price_column not in df.columns:
+        return df_momentum
+    
+    for period in periods:
+        # Price momentum
+        df_momentum[f"momentum_{period}"] = df[price_column].pct_change(period)
+        
+        # Rate of change
+        df_momentum[f"roc_{period}"] = (df[price_column] / df[price_column].shift(period) - 1) * 100
+        
+        # Moving average convergence/divergence
+        if period > 1:
+            short_ma = df[price_column].rolling(window=period//2).mean()
+            long_ma = df[price_column].rolling(window=period).mean()
+            df_momentum[f"macd_{period}"] = short_ma - long_ma
+    
+    return df_momentum
+
+def calculate_volatility_features(df: pd.DataFrame, 
+                                price_column: str = 'close',
+                                windows: List[int] = [10, 20, 50]) -> pd.DataFrame:
+    """Calculate volatility-based features."""
+    df_vol = df.copy()
+    
+    if price_column not in df.columns:
+        return df_vol
+    
+    returns = df[price_column].pct_change()
+    
+    for window in windows:
+        # Rolling volatility
+        df_vol[f"volatility_{window}"] = returns.rolling(window=window).std()
+        
+        # Parkinson volatility (using high-low if available)
+        if 'high' in df.columns and 'low' in df.columns:
+            hl_vol = np.log(df['high'] / df['low']) ** 2
+            df_vol[f"parkinson_vol_{window}"] = np.sqrt(hl_vol.rolling(window=window).mean() / (4 * np.log(2)))
+        
+        # Garman-Klass volatility
+        if all(col in df.columns for col in ['high', 'low', 'open', 'close']):
+            gk_vol = 0.5 * np.log(df['high'] / df['low']) ** 2 - (2 * np.log(2) - 1) * np.log(df['close'] / df['open']) ** 2
+            df_vol[f"gk_vol_{window}"] = np.sqrt(gk_vol.rolling(window=window).mean())
+    
+    return df_vol
+
+def create_volume_features(df: pd.DataFrame, 
+                          volume_column: str = 'volume',
+                          price_column: str = 'close',
+                          windows: List[int] = [10, 20, 50]) -> pd.DataFrame:
+    """Create volume-based features."""
+    df_vol = df.copy()
+    
+    if volume_column not in df.columns or price_column not in df.columns:
+        return df_vol
+    
+    for window in windows:
+        # Volume moving average
+        df_vol[f"volume_ma_{window}"] = df[volume_column].rolling(window=window).mean()
+        
+        # Volume ratio
+        df_vol[f"volume_ratio_{window}"] = df[volume_column] / df_vol[f"volume_ma_{window}"]
+        
+        # Price-volume trend
+        df_vol[f"pvt_{window}"] = (df[price_column].pct_change() * df[volume_column]).rolling(window=window).sum()
+        
+        # On-balance volume
+        price_change = df[price_column].diff()
+        obv = np.where(price_change > 0, df[volume_column], 
+                      np.where(price_change < 0, -df[volume_column], 0))
+        df_vol[f"obv_{window}"] = pd.Series(obv).rolling(window=window).sum()
+    
+    return df_vol
+
+def create_cyclical_features(df: pd.DataFrame, 
+                           time_column: str = 'timestamp',
+                           periods: List[str] = ['day', 'week', 'month', 'quarter']) -> pd.DataFrame:
+    """Create cyclical time-based features."""
+    df_cyclical = df.copy()
+    
+    if time_column not in df.columns:
+        return df_cyclical
+    
+    if not pd.api.types.is_datetime64_any_dtype(df[time_column]):
+        df[time_column] = pd.to_datetime(df[time_column])
+    
+    dt = df[time_column].dt
+    
+    for period in periods:
+        if period == 'day':
+            df_cyclical['day_sin'] = np.sin(2 * np.pi * dt.dayofyear / 365.25)
+            df_cyclical['day_cos'] = np.cos(2 * np.pi * dt.dayofyear / 365.25)
+        elif period == 'week':
+            df_cyclical['week_sin'] = np.sin(2 * np.pi * dt.dayofweek / 7)
+            df_cyclical['week_cos'] = np.cos(2 * np.pi * dt.dayofweek / 7)
+        elif period == 'month':
+            df_cyclical['month_sin'] = np.sin(2 * np.pi * dt.month / 12)
+            df_cyclical['month_cos'] = np.cos(2 * np.pi * dt.month / 12)
+        elif period == 'quarter':
+            df_cyclical['quarter_sin'] = np.sin(2 * np.pi * dt.quarter / 4)
+            df_cyclical['quarter_cos'] = np.cos(2 * np.pi * dt.quarter / 4)
+    
+    return df_cyclical
+
+def create_lag_features(df: pd.DataFrame, 
+                       columns: List[str],
+                       lags: List[int] = [1, 2, 3, 5, 10, 20]) -> pd.DataFrame:
+    """Create lagged features for time series."""
+    df_lagged = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for lag in lags:
+                df_lagged[f"{col}_lag_{lag}"] = df[col].shift(lag)
+    
+    return df_lagged
+
+def create_lead_features(df: pd.DataFrame, 
+                        columns: List[str],
+                        leads: List[int] = [1, 2, 3, 5, 10, 20]) -> pd.DataFrame:
+    """Create lead features for time series (future values)."""
+    df_lead = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for lead in leads:
+                df_lead[f"{col}_lead_{lead}"] = df[col].shift(-lead)
+    
+    return df_lead
+
+def calculate_feature_importance_correlation(df: pd.DataFrame, 
+                                           target_column: str,
+                                           feature_columns: Optional[List[str]] = None) -> pd.DataFrame:
+    """Calculate correlation-based feature importance."""
+    if target_column not in df.columns:
+        return pd.DataFrame()
+    
+    if feature_columns is None:
+        feature_columns = [col for col in df.columns if col != target_column and df[col].dtype in ['float64', 'int64']]
+    
+    correlations = []
+    for col in feature_columns:
+        if col in df.columns:
+            corr = df[target_column].corr(df[col])
+            correlations.append({
+                'feature': col,
+                'correlation': corr,
+                'abs_correlation': abs(corr)
+            })
+    
+    importance_df = pd.DataFrame(correlations)
+    return importance_df.sort_values('abs_correlation', ascending=False)
+
+def detect_multicollinearity(df: pd.DataFrame, 
+                           threshold: float = 0.8) -> pd.DataFrame:
+    """Detect multicollinearity in features."""
+    numeric_df = df.select_dtypes(include=[np.number])
+    corr_matrix = numeric_df.corr().abs()
+    
+    # Find pairs with high correlation
+    high_corr_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i+1, len(corr_matrix.columns)):
+            if corr_matrix.iloc[i, j] > threshold:
+                high_corr_pairs.append({
+                    'feature1': corr_matrix.columns[i],
+                    'feature2': corr_matrix.columns[j],
+                    'correlation': corr_matrix.iloc[i, j]
+                })
+    
+    return pd.DataFrame(high_corr_pairs)
+
+def create_polynomial_features(df: pd.DataFrame, 
+                             columns: List[str],
+                             degree: int = 2) -> pd.DataFrame:
+    """Create polynomial features."""
+    df_poly = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for d in range(2, degree + 1):
+                df_poly[f"{col}_poly_{d}"] = df[col] ** d
+    
+    return df_poly
+
+def calculate_rolling_correlation(df: pd.DataFrame, 
+                                col1: str, 
+                                col2: str,
+                                window: int = 20) -> pd.Series:
+    """Calculate rolling correlation between two columns."""
+    if col1 not in df.columns or col2 not in df.columns:
+        return pd.Series()
+    
+    return df[col1].rolling(window=window).corr(df[col2])
+
+def create_ratio_features(df: pd.DataFrame, 
+                        numerator_cols: List[str],
+                        denominator_cols: List[str]) -> pd.DataFrame:
+    """Create ratio features between columns."""
+    df_ratios = df.copy()
+    
+    for num_col in numerator_cols:
+        for den_col in denominator_cols:
+            if num_col in df.columns and den_col in df.columns:
+                ratio_name = f"{num_col}_over_{den_col}"
+                df_ratios[ratio_name] = safe_divide(df[num_col], df[den_col])
+    
+    return df_ratios
+
+def calculate_rolling_quantiles(df: pd.DataFrame, 
+                              columns: List[str],
+                              window: int = 20,
+                              quantiles: List[float] = [0.25, 0.5, 0.75]) -> pd.DataFrame:
+    """Calculate rolling quantiles for specified columns."""
+    df_quantiles = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for q in quantiles:
+                df_quantiles[f"{col}_q{int(q*100)}_{window}"] = df[col].rolling(window=window).quantile(q)
+    
+    return df_quantiles
+
+def create_difference_features(df: pd.DataFrame, 
+                             columns: List[str],
+                             periods: List[int] = [1, 2, 3, 5, 10]) -> pd.DataFrame:
+    """Create difference features (current - lagged)."""
+    df_diff = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for period in periods:
+                df_diff[f"{col}_diff_{period}"] = df[col] - df[col].shift(period)
+    
+    return df_diff
+
+def calculate_rolling_skewness_kurtosis(df: pd.DataFrame, 
+                                      columns: List[str],
+                                      window: int = 20) -> pd.DataFrame:
+    """Calculate rolling skewness and kurtosis."""
+    df_skew_kurt = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            df_skew_kurt[f"{col}_skew_{window}"] = df[col].rolling(window=window).skew()
+            df_skew_kurt[f"{col}_kurt_{window}"] = df[col].rolling(window=window).kurt()
+    
+    return df_skew_kurt
+
+def create_interaction_terms(df: pd.DataFrame, 
+                           columns: List[str],
+                           max_interactions: int = 10) -> pd.DataFrame:
+    """Create interaction terms between columns."""
+    df_interactions = df.copy()
+    
+    interaction_count = 0
+    for i, col1 in enumerate(columns):
+        for j, col2 in enumerate(columns[i+1:], i+1):
+            if interaction_count >= max_interactions:
+                break
+            if col1 in df.columns and col2 in df.columns:
+                df_interactions[f"{col1}_x_{col2}"] = df[col1] * df[col2]
+                interaction_count += 1
+    
+    return df_interactions
+
+def calculate_rolling_rank(df: pd.DataFrame, 
+                          columns: List[str],
+                          window: int = 20) -> pd.DataFrame:
+    """Calculate rolling rank for columns."""
+    df_rank = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            df_rank[f"{col}_rank_{window}"] = df[col].rolling(window=window).rank(pct=True)
+    
+    return df_rank
+
+def create_binary_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          thresholds: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+    """Create binary features based on thresholds."""
+    df_binary = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            if thresholds and col in thresholds:
+                threshold = thresholds[col]
             else:
-                logger.warning(f"⚠️ Unknown join method: {method}, using inner")
-                aligned = reference_df.join(df, how="inner")
+                threshold = df[col].median()
+            
+            df_binary[f"{col}_binary"] = (df[col] > threshold).astype(int)
+    
+    return df_binary
 
-            aligned_dfs.append(aligned)
+def calculate_rolling_zscore(df: pd.DataFrame, 
+                           columns: List[str],
+                           window: int = 20) -> pd.DataFrame:
+    """Calculate rolling z-scores for columns."""
+    df_zscore = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            rolling_mean = df[col].rolling(window=window).mean()
+            rolling_std = df[col].rolling(window=window).std()
+            df_zscore[f"{col}_zscore_{window}"] = (df[col] - rolling_mean) / rolling_std
+    
+    return df_zscore
 
-        logger.info(f"✅ Successfully aligned {len(dfs)} DataFrames using {method} join")
-        return aligned_dfs
+def create_categorical_encoding(df: pd.DataFrame, 
+                              columns: List[str],
+                              method: str = 'onehot') -> pd.DataFrame:
+    """Create categorical encodings."""
+    df_encoded = df.copy()
+    
+    for col in columns:
+        if col in df.columns and df[col].dtype == 'object':
+            if method == 'onehot':
+                dummies = pd.get_dummies(df[col], prefix=col)
+                df_encoded = pd.concat([df_encoded, dummies], axis=1)
+            elif method == 'label':
+                df_encoded[f"{col}_encoded"] = pd.Categorical(df[col]).codes
+            elif method == 'target':
+                # This would require target values, placeholder for now
+                df_encoded[f"{col}_target_encoded"] = df[col].astype('category').cat.codes
+    
+    return df_encoded
 
-    except Exception as e:
-        logger.error(f"❌ Error aligning DataFrames: {e}")
-        return list(dfs)
+def calculate_rolling_covariance(df: pd.DataFrame, 
+                               col1: str, 
+                               col2: str,
+                               window: int = 20) -> pd.Series:
+    """Calculate rolling covariance between two columns."""
+    if col1 not in df.columns or col2 not in df.columns:
+        return pd.Series()
+    
+    return df[col1].rolling(window=window).cov(df[col2])
 
-def validate_dataframe_schema(df: pd.DataFrame, required_columns: List[str]) -> bool:
-    """Validate that DataFrame has required columns."""
+def create_time_based_features(df: pd.DataFrame, 
+                             time_column: str = 'timestamp') -> pd.DataFrame:
+    """Create comprehensive time-based features."""
+    df_time = df.copy()
+    
+    if time_column not in df.columns:
+        return df_time
+    
+    if not pd.api.types.is_datetime64_any_dtype(df[time_column]):
+        df[time_column] = pd.to_datetime(df[time_column])
+    
+    dt = df[time_column].dt
+    
+    # Basic time features
+    df_time['year'] = dt.year
+    df_time['month'] = dt.month
+    df_time['day'] = dt.day
+    df_time['dayofweek'] = dt.dayofweek
+    df_time['dayofyear'] = dt.dayofyear
+    df_time['week'] = dt.isocalendar().week
+    df_time['quarter'] = dt.quarter
+    df_time['hour'] = dt.hour
+    df_time['minute'] = dt.minute
+    
+    # Cyclical features
+    df_time['month_sin'] = np.sin(2 * np.pi * dt.month / 12)
+    df_time['month_cos'] = np.cos(2 * np.pi * dt.month / 12)
+    df_time['day_sin'] = np.sin(2 * np.pi * dt.dayofyear / 365.25)
+    df_time['day_cos'] = np.cos(2 * np.pi * dt.dayofyear / 365.25)
+    df_time['hour_sin'] = np.sin(2 * np.pi * dt.hour / 24)
+    df_time['hour_cos'] = np.cos(2 * np.pi * dt.hour / 24)
+    
+    # Business day features
+    df_time['is_weekend'] = dt.dayofweek.isin([5, 6]).astype(int)
+    df_time['is_month_start'] = dt.is_month_start.astype(int)
+    df_time['is_month_end'] = dt.is_month_end.astype(int)
+    df_time['is_quarter_start'] = dt.is_quarter_start.astype(int)
+    df_time['is_quarter_end'] = dt.is_quarter_end.astype(int)
+    df_time['is_year_start'] = dt.is_year_start.astype(int)
+    df_time['is_year_end'] = dt.is_year_end.astype(int)
+    
+    return df_time
+
+def calculate_rolling_percentiles(df: pd.DataFrame, 
+                                columns: List[str],
+                                window: int = 20,
+                                percentiles: List[float] = [10, 25, 50, 75, 90]) -> pd.DataFrame:
+    """Calculate rolling percentiles for columns."""
+    df_percentiles = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for p in percentiles:
+                df_percentiles[f"{col}_p{int(p)}_{window}"] = df[col].rolling(window=window).quantile(p/100)
+    
+    return df_percentiles
+
+def create_moving_average_features(df: pd.DataFrame, 
+                                 columns: List[str],
+                                 windows: List[int] = [5, 10, 20, 50, 100]) -> pd.DataFrame:
+    """Create various moving average features."""
+    df_ma = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for window in windows:
+                # Simple Moving Average
+                df_ma[f"{col}_sma_{window}"] = df[col].rolling(window=window).mean()
+                
+                # Exponential Moving Average
+                df_ma[f"{col}_ema_{window}"] = df[col].ewm(span=window).mean()
+                
+                # Weighted Moving Average
+                weights = np.arange(1, window + 1)
+                df_ma[f"{col}_wma_{window}"] = df[col].rolling(window=window).apply(
+                    lambda x: np.average(x, weights=weights), raw=True
+                )
+                
+                # Hull Moving Average
+                wma_half = df[col].rolling(window=window//2).apply(
+                    lambda x: np.average(x, weights=np.arange(1, window//2 + 1)), raw=True
+                )
+                wma_full = df[col].rolling(window=window).apply(
+                    lambda x: np.average(x, weights=np.arange(1, window + 1)), raw=True
+                )
+                df_ma[f"{col}_hma_{window}"] = (2 * wma_half - wma_full).rolling(window=int(np.sqrt(window))).mean()
+    
+    return df_ma
+
+def calculate_rolling_regression(df: pd.DataFrame, 
+                               y_col: str, 
+                               x_col: str,
+                               window: int = 20) -> pd.DataFrame:
+    """Calculate rolling linear regression statistics."""
+    df_reg = df.copy()
+    
+    if y_col not in df.columns or x_col not in df.columns:
+        return df_reg
+    
+    def rolling_regression(y, x):
+        if len(y) < 2:
+            return np.nan, np.nan, np.nan
+        try:
+            slope, intercept = np.polyfit(x, y, 1)
+            r_squared = np.corrcoef(x, y)[0, 1] ** 2
+            return slope, intercept, r_squared
+        except:
+            return np.nan, np.nan, np.nan
+    
+    # Rolling regression
+    reg_results = df[[y_col, x_col]].rolling(window=window).apply(
+        lambda x: rolling_regression(x[y_col], x[x_col])[0], raw=False
+    )
+    
+    df_reg[f"{y_col}_vs_{x_col}_slope_{window}"] = reg_results[y_col]
+    df_reg[f"{y_col}_vs_{x_col}_r2_{window}"] = df[[y_col, x_col]].rolling(window=window).apply(
+        lambda x: rolling_regression(x[y_col], x[x_col])[2], raw=False
+    )[y_col]
+    
+    return df_reg
+
+def create_fourier_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          n_components: int = 5) -> pd.DataFrame:
+    """Create Fourier transform features."""
+    df_fourier = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            # FFT
+            fft = np.fft.fft(df[col].fillna(0))
+            fft_real = np.real(fft)
+            fft_imag = np.imag(fft)
+            
+            # Take first n_components
+            for i in range(min(n_components, len(fft_real))):
+                df_fourier[f"{col}_fft_real_{i}"] = fft_real[i]
+                df_fourier[f"{col}_fft_imag_{i}"] = fft_imag[i]
+    
+    return df_fourier
+
+def calculate_entropy_features(df: pd.DataFrame, 
+                             columns: List[str],
+                             window: int = 20) -> pd.DataFrame:
+    """Calculate entropy-based features."""
+    df_entropy = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            # Shannon entropy
+            def shannon_entropy(x):
+                if len(x) == 0:
+                    return np.nan
+                # Discretize data into bins
+                bins = np.histogram(x, bins=10)[0]
+                bins = bins[bins > 0]  # Remove zero bins
+                if len(bins) == 0:
+                    return 0
+                probabilities = bins / np.sum(bins)
+                return -np.sum(probabilities * np.log2(probabilities))
+            
+            df_entropy[f"{col}_entropy_{window}"] = df[col].rolling(window=window).apply(shannon_entropy, raw=True)
+    
+    return df_entropy
+
+def create_wavelet_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          wavelet: str = 'db4',
+                          levels: int = 3) -> pd.DataFrame:
+    """Create wavelet transform features."""
     try:
-        missing_columns = set(required_columns) - set(df.columns)
-        if missing_columns:
-            logger.error(f"❌ Missing required columns: {missing_columns}")
-            return False
-
-        logger.info(f"✅ DataFrame schema validation passed for {len(required_columns)} required columns")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Error validating DataFrame schema: {e}")
-        return False
-
-def validate_file_size(max_size_mb: int = 100):
-    """Decorator to validate file size."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Get file_path from kwargs if available
-            file_path = kwargs.get('file_path')
-            if file_path:
-                if isinstance(file_path, str):
-                    file_path = Path(file_path)
-
-                if not file_path.exists():
-                    logger.warning(f"⚠️ File does not exist: {file_path}")
-                    raise ValueError(f"File does not exist: {file_path}")
-
-                file_size_mb_actual = file_path.stat().st_size / (1024 * 1024)
-                if file_size_mb_actual > max_size_mb:
-                    logger.warning(f"⚠️ File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
-                    raise ValueError(f"File too large: {file_size_mb_actual:.2f}MB (max: {max_size_mb}MB)")
-
-                logger.info(f"✅ File size validation passed: {file_size_mb_actual:.2f}MB")
-
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-def guard_dataframe_nulls(df: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
-    """Guard against excessive null values in DataFrame."""
-    try:
-        if df is None:
-            logger.warning("⚠️ DataFrame is None")
-            return df
-
-        null_ratio = df.isnull().mean().mean()
-        if null_ratio > threshold:
-            logger.warning(f"⚠️ High null ratio: {null_ratio:.2%} (threshold: {threshold:.2%})")
-            # Fill with appropriate defaults
-            for col in df.columns:
-                if df[col].dtype in ['int64', 'float64']:
-                    df[col] = df[col].fillna(df[col].median() if not df[col].median() != df[col].median() else 0)
-                else:
-                    df[col] = df[col].fillna('')
-
-        logger.info(f"✅ DataFrame null guard passed with ratio: {null_ratio:.2%}")
+        import pywt
+    except ImportError:
+        logger.warning("PyWavelets not available, skipping wavelet features")
         return df
-    except Exception as e:
-        logger.error(f"❌ Error in null guard: {e}")
-        return df
-
-def secure_file_path(allowed_dirs: List[str] = None):
-    """Decorator to secure file paths."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Basic path security check
-            if 'file_path' in kwargs:
-                file_path = kwargs['file_path']
-                if isinstance(file_path, str):
-                    file_path = Path(file_path)
-                # Basic security - prevent access to parent directories
-                if '..' in str(file_path):
-                    logger.warning(f"⚠️ Potential path traversal attempt: {file_path}")
-                    raise ValueError("Path traversal not allowed")
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
-
-def with_tracing_span(span_name: str = None):
-    """Decorator for tracing spans."""
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            # Basic tracing - just log the function call
-            logger.info(f"🔍 Tracing span: {span_name or func.__name__}")
+    
+    df_wavelet = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
             try:
-                result = func(*args, **kwargs)
-                logger.info(f"✅ Tracing span completed: {span_name or func.__name__}")
-                return result
+                # Wavelet decomposition
+                coeffs = pywt.wavedec(df[col].fillna(0), wavelet, level=levels)
+                
+                # Extract features from coefficients
+                for i, coeff in enumerate(coeffs):
+                    if i == 0:  # Approximation coefficients
+                        df_wavelet[f"{col}_wavelet_approx_{i}"] = coeff[0] if len(coeff) > 0 else 0
+                    else:  # Detail coefficients
+                        df_wavelet[f"{col}_wavelet_detail_{i}"] = coeff[0] if len(coeff) > 0 else 0
+                        
             except Exception as e:
-                logger.error(f"❌ Tracing span failed: {span_name or func.__name__}: {e}")
-                raise
-        return wrapper
-    return decorator
+                logger.warning(f"Wavelet decomposition failed for {col}: {e}")
+                continue
+    
+    return df_wavelet
 
-def sanitize_string(s: str, max_length: int = 255) -> str:
-    """Sanitize string input."""
+def create_autocorrelation_features(df: pd.DataFrame, 
+                                  columns: List[str],
+                                  max_lags: int = 10) -> pd.DataFrame:
+    """Create autocorrelation features."""
+    df_autocorr = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            for lag in range(1, max_lags + 1):
+                df_autocorr[f"{col}_autocorr_{lag}"] = df[col].autocorr(lag=lag)
+    
+    return df_autocorr
+
+def calculate_rolling_information_ratio(df: pd.DataFrame, 
+                                      returns_col: str,
+                                      benchmark_col: str,
+                                      window: int = 20) -> pd.Series:
+    """Calculate rolling information ratio."""
+    if returns_col not in df.columns or benchmark_col not in df.columns:
+        return pd.Series()
+    
+    excess_returns = df[returns_col] - df[benchmark_col]
+    tracking_error = excess_returns.rolling(window=window).std()
+    mean_excess_return = excess_returns.rolling(window=window).mean()
+    
+    return mean_excess_return / tracking_error
+
+def create_regime_features(df: pd.DataFrame, 
+                         columns: List[str],
+                         window: int = 50,
+                         n_regimes: int = 3) -> pd.DataFrame:
+    """Create regime-based features using clustering."""
     try:
-        if not isinstance(s, str):
-            s = str(s)
-
-        # Remove potentially dangerous characters
-        import re
-        s = re.sub(r'[^\w\s\-_.]', '', s)
-
-        # Truncate if too long
-        if len(s) > max_length:
-            s = s[:max_length]
-
-        return s.strip()
-    except Exception as e:
-        logger.error(f"❌ Error sanitizing string: {e}")
-        return ""
-
-# =============================================================================
-# M1 OPTIMIZATION UTILITIES
-# =============================================================================
-
-def memory_checkpoint(name: str):
-    """Create a memory checkpoint context manager.
-
-    Args:
-        name: Name of the checkpoint for logging
-
-    Returns:
-        Context manager for memory checkpointing
-    """
-    from contextlib import contextmanager
-
-    @contextmanager
-    def _memory_checkpoint():
-        """Enhanced memory checkpoint with proper error handling and logging."""
-        # Try to get M1 memory optimizer with specific error handling
-        memory_optimizer = None
-        try:
-            memory_optimizer = get_m1_memory_optimizer()
-        except ImportError as e:
-            logger.debug(f"M1 memory optimizer not available: {e}")
-        except (AttributeError, RuntimeError) as e:
-            logger.warning(f"M1 memory optimizer initialization failed: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error getting M1 memory optimizer: {e}")
-
-        # Use memory checkpointing if available, otherwise just yield
-        if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
+        from sklearn.cluster import KMeans
+    except ImportError:
+        logger.warning("Scikit-learn not available, skipping regime features")
+        return df
+    
+    df_regime = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
             try:
-                with memory_optimizer.memory_checkpoint(name):
-                    yield
-            except AttributeError as e:
-                logger.warning(f"Memory checkpoint method not available: {e}")
-                yield  # Fallback: just yield without checkpointing
+                # Prepare data for clustering
+                data = df[col].rolling(window=window).mean().fillna(method='bfill').values.reshape(-1, 1)
+                
+                # K-means clustering
+                kmeans = KMeans(n_clusters=n_regimes, random_state=42)
+                regimes = kmeans.fit_predict(data)
+                
+                # Create regime features
+                df_regime[f"{col}_regime"] = regimes
+                df_regime[f"{col}_regime_distance"] = np.min(kmeans.transform(data), axis=1)
+                
             except Exception as e:
-                logger.error(f"Error during memory checkpointing: {e}")
-                raise  # Re-raise the exception to maintain proper error propagation
-        else:
-            # Fallback: just yield without checkpointing
-            logger.debug(f"Memory checkpointing not available for {name}, using fallback")
-            yield
+                logger.warning(f"Regime detection failed for {col}: {e}")
+                continue
+    
+    return df_regime
 
-    return _memory_checkpoint()
+def calculate_rolling_skewness_kurtosis_ratio(df: pd.DataFrame, 
+                                            columns: List[str],
+                                            window: int = 20) -> pd.DataFrame:
+    """Calculate rolling skewness to kurtosis ratio."""
+    df_skew_kurt_ratio = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            skewness = df[col].rolling(window=window).skew()
+            kurtosis = df[col].rolling(window=window).kurt()
+            df_skew_kurt_ratio[f"{col}_skew_kurt_ratio_{window}"] = skewness / (kurtosis + 1e-10)
+    
+    return df_skew_kurt_ratio
 
-def gpu_context(name: str):
-    """Create a GPU context manager.
+def create_fractal_features(df: pd.DataFrame, 
+                          columns: List[str],
+                          window: int = 20) -> pd.DataFrame:
+    """Create fractal dimension features."""
+    df_fractal = df.copy()
+    
+    for col in columns:
+        if col in df.columns:
+            def fractal_dimension(x):
+                if len(x) < 3:
+                    return np.nan
+                try:
+                    # Box-counting method for fractal dimension
+                    n = len(x)
+                    scales = np.logspace(0.5, np.log10(n/4), 10).astype(int)
+                    counts = []
+                    
+                    for scale in scales:
+                        boxes = np.ceil(n / scale)
+                        box_counts = []
+                        for i in range(0, n, scale):
+                            box_data = x[i:i+scale]
+                            if len(box_data) > 0:
+                                box_counts.append(np.max(box_data) - np.min(box_data))
+                        counts.append(np.sum(box_counts))
+                    
+                    # Linear regression in log space
+                    if len(counts) > 1:
+                        log_scales = np.log(scales)
+                        log_counts = np.log(counts)
+                        slope = np.polyfit(log_scales, log_counts, 1)[0]
+                        return -slope
+                    else:
+                        return np.nan
+                except:
+                    return np.nan
+            
+            df_fractal[f"{col}_fractal_dim_{window}"] = df[col].rolling(window=window).apply(fractal_dimension, raw=True)
+    
+    return df_fractal
 
-    Args:
-        name: Name of the context for logging
-
-    Returns:
-        Context manager for GPU operations
-    """
-
-    @contextmanager
-    def _gpu_context():
-        try:
-            # Try to get M1 GPU manager
-            gpu_manager = get_m1_gpu_manager()
-            if gpu_manager and hasattr(gpu_manager, 'gpu_context'):
-                with gpu_manager.gpu_context(name):
-                    yield
-            else:
-                # Fallback: just yield without GPU context
-                yield
-        except Exception:
-            # If anything fails, just yield without GPU context
-            yield
-
-    return _gpu_context()
-
-def optimize_memory() -> Dict[str, Any]:
-    """Optimize memory usage across the system.
-
-    Returns:
-        Dictionary with memory optimization results
-    """
-    try:
-        # Try to get M1 memory optimizer
-        memory_optimizer = get_m1_memory_optimizer()
-        if memory_optimizer and hasattr(memory_optimizer, 'optimize_memory'):
-            return memory_optimizer.optimize_memory()
-        else:
-            # Fallback: basic garbage collection
-            import gc
-            collected = gc.collect()
-            return {
-                'objects_collected': collected,
-                'method': 'fallback_gc',
-                'success': True
-            }
-    except Exception as e:
-        logger.warning(f"⚠️ Memory optimization failed: {e}")
-        return {
-            'error': str(e),
-            'method': 'failed',
-            'success': False
+def create_comprehensive_features(df: pd.DataFrame, 
+                                target_columns: List[str],
+                                time_column: Optional[str] = None,
+                                feature_config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """Create comprehensive feature set for time series data."""
+    if feature_config is None:
+        feature_config = {
+            'lags': [1, 2, 3, 5, 10, 20],
+            'rolling_windows': [5, 10, 20, 50],
+            'technical_indicators': True,
+            'cyclical_features': True,
+            'interaction_features': True,
+            'polynomial_degree': 2
         }
+    
+    df_features = df.copy()
+    
+    # Time-based features
+    if time_column and time_column in df.columns:
+        df_features = create_time_based_features(df_features, time_column)
+        if feature_config.get('cyclical_features', True):
+            df_features = create_cyclical_features(df_features, time_column)
+    
+    # Lag features
+    df_features = create_lag_features(df_features, target_columns, feature_config.get('lags', [1, 2, 3, 5, 10, 20]))
+    
+    # Rolling features
+    df_features = create_rolling_features(df_features, target_columns, feature_config.get('rolling_windows', [5, 10, 20, 50]))
+    
+    # Technical indicators
+    if feature_config.get('technical_indicators', True):
+        df_features = calculate_technical_indicators(df_features)
+        df_features = create_momentum_features(df_features)
+        df_features = calculate_volatility_features(df_features)
+    
+    # Interaction features
+    if feature_config.get('interaction_features', True):
+        df_features = create_interaction_terms(df_features, target_columns)
+        df_features = create_ratio_features(df_features, target_columns, target_columns)
+    
+    # Polynomial features
+    if feature_config.get('polynomial_degree', 0) > 1:
+        df_features = create_polynomial_features(df_features, target_columns, feature_config['polynomial_degree'])
+    
+    return df_features
 
-def get_system_memory_usage() -> int:
-    """Get current system memory usage in bytes.
-
-    Returns:
-        Current system memory usage in bytes
-    """
-    if psutil is None:
-        return 0
-    try:
-        return psutil.virtual_memory().used
-    except Exception as e:
-        logger.warning(f"⚠️ Error getting system memory usage: {e}")
-        return 0
-
-# VectorBT availability flag (pandas-based fallbacks used instead)
-VECTORBT_AVAILABLE = False
-vbt = None
-cp = None
-
-# Define rolling/statistical helper functions using pandas/numpy implementations
-def rolling_mean(series, window, **kwargs):
-    return series.rolling(window, **kwargs).mean()
-
-
-def rolling_std(series, window, **kwargs):
-    return series.rolling(window, **kwargs).std()
-
-
-def rolling_var(series, window, **kwargs):
-    return series.rolling(window, **kwargs).var()
-
-
-def rolling_min(series, window, **kwargs):
-    return series.rolling(window, **kwargs).min()
-
-
-def rolling_max(series, window, **kwargs):
-    return series.rolling(window, **kwargs).max()
-
-
-def rolling_sum(series, window, **kwargs):
-    return series.rolling(window, **kwargs).sum()
-
-
-def rolling_apply(series, window, func, **kwargs):
-    return series.rolling(window, **kwargs).apply(func)
-
-
-def rolling_corr(series, other, window, **kwargs):
-    return series.rolling(window, **kwargs).corr(other)
-
-
-def rolling_cov(series, other, window, **kwargs):
-    return series.rolling(window, **kwargs).cov(other)
-
-
-def scale(series, **kwargs):
-    std = series.std()
-    return (series - series.mean()) / std if std not in (0, None) else series * 0
-
-
-def rank(series, **kwargs):
-    return series.rank(**kwargs)
-
-
-def zscore(series, **kwargs):
-    std = series.std()
-    return (series - series.mean()) / std if std not in (0, None) else series * 0
-
-
-def winsorize(series, limits=(0.05, 0.05), **kwargs):
-    try:
-        from scipy.stats import mstats
-        return pd.Series(mstats.winsorize(series, limits=limits), index=series.index)
-    except Exception:
-        lower, upper = limits
-        return series.clip(lower=series.quantile(lower), upper=series.quantile(1 - upper))
-
-
-def clip(series, lower=None, upper=None, **kwargs):
-    return series.clip(lower=lower, upper=upper, **kwargs)
-
-
-def quantile(series, q, **kwargs):
-    return series.quantile(q, **kwargs)
-
-def get_memory_usage() -> float:
-    """Get current memory usage in bytes."""
-    if psutil is None:
-        logger.warning("⚠️ psutil not available for memory monitoring")
-        return 0.0
-    try:
-        return psutil.Process().memory_info().rss
-    except Exception as e:
-        logger.warning(f"⚠️ Error getting memory usage: {e}")
-        return 0.0
-
-# validate_file_path moved to base_utilities.py to avoid circular imports
-
-def get_file_size(file_path: Union[str, Path]) -> int:
-    """Get the size of a file in bytes.
-
-    Args:
-        file_path: Path to the file
-
-    Returns:
-        File size in bytes, or 0 if file doesn't exist or can't be accessed
-    """
-    try:
-        path = Path(file_path)
-        if path.exists() and path.is_file():
-            return path.stat().st_size
-        return 0
-    except Exception:
-        return 0
-
-def check_disk_space(path: Union[str, Path], required_gb: float = 1.0) -> Dict[str, Any]:
-    """Check if there's sufficient disk space available.
-
-    Args:
-        path: Path to check disk space for
-        required_gb: Required disk space in GB
-
-    Returns:
-        Dictionary with disk space information and availability status
-    """
-    try:
-        path_obj = Path(path)
-        if not path_obj.exists():
-            path_obj = path_obj.parent if path_obj.parent.exists() else Path.home()
-
-        stat = shutil.disk_usage(str(path_obj))
-        total_gb = stat.total / (1024 ** 3)
-        free_gb = stat.free / (1024 ** 3)
-        used_gb = stat.used / (1024 ** 3)
-
-        sufficient = free_gb >= required_gb
-
-        return {
-            'total_gb': round(total_gb, 2),
-            'free_gb': round(free_gb, 2),
-            'used_gb': round(used_gb, 2),
-            'required_gb': required_gb,
-            'sufficient': sufficient,
-            'available_percentage': round((free_gb / total_gb) * 100, 2)
-        }
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to check disk space: {e}")
-        return {
-            'error': str(e),
-            'sufficient': False,
-            'total_gb': 0.0,
-            'free_gb': 0.0,
-            'used_gb': 0.0,
-            'required_gb': required_gb,
-            'available_percentage': 0.0
-        }
-
-class CommonUtilities:
-    """Common utilities class for unified operations."""
-
-    def __init__(self):
-        """Initialize common utilities."""
-        self.logger = logging.getLogger(__name__)
-        self.m1_available = is_m1_available()
-        self.mps_available = is_mps_available()
-
-    def get_m1_status(self):
-        """Get M1 status information."""
-        return {
-            'm1_available': self.m1_available,
-            'mps_available': self.mps_available
-        }
-
-    def optimize_for_m1(self, data):
-        """Optimize data processing for M1."""
-        if self.m1_available:
-            # M1-specific optimizations
-            if hasattr(data, 'values'):
-                return data.values
-        return data
-
-    def get_system_info(self):
-        """Get system information."""
-        return {
-            'm1_available': self.m1_available,
-            'mps_available': self.mps_available,
-            'platform': os.name,
-            'python_version': f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
-        }
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and
-                VECTORBT_AVAILABLE)
-
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str,
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    def _vectorbt_apply_operation(self, data: pd.Series, func,
-                                 window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling apply operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return data.rolling(window=window).apply(func, **kwargs)
-
-        try:
-            return rolling_apply(data, func, window=window, **kwargs)
-        except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-            return data.rolling(window=window).apply(func, **kwargs)
+# Export all functions for easy importing
+__all__ = [
+    'safe_dataframe_operation',
+    'get_memory_usage',
+    'optimize_dataframe_memory',
+    'safe_divide',
+    'safe_log',
+    'safe_sqrt',
+    'rolling_apply_safe',
+    'validate_dataframe',
+    'clean_dataframe',
+    'resample_dataframe',
+    'calculate_returns',
+    'calculate_volatility',
+    'calculate_sharpe_ratio',
+    'calculate_max_drawdown',
+    'calculate_correlation_matrix',
+    'detect_outliers',
+    'remove_outliers',
+    'memory_monitor',
+    'force_garbage_collection',
+    'safe_merge',
+    'safe_concat',
+    'create_lagged_features',
+    'create_rolling_features',
+    'calculate_technical_indicators',
+    'performance_timer',
+    'memory_efficient_apply',
+    'validate_time_series',
+    'resample_to_frequency',
+    'calculate_rolling_statistics',
+    'safe_feature_engineering',
+    'create_interaction_features',
+    'calculate_cross_correlations',
+    'detect_regime_changes',
+    'create_momentum_features',
+    'calculate_volatility_features',
+    'create_volume_features',
+    'create_cyclical_features',
+    'create_lag_features',
+    'create_lead_features',
+    'calculate_feature_importance_correlation',
+    'detect_multicollinearity',
+    'create_polynomial_features',
+    'calculate_rolling_correlation',
+    'create_ratio_features',
+    'calculate_rolling_quantiles',
+    'create_difference_features',
+    'calculate_rolling_skewness_kurtosis',
+    'create_interaction_terms',
+    'calculate_rolling_rank',
+    'create_binary_features',
+    'calculate_rolling_zscore',
+    'create_categorical_encoding',
+    'calculate_rolling_covariance',
+    'create_time_based_features',
+    'calculate_rolling_percentiles',
+    'create_moving_average_features',
+    'calculate_rolling_regression',
+    'create_fourier_features',
+    'calculate_entropy_features',
+    'create_wavelet_features',
+    'create_autocorrelation_features',
+    'calculate_rolling_information_ratio',
+    'create_regime_features',
+    'calculate_rolling_skewness_kurtosis_ratio',
+    'create_fractal_features',
+    'create_comprehensive_features'
+]

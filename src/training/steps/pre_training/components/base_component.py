@@ -5,10 +5,10 @@ This module provides base classes that inherit from ModularComponent
 for the pre-training pipeline, maintaining backward compatibility
 while adding advanced features.
 """
+from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional, Callable
 import logging
 
 # Import ModularComponent and related classes
@@ -30,139 +30,32 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ComponentConfig:
-    """Configuration for pre-training components."""
-    
-    # Component identification
-    component_name: str = "base_component"
-    component_type: str = "pre_training"
-    
-    # Processing settings
+    name: str = "feature_generation_period_optimization_step"
     enabled: bool = True
-    parallel_processing: bool = True
-    max_workers: int = 4
-    
-    # Validation settings
-    strict_validation: bool = True
-    skip_validation: bool = False
-    
-    # Performance settings
-    memory_limit_mb: int = 1024
-    timeout_seconds: int = 300
-    
-    # Logging settings
-    log_level: str = "INFO"
-    verbose: bool = False
-    
-    # Custom parameters for component-specific configuration
-    custom_params: Optional[Dict[str, Any]] = None
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary."""
-        return {
-            'component_name': self.component_name,
-            'component_type': self.component_type,
-            'enabled': self.enabled,
-            'parallel_processing': self.parallel_processing,
-            'max_workers': self.max_workers,
-            'strict_validation': self.strict_validation,
-            'skip_validation': self.skip_validation,
-            'memory_limit_mb': self.memory_limit_mb,
-            'timeout_seconds': self.timeout_seconds,
-            'log_level': self.log_level,
-            'verbose': self.verbose
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ComponentConfig':
-        """Create config from dictionary."""
-        return cls(**data)
+    extra: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class ComponentResult:
-    """Result from component processing."""
-    
-    # Processing status
-    success: bool = True
+    success: bool
+    artifacts: Dict[str, Any] = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
-    
-    # Data results
-    processed_data: Any = None
-    metadata: Dict[str, Any] = None
-    artifacts: Dict[str, Any] = None
-    
-    # Performance metrics
-    processing_time: float = 0.0
-    memory_usage_mb: float = 0.0
-    
-    # Validation results
-    validation_passed: bool = True
-    validation_errors: List[str] = None
-    
-    def __post_init__(self):
-        """Initialize default values."""
-        if self.metadata is None:
-            self.metadata = {}
-        if self.artifacts is None:
-            self.artifacts = {}
-        if self.validation_errors is None:
-            self.validation_errors = []
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to dictionary."""
-        return {
-            'success': self.success,
-            'error_message': self.error_message,
-            'processed_data': self.processed_data,
-            'metadata': self.metadata,
-            'artifacts': self.artifacts,
-            'processing_time': self.processing_time,
-            'memory_usage_mb': self.memory_usage_mb,
-            'validation_passed': self.validation_passed,
-            'validation_errors': self.validation_errors
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ComponentResult':
-        """Create result from dictionary."""
-        return cls(**data)
 
-class BaseComponent(ABC):
-    """Base class for pre-training pipeline components."""
-    
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the component with configuration."""
-        self.config = config or {}
+class BasePreTrainingComponent:
+    """Very small base class with a uniform interface + helpers."""
+    def __init__(self, config: Optional[ComponentConfig] = None):
+        self.config = config or ComponentConfig()
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-    @abstractmethod
-    def process(self, data: Any) -> Any:
-        """Process the input data and return the result."""
+
+    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> ComponentResult:
+        raise NotImplementedError
+
+    # Optional hooks many teams like
+    def validate(self, training_input: Dict[str, Any]) -> None:
         pass
-    
-    @abstractmethod
-    def validate(self, data: Any) -> bool:
-        """Validate the input data."""
+
+    def on_success(self, result: ComponentResult) -> None:
         pass
-    
-    def get_config(self) -> Dict[str, Any]:
-        """Get the component configuration."""
-        return self.config.copy()
-    
-    def set_config(self, config: Dict[str, Any]) -> None:
-        """Set the component configuration."""
-        self.config.update(config)
-    
-    def log_info(self, message: str) -> None:
-        """Log an info message."""
-        self.logger.info(message)
-    
-    def log_warning(self, message: str) -> None:
-        """Log a warning message."""
-        self.logger.warning(message)
-    
-    def log_error(self, message: str) -> None:
-        """Log an error message."""
-        self.logger.error(message)
 
 class BasePreTrainingComponent(ModularComponent if MODULAR_COMPONENT_AVAILABLE else BaseComponent):
     """Base class for pre-training pipeline components with ModularComponent integration."""
@@ -353,3 +246,5 @@ class BasePreTrainingComponent(ModularComponent if MODULAR_COMPONENT_AVAILABLE e
                     'peak_memory_mb': 150.0,
                     'recommended_memory_mb': 200.0
                 }
+    def on_failure(self, result: ComponentResult) -> None:
+        pass

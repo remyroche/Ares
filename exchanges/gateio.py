@@ -58,6 +58,7 @@ class GateioExchange(BaseExchange):
         try:
             if aiohttp is None:
                 self.logger.warning("⚠️ aiohttp not available, using mock session")
+                self.logger.warning("⚠️ Mock session will fast fail on API calls instead of returning mock data")
                 self.session = None
                 return
 
@@ -118,8 +119,8 @@ class GateioExchange(BaseExchange):
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make HTTP request to GateIO API."""
         if aiohttp is None or not self.session:
-            self.logger.warning("⚠️ aiohttp not available, returning mock data")
-            return []
+            self.logger.error("❌ aiohttp not available, fast failing API call")
+            raise Exception("aiohttp not available - API call cannot be completed")
 
         url = f"{self.base_url}{endpoint}"
         

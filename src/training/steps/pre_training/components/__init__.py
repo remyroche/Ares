@@ -1,29 +1,15 @@
-"""
-Components Package
+from __future__ import annotations
+from typing import Dict, Type
 
-This package provides various components for the pre-training pipeline.
-"""
+class ComponentFactory:
+    _registry: Dict[str, type] = {}
 
-# Set up path first before any imports
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+    @classmethod
+    def register_component(cls, key: str, component_cls: type) -> None:
+        cls._registry[key] = component_cls
 
-from .final_feature_selection import (
-    FinalFeatureSelectionComponent,
-    FinalFeatureSelectionConfig
-)
-
-# Import the component factory and registry
-from .component_factory import BaseComponent, ComponentFactory
-from .base_component import ComponentConfig
-from .component_registry import ComponentRegistry
-
-__all__ = [
-    "FinalFeatureSelectionComponent",
-    "FinalFeatureSelectionConfig",
-    "ComponentFactory",
-    "ComponentConfig", 
-    "BaseComponent",
-    "ComponentRegistry"
-]
+    @classmethod
+    def create(cls, key: str, *args, **kwargs):
+        if key not in cls._registry:
+            raise KeyError(f"Component '{key}' not registered")
+        return cls._registry[key](*args, **kwargs)

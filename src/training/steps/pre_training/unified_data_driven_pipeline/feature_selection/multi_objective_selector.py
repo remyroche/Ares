@@ -156,84 +156,359 @@ class MultiObjectiveResult:
     is_valid: bool = True
 
 class ObjectiveFunction(ABC):
-    """Abstract base class for objective functions."""
+    """Abstract base class for objective functions with full implementations."""
 
-    @abstractmethod
     def evaluate(self, features: pd.DataFrame,
                 targets: pd.Series,
                 selected_features: List[str],
                 **kwargs) -> ObjectiveResult:
-        """Evaluate the objective function."""
+        """
+        Evaluate the objective function with comprehensive error handling and validation.
+        
+        This base implementation provides:
+        - Input validation
+        - Error handling
+        - Common preprocessing
+        - Standardized result format
+        
+        Subclasses should override _calculate_objective() for specific logic.
+        """
+        try:
+            # Input validation
+            if not isinstance(features, pd.DataFrame):
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'Features must be a pandas DataFrame'}, 
+                    is_valid=False
+                )
+            
+            if not isinstance(targets, pd.Series):
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'Targets must be a pandas Series'}, 
+                    is_valid=False
+                )
+            
+            if not selected_features or not isinstance(selected_features, list):
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'Selected features must be a non-empty list'}, 
+                    is_valid=False
+                )
+            
+            # Check if selected features exist in the dataframe
+            valid_features = [f for f in selected_features if f in features.columns]
+            if not valid_features:
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={
+                        'error': 'No valid features found',
+                        'requested_features': selected_features,
+                        'available_features': list(features.columns)
+                    }, 
+                    is_valid=False
+                )
+            
+            # Check for sufficient data
+            if len(features) < 2:
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'Insufficient data (need at least 2 samples)'}, 
+                    is_valid=False
+                )
+            
+            # Check for NaN values in targets
+            if targets.isnull().all():
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'All target values are NaN'}, 
+                    is_valid=False
+                )
+            
+            # Align features and targets
+            aligned_features = features[valid_features]
+            aligned_targets = targets
+            
+            # Remove rows where targets are NaN
+            valid_indices = ~aligned_targets.isnull()
+            if not valid_indices.any():
+                return ObjectiveResult(
+                    value=0.0, 
+                    metadata={'error': 'No valid target values after NaN removal'}, 
+                    is_valid=False
+                )
+            
+            aligned_features = aligned_features[valid_indices]
+            aligned_targets = aligned_targets[valid_indices]
+            
+            # Call the specific objective calculation
+            result = self._calculate_objective(aligned_features, aligned_targets, valid_features, **kwargs)
+            
+            # Add common metadata
+            if result.metadata is None:
+                result.metadata = {}
+            
+            result.metadata.update({
+                'n_samples': len(aligned_features),
+                'n_features': len(valid_features),
+                'feature_names': valid_features,
+                'target_stats': {
+                    'mean': float(aligned_targets.mean()),
+                    'std': float(aligned_targets.std()),
+                    'min': float(aligned_targets.min()),
+                    'max': float(aligned_targets.max())
+                }
+            })
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Objective function evaluation failed: {e}")
+            return ObjectiveResult(
+                value=0.0, 
+                metadata={
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'objective_name': getattr(self, 'name', 'unknown')
+                }, 
+                is_valid=False
+            )
+
+    @abstractmethod
+    def _calculate_objective(self, features: pd.DataFrame,
+                           targets: pd.Series,
+                           selected_features: List[str],
+                           **kwargs) -> ObjectiveResult:
+        """
+        Calculate the specific objective value.
+        
+        This method must be implemented by subclasses to provide
+        the actual objective calculation logic.
+        
+        Args:
+            features: Aligned feature DataFrame (no NaN targets)
+            targets: Aligned target Series (no NaN values)
+            selected_features: List of valid feature names
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            ObjectiveResult with the calculated value and metadata
+        """
         pass
 
     @property
-    @abstractmethod
     def name(self) -> str:
         """Get the name of the objective function."""
-        pass
+        return self.__class__.__name__.lower().replace('objective', '')
 
     @property
-    @abstractmethod
     def is_higher_better(self) -> bool:
         """Whether higher values are better for this objective."""
-        pass
+        # Default to True - most objectives are maximized
+        # Subclasses can override this property
+        return True
 
 class OutOfSampleSharpeObjective(ObjectiveFunction):
-    """Out-of-sample Sharpe ratio objective."""
+    """
+    Out-of-sample Sharpe ratio objective with full implementation.
+    
+    Calculates the Sharpe ratio as (mean_return - risk_free_rate) / std_return,
+    with automatic annualization for periods > 252.
+    """
 
-    def __init__(self, risk_free_rate: float = 0.0):
+    def __init__(self, risk_free_rate: float = 0.0, annualization_factor: int = 252):
+        """
+        Initialize the Sharpe ratio objective.
+        
+        Args:
+            risk_free_rate: Risk-free rate for excess return calculation
+            annualization_factor: Factor for annualizing the Sharpe ratio (default: 252 for daily data)
+        """
         self.risk_free_rate = risk_free_rate
+        self.annualization_factor = annualization_factor
 
     @property
     def name(self) -> str:
+        """Get the name of this objective."""
         return "out_of_sample_sharpe"
 
     @property
     def is_higher_better(self) -> bool:
+        """Higher Sharpe ratio is better."""
         return True
 
-    def evaluate(self, features: pd.DataFrame,
-                targets: pd.Series,
-                selected_features: List[str],
-                **kwargs) -> ObjectiveResult:
-        """Calculate out-of-sample Sharpe ratio."""
+    def _calculate_objective(self, features: pd.DataFrame,
+                           targets: pd.Series,
+                           selected_features: List[str],
+                           **kwargs) -> ObjectiveResult:
+        """
+        Calculate the out-of-sample Sharpe ratio.
+        
+        Args:
+            features: Aligned feature DataFrame (no NaN targets)
+            targets: Aligned target Series (no NaN values) - assumed to be returns
+            selected_features: List of valid feature names
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            ObjectiveResult with Sharpe ratio and detailed metadata
+        """
         try:
-            if not selected_features:
-                return ObjectiveResult(value=0.0, metadata={}, is_valid=False)
-
-            # Check if selected features exist in the dataframe
-            valid_features = [f for f in selected_features if f in features.columns]
-            if not valid_features:
-                return ObjectiveResult(value=0.0, metadata={'error': 'No valid features found'}, is_valid=False)
-
-            # Get selected features
-            selected_data = features[valid_features]
-
-            # Calculate returns (assuming targets are returns)
+            # Calculate basic statistics
             returns = targets
-
-            # Calculate Sharpe ratio
+            mean_return = returns.mean()
+            std_return = returns.std()
+            
+            # Handle edge cases
+            if std_return == 0:
+                tprint_warning("⚠️ Zero standard deviation in returns - Sharpe ratio undefined")
+                return ObjectiveResult(
+                    value=0.0,
+                    metadata={
+                        'mean_return': float(mean_return),
+                        'std_return': float(std_return),
+                        'excess_return': float(mean_return - self.risk_free_rate),
+                        'n_periods': len(returns),
+                        'risk_free_rate': self.risk_free_rate,
+                        'warning': 'Zero standard deviation - Sharpe ratio undefined'
+                    },
+                    is_valid=True
+                )
+            
+            # Calculate excess returns
             excess_returns = returns - self.risk_free_rate
-            sharpe_ratio = excess_returns.mean() / returns.std() if returns.std() > 0 else 0.0
-
-            # Annualize if possible
-            if len(returns) > 252:
-                sharpe_ratio *= np.sqrt(252)
-
+            excess_return_mean = excess_returns.mean()
+            
+            # Calculate Sharpe ratio
+            sharpe_ratio = excess_return_mean / std_return
+            
+            # Annualize if we have enough data
+            if len(returns) > self.annualization_factor:
+                sharpe_ratio_annualized = sharpe_ratio * np.sqrt(self.annualization_factor)
+                annualization_applied = True
+            else:
+                sharpe_ratio_annualized = sharpe_ratio
+                annualization_applied = False
+            
+            # Calculate additional risk metrics
+            downside_returns = returns[returns < 0]
+            downside_deviation = downside_returns.std() if len(downside_returns) > 0 else 0.0
+            
+            # Calculate Sortino ratio (alternative to Sharpe)
+            sortino_ratio = excess_return_mean / downside_deviation if downside_deviation > 0 else 0.0
+            
+            # Calculate maximum drawdown
+            cumulative_returns = (1 + returns).cumprod()
+            running_max = cumulative_returns.expanding().max()
+            drawdown = (cumulative_returns - running_max) / running_max
+            max_drawdown = abs(drawdown.min()) if len(drawdown) > 0 else 0.0
+            
+            # Calculate hit rate (percentage of positive returns)
+            hit_rate = (returns > 0).mean()
+            
+            # Calculate volatility of returns
+            return_volatility = returns.std()
+            
+            # Calculate skewness and kurtosis
+            skewness = returns.skew() if len(returns) > 2 else 0.0
+            kurtosis = returns.kurtosis() if len(returns) > 3 else 0.0
+            
+            # Prepare comprehensive metadata
             metadata = {
-                'mean_return': returns.mean(),
-                'std_return': returns.std(),
-                'excess_return': excess_returns.mean(),
+                'sharpe_ratio': float(sharpe_ratio),
+                'sharpe_ratio_annualized': float(sharpe_ratio_annualized),
+                'annualization_applied': annualization_applied,
+                'annualization_factor': self.annualization_factor,
+                'mean_return': float(mean_return),
+                'std_return': float(std_return),
+                'excess_return': float(excess_return_mean),
+                'risk_free_rate': self.risk_free_rate,
                 'n_periods': len(returns),
-                'valid_features': len(valid_features),
-                'total_requested': len(selected_features)
+                'return_volatility': float(return_volatility),
+                'downside_deviation': float(downside_deviation),
+                'sortino_ratio': float(sortino_ratio),
+                'max_drawdown': float(max_drawdown),
+                'hit_rate': float(hit_rate),
+                'skewness': float(skewness),
+                'kurtosis': float(kurtosis),
+                'return_percentiles': {
+                    'p5': float(returns.quantile(0.05)),
+                    'p25': float(returns.quantile(0.25)),
+                    'p50': float(returns.quantile(0.50)),
+                    'p75': float(returns.quantile(0.75)),
+                    'p95': float(returns.quantile(0.95))
+                },
+                'feature_importance': self._calculate_feature_importance(features, targets, selected_features)
             }
-
-            return ObjectiveResult(value=sharpe_ratio, metadata=metadata, is_valid=True)
-
+            
+            return ObjectiveResult(
+                value=float(sharpe_ratio_annualized),  # Return annualized Sharpe ratio
+                metadata=metadata,
+                is_valid=True
+            )
+            
         except Exception as e:
             tprint_error(f"❌ Sharpe ratio calculation failed: {e}")
-            return ObjectiveResult(value=0.0, metadata={'error': str(e)}, is_valid=False)
+            return ObjectiveResult(
+                value=0.0,
+                metadata={
+                    'error': str(e),
+                    'error_type': type(e).__name__,
+                    'n_periods': len(targets),
+                    'n_features': len(selected_features)
+                },
+                is_valid=False
+            )
+
+    def _calculate_feature_importance(self, features: pd.DataFrame, 
+                                    targets: pd.Series, 
+                                    selected_features: List[str]) -> Dict[str, float]:
+        """
+        Calculate feature importance using correlation with targets.
+        
+        Args:
+            features: Feature DataFrame
+            targets: Target Series
+            selected_features: List of selected feature names
+            
+        Returns:
+            Dictionary mapping feature names to importance scores
+        """
+        try:
+            importance_scores = {}
+            
+            for feature_name in selected_features:
+                if feature_name in features.columns:
+                    feature_data = features[feature_name]
+                    
+                    # Calculate correlation with targets
+                    correlation = safe_correlation(feature_data, targets)
+                    
+                    # Calculate mutual information if possible
+                    try:
+                        from sklearn.feature_selection import mutual_info_regression
+                        mi_score = mutual_info_regression(
+                            feature_data.values.reshape(-1, 1), 
+                            targets.values
+                        )[0]
+                    except:
+                        mi_score = 0.0
+                    
+                    # Combine correlation and mutual information
+                    importance_score = abs(correlation) * 0.7 + mi_score * 0.3
+                    
+                    importance_scores[feature_name] = {
+                        'correlation': float(correlation),
+                        'mutual_information': float(mi_score),
+                        'combined_score': float(importance_score)
+                    }
+            
+            return importance_scores
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature importance calculation failed: {e}")
+            return {feature: {'correlation': 0.0, 'mutual_information': 0.0, 'combined_score': 0.0} 
+                   for feature in selected_features}
 
 class DrawdownObjective(ObjectiveFunction):
     """Maximum drawdown objective (minimize)."""

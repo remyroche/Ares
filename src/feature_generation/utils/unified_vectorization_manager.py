@@ -34,9 +34,12 @@ try:
 except ImportError:
     TPRINT_AVAILABLE = False
     # Fallback functions for when tprint is not available
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint(*args, **kwargs): 
+        raise ImportError("tprint not available - install required dependencies")
+    def tprint_debug(*args, **kwargs): 
+        raise ImportError("tprint_debug not available - install required dependencies")
+    def tprint_info(*args, **kwargs): 
+        raise ImportError("tprint_info not available - install required dependencies")
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)

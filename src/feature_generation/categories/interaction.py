@@ -1227,9 +1227,6 @@ __all__ = [
     'PolynomialFeatureGenerator',
     'CorrelationInteractionGenerator',
     'create_default_interaction_generators'
-    # Note: RegimeDependentFeatureGenerator, CointegrationResidualGenerator,
-    # StructuralRatioGenerator, PairwiseInteractionGenerator are not implemented yet
-    # They are referenced but not defined - removed from exports to prevent import errors
 ]
 
 try:

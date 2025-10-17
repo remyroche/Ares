@@ -3,7 +3,7 @@ Analyst Training Pipeline - ModularComponent Implementation
 
 This module provides a ModularComponent implementation of the Analyst Training Pipeline
 that orchestrates the training of Analyst models by:
-1. Training base models (TCN, LightGBM, Ridge, ElasticNet, RandomForest)
+1. Training base models (LightGBM, LightGBM+PatchTST, CatBoost, Stacker LGBM Calibrated)
 2. Training ensemble models with full feature integration (HMM, NAS)
 
 The pipeline supports 5m timeframe with proper regime-aware training.
@@ -33,9 +33,10 @@ from ..unified_data_driven_pipeline.core.modular_architecture import (
 
 class AnalystModelType(Enum):
     """Types of Analyst models."""
-    TCN = "tcn"
     LIGHTGBM = "lightgbm"
-    RIDGE = "ridge"
+    LIGHTGBM_PATCHTST = "lightgbm_patchtst"
+    CATBOOST = "catboost"
+    STACKER_LGBM_CALIBRATED = "stacker_lgbm_calibrated"
     ELASTIC_NET = "elastic_net"
     RANDOM_FOREST = "random_forest"
     HMM = "hmm"

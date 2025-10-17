@@ -2,7 +2,7 @@
 Tactician Ensemble Training - Ensemble Model Training Module
 
 This module handles training of Tactician ensemble models that combine:
-- Base models (RandomSurvivalForest, XGBoost, ElasticNetCV)
+- Base models (LGBM+GRU, CatBoost, Causal Dilated TCN, Stacker LGBM Calibrated)
 - HMM regime features and probabilities
 - Analyst model predictions and confidence scores
 - OOF predictions from all base models
@@ -151,7 +151,6 @@ class TacticianEnsembleTrainingConfig:
         if self.base_model_types is None:
             self.base_model_types = [
                 "RANDOM_SURVIVAL_FOREST",
-                "XGBOOST",
                 "ELASTIC_NET_CV"
             ]
 

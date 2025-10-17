@@ -404,7 +404,7 @@ class MigrationValidator:
                 'factory': create_analyst_models_training,
                 'test_data': self.test_data['analyst_data'],
                 'config': {
-                    'model': {'model_types': ['tcn', 'lightgbm', 'ridge']},
+                    'model': {'model_types': ['lightgbm', 'lightgbm_patchtst', 'catboost']},
                     'training': {'epochs': 5}
                 }
             },
@@ -416,7 +416,7 @@ class MigrationValidator:
                     'base_model_outputs': self.test_data['base_model_outputs']
                 },
                 'config': {
-                    'model': {'base_models': ['tcn', 'lightgbm', 'ridge']},
+                    'model': {'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost']},
                     'training': {'epochs': 5}
                 }
             },
@@ -435,7 +435,7 @@ class MigrationValidator:
                 'test_data': self.test_data,
                 'config': {
                     'pipeline': {'phases': ['analyst_models', 'ml_labeling']},
-                    'analyst_models': {'model_types': ['tcn', 'lightgbm']},
+                    'analyst_models': {'model_types': ['lightgbm', 'lightgbm_patchtst']},
                     'ml_labeling': {'ml_model_type': 'random_forest'}
                 }
             }

@@ -48,7 +48,6 @@ class MLModelType(Enum):
     RANDOM_FOREST = "random_forest"
     GRADIENT_BOOSTING = "gradient_boosting"
     LINEAR_REGRESSION = "linear_regression"
-    RIDGE = "ridge"
     NEURAL_NETWORK = "neural_network"
 
 
@@ -369,8 +368,6 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent):
                 model = self._create_gradient_boosting_model()
             elif model_type == MLModelType.LINEAR_REGRESSION:
                 model = self._create_linear_regression_model()
-            elif model_type == MLModelType.RIDGE:
-                model = self._create_ridge_model()
             elif model_type == MLModelType.NEURAL_NETWORK:
                 model = self._create_neural_network_model()
             else:
@@ -428,14 +425,6 @@ class MLEntryTimingLabelerModular(BaseModelsTrainingComponent):
             'config': self.labeling_config.model_params
         }
     
-    def _create_ridge_model(self) -> Dict[str, Any]:
-        """Create Ridge model."""
-        return {
-            'type': 'ridge',
-            'alpha': self.labeling_config.model_params.get('alpha', 1.0),
-            'solver': self.labeling_config.model_params.get('solver', 'auto'),
-            'config': self.labeling_config.model_params
-        }
     
     def _create_neural_network_model(self) -> Dict[str, Any]:
         """Create Neural Network model."""

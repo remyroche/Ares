@@ -110,18 +110,18 @@ class UnifiedTrainingPipelineModular(ModularComponent):
                 'monitoring': True
             },
             'analyst_models': {
-                'model_types': ['tcn', 'lightgbm', 'ridge', 'elastic_net', 'random_forest'],
+                'model_types': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
                 'regime_aware': True,
                 'timeframe': '15m'
             },
             'analyst_ensemble': {
-                'base_models': ['tcn', 'lightgbm', 'ridge', 'elastic_net', 'random_forest'],
+                'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
                 'ensemble_method': 'voting',
                 'regime_aware': True,
                 'timeframe': '15m'
             },
             'tactician_models': {
-                'model_types': ['random_survival_forest', 'xgboost', 'elastic_net_cv'],
+                'model_types': ['lgbm_gru', 'catboost', 'causal_tcn', 'stacker_lgbm_calibrated'],
                 'regime_aware': True,
                 'timeframe': '5m'
             },

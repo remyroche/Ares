@@ -133,7 +133,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             ensemble_method=EnsembleMethod(self.model_config.get('ensemble_method', 'voting')),
             ensemble_params=self.model_config.get('ensemble_params', {}),
             hmm_config=self.get_config('hmm_config', {}),
-            nas_config=self.get_config('nas_config', {}),
             regime_aware=self.get_config('regime_aware', True),
             timeframe=self.get_config('timeframe', '15m'),
             auto_save=self.get_config('auto_save', True)
@@ -143,7 +142,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         self._ensemble_model = None
         self._base_model_outputs = {}
         self._hmm_model = None
-        self._nas_models = {}
         self._training_results = {}
         self._regime_performance = {}
         
@@ -231,19 +229,11 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             if not hmm_result['success']:
                 raise RuntimeError(f"HMM training failed: {hmm_result['errors']}")
             
-            # Phase 2: Train NAS models per regime
-            self.logger.info("Phase 2: Training NAS models per regime")
-            self.set_ml_state('training_phase', 'nas')
-            
-            nas_result = self._train_nas_models(data, hmm_result['hmm_model'])
-            if not nas_result['success']:
-                raise RuntimeError(f"NAS training failed: {nas_result['errors']}")
-            
-            # Phase 3: Train ensemble model
-            self.logger.info("Phase 3: Training ensemble model")
+            # Phase 2: Train ensemble model
+            self.logger.info("Phase 2: Training ensemble model")
             self.set_ml_state('training_phase', 'ensemble')
             
-            ensemble_result = self._train_ensemble_model(data, hmm_result['hmm_model'], nas_result['nas_models'])
+            ensemble_result = self._train_ensemble_model(data, hmm_result['hmm_model'])
             if not ensemble_result['success']:
                 raise RuntimeError(f"Ensemble training failed: {ensemble_result['errors']}")
             
@@ -264,7 +254,7 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 ensemble_metrics=evaluation_result['metrics'],
                 training_time=self.get_ml_state('total_training_time', 0),
                 errors=[],
-                warnings=hmm_result['warnings'] + nas_result['warnings'] + ensemble_result['warnings'] + evaluation_result['warnings'],
+                warnings=hmm_result['warnings'] + ensemble_result['warnings'] + evaluation_result['warnings'],
                 regime_performance=evaluation_result.get('regime_performance')
             )
             
@@ -273,7 +263,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 'ensemble_model': ensemble_result['ensemble_model'],
                 'base_model_outputs': ensemble_result['base_model_outputs'],
                 'hmm_model': hmm_result['hmm_model'],
-                'nas_models': nas_result['nas_models'],
                 'metrics': evaluation_result['metrics'],
                 'training_time': result.training_time,
                 'regime_performance': evaluation_result.get('regime_performance')
@@ -362,47 +351,8 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 'warnings': []
             }
     
-    def _train_nas_models(self, data: Any, hmm_model: Any) -> Dict[str, Any]:
-        """Train NAS models per regime."""
-        try:
-            self.logger.info("Training NAS models per regime")
-            
-            # Placeholder NAS training implementation
-            nas_models = {}
-            n_regimes = hmm_model.get('n_components', 3)
-            
-            for regime in range(n_regimes):
-                nas_model = {
-                    'type': 'nas',
-                    'regime': regime,
-                    'search_space': self.ensemble_config.nas_config.get('search_space', 'default'),
-                    'max_trials': self.ensemble_config.nas_config.get('max_trials', 50),
-                    'trained': True,
-                    'config': self.ensemble_config.nas_config
-                }
-                nas_models[f'regime_{regime}'] = nas_model
-            
-            # Update state
-            self._nas_models = nas_models
-            self.set_ml_state('nas_trained', True)
-            
-            return {
-                'success': True,
-                'nas_models': nas_models,
-                'errors': [],
-                'warnings': []
-            }
-            
-        except Exception as e:
-            self.logger.error(f"NAS training failed: {e}")
-            return {
-                'success': False,
-                'nas_models': {},
-                'errors': [str(e)],
-                'warnings': []
-            }
     
-    def _train_ensemble_model(self, data: Any, hmm_model: Any, nas_models: Dict[str, Any]) -> Dict[str, Any]:
+    def _train_ensemble_model(self, data: Any, hmm_model: Any) -> Dict[str, Any]:
         """Train ensemble model."""
         try:
             self.logger.info("Training ensemble model")

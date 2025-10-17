@@ -2,7 +2,7 @@
 Tactician Training Pipeline - Unified Pipeline for Base and Ensemble Training
 
 This pipeline orchestrates the training of Tactician models by:
-1. Training base models (RandomSurvivalForest, XGBoost, ElasticNetCV)
+1. Training base models (LGBM+GRU, CatBoost, Causal Dilated TCN, Stacker LGBM Calibrated)
 2. Training ensemble models with full feature integration
 
 The pipeline supports both short and long timeframes with proper feature differentiation.
@@ -132,10 +132,7 @@ class TacticianTrainingPipelineConfig:
         if self.base_model_types is None:
             self.base_model_types = [
                 TacticianModelType.RANDOM_SURVIVAL_FOREST,
-                TacticianModelType.XGBOOST,
                 TacticianModelType.ELASTIC_NET_CV,
-                TacticianModelType.NAS,
-                TacticianModelType.TAS,
             ]
         else:
             normalized_types: List[TacticianModelType] = []

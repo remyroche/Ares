@@ -18,13 +18,13 @@ The models_training pipeline has been successfully migrated to the ModularCompon
 #### **Analyst Models Training** (`analyst_models_training_modular.py`)
 - **Original**: `analyst_models_training.py` (1,800+ lines)
 - **Migrated**: `AnalystModelsTrainingModular` class
-- **Features**: TCN, LightGBM, Ridge, ElasticNet, RandomForest, NAS, TAS model training
+- **Features**: LightGBM, LightGBM+PatchTST, CatBoost, Stacker LGBM Calibrated model training
 - **Benefits**: Unified interface, comprehensive state management, ML-specific monitoring
 
 #### **Analyst Ensemble Training** (`analyst_ensemble_training_modular.py`)
 - **Original**: `analyst_ensemble_training.py` (800+ lines)
 - **Migrated**: `AnalystEnsembleTrainingModular` class
-- **Features**: HMM regime detection, NAS per-regime, ensemble combination methods
+- **Features**: HMM regime detection, meta-learner ensemble, ensemble combination methods
 - **Benefits**: Coordinated training phases, ensemble-specific optimization
 
 #### **ML Entry Timing Labeler** (`ml_entry_timing_labeler_modular.py`)
@@ -95,7 +95,7 @@ from src.training.steps.models_training import create_analyst_models_training
 
 # Create component
 config = {
-    'model': {'model_types': ['tcn', 'lightgbm', 'ridge']},
+    'model': {'model_types': ['lightgbm', 'lightgbm_patchtst', 'catboost']},
     'training': {'epochs': 100, 'batch_size': 32}
 }
 component = create_analyst_models_training(config)
@@ -116,8 +116,8 @@ from src.training.steps.models_training import create_unified_training_pipeline
 # Create unified pipeline
 config = {
     'pipeline': {'phases': ['analyst_models', 'analyst_ensemble', 'ml_labeling']},
-    'analyst_models': {'model_types': ['tcn', 'lightgbm']},
-    'analyst_ensemble': {'base_models': ['tcn', 'lightgbm']},
+    'analyst_models': {'model_types': ['lightgbm', 'lightgbm_patchtst']},
+    'analyst_ensemble': {'base_models': ['lightgbm', 'lightgbm_patchtst']},
     'ml_labeling': {'ml_model_type': 'random_forest'}
 }
 pipeline = create_unified_training_pipeline(config)

@@ -155,7 +155,7 @@ from src.training.steps.models_training import create_analyst_training_pipeline
 # Create pipeline
 config = {
     'model': {
-        'base_models': ['tcn', 'lightgbm', 'ridge'],
+        'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost'],
         'ensemble_method': 'voting'
     },
     'training': {

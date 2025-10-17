@@ -134,15 +134,7 @@ class TacticianDifferentiatedLabeler:
         tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
 
         # Initialize VectorBT optimizer for enhanced performance
-        # vectorbt_config = self.config.vectorbt_config or VectorBTConfig(
-        #     enable_vectorbt=True,
-        #     vectorbt_threshold=1000,
-        #     performance_monitoring=True,
-        #     memory_efficiency_mode=True
-        # )
-        # self.vectorbt_optimizer = get_vectorbt_optimizer(vectorbt_config)
-        # tprint_info(f"⚡ VectorBT optimizer initialized: {self.vectorbt_optimizer.__class__.__name__}")
-        self.vectorbt_optimizer = None
+        self._initialize_vectorbt_optimizer()
 
         # Initialize M1 optimizations if available
         self.m1_integration = integrate_with_m1_optimizers()
@@ -204,6 +196,60 @@ class TacticianDifferentiatedLabeler:
         except (ImportError, AttributeError, Exception) as e:
             tprint_warning(f"⚠️ Enhanced quality scorer not available, using fallback: {e}")
             self.quality_scorer = None
+
+    def _initialize_vectorbt_optimizer(self):
+        """Initialize VectorBT optimizer if available."""
+        try:
+            # Try to import VectorBT optimizer
+            from .profit_labeling.vectorbt_optimizer import get_vectorbt_optimizer, VectorBTConfig
+            tprint_info("⚡ Initializing VectorBT optimizer")
+            
+            vectorbt_config = VectorBTConfig(
+                enable_vectorbt=True,
+                vectorbt_threshold=self.config.vectorbt_config.get('threshold', 1000),
+                performance_monitoring=True,
+                memory_efficiency_mode=True
+            )
+            self.vectorbt_optimizer = get_vectorbt_optimizer(vectorbt_config)
+            tprint_success(f"✅ VectorBT optimizer initialized: {self.vectorbt_optimizer.__class__.__name__}")
+        except (ImportError, AttributeError, Exception) as e:
+            tprint_warning(f"⚠️ VectorBT optimizer not available, using fallback methods: {e}")
+            self.vectorbt_optimizer = None
+
+    def _safe_vectorbt_operation(self, operation_name: str, operation_func, *args, **kwargs):
+        """Safely execute VectorBT operations with fallback."""
+        if self.vectorbt_optimizer is not None:
+            try:
+                return operation_func(*args, **kwargs)
+            except Exception as e:
+                tprint_warning(f"VectorBT {operation_name} failed: {e}, using fallback")
+                return None
+        else:
+            tprint_info(f"VectorBT not available for {operation_name}, using fallback")
+            return None
+
+    def _calculate_peak_distance(self, current_idx, existing_idx):
+        """Calculate time distance between two indices in minutes."""
+        try:
+            # Handle different index types (datetime, timestamp, etc.)
+            if hasattr(current_idx, 'to_pydatetime'):
+                current_time = current_idx.to_pydatetime()
+            elif hasattr(current_idx, 'timestamp'):
+                current_time = pd.Timestamp(current_idx).to_pydatetime()
+            else:
+                current_time = pd.Timestamp(current_idx).to_pydatetime()
+                
+            if hasattr(existing_idx, 'to_pydatetime'):
+                existing_time = existing_idx.to_pydatetime()
+            elif hasattr(existing_idx, 'timestamp'):
+                existing_time = pd.Timestamp(existing_idx).to_pydatetime()
+            else:
+                existing_time = pd.Timestamp(existing_idx).to_pydatetime()
+                
+            return abs((current_time - existing_time).total_seconds() / 60)
+        except Exception as e:
+            tprint_warning(f"Error calculating peak distance: {e}")
+            return float('inf')
 
     def create_entry_timing_labels(
         self,
@@ -294,7 +340,8 @@ class TacticianDifferentiatedLabeler:
         scores = np.zeros(len(entry_indices))
 
         # Use VectorBT for optimized rolling operations if data is large enough
-        if self.vectorbt_optimizer is not None and len(data) >= self.vectorbt_optimizer.config.vectorbt_threshold:
+        vectorbt_threshold = self.config.vectorbt_config.get('threshold', 1000)
+        if self.vectorbt_optimizer is not None and len(data) >= vectorbt_threshold:
             tprint_info(f"⚡ Using VectorBT optimization for {len(data)} samples")
             scores = self._calculate_vectorized_quality_scores(
                 data, entry_indices, future_window_starts, future_window_ends,
@@ -371,7 +418,8 @@ class TacticianDifferentiatedLabeler:
         tprint_info(f"📈 Score range: {scores.min():.4f} - {scores.max():.4f}")
 
         # Use VectorBT for optimized peak detection on large datasets
-        if self.vectorbt_optimizer is not None and len(scores) >= self.vectorbt_optimizer.config.vectorbt_threshold:
+        vectorbt_threshold = self.config.vectorbt_config.get('threshold', 1000)
+        if self.vectorbt_optimizer is not None and len(scores) >= vectorbt_threshold:
             tprint_info(f"⚡ Using VectorBT optimization for peak detection on {len(scores)} scores")
             filtered_labels = self._vectorbt_peak_filtering(labels, scores, indices)
         else:
@@ -433,10 +481,19 @@ class TacticianDifferentiatedLabeler:
 
         # If no peaks found but we have high-quality entries, keep the best
         if filtered_labels.sum() == 0 and len(scores) > 0:
-            best_idx = np.argmax(scores)
-            if best_idx < len(indices):
-                filtered_labels.loc[indices[best_idx]] = scores[best_idx]
-                tprint_info(f"🔄 Fallback: selected best entry with score {scores[best_idx]:.4f}")
+            # Find the best entry that meets the quality threshold
+            valid_scores = scores[scores > self.config.entry_quality_threshold]
+            if len(valid_scores) > 0:
+                best_idx = np.argmax(scores)
+                if best_idx < len(indices):
+                    filtered_labels.loc[indices[best_idx]] = scores[best_idx]
+                    tprint_info(f"🔄 Fallback: selected best entry with score {scores[best_idx]:.4f}")
+            else:
+                # If no entries meet threshold, lower it temporarily
+                best_idx = np.argmax(scores)
+                if best_idx < len(indices) and scores[best_idx] > 0:
+                    filtered_labels.loc[indices[best_idx]] = scores[best_idx]
+                    tprint_warning(f"⚠️ No entries met quality threshold, selected best available: {scores[best_idx]:.4f}")
 
         final_count = int((filtered_labels > 0).sum())
         tprint_info(f"🎯 Standard peak filtering result: {final_count} entries selected")
@@ -454,13 +511,25 @@ class TacticianDifferentiatedLabeler:
         # Calculate rolling max to identify peaks
         window_size = self.config.min_entry_window_minutes * 2 + 1
         tprint_info(f"🔍 Using rolling window size: {window_size}")
-        rolling_max = self.vectorbt_optimizer.rolling_max(temp_series, window=window_size)
+        rolling_max = self._safe_vectorbt_operation(
+            'rolling_max',
+            self.vectorbt_optimizer.rolling_max,
+            temp_series, window=window_size
+        )
 
         # Identify peaks where current value equals rolling max
-        peak_mask = (temp_series == rolling_max) & (temp_series > self.config.entry_quality_threshold)
+        if rolling_max is not None:
+            peak_mask = (temp_series == rolling_max) & (temp_series > self.config.entry_quality_threshold)
+        else:
+            # Fallback: use simple threshold-based peak detection
+            peak_mask = temp_series > self.config.entry_quality_threshold
+            tprint_info("🔄 Using fallback peak detection (threshold-based)")
         tprint_info(f"📈 Found {int(peak_mask.sum())} potential peaks")
 
         # Apply additional filtering to ensure minimum distance between peaks
+        filtered_peaks = []
+        filtered_scores = []
+        
         if peak_mask.sum() > 0:
             peak_indices = temp_series[peak_mask].index
             peak_scores = temp_series[peak_mask].values
@@ -468,8 +537,6 @@ class TacticianDifferentiatedLabeler:
 
             # Sort by score and apply distance filtering
             sorted_indices = np.argsort(peak_scores)[::-1]  # Sort by score descending
-            filtered_peaks = []
-            filtered_scores = []
 
             for idx in sorted_indices:
                 current_peak_idx = peak_indices[idx]
@@ -482,7 +549,7 @@ class TacticianDifferentiatedLabeler:
                     tprint_info(f"✅ Added first peak: score {current_score:.4f}")
                 else:
                     # Calculate minimum distance to existing peaks
-                    distances = [abs((current_peak_idx - existing_idx).total_seconds() / 60)
+                    distances = [self._calculate_peak_distance(current_peak_idx, existing_idx)
                                for existing_idx in filtered_peaks]
                     min_distance = min(distances) if distances else float('inf')
 
@@ -498,16 +565,18 @@ class TacticianDifferentiatedLabeler:
         # Create filtered labels
         filtered_labels = pd.Series(0.0, index=labels.index, dtype=float)
 
-        if 'filtered_peaks' in locals() and len(filtered_peaks) > 0:
+        if len(filtered_peaks) > 0:
             for idx, score in zip(filtered_peaks, filtered_scores):
                 filtered_labels.loc[idx] = score
             tprint_info(f"✅ Applied {len(filtered_peaks)} filtered peaks to labels")
         elif len(scores) > 0:
             # Fallback: keep the best entry if no peaks found
             best_idx = np.argmax(scores)
-            if best_idx < len(indices):
+            if best_idx < len(indices) and scores[best_idx] > 0:
                 filtered_labels.loc[indices[best_idx]] = scores[best_idx]
                 tprint_warning(f"🔄 VectorBT fallback: selected best entry with score {scores[best_idx]:.4f}")
+            else:
+                tprint_error("❌ No valid entries found for VectorBT fallback")
 
         final_count = int((filtered_labels > 0).sum())
         tprint_success(f"⚡ VectorBT peak filtering completed: {final_count} peaks selected")
@@ -540,15 +609,29 @@ class TacticianDifferentiatedLabeler:
         # Calculate rolling statistics using VectorBT
         volatility_window = min(20, window_size)
         tprint_info(f"🔍 Calculating volatility with window {volatility_window}")
-        rolling_volatility = self.vectorbt_optimizer.calculate_volatility(
+        rolling_volatility = self._safe_vectorbt_operation(
+            'calculate_volatility',
+            self.vectorbt_optimizer.calculate_volatility,
             close_prices.pct_change(), window=volatility_window, annualize=False
         )
 
         # Calculate rolling price statistics
         tprint_info(f"📊 Calculating rolling price statistics with window {window_size}")
-        rolling_max_high = self.vectorbt_optimizer.rolling_max(high_prices, window=window_size)
-        rolling_min_low = self.vectorbt_optimizer.rolling_min(low_prices, window=window_size)
-        rolling_mean_close = self.vectorbt_optimizer.rolling_mean(close_prices, window=window_size)
+        rolling_max_high = self._safe_vectorbt_operation(
+            'rolling_max',
+            self.vectorbt_optimizer.rolling_max,
+            high_prices, window=window_size
+        )
+        rolling_min_low = self._safe_vectorbt_operation(
+            'rolling_min',
+            self.vectorbt_optimizer.rolling_min,
+            low_prices, window=window_size
+        )
+        rolling_mean_close = self._safe_vectorbt_operation(
+            'rolling_mean',
+            self.vectorbt_optimizer.rolling_mean,
+            close_prices, window=window_size
+        )
 
         # Pre-allocate scores array
         scores = np.zeros(len(entry_indices))
@@ -587,7 +670,7 @@ class TacticianDifferentiatedLabeler:
             # Get regime parameters
             regime_params = self._get_regime_parameters(entry_index, regime_assignments)
 
-            # Apply regime-specific thresholds
+            # Apply regime-specific thresholds (consistent with fallback method)
             if adverse_move > regime_params['max_adverse_movement_pct']:
                 continue
             if favorable_move < regime_params['min_favorable_movement_pct']:
@@ -600,11 +683,17 @@ class TacticianDifferentiatedLabeler:
             timing_score = 1.0 / (1.0 + len(future_window) / self.config.max_entry_window_minutes)
 
             # Calculate volatility score using pre-computed rolling volatility
-            if i < len(rolling_volatility) and not pd.isna(rolling_volatility.iloc[entry_idx]):
+            if rolling_volatility is not None and i < len(rolling_volatility) and not pd.isna(rolling_volatility.iloc[entry_idx]):
                 volatility = rolling_volatility.iloc[entry_idx]
                 volatility_score = 1.0 / (1.0 + volatility * 100 / 10.0)
             else:
-                volatility_score = 1.0
+                # Fallback: calculate volatility from future window
+                if len(future_window) >= 2:
+                    returns = future_window['close'].pct_change().dropna()
+                    volatility = returns.std() if not returns.empty else 0.0
+                    volatility_score = 1.0 / (1.0 + volatility * 100 / 10.0)
+                else:
+                    volatility_score = 1.0
 
             # Calculate composite quality score
             quality_score = (
@@ -684,30 +773,50 @@ class TacticianDifferentiatedLabeler:
 
         # Use enhanced scorer if available
         if self.quality_scorer is not None:
-            tprint_info("🎯 Using enhanced quality scorer for entry calculation")
-            # Determine regime
-            regime = None
-            if regime_assignments is not None and self.config.enable_regime_adaptive_labeling:
-                if index_label in regime_assignments.index:
-                    regime_value = regime_assignments.loc[index_label]
-                    regime = f"regime_{regime_value}"
-                    tprint_info(f"🎭 Using regime: {regime}")
+            return self._calculate_enhanced_quality_score(entry_point, future_data, index_label, regime_assignments)
+        else:
+            return self._calculate_fallback_quality_score(entry_point, future_data, index_label, regime_assignments)
 
-            # Build market context (can be expanded with more features)
-            market_context = {}
+    def _calculate_enhanced_quality_score(
+        self,
+        entry_point: pd.Series,
+        future_data: pd.DataFrame,
+        index_label: Any,
+        regime_assignments: Optional[pd.Series]
+    ) -> float:
+        """Calculate quality score using enhanced scorer."""
+        tprint_info("🎯 Using enhanced quality scorer for entry calculation")
+        
+        # Determine regime
+        regime = None
+        if regime_assignments is not None and self.config.enable_regime_adaptive_labeling:
+            if index_label in regime_assignments.index:
+                regime_value = regime_assignments.loc[index_label]
+                regime = f"regime_{regime_value}"
+                tprint_info(f"🎭 Using regime: {regime}")
 
-            # Calculate quality using enhanced scorer
-            quality_score = self.quality_scorer.calculate_entry_quality(
-                entry_point=entry_point,
-                future_data=future_data,
-                regime=regime,
-                market_context=market_context
-            )
+        # Build market context (can be expanded with more features)
+        market_context = {}
 
-            tprint_info(f"📊 Enhanced quality score: {quality_score:.4f}")
-            return quality_score
+        # Calculate quality using enhanced scorer
+        quality_score = self.quality_scorer.calculate_entry_quality(
+            entry_point=entry_point,
+            future_data=future_data,
+            regime=regime,
+            market_context=market_context
+        )
 
-        # Fallback to old method if enhanced scorer not available
+        tprint_info(f"📊 Enhanced quality score: {quality_score:.4f}")
+        return quality_score
+
+    def _calculate_fallback_quality_score(
+        self,
+        entry_point: pd.Series,
+        future_data: pd.DataFrame,
+        index_label: Any,
+        regime_assignments: Optional[pd.Series]
+    ) -> float:
+        """Calculate quality score using fallback method."""
         tprint_info("🔄 Using fallback quality scoring method")
         regime_params = self._get_regime_parameters(index_label, regime_assignments)
 
@@ -720,6 +829,7 @@ class TacticianDifferentiatedLabeler:
 
         tprint_info(f"📊 Price movements: adverse={adverse_move:.2f}%, favorable={favorable_move:.2f}%")
 
+        # Apply regime-specific thresholds
         if adverse_move > regime_params['max_adverse_movement_pct']:
             tprint_info(f"❌ Adverse movement {adverse_move:.2f}% exceeds threshold {regime_params['max_adverse_movement_pct']:.2f}%")
             return 0.0
@@ -728,27 +838,17 @@ class TacticianDifferentiatedLabeler:
             tprint_info(f"❌ Favorable movement {favorable_move:.2f}% below threshold {regime_params['min_favorable_movement_pct']:.2f}%")
             return 0.0
 
+        # Calculate quality components
         risk_reward_ratio = favorable_move / (adverse_move + 1e-8)
         timing_score = safe_divide(1.0, 1.0 + safe_divide(len(future_data), self.config.max_entry_window_minutes), default=0.0)
 
         tprint_info(f"📊 Risk-reward ratio: {risk_reward_ratio:.2f}, Timing score: {timing_score:.3f}")
 
-        # Use VectorBT for optimized volatility calculation
-        if len(future_data) >= 2:
-            returns = future_data['close'].pct_change().dropna()
-            if not returns.empty:
-                # Use VectorBT optimized volatility calculation
-                volatility = self.vectorbt_optimizer.calculate_volatility(
-                    returns, window=len(returns), annualize=False
-                ).iloc[-1] if len(returns) > 0 else 0.0
-            else:
-                volatility = 0.0
-        else:
-            volatility = 0.0
+        # Calculate volatility score
+        volatility_score = self._calculate_volatility_score(future_data)
+        tprint_info(f"📊 Volatility score: {volatility_score:.3f}")
 
-        volatility_score = safe_divide(1.0, 1.0 + safe_divide(volatility * 100, 10.0), default=1.0)
-        tprint_info(f"📊 Volatility: {volatility:.4f}, Volatility score: {volatility_score:.3f}")
-
+        # Calculate composite quality score
         quality_score = (
             risk_reward_ratio * 0.4 +
             timing_score * 0.3 +
@@ -758,6 +858,27 @@ class TacticianDifferentiatedLabeler:
         final_score = float(min(max(quality_score, 0.0), 1.0))
         tprint_info(f"📊 Fallback quality score: {final_score:.4f}")
         return final_score
+
+    def _calculate_volatility_score(self, future_data: pd.DataFrame) -> float:
+        """Calculate volatility score with VectorBT optimization and fallback."""
+        if len(future_data) >= 2:
+            returns = future_data['close'].pct_change().dropna()
+            if not returns.empty:
+                # Use VectorBT optimized volatility calculation
+                volatility_result = self._safe_vectorbt_operation(
+                    'calculate_volatility',
+                    self.vectorbt_optimizer.calculate_volatility,
+                    returns, window=len(returns), annualize=False
+                )
+                volatility = volatility_result.iloc[-1] if volatility_result is not None and len(volatility_result) > 0 else returns.std()
+            else:
+                volatility = 0.0
+        else:
+            volatility = 0.0
+
+        volatility_score = safe_divide(1.0, 1.0 + safe_divide(volatility * 100, 10.0), default=1.0)
+        tprint_info(f"📊 Volatility: {volatility:.4f}, Volatility score: {volatility_score:.3f}")
+        return volatility_score
 
     def _get_regime_parameters(
         self,
@@ -881,12 +1002,26 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     regime_assignments = regime_assignments.iloc[:, 0]  # Take first column
                 tprint_info(f"📊 Using regime assignments for adaptive labeling")
 
-            # Generate labels
-            labels, quality_metrics = self.labeler.create_entry_timing_labels(
-                data=data,
-                analyst_signals=analyst_signals,
-                regime_assignments=regime_assignments
-            )
+            # Generate labels with error handling
+            try:
+                labels, quality_metrics = self.labeler.create_entry_timing_labels(
+                    data=data,
+                    analyst_signals=analyst_signals,
+                    regime_assignments=regime_assignments
+                )
+            except Exception as e:
+                tprint_error(f"❌ Error during label generation: {e}")
+                raise ValueError(f"Failed to generate entry timing labels: {e}") from e
+
+            # Validate generated labels
+            if labels is None or len(labels) == 0:
+                raise ValueError("No labels generated - check data quality and configuration")
+            
+            if not isinstance(labels, pd.Series):
+                raise ValueError(f"Expected labels to be pd.Series, got {type(labels)}")
+            
+            if len(labels) != len(data):
+                raise ValueError(f"Label length ({len(labels)}) doesn't match data length ({len(data)})")
 
             # Calculate processing time
             processing_time = time.time() - start_time

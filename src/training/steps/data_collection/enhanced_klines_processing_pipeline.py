@@ -226,6 +226,7 @@ class ExchangeInterface:
         self.connected = False
         self.exchange_client = None
         self.klines_adapter = None
+        self.enable_logging = kwargs.get('enable_logging', True)
         
     async def connect(self):
         """Connect to the exchange using existing modules."""
@@ -1694,7 +1695,7 @@ class EnhancedKlinesProcessingPipeline:
                     tprint_info(f"📥 Re-downloading data for gap: {gap.start_time} to {gap.end_time}")
 
                 # Download data for the gap period
-                gap_data = await exchange_interface.get_klines(
+                gap_data = await exchange_interface.fetch_klines(
                     symbol=symbol,
                     interval=interval,
                     start_time=gap.start_time,

@@ -89,6 +89,15 @@ class PartialBarNowcaster:
             self.current_hour_start = now.replace(minute=0, second=0, microsecond=0)
             self.current_hour_end = self.current_hour_start + timedelta(hours=1)
 
+            # Validate configuration
+            if self.config.min_bar_completion >= self.config.max_bar_completion:
+                tprint_error("❌ Invalid configuration: min_bar_completion must be less than max_bar_completion")
+                return False
+
+            if self.config.evaluation_interval <= 0:
+                tprint_error("❌ Invalid configuration: evaluation_interval must be positive")
+                return False
+
             # Schedule first evaluation
             self.next_evaluation_time = now + timedelta(seconds=self.config.evaluation_interval)
 

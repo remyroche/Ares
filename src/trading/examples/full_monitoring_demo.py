@@ -1,5 +1,4 @@
 """
-import warnings
 Full Monitoring Demo
 
 Complete demonstration of the comprehensive trading monitoring system
@@ -9,8 +8,9 @@ performance reporting, and live dashboards.
 
 import asyncio
 import logging
+import warnings
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
 
@@ -55,11 +55,17 @@ async def main():
             'enable_lime': True
         }
 
-        success = await initialize_comprehensive_monitoring(monitoring_config)
-        if success:
-            tprint_success("✅ Comprehensive monitoring system initialized")
-        else:
-            tprint_error("❌ Failed to initialize monitoring system")
+        # Initialize comprehensive monitoring
+        try:
+            if not comprehensive_trade_monitor.is_initialized:
+                success = await comprehensive_trade_monitor.initialize(monitoring_config)
+                if not success:
+                    tprint_error("❌ Failed to initialize monitoring system")
+                    return
+            else:
+                tprint_success("✅ Comprehensive monitoring system already initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize monitoring system: {e}")
             return
 
         # Step 2: Create Trading Orchestrator
@@ -85,13 +91,17 @@ async def main():
             }
         }
 
-        orchestrator = create_trading_orchestrator(orchestrator_config)
-        success = await orchestrator.initialize()
+        try:
+            orchestrator = create_trading_orchestrator(orchestrator_config)
+            success = await orchestrator.initialize()
 
-        if success:
-            tprint_success("✅ Trading orchestrator initialized")
-        else:
-            tprint_error("❌ Failed to initialize trading orchestrator")
+            if success:
+                tprint_success("✅ Trading orchestrator initialized")
+            else:
+                tprint_error("❌ Failed to initialize trading orchestrator")
+                return
+        except Exception as e:
+            tprint_error(f"❌ Failed to create trading orchestrator: {e}")
             return
 
         # Step 3: Simulate Detailed Trading Operations
@@ -184,101 +194,121 @@ async def main():
         tprint_info("📊 Step 4: Generating Comprehensive Reports")
 
         # Session performance report
-        session_report = await comprehensive_trade_monitor.generate_performance_report("session", "json")
-        if session_report:
-            tprint_success("✅ Generated session performance report")
+        try:
+            session_report = await comprehensive_trade_monitor.generate_performance_report("session", "json")
+            if session_report:
+                tprint_success("✅ Generated session performance report")
 
-            # Display key metrics
-            if 'executive_summary' in session_report:
-                tprint_info("📈 Session Performance Summary:")
-                exec_summary = session_report['executive_summary']
+                # Display key metrics
+                if 'executive_summary' in session_report:
+                    tprint_info("📈 Session Performance Summary:")
+                    exec_summary = session_report['executive_summary']
 
-                if 'performance_overview' in exec_summary:
-                    perf = exec_summary['performance_overview']
-                    tprint_structured({
-                        'Total Trades': perf.get('total_trades', 0),
-                        'Win Rate': f"{perf.get('win_rate', 0):.1%}",
-                        'Total PnL': f"${perf.get('total_pnl', 0):.2f}",
-                        'Profit Factor': f"{perf.get('profit_factor', 0):.2f}",
-                        'Sharpe Ratio': f"{perf.get('sharpe_ratio', 0):.3f}",
-                        'Max Drawdown': f"{perf.get('max_drawdown', 0):.1%}"
-                    }, LogLevel.INFO)
+                    if 'performance_overview' in exec_summary:
+                        perf = exec_summary['performance_overview']
+                        tprint_structured({
+                            'Total Trades': perf.get('total_trades', 0),
+                            'Win Rate': f"{perf.get('win_rate', 0):.1%}",
+                            'Total PnL': f"${perf.get('total_pnl', 0):.2f}",
+                            'Profit Factor': f"{perf.get('profit_factor', 0):.2f}",
+                            'Sharpe Ratio': f"{perf.get('sharpe_ratio', 0):.3f}",
+                            'Max Drawdown': f"{perf.get('max_drawdown', 0):.1%}"
+                        }, LogLevel.INFO)
 
-        # Model performance analysis
-        if 'model_performance' in session_report:
-            tprint_info("🤖 Model Performance Analysis:")
-            model_perf = session_report['model_performance']['individual_model_performance']
+                # Model performance analysis
+                if 'model_performance' in session_report:
+                    tprint_info("🤖 Model Performance Analysis:")
+                    model_perf = session_report['model_performance']['individual_model_performance']
 
-            for model_id, metrics in model_perf.items():
-                tprint_info(f"  {model_id}:")
-                tprint_info(f"    Usage: {metrics['usage_count']} trades")
-                tprint_info(f"    PnL: ${metrics['total_pnl']:.2f}")
-                tprint_info(f"    Accuracy: {metrics['accuracy']:.1%}")
-                tprint_info(f"    Avg Confidence: {metrics['avg_confidence']:.1%}")
+                    for model_id, metrics in model_perf.items():
+                        tprint_info(f"  {model_id}:")
+                        tprint_info(f"    Usage: {metrics['usage_count']} trades")
+                        tprint_info(f"    PnL: ${metrics['total_pnl']:.2f}")
+                        tprint_info(f"    Accuracy: {metrics['accuracy']:.1%}")
+                        tprint_info(f"    Avg Confidence: {metrics['avg_confidence']:.1%}")
+            else:
+                tprint_warning("⚠️ No session report generated")
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate session report: {e}")
 
         # Step 5: Generate Live Dashboard
         tprint_info("📱 Step 5: Generating Live Dashboard")
 
-        dashboard = await orchestrator.generate_live_dashboard()
-        if dashboard:
-            tprint_success("✅ Generated live trading dashboard")
+        try:
+            dashboard = await orchestrator.generate_live_dashboard()
+            if dashboard:
+                tprint_success("✅ Generated live trading dashboard")
 
-            # Show live metrics
-            if 'live_metrics' in dashboard:
-                live_metrics = dashboard['live_metrics']
-                tprint_info("📊 Live Trading Metrics:")
+                # Show live metrics
+                if 'live_metrics' in dashboard:
+                    live_metrics = dashboard['live_metrics']
+                    tprint_info("📊 Live Trading Metrics:")
 
-                if 'current_performance' in live_metrics:
-                    current_perf = live_metrics['current_performance']
-                    tprint_structured({
-                        'Total Trades': current_perf.get('total_trades', 0),
-                        'Total PnL': f"${current_perf.get('total_pnl', 0):.2f}",
-                        'Win Rate': f"{current_perf.get('win_rate', 0):.1%}",
-                        'Current Drawdown': f"{current_perf.get('current_drawdown', 0):.1%}",
-                        'Trades/Hour': f"{current_perf.get('trades_per_hour', 0):.1f}"
-                    }, LogLevel.INFO)
+                    if 'current_performance' in live_metrics:
+                        current_perf = live_metrics['current_performance']
+                        tprint_structured({
+                            'Total Trades': current_perf.get('total_trades', 0),
+                            'Total PnL': f"${current_perf.get('total_pnl', 0):.2f}",
+                            'Win Rate': f"{current_perf.get('win_rate', 0):.1%}",
+                            'Current Drawdown': f"{current_perf.get('current_drawdown', 0):.1%}",
+                            'Trades/Hour': f"{current_perf.get('trades_per_hour', 0):.1f}"
+                        }, LogLevel.INFO)
+            else:
+                tprint_warning("⚠️ No dashboard generated")
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate live dashboard: {e}")
 
         # Step 6: Individual Trade Analysis
         tprint_info("🔍 Step 6: Detailed Individual Trade Analysis")
 
-        if comprehensive_trade_monitor.completed_trades:
-            # Analyze the first completed trade
-            trade = comprehensive_trade_monitor.completed_trades[0]
+        try:
+            if comprehensive_trade_monitor.completed_trades:
+                # Analyze the first completed trade
+                trade = comprehensive_trade_monitor.completed_trades[0]
 
-            analysis = await analyze_trade_performance(trade, include_explanations=True)
+                analysis = await analyze_trade_performance(trade, include_explanations=True)
 
-            if analysis:
-                tprint_success("✅ Completed detailed trade analysis")
+                if analysis:
+                    tprint_success("✅ Completed detailed trade analysis")
 
-                # Show trade quality
-                if 'trade_quality_score' in analysis:
-                    quality = analysis['trade_quality_score']
-                    tprint_info(f"📊 Trade Quality Analysis:")
-                    tprint_structured({
-                        'Overall Score': f"{quality['overall_score']:.3f}",
-                        'Quality Grade': quality['quality_grade'],
-                        'Classification': quality['trade_classification'],
-                        'Performance Score': f"{quality['component_scores']['performance']:.3f}",
-                        'Model Score': f"{quality['component_scores']['model_effectiveness']:.3f}",
-                        'Risk Score': f"{quality['component_scores']['risk_management']:.3f}",
-                        'Timing Score': f"{quality['component_scores']['timing']:.3f}",
-                        'Execution Score': f"{quality['component_scores']['execution']:.3f}"
-                    }, LogLevel.INFO)
+                    # Show trade quality
+                    if 'trade_quality_score' in analysis:
+                        quality = analysis['trade_quality_score']
+                        tprint_info(f"📊 Trade Quality Analysis:")
+                        tprint_structured({
+                            'Overall Score': f"{quality['overall_score']:.3f}",
+                            'Quality Grade': quality['quality_grade'],
+                            'Classification': quality['trade_classification'],
+                            'Performance Score': f"{quality['component_scores']['performance']:.3f}",
+                            'Model Score': f"{quality['component_scores']['model_effectiveness']:.3f}",
+                            'Risk Score': f"{quality['component_scores']['risk_management']:.3f}",
+                            'Timing Score': f"{quality['component_scores']['timing']:.3f}",
+                            'Execution Score': f"{quality['component_scores']['execution']:.3f}"
+                        }, LogLevel.INFO)
 
-                # Show feature importance
-                if 'explainability_analysis' in analysis:
-                    exp_analysis = analysis['explainability_analysis']
-                    if 'feature_consensus' in exp_analysis and 'top_features' in exp_analysis['feature_consensus']:
-                        top_features = exp_analysis['feature_consensus']['top_features']
-                        tprint_info("🎯 Top Important Features:")
-                        for feature, importance in top_features[:5]:
-                            tprint_info(f"  {feature}: {importance:.4f}")
+                    # Show feature importance
+                    if 'explainability_analysis' in analysis:
+                        exp_analysis = analysis['explainability_analysis']
+                        if 'feature_consensus' in exp_analysis and 'top_features' in exp_analysis['feature_consensus']:
+                            top_features = exp_analysis['feature_consensus']['top_features']
+                            tprint_info("🎯 Top Important Features:")
+                            for feature, importance in top_features[:5]:
+                                tprint_info(f"  {feature}: {importance:.4f}")
+                else:
+                    tprint_warning("⚠️ No trade analysis generated")
+            else:
+                tprint_warning("⚠️ No completed trades available for analysis")
+        except Exception as e:
+            tprint_error(f"❌ Failed to analyze individual trades: {e}")
 
         # Step 7: Show Monitoring Statistics
         tprint_info("📈 Step 7: Final Monitoring Statistics")
 
-        monitor_stats = comprehensive_trade_monitor.get_monitor_stats()
-        tprint_structured(monitor_stats, LogLevel.INFO)
+        try:
+            monitor_stats = comprehensive_trade_monitor.get_monitor_stats()
+            tprint_structured(monitor_stats, LogLevel.INFO)
+        except Exception as e:
+            tprint_error(f"❌ Failed to get monitoring statistics: {e}")
 
         tprint_success("🎉 Full Trading Monitoring Demonstration Completed!")
         print("=" * 80)
@@ -387,17 +417,20 @@ async def record_comprehensive_trade(scenario: Dict[str, Any], market_data: pd.D
                 'training_date': '2024-01-15'
             }
 
-        # Record the comprehensive trade
+        # Record the comprehensive trade using the actual function
         trade_id = await record_detailed_trade(trade_data, models_used, market_data)
 
-        tprint_success(f"✅ Recorded comprehensive trade: {trade_id}")
-        tprint_info(f"   Symbol: {scenario['symbol']}")
-        tprint_info(f"   Action: {scenario['action']}")
-        tprint_info(f"   Confidence: {scenario['confidence']:.1%}")
-        tprint_info(f"   Regime: {scenario['regime_type']}")
-        tprint_info(f"   Models Used: {len(models_used)}")
+        if trade_id:
+            tprint_success(f"✅ Recorded comprehensive trade: {trade_id}")
+            tprint_info(f"   Symbol: {scenario['symbol']}")
+            tprint_info(f"   Action: {scenario['action']}")
+            tprint_info(f"   Confidence: {scenario['confidence']:.1%}")
+            tprint_info(f"   Regime: {scenario['regime_type']}")
+            tprint_info(f"   Models Used: {len(models_used)}")
+        else:
+            tprint_warning("⚠️ Trade recording returned no trade ID")
 
-        return trade_id
+        return trade_id or ""
 
     except Exception as e:
         tprint_error(f"❌ Failed to record comprehensive trade: {e}")
@@ -456,13 +489,16 @@ async def simulate_trade_outcome(trade_id: str, scenario: Dict[str, Any]):
         }
 
         # Update trade outcome
-        success = await update_trade_outcome(trade_id, outcome_data)
+        if trade_id:
+            success = await update_trade_outcome(trade_id, outcome_data)
 
-        if success:
-            outcome_emoji = "📈" if actual_pnl > 0 else "📉" if actual_pnl < 0 else "➡️"
-            tprint_success(f"✅ {outcome_emoji} Trade completed: {actual_pnl:+.2f} PnL ({pnl_percentage:+.2%})")
+            if success:
+                outcome_emoji = "📈" if actual_pnl > 0 else "📉" if actual_pnl < 0 else "➡️"
+                tprint_success(f"✅ {outcome_emoji} Trade completed: {actual_pnl:+.2f} PnL ({pnl_percentage:+.2%})")
+            else:
+                tprint_warning("⚠️ Failed to update trade outcome")
         else:
-            tprint_warning("⚠️ Failed to update trade outcome")
+            tprint_warning("⚠️ No trade ID available for outcome update")
 
     except Exception as e:
         tprint_error(f"❌ Failed to simulate trade outcome: {e}")

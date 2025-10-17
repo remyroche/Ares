@@ -43,10 +43,30 @@ from .template_interaction_generator import (
 
 from .modular_architecture import (
     ModularArchitecture,
+    ModularComponent,
+    ExampleModularComponent,
     ValidationLevel,
+    ValidationResult,
+    ErrorInfo,
+    PerformanceMetric,
+    MetricType,
+    MetricLevel,
     ErrorSeverity,
     ErrorCategory,
-    create_modular_architecture
+    create_modular_architecture,
+    create_modular_component
+)
+
+from .migration_utils import (
+    ComponentMigrationAnalyzer,
+    ComponentMigrationWrapper,
+    MigrationReport,
+    migrate_base_component_to_modular,
+    create_component_wrapper,
+    validate_migration_compatibility,
+    generate_migration_report,
+    create_simple_migration,
+    create_advanced_migration
 )
 
 __all__ = [
@@ -79,8 +99,27 @@ __all__ = [
     'create_template_interaction_generator',
 
     'ModularArchitecture',
+    'ModularComponent',
+    'ExampleModularComponent',
     'ValidationLevel',
+    'ValidationResult',
+    'ErrorInfo',
+    'PerformanceMetric',
+    'MetricType',
+    'MetricLevel',
     'ErrorSeverity',
     'ErrorCategory',
-    'create_modular_architecture'
+    'create_modular_architecture',
+    'create_modular_component',
+    
+    # Migration utilities
+    'ComponentMigrationAnalyzer',
+    'ComponentMigrationWrapper',
+    'MigrationReport',
+    'migrate_base_component_to_modular',
+    'create_component_wrapper',
+    'validate_migration_compatibility',
+    'generate_migration_report',
+    'create_simple_migration',
+    'create_advanced_migration'
 ]

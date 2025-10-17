@@ -853,17 +853,40 @@ class MultiHorizonProfitLabeler:
         quality_thresholds: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """
-        Execute multi-horizon profit labeling.
+        Execute multi-horizon profit labeling with volatility modulation and regime awareness.
+
+        This method performs comprehensive profit labeling by:
+        1. Loading and validating market data from the specified directory
+        2. Applying volatility-aware labeling with single 0.5% base target
+        3. Modulating the target threshold based on market volatility conditions
+        4. Integrating regime-specific labeling if regime data is provided
+        5. Applying quality scoring and validation to ensure label reliability
+        6. Generating comprehensive reports and metadata
+
+        The labeling process uses a single profit target (0.5% by default) that is
+        dynamically adjusted based on market volatility using the formula:
+        effective_threshold = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
 
         Args:
-            symbol: Trading symbol (e.g., 'ETHUSDT')
-            exchange: Exchange name (e.g., 'binance')
-            timeframe: Timeframe for labeling (e.g., '15m')
-            data_dir: Directory containing historical data
-            regime_data: Optional regime data for regime-aware labeling
+            symbol: Trading symbol (e.g., 'ETHUSDT', 'BTCUSDT')
+            exchange: Exchange name (e.g., 'binance', 'coinbase')
+            timeframe: Timeframe for labeling (e.g., '15m', '1h', '4h')
+            data_dir: Optional directory containing historical data files
+            regime_data: Optional regime assignments for regime-aware labeling
+            quality_thresholds: Optional quality thresholds for label validation
 
         Returns:
-            Dictionary containing labeling results and metadata
+            Dictionary containing:
+                - labeling_result: LabelingResult with generated labels and metadata
+                - quality_metrics: Comprehensive quality scores and validation results
+                - processing_stats: Processing statistics and performance metrics
+                - regime_analysis: Regime-specific analysis if regime data provided
+                - artifacts: Generated artifacts and reports
+
+        Raises:
+            ValueError: If required parameters are missing or invalid
+            FileNotFoundError: If market data files cannot be found
+            RuntimeError: If labeling process fails due to data quality issues
         """
         try:
             tprint_info(f"🏷️ Starting multi-horizon profit labeling for {symbol} on {exchange}")

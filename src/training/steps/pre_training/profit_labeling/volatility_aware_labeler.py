@@ -122,7 +122,7 @@ class VolatilityAwareConfig:
         # Validate configuration
         self._validate_config()
     
-    def _validate_config(self):
+    def _validate_config(self) -> None:
         """Validate configuration parameters and raise helpful errors."""
         errors = []
         
@@ -138,11 +138,10 @@ class VolatilityAwareConfig:
         if self.volatility.window < 2:
             errors.append(f"volatility.window ({self.volatility.window}) must be >= 2")
         
-        # Validate multi-target profit targets
-        if hasattr(self.multi_target, 'target_profits') and self.multi_target.target_profits:
-            for i, target in enumerate(self.multi_target.target_profits):
-                if target <= 0:
-                    errors.append(f"multi_target.target_profits[{i}] ({target}) must be > 0")
+        # Validate single target profit
+        if hasattr(self.multi_target, 'target_profit') and self.multi_target.target_profit:
+            if self.multi_target.target_profit <= 0:
+                errors.append(f"multi_target.target_profit ({self.multi_target.target_profit}) must be > 0")
         
         # Validate quality scoring thresholds
         if not (0 <= self.quality_scoring.min_quality_threshold <= 1):
@@ -158,20 +157,20 @@ class VolatilityAwareConfig:
 
 class QualityScoringConfig:
     """Configuration for quality scoring."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.min_quality_threshold = 0.3
         self.min_predictability = 0.3
 
 
 class RegimeConfig:
     """Configuration for regime adaptation."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = False
 
 
 class OptimalEntryDetectionConfig:
     """Configuration for optimal entry point detection."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = False
         self.entry_threshold = 0.5
         self.find_highest_gap_entry = False
@@ -184,21 +183,24 @@ class OptimalEntryDetectionConfig:
 
 class NoiseGatingConfig:
     """Configuration for noise gating."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = True
 
 
 class MultiTargetConfig:
-    """Configuration for multi-target labeling."""
-    def __init__(self):
+    """Configuration for single-target labeling with volatility modulation."""
+    def __init__(self) -> None:
         self.horizons = []
-        self.target_profits = []
+        self.target_profit = 0.5  # Single 0.5% base target
         self.min_lqs_score = 0.3
+        self.volatility_modulation = True  # Enable volatility-based threshold adjustment
+        self.min_threshold_multiplier = 0.5  # Minimum threshold multiplier
+        self.max_threshold_multiplier = 2.0  # Maximum threshold multiplier
 
 
 class VolatilityConfig:
     """Configuration for volatility settings."""
-    def __init__(self):
+    def __init__(self) -> None:
         self.enabled = True
         self.window = 20
         self.sensitivity = 1.5  # Tunable parameter for volatility sensitivity
@@ -280,16 +282,34 @@ class VolatilityAwareMultiHorizonLabeler:
         profit_targets: Optional[List[float]] = None
     ) -> LabelingResult:
         """
-        Generate volatility-aware labels with analyst profit targets.
+        Generate volatility-aware labels with single profit target modulated by market volatility.
+
+        This method creates trading opportunity labels by:
+        1. Calculating future returns over the specified lookahead period
+        2. Computing rolling volatility to assess market conditions
+        3. Applying volatility modulation to the base profit target (0.5% default)
+        4. Generating binary or regression labels based on the effective threshold
+
+        The volatility modulation follows the formula:
+        effective_threshold = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
+        Where k is the volatility sensitivity factor (default 1.5).
 
         Args:
-            data: Input data
-            price_column: Name of price column
-            volatility_column: Name of volatility column (optional)
-            profit_targets: Optional list of profit targets for analyst labeling
+            data: Input market data DataFrame with OHLCV columns
+            price_column: Name of the price column to use for calculations (default: "close")
+            volatility_column: Optional name of pre-calculated volatility column
+            profit_targets: Optional list of profit targets in percentage points (default: [0.5])
 
         Returns:
-            LabelingResult with generated labels
+            LabelingResult containing:
+                - labels: Generated labels (Series for single target, DataFrame for multiple)
+                - metadata: Processing metadata including quality scores and statistics
+                - success: Boolean indicating if labeling was successful
+                - quality_scores: Comprehensive quality metrics for label validation
+
+        Raises:
+            ValueError: If input data is invalid or insufficient
+            RuntimeError: If labeling process fails due to data quality issues
         """
         try:
             # Edge case handling: empty/short series
@@ -441,12 +461,11 @@ class VolatilityAwareMultiHorizonLabeler:
     
     def _calculate_comprehensive_target_quality(self, labels: pd.Series, prices: pd.Series, target_name: str) -> Any:
         """Calculate quality scores focused on trade opportunities using potential profit."""
-        self.logger.info(f"DEBUG: Starting trade opportunity quality for {target_name}")
-        self.logger.info(f"DEBUG: labels length: {len(labels)}, prices length: {len(prices)}")
+        # Calculate trade opportunity quality metrics
         
         # Align series to ensure consistent indices
         labels_aligned, prices_aligned = _align_like(labels, prices)
-        self.logger.info(f"DEBUG: After alignment - labels: {len(labels_aligned)}, prices: {len(prices_aligned)}")
+        # Align labels and prices for quality calculation
         
         # Only calculate quality for trade opportunities (non-zero labels: positive for longs, negative for shorts)
         trade_opportunities = labels_aligned[labels_aligned != 0]
@@ -456,8 +475,7 @@ class VolatilityAwareMultiHorizonLabeler:
         
         long_opportunities = len(trade_opportunities[trade_opportunities > 0])
         short_opportunities = len(trade_opportunities[trade_opportunities < 0])
-        self.logger.info(f"DEBUG: Found {len(trade_opportunities)} trade opportunities out of {len(labels_aligned)} total samples")
-        self.logger.info(f"DEBUG: Long opportunities: {long_opportunities}, Short opportunities: {short_opportunities}")
+        # Count trade opportunities by direction
         
         # Calculate potential profit for each trade opportunity
         potential_profits = self._calculate_potential_profits(trade_opportunities, prices_aligned, target_name)
@@ -717,31 +735,31 @@ class VolatilityAwareMultiHorizonLabeler:
     
     def _check_quality_gates(self, labels: pd.Series, lookahead_returns: pd.Series, coverage: float) -> bool:
         """Check minimum quality gates."""
-        self.logger.info(f"DEBUG: Checking quality gates - coverage: {coverage:.3f}")
+        # Check quality gates for label validation
         
         # Gate 1: Coverage ≥ 5%
         if coverage < 0.05:
-            self.logger.warning(f"DEBUG: Gate 1 FAILED - coverage {coverage:.3f} < 0.05")
+            self.logger.warning(f"Quality gate 1 failed: coverage {coverage:.3f} < 0.05")
             return False
-        self.logger.info(f"DEBUG: Gate 1 PASSED - coverage {coverage:.3f} >= 0.05")
+        # Quality gate 1 passed
         
         # Gate 2: Balance check removed - not relevant for 2-5 opportunities per day
         if len(labels.dropna()) > 0:
             positive_rate = (labels.dropna() > 0).mean()
-            self.logger.info(f"DEBUG: Gate 2 SKIPPED - positive_rate: {positive_rate:.3f} (balance not relevant for low-frequency opportunities)")
+            # Gate 2 skipped for low-frequency opportunities
         
         # Gate 3: IC p-value < 0.1 in at least half of temporal folds
         if len(labels.dropna()) > 10 and len(lookahead_returns.dropna()) > 10:
             ic_pvalue = self._calculate_ic_pvalue(labels.dropna(), lookahead_returns.dropna())
-            self.logger.info(f"DEBUG: Gate 3 - IC p-value: {ic_pvalue:.3f}")
+            # Check IC p-value threshold
             if ic_pvalue >= 0.1:
-                self.logger.warning(f"DEBUG: Gate 3 FAILED - IC p-value {ic_pvalue:.3f} >= 0.1")
+                self.logger.warning(f"Quality gate 3 failed: IC p-value {ic_pvalue:.3f} >= 0.1")
                 return False
-            self.logger.info(f"DEBUG: Gate 3 PASSED - IC p-value {ic_pvalue:.3f} < 0.1")
+            # Quality gate 3 passed
         else:
-            self.logger.info(f"DEBUG: Gate 3 SKIPPED - insufficient data: labels={len(labels.dropna())}, returns={len(lookahead_returns.dropna())}")
+            # Gate 3 skipped due to insufficient data
         
-        self.logger.info(f"DEBUG: All quality gates PASSED")
+        # All quality gates passed
         return True
     
     def _calculate_target_metrics(self, labels: pd.Series, lookahead_returns: pd.Series) -> Dict[str, float]:
@@ -770,18 +788,15 @@ class VolatilityAwareMultiHorizonLabeler:
         labels_clean, returns_clean = _align_like(labels, lookahead_returns)
         
         # Debug logging
-        self.logger.info(f"DEBUG: labels_clean length: {len(labels_clean)}, non-null: {len(labels_clean.dropna())}")
-        self.logger.info(f"DEBUG: returns_clean length: {len(returns_clean)}, non-null: {len(returns_clean.dropna())}")
-        self.logger.info(f"DEBUG: labels_clean sample: {labels_clean.head()}")
-        self.logger.info(f"DEBUG: returns_clean sample: {returns_clean.head()}")
+        # Clean data for metrics calculation
         
         if len(labels_clean.dropna()) < 10:
-            self.logger.warning(f"DEBUG: Insufficient data for metrics - {len(labels_clean.dropna())} < 10")
+            self.logger.warning(f"Insufficient data for metrics: {len(labels_clean.dropna())} < 10")
             return {'ic': 0.0, 'hit_rate': 0.0, 'uplift': 0.0}
         
         # Information Coefficient (Spearman correlation)
         ic = labels_clean.corr(returns_clean, method='spearman')
-        self.logger.info(f"DEBUG: IC calculation: {ic}")
+        # Calculate information coefficient
         metrics['ic'] = ic if not pd.isna(ic) else 0.0
         
         # Hit Rate
@@ -960,7 +975,7 @@ class VolatilityAwareMultiHorizonLabeler:
     def _create_fallback_quality_score(self) -> Dict[str, Any]:
         """Create fallback quality score when calculation fails."""
         class FallbackQualityScore:
-            def __init__(self):
+            def __init__(self) -> None:
                 self.overall_quality = 0.0
                 self.predictability = 0.0
                 self.stability = 0.0
@@ -2399,8 +2414,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 low_vol_mask = volatility <= self.config.volatility_threshold
 
                 labels = pd.Series(0, index=prices.index, dtype=np.uint8)
-                # Use existing volatility-modulated threshold logic with 0.5% minimum
-                base_threshold = 0.005  # 0.5% minimum
+                # Use volatility-modulated threshold logic with configurable base target
+                base_threshold = self.config.multi_target.target_profit / 100.0  # Convert percentage to decimal
                 
                 # Apply volatility modulation: effective_target = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
                 k = self.config.volatility.sensitivity  # Tunable parameter
@@ -2418,17 +2433,11 @@ class VolatilityAwareMultiHorizonLabeler:
                     labels -= short_signals  # -1 for short signals
                 
                 # Debug: Log return statistics
-                self.logger.info(f"DEBUG: Return stats - mean: {future_returns.mean():.6f}, std: {future_returns.std():.6f}")
-                self.logger.info(f"DEBUG: Return percentiles - 50%: {future_returns.quantile(0.5):.6f}, 75%: {future_returns.quantile(0.75):.6f}, 90%: {future_returns.quantile(0.9):.6f}")
-                self.logger.info(f"DEBUG: Return percentiles - 95%: {future_returns.quantile(0.95):.6f}, 99%: {future_returns.quantile(0.99):.6f}")
-                self.logger.info(f"DEBUG: Volatility-modulated thresholds - base: {base_threshold:.4f}, effective range: {effective_threshold.min():.4f} to {effective_threshold.max():.4f}")
+                # Calculate return statistics and volatility-modulated thresholds
                 long_rate = (labels > 0).mean()
                 short_rate = (labels < 0).mean()
                 signal_rate = (labels != 0).mean()
-                self.logger.info(f"DEBUG: Direction config - Long: {self.config.enable_long_positions}, Short: {self.config.enable_short_positions}")
-                self.logger.info(f"DEBUG: Signal rates - Long: {long_rate:.3f}, Short: {short_rate:.3f}, Total: {signal_rate:.3f}")
-                self.logger.info(f"DEBUG: Volatility stats - mean: {volatility.mean():.6f}, std: {volatility.std():.6f}")
-                self.logger.info(f"DEBUG: Volatility sensitivity (k): {k}")
+                # Generate signals based on direction configuration and volatility modulation
             else:
                 # Regression: use actual returns
                 labels = future_returns

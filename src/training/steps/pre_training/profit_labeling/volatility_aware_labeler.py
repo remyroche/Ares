@@ -341,6 +341,9 @@ class VolatilityAwareMultiHorizonLabeler:
             # Generate quality scores with proper alignment
             quality_scores = self._calculate_quality_scores(labels, price_series)
             
+            # Create downstream-ready opportunity data
+            opportunity_data = self._create_downstream_opportunity_data(quality_scores)
+            
             # Determine result shape and format
             if isinstance(labels, pd.DataFrame):
                 # Multi-target case
@@ -361,6 +364,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 "total_labels": len(result_labels),
                 "non_null_labels": result_labels.notna().sum() if isinstance(result_labels, pd.Series) else result_labels.notna().sum().sum(),
                 "quality_scores": quality_scores,
+                "opportunity_data": opportunity_data,  # Downstream-ready opportunity data
                 "profit_targets_pp": target_pp,
                 "profit_targets_frac": targets_frac,
                 "n_horizons": 1,
@@ -456,9 +460,13 @@ class VolatilityAwareMultiHorizonLabeler:
         # Calculate composite score based on potential profit quality
         composite_score = self._calculate_potential_profit_quality_score(metrics, potential_profits)
         
+        # Calculate individual opportunity scores and weights
+        opportunity_scores = self._calculate_individual_opportunity_scores(trade_opportunities, potential_profits, metrics)
+        opportunity_weights = self._calculate_individual_opportunity_weights(trade_opportunities, potential_profits, metrics)
+        
         # Create trade opportunity quality score object
         class TradeOpportunityQualityScore:
-            def __init__(self, composite_score, metrics, potential_profits, target_name):
+            def __init__(self, composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights):
                 self.overall_quality = composite_score
                 self.predictability = metrics.get('ic', 0.0)
                 self.stability = metrics.get('stability', 0.0)
@@ -469,11 +477,14 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.potential_profits = potential_profits
                 self.avg_potential_profit = potential_profits.mean() if len(potential_profits) > 0 else 0.0
                 self.max_potential_profit = potential_profits.max() if len(potential_profits) > 0 else 0.0
+                # Individual opportunity scoring for downstream use
+                self.opportunity_scores = opportunity_scores  # Per-opportunity quality scores
+                self.opportunity_weights = opportunity_weights  # Per-opportunity weights
                 # Store all metrics for detailed analysis
                 self.metrics = metrics
                 self.red_flag_reasons = self._extract_trade_opportunity_red_flags(metrics, potential_profits)
         
-        return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name)
+        return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights)
     
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
         """Calculate potential profit based on signal direction in 90min period."""
@@ -600,6 +611,73 @@ class VolatilityAwareMultiHorizonLabeler:
         )
         
         return composite_score
+    
+    def _calculate_individual_opportunity_scores(self, trade_opportunities: pd.Series, potential_profits: pd.Series, metrics: Dict[str, float]) -> pd.Series:
+        """Calculate individual quality scores for each opportunity."""
+        if len(potential_profits) == 0:
+            return pd.Series(dtype=float)
+        
+        # Base score from potential profit (normalized to [0, 1])
+        avg_profit = metrics.get('avg_potential_profit', 0.0)
+        std_profit = metrics.get('std_potential_profit', 0.0)
+        
+        # Individual opportunity scores based on:
+        # 1. Potential profit relative to average (40% weight)
+        # 2. Consistency with overall pattern (30% weight) 
+        # 3. Risk-adjusted return (30% weight)
+        
+        # Profit score: how much above/below average
+        profit_scores = potential_profits / max(avg_profit, 0.001)  # Avoid division by zero
+        profit_scores = np.clip(profit_scores, 0, 2)  # Cap at 2x average
+        
+        # Consistency score: how close to the mean (lower deviation = higher score)
+        if std_profit > 0:
+            consistency_scores = 1.0 / (1.0 + np.abs(potential_profits - avg_profit) / std_profit)
+        else:
+            consistency_scores = pd.Series(1.0, index=potential_profits.index)
+        
+        # Risk-adjusted score: potential profit / volatility (if we had individual volatility)
+        # For now, use a simplified version based on profit magnitude
+        risk_adjusted_scores = potential_profits / max(potential_profits.max(), 0.001)
+        
+        # Weighted composite individual scores
+        individual_scores = (
+            0.4 * profit_scores +
+            0.3 * consistency_scores +
+            0.3 * risk_adjusted_scores
+        )
+        
+        # Normalize to [0, 1] range
+        individual_scores = np.clip(individual_scores, 0, 1)
+        
+        return pd.Series(individual_scores, index=trade_opportunities.index)
+    
+    def _calculate_individual_opportunity_weights(self, trade_opportunities: pd.Series, potential_profits: pd.Series, metrics: Dict[str, float]) -> pd.Series:
+        """Calculate individual weights for each opportunity based on quality and potential."""
+        if len(potential_profits) == 0:
+            return pd.Series(dtype=float)
+        
+        # Base weight from potential profit magnitude
+        avg_profit = metrics.get('avg_potential_profit', 0.0)
+        max_profit = metrics.get('max_potential_profit', 0.0)
+        
+        # Weight based on potential profit relative to maximum
+        if max_profit > 0:
+            profit_weights = potential_profits / max_profit
+        else:
+            profit_weights = pd.Series(1.0, index=potential_profits.index)
+        
+        # Apply exponential scaling to emphasize high-potential opportunities
+        # This creates a more pronounced difference between high and low potential opportunities
+        scaled_weights = np.power(profit_weights, 0.7)  # 0.7 < 1 makes the curve less steep
+        
+        # Normalize weights to sum to 1.0 for proper probability distribution
+        if scaled_weights.sum() > 0:
+            normalized_weights = scaled_weights / scaled_weights.sum()
+        else:
+            normalized_weights = pd.Series(1.0 / len(scaled_weights), index=scaled_weights.index)
+        
+        return normalized_weights
     
     def _extract_trade_opportunity_red_flags(self, metrics: Dict[str, float], potential_profits: pd.Series) -> List[str]:
         """Extract red flags specific to trade opportunities."""
@@ -1140,6 +1218,37 @@ class VolatilityAwareMultiHorizonLabeler:
         
         return red_flags[:1]  # Return first red flag only
     
+    def _create_downstream_opportunity_data(self, quality_scores: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
+        """Create downstream-ready opportunity data with scores and weights for each target."""
+        opportunity_data = {}
+        
+        for target_name, quality in quality_scores.items():
+            if hasattr(quality, 'opportunity_scores') and hasattr(quality, 'opportunity_weights') and hasattr(quality, 'potential_profits'):
+                # Create DataFrame with all opportunity information
+                opportunity_df = pd.DataFrame({
+                    'opportunity_index': quality.opportunity_scores.index,
+                    'signal_direction': quality.opportunity_scores.index.map(lambda idx: 1 if idx in quality.opportunity_scores.index else 0),  # Will be updated with actual signal direction
+                    'potential_profit': quality.potential_profits,
+                    'quality_score': quality.opportunity_scores,
+                    'weight': quality.opportunity_weights,
+                    'target_name': target_name
+                })
+                
+                # Add derived metrics
+                opportunity_df['profit_rank'] = opportunity_df['potential_profit'].rank(ascending=False)
+                opportunity_df['quality_rank'] = opportunity_df['quality_score'].rank(ascending=False)
+                opportunity_df['weight_rank'] = opportunity_df['weight'].rank(ascending=False)
+                
+                # Add composite opportunity score (combination of quality and weight)
+                opportunity_df['composite_score'] = (
+                    0.6 * opportunity_df['quality_score'] + 
+                    0.4 * opportunity_df['weight']
+                )
+                
+                opportunity_data[target_name] = opportunity_df
+        
+        return opportunity_data
+    
     def _create_fallback_quality_score(self, reason: str = "unknown") -> Dict[str, Any]:
         """Create fallback quality score with reason."""
         class FallbackQualityScore:
@@ -1270,10 +1379,19 @@ class VolatilityAwareMultiHorizonLabeler:
                         if len(long_profits) > 0 and len(short_profits) > 0:
                             direction_info = f" | Long: {len(long_profits)}, Short: {len(short_profits)}"
                     
+                    # Get individual opportunity scoring info if available
+                    opportunity_info = ""
+                    if hasattr(quality, 'opportunity_scores') and hasattr(quality, 'opportunity_weights'):
+                        if len(quality.opportunity_scores) > 0:
+                            avg_score = quality.opportunity_scores.mean()
+                            max_score = quality.opportunity_scores.max()
+                            weight_entropy = -(quality.opportunity_weights * np.log(quality.opportunity_weights + 1e-10)).sum()
+                            opportunity_info = f" | Avg Score: {avg_score:.3f} | Max Score: {max_score:.3f} | Weight Entropy: {weight_entropy:.3f}"
+                    
                     self.logger.info(f"  🏆 {target_name} Trade Opportunity Quality: {pass_status}{red_flag_text}")
                     self.logger.info(f"     IC: {ic_med:.4f} | HitRate: {hit_rate:.3f} | Coverage: {coverage:.1%}{direction_info}")
                     self.logger.info(f"     Stability: {stability:.3f} | Sharpe: {sharpe_norm:.3f} | Uplift: {uplift_bps:.1f}bps")
-                    self.logger.info(f"     Avg Potential Profit: {avg_potential_profit:.1f}bps | Max: {max_potential_profit:.1f}bps | Overall: {quality.overall_quality:.3f}")
+                    self.logger.info(f"     Avg Potential Profit: {avg_potential_profit:.1f}bps | Max: {max_potential_profit:.1f}bps | Overall: {quality.overall_quality:.3f}{opportunity_info}")
                     
                     # Temporal CV metrics
                     if 'temporal_cv_ic' in metrics:

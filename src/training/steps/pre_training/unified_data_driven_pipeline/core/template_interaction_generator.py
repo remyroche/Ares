@@ -8,7 +8,7 @@ with core 15 interaction templates and HTF-aware templates.
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import time
 from collections import defaultdict
@@ -59,6 +59,100 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class FeatureSpec:
+    """Standardized feature specification with metadata."""
+    name: str
+    series: pd.Series
+    role: str                         # e.g. "price_feature", "volatility_feature"
+    tags: List[str] = field(default_factory=list)  # e.g. ["close","spot"], ["rv_5m"]
+    freq: Optional[str] = None
+    window: Optional[int] = None
+    scale: Optional[str] = None       # e.g. "zscore", "minmax", None
+    preprocess: Dict[str, Any] = field(default_factory=dict)  # e.g. {"winsor": (0.01, 0.99)}
+
+class FeatureStore:
+    """Standardizes, aligns, and serves Series by semantic role."""
+    
+    def __init__(self, features: Union[pd.DataFrame, Dict[str, pd.Series], List[FeatureSpec]]):
+        self._raw = {}
+        if isinstance(features, pd.DataFrame):
+            for col in features.columns:
+                self._raw[col] = FeatureSpec(name=col, series=features[col], role="unknown")
+        elif isinstance(features, dict):
+            for k, v in features.items():
+                self._raw[k] = FeatureSpec(name=k, series=v, role="unknown")
+        elif isinstance(features, list):
+            for fs in features:
+                self._raw[fs.name] = fs
+        else:
+            self._raw = {}
+
+        self._index = self._infer_common_index()
+        self._registry_by_role: Dict[str, List[str]] = {}
+        self._cache: Dict[str, pd.Series] = {}
+
+        # sanitize, align, enforce float dtype
+        for k, fs in self._raw.items():
+            s = fs.series
+            if not s.index.equals(self._index):
+                s = s.reindex(self._index)
+            s = s.astype("float64")
+            # simple preprocessing hooks
+            wins = fs.preprocess.get("winsor")
+            if wins is not None:
+                lo, hi = wins
+                s = s.clip(s.quantile(lo), s.quantile(hi))
+            if fs.scale == "zscore":
+                s = (s - s.mean()) / (s.std(ddof=0) + 1e-12)
+            self._raw[k].series = s
+
+        # default role inference (keeps your heuristics)
+        for k, fs in self._raw.items():
+            if fs.role == "unknown":
+                fs.role = self._infer_role_from_name(fs.name)
+
+            self._registry_by_role.setdefault(fs.role, []).append(k)
+
+    def _infer_common_index(self) -> pd.Index:
+        idxs = [fs.series.index for fs in self._raw.values() if isinstance(fs.series, pd.Series)]
+        if not idxs:
+            return pd.RangeIndex(0, 100)  # fallback
+        # choose the longest index and reindex others to it
+        return max(idxs, key=len)
+
+    @staticmethod
+    def _infer_role_from_name(name: str) -> str:
+        n = name.lower()
+        if any(x in n for x in ['price', 'close', 'open', 'high', 'low']): return 'price_feature'
+        if any(x in n for x in ['vol', 'sigma', 'rv', 'gk']): return 'volatility_feature'
+        if any(x in n for x in ['mom', 'momentum', 'signal', 'alpha']): return 'momentum_feature'
+        if any(x in n for x in ['rsi', 'stoch', 'mean_rev', 'osc']): return 'mean_reversion_feature'
+        if any(x in n for x in ['liquidity', 'depth', 'book']): return 'liquidity_feature'
+        if 'volume' in n: return 'volume_feature'
+        if any(x in n for x in ['tod', 'time_of_day', 'session']): return 'tod_indicator'
+        if any(x in n for x in ['regime', 'vol_regime']): return 'regime_indicator'
+        return 'feature'  # generic
+
+    @property
+    def index(self) -> pd.Index:
+        return self._index
+
+    def by_role(self, role: str) -> List[str]:
+        return self._registry_by_role.get(role, [])
+
+    def get(self, name: str) -> pd.Series:
+        if name in self._cache:
+            return self._cache[name]
+        s = self._raw[name].series
+        # final NaN policy: forward-fill then drop leading
+        s = s.ffill()
+        self._cache[name] = s
+        return s
+
+    def names(self) -> List[str]:
+        return list(self._raw.keys())
 
 @dataclass
 class InteractionTemplate:

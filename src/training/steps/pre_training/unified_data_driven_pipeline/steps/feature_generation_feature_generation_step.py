@@ -20,7 +20,10 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+    ComponentConfig, ComponentResult
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
@@ -66,13 +69,18 @@ class FeatureGenerationResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-class FeatureGenerationStep(BasePreTrainingComponent):
+class FeatureGenerationStep(ModularComponent):
     """Enhanced feature generation step using AutoOptimizedFeatureGenerator."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the enhanced feature generation step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        # Convert ComponentConfig to dict for ModularComponent
+        config_dict = config.to_dict() if config else {}
+        super().__init__(
+            name="feature_generation_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize feature generation components
         if FEATURE_GENERATION_AVAILABLE:
@@ -295,6 +303,106 @@ class FeatureGenerationStep(BasePreTrainingComponent):
             else:
                 serialized[key] = value
         return serialized
+
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Initialize feature generation components
+            if FEATURE_GENERATION_AVAILABLE:
+                # Create feature configuration with default values
+                self.feature_config = FeatureConfig(
+                    name="enhanced_features",
+                    category=FeatureCategory.VOLATILITY,  # Default category
+                    description="Enhanced feature generation with VectorBT optimization",
+                    required_columns=["open", "high", "low", "close", "volume"],
+                    optional_columns=["timestamp"],
+                    default_lookback=20,
+                    min_lookback=1,
+                    max_lookback=252,
+                    use_vectorbt=True,  # Enable VectorBT optimization
+                    enable_gpu=True,  # Enable GPU acceleration
+                    enable_parallel=True  # Enable parallel processing
+                )
+                
+                # Create auto-optimization configuration
+                self.auto_optimization_config = AutoOptimizationConfig(
+                    optimization_level=OptimizationLevel.BALANCED,
+                    enable_auto_optimization=True,  # Enable auto-optimization
+                    enable_vectorbt_optimization=True,  # Enable VectorBT optimization
+                    enable_memory_optimization=True,  # Enable memory optimization
+                    enable_gpu_acceleration=True  # Enable GPU acceleration
+                )
+                
+                # Initialize feature generators
+                self.auto_optimized_generator = AutoOptimizedFeatureGenerator(
+                    self.feature_config, 
+                    self.auto_optimization_config
+                )
+            else:
+                self.auto_optimized_generator = None
+            
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('generation_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('generation_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment generation count
+        count = self.get_state('generation_count', 0)
+        self.set_state('generation_count', count + 1)
+        
+        # Basic processing - return data as-is for now
+        # The actual feature generation is done in the execute method
+        return data
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.1,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.1:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
     def process(self, data: Any) -> Any:
         """Process the input data and return the result."""

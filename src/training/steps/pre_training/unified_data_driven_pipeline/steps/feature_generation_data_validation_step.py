@@ -18,7 +18,10 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+    ComponentConfig, ComponentResult
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
@@ -76,13 +79,18 @@ class DataValidationResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
+class FeatureGenerationDataValidationStep(ModularComponent):
     """Enhanced data validation step using comprehensive quality assessment."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the enhanced data validation step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        # Convert ComponentConfig to dict for ModularComponent
+        config_dict = config.to_dict() if config else {}
+        super().__init__(
+            name="feature_generation_data_validation_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize quality assessment components
         if QUALITY_COMPONENTS_AVAILABLE:
@@ -154,6 +162,15 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
             )
 
         try:
+            # Use ModularComponent's safe processing
+            if not self.is_initialized():
+                if not self.initialize():
+                    return ComponentResult(
+                        success=False,
+                        metadata={},
+                        error_message="Component initialization failed"
+                    )
+
             if not QUALITY_COMPONENTS_AVAILABLE:
                 # Fallback to basic validation
                 return await self._fallback_validation(data, training_input, pipeline_state or {})
@@ -403,7 +420,106 @@ class FeatureGenerationDataValidationStep(BasePreTrainingComponent):
             # Re-raise the exception instead of using fallback data
             raise ValueError(f"Data loading failed for {symbol} {timeframe} on {exchange}: {e}")
     
-    # Required abstract methods from BasePreTrainingComponent
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Initialize quality assessment components
+            if QUALITY_COMPONENTS_AVAILABLE:
+                self.quality_scorer = ComprehensiveQualityScorer()
+                self.data_quality_framework = DataQualityFramework()
+                self.advanced_metrics = AdvancedQualityMetrics()
+                self.alert_system = QualityAlertSystem()
+            else:
+                self.logger.warning("⚠️ Quality components not available, using fallback validation")
+                self.quality_scorer = None
+                self.data_quality_framework = None
+                self.advanced_metrics = None
+                self.alert_system = None
+            
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('validation_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('validation_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment validation count
+        count = self.get_state('validation_count', 0)
+        self.set_state('validation_count', count + 1)
+        
+        # Perform basic validation (synchronous)
+        basic_checks = {
+            'has_data': not len(data) == 0,
+            'has_required_columns': all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']),
+            'no_all_nan': not data.isnull().all().any(),
+            'sufficient_rows': len(data) >= 100
+        }
+        
+        success = all(basic_checks.values())
+        quality_score = sum(basic_checks.values()) / len(basic_checks) * 100
+        
+        validation_result = {
+            'success': success,
+            'data_quality_score': quality_score,
+            'quality_level': 'good' if success else 'poor',
+            'validation_metadata': {'method': 'basic_sync'},
+            'quality_breakdown': basic_checks,
+            'issues': [] if success else ['Basic validation failed'],
+            'warnings': [],
+            'recommendations': ['Use async execute method for comprehensive validation']
+        }
+        
+        return validation_result
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.05,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.05:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
+
+    # Legacy methods for backward compatibility
     def process(self, data: Any) -> Any:
         """Process the input data and return the result."""
         try:

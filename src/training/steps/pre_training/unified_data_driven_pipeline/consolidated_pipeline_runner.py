@@ -1,285 +1,1369 @@
-from __future__ import annotations
+"""
+Consolidated Pipeline Runner
+
+This module provides functions to run the consolidated pipeline up to specific steps,
+allowing the step files to call the consolidated pipeline at the proper places.
+"""
 
 import asyncio
-from dataclasses import dataclass
-from typing import Any, Dict, Optional
-import numpy as np
-import pandas as pd
+import logging
+from typing import Dict, Any, Optional, List, Tuple, Union, Callable, Awaitable
+from pathlib import Path
 from datetime import datetime
+import pandas as pd
+import numpy as np
 
-@dataclass
-class OptimizationConfig:
-    candidate_periods: Optional[list[int]] = None  # if None, derive from data
-    score_metric: str = "sharpe"  # placeholder
-    direction: str = "longs"
-
-def _score_series(returns: pd.Series, metric: str = "sharpe") -> float:
-    if returns.empty or returns.std() == 0:
-        return -np.inf
-    if metric == "sharpe":
-        # naive daily-like sharpe (no risk-free, unit variance scale)
-        return returns.mean() / returns.std()
-    elif metric == "sum":
-        return returns.sum()
-    return returns.mean()
-
-def _rolling_signal(df: pd.DataFrame, period: int, direction: str) -> pd.Series:
-    # Example: use close momentum as a proxy signal
-    mom = df["close"].pct_change(periods=period)
-    signal = np.sign(mom).fillna(0.0)
-    if direction == "shorts":
-        signal *= -1
-    return signal.clip(-1, 1)
-
-async def run_period_optimization_step(
-    data: pd.DataFrame,
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Naive, fully self-contained 'period optimization' that scores a set of rolling periods
-    on a toy momentum strategy and returns the best period.
-    """
-    # 0) defensive copies + slicing
-    df = data.copy()
-    if not {"open","high","low","close","volume"}.issubset(df.columns):
-        raise ValueError("DataFrame must contain columns: open, high, low, close, volume")
-
-    if start_date:
-        df = df[df.index >= pd.to_datetime(start_date)]
-    if end_date:
-        df = df[df.index <= pd.to_datetime(end_date)]
-    if lookback_days:
-        cutoff = df.index.max() - pd.Timedelta(days=lookback_days)
-        df = df[df.index >= cutoff]
-
-    if df.empty:
-        return dict(success=False, optimized_periods=0, optimization_metadata={}, artifacts={}, error_message="No data after filtering")
-
-    # 1) derive candidate periods if not provided
-    overrides = custom_overrides or {}
-    cfg = OptimizationConfig(
-        candidate_periods=overrides.get("candidate_periods") or [3, 5, 8, 10, 12, 15, 20, 30, 50],
-        score_metric=overrides.get("score_metric", "sharpe"),
-        direction=direction,
+# Import tprint utilities for enhanced logging
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
+        tprint_performance, tprint_step, tprint_result
     )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
+    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
-    # 2) price returns at native timeframe
-    ret = df["close"].pct_change().fillna(0.0)
+# Ensure tprint_error is always available
+if not TPRINT_AVAILABLE:
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
 
-    # 3) brute force scan
-    scores: Dict[int, float] = {}
-    for p in cfg.candidate_periods:
-        sig = _rolling_signal(df, p, cfg.direction)
-        strat_ret = ret.shift(1) * sig  # enter on next bar
-        scores[p] = _score_series(strat_ret, cfg.score_metric)
+from .consolidated_pipeline import (
+    UnifiedDataDrivenPipeline,
+    create_unified_pipeline,
+    ConsolidatedPipelineResult
+)
+from .core.config import UnifiedPipelineConfig, create_default_config
+from .core.simplified_config import (
+    create_full_config,
+    create_blank_config,
+    create_light_config,
+    create_config_by_intensity,
+    PipelineIntensity
+)
 
-    # 4) pick best (max score)
-    best_period = max(scores, key=scores.get)
-    best_score = scores[best_period]
+class ConsolidatedPipelineRunner:
+    """Runner for executing consolidated pipeline up to specific steps."""
 
-    # 5) artifacts + metadata for downstream
-    artifacts = {
-        "scores_by_period": scores,
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "direction": direction,
-        "exchange": exchange,
-    }
-    metadata = {
-        "optimized_periods": best_period,
-        "best_score": best_score,
-        "score_metric": cfg.score_metric,
-        "evaluated_at": datetime.utcnow().isoformat() + "Z",
-        "n_candidates": len(cfg.candidate_periods),
-    }
+    def __init__(self, config: Optional[UnifiedPipelineConfig] = None) -> None:
+        """
+        Initialize the pipeline runner.
 
-    # Simulate async workload parity with real pipeline
-    await asyncio.sleep(0)
+        Args:
+            config: Optional pipeline configuration. If None, uses default config.
 
-    return dict(
-        success=True,
-        optimized_periods=best_period,
-        optimization_metadata=metadata,
-        artifacts=artifacts,
-        metadata=metadata,
-        error_message=None,
-    )
+        Raises:
+            ValueError: If config is invalid
+            ImportError: If required dependencies are missing
+        """
+        try:
+            tprint_step("🚀 Initializing ConsolidatedPipelineRunner")
 
-async def run_lookback_optimization_step(
-    data: pd.DataFrame,
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Naive, fully self-contained 'lookback optimization' that scores different lookback windows
-    on a toy momentum strategy and returns the best lookback.
-    """
-    # 0) defensive copies + slicing
-    df = data.copy()
-    if not {"open","high","low","close","volume"}.issubset(df.columns):
-        raise ValueError("DataFrame must contain columns: open, high, low, close, volume")
+            if config is None:
+                tprint_info("📋 Using default configuration")
+                self.config = create_default_config()
+            else:
+                tprint_info("📋 Using provided configuration")
+                self.config = config
 
-    if start_date:
-        df = df[df.index >= pd.to_datetime(start_date)]
-    if end_date:
-        df = df[df.index <= pd.to_datetime(end_date)]
-    if lookback_days:
-        cutoff = df.index.max() - pd.Timedelta(days=lookback_days)
-        df = df[df.index >= cutoff]
+            # Validate configuration
+            if not isinstance(self.config, UnifiedPipelineConfig):
+                raise ValueError(f"Invalid config type: {type(self.config)}. Expected UnifiedPipelineConfig.")
 
-    if df.empty:
-        return dict(success=False, optimized_lookbacks=0, optimization_metadata={}, artifacts={}, error_message="No data after filtering")
+            tprint_info("🔧 Creating unified pipeline")
+            self.pipeline = create_unified_pipeline(self.config)
 
-    # 1) derive candidate lookbacks if not provided
-    overrides = custom_overrides or {}
-    cfg = OptimizationConfig(
-        candidate_periods=overrides.get("candidate_lookbacks") or [10, 20, 30, 50, 100, 200],
-        score_metric=overrides.get("score_metric", "sharpe"),
-        direction=direction,
-    )
+            if self.pipeline is None:
+                raise RuntimeError("Failed to create unified pipeline")
 
-    # 2) price returns at native timeframe
-    ret = df["close"].pct_change().fillna(0.0)
+            self.logger = logging.getLogger(__name__)
+            tprint_success("✅ ConsolidatedPipelineRunner initialized successfully")
 
-    # 3) brute force scan
-    scores: Dict[int, float] = {}
-    for p in cfg.candidate_periods:
-        sig = _rolling_signal(df, p, cfg.direction)
-        strat_ret = ret.shift(1) * sig  # enter on next bar
-        scores[p] = _score_series(strat_ret, cfg.score_metric)
+        except Exception as e:
+            error_msg = f"Failed to initialize ConsolidatedPipelineRunner: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
 
-    # 4) pick best (max score)
-    best_lookback = max(scores, key=scores.get)
-    best_score = scores[best_lookback]
+    async def run_data_validation_step(self,
+                                     data: pd.DataFrame,
+                                     symbol: str = "ETHUSDT",
+                                     timeframe: str = "15m",
+                                     direction: str = "longs",
+                                     intensity: str = "blank",
+                                     lookback_days: Optional[int] = None,
+                                     start_date: Optional[str] = None,
+                                     end_date: Optional[str] = None,
+                                     exchange: str = "binance",
+                                     custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Run pipeline up to data validation step.
 
-    # 5) artifacts + metadata for downstream
-    artifacts = {
-        "scores_by_lookback": scores,
-        "symbol": symbol,
-        "timeframe": timeframe,
-        "direction": direction,
-        "exchange": exchange,
-    }
-    metadata = {
-        "optimized_lookbacks": best_lookback,
-        "best_score": best_score,
-        "score_metric": cfg.score_metric,
-        "evaluated_at": datetime.utcnow().isoformat() + "Z",
-        "n_candidates": len(cfg.candidate_periods),
-    }
+        Args:
+            data: Input DataFrame with time series data
+            symbol: Trading symbol (default: "ETHUSDT")
+            timeframe: Time frame for analysis (default: "15m")
+            direction: Trading direction (default: "longs")
+            intensity: Pipeline intensity level (default: "blank")
+            lookback_days: Optional lookback period in days
+            start_date: Optional start date for analysis
+            end_date: Optional end date for analysis
+            exchange: Exchange name (default: "binance")
+            custom_overrides: Optional configuration overrides
 
-    # Simulate async workload parity with real pipeline
-    await asyncio.sleep(0)
+        Returns:
+            Dict containing validation results with keys:
+            - success: bool
+            - data_quality_score: float
+            - validation_metadata: Dict[str, Any]
+            - artifacts: Dict[str, Any]
+            - error_message: Optional[str]
 
-    return dict(
-        success=True,
-        optimized_lookbacks=best_lookback,
-        optimization_metadata=metadata,
-        artifacts=artifacts,
-        metadata=metadata,
-        error_message=None,
-    )
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If pipeline execution fails
+        """
+        try:
+            tprint_step("🔍 Starting data validation step")
+            tprint_info(f"📊 Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
+            tprint_info(f"🎯 Symbol: {symbol}, Timeframe: {timeframe}, Direction: {direction}")
+            tprint_info(f"⚙️ Intensity: {intensity}, Exchange: {exchange}")
 
-async def run_period_lookback_optimization_step(
-    data: pd.DataFrame,
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """
-    Combined period and lookback optimization step.
-    """
-    # Run period optimization
-    period_result = await run_period_optimization_step(
-        data=data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        intensity=intensity,
-        lookback_days=lookback_days,
-        start_date=start_date,
-        end_date=end_date,
-        exchange=exchange,
-        custom_overrides=custom_overrides
-    )
-    
-    # Run lookback optimization
-    lookback_result = await run_lookback_optimization_step(
-        data=data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        intensity=intensity,
-        lookback_days=lookback_days,
-        start_date=start_date,
-        end_date=end_date,
-        exchange=exchange,
-        custom_overrides=custom_overrides
-    )
-    
-    # Combine results
-    combined_artifacts = {}
-    combined_artifacts.update(period_result.get('artifacts', {}))
-    combined_artifacts.update(lookback_result.get('artifacts', {}))
-    
-    combined_metadata = {}
-    combined_metadata.update(period_result.get('metadata', {}))
-    combined_metadata.update(lookback_result.get('metadata', {}))
-    
-    # Generate report
-    await _generate_period_lookback_optimization_report({
-        'period_result': period_result,
-        'lookback_result': lookback_result,
-        'combined_artifacts': combined_artifacts,
-        'combined_metadata': combined_metadata
-    }, data)
-    
-    return dict(
-        success=period_result.get('success', False) and lookback_result.get('success', False),
-        optimized_periods=period_result.get('optimized_periods', 0),
-        optimized_lookbacks=lookback_result.get('optimized_lookbacks', 0),
-        optimization_metadata=combined_metadata,
-        artifacts=combined_artifacts,
-        metadata=combined_metadata,
-        error_message=None if (period_result.get('success', False) and lookback_result.get('success', False)) else "One or both optimization steps failed",
-    )
+            # Validate input data
+            if data is None or len(data) == 0:
+                raise ValueError("Input data cannot be None or empty")
 
-async def _generate_period_lookback_optimization_report(result: Dict[str, Any], data: pd.DataFrame) -> None:
-    """Generate human-readable report for period + lookback optimization step."""
-    from pathlib import Path
-    
-    # Create outcomes directory
-    outcomes_dir = Path("outcomes")
-    outcomes_dir.mkdir(exist_ok=True)
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Expected pandas DataFrame, got {type(data)}")
 
-    # Generate timestamp for filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    report_filename = f"period_lookback_optimization_report_{timestamp}.md"
-    report_path = outcomes_dir / report_filename
+            # Configure pipeline based on intensity
+            tprint_info("🔧 Configuring pipeline based on intensity")
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
 
-    # Generate report content
-    report_content = f"""# Period + Lookback Optimization Report
+            if self.pipeline is None:
+                raise RuntimeError("Failed to create unified pipeline with new configuration")
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'data_validation'
+            }
+
+            tprint_info("🚀 Executing pipeline up to data validation")
+            # Run pipeline up to data validation
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            if result is None:
+                raise RuntimeError("Pipeline returned None result")
+
+            # Extract validation results
+            validation_result = {
+                'success': result.success,
+                'data_quality_score': getattr(result, 'data_quality_score', 0.0),
+                'validation_metadata': getattr(result, 'validation_metadata', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            if validation_result['success']:
+                tprint_success(f"✅ Data validation completed successfully")
+                tprint_result(f"📈 Data quality score: {validation_result['data_quality_score']:.3f}")
+                tprint_info(f"📋 Validation metadata keys: {list(validation_result['validation_metadata'].keys())}")
+                tprint_info(f"📦 Artifacts generated: {len(validation_result['artifacts'])}")
+            else:
+                tprint_error(f"❌ Data validation failed: {validation_result['error_message']}")
+
+            # Generate human-readable report
+            tprint_info("📄 Generating human-readable report")
+            await self._generate_data_validation_report(validation_result, data)
+
+            return validation_result
+
+        except ValueError as e:
+            error_msg = f"Invalid input for data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            return {
+                'success': False,
+                'error_message': error_msg,
+                'artifacts': {},
+                'data_quality_score': 0.0,
+                'validation_metadata': {}
+            }
+        except RuntimeError as e:
+            error_msg = f"Runtime error in data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            return {
+                'success': False,
+                'error_message': error_msg,
+                'artifacts': {},
+                'data_quality_score': 0.0,
+                'validation_metadata': {}
+            }
+        except Exception as e:
+            error_msg = f"Unexpected error in data validation step: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(f"Data validation step failed: {e}", exc_info=True)
+            return {
+                'success': False,
+                'error_message': error_msg,
+                'artifacts': {},
+                'data_quality_score': 0.0,
+                'validation_metadata': {}
+            }
+
+    async def run_feature_generation_step(self,
+                                        data: pd.DataFrame,
+                                        symbol: str = "ETHUSDT",
+                                        timeframe: str = "15m",
+                                        direction: str = "longs",
+                                        intensity: str = "blank",
+                                        lookback_days: Optional[int] = None,
+                                        start_date: Optional[str] = None,
+                                        end_date: Optional[str] = None,
+                                        exchange: str = "binance",
+                                        custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to feature generation step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'feature_generation'
+            }
+
+            # Run pipeline up to feature generation
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract feature generation results
+            feature_result = {
+                'success': result.success,
+                'generated_features': getattr(result, 'generated_features', pd.DataFrame()),
+                'feature_metadata': getattr(result, 'feature_metadata', {}),
+                'generation_metrics': getattr(result, 'generation_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_feature_generation_report(feature_result, data)
+
+            return feature_result
+
+        except Exception as e:
+            self.logger.error(f"Feature generation step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'generated_features': pd.DataFrame(),
+                'feature_metadata': {},
+                'generation_metrics': {}
+            }
+
+    async def run_feature_selection_step(self,
+                                       data: pd.DataFrame,
+                                       symbol: str = "ETHUSDT",
+                                       timeframe: str = "15m",
+                                       direction: str = "longs",
+                                       intensity: str = "blank",
+                                       lookback_days: Optional[int] = None,
+                                       start_date: Optional[str] = None,
+                                       end_date: Optional[str] = None,
+                                       exchange: str = "binance",
+                                       custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to feature selection step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'feature_selection'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to feature selection
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract feature selection results
+            selection_result = {
+                'success': result.success,
+                'selected_features': getattr(result, 'selected_features', pd.DataFrame()),
+                'selection_metadata': getattr(result, 'selection_metadata', {}),
+                'selection_metrics': getattr(result, 'selection_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_feature_selection_report(selection_result, data)
+
+            return selection_result
+
+        except Exception as e:
+            self.logger.error(f"Feature selection step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'selected_features': pd.DataFrame(),
+                'selection_metadata': {},
+                'selection_metrics': {}
+            }
+
+    async def run_period_optimization_step(self,
+                                         data: pd.DataFrame,
+                                         symbol: str = "ETHUSDT",
+                                         timeframe: str = "15m",
+                                         direction: str = "longs",
+                                         intensity: str = "blank",
+                                         lookback_days: Optional[int] = None,
+                                         start_date: Optional[str] = None,
+                                         end_date: Optional[str] = None,
+                                         exchange: str = "binance",
+                                         custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to period optimization step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'period_optimization'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to period optimization
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract period optimization results
+            optimization_result = {
+                'success': result.success,
+                'optimal_periods': getattr(result, 'optimal_periods', {}),
+                'optimization_metrics': getattr(result, 'optimization_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_period_optimization_report(optimization_result, data)
+
+            return optimization_result
+
+        except Exception as e:
+            self.logger.error(f"Period optimization step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'optimal_periods': {},
+                'optimization_metrics': {}
+            }
+
+    async def run_lookback_optimization_step(self,
+                                           data: pd.DataFrame,
+                                           symbol: str = "ETHUSDT",
+                                           timeframe: str = "15m",
+                                           direction: str = "longs",
+                                           intensity: str = "blank",
+                                           lookback_days: Optional[int] = None,
+                                           start_date: Optional[str] = None,
+                                           end_date: Optional[str] = None,
+                                           exchange: str = "binance",
+                                           custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to lookback optimization step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'lookback_optimization'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to lookback optimization
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract lookback optimization results
+            optimization_result = {
+                'success': result.success,
+                'optimal_lookbacks': getattr(result, 'optimal_lookbacks', {}),
+                'optimization_metrics': getattr(result, 'optimization_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_lookback_optimization_report(optimization_result, data)
+
+            return optimization_result
+
+        except Exception as e:
+            self.logger.error(f"Lookback optimization step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'optimal_lookbacks': {},
+                'optimization_metrics': {}
+            }
+
+    async def run_period_lookback_optimization_step(self,
+                                                  data: pd.DataFrame,
+                                                  symbol: str = "ETHUSDT",
+                                                  timeframe: str = "15m",
+                                                  direction: str = "longs",
+                                                  intensity: str = "blank",
+                                                  lookback_days: Optional[int] = None,
+                                                  start_date: Optional[str] = None,
+                                                  end_date: Optional[str] = None,
+                                                  exchange: str = "binance",
+                                                  custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to concurrent period + lookback optimization step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'period_lookback_optimization'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to concurrent period + lookback optimization
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract period + lookback optimization results
+            optimization_result = {
+                'success': result.success,
+                'period_results': getattr(result, 'period_results', {}),
+                'lookback_results': getattr(result, 'lookback_results', {}),
+                'combined_results': getattr(result, 'combined_results', {}),
+                'trading_defaults': getattr(result, 'trading_defaults', {}),
+                'interaction_periods': getattr(result, 'interaction_periods', []),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_period_lookback_optimization_report(optimization_result, data)
+
+            return optimization_result
+
+        except Exception as e:
+            self.logger.error(f"Concurrent period + lookback optimization step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'period_results': {},
+                'lookback_results': {},
+                'combined_results': {},
+                'trading_defaults': {},
+                'interaction_periods': []
+            }
+
+    async def run_interaction_generation_step(self,
+                                            data: pd.DataFrame,
+                                            symbol: str = "ETHUSDT",
+                                            timeframe: str = "15m",
+                                            direction: str = "longs",
+                                            intensity: str = "blank",
+                                            lookback_days: Optional[int] = None,
+                                            start_date: Optional[str] = None,
+                                            end_date: Optional[str] = None,
+                                            exchange: str = "binance",
+                                            custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to interaction generation step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'interaction_generation'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to interaction generation
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract interaction generation results
+            interaction_result = {
+                'success': result.success,
+                'interaction_features': getattr(result, 'interaction_features', pd.DataFrame()),
+                'interaction_metadata': getattr(result, 'interaction_metadata', {}),
+                'generation_metrics': getattr(result, 'generation_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_interaction_generation_report(interaction_result, data)
+
+            return interaction_result
+
+        except Exception as e:
+            self.logger.error(f"Interaction generation step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'interaction_features': pd.DataFrame(),
+                'interaction_metadata': {},
+                'generation_metrics': {}
+            }
+
+    async def run_vectorization_step(self,
+                                   data: pd.DataFrame,
+                                   symbol: str = "ETHUSDT",
+                                   timeframe: str = "15m",
+                                   direction: str = "longs",
+                                   intensity: str = "blank",
+                                   lookback_days: Optional[int] = None,
+                                   start_date: Optional[str] = None,
+                                   end_date: Optional[str] = None,
+                                   exchange: str = "binance",
+                                   custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to vectorization step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'vectorization'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to vectorization
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract vectorization results
+            vectorization_result = {
+                'success': result.success,
+                'vectorized_features': getattr(result, 'vectorized_features', pd.DataFrame()),
+                'vectorization_metadata': getattr(result, 'vectorization_metadata', {}),
+                'performance_metrics': getattr(result, 'performance_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_vectorization_report(vectorization_result, data)
+
+            return vectorization_result
+
+        except Exception as e:
+            self.logger.error(f"Vectorization step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'vectorized_features': pd.DataFrame(),
+                'vectorization_metadata': {},
+                'performance_metrics': {}
+            }
+
+    async def run_labeling_integration_step(self,
+                                          data: pd.DataFrame,
+                                          symbol: str = "ETHUSDT",
+                                          timeframe: str = "15m",
+                                          direction: str = "longs",
+                                          intensity: str = "blank",
+                                          lookback_days: Optional[int] = None,
+                                          start_date: Optional[str] = None,
+                                          end_date: Optional[str] = None,
+                                          exchange: str = "binance",
+                                          custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to labeling integration step."""
+        try:
+            # Check what custom_overrides contains
+            if isinstance(custom_overrides, pd.DataFrame):
+                self.logger.warning("custom_overrides is a DataFrame, converting to None")
+                custom_overrides = None
+            
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'labeling_integration'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to labeling integration
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract labeling integration results
+            labeling_result = {
+                'success': result.success,
+                'labeled_data': getattr(result, 'labeled_data', pd.DataFrame()),
+                'labeling_metadata': getattr(result, 'labeling_metadata', {}),
+                'quality_metrics': getattr(result, 'quality_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_labeling_integration_report(labeling_result, data)
+
+            return labeling_result
+
+        except Exception as e:
+            self.logger.error(f"Labeling integration step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'labeled_data': pd.DataFrame(),
+                'labeling_metadata': {},
+                'quality_metrics': {}
+            }
+
+    async def run_final_validation_step(self,
+                                      data: pd.DataFrame,
+                                      symbol: str = "ETHUSDT",
+                                      timeframe: str = "15m",
+                                      direction: str = "longs",
+                                      intensity: str = "blank",
+                                      lookback_days: Optional[int] = None,
+                                      start_date: Optional[str] = None,
+                                      end_date: Optional[str] = None,
+                                      exchange: str = "binance",
+                                      custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to final validation step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'final_validation'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to final validation
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract final validation results
+            validation_result = {
+                'success': result.success,
+                'final_dataset': getattr(result, 'final_dataset', pd.DataFrame()),
+                'validation_summary': getattr(result, 'validation_summary', {}),
+                'quality_metrics': getattr(result, 'quality_metrics', {}),
+                'pipeline_summary': getattr(result, 'pipeline_summary', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_final_validation_report(validation_result, data)
+
+            return validation_result
+
+        except Exception as e:
+            self.logger.error(f"Final validation step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'final_dataset': pd.DataFrame(),
+                'validation_summary': {},
+                'quality_metrics': {},
+                'pipeline_summary': {}
+            }
+
+    def _get_labels_from_pipeline_state(self, pipeline_state: Optional[Dict[str, Any]]) -> Optional[pd.Series]:
+        """
+        Extract labels from pipeline state (from previous labeling steps).
+
+        Args:
+            pipeline_state: Pipeline state dictionary containing labels from previous steps
+
+        Returns:
+            Target series from previous steps, or None if not found
+        """
+        # Handle different types of pipeline_state
+        if pipeline_state is None:
+            return None
+        
+        # If pipeline_state is a DataFrame, return None (no labels available)
+        if isinstance(pipeline_state, pd.DataFrame):
+            return None
+        
+        # If pipeline_state is not a dict, return None
+        if not isinstance(pipeline_state, dict):
+            return None
+        
+        # Check if pipeline_state is empty (only for dictionaries)
+        if isinstance(pipeline_state, dict) and not pipeline_state:
+            return None
+
+        # Try to get labels from various possible sources in pipeline state
+        if 'labeled_data' in pipeline_state and 'target' in pipeline_state['labeled_data'].columns:
+            return pipeline_state['labeled_data']['target']
+        elif 'targets' in pipeline_state:
+            return pipeline_state['targets']
+        elif 'labels' in pipeline_state:
+            return pipeline_state['labels']
+        else:
+            return None
+
+    def _create_config_from_intensity(self, intensity: str, custom_overrides: Optional[Dict[str, Any]] = None) -> UnifiedPipelineConfig:
+        """
+        Create configuration based on intensity level.
+
+        Args:
+            intensity: Intensity level ("full", "blank", "light")
+            custom_overrides: Optional configuration overrides
+
+        Returns:
+            Configured UnifiedPipelineConfig instance
+
+        Raises:
+            ValueError: If intensity is invalid
+            RuntimeError: If config creation fails
+        """
+        try:
+            tprint_info(f"🔧 Creating configuration for intensity: {intensity}")
+
+            # Validate intensity parameter
+            valid_intensities = {"full", "blank", "light"}
+            if intensity not in valid_intensities:
+                raise ValueError(f"Invalid intensity '{intensity}'. Must be one of: {valid_intensities}")
+
+            # Create base configuration
+            if intensity == "full":
+                tprint_info("📋 Creating full intensity configuration (100%)")
+                config = create_full_config()
+            elif intensity == "blank":
+                tprint_info("📋 Creating blank intensity configuration (25%)")
+                config = create_blank_config()
+            elif intensity == "light":
+                tprint_info("📋 Creating light intensity configuration (10%)")
+                config = create_light_config()
+            else:
+                tprint_warning(f"⚠️ Unknown intensity '{intensity}', falling back to blank")
+                config = create_config_by_intensity(PipelineIntensity.BLANK)
+
+            if config is None:
+                raise RuntimeError("Failed to create configuration")
+
+            # Apply custom overrides if provided
+            if custom_overrides:
+                tprint_info(f"🔧 Applying {len(custom_overrides)} custom overrides")
+                for key, value in custom_overrides.items():
+                    if hasattr(config, key):
+                        old_value = getattr(config, key)
+                        setattr(config, key, value)
+                        tprint_debug(f"  - {key}: {old_value} → {value}")
+                    else:
+                        tprint_warning(f"  - Unknown config key: {key}")
+
+            tprint_success(f"✅ Configuration created successfully for intensity: {intensity}")
+            return config
+
+        except ValueError as e:
+            error_msg = f"Invalid intensity parameter: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Failed to create configuration: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg) from e
+
+    async def _generate_data_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """
+        Generate human-readable report for data validation step.
+
+        Args:
+            result: Validation result dictionary
+            data: Input DataFrame
+
+        Raises:
+            OSError: If report file cannot be created
+            ValueError: If result data is invalid
+        """
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"data_validation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+        try:
+            tprint_info("📄 Generating data validation report")
+
+            # Validate inputs
+            if not isinstance(result, dict):
+                raise ValueError(f"Result must be a dictionary, got {type(result)}")
+
+            if not isinstance(data, pd.DataFrame):
+                raise ValueError(f"Data must be a pandas DataFrame, got {type(data)}")
+
+            # Create outcomes directory
+            outcomes_dir = Path("outcomes")
+            outcomes_dir.mkdir(exist_ok=True)
+            tprint_debug(f"📁 Using outcomes directory: {outcomes_dir.absolute()}")
+
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"data_validation_report_{timestamp}.md"
+            report_path = outcomes_dir / report_filename
+
+            # Generate report content
+            status_emoji = "✅ SUCCESS" if result['success'] else "❌ FAILED"
+            quality_score = result.get('data_quality_score', 0.0)
+            error_msg = result.get('error_message', 'None')
+            artifacts_count = len(result.get('artifacts', {}))
+
+            report_content = f"""# Data Validation Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {status_emoji}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Quality Score**: {quality_score:.3f}
+
+## Validation Results
+- **Success**: {result['success']}
+- **Error Message**: {error_msg}
+- **Artifacts Generated**: {artifacts_count}
+
+## Data Quality Metrics
+- **Rows**: {data.shape[0]:,}
+- **Columns**: {data.shape[1]:,}
+- **Memory Usage**: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB
+- **Missing Values**: {data.isnull().sum().sum():,}
+
+## Next Steps
+1. Review validation results
+2. Address any issues if present
+3. Proceed to feature generation step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+            # Write report
+            tprint_debug(f"💾 Writing report to: {report_path}")
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+
+            # Add report to artifacts
+            result['artifacts']['human_readable_report'] = str(report_path)
+
+            tprint_success(f"📊 Human-readable report saved: {report_path}")
+
+        except OSError as e:
+            error_msg = f"Failed to create report file: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            raise OSError(error_msg) from e
+        except ValueError as e:
+            error_msg = f"Invalid data for report generation: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error generating report: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            self.logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+
+    async def _generate_feature_generation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for feature generation step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"feature_generation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Feature Generation Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Generated Features**: {len(result.get('generated_features', pd.DataFrame()).columns)}
+
+## Generation Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review generated features
+2. Proceed to feature selection step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_feature_selection_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for feature selection step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"feature_selection_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Feature Selection Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Selected Features**: {len(result.get('selected_features', pd.DataFrame()).columns)}
+
+## Selection Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review selected features
+2. Proceed to period optimization step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_period_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for period optimization step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"period_optimization_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Period Optimization Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Optimized Periods**: {len(result.get('optimal_periods', {}))}
+
+## Optimization Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review optimized periods
+2. Proceed to lookback optimization step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_lookback_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for lookback optimization step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"lookback_optimization_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Lookback Optimization Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Optimized Lookbacks**: {len(result.get('optimal_lookbacks', {}))}
+
+## Optimization Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review optimized lookbacks
+2. Proceed to interaction generation step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_interaction_generation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for interaction generation step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"interaction_generation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Interaction Generation Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Interaction Features**: {len(result.get('interaction_features', pd.DataFrame()).columns)}
+
+## Generation Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review interaction features
+2. Proceed to vectorization step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_vectorization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for vectorization step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"vectorization_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Vectorization Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Vectorized Features**: {len(result.get('vectorized_features', pd.DataFrame()).columns)}
+
+## Vectorization Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review vectorized features
+2. Proceed to labeling integration step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_labeling_integration_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for labeling integration step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"labeling_integration_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Labeling Integration Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Labeled Data**: {len(result.get('labeled_data', pd.DataFrame()).columns)}
+
+## Labeling Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review labeled data
+2. Proceed to final validation step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_final_validation_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for final validation step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"final_validation_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Final Validation Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Final Dataset**: {len(result.get('final_dataset', pd.DataFrame()).columns)}
+
+## Validation Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review final dataset
+2. Use dataset for model training
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+    async def _generate_period_lookback_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for period + lookback optimization step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"period_lookback_optimization_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Period + Lookback Optimization Report
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 ## Executive Summary
@@ -310,11 +1394,252 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 *Report generated by Consolidated Pipeline Runner*
 """
 
-    # Write report
-    with open(report_path, 'w') as f:
-        f.write(report_content)
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
 
-    # Add report to artifacts
-    result['combined_artifacts']['human_readable_report'] = str(report_path)
+        # Add report to artifacts
+        result['combined_artifacts']['human_readable_report'] = str(report_path)
 
-    print(f"📊 Human-readable report saved: {report_path}")
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
+# Convenience functions for each step
+async def run_data_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run data validation step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing validation results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting data validation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_data_validation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for data validation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_feature_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run feature generation step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing feature generation results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting feature generation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_feature_generation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for feature generation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_feature_selection_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run feature selection step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing feature selection results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting feature selection step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_feature_selection_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for feature selection: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_period_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run period optimization step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing period optimization results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting period optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_period_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for period optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run lookback optimization step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing lookback optimization results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting lookback optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_lookback_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for lookback optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_interaction_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run interaction generation step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing interaction generation results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting interaction generation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_interaction_generation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for interaction generation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_vectorization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run vectorization step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing vectorization results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting vectorization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_vectorization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for vectorization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run labeling integration step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing labeling integration results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting labeling integration step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_labeling_integration_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for labeling integration: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run concurrent period + lookback optimization step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing period + lookback optimization results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting concurrent period + lookback optimization step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_period_lookback_optimization_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for period + lookback optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_final_validation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run final validation step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing final validation results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting final validation step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_final_validation_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for final validation: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e

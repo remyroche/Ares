@@ -93,7 +93,7 @@ class AnalystTrainingPipelineModular(BaseModelsTrainingComponent):
         default_config = {
             'model': {
                 'type': 'ensemble',
-                'base_models': ['tcn', 'lightgbm', 'ridge', 'elastic_net', 'random_forest'],
+                'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
                 'ensemble_method': 'voting'
             },
             'training': {
@@ -387,20 +387,16 @@ class AnalystTrainingPipelineModular(BaseModelsTrainingComponent):
     def _train_single_model(self, model_type: AnalystModelType, data: Any, config: Dict[str, Any]) -> Any:
         """Train a single model."""
         try:
-            if model_type == AnalystModelType.TCN:
-                return self._train_tcn_model(data, config)
-            elif model_type == AnalystModelType.LIGHTGBM:
+            if model_type == AnalystModelType.LIGHTGBM:
                 return self._train_lightgbm_model(data, config)
-            elif model_type == AnalystModelType.RIDGE:
-                return self._train_ridge_model(data, config)
-            elif model_type == AnalystModelType.ELASTIC_NET:
-                return self._train_elastic_net_model(data, config)
-            elif model_type == AnalystModelType.RANDOM_FOREST:
-                return self._train_random_forest_model(data, config)
+            elif model_type == AnalystModelType.LIGHTGBM_PATCHTST:
+                return self._train_lightgbm_patchtst_model(data, config)
+            elif model_type == AnalystModelType.CATBOOST:
+                return self._train_catboost_model(data, config)
+            elif model_type == AnalystModelType.STACKER_LGBM_CALIBRATED:
+                return self._train_stacker_lgbm_calibrated_model(data, config)
             elif model_type == AnalystModelType.HMM:
                 return self._train_hmm_model(data, config)
-            elif model_type == AnalystModelType.NAS:
-                return self._train_nas_model(data, config)
             else:
                 self.logger.warning(f"Unknown model type: {model_type}")
                 return None
@@ -409,47 +405,35 @@ class AnalystTrainingPipelineModular(BaseModelsTrainingComponent):
             self.logger.error(f"Failed to train {model_type.value}: {e}")
             return None
     
-    def _train_tcn_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train TCN model."""
-        # Placeholder implementation
-        self.logger.info("Training TCN model (placeholder)")
-        return {'type': 'tcn', 'trained': True, 'config': config}
-    
     def _train_lightgbm_model(self, data: Any, config: Dict[str, Any]) -> Any:
         """Train LightGBM model."""
         # Placeholder implementation
         self.logger.info("Training LightGBM model (placeholder)")
         return {'type': 'lightgbm', 'trained': True, 'config': config}
     
-    def _train_ridge_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train Ridge model."""
+    def _train_lightgbm_patchtst_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train LightGBM + PatchTST model."""
         # Placeholder implementation
-        self.logger.info("Training Ridge model (placeholder)")
-        return {'type': 'ridge', 'trained': True, 'config': config}
+        self.logger.info("Training LightGBM + PatchTST model (placeholder)")
+        return {'type': 'lightgbm_patchtst', 'trained': True, 'config': config}
     
-    def _train_elastic_net_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train ElasticNet model."""
+    def _train_catboost_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train CatBoost model."""
         # Placeholder implementation
-        self.logger.info("Training ElasticNet model (placeholder)")
-        return {'type': 'elastic_net', 'trained': True, 'config': config}
+        self.logger.info("Training CatBoost model (placeholder)")
+        return {'type': 'catboost', 'trained': True, 'config': config}
     
-    def _train_random_forest_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train Random Forest model."""
+    def _train_stacker_lgbm_calibrated_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train Stacker LGBM Calibrated model."""
         # Placeholder implementation
-        self.logger.info("Training Random Forest model (placeholder)")
-        return {'type': 'random_forest', 'trained': True, 'config': config}
+        self.logger.info("Training Stacker LGBM Calibrated model (placeholder)")
+        return {'type': 'stacker_lgbm_calibrated', 'trained': True, 'config': config}
     
     def _train_hmm_model(self, data: Any, config: Dict[str, Any]) -> Any:
         """Train HMM model."""
         # Placeholder implementation
         self.logger.info("Training HMM model (placeholder)")
         return {'type': 'hmm', 'trained': True, 'config': config}
-    
-    def _train_nas_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train NAS model."""
-        # Placeholder implementation
-        self.logger.info("Training NAS model (placeholder)")
-        return {'type': 'nas', 'trained': True, 'config': config}
     
     def _train_ensemble_model(self, data: Any, base_models: Dict[str, Any]) -> Dict[str, Any]:
         """Train ensemble model."""

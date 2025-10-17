@@ -98,7 +98,7 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         default_config = {
             'model': {
                 'type': 'ensemble',
-                'base_models': ['tcn', 'lightgbm', 'ridge', 'elastic_net', 'random_forest'],
+                'base_models': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
                 'ensemble_method': 'voting',
                 'ensemble_params': {}
             },
@@ -158,7 +158,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self.set_ml_state('ensemble_initialized', True)
             self.set_ml_state('ensemble_trained', False)
             self.set_ml_state('hmm_trained', False)
-            self.set_ml_state('nas_trained', False)
             self.set_ml_state('training_phase', 'none')
             
             # Initialize ensemble configurations
@@ -178,7 +177,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self._ensemble_model = None
             self._base_model_outputs.clear()
             self._hmm_model = None
-            self._nas_models.clear()
             self._training_results.clear()
             self._regime_performance.clear()
             
@@ -186,7 +184,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self.set_ml_state('ensemble_initialized', False)
             self.set_ml_state('ensemble_trained', False)
             self.set_ml_state('hmm_trained', False)
-            self.set_ml_state('nas_trained', False)
             
             # Call parent cleanup
             super()._cleanup_resources()
@@ -203,7 +200,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             'ensemble_params': self.ensemble_config.ensemble_params,
             'base_models': self.ensemble_config.base_models,
             'hmm_config': self.ensemble_config.hmm_config,
-            'nas_config': self.ensemble_config.nas_config
         }
         
         self.set_ml_state('ensemble_configs', ensemble_configs)
@@ -585,7 +581,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             },
             'ensemble_model': self._ensemble_model is not None,
             'hmm_model': self._hmm_model is not None,
-            'nas_models': list(self._nas_models.keys()),
             'training_results': self._training_results,
             'regime_performance': self._regime_performance
         })

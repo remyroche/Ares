@@ -2839,6 +2839,11 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     exchange=exchange,
                     timeframe=timeframe,
                 )
+                
+                # Log reporting path for user visibility
+                tprint_success(f"📊 Reporting artifacts saved to: {artifact_path}")
+                tprint_info(f"   → Logical name: {logical_name}")
+                tprint_info(f"   → Artifact digest: {artifact_digest}")
                 artifact_manifest = getattr(self.labeler, 'artifact_manifest', None)
                 if artifact_manifest is not None:
                     try:

@@ -158,22 +158,25 @@ class MultiObjectiveResult:
 class ObjectiveFunction(ABC):
     """Abstract base class for objective functions."""
 
+    @abstractmethod
     def evaluate(self, features: pd.DataFrame,
                 targets: pd.Series,
                 selected_features: List[str],
                 **kwargs) -> ObjectiveResult:
         """Evaluate the objective function."""
-        raise NotImplementedError("Subclasses must implement the evaluate method")
+        pass
 
     @property
+    @abstractmethod
     def name(self) -> str:
         """Get the name of the objective function."""
-        raise NotImplementedError("Subclasses must implement the name property")
+        pass
 
     @property
+    @abstractmethod
     def is_higher_better(self) -> bool:
         """Whether higher values are better for this objective."""
-        raise NotImplementedError("Subclasses must implement the is_higher_better property")
+        pass
 
 class OutOfSampleSharpeObjective(ObjectiveFunction):
     """Out-of-sample Sharpe ratio objective."""

@@ -22,6 +22,21 @@ from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent, ComponentConfig, ComponentResult
 )
 
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 # Import battle-tested feature selection components
 try:
     from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.battle_tested_feature_selection import (
@@ -56,6 +71,12 @@ def _cols(obj: Any) -> List[str]:
         return list(obj.columns)
     if hasattr(obj, "tolist"):
         return list(obj.tolist())
+    if isinstance(obj, list):
+        # Handle list of FeatureScore objects
+        if obj and hasattr(obj[0], 'name'):
+            return [item.name for item in obj if hasattr(item, 'name')]
+        # Handle list of strings
+        return list(obj)
     return list(obj)
 
 def _safe_to_meta(obj: Any) -> Dict[str, Any]:
@@ -302,7 +323,7 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 self.multi_objective_selector.optimize_features, df1, targets
             )
             
-            tprint_debug(f"📊 Stage 2 result: success={multi_objective_result.success}")
+            tprint_debug(f"📊 Stage 2 result: success={multi_objective_result.is_valid}")
             if hasattr(multi_objective_result, 'selected_features'):
                 tprint_debug(f"📊 Selected features count: {len(multi_objective_result.selected_features)}")
             
@@ -466,7 +487,7 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 success=True,
                 selected_features=selected_data,
                 selection_metadata={'method': 'fallback_correlation', 'symbol': symbol, 'timeframe': timeframe},
-                selection_metrics={'selected_count': len(selected_features), 'total_count': len(data_clean.columns)},
+                selection_metrics={'selected_count': len(selected_features), 'total_count': len(data.columns)},
                 selection_strategy="correlation_fallback",
                 feature_importance=feature_importance,
                 economic_validation={},

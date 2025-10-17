@@ -62,6 +62,7 @@ class PhemexExchange(BaseExchange):
         try:
             if aiohttp is None:
                 self.logger.warning("⚠️ aiohttp not available, using mock session")
+                self.logger.warning("⚠️ Mock session will fast fail on API calls instead of returning mock data")
                 self.session = None
                 return
 
@@ -127,8 +128,8 @@ class PhemexExchange(BaseExchange):
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make HTTP request to Phemex API."""
         if aiohttp is None or not self.session:
-            self.logger.warning("⚠️ aiohttp not available, returning mock data")
-            return []
+            self.logger.error("❌ aiohttp not available, fast failing API call")
+            raise Exception("aiohttp not available - API call cannot be completed")
 
         url = f"{self._get_base_url()}{endpoint}"
         

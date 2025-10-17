@@ -221,12 +221,17 @@ def _lazy_import_quality_utilities():
 # Enhanced exchange interface using existing exchange modules
 class ExchangeInterface:
     """Enhanced exchange interface that uses existing exchange modules."""
-    def __init__(self, exchange="binance", *args, **kwargs):
+    def __init__(self, exchange="binance", api_key=None, api_secret=None, trade_symbol="BTCUSDT", *args, **kwargs):
         self.exchange = exchange.lower()
         self.connected = False
         self.exchange_client = None
         self.klines_adapter = None
         self.enable_logging = kwargs.get('enable_logging', True)
+        
+        # Store exchange parameters
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.trade_symbol = trade_symbol
         
     async def connect(self):
         """Connect to the exchange using existing modules."""
@@ -248,9 +253,20 @@ class ExchangeInterface:
                 # Import the klines adapter normally
                 from exchanges.binance.klines_adapter import BinanceKlinesAdapter
                 
+                # Initialize the exchange client with proper parameters
+                # Use empty strings for API credentials if not provided (for public data only)
+                self.exchange_client = BinanceExchange(
+                    api_key=self.api_key or "",
+                    api_secret=self.api_secret or "",
+                    trade_symbol=self.trade_symbol
+                )
+                self.klines_adapter = BinanceKlinesAdapter(
+                    api_key=self.api_key,
+                    secret_key=self.api_secret
+                )
+                
                 # Initialize the exchange client
-                self.exchange_client = BinanceExchange()
-                self.klines_adapter = BinanceKlinesAdapter()
+                await self.exchange_client.initialize()
                 
                 # Test connection
                 await self._test_connection()
@@ -262,7 +278,9 @@ class ExchangeInterface:
         except Exception as e:
             if self.enable_logging:
                 tprint_error(f"❌ Failed to connect to {self.exchange}: {e}")
-            raise
+            # Don't raise the exception, allow fallback to existing data processing
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Will fall back to existing data processing")
     
     async def disconnect(self):
         """Disconnect from the exchange."""
@@ -280,14 +298,18 @@ class ExchangeInterface:
         # Test with a simple API call using the existing modules
         try:
             # Use the existing exchange client to test connection
-            if hasattr(self.exchange_client, 'test_connection'):
-                await self.exchange_client.test_connection()
+            if hasattr(self.exchange_client, '_test_connection'):
+                await self.exchange_client._test_connection()
+            elif hasattr(self.exchange_client, 'get_status'):
+                status = await self.exchange_client.get_status()
+                if status != "connected":
+                    raise ConnectionError(f"Exchange status: {status}")
             else:
-                # Fallback: try to get market data
-                if hasattr(self.exchange_client, 'get_markets'):
-                    markets = await self.exchange_client.get_markets()
-                    if not markets:
-                        raise ConnectionError("No markets available")
+                # Fallback: try to get server time
+                if hasattr(self.exchange_client, 'get_server_time'):
+                    await self.exchange_client.get_server_time()
+                else:
+                    raise ConnectionError("No test method available")
         except Exception as e:
             raise ConnectionError(f"Connection test failed: {e}")
     
@@ -313,21 +335,25 @@ class ExchangeInterface:
                 tprint_info(f"📥 Fetching {symbol} {interval} data from {start_time} to {end_time}")
             
             # Use the existing klines adapter to fetch data
-            if hasattr(self.klines_adapter, 'get_klines'):
-                ohlcv = await self.klines_adapter.get_klines(
+            if hasattr(self.klines_adapter, 'get_klines_data'):
+                # Convert timestamps to datetime objects for the adapter
+                start_dt = datetime.fromtimestamp(start_time / 1000) if isinstance(start_time, (int, float)) else start_time
+                end_dt = datetime.fromtimestamp(end_time / 1000) if isinstance(end_time, (int, float)) else end_time
+                
+                df = await self.klines_adapter.get_klines_data(
                     symbol=symbol,
                     interval=interval,
-                    start_time=start_time,
-                    end_time=end_time,
+                    start_time=start_dt,
+                    end_time=end_dt,
                     limit=limit
                 )
+                # Convert DataFrame back to list format for compatibility
+                ohlcv = df.values.tolist() if not df.empty else []
             else:
                 # Fallback to direct exchange client
                 ohlcv = await self.exchange_client.get_klines(
                     symbol=symbol,
                     interval=interval,
-                    start_time=start_time,
-                    end_time=end_time,
                     limit=limit
                 )
             
@@ -358,17 +384,25 @@ class ExchangeInterface:
         if self.enable_logging:
             tprint_info(f"📊 Fetching historical data for {symbol} {interval} from {start_date} to {end_date}")
         
+        # Check if we're connected to exchange
+        if not self.connected or not self.klines_adapter:
+            if self.enable_logging:
+                tprint_warning(f"⚠️ Not connected to exchange, returning empty data")
+            return []
+        
         try:
             # Use the existing klines adapter for historical data
-            if hasattr(self.klines_adapter, 'get_historical_klines'):
-                # Use the adapter's historical data method
-                historical_data = await self.klines_adapter.get_historical_klines(
+            if hasattr(self.klines_adapter, 'get_klines_data'):
+                # Use the adapter's klines data method for historical data
+                historical_data_df = await self.klines_adapter.get_klines_data(
                     symbol=symbol,
                     interval=interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                    batch_size=batch_size
+                    start_time=start_date,
+                    end_time=end_date,
+                    limit=batch_size
                 )
+                # Convert DataFrame to list format for compatibility
+                historical_data = historical_data_df.values.tolist() if not historical_data_df.empty else []
                 
                 if self.enable_logging:
                     tprint_success(f"✅ Total historical data: {len(historical_data)} records")
@@ -432,11 +466,18 @@ class ExchangeInterface:
         except Exception as e:
             if self.enable_logging:
                 tprint_error(f"❌ Failed to fetch historical data: {e}")
-            raise
+            # Return empty list instead of raising to allow fallback to existing data
+            return []
 
 def create_exchange_interface(config):
     """Create an exchange interface instance."""
-    return ExchangeInterface(exchange=config.get('exchange', 'binance'))
+    return ExchangeInterface(
+        exchange=config.get('exchange', 'binance'),
+        api_key=config.get('api_key'),
+        api_secret=config.get('api_secret'),
+        trade_symbol=config.get('trade_symbol', 'BTCUSDT'),
+        enable_logging=config.get('enable_logging', True)
+    )
 
 # Simple data standardization
 class UnifiedOHLCVStandardizer:
@@ -2373,8 +2414,13 @@ if __name__ == "__main__":
             )
 
             # Create enhanced exchange interface for data downloading
-            exchange_interface = ExchangeInterface(exchange="binance")
-            exchange_interface.enable_logging = True  # Enable logging for the interface
+            exchange_interface = ExchangeInterface(
+                exchange="binance",
+                api_key="",  # Add your API key here
+                api_secret="",  # Add your API secret here
+                trade_symbol="BTCUSDT",
+                enable_logging=True
+            )
             
             try:
                 await exchange_interface.connect()

@@ -106,7 +106,6 @@ class FeatureGenerationStep(BasePreTrainingComponent):
             )
             
         else:
-            self.logger.warning("Advanced feature generation components not available, using fallback")
             self.auto_optimized_generator = None
 
     async def execute(self,
@@ -148,10 +147,8 @@ class FeatureGenerationStep(BasePreTrainingComponent):
             if missing_columns:
                 raise ValueError(f"Missing required columns: {missing_columns}. Available: {list(data.columns)}")
             if not FEATURE_GENERATION_AVAILABLE:
-                # Fallback to basic feature generation
-                return await self._fallback_feature_generation(
-                    data, symbol, timeframe, direction, custom_overrides
-                )
+                # Fast fail if enhanced components are not available
+                raise RuntimeError("Enhanced feature generation components are not available")
 
             # Perform comprehensive feature generation
             generation_result = await self._perform_enhanced_feature_generation(
@@ -262,77 +259,10 @@ class FeatureGenerationStep(BasePreTrainingComponent):
             
         except Exception as e:
             self.logger.error(f"Enhanced feature generation failed: {e}")
-            return FeatureGenerationResult(
-                success=False,
-                generated_features=pd.DataFrame(),
-                feature_metadata={},
-                generation_metrics={},
-                optimization_stats={},
-                feature_categories=[],
-                vectorbt_optimizations={},
-                artifacts={},
-                error_message=str(e)
-            )
+            # Fast fail - no fallback, just raise the error
+            raise RuntimeError(f"Feature generation failed: {e}") from e
 
-    async def _fallback_feature_generation(self, data: pd.DataFrame, symbol: str,
-                                          timeframe: str, direction: str,
-                                          custom_overrides: Optional[Dict[str, Any]]) -> FeatureGenerationResult:
-        """Fallback feature generation when advanced components are not available."""
-        
-        try:
-            # Basic feature generation with prefixed fallback columns
-            basic_features = pd.DataFrame(index=data.index)
-            
-            # Simple technical indicators with proper min_periods
-            basic_features['fb_sma_20'] = data['close'].rolling(20, min_periods=20).mean()
-            basic_features['fb_sma_50'] = data['close'].rolling(50, min_periods=50).mean()
-            basic_features['fb_rsi_14'] = self._calculate_rsi(data['close'], 14)
-            basic_features['fb_bb_upper'] = data['close'].rolling(20, min_periods=20).mean() + 2 * data['close'].rolling(20, min_periods=20).std()
-            basic_features['fb_bb_lower'] = data['close'].rolling(20, min_periods=20).mean() - 2 * data['close'].rolling(20, min_periods=20).std()
-            basic_features['fb_volume_sma'] = data['volume'].rolling(20, min_periods=20).mean()
-            
-            # Remove NaN values
-            basic_features = basic_features.dropna()
-            
-            return FeatureGenerationResult(
-                success=True,
-                generated_features=basic_features,
-                feature_metadata={'method': 'fallback_basic', 'symbol': symbol, 'timeframe': timeframe},
-                generation_metrics={'feature_count': len(basic_features.columns), 'shape': basic_features.shape},
-                optimization_stats={'method': 'fallback'},
-                feature_categories=['basic_technical'],
-                vectorbt_optimizations={'vectorbt_enabled': False},
-                artifacts={'fallback_features': basic_features.columns.tolist()}
-            )
-            
-        except Exception as e:
-            return FeatureGenerationResult(
-                success=False,
-                generated_features=pd.DataFrame(),
-                feature_metadata={},
-                generation_metrics={},
-                optimization_stats={},
-                feature_categories=[],
-                vectorbt_optimizations={},
-                artifacts={},
-                error_message=str(e)
-            )
 
-    def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate RSI indicator using Wilder's smoothing to avoid division by zero."""
-        delta = prices.diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
-        
-        # Use Wilder's smoothing (exponential weighted mean)
-        alpha = 1.0 / period
-        avg_gain = gain.ewm(alpha=alpha, adjust=False).mean()
-        avg_loss = loss.ewm(alpha=alpha, adjust=False).mean()
-        
-        # Guard against division by zero
-        rs = avg_gain / avg_loss.replace(0, np.nan)
-        rsi = 100 - (100 / (1 + rs))
-        return rsi.clip(0, 100).fillna(50)  # Clip to [0,100] and fill NaNs with neutral RSI
 
     # Required utility methods for BasePreTrainingComponent
     def safe_dataframe_operation(self, operation_func, *args, **kwargs):

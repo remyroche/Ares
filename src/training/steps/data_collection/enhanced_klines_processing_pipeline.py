@@ -218,251 +218,12 @@ def _lazy_import_quality_utilities():
         
         def run_comprehensive_validation(self, data):
             return []
-# Enhanced exchange interface using existing exchange modules
-class ExchangeInterface:
-    """Enhanced exchange interface that uses existing exchange modules."""
-    def __init__(self, exchange="binance", *args, **kwargs):
-        self.exchange = exchange.lower()
-        self.connected = False
-        self.exchange_client = None
-        self.klines_adapter = None
-        
-    async def connect(self):
-        """Connect to the exchange using existing modules."""
-        try:
-            if self.exchange == "binance":
-                # Import and use the existing Binance exchange modules
-                # Use importlib to import from the specific .py file
-                import importlib.util
-                import sys
-                from pathlib import Path
-                
-                # Import from the parent-level binance.py file
-                binance_path = Path(__file__).parent.parent.parent.parent / "exchanges" / "binance.py"
-                spec = importlib.util.spec_from_file_location("binance_exchange", binance_path)
-                binance_module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(binance_module)
-                BinanceExchange = binance_module.BinanceExchange
-                
-                # Import the klines adapter normally
-                from exchanges.binance.klines_adapter import BinanceKlinesAdapter
-                
-                # Initialize the exchange client
-                self.exchange_client = BinanceExchange()
-                self.klines_adapter = BinanceKlinesAdapter()
-                
-                # Test connection
-                await self._test_connection()
-                self.connected = True
-                if self.enable_logging:
-                    tprint_success(f"✅ Connected to {self.exchange.upper()} exchange via existing modules")
-            else:
-                raise ValueError(f"Unsupported exchange: {self.exchange}")
-        except Exception as e:
-            if self.enable_logging:
-                tprint_error(f"❌ Failed to connect to {self.exchange}: {e}")
-            raise
-    
-    async def disconnect(self):
-        """Disconnect from the exchange."""
-        self.connected = False
-        self.exchange_client = None
-        self.klines_adapter = None
-        if self.enable_logging:
-            tprint_info("✅ Disconnected from exchange")
-    
-    async def _test_connection(self):
-        """Test the connection to the exchange."""
-        if not self.exchange_client:
-            raise ConnectionError("Exchange client not initialized")
-        
-        # Test with a simple API call using the existing modules
-        try:
-            # Use the existing exchange client to test connection
-            if hasattr(self.exchange_client, 'test_connection'):
-                await self.exchange_client.test_connection()
-            else:
-                # Fallback: try to get market data
-                if hasattr(self.exchange_client, 'get_markets'):
-                    markets = await self.exchange_client.get_markets()
-                    if not markets:
-                        raise ConnectionError("No markets available")
-        except Exception as e:
-            raise ConnectionError(f"Connection test failed: {e}")
-    
-    async def fetch_klines(self, symbol, interval, start_time, end_time, limit=1000):
-        """
-        Fetch klines data using existing exchange modules.
-        
-        Args:
-            symbol: Trading symbol (e.g., 'ETHUSDT')
-            interval: Time interval (e.g., '1m', '5m', '1h')
-            start_time: Start timestamp
-            end_time: End timestamp
-            limit: Maximum number of records per request
-            
-        Returns:
-            List of klines data
-        """
-        if not self.connected or not self.klines_adapter:
-            raise ConnectionError("Not connected to exchange")
-        
-        try:
-            if self.enable_logging:
-                tprint_info(f"📥 Fetching {symbol} {interval} data from {start_time} to {end_time}")
-            
-            # Use the existing klines adapter to fetch data
-            if hasattr(self.klines_adapter, 'get_klines'):
-                ohlcv = await self.klines_adapter.get_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=start_time,
-                    end_time=end_time,
-                    limit=limit
-                )
-            else:
-                # Fallback to direct exchange client
-                ohlcv = await self.exchange_client.get_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_time=start_time,
-                    end_time=end_time,
-                    limit=limit
-                )
-            
-            if self.enable_logging:
-                tprint_success(f"✅ Fetched {len(ohlcv)} records")
-            
-            return ohlcv
-            
-        except Exception as e:
-            if self.enable_logging:
-                tprint_error(f"❌ Failed to fetch data: {e}")
-            raise
-    
-    async def fetch_historical_data(self, symbol, interval, start_date, end_date, batch_size=1000):
-        """
-        Fetch historical data using existing exchange modules.
-        
-        Args:
-            symbol: Trading symbol
-            interval: Time interval
-            start_date: Start date
-            end_date: End date
-            batch_size: Number of records per batch
-            
-        Returns:
-            Combined DataFrame of all historical data
-        """
-        if self.enable_logging:
-            tprint_info(f"📊 Fetching historical data for {symbol} {interval} from {start_date} to {end_date}")
-        
-        try:
-            # Use the existing klines adapter for historical data
-            if hasattr(self.klines_adapter, 'get_historical_klines'):
-                # Use the adapter's historical data method
-                historical_data = await self.klines_adapter.get_historical_klines(
-                    symbol=symbol,
-                    interval=interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                    batch_size=batch_size
-                )
-                
-                if self.enable_logging:
-                    tprint_success(f"✅ Total historical data: {len(historical_data)} records")
-                
-                return historical_data
-            else:
-                # Fallback to batch processing using fetch_klines
-                all_data = []
-                current_start = start_date
-                
-                while current_start < end_date:
-                    # Calculate batch end time
-                    if interval == '1m':
-                        batch_end = current_start + timedelta(minutes=batch_size)
-                    elif interval == '5m':
-                        batch_end = current_start + timedelta(minutes=batch_size * 5)
-                    elif interval == '15m':
-                        batch_end = current_start + timedelta(minutes=batch_size * 15)
-                    elif interval == '1h':
-                        batch_end = current_start + timedelta(hours=batch_size)
-                    else:
-                        batch_end = current_start + timedelta(days=1)  # Default to daily
-                    
-                    # Don't exceed end_date
-                    if batch_end > end_date:
-                        batch_end = end_date
-                    
-                    try:
-                        # Fetch batch data
-                        batch_data = await self.fetch_klines(
-                            symbol=symbol,
-                            interval=interval,
-                            start_time=current_start,
-                            end_time=batch_end,
-                            limit=batch_size
-                        )
-                        
-                        if batch_data:
-                            all_data.extend(batch_data)
-                            if self.enable_logging:
-                                tprint_info(f"  📈 Batch: {len(batch_data)} records from {current_start} to {batch_end}")
-                        
-                        # Move to next batch
-                        current_start = batch_end
-                        
-                        # Rate limiting - wait between requests
-                        await asyncio.sleep(0.1)  # 100ms delay
-                        
-                    except Exception as e:
-                        if self.enable_logging:
-                            tprint_warning(f"⚠️ Batch failed: {e}")
-                        # Continue with next batch
-                        current_start = batch_end
-                        continue
-                
-                if self.enable_logging:
-                    tprint_success(f"✅ Total historical data: {len(all_data)} records")
-                
-                return all_data
-                
-        except Exception as e:
-            if self.enable_logging:
-                tprint_error(f"❌ Failed to fetch historical data: {e}")
-            raise
+# Import ExchangeInterface from the proper location
+from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
-def create_exchange_interface(config):
-    """Create an exchange interface instance."""
-    return ExchangeInterface(exchange=config.get('exchange', 'binance'))
-
-# Simple data standardization
-class UnifiedOHLCVStandardizer:
-    """Simple data standardizer."""
-    def __init__(self, *args, **kwargs):
-        pass
-    
-    def standardize(self, data):
-        return data
-
-# Simple parquet management
-class KlinesParquetManager:
-    """Simple parquet manager."""
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
-    
-    async def store_klines(self, data, symbol, interval, **kwargs):
-        return {"success": True, "file_path": "dummy.parquet"}
-    
-    def write_data(self, df, symbol, interval, data_type="raw", overwrite=False):
-        return True
-    
-    def get_compression_stats(self):
-        return {"total_file_size_mb": 0.0, "compression_ratio": 1.0}
-    
-    async def load_klines(self, symbol, interval, **kwargs):
-        return pd.DataFrame()
+# Import the proper classes from their locations
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+from src.utils.data.klines_parquet import KlinesParquetManager
 
 class StorageConfig:
     """Simple storage config."""
@@ -1017,6 +778,12 @@ class EnhancedKlinesProcessingPipeline:
             }
 
             # Step 1: Download data using ExchangeInterface
+            try:
+                await exchange_interface.connect()
+            except Exception as e:
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ Exchange connection failed: {e}")
+            
             download_result = await self._download_data(
                 symbol, interval, years, exchange_interface
             )
@@ -1209,20 +976,37 @@ class EnhancedKlinesProcessingPipeline:
             else:
                 # Download fresh data from exchange
                 if self.enable_logging:
-                    tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange.upper()} exchange")
+                    tprint_info(f"🌐 Downloading fresh data from {exchange_interface.exchange_type.upper()} exchange")
                 
                 # Calculate date range
                 end_date = datetime.now() - timedelta(days=3)  # 3 days ago
                 start_date = end_date - timedelta(days=years * 365)
                 
-                # Download historical data
-                raw_data = await exchange_interface.fetch_historical_data(
-                symbol=symbol,
-                interval=interval,
-                    start_date=start_date,
-                    end_date=end_date,
-                    batch_size=1000
+                # Download historical data using get_klines
+                klines_data = await exchange_interface.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_date,
+                    end_time=end_date,
+                    limit=1000
                 )
+                
+                # Convert KlineData objects to list format
+                raw_data = []
+                for kline in klines_data:
+                    raw_data.append([
+                        int(kline.timestamp.timestamp() * 1000),  # timestamp
+                        kline.open_price,  # open
+                        kline.high_price,  # high
+                        kline.low_price,   # low
+                        kline.close_price, # close
+                        kline.volume,      # volume
+                        int(kline.close_time.timestamp() * 1000),  # close_time
+                        kline.quote_asset_volume,  # quote_volume
+                        kline.number_of_trades,     # trades
+                        kline.taker_buy_base_asset_volume,  # taker_buy_base
+                        kline.taker_buy_quote_asset_volume   # taker_buy_quote
+                    ])
                 
                 if not raw_data:
                     raise ValueError("No data received from exchange")
@@ -1694,13 +1478,30 @@ class EnhancedKlinesProcessingPipeline:
                     tprint_info(f"📥 Re-downloading data for gap: {gap.start_time} to {gap.end_time}")
 
                 # Download data for the gap period
-                gap_data = await exchange_interface.get_klines(
+                gap_klines = await exchange_interface.get_klines(
                     symbol=symbol,
                     interval=interval,
                     start_time=gap.start_time,
                     end_time=gap.end_time,
                     limit=1000
                 )
+                
+                # Convert KlineData objects to list format
+                gap_data = []
+                for kline in gap_klines:
+                    gap_data.append([
+                        int(kline.timestamp.timestamp() * 1000),  # timestamp
+                        kline.open_price,  # open
+                        kline.high_price,  # high
+                        kline.low_price,   # low
+                        kline.close_price, # close
+                        kline.volume,      # volume
+                        int(kline.close_time.timestamp() * 1000),  # close_time
+                        kline.quote_asset_volume,  # quote_volume
+                        kline.number_of_trades,     # trades
+                        kline.taker_buy_base_asset_volume,  # taker_buy_base
+                        kline.taker_buy_quote_asset_volume   # taker_buy_quote
+                    ])
 
                 if gap_data:
                     gap_df = self._klines_to_dataframe(gap_data, symbol, interval)
@@ -2372,8 +2173,14 @@ if __name__ == "__main__":
             )
 
             # Create enhanced exchange interface for data downloading
-            exchange_interface = ExchangeInterface(exchange="binance")
-            exchange_interface.enable_logging = True  # Enable logging for the interface
+            exchange_config = {
+                'exchange_type': 'binance',
+                'api_key': "",  # Add your API key here
+                'api_secret': "",  # Add your API secret here
+                'testnet': True,
+                'rate_limits': {}
+            }
+            exchange_interface = ExchangeInterface(exchange_config)
             
             try:
                 await exchange_interface.connect()
@@ -2384,15 +2191,15 @@ if __name__ == "__main__":
                 class FallbackExchangeInterface:
                     def __init__(self):
                         self.connected = True
-                        self.exchange = "local"
+                        self.exchange_type = "local"
                     
                     async def connect(self):
-                        pass
+                        return True
                     
                     async def disconnect(self):
                         pass
                     
-                    async def fetch_historical_data(self, *args, **kwargs):
+                    async def get_klines(self, *args, **kwargs):
                         return []
                 
                 exchange_interface = FallbackExchangeInterface()

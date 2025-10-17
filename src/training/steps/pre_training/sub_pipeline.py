@@ -3611,6 +3611,10 @@ class PreTrainingSubPipeline:
                         )
                         artifacts['multi_horizon_labeling_result'] = validated_contract
                         result.artifacts = artifacts
+                        
+                        # Store tactician entry labeler artifacts in pipeline state for downstream use
+                        self._current_pipeline_state['tactician_entry_labeler'] = artifacts['multi_horizon_labeling_result']
+                        self.logger.info("✅ Stored tactician entry labeler artifacts in pipeline state for downstream use")
                 except DataContractValidationError as contract_error:
                     self.event_logger.error(
                         "Contract validation error",

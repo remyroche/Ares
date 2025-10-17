@@ -755,6 +755,52 @@ class TacticianDifferentiatedLabeler:
 
         return metrics
 
+    def _calculate_sample_weights(self, labels: pd.Series, quality_metrics: Dict[str, float]) -> pd.Series:
+        """
+        Calculate sample weights for target weighting in downstream steps.
+        
+        Higher quality entries get higher weights to improve model training.
+        This ensures the model focuses more on high-quality entry points.
+        """
+        tprint_info("⚖️ Calculating sample weights for target weighting")
+        
+        # Base weight for all samples
+        base_weight = 0.1
+        
+        # Calculate weights based on entry quality scores
+        # Non-entry points (labels == 0) get base weight
+        # Entry points get weights proportional to their quality scores
+        weights = pd.Series(base_weight, index=labels.index)
+        
+        # Apply higher weights to entry points based on their quality
+        entry_mask = labels > 0
+        if entry_mask.sum() > 0:
+            # Scale quality scores to weight range [base_weight, 1.0]
+            quality_scores = labels[entry_mask]
+            min_quality = quality_scores.min()
+            max_quality = quality_scores.max()
+            
+            if max_quality > min_quality:
+                # Normalize quality scores to [0, 1] range
+                normalized_quality = (quality_scores - min_quality) / (max_quality - min_quality)
+                # Scale to [base_weight, 1.0] range
+                entry_weights = base_weight + (1.0 - base_weight) * normalized_quality
+            else:
+                # All entry points have same quality, use medium weight
+                entry_weights = pd.Series(0.5, index=quality_scores.index)
+            
+            weights[entry_mask] = entry_weights
+        
+        # Ensure weights are positive and finite
+        weights = weights.clip(lower=0.01, upper=1.0)
+        weights = weights.replace([np.inf, -np.inf], base_weight)
+        
+        tprint_info(f"📊 Sample weights calculated: {len(weights)} samples")
+        tprint_info(f"   → Entry points: {entry_mask.sum()}, Non-entry points: {(~entry_mask).sum()}")
+        tprint_info(f"   → Weight range: {weights.min():.3f} - {weights.max():.3f}")
+        
+        return weights
+
     def _calculate_entry_quality_score(
         self,
         entry_point: pd.Series,
@@ -1050,6 +1096,11 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                 }
             }
 
+            # Calculate sample weights for target weighting in downstream steps
+            # Higher quality entries get higher weights for better model training
+            sample_weights = self._calculate_sample_weights(labels, quality_metrics)
+            tprint_success(f"✅ Calculated sample weights for target weighting: min={sample_weights.min():.3f}, max={sample_weights.max():.3f}, mean={sample_weights.mean():.3f}")
+
             # Save labeled data to parquet file for persistence
             from pathlib import Path
             symbol = pipeline_state.get('symbol', 'UNKNOWN')
@@ -1076,6 +1127,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'confidence_scores': confidence_df,
                     'eligibility_masks': eligibility_df,
                     'quality_scores': quality_scores,
+                    'sample_weights': sample_weights,  # Add sample weights for target weighting
                     'normalization_factors': {
                         'scaling_reference': 'Entry quality normalized scoring',
                         'quality_threshold': quality_metrics.get('quality_threshold', 0.0),
@@ -1096,7 +1148,8 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'n_samples': len(label_df),
                         'n_targets': 1,
                         'n_horizons': 1,
-                        'source': 'all_market_data'
+                        'source': 'all_market_data',
+                        'target_weighting_enabled': True  # Indicate target weighting is enabled
                     }
                 },
                 'labeling_report': {
@@ -1238,6 +1291,15 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'timing_analysis': timing_analysis,
                     },
                     'quality_scores': quality_scores,
+                    'sample_weights': {
+                        'enabled': True,
+                        'min_weight': float(sample_weights.min()),
+                        'max_weight': float(sample_weights.max()),
+                        'mean_weight': float(sample_weights.mean()),
+                        'std_weight': float(sample_weights.std()),
+                        'method': 'quality_based_weighting',
+                        'description': 'Sample weights calculated based on entry quality scores for improved model training'
+                    },
                     'data_quality': data_quality,
                     'data_info': {
                         'input_rows': len(data),
@@ -1246,6 +1308,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'analyst_signals_count': int(analyst_signals.sum()) if analyst_signals is not None and hasattr(analyst_signals, 'sum') else None,
                         'regime_assignments_available': regime_assignments is not None,
                         'regime_count': int(regime_assignments.nunique()) if regime_assignments is not None and hasattr(regime_assignments, 'nunique') else None,
+                        'target_weighting_enabled': True,
                     },
                     'confidence_statistics': {
                         'mean_confidence': float(confidence_df.iloc[:, 0].mean()) if len(confidence_df) > 0 else 0.0,
@@ -1370,6 +1433,52 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
         except Exception as e:
             self.logger.error(f"Error validating data in TacticianEntryLabelerComponent: {e}")
             return False
+
+    def _calculate_sample_weights(self, labels: pd.Series, quality_metrics: Dict[str, float]) -> pd.Series:
+        """
+        Calculate sample weights for target weighting in downstream steps.
+        
+        Higher quality entries get higher weights to improve model training.
+        This ensures the model focuses more on high-quality entry points.
+        """
+        tprint_info("⚖️ Calculating sample weights for target weighting")
+        
+        # Base weight for all samples
+        base_weight = 0.1
+        
+        # Calculate weights based on entry quality scores
+        # Non-entry points (labels == 0) get base weight
+        # Entry points get weights proportional to their quality scores
+        weights = pd.Series(base_weight, index=labels.index)
+        
+        # Apply higher weights to entry points based on their quality
+        entry_mask = labels > 0
+        if entry_mask.sum() > 0:
+            # Scale quality scores to weight range [base_weight, 1.0]
+            quality_scores = labels[entry_mask]
+            min_quality = quality_scores.min()
+            max_quality = quality_scores.max()
+            
+            if max_quality > min_quality:
+                # Normalize quality scores to [0, 1] range
+                normalized_quality = (quality_scores - min_quality) / (max_quality - min_quality)
+                # Scale to [base_weight, 1.0] range
+                entry_weights = base_weight + (1.0 - base_weight) * normalized_quality
+            else:
+                # All entry points have same quality, use medium weight
+                entry_weights = pd.Series(0.5, index=quality_scores.index)
+            
+            weights[entry_mask] = entry_weights
+        
+        # Ensure weights are positive and finite
+        weights = weights.clip(lower=0.01, upper=1.0)
+        weights = weights.replace([np.inf, -np.inf], base_weight)
+        
+        tprint_info(f"📊 Sample weights calculated: {len(weights)} samples")
+        tprint_info(f"   → Entry points: {entry_mask.sum()}, Non-entry points: {(~entry_mask).sum()}")
+        tprint_info(f"   → Weight range: {weights.min():.3f} - {weights.max():.3f}")
+        
+        return weights
 
 # Register component with factory
 def _register_tactician_entry_labeler():

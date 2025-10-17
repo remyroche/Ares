@@ -86,17 +86,18 @@ class FeatureGenerationStep(BasePreTrainingComponent):
                 default_lookback=20,
                 min_lookback=1,
                 max_lookback=252,
-                use_vectorbt=False,  # Align with auto-optimization config
-                enable_gpu=False,  # Align with auto-optimization config
-                enable_parallel=False  # Align with auto-optimization config
+                use_vectorbt=True,  # Enable VectorBT optimization
+                enable_gpu=True,  # Enable GPU acceleration
+                enable_parallel=True  # Enable parallel processing
             )
             
             # Create auto-optimization configuration
             self.auto_optimization_config = AutoOptimizationConfig(
                 optimization_level=OptimizationLevel.BALANCED,
-                enable_auto_optimization=False,  # Disable auto-optimization to prevent data corruption
-                enable_vectorbt_optimization=False,  # Disable VectorBT optimization to prevent data corruption
-                enable_memory_optimization=False  # Disable memory optimization to prevent data corruption
+                enable_auto_optimization=True,  # Enable auto-optimization
+                enable_vectorbt_optimization=True,  # Enable VectorBT optimization
+                enable_memory_optimization=True,  # Enable memory optimization
+                enable_gpu_acceleration=True  # Enable GPU acceleration
             )
             
             # Initialize feature generators
@@ -234,10 +235,11 @@ class FeatureGenerationStep(BasePreTrainingComponent):
             
             # Get VectorBT optimization details with safe attribute access
             vectorbt_optimizations = {
-                'vectorbt_enabled': bool(getattr(feature_config, 'enable_vectorbt', False)),
+                'vectorbt_enabled': bool(getattr(feature_config, 'use_vectorbt', False)),
                 'optimization_level': getattr(self.auto_optimization_config, 'optimization_level', None),
-                'parallel_processing': bool(getattr(self.auto_optimization_config, 'enable_parallel', False)),
-                'memory_optimization': bool(getattr(self.auto_optimization_config, 'enable_memory_optimization', False))
+                'parallel_processing': bool(getattr(feature_config, 'enable_parallel', False)),
+                'memory_optimization': bool(getattr(self.auto_optimization_config, 'enable_memory_optimization', False)),
+                'gpu_acceleration': bool(getattr(feature_config, 'enable_gpu', False))
             }
             
             # Compile comprehensive result with safe attribute access

@@ -25,7 +25,7 @@ class AutoOptimizationConfig:
     # VectorBT optimization
     enable_vectorbt_optimization: bool = True
     vectorbt_threshold: int = 1000
-    enable_gpu_acceleration: bool = False
+    enable_gpu_acceleration: bool = True
 
     # Rolling operations optimization
     enable_rolling_optimization: bool = True

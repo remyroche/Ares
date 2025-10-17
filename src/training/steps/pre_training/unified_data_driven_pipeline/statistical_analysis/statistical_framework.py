@@ -187,13 +187,33 @@ class RelationshipAnalysis:
 class StatisticalTest(ABC):
     """Abstract base class for statistical tests."""
 
+    @abstractmethod
     def test(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-        """Perform the statistical test."""
-        raise NotImplementedError("Subclasses must implement the test method")
+        """
+        Perform the statistical test.
+        
+        Args:
+            data: Input DataFrame containing the data to test
+            **kwargs: Additional keyword arguments specific to the test
+            
+        Returns:
+            Dictionary containing test results including statistics, p-values, and other relevant metrics
+        """
+        pass
 
+    @abstractmethod
     def is_significant(self, result: Dict[str, Any], alpha: float = 0.05) -> bool:
-        """Check if the result is statistically significant."""
-        raise NotImplementedError("Subclasses must implement the is_significant method")
+        """
+        Check if the test result is statistically significant.
+        
+        Args:
+            result: Dictionary containing test results from the test method
+            alpha: Significance level (default: 0.05)
+            
+        Returns:
+            Boolean indicating whether the result is statistically significant
+        """
+        pass
 
 class NormalityTest(StatisticalTest):
     """Test for normality using multiple methods."""

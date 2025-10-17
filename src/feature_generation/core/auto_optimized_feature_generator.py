@@ -345,15 +345,7 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                             feature_series = feature_series.astype(np.float32)
                             tprint_info("✅ Applied basic dtype optimization (float64 -> float32)")
             
-            # Apply NaN handling optimization
-            if self.auto_optimization_config.enable_nan_optimization:
-                if feature_series.isna().any():
-                    tprint_info("🔧 Applying NaN handling optimization")
-                    # Forward fill then backward fill
-                    feature_series = feature_series.fillna(method='ffill').fillna(method='bfill')
-                    # If still NaN, fill with 0
-                    feature_series = feature_series.fillna(0.0)
-                    tprint_success("✅ NaN handling optimization applied")
+            # NaN handling removed as requested
             
             # Apply outlier handling
             if self.auto_optimization_config.enable_outlier_optimization:

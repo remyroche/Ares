@@ -1,7 +1,7 @@
 """
 CLVSA Architecture
 
-Stub implementation to prevent import errors.
+to prevent import errors.
 """
 
 class CLVSAArchitecture:

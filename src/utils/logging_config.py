@@ -1,7 +1,11 @@
-"""Logging configuration utilities."""
+"""
+Simple logging configuration for the pipeline components.
+"""
 import logging
-from typing import Dict, List, Optional, Union, Any, Tuple
 
-def get_logger(name: str = None) -> Any:
-    """Get a logger instance."""
-    return logging.getLogger(name or __name__)
+def setup_logging(level=logging.INFO):
+    """Setup basic logging configuration."""
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    )

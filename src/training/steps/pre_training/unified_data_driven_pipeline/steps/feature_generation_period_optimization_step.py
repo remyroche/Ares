@@ -181,7 +181,8 @@ async def handle_feature_generation_period_optimization_step(
     # Create step instance and execute
     step = FeatureGenerationPeriodOptimizationStep()
 
-    return await step.execute(
+    # Prepare training input as dict
+    training_input = dict(
         data=sample_data,
         symbol=symbol,
         timeframe=timeframe,
@@ -191,8 +192,10 @@ async def handle_feature_generation_period_optimization_step(
         start_date=start_date,
         end_date=end_date,
         exchange=exchange,
-        custom_overrides=custom_overrides
+        custom_overrides=custom_overrides,
     )
+
+    return await step.execute(training_input=training_input, pipeline_state={})
 
 # Register component with factory
 def _register_feature_generation_period_optimization_step():

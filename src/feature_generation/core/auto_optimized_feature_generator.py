@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, Union
 import logging
 import pandas as pd
 import time
+import threading
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, FeatureResult
 from .optimization_mixin import OptimizationMixin
@@ -52,8 +53,11 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 'memory_savings_mb': 0.0,
                 'strategy_used': self.auto_optimization_config.optimization_level.value
             }
+            
+            # Thread safety for stats updates
+            self._stats_lock = threading.Lock()
 
-            self.logger = logger.getChild(f'AutoOptimized{self.__class__.__name__}')
+            self.logger = logger.getChild(f'AutoOptimized.{self.__class__.__name__}')
 
             if self.auto_optimization_config.enable_optimization_logging:
                 self.logger.info(f"Auto-optimization enabled with {self.auto_optimization_config.optimization_level.value} strategy")
@@ -83,7 +87,7 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             f"Subclass {self.__class__.__name__} must implement _generate_feature method"
         )
 
-    def _apply_level_settings(self):
+    def _apply_level_settings(self) -> None:
         """Apply settings based on optimization level."""
         try:
             level_settings = self.auto_optimization_config.get_settings_for_level()
@@ -130,12 +134,13 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
             # DEBUG: Check data quality at the start of generate
             import numpy as np
-            print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - Data shape: {data.shape}")
-            print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
-            for col in data.select_dtypes(include=[np.number]).columns:
-                non_finite = (~np.isfinite(data[col])).sum()
-                if non_finite > 0:
-                    print(f"🔍 [DEBUG] AutoOptimizedFeatureGenerator.generate - {col}: {non_finite} non-finite values")
+            if self.auto_optimization_config.enable_optimization_logging:
+                self.logger.debug(f"AutoOptimizedFeatureGenerator.generate - Data shape: {data.shape}")
+                self.logger.debug(f"AutoOptimizedFeatureGenerator.generate - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+                for col in data.select_dtypes(include=[np.number]).columns:
+                    non_finite = (~np.isfinite(data[col])).sum()
+                    if non_finite > 0:
+                        self.logger.debug(f"AutoOptimizedFeatureGenerator.generate - {col}: {non_finite} non-finite values")
 
             # Log optimization start
             if self.auto_optimization_config.enable_optimization_logging:
@@ -146,12 +151,13 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 self.logger.debug(f"Applying auto-optimization ({self.auto_optimization_config.optimization_level.value})")
                 data = self._auto_optimize_data(data)
                 # DEBUG: Check data quality after optimization
-                print(f"🔍 [DEBUG] After _auto_optimize_data - Data shape: {data.shape}")
-                print(f"🔍 [DEBUG] After _auto_optimize_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
-                for col in data.select_dtypes(include=[np.number]).columns:
-                    non_finite = (~np.isfinite(data[col])).sum()
-                    if non_finite > 0:
-                        print(f"🔍 [DEBUG] After _auto_optimize_data - {col}: {non_finite} non-finite values")
+                if self.auto_optimization_config.enable_optimization_logging:
+                    self.logger.debug(f"After _auto_optimize_data - Data shape: {data.shape}")
+                    self.logger.debug(f"After _auto_optimize_data - Non-finite values: {(~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()}")
+                    for col in data.select_dtypes(include=[np.number]).columns:
+                        non_finite = (~np.isfinite(data[col])).sum()
+                        if non_finite > 0:
+                            self.logger.debug(f"After _auto_optimize_data - {col}: {non_finite} non-finite values")
             else:
                 self.logger.debug("Auto-optimization disabled, using original data")
 
@@ -160,8 +166,9 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
             # Update auto-optimization stats
             optimization_time = time.time() - start_time
-            self.auto_optimization_stats['total_optimizations'] += 1
-            self.auto_optimization_stats['total_optimization_time'] += optimization_time
+            with self._stats_lock:
+                self.auto_optimization_stats['total_optimizations'] += 1
+                self.auto_optimization_stats['total_optimization_time'] += optimization_time
 
             self.logger.debug(f"Feature generation completed in {optimization_time:.3f}s, success: {result.success}")
 
@@ -176,12 +183,15 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 'optimization_stats': self.optimization_strategy.get_stats()
             })
 
+            # Add auto-optimization error if present
+            if hasattr(self, '_last_auto_opt_error') and self._last_auto_opt_error:
+                result.metadata['auto_optimization_error'] = self._last_auto_opt_error
+
             return result
 
         except Exception as e:
             self.logger.error(f"Error generating feature '{self.config.name}': {e}")
             # Create a failed result
-            from .feature_generator import FeatureResult
             return FeatureResult(
                 name=self.config.name,
                 data=pd.Series(dtype=float, index=data.index),
@@ -209,7 +219,8 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             if hasattr(self, 'get_optimization_stats'):
                 opt_stats = self.get_optimization_stats()
                 memory_saved = opt_stats.get('memory_saved_mb', 0.0)
-                self.auto_optimization_stats['memory_savings_mb'] += memory_saved
+                with self._stats_lock:
+                    self.auto_optimization_stats['memory_savings_mb'] += memory_saved
                 self.logger.debug(f"Memory saved this optimization: {memory_saved:.2f}MB")
 
             if self.auto_optimization_config.enable_optimization_logging:
@@ -219,22 +230,25 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
         except Exception as e:
             self.logger.warning(f"Auto-optimization failed: {e}, using original data")
+            self._last_auto_opt_error = str(e)
             return data
 
-    def set_optimization_strategy(self, level: Union[str, OptimizationLevel]):
+    def set_optimization_strategy(self, level: Union[str, OptimizationLevel]) -> None:
         """Change optimization strategy at runtime."""
         if isinstance(level, str):
             level = OptimizationLevel(level)
 
         self.auto_optimization_config.optimization_level = level
         self.optimization_strategy = self._create_optimization_strategy()
+        self.auto_optimization_stats['strategy_used'] = level.value
 
         if self.auto_optimization_config.enable_optimization_logging:
             self.logger.info(f"Optimization strategy changed to {level.value}")
 
     def get_auto_optimization_stats(self) -> Dict[str, Any]:
         """Get automatic optimization statistics."""
-        stats = self.auto_optimization_stats.copy()
+        with self._stats_lock:
+            stats = self.auto_optimization_stats.copy()
 
         if stats['total_optimizations'] > 0:
             stats['average_optimization_time'] = (
@@ -248,33 +262,19 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
         return stats
 
-    def reset_auto_optimization_stats(self):
+    def reset_auto_optimization_stats(self) -> None:
         """Reset automatic optimization statistics."""
-        self.auto_optimization_stats = {
-            'total_optimizations': 0,
-            'total_optimization_time': 0.0,
-            'memory_savings_mb': 0.0,
-            'strategy_used': self.auto_optimization_config.optimization_level.value
-        }
+        with self._stats_lock:
+            self.auto_optimization_stats = {
+                'total_optimizations': 0,
+                'total_optimization_time': 0.0,
+                'memory_savings_mb': 0.0,
+                'strategy_used': self.auto_optimization_config.optimization_level.value
+            }
         self.optimization_strategy.reset_stats()
 
-    def _should_use_vectorbt(self, data: pd.DataFrame) -> bool:
-        """Determine if VectorBT optimization should be used."""
-        if not self.auto_optimization_config.enable_vectorbt_optimization:
-            return False
 
-        # Check if data size exceeds threshold
-        if len(data) < self.auto_optimization_config.vectorbt_threshold:
-            return False
-
-        # Check if data has numeric columns suitable for VectorBT
-        numeric_columns = data.select_dtypes(include=['number']).columns
-        if len(numeric_columns) == 0:
-            return False
-
-        return True
-
-    def enable_auto_optimization(self, enabled: bool = True):
+    def enable_auto_optimization(self, enabled: bool = True) -> None:
         """Enable or disable automatic optimization."""
         self.auto_optimization_config.enable_auto_optimization = enabled
 
@@ -286,7 +286,7 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
         """Get current optimization configuration."""
         return self.auto_optimization_config
 
-    def update_optimization_config(self, **kwargs):
+    def update_optimization_config(self, **kwargs) -> None:
         """Update optimization configuration."""
         for key, value in kwargs.items():
             if hasattr(self.auto_optimization_config, key):

@@ -344,3 +344,65 @@ class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABL
                 execution_time=self._end_execution(),
                 metrics={},
             )
+
+    # Required abstract methods from ModularComponent (if available)
+    if MODULAR_COMPONENT_AVAILABLE:
+        def _initialize_resources(self) -> bool:
+            """Initialize component-specific resources."""
+            try:
+                # Set initial state
+                self.set_state('initialized_at', datetime.now().isoformat())
+                self.set_state('execution_count', 0)
+                return True
+            except Exception as e:
+                self.logger.error(f"Resource initialization failed: {e}")
+                return False
+        
+        def _cleanup_resources(self) -> None:
+            """Cleanup component-specific resources."""
+            self.set_state('cleaned_up_at', datetime.now().isoformat())
+            self.set_state('execution_count', 0)
+        
+        def _process_data(self, data: Any, **kwargs) -> Any:
+            """Process data with component logic."""
+            # Increment execution count
+            count = self.get_state('execution_count', 0)
+            self.set_state('execution_count', count + 1)
+            
+            # Basic processing - return data as-is for now
+            # The actual processing is done in the execute method
+            return data
+        
+        def _get_validation_rules(self) -> Dict[str, Any]:
+            """Get validation rules for this component."""
+            return {
+                'min_size': 100,
+                'max_size': 1000000,
+                'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+                'data_types': ['pandas.DataFrame'],
+                'max_nan_ratio': 0.1,
+                'min_unique_values': 2
+            }
+        
+        def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+            """Validate data with component-specific rules."""
+            errors = []
+            warnings = []
+            metadata = {}
+            
+            if hasattr(data, 'shape'):  # DataFrame-like object
+                # Check data size
+                if len(data) < 100:
+                    warnings.append("Data size is small (< 100 rows)")
+                
+                # Check for NaN values
+                if hasattr(data, 'isnull'):
+                    nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+                    if nan_ratio > 0.1:
+                        warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+                    
+                    metadata['data_shape'] = data.shape
+                    metadata['nan_ratio'] = nan_ratio
+                    metadata['columns'] = list(data.columns)
+            
+            return {'errors': errors, 'warnings': warnings, 'metadata': metadata}

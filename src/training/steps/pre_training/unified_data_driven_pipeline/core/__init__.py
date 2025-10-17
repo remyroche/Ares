@@ -69,6 +69,12 @@ from .migration_utils import (
     create_advanced_migration
 )
 
+from .modular_pipeline_integration import (
+    ModularPipelineOrchestrator,
+    create_modular_pipeline_orchestrator,
+    integrate_with_consolidated_pipeline
+)
+
 __all__ = [
     # Configuration
     'UnifiedPipelineConfig',
@@ -121,5 +127,10 @@ __all__ = [
     'validate_migration_compatibility',
     'generate_migration_report',
     'create_simple_migration',
-    'create_advanced_migration'
+    'create_advanced_migration',
+    
+    # Pipeline integration
+    'ModularPipelineOrchestrator',
+    'create_modular_pipeline_orchestrator',
+    'integrate_with_consolidated_pipeline'
 ]

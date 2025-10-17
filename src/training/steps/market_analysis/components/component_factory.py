@@ -12,6 +12,15 @@ import warnings
 from typing import Dict, Type, Any, Optional, List
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+
+# Import ModularComponent for enhanced component creation
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+        ModularComponent
+    )
+    MODULAR_COMPONENT_AVAILABLE = True
+except ImportError:
+    MODULAR_COMPONENT_AVAILABLE = False
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
@@ -839,6 +848,50 @@ except ImportError:
             )
 
         self._components[name] = component_class
+
+    def create_modular_component(
+        self,
+        component_name: str,
+        config: Optional[ComponentConfig] = None
+    ) -> BaseMarketAnalysisComponent:
+        """
+        Create a ModularComponent instance with enhanced features.
+
+        Args:
+            component_name: Name of the component to create
+            config: Component configuration
+
+        Returns:
+            ModularComponent instance
+
+        Raises:
+            ValueError: If component name is not registered
+        """
+        if not MODULAR_COMPONENT_AVAILABLE:
+            # Fallback to regular component creation
+            return self.create_component(component_name, config)
+        
+        tprint(f"🏭 [COMPONENT_FACTORY] Creating ModularComponent: {component_name}", color="cyan")
+        
+        # Get the component class
+        if component_name not in self._components:
+            available_components = list(self._components.keys()) + ['regime_data_splitting']
+            tprint(f"❌ [COMPONENT_FACTORY] Unknown component: {component_name}", color="red")
+            tprint(f"📊 [COMPONENT_FACTORY] Available components: {available_components}", color="cyan")
+            raise ValueError(f"Unknown component: {component_name}")
+        
+        component_class = self._components[component_name]
+        
+        # Check if component is already a ModularComponent
+        if issubclass(component_class, ModularComponent):
+            return component_class(
+                name=component_name,
+                config=config.to_dict() if hasattr(config, 'to_dict') else config.__dict__,
+                logger=config.logger if hasattr(config, 'logger') else None
+            )
+        else:
+            # For non-ModularComponent classes, create regular instance
+            return component_class(config)
 
     @classmethod
     def get_available_components(self) -> list[str]:

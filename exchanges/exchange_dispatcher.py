@@ -138,21 +138,41 @@ class ExchangeDispatcher:
                     trade_symbol=self.config.trade_symbol
                 )
             elif self.config.exchange_type == ExchangeType.BINANCE:
-                # TODO: Implement Binance exchange
-                self.logger.warning("Binance exchange not yet implemented")
-                return None
+                from .binance import create_binance_exchange
+                return create_binance_exchange(
+                    api_key=self.config.api_key,
+                    api_secret=self.config.api_secret,
+                    trade_symbol=self.config.trade_symbol,
+                    password=self.config.password,
+                    subaccount_id=self.config.subaccount_id,
+                    use_testnet=self.config.use_testnet
+                )
             elif self.config.exchange_type == ExchangeType.GATEIO:
-                # TODO: Implement Gate.io exchange
-                self.logger.warning("Gate.io exchange not yet implemented")
-                return None
+                from .gateio import create_gateio_exchange
+                return create_gateio_exchange(
+                    api_key=self.config.api_key,
+                    api_secret=self.config.api_secret,
+                    trade_symbol=self.config.trade_symbol,
+                    password=self.config.password
+                )
             elif self.config.exchange_type == ExchangeType.MEXC:
-                # TODO: Implement MEXC exchange
-                self.logger.warning("MEXC exchange not yet implemented")
-                return None
+                from .mexc import create_mexc_exchange
+                return create_mexc_exchange(
+                    api_key=self.config.api_key,
+                    api_secret=self.config.api_secret,
+                    trade_symbol=self.config.trade_symbol,
+                    password=self.config.password,
+                    subaccount_id=self.config.subaccount_id,
+                    use_testnet=self.config.use_testnet
+                )
             elif self.config.exchange_type == ExchangeType.PHEMEX:
-                # TODO: Implement Phemex exchange
-                self.logger.warning("Phemex exchange not yet implemented")
-                return None
+                from .phemex import create_phemex_exchange
+                return create_phemex_exchange(
+                    api_key=self.config.api_key,
+                    api_secret=self.config.api_secret,
+                    trade_symbol=self.config.trade_symbol,
+                    password=self.config.password
+                )
             else:
                 self.logger.error(f"Unsupported exchange type: {self.config.exchange_type}")
                 return None
@@ -462,7 +482,7 @@ def create_okx_dispatcher(
     return create_exchange_dispatcher(config)
 
 
-# Convenience function for creating Binance dispatcher (when implemented)
+# Convenience function for creating Binance dispatcher
 def create_binance_dispatcher(
     api_key: str,
     api_secret: str,
@@ -475,6 +495,56 @@ def create_binance_dispatcher(
         api_key=api_key,
         api_secret=api_secret,
         use_testnet=use_testnet,
+        trade_symbol=trade_symbol
+    )
+    return create_exchange_dispatcher(config)
+
+
+# Convenience function for creating Gate.io dispatcher
+def create_gateio_dispatcher(
+    api_key: str,
+    api_secret: str,
+    trade_symbol: str = "BTCUSDT"
+) -> ExchangeDispatcher:
+    """Create a Gate.io exchange dispatcher."""
+    config = ExchangeConfig(
+        exchange_type=ExchangeType.GATEIO,
+        api_key=api_key,
+        api_secret=api_secret,
+        trade_symbol=trade_symbol
+    )
+    return create_exchange_dispatcher(config)
+
+
+# Convenience function for creating MEXC dispatcher
+def create_mexc_dispatcher(
+    api_key: str,
+    api_secret: str,
+    use_testnet: bool = True,
+    trade_symbol: str = "BTCUSDT"
+) -> ExchangeDispatcher:
+    """Create a MEXC exchange dispatcher."""
+    config = ExchangeConfig(
+        exchange_type=ExchangeType.MEXC,
+        api_key=api_key,
+        api_secret=api_secret,
+        use_testnet=use_testnet,
+        trade_symbol=trade_symbol
+    )
+    return create_exchange_dispatcher(config)
+
+
+# Convenience function for creating Phemex dispatcher
+def create_phemex_dispatcher(
+    api_key: str,
+    api_secret: str,
+    trade_symbol: str = "BTCUSDT"
+) -> ExchangeDispatcher:
+    """Create a Phemex exchange dispatcher."""
+    config = ExchangeConfig(
+        exchange_type=ExchangeType.PHEMEX,
+        api_key=api_key,
+        api_secret=api_secret,
         trade_symbol=trade_symbol
     )
     return create_exchange_dispatcher(config)

@@ -401,6 +401,8 @@ class BayesianTPEOptimizer:
             all_trials = []
             best_params = None
             best_value = None
+            coarse_results = None
+            fine_results = None
 
             # Stage 1: Coarse Grid Search (if enabled)
             if self.config.enable_staged_optimization:
@@ -703,9 +705,9 @@ class BayesianTPEOptimizer:
         objectives_direction = {obj_name: 'max' for obj_name in objectives.keys()}
 
         try:
-            # Compute the Pareto front using the existing ParetoFront optimizer
-            pareto_front = self.pareto_front_optimizer.compute_pareto_front_gpu(
-                self.pareto_solutions, objectives_direction, use_gpu=False  # Use CPU for simplicity
+            # Compute the Pareto front using the imported function
+            pareto_front = compute_pareto_front(
+                self.pareto_solutions, objectives_direction
             )
 
             # Update our stored Pareto front
@@ -779,13 +781,17 @@ class BayesianTPEOptimizer:
             return True
 
         # Calculate confidence interval
-        from scipy import stats
-        confidence_interval = stats.t.interval(
-            self.confidence_level,
-            len(recent_values) - 1,
-            loc=mean_performance,
-            scale=stats.sem(recent_values)  # Standard error of the mean
-        )
+        try:
+            from scipy import stats
+            confidence_interval = stats.t.interval(
+                self.confidence_level,
+                len(recent_values) - 1,
+                loc=mean_performance,
+                scale=stats.sem(recent_values)  # Standard error of the mean
+            )
+        except ImportError:
+            self.logger.warning("SciPy not available, disabling confidence-based stopping")
+            return False
 
         # Calculate expected improvement potential
         expected_improvement = self._calculate_expected_improvement_potential(recent_values)
@@ -837,6 +843,11 @@ class BayesianTPEOptimizer:
 
         # Fit linear trend to recent values
         x = np.arange(len(recent_values))
+        
+        # Check for sufficient variation to avoid rank warnings
+        if len(recent_values) < 2 or np.std(recent_values) < 1e-10:
+            return 0.0
+            
         try:
             slope, intercept = np.polyfit(x, recent_values, 1)
 
@@ -861,8 +872,8 @@ class BayesianTPEOptimizer:
 
             return max(0, potential)
 
-        except np.RankWarning:
-            # Singular matrix, likely due to constant values
+        except (np.linalg.LinAlgError, ValueError):
+            # Singular matrix or invalid values, likely due to constant values
             return 0.0
 
     def _calculate_adaptive_threshold(self, convergence_rate: float) -> float:
@@ -947,35 +958,26 @@ class BayesianTPEOptimizer:
         Returns:
             True if early stopping should be triggered
         """
-        if not self.config.early_stopping_patience or len(trials) < self.config.early_stopping_patience:
+        window = self.config.early_stopping_patience
+        if not window or len(trials) < window + 1:
             return False
 
-        # Get recent trial values
-        recent_trials = sorted(trials[-self.config.early_stopping_patience:],
-                             key=lambda x: x['value'],
-                             reverse=(self.config.direction == 'maximize'))
-
-        best_recent = recent_trials[0]['value']
-
-        # Compare with best overall
-        all_trials_sorted = sorted(trials,
-                                  key=lambda x: x['value'],
-                                  reverse=(self.config.direction == 'maximize'))
-        best_overall = all_trials_sorted[0]['value']
-
-        # Calculate improvement
+        values = [t['value'] for t in trials]
+        
+        # Compare overall best up to start of window vs overall best at end
         if self.config.direction == 'maximize':
-            improvement = best_recent - best_overall
+            prev_best = max(values[:-window])
+            curr_best = max(values)
+            improvement = curr_best - prev_best
         else:
-            improvement = best_overall - best_recent
+            prev_best = min(values[:-window])
+            curr_best = min(values)
+            improvement = prev_best - curr_best
 
-        # Check threshold
-        threshold = self.config.early_stopping_threshold or (abs(best_overall) * 0.001)
+        threshold = self.config.early_stopping_threshold or abs(prev_best) * 1e-3
 
         if improvement < threshold:
-            self.logger.info(f"⏹️ Early stopping triggered in {stage} stage")
-            self.logger.info(f"   No significant improvement in last {self.config.early_stopping_patience} trials")
-            self.logger.info(f"   Best value: {best_overall:.6f}")
+            self.logger.info(f"⏹️ Early stopping in {stage} (no improvement ≥ {threshold:.3g} in last {window} evals)")
             return True
 
         return False
@@ -1356,31 +1358,24 @@ class BayesianTPEOptimizer:
             if not param_combinations:
                 return []
 
-            # Use VectorBT for efficient adaptive grid generation
-            if vbt and len(param_combinations) > 1:
-                # Convert to VectorBT arrays
-                param_arrays = []
+            # Use plain NumPy for efficient adaptive grid generation
+            if len(param_combinations) > 1:
+                # Convert to parameter value lists
+                param_values = []
+                param_names = []
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
-                    param_arrays.append(vbt.array(values))
+                    param_values.append(values)
+                    param_names.append(param_list[0][0])
 
-                # Use VectorBT's efficient operations for adaptive grid
-                mesh_arrays = vbt.meshgrid(*param_arrays)
-
-                # Convert back to parameter dictionaries
-                combinations = []
-                for i in range(len(mesh_arrays[0])):
-                    param_dict = {}
-                    for j, param_list in enumerate(param_combinations):
-                        param_name = param_list[0][0]
-                        param_dict[param_name] = mesh_arrays[j][i]
-                    combinations.append(param_dict)
-
-                return combinations
+                # Use itertools.product for grid generation
+                combinations = list(itertools.product(*param_values))
+                return [dict(zip(param_names, combo)) for combo in combinations]
             else:
-                # Fallback to itertools
-                combinations = list(itertools.product(*param_combinations))
-                return [dict(combo) for combo in combinations]
+                # Single parameter case
+                param_name = param_combinations[0][0][0]
+                values = [val for _, val in param_combinations[0]]
+                return [{param_name: val} for val in values]
 
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT adaptive grid generation failed, using fallback: {e}")
@@ -1408,18 +1403,11 @@ class BayesianTPEOptimizer:
                 study_name=f"tpe_optimization_{int(time.time())}"
             )
 
-            # Add early stopping callback if configured
-            callbacks = []
-            if self.config.early_stopping_patience:
-                early_stopping_callback = self._create_early_stopping_callback()
-                callbacks.append(early_stopping_callback)
-
-            # Run TPE optimization with callbacks
+            # Run TPE optimization (early stopping handled in objective wrapper)
             self.study.optimize(
                 self._create_objective_wrapper(objective, search_space),
                 n_trials=n_trials,
                 timeout=self.config.timeout,
-                callbacks=callbacks if callbacks else None,
                 show_progress_bar=False  # Disable progress bar for cleaner output
             )
 
@@ -1801,65 +1789,57 @@ class BayesianTPEOptimizer:
                     # (low, high) format for numerical parameters
                     low, high = param_config
                     if isinstance(low, int) and isinstance(high, int):
-                        # Use VectorBT's optimized integer range generation
-                        param_values = vbt.array(np.linspace(low, high, grid_points, dtype=int))
+                        # Use NumPy's optimized integer range generation
+                        param_values = np.linspace(low, high, grid_points, dtype=int)
                     else:
-                        # Use VectorBT's optimized float range generation
-                        param_values = vbt.array(np.linspace(low, high, grid_points))
+                        # Use NumPy's optimized float range generation
+                        param_values = np.linspace(low, high, grid_points)
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
                     param_type = param_config.get('type', 'float')
                     if param_type == 'int':
                         low, high = param_config['low'], param_config['high']
-                        param_values = vbt.array(np.linspace(low, high, grid_points, dtype=int))
+                        param_values = np.linspace(low, high, grid_points, dtype=int)
                     elif param_type == 'float':
                         low, high = param_config['low'], param_config['high']
                         if param_config.get('log', False):
-                            # Use VectorBT's optimized logspace
-                            param_values = vbt.array(np.logspace(np.log10(low), np.log10(high), grid_points))
+                            # Use NumPy's optimized logspace
+                            param_values = np.logspace(np.log10(low), np.log10(high), grid_points)
                         else:
-                            param_values = vbt.array(np.linspace(low, high, grid_points))
+                            param_values = np.linspace(low, high, grid_points)
                     elif param_type == 'categorical':
-                        param_values = vbt.array(param_config.get('choices', []))
+                        param_values = np.array(param_config.get('choices', []))
                     else:
                         continue
                 elif isinstance(param_config, list):
                     # Choice format for categorical parameters
-                    param_values = vbt.array(param_config)
+                    param_values = np.array(param_config)
                 else:
                     continue
 
-                param_combinations.append([(param_name, val) for val in param_values.values])
+                param_combinations.append([(param_name, val) for val in param_values])
 
             if not param_combinations:
                 return []
 
-            # Use VectorBT's optimized meshgrid with memory-efficient operations
-            if vbt and len(param_combinations) > 1:
-                # Convert to VectorBT arrays for efficient operations
-                param_arrays = []
+            # Use plain NumPy and itertools for grid generation
+            if len(param_combinations) > 1:
+                # Convert to parameter value lists
+                param_values = []
+                param_names = []
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
-                    param_arrays.append(vbt.array(values))
+                    param_values.append(values)
+                    param_names.append(param_list[0][0])
 
-                # Use VectorBT's memory-efficient meshgrid
-                mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
-
-                # Convert back to parameter dictionaries using VectorBT's vectorized operations
-                combinations = []
-                for i in range(len(mesh_arrays[0])):
-                    param_dict = {}
-                    for j, param_list in enumerate(param_combinations):
-                        param_name = param_list[0][0]
-                        param_dict[param_name] = mesh_arrays[j][i]
-                    combinations.append(param_dict)
-
-                return combinations
+                # Use itertools.product for grid generation
+                combinations = list(itertools.product(*param_values))
+                return [dict(zip(param_names, combo)) for combo in combinations]
             else:
-                # Fallback to itertools for single parameter or when VectorBT not available
-                import itertools
-                combinations = list(itertools.product(*param_combinations))
-                return [dict(combo) for combo in combinations]
+                # Single parameter case
+                param_name = param_combinations[0][0][0]
+                values = [val for _, val in param_combinations[0]]
+                return [{param_name: val} for val in values]
 
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT grid generation failed, using fallback: {e}")
@@ -1891,11 +1871,11 @@ class BayesianTPEOptimizer:
                     fine_max = min(high, best_val + fine_rng)
 
                     if isinstance(low, int) and isinstance(high, int):
-                        # Use VectorBT's optimized integer range
-                        param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points, dtype=int))
+                        # Use NumPy's optimized integer range
+                        param_values = np.linspace(fine_min, fine_max, grid_points, dtype=int)
                     else:
-                        # Use VectorBT's optimized float range
-                        param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points))
+                        # Use NumPy's optimized float range
+                        param_values = np.linspace(fine_min, fine_max, grid_points)
 
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
@@ -1904,7 +1884,7 @@ class BayesianTPEOptimizer:
                         low, high = param_config['low'], param_config['high']
                         fine_min = max(low, int(best_val) - 2)
                         fine_max = min(high, int(best_val) + 2)
-                        param_values = vbt.array(np.arange(fine_min, fine_max + 1, dtype=int))
+                        param_values = np.arange(fine_min, fine_max + 1, dtype=int)
                     elif param_type == 'float':
                         low, high = param_config['low'], param_config['high']
                         rng = high - low
@@ -1913,47 +1893,40 @@ class BayesianTPEOptimizer:
                         fine_max = min(high, best_val + fine_rng)
 
                         if param_config.get('log', False) and fine_min > 0 and fine_max > fine_min:
-                            # Use VectorBT's optimized logspace
-                            param_values = vbt.array(np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points))
+                            # Use NumPy's optimized logspace
+                            param_values = np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points)
                         else:
-                            param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points))
+                            param_values = np.linspace(fine_min, fine_max, grid_points)
                     elif param_type == 'categorical':
-                        param_values = vbt.array(param_config.get('choices', []))
+                        param_values = np.array(param_config.get('choices', []))
                     else:
                         continue
                 else:
                     continue
 
-                param_combinations.append([(param_name, val) for val in param_values.values])
+                param_combinations.append([(param_name, val) for val in param_values])
 
             if not param_combinations:
                 return []
 
-            # Use VectorBT's optimized meshgrid with memory-efficient operations
-            if vbt and len(param_combinations) > 1:
-                # Convert to VectorBT arrays
-                param_arrays = []
+            # Use plain NumPy and itertools for grid generation
+            if len(param_combinations) > 1:
+                # Convert to parameter value lists
+                param_values = []
+                param_names = []
                 for param_list in param_combinations:
                     values = [val for _, val in param_list]
-                    param_arrays.append(vbt.array(values))
+                    param_values.append(values)
+                    param_names.append(param_list[0][0])
 
-                # Use VectorBT's memory-efficient meshgrid
-                mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
-
-                # Convert back to parameter dictionaries using vectorized operations
-                combinations = []
-                for i in range(len(mesh_arrays[0])):
-                    param_dict = {}
-                    for j, param_list in enumerate(param_combinations):
-                        param_name = param_list[0][0]
-                        param_dict[param_name] = mesh_arrays[j][i]
-                    combinations.append(param_dict)
-
-                return combinations
+                # Use itertools.product for grid generation
+                combinations = list(itertools.product(*param_values))
+                return [dict(zip(param_names, combo)) for combo in combinations]
             else:
-                # Fallback to itertools
-                combinations = list(itertools.product(*param_combinations))
-                return [dict(combo) for combo in combinations]
+                # Single parameter case
+                param_name = param_combinations[0][0][0]
+                values = [val for _, val in param_combinations[0]]
+                return [{param_name: val} for val in values]
 
         except Exception as e:
             self.logger.warning(f"⚠️ VectorBT fine grid generation failed, using fallback: {e}")
@@ -1985,7 +1958,7 @@ class BayesianTPEOptimizer:
                     # Use VectorBT's built-in parallel processing with better memory management
                     if self.config.vectorbt_enable_parallel and len(chunk_params) > 1:
                         # Create VectorBT array for batch processing
-                        param_batch = vbt.array([list(params.values()) for params in chunk_params])
+                        param_batch = np.array([list(params.values()) for params in chunk_params])
 
                         # Use VectorBT's vectorized operations for objective evaluation
                         try:
@@ -2083,7 +2056,7 @@ class BayesianTPEOptimizer:
             for name in param_names:
                 values = [params[name] for params in grid_points]
                 # Convert to VectorBT array for vectorized operations
-                param_arrays[name] = vbt.array(values)
+                param_arrays[name] = np.array(values)
 
             return param_arrays
         except Exception as e:

@@ -7,7 +7,7 @@ with separate modules for core optimization, validation, error handling, and per
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union, Callable
+from typing import Dict, List, Optional, Tuple, Any, Union, Callable, Type
 from dataclasses import dataclass
 import logging
 import time
@@ -113,6 +113,375 @@ class PerformanceMetric:
     timestamp: float
     component: str
     metadata: Dict[str, Any]
+
+class ModularComponent(ABC):
+    """
+    Abstract base class for modular components in the unified data-driven pipeline.
+    
+    This class provides a standardized interface for creating modular, reusable components
+    that can be composed together in the data processing pipeline. Each component follows
+    a consistent lifecycle and provides comprehensive functionality for:
+    
+    - Initialization and cleanup
+    - Input validation
+    - Data processing
+    - Configuration management
+    - State management
+    - Performance monitoring
+    - Serialization and persistence
+    
+    Subclasses must implement the abstract methods to define their specific behavior.
+    
+    Example:
+        class MyComponent(ModularComponent):
+            def initialize(self) -> bool:
+                # Initialize component resources
+                return True
+            
+            def process(self, data: Any, **kwargs) -> Any:
+                # Process the input data
+                return processed_data
+            
+            # ... implement other abstract methods
+    """
+
+    def __init__(self, name: str, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
+        """Initialize the modular component."""
+        self.name = name
+        self.config = config or {}
+        self.logger = logger or logging.getLogger(f"{__name__}.{name}")
+        self.performance_stats = {
+            'total_operations': 0,
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'total_time': 0.0
+        }
+        self._initialized = False
+        self._state = {}
+
+    @abstractmethod
+    def initialize(self) -> bool:
+        """Initialize the component. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def process(self, data: Any, **kwargs) -> Any:
+        """Process the input data. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def validate_input(self, data: Any) -> ValidationResult:
+        """Validate input data. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def cleanup(self) -> None:
+        """Cleanup resources. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_component_info(self) -> Dict[str, Any]:
+        """Get component information. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_dependencies(self) -> List[str]:
+        """Get list of component dependencies. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_output_schema(self) -> Dict[str, Any]:
+        """Get expected output schema. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_required_config(self) -> List[str]:
+        """Get list of required configuration parameters. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def can_process(self, data: Any) -> bool:
+        """Check if component can process the given data. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_processing_capabilities(self) -> Dict[str, Any]:
+        """Get component processing capabilities. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def estimate_processing_time(self, data: Any) -> float:
+        """Estimate processing time for given data. Must be implemented by subclasses."""
+        pass
+
+    @abstractmethod
+    def get_memory_requirements(self, data: Any) -> Dict[str, Any]:
+        """Get memory requirements for processing data. Must be implemented by subclasses."""
+        pass
+
+    def is_initialized(self) -> bool:
+        """Check if component is initialized."""
+        return self._initialized
+
+    def set_state(self, key: str, value: Any) -> None:
+        """Set component state."""
+        self._state[key] = value
+
+    def get_state(self, key: str, default: Any = None) -> Any:
+        """Get component state."""
+        return self._state.get(key, default)
+
+    def get_all_state(self) -> Dict[str, Any]:
+        """Get all component state."""
+        return self._state.copy()
+
+    def clear_state(self) -> None:
+        """Clear component state."""
+        self._state.clear()
+
+    def update_config(self, config: Dict[str, Any]) -> None:
+        """Update component configuration."""
+        self.config.update(config)
+
+    def get_config(self, key: str = None, default: Any = None) -> Any:
+        """Get configuration value."""
+        if key is None:
+            return self.config.copy()
+        return self.config.get(key, default)
+
+    def validate_config(self) -> bool:
+        """Validate component configuration."""
+        required_config = self.get_required_config()
+        missing_config = [key for key in required_config if key not in self.config]
+        if missing_config:
+            self.logger.error(f"Missing required configuration: {missing_config}")
+            return False
+        return True
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        return self.performance_stats.copy()
+
+    def reset_stats(self) -> None:
+        """Reset performance statistics."""
+        self.performance_stats = {
+            'total_operations': 0,
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'total_time': 0.0
+        }
+
+    def get_status(self) -> Dict[str, Any]:
+        """Get component status."""
+        return {
+            'name': self.name,
+            'initialized': self._initialized,
+            'config': self.config,
+            'performance_stats': self.performance_stats,
+            'state': self._state
+        }
+
+    def serialize(self) -> Dict[str, Any]:
+        """Serialize component for persistence."""
+        return {
+            'name': self.name,
+            'config': self.config,
+            'state': self._state,
+            'performance_stats': self.performance_stats
+        }
+
+    def deserialize(self, data: Dict[str, Any]) -> None:
+        """Deserialize component from persisted data."""
+        self.config = data.get('config', {})
+        self._state = data.get('state', {})
+        self.performance_stats = data.get('performance_stats', {
+            'total_operations': 0,
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'total_time': 0.0
+        })
+
+    def _update_performance_stats(self, success: bool, processing_time: float) -> None:
+        """Update performance statistics."""
+        self.performance_stats['total_operations'] += 1
+        if success:
+            self.performance_stats['successful_operations'] += 1
+        else:
+            self.performance_stats['failed_operations'] += 1
+        self.performance_stats['total_time'] += processing_time
+
+    def _log_operation(self, operation: str, success: bool, processing_time: float) -> None:
+        """Log operation details."""
+        status = "SUCCESS" if success else "FAILED"
+        self.logger.info(f"Operation '{operation}' {status} in {processing_time:.4f}s")
+
+    def _validate_dependencies(self, dependencies: List[str]) -> bool:
+        """Validate that all dependencies are available."""
+        # This is a placeholder - in a real implementation, you'd check
+        # if the dependencies are actually available in the system
+        return True
+
+    def _check_memory_usage(self, data: Any) -> bool:
+        """Check if there's enough memory to process the data."""
+        # This is a placeholder - in a real implementation, you'd check
+        # actual memory usage and available memory
+        return True
+
+    def _safe_process(self, data: Any, **kwargs) -> Any:
+        """Safely process data with error handling and performance tracking."""
+        start_time = time.time()
+        success = False
+        result = None
+        
+        try:
+            # Validate input
+            validation_result = self.validate_input(data)
+            if not validation_result.is_valid:
+                raise ValueError(f"Input validation failed: {validation_result.errors}")
+            
+            # Check if component can process the data
+            if not self.can_process(data):
+                raise ValueError(f"Component {self.name} cannot process the given data")
+            
+            # Check memory requirements
+            if not self._check_memory_usage(data):
+                raise MemoryError(f"Insufficient memory to process data in component {self.name}")
+            
+            # Process the data
+            result = self.process(data, **kwargs)
+            success = True
+            
+        except Exception as e:
+            self.logger.error(f"Error in component {self.name}: {str(e)}")
+            raise
+        finally:
+            processing_time = time.time() - start_time
+            self._update_performance_stats(success, processing_time)
+            self._log_operation("process", success, processing_time)
+        
+        return result
+
+class ExampleModularComponent(ModularComponent):
+    """Example implementation of ModularComponent for demonstration purposes."""
+
+    def __init__(self, name: str = "example_component", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
+        super().__init__(name, config, logger)
+        self.processing_window = self.get_config('processing_window', 20)
+        self.threshold = self.get_config('threshold', 0.5)
+
+    def initialize(self) -> bool:
+        """Initialize the example component."""
+        try:
+            if not self.validate_config():
+                return False
+            
+            self._initialized = True
+            self.logger.info(f"Component {self.name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to initialize component {self.name}: {e}")
+            return False
+
+    def process(self, data: Any, **kwargs) -> Any:
+        """Process the input data."""
+        if isinstance(data, pd.DataFrame):
+            # Example: Calculate rolling mean
+            if 'close' in data.columns:
+                result = data['close'].rolling(window=self.processing_window).mean()
+                return result
+            else:
+                raise ValueError("DataFrame must contain 'close' column")
+        else:
+            raise ValueError("Data must be a pandas DataFrame")
+
+    def validate_input(self, data: Any) -> ValidationResult:
+        """Validate input data."""
+        errors = []
+        warnings = []
+        
+        if not isinstance(data, pd.DataFrame):
+            errors.append("Data must be a pandas DataFrame")
+            return ValidationResult(False, ValidationLevel.STANDARD, errors, warnings, {})
+        
+        if len(data) < self.processing_window:
+            errors.append(f"Data must have at least {self.processing_window} rows")
+        
+        if 'close' not in data.columns:
+            errors.append("DataFrame must contain 'close' column")
+        
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            validation_level=ValidationLevel.STANDARD,
+            errors=errors,
+            warnings=warnings,
+            metadata={'shape': data.shape, 'columns': list(data.columns)}
+        )
+
+    def cleanup(self) -> None:
+        """Cleanup resources."""
+        self._initialized = False
+        self.clear_state()
+        self.logger.info(f"Component {self.name} cleaned up")
+
+    def get_component_info(self) -> Dict[str, Any]:
+        """Get component information."""
+        return {
+            'name': self.name,
+            'type': 'example_component',
+            'version': '1.0.0',
+            'description': 'Example modular component for demonstration',
+            'processing_window': self.processing_window,
+            'threshold': self.threshold
+        }
+
+    def get_dependencies(self) -> List[str]:
+        """Get list of component dependencies."""
+        return ['pandas', 'numpy']
+
+    def get_output_schema(self) -> Dict[str, Any]:
+        """Get expected output schema."""
+        return {
+            'type': 'pandas.Series',
+            'index_type': 'DatetimeIndex',
+            'dtype': 'float64',
+            'description': 'Rolling mean of close prices'
+        }
+
+    def get_required_config(self) -> List[str]:
+        """Get list of required configuration parameters."""
+        return ['processing_window', 'threshold']
+
+    def can_process(self, data: Any) -> bool:
+        """Check if component can process the given data."""
+        return isinstance(data, pd.DataFrame) and 'close' in data.columns
+
+    def get_processing_capabilities(self) -> Dict[str, Any]:
+        """Get component processing capabilities."""
+        return {
+            'input_types': ['pandas.DataFrame'],
+            'required_columns': ['close'],
+            'output_type': 'pandas.Series',
+            'supports_parallel': True,
+            'memory_efficient': True
+        }
+
+    def estimate_processing_time(self, data: Any) -> float:
+        """Estimate processing time for given data."""
+        if isinstance(data, pd.DataFrame):
+            # Simple estimation based on data size
+            return len(data) * 0.0001  # 0.1ms per row
+        return 0.0
+
+    def get_memory_requirements(self, data: Any) -> Dict[str, Any]:
+        """Get memory requirements for processing data."""
+        if isinstance(data, pd.DataFrame):
+            estimated_memory = len(data) * 8 * 1.5  # Rough estimate
+            return {
+                'estimated_memory_mb': estimated_memory / (1024 * 1024),
+                'peak_memory_mb': estimated_memory * 2 / (1024 * 1024),
+                'memory_efficient': True
+            }
+        return {'estimated_memory_mb': 0, 'peak_memory_mb': 0, 'memory_efficient': True}
 
 class BaseModule(ABC):
     """Base class for all modular components."""
@@ -675,9 +1044,19 @@ def create_modular_architecture(component_name: str,
     """Create a modular architecture instance."""
     return ModularArchitecture(component_name, logger)
 
+def create_modular_component(component_class: Type[ModularComponent],
+                           name: str,
+                           config: Optional[Dict[str, Any]] = None,
+                           logger: Optional[logging.Logger] = None) -> ModularComponent:
+    """Create a modular component instance."""
+    return component_class(name, config, logger)
+
 # Export main classes and functions
 __all__ = [
+    'ModularComponent',
+    'ExampleModularComponent',
     'ModularArchitecture',
+    'BaseModule',
     'InputValidator',
     'ErrorHandler',
     'PerformanceMonitor',
@@ -690,5 +1069,6 @@ __all__ = [
     'ValidationResult',
     'ErrorInfo',
     'PerformanceMetric',
-    'create_modular_architecture'
+    'create_modular_architecture',
+    'create_modular_component'
 ]

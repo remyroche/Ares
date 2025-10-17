@@ -1,18 +1,19 @@
 """
-Analyst Profit Labeler - Specialized Multi-Horizon Labeling for Analyst Models
+Analyst Profit Labeler - Specialized Single-Target Labeling for Analyst Models
 
 This module provides a specialized profit labeling component for Analyst models,
 using the VolatilityAwareMultiHorizonLabeler with Analyst-specific configurations.
 
 Key Features:
 - 15m timeframe optimization for strategic decision-making
-- Multi-horizon profit labeling (15m to 150m, up to 10 rolling windows)
+- Single-target profit labeling (0.5% base threshold modulated by volatility)
+- Single horizon (90 minutes = 6 periods of 15m) for strategic decision-making
 - Optimal entry point detection - analyzes price variation over rolling windows
 - Local extrema entry - finds local minima/maxima BEFORE price action as optimal entry point
-- Simplified profit targeting (0.5% base threshold modulated by volatility) - compatible with model_training/
-- Volatility-aware target bands
+- Volatility-aware threshold modulation
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
+- Consolidated opportunity flagging (single flag per profitable move across horizons)
 """
 
 import warnings
@@ -107,6 +108,12 @@ class AnalystProfitLabelerConfig:
     # Note: This is a percentage point, not fractional return (0.005 = 0.5%)
     # The threshold will be dynamically adjusted based on market volatility
     target_profit: float = 0.5
+    
+    # For backward compatibility and metadata consistency, expose as target_profits list
+    @property
+    def target_profits(self) -> List[float]:
+        """Return target_profit as a single-item list for API consistency."""
+        return [self.target_profit]
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -433,9 +440,7 @@ class AnalystProfitLabeler:
             labeler_config.timeframe = self.config.timeframe
             # Note: Single-horizon labeler doesn't use multi_target config
             # Horizons will be handled by the adapter loop in generate_labels
-            # Configure multi-target to use very lenient quality thresholds
-            labeler_config.multi_target.min_lqs_score = 0.01  # Very lenient LQS threshold (default 0.3)
-            tprint_info(f"✅ Single-target: {len(self.config.horizons)} horizons, 1 target ({self.config.target_profit}%), LQS=0.01")
+            tprint_info(f"✅ Single-target: {len(self.config.horizons)} horizons, 1 target ({self.config.target_profit}%)")
 
             # Configure volatility settings
             tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
@@ -590,14 +595,18 @@ class AnalystProfitLabeler:
                 tprint_info(f"🔄 Generating consolidated opportunity labels across {len(self.config.horizons)} horizons with {self.config.target_profit}% target...")
 
                 # Check if any horizon/target combination shows a profitable opportunity
-                consolidated_labels = pd.Series([0] * len(data), index=data.index, name='opportunity')
+                consolidated_labels = pd.Series([False] * len(data), index=data.index, name='opportunity', dtype=bool)
 
                 for horizon_idx, horizon_minutes in enumerate(self.config.horizons):
                     tprint_info(f"📈 Checking horizon {horizon_idx + 1}/{len(self.config.horizons)}: {horizon_minutes}min")
 
-                    # Set the lookahead period for this horizon
+                    # Calculate lookahead period for this horizon
                     lookahead_bars = horizon_minutes // self.config.base_period_minutes
-                    self.labeler.config.lookahead_periods = lookahead_bars
+                    
+                    # Create a copy of the labeler config to avoid mutating the original
+                    horizon_config = self.labeler.config
+                    original_lookahead = getattr(horizon_config, 'lookahead_periods', None)
+                    horizon_config.lookahead_periods = lookahead_bars
 
                     # Generate labels for this horizon with profit targets
                     profit_targets = getattr(self.labeler.config, 'analyst_profit_targets', None)
@@ -608,6 +617,10 @@ class AnalystProfitLabeler:
                         volatility_column=None,  # Will be calculated automatically
                         profit_targets=profit_targets
                     )
+                    
+                    # Restore original lookahead_periods to avoid side effects
+                    if original_lookahead is not None:
+                        horizon_config.lookahead_periods = original_lookahead
 
                     if horizon_result.success and horizon_result.labels is not None:
                         # Convert to Series if needed
@@ -619,7 +632,7 @@ class AnalystProfitLabeler:
 
                         # Mark as opportunity if this horizon shows profitability
                         if isinstance(horizon_series, pd.Series):
-                            consolidated_labels = consolidated_labels | (horizon_series > 0)
+                            consolidated_labels = consolidated_labels | (horizon_series > 0).astype(bool)
                         
                         # Collect quality scores from this horizon
                         if hasattr(horizon_result, 'quality_scores') and horizon_result.quality_scores:
@@ -649,7 +662,12 @@ class AnalystProfitLabeler:
 
                 tprint_info(f"🎯 DETAILED OPPORTUNITY STATISTICS (BEFORE QUALITY FILTERING):")
                 tprint_info(f"   ┌─────────────────────────────────────────────────────┐")
-                tprint_info(f"   │ Total opportunities found: {total_opportunities:,}","   │ Total samples processed: {total_samples:,}","   │ Opportunity rate: {opportunity_rate:.1%}","   │ Days represented: {days_in_data:.1f}","   │ Opportunities per day: {total_opportunities / days_in_data:.1f}","   └─────────────────────────────────────────────────────┘")
+                tprint_info(f"   │ Total opportunities found: {total_opportunities:,}")
+                tprint_info(f"   │ Total samples processed: {total_samples:,}")
+                tprint_info(f"   │ Opportunity rate: {opportunity_rate:.1%}")
+                tprint_info(f"   │ Days represented: {days_in_data:.1f}")
+                tprint_info(f"   │ Opportunities per day: {total_opportunities / days_in_data:.1f}")
+                tprint_info(f"   └─────────────────────────────────────────────────────┘")
                 tprint_info(f"   📊 Raw opportunity count: {total_opportunities:,} (before quality thresholds)")
                 tprint_info(f"   📊 Opportunities per day: {total_opportunities / days_in_data:.1f} (before quality thresholds)")
 
@@ -677,7 +695,7 @@ class AnalystProfitLabeler:
                             )
 
                 result = LabelingResult(
-                    labels=consolidated_labels.to_frame('opportunity'),
+                    labels=consolidated_labels.astype('int8').to_frame('opportunity'),
                     metadata={
                         'n_horizons': len(self.config.horizons),
                         'horizons': self.config.horizons,
@@ -721,7 +739,19 @@ class AnalystProfitLabeler:
                         tprint_info(f"   │ mask head: {mask.head()}")
                         tprint_info(f"   │ data head index: {data.head(3).index.tolist()}")
                         
-                        result.labels = result.labels[filter_result.eligibility_mask]
+                        # Ensure eligibility mask alignment with labels
+                        if len(filter_result.eligibility_mask) != len(result.labels):
+                            tprint_warning(f"⚠️ Eligibility mask length ({len(filter_result.eligibility_mask)}) doesn't match labels length ({len(result.labels)})")
+                            # Reindex mask to match labels index
+                            mask_series = pd.Series(filter_result.eligibility_mask, index=result.labels.index)
+                            result.labels = result.labels[mask_series]
+                        else:
+                            result.labels = result.labels[filter_result.eligibility_mask]
+                        
+                        # Update LabelingResult counts to match filtered labels
+                        result.n_samples = len(result.labels)
+                        result.n_targets = len(result.labels.columns) if hasattr(result.labels, 'columns') else 1
+                        result.n_horizons = len(self.config.horizons)
 
                         # Track opportunities after filtering
                         opportunities_after_filtering = result.labels['opportunity'].sum()
@@ -908,6 +938,30 @@ class AnalystProfitLabeler:
         if not hasattr(result.labels, 'columns') or result.labels is None:
             return {'error': 'No horizon data available'}
 
+        # Check if this is consolidated mode (single 'opportunity' column)
+        if 'opportunity' in result.labels.columns and len(result.labels.columns) == 1:
+            # Consolidated mode - create summary for all horizons
+            opportunity_data = result.labels['opportunity']
+            total_opportunities = int((opportunity_data == 1).sum()) if pd.api.types.is_numeric_dtype(opportunity_data) else 0
+            total_labels = len(opportunity_data)
+            
+            horizon_analysis = {}
+            for horizon_minutes in self.config.horizons:
+                horizon_analysis[f"{horizon_minutes}min"] = {
+                    'horizon_minutes': horizon_minutes,
+                    'horizon_bars': horizon_minutes // self.config.base_period_minutes,
+                    'total_labels': total_labels,
+                    'positive_labels': total_opportunities,
+                    'negative_labels': total_labels - total_opportunities,
+                    'neutral_labels': 0,
+                    'nan_labels': int(opportunity_data.isna().sum()),
+                    'label_balance': round(abs(total_opportunities - (total_labels - total_opportunities)) / total_labels, 3) if total_labels > 0 else 0,
+                    'positive_rate': round(total_opportunities / total_labels * 100, 2) if total_labels > 0 else 0,
+                    'expected_labels': 2  # Expected for consolidated mode
+                }
+            return horizon_analysis
+
+        # Original per-horizon analysis
         horizon_analysis = {}
         for col in result.labels.columns:
             if col.startswith('h'):
@@ -916,7 +970,7 @@ class AnalystProfitLabeler:
 
                 horizon_analysis[f"{horizon_minutes}min"] = {
                     'horizon_minutes': horizon_minutes,
-                    'horizon_bars': horizon_minutes // 15,
+                    'horizon_bars': horizon_minutes // self.config.base_period_minutes,
                     'total_labels': len(horizon_data),
                     'positive_labels': int((horizon_data == 1).sum()) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
                     'negative_labels': int((horizon_data == 0).sum()) if pd.api.types.is_numeric_dtype(horizon_data) else 0,
@@ -933,6 +987,21 @@ class AnalystProfitLabeler:
         if not hasattr(result.labels, 'columns') or result.labels is None:
             return {'error': 'No target data available'}
 
+        # Check if this is consolidated mode (single 'opportunity' column)
+        if 'opportunity' in result.labels.columns and len(result.labels.columns) == 1:
+            # Consolidated mode - create target breakdown for configured targets
+            opportunity_data = result.labels['opportunity']
+            target_analysis = {}
+            
+            for target_profit in self.config.target_profits:
+                target_analysis[f"{target_profit}%"] = {
+                    'target_profit_pct': target_profit,
+                    'expected_labels': 0,  # In consolidated mode, we don't have per-target breakdown
+                    'note': 'Consolidated mode - single opportunity flag across all targets'
+                }
+            return target_analysis
+
+        # Original per-target analysis
         target_analysis = {}
         for col in result.labels.columns:
             if col.startswith('h'):
@@ -964,8 +1033,8 @@ class AnalystProfitLabeler:
                 'predictability': round(getattr(quality, 'predictability', 0), 4),
                 'stability': round(getattr(quality, 'stability', 0), 4),
                 'balance': round(getattr(quality, 'balance', 0), 4),
-                'quality_passes_threshold': getattr(quality, 'overall_quality', 0) >= self.labeler.config.min_label_quality,
-                'predictability_passes_threshold': getattr(quality, 'predictability', 0) >= self.labeler.config.min_predictability
+                'quality_passes_threshold': getattr(quality, 'overall_quality', 0) >= self.config.min_label_quality,
+                'predictability_passes_threshold': getattr(quality, 'predictability', 0) >= self.config.min_predictability
             }
 
         return quality_analysis
@@ -1384,9 +1453,22 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     analyst_config.base_period_minutes = int(analyst_config.timeframe[:-1]) * 60
 
             # Update other parameters
-            for key in ['horizons', 'target_profits', 'min_label_quality', 'min_predictability', 'enable_advanced_filters']:
+            for key in ['horizons', 'min_label_quality', 'min_predictability', 'enable_advanced_filters']:
                 if key in custom_params:
                     setattr(analyst_config, key, custom_params[key])
+            
+            # Handle target_profits -> target_profit mapping for backward compatibility
+            if 'target_profits' in custom_params:
+                target_profits = custom_params['target_profits']
+                if isinstance(target_profits, list) and len(target_profits) > 0:
+                    # Use the first target for single-target design
+                    analyst_config.target_profit = target_profits[0]
+                    if len(target_profits) > 1:
+                        tprint_warning(f"⚠️ Multiple targets provided {target_profits}, using first target {target_profits[0]}% for single-target design")
+                else:
+                    analyst_config.target_profit = target_profits
+            elif 'target_profit' in custom_params:
+                analyst_config.target_profit = custom_params['target_profit']
 
             # Update advanced filters configuration if provided
             if 'advanced_filters_config' in custom_params and ADVANCED_FILTERS_AVAILABLE:

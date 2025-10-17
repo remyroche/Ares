@@ -315,8 +315,13 @@ class ExchangeMessageHandler:
 
         # If no target exchanges specified, send to all
         if not target_exchanges:
-            # This would be determined by the exchange registry
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # TODO: Implement actual exchange registry determination
+            # This would typically:
+            # 1. Query the exchange registry for active exchanges
+            # 2. Filter exchanges based on capabilities and status
+            # 3. Apply load balancing and failover logic
+            # 4. Return prioritized list of target exchanges
+            target_exchanges = ["binance", "okx"]  # Placeholder target exchanges
 
         return await self.send_message(order_message, target_exchanges)
 
@@ -348,7 +353,9 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # TODO: Implement actual exchange registry determination
+            # This would typically query the exchange registry for active exchanges
+            target_exchanges = ["binance", "okx"]  # Placeholder target exchanges
 
         return await self.send_message(data_message, target_exchanges)
 
@@ -377,7 +384,9 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            # TODO: Implement actual exchange registry determination
+            # This would typically query the exchange registry for active exchanges
+            target_exchanges = ["binance", "okx"]  # Placeholder target exchanges
 
         return await self.send_message(batch_message, target_exchanges)
 

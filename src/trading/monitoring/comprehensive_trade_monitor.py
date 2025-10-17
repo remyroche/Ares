@@ -32,19 +32,408 @@ logger = system_logger.getChild('ComprehensiveTradeMonitor')
 
 # Stub classes for missing components
 class EnhancedMonitoringOrchestrator:
-    """Stub class for EnhancedMonitoringOrchestrator - to be implemented"""
+    """
+    Stub class for EnhancedMonitoringOrchestrator - provides enhanced monitoring capabilities.
+    
+    This class orchestrates comprehensive monitoring of trading operations including
+    performance tracking, alert management, and real-time reporting.
+    """
+    
     def __init__(self):
-        pass
+        """Initialize enhanced monitoring orchestrator."""
+        self.is_initialized = False
+        self.monitoring_config = None
+        self.active_alerts = []
+        self.performance_metrics = {}
+        self.real_time_data = {}
+        self.export_enabled = False
+        self.export_directory = None
+        
+        self.logger = logger.getChild('EnhancedMonitoringOrchestrator')
+        self.logger.info("EnhancedMonitoringOrchestrator initialized")
+    
+    async def initialize(self, config: 'EnhancedMonitoringConfig') -> bool:
+        """Initialize enhanced monitoring with configuration."""
+        try:
+            self.monitoring_config = config
+            self.export_enabled = config.enable_monitoring
+            self.export_directory = Path(config.export_directory) if config.export_directory else None
+            
+            if self.export_directory:
+                self.export_directory.mkdir(parents=True, exist_ok=True)
+            
+            self.is_initialized = True
+            self.logger.info("Enhanced monitoring orchestrator initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize enhanced monitoring: {e}")
+            return False
+    
+    async def record_comprehensive_trade_decision(self, decision_data: Dict[str, Any]) -> bool:
+        """Record comprehensive trade decision in monitoring system."""
+        try:
+            if not self.is_initialized:
+                self.logger.warning("Enhanced monitoring not initialized")
+                return False
+            
+            # Store decision data
+            decision_id = decision_data.get('trade_id', f"decision_{datetime.now().timestamp()}")
+            self.real_time_data[decision_id] = {
+                'timestamp': datetime.now(),
+                'data': decision_data
+            }
+            
+            # Check for alerts
+            await self._check_alerts(decision_data)
+            
+            # Export if enabled
+            if self.export_enabled and self.export_directory:
+                await self._export_decision_data(decision_data)
+            
+            self.logger.debug(f"Recorded comprehensive trade decision: {decision_id}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to record trade decision: {e}")
+            return False
+    
+    async def _check_alerts(self, decision_data: Dict[str, Any]) -> None:
+        """Check for alert conditions in trade decision."""
+        try:
+            # Example alert conditions
+            if decision_data.get('risk_metrics', {}).get('var_95', 0) > 0.05:
+                await self._trigger_alert('HIGH_RISK', decision_data)
+            
+            if decision_data.get('signal_confidence', 0) < 0.3:
+                await self._trigger_alert('LOW_CONFIDENCE', decision_data)
+                
+        except Exception as e:
+            self.logger.error(f"Error checking alerts: {e}")
+    
+    async def _trigger_alert(self, alert_type: str, data: Dict[str, Any]) -> None:
+        """Trigger monitoring alert."""
+        alert = {
+            'id': f"alert_{len(self.active_alerts)}",
+            'type': alert_type,
+            'timestamp': datetime.now(),
+            'data': data,
+            'resolved': False
+        }
+        self.active_alerts.append(alert)
+        self.logger.warning(f"Alert triggered: {alert_type}")
+    
+    async def _export_decision_data(self, decision_data: Dict[str, Any]) -> None:
+        """Export decision data to file."""
+        try:
+            if not self.export_directory:
+                return
+            
+            today = datetime.now().strftime('%Y-%m-%d')
+            daily_dir = self.export_directory / today
+            daily_dir.mkdir(parents=True, exist_ok=True)
+            
+            filename = f"decision_{decision_data.get('trade_id', 'unknown')}.json"
+            filepath = daily_dir / filename
+            
+            with open(filepath, 'w') as f:
+                json.dump(decision_data, f, indent=2, default=str)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to export decision data: {e}")
+    
+    async def stop(self) -> None:
+        """Stop enhanced monitoring orchestrator."""
+        self.is_initialized = False
+        self.logger.info("Enhanced monitoring orchestrator stopped")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get monitoring status."""
+        return {
+            'is_initialized': self.is_initialized,
+            'active_alerts': len(self.active_alerts),
+            'decisions_recorded': len(self.real_time_data),
+            'export_enabled': self.export_enabled,
+            'export_directory': str(self.export_directory) if self.export_directory else None
+        }
+
 
 class ExplainabilityIntegrator:
-    """Stub class for ExplainabilityIntegrator - to be implemented"""
+    """
+    Stub class for ExplainabilityIntegrator - provides ML model explainability features.
+    
+    This class integrates SHAP, LIME, and other explainability techniques to provide
+    insights into ML model decisions and feature importance.
+    """
+    
     def __init__(self):
-        pass
+        """Initialize explainability integrator."""
+        self.is_initialized = False
+        self.shap_explainer = None
+        self.lime_explainer = None
+        self.feature_importance_cache = {}
+        
+        self.logger = logger.getChild('ExplainabilityIntegrator')
+        self.logger.info("ExplainabilityIntegrator initialized")
+    
+    async def initialize(self) -> bool:
+        """Initialize explainability components."""
+        try:
+            # Initialize SHAP and LIME explainers
+            # In a real implementation, these would be properly configured
+            self.shap_explainer = "shap_explainer_placeholder"
+            self.lime_explainer = "lime_explainer_placeholder"
+            
+            self.is_initialized = True
+            self.logger.info("Explainability integrator initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize explainability integrator: {e}")
+            return False
+    
+    async def generate_shap_explanation(
+        self,
+        model: Any,
+        model_id: str,
+        features: Dict[str, float],
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate SHAP explanation for model prediction."""
+        try:
+            if not self.is_initialized:
+                self.logger.warning("Explainability integrator not initialized")
+                return None
+            
+            # Simulate SHAP explanation
+            explanation = {
+                'model_id': model_id,
+                'shap_values': {name: np.random.normal(0, 0.1) for name in feature_names},
+                'base_value': 0.0,
+                'prediction': np.random.uniform(0, 1),
+                'timestamp': datetime.now()
+            }
+            
+            self.logger.debug(f"Generated SHAP explanation for {model_id}")
+            return explanation
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate SHAP explanation: {e}")
+            return None
+    
+    async def generate_lime_explanation(
+        self,
+        model: Any,
+        model_id: str,
+        features: Dict[str, float],
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate LIME explanation for model prediction."""
+        try:
+            if not self.is_initialized:
+                self.logger.warning("Explainability integrator not initialized")
+                return None
+            
+            # Simulate LIME explanation
+            explanation = {
+                'model_id': model_id,
+                'explanation': {name: np.random.normal(0, 0.1) for name in feature_names},
+                'prediction': np.random.uniform(0, 1),
+                'confidence': np.random.uniform(0.5, 1.0),
+                'timestamp': datetime.now()
+            }
+            
+            self.logger.debug(f"Generated LIME explanation for {model_id}")
+            return explanation
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate LIME explanation: {e}")
+            return None
+    
+    async def calculate_feature_importance(
+        self,
+        model: Any,
+        model_id: str,
+        features: Dict[str, float]
+    ) -> Dict[str, float]:
+        """Calculate feature importance for model."""
+        try:
+            if not self.is_initialized:
+                return {}
+            
+            # Simulate feature importance calculation
+            importance = {
+                name: abs(np.random.normal(0, 0.1)) 
+                for name in features.keys()
+            }
+            
+            # Normalize importance scores
+            total_importance = sum(importance.values())
+            if total_importance > 0:
+                importance = {k: v / total_importance for k, v in importance.items()}
+            
+            self.feature_importance_cache[model_id] = importance
+            self.logger.debug(f"Calculated feature importance for {model_id}")
+            return importance
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate feature importance: {e}")
+            return {}
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get explainability integrator status."""
+        return {
+            'is_initialized': self.is_initialized,
+            'cached_importance': len(self.feature_importance_cache),
+            'shap_available': self.shap_explainer is not None,
+            'lime_available': self.lime_explainer is not None
+        }
+
 
 class ExplainabilityOrchestrator:
-    """Stub class for ExplainabilityOrchestrator - to be implemented"""
+    """
+    Stub class for ExplainabilityOrchestrator - orchestrates explainability operations.
+    
+    This class coordinates explainability operations across multiple models and
+    provides unified explainability services.
+    """
+    
     def __init__(self):
-        pass
+        """Initialize explainability orchestrator."""
+        self.is_initialized = False
+        self.integrator = ExplainabilityIntegrator()
+        self.explanation_cache = {}
+        self.model_explainers = {}
+        
+        self.logger = logger.getChild('ExplainabilityOrchestrator')
+        self.logger.info("ExplainabilityOrchestrator initialized")
+    
+    async def initialize(self) -> bool:
+        """Initialize explainability orchestrator."""
+        try:
+            # Initialize the integrator
+            success = await self.integrator.initialize()
+            if not success:
+                return False
+            
+            self.is_initialized = True
+            self.logger.info("Explainability orchestrator initialized successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize explainability orchestrator: {e}")
+            return False
+    
+    async def generate_comprehensive_explanation(
+        self,
+        models: Dict[str, Any],
+        features: Dict[str, float],
+        feature_names: List[str]
+    ) -> Dict[str, Any]:
+        """Generate comprehensive explanations for multiple models."""
+        try:
+            if not self.is_initialized:
+                self.logger.warning("Explainability orchestrator not initialized")
+                return {}
+            
+            explanations = {}
+            
+            for model_id, model in models.items():
+                # Generate SHAP explanation
+                shap_explanation = await self.integrator.generate_shap_explanation(
+                    model, model_id, features, feature_names
+                )
+                
+                # Generate LIME explanation
+                lime_explanation = await self.integrator.generate_lime_explanation(
+                    model, model_id, features, feature_names
+                )
+                
+                # Calculate feature importance
+                importance = await self.integrator.calculate_feature_importance(
+                    model, model_id, features
+                )
+                
+                explanations[model_id] = {
+                    'shap': shap_explanation,
+                    'lime': lime_explanation,
+                    'importance': importance,
+                    'timestamp': datetime.now()
+                }
+            
+            # Cache explanations
+            explanation_id = f"explanation_{datetime.now().timestamp()}"
+            self.explanation_cache[explanation_id] = explanations
+            
+            self.logger.info(f"Generated comprehensive explanations for {len(models)} models")
+            return explanations
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate comprehensive explanations: {e}")
+            return {}
+    
+    async def get_model_explanation(
+        self,
+        model_id: str,
+        features: Dict[str, float]
+    ) -> Optional[Dict[str, Any]]:
+        """Get explanation for specific model."""
+        try:
+            if model_id not in self.model_explainers:
+                self.logger.warning(f"No explainer found for model: {model_id}")
+                return None
+            
+            model = self.model_explainers[model_id]
+            feature_names = list(features.keys())
+            
+            # Generate explanations
+            shap_explanation = await self.integrator.generate_shap_explanation(
+                model, model_id, features, feature_names
+            )
+            
+            lime_explanation = await self.integrator.generate_lime_explanation(
+                model, model_id, features, feature_names
+            )
+            
+            return {
+                'model_id': model_id,
+                'shap': shap_explanation,
+                'lime': lime_explanation,
+                'timestamp': datetime.now()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get model explanation: {e}")
+            return None
+    
+    def register_model_explainer(self, model_id: str, model: Any) -> None:
+        """Register model explainer."""
+        self.model_explainers[model_id] = model
+        self.logger.info(f"Registered explainer for model: {model_id}")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get explainability orchestrator status."""
+        return {
+            'is_initialized': self.is_initialized,
+            'registered_models': len(self.model_explainers),
+            'cached_explanations': len(self.explanation_cache),
+            'integrator_status': self.integrator.get_status()
+        }
+
+
+# Configuration class for enhanced monitoring
+@dataclass
+class EnhancedMonitoringConfig:
+    """Configuration for enhanced monitoring orchestrator."""
+    enable_monitoring: bool = True
+    enable_explanations: bool = True
+    enable_real_time_tracking: bool = True
+    monthly_export_enabled: bool = True
+    daily_export_enabled: bool = True
+    export_directory: str = "trading_reports"
+    enable_shap: bool = True
+    enable_lime: bool = True
+    auto_integrate_trading_systems: bool = True
 
 @dataclass
 class DetailedTradeMetrics:

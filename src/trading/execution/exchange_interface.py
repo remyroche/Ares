@@ -1202,10 +1202,313 @@ class ExchangeInterface:
             tprint(f"❌ Error in error handler: {e}", "ERROR")
 
 class SimulatedExchange:
-    """Stub class for SimulatedExchange - to be implemented"""
+    """
+    Stub class for SimulatedExchange - provides simulated trading functionality.
+    
+    This class simulates exchange operations for testing and development purposes.
+    It maintains internal state for orders, balances, and positions without
+    connecting to real exchanges.
+    """
+    
     def __init__(self, config: Dict[str, Any]):
+        """Initialize simulated exchange with configuration."""
         self.config = config
-        pass
+        self.exchange_type = config.get('exchange_type', 'simulated')
+        self.symbol = config.get('symbol', 'BTCUSDT')
+        
+        # Simulated account state
+        self.balances = {
+            'USDT': 10000.0,  # Starting with 10k USDT
+            'BTC': 0.0,
+            'ETH': 0.0
+        }
+        
+        # Simulated order book
+        self.orders = {}
+        self.order_counter = 0
+        
+        # Simulated positions
+        self.positions = {}
+        
+        # Simulated market data
+        self.current_prices = {
+            'BTCUSDT': 50000.0,
+            'ETHUSDT': 3000.0
+        }
+        
+        # Connection state
+        self.is_connected = False
+        self.last_update = datetime.now()
+        
+        self.logger = logger.getChild('SimulatedExchange')
+        self.logger.info(f"SimulatedExchange initialized for {self.symbol}")
+    
+    async def connect(self) -> bool:
+        """Simulate connection to exchange."""
+        try:
+            self.is_connected = True
+            self.logger.info("Connected to simulated exchange")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to connect to simulated exchange: {e}")
+            return False
+    
+    async def disconnect(self) -> None:
+        """Simulate disconnection from exchange."""
+        self.is_connected = False
+        self.logger.info("Disconnected from simulated exchange")
+    
+    async def get_account_info(self) -> Dict[str, Any]:
+        """Get simulated account information."""
+        total_balance = sum(self.balances.values())
+        return {
+            'totalWalletBalance': str(total_balance),
+            'balances': self.balances.copy(),
+            'accountType': 'SPOT',
+            'canTrade': True,
+            'canWithdraw': True,
+            'canDeposit': True
+        }
+    
+    async def get_balance(self, asset: str) -> float:
+        """Get balance for specific asset."""
+        return self.balances.get(asset, 0.0)
+    
+    async def get_open_positions(self) -> List[Dict[str, Any]]:
+        """Get simulated open positions."""
+        positions = []
+        for symbol, position in self.positions.items():
+            if position['amount'] != 0:
+                positions.append({
+                    'symbol': symbol,
+                    'positionAmt': str(position['amount']),
+                    'entryPrice': str(position['entry_price']),
+                    'leverage': str(position.get('leverage', 1)),
+                    'unrealizedPnl': str(position.get('unrealized_pnl', 0.0)),
+                    'markPrice': str(self.current_prices.get(symbol, 0.0))
+                })
+        return positions
+    
+    async def create_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Create simulated order."""
+        if not self.is_connected:
+            raise Exception("Not connected to exchange")
+        
+        self.order_counter += 1
+        order_id = f"sim_order_{self.order_counter}"
+        
+        # Simulate order execution
+        execution_price = price or self.current_prices.get(symbol, 0.0)
+        
+        order = {
+            'orderId': order_id,
+            'symbol': symbol,
+            'status': 'FILLED',  # Simulate immediate fill
+            'type': order_type,
+            'side': side,
+            'origQty': str(quantity),
+            'executedQty': str(quantity),
+            'price': str(execution_price),
+            'timeInForce': 'GTC',
+            'time': int(datetime.now().timestamp() * 1000),
+            'updateTime': int(datetime.now().timestamp() * 1000)
+        }
+        
+        self.orders[order_id] = order
+        
+        # Update balances and positions
+        await self._update_balances_and_positions(symbol, side, quantity, execution_price)
+        
+        self.logger.info(f"Created simulated order: {order_id} - {side} {quantity} {symbol} @ {execution_price}")
+        return order
+    
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel simulated order."""
+        if order_id in self.orders:
+            self.orders[order_id]['status'] = 'CANCELLED'
+            self.logger.info(f"Cancelled simulated order: {order_id}")
+            return True
+        return False
+    
+    async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
+        """Get simulated order status."""
+        return self.orders.get(order_id, {})
+    
+    async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get simulated open orders."""
+        open_orders = []
+        for order in self.orders.values():
+            if order['status'] in ['NEW', 'PARTIALLY_FILLED']:
+                if symbol is None or order['symbol'] == symbol:
+                    open_orders.append(order)
+        return open_orders
+    
+    async def get_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get simulated ticker data."""
+        base_price = self.current_prices.get(symbol, 0.0)
+        # Add some random variation
+        variation = np.random.normal(0, base_price * 0.001)
+        current_price = base_price + variation
+        
+        return {
+            'symbol': symbol,
+            'price': str(current_price),
+            'bidPrice': str(current_price - 0.5),
+            'askPrice': str(current_price + 0.5),
+            'volume': str(np.random.uniform(1000, 10000)),
+            'change': str(variation),
+            'changePercent': str((variation / base_price) * 100) if base_price > 0 else '0'
+        }
+    
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        limit: int = 500
+    ) -> List[List[Any]]:
+        """Get simulated kline data."""
+        base_price = self.current_prices.get(symbol, 0.0)
+        klines = []
+        current_time = datetime.now()
+        
+        for i in range(min(limit, 500)):
+            timestamp = current_time - timedelta(minutes=i)
+            open_price = base_price + np.random.normal(0, base_price * 0.02)
+            high_price = open_price + abs(np.random.normal(0, base_price * 0.01))
+            low_price = open_price - abs(np.random.normal(0, base_price * 0.01))
+            close_price = low_price + np.random.uniform(0, high_price - low_price)
+            volume = np.random.uniform(100, 1000)
+            
+            klines.append([
+                int(timestamp.timestamp() * 1000),  # Open time
+                str(open_price),                    # Open
+                str(high_price),                    # High
+                str(low_price),                     # Low
+                str(close_price),                   # Close
+                str(volume),                        # Volume
+                int(timestamp.timestamp() * 1000),  # Close time
+                str(close_price * volume),          # Quote asset volume
+                int(np.random.uniform(10, 100)),    # Number of trades
+                str(volume * np.random.uniform(0.3, 0.7)),  # Taker buy base asset volume
+                str(close_price * volume * np.random.uniform(0.3, 0.7)),  # Taker buy quote asset volume
+                '0'  # Ignore
+            ])
+        
+        return klines
+    
+    async def _update_balances_and_positions(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float
+    ) -> None:
+        """Update simulated balances and positions after order execution."""
+        try:
+            # Determine base and quote assets
+            if symbol.endswith('USDT'):
+                base_asset = symbol[:-4]
+                quote_asset = 'USDT'
+            else:
+                base_asset = symbol[:3]
+                quote_asset = symbol[3:]
+            
+            # Calculate cost
+            cost = quantity * price
+            
+            if side.upper() == 'BUY':
+                # Buying: reduce quote asset, increase base asset
+                self.balances[quote_asset] -= cost
+                self.balances[base_asset] += quantity
+                
+                # Update position
+                if symbol not in self.positions:
+                    self.positions[symbol] = {
+                        'amount': 0.0,
+                        'entry_price': 0.0,
+                        'leverage': 1,
+                        'unrealized_pnl': 0.0
+                    }
+                
+                # Update position (simple average)
+                current_amount = self.positions[symbol]['amount']
+                current_entry = self.positions[symbol]['entry_price']
+                
+                if current_amount >= 0:  # Adding to long position
+                    new_amount = current_amount + quantity
+                    new_entry = ((current_amount * current_entry) + cost) / new_amount if new_amount > 0 else 0
+                else:  # Reducing short position
+                    new_amount = current_amount + quantity
+                    new_entry = current_entry if new_amount < 0 else price
+                
+                self.positions[symbol]['amount'] = new_amount
+                self.positions[symbol]['entry_price'] = new_entry
+                
+            else:  # SELL
+                # Selling: reduce base asset, increase quote asset
+                self.balances[base_asset] -= quantity
+                self.balances[quote_asset] += cost
+                
+                # Update position
+                if symbol not in self.positions:
+                    self.positions[symbol] = {
+                        'amount': 0.0,
+                        'entry_price': 0.0,
+                        'leverage': 1,
+                        'unrealized_pnl': 0.0
+                    }
+                
+                # Update position
+                current_amount = self.positions[symbol]['amount']
+                current_entry = self.positions[symbol]['entry_price']
+                
+                if current_amount <= 0:  # Adding to short position
+                    new_amount = current_amount - quantity
+                    new_entry = ((abs(current_amount) * current_entry) + cost) / abs(new_amount) if new_amount < 0 else 0
+                else:  # Reducing long position
+                    new_amount = current_amount - quantity
+                    new_entry = current_entry if new_amount > 0 else price
+                
+                self.positions[symbol]['amount'] = new_amount
+                self.positions[symbol]['entry_price'] = new_entry
+            
+            # Update unrealized PnL
+            if symbol in self.positions and self.positions[symbol]['amount'] != 0:
+                current_price = self.current_prices.get(symbol, price)
+                entry_price = self.positions[symbol]['entry_price']
+                amount = self.positions[symbol]['amount']
+                
+                if amount > 0:  # Long position
+                    self.positions[symbol]['unrealized_pnl'] = (current_price - entry_price) * amount
+                else:  # Short position
+                    self.positions[symbol]['unrealized_pnl'] = (entry_price - current_price) * abs(amount)
+            
+            self.logger.debug(f"Updated balances and positions for {symbol}: {side} {quantity} @ {price}")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating balances and positions: {e}")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get simulated exchange status."""
+        return {
+            'is_connected': self.is_connected,
+            'exchange_type': self.exchange_type,
+            'symbol': self.symbol,
+            'balances': self.balances.copy(),
+            'positions': self.positions.copy(),
+            'orders_count': len(self.orders),
+            'last_update': self.last_update.isoformat()
+        }
 
 # Factory function for creating exchange interfaces
 def create_exchange_interface(config: Dict[str, Any]) -> ExchangeInterface:

@@ -16,7 +16,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 
 from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+    ComponentConfig, ComponentResult
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 
 # Import advanced vectorization components
@@ -52,13 +55,18 @@ class VectorizationResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-class FeatureGenerationVectorizationStep(BasePreTrainingComponent):
+class FeatureGenerationVectorizationStep(ModularComponent):
     """Enhanced vectorization step using VectorizedFeatureGenerator."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the enhanced vectorization step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        # Convert ComponentConfig to dict for ModularComponent
+        config_dict = config.to_dict() if config else {}
+        super().__init__(
+            name="feature_generation_vectorization_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize vectorization components
         if VECTORIZATION_COMPONENTS_AVAILABLE:
@@ -225,7 +233,83 @@ class FeatureGenerationVectorizationStep(BasePreTrainingComponent):
                 error_message=str(e)
             )
 
-
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Initialize vectorization components
+            if VECTORIZATION_COMPONENTS_AVAILABLE:
+                self.matrix_processor = MatrixFeatureProcessor()
+                self.vectorized_generator = VectorizedFeatureGenerator()
+                self.vectorbt_generator = VectorBTFeatureGenerator()
+                self.unified_manager = UnifiedVectorizationManager()
+            else:
+                self.matrix_processor = None
+                self.vectorized_generator = None
+                self.vectorbt_generator = None
+                self.unified_manager = None
+            
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('vectorization_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('vectorization_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment vectorization count
+        count = self.get_state('vectorization_count', 0)
+        self.set_state('vectorization_count', count + 1)
+        
+        # Basic processing - return data as-is for now
+        # The actual vectorization is done in the execute method
+        return data
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.1,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.1:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
 # Command handler for ares_launcher integration
 async def handle_feature_generation_vectorization_step(

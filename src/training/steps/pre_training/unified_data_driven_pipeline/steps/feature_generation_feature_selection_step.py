@@ -19,7 +19,10 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+    ComponentConfig, ComponentResult
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 
 # Import tprint utilities
@@ -143,13 +146,18 @@ class FeatureSelectionResult:
             'error_message': self.error_message
         }
 
-class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
+class FeatureGenerationFeatureSelectionStep(ModularComponent):
     """Sophisticated feature selection step using battle-tested components."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the sophisticated feature selection step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        # Convert ComponentConfig to dict for ModularComponent
+        config_dict = config.to_dict() if config else {}
+        super().__init__(
+            name="feature_generation_feature_selection_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize battle-tested feature selection components
         if BATTLE_TESTED_COMPONENTS_AVAILABLE:
@@ -517,6 +525,84 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 artifacts={},
                 error_message=str(e)
             )
+
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Initialize battle-tested feature selection components
+            if BATTLE_TESTED_COMPONENTS_AVAILABLE:
+                self.battle_tested_selector = BattleTestedFeatureSelector()
+                self.multi_objective_selector = MultiObjectiveFeatureSelector()
+                self.economic_evaluator = EconomicPeriodEvaluator()
+                self.vectorbt_optimizer = EnhancedVectorBTOptimizer()
+            else:
+                self.battle_tested_selector = None
+                self.multi_objective_selector = None
+                self.economic_evaluator = None
+                self.vectorbt_optimizer = None
+            
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('selection_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('selection_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment selection count
+        count = self.get_state('selection_count', 0)
+        self.set_state('selection_count', count + 1)
+        
+        # Basic processing - return data as-is for now
+        # The actual feature selection is done in the execute method
+        return data
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.1,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.1:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
 # Command handler for ares_launcher integration
 async def handle_feature_generation_feature_selection_step(

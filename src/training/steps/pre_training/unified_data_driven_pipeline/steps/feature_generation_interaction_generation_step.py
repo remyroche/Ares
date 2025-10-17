@@ -17,7 +17,10 @@ from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_p
     run_interaction_generation_step
 )
 from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+    ComponentConfig, ComponentResult
+)
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
@@ -33,13 +36,18 @@ class InteractionGenerationResult:
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
 
-class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
+class FeatureGenerationInteractionGenerationStep(ModularComponent):
     """Interaction generation step that calls the consolidated pipeline."""
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the interaction generation step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        # Convert ComponentConfig to dict for ModularComponent
+        config_dict = config.to_dict() if config else {}
+        super().__init__(
+            name="feature_generation_interaction_generation_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
 
     async def execute(self,
                      training_input: Dict[str, Any],
@@ -124,6 +132,72 @@ class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
     def optimize_dataframe_for_matrix_ops(self, df):
         """Optimize dataframe for matrix operations."""
         return optimize_dataframe(df)
+
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('interaction_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('interaction_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment interaction count
+        count = self.get_state('interaction_count', 0)
+        self.set_state('interaction_count', count + 1)
+        
+        # Basic processing - return data as-is for now
+        # The actual interaction generation is done in the execute method
+        return data
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.1,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.1:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
 # Command handler for ares_launcher integration
 async def handle_feature_generation_interaction_generation_step(

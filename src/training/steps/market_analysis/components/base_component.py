@@ -13,6 +13,15 @@ from src.training.common.artifact_persistence import SaveReport
 from src.utils.logger import system_logger
 from .artifact_manager import ArtifactManager
 
+# Import ModularComponent for enhanced functionality
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+        ModularComponent
+    )
+    MODULAR_COMPONENT_AVAILABLE = True
+except ImportError:
+    MODULAR_COMPONENT_AVAILABLE = False
+
 @dataclass
 class ComponentConfig:
     """Base configuration for pipeline components."""
@@ -60,17 +69,56 @@ class ComponentConfig:
                 r"trade",
             ]
 
-class BaseMarketAnalysisComponent(ABC):
+class BaseMarketAnalysisComponent(ModularComponent if MODULAR_COMPONENT_AVAILABLE else ABC):
     """
     Base class for market analysis pipeline components.
 
     Provides common functionality and enforces consistent interface.
+    Now inherits from ModularComponent for enhanced features.
     """
 
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the component with configuration."""
         self.config = config or ComponentConfig()
-        self.logger = system_logger.getChild(self.__class__.__name__)
+        
+        if MODULAR_COMPONENT_AVAILABLE:
+            # Convert ComponentConfig to dict for ModularComponent
+            config_dict = {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe,
+                'data_dir': self.config.data_dir,
+                'output_dir': self.config.output_dir,
+                'start_date': self.config.start_date,
+                'end_date': self.config.end_date,
+                'force_rerun': self.config.force_rerun,
+                'validation_enabled': self.config.validation_enabled,
+                'monitoring_enabled': self.config.monitoring_enabled,
+                'fast_mode': self.config.fast_mode,
+                'custom_params': self.config.custom_params or {},
+                'min_regime_persistence': self.config.min_regime_persistence,
+                'max_feature_noise_ratio': self.config.max_feature_noise_ratio,
+                'min_temporal_stability': self.config.min_temporal_stability,
+                'regime_search_min': self.config.regime_search_min,
+                'regime_search_max': self.config.regime_search_max,
+                'n_regimes': self.config.n_regimes,
+                'algorithm_type': self.config.algorithm_type,
+                'economic_weight': self.config.economic_weight,
+                'volatility_regime_weight': self.config.volatility_regime_weight,
+                'volume_regime_weight': self.config.volume_regime_weight,
+                'structural_trend_weight': self.config.structural_trend_weight,
+                'signal_like_patterns': self.config.signal_like_patterns or [],
+                'feature_category_caps': self.config.feature_category_caps or {}
+            }
+            super().__init__(
+                name=self.__class__.__name__,
+                config=config_dict,
+                logger=system_logger.getChild(self.__class__.__name__)
+            )
+        else:
+            # Fallback to original behavior
+            self.logger = system_logger.getChild(self.__class__.__name__)
+        
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
 

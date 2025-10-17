@@ -2548,7 +2548,6 @@ class VolatilityAwareMultiHorizonLabeler:
         else:
             # Single target case - return Series
             if self.config.label_type == LabelDefinitionType.BINARY:
-                labels = pd.Series(0, index=prices.index, dtype=np.uint8)
                 # Use volatility-modulated threshold logic with configurable base target
                 base_threshold = self.config.multi_target.target_profit / 100.0  # Convert percentage to decimal
                 

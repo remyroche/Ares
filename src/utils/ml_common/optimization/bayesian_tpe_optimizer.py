@@ -1378,7 +1378,7 @@ class BayesianTPEOptimizer:
                 return [{param_name: val} for val in values]
 
         except Exception as e:
-            self.logger.warning(f"⚠️ VectorBT adaptive grid generation failed, using fallback: {e}")
+            self.logger.warning(f"⚠️ Adaptive grid generation failed, using fallback: {e}")
             return build_fine_grid_around_best(search_space, best_params, grid_points)
 
     def _run_tpe_stage(self, objective: Callable, search_space: Dict[str, Any],

@@ -8,6 +8,12 @@ to use the ModularComponent architecture.
 import sys
 import os
 from pathlib import Path
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich import print as rprint
+from rich import box
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -360,6 +366,9 @@ class MigratedMonteCarloEngine(ModularComponent):
         return self._portfolio_state.copy()
 
 
+# Initialize Rich console
+console = Console()
+
 def create_migrated_monte_carlo_engine(config: dict = None) -> MigratedMonteCarloEngine:
     """Create a migrated Monte Carlo engine instance."""
     return MigratedMonteCarloEngine(config)
@@ -383,7 +392,7 @@ def register_migrated_monte_carlo_engine():
         }
     )
     
-    print("Migrated Monte Carlo Engine registered successfully")
+    console.print("✅ [bold green]Migrated Monte Carlo Engine registered successfully[/bold green]")
 
 
 if __name__ == '__main__':
@@ -408,9 +417,16 @@ if __name__ == '__main__':
     # Create migrated component
     engine = create_migrated_monte_carlo_engine(config)
     
+    # Display banner
+    console.print(Panel.fit(
+        "[bold blue]Monte Carlo Engine Migration Demo[/bold blue]\n"
+        "Demonstrating migrated Monte Carlo engine functionality",
+        border_style="blue"
+    ))
+    
     # Initialize
     if engine.initialize():
-        print("Monte Carlo Engine initialized successfully")
+        console.print("✅ [bold green]Monte Carlo Engine initialized successfully[/bold green]")
         
         # Example data
         sample_data = {
@@ -419,12 +435,39 @@ if __name__ == '__main__':
         }
         
         # Process data
-        result = engine.process(sample_data)
-        print(f"Simulation completed: {result['performance_metrics']}")
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Running Monte Carlo simulation...", total=100)
+            
+            result = engine.process(sample_data)
+            progress.update(task, completed=100)
+        
+        # Display results
+        console.print("\n📊 [bold blue]Simulation Results:[/bold blue]")
+        table = Table(title="Performance Metrics", box=box.ROUNDED)
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        
+        metrics = result['performance_metrics']
+        table.add_row("Total Return", f"{metrics['total_return']:.2%}")
+        table.add_row("Sharpe Ratio", f"{metrics['sharpe_ratio']:.2f}")
+        table.add_row("Max Drawdown", f"{metrics['max_drawdown']:.2%}")
+        table.add_row("VaR 95%", f"{metrics['var_95']:.2%}")
+        table.add_row("VaR 99%", f"{metrics['var_99']:.2%}")
+        table.add_row("Expected Shortfall 95%", f"{metrics['expected_shortfall_95']:.2%}")
+        table.add_row("Expected Shortfall 99%", f"{metrics['expected_shortfall_99']:.2%}")
+        table.add_row("Simulations", f"{metrics['n_simulations']}")
+        
+        console.print(table)
         
         # Cleanup
         engine.cleanup()
-        print("Monte Carlo Engine cleaned up")
+        console.print("🧹 [yellow]Monte Carlo Engine cleaned up[/yellow]")
     
     # Register in registry
     register_migrated_monte_carlo_engine()

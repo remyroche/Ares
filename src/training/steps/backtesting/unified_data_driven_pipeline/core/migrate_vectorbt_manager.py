@@ -8,6 +8,12 @@ to use the ModularComponent architecture.
 import sys
 import os
 from pathlib import Path
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich import print as rprint
+from rich import box
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -414,6 +420,9 @@ class MigratedVectorBTManager(ModularComponent):
             return False
 
 
+# Initialize Rich console
+console = Console()
+
 def create_migrated_vectorbt_manager(config: dict = None) -> MigratedVectorBTManager:
     """Create a migrated VectorBT manager instance."""
     return MigratedVectorBTManager(config)
@@ -437,7 +446,7 @@ def register_migrated_vectorbt_manager():
         }
     )
     
-    print("Migrated VectorBT Manager registered successfully")
+    console.print("✅ [bold green]Migrated VectorBT Manager registered successfully[/bold green]")
 
 
 if __name__ == '__main__':
@@ -462,9 +471,16 @@ if __name__ == '__main__':
     # Create migrated component
     manager = create_migrated_vectorbt_manager(config)
     
+    # Display banner
+    console.print(Panel.fit(
+        "[bold blue]VectorBT Manager Migration Demo[/bold blue]\n"
+        "Demonstrating migrated VectorBT manager functionality",
+        border_style="blue"
+    ))
+    
     # Initialize
     if manager.initialize():
-        print("VectorBT Manager initialized successfully")
+        console.print("✅ [bold green]VectorBT Manager initialized successfully[/bold green]")
         
         # Example data
         sample_data = {
@@ -479,13 +495,36 @@ if __name__ == '__main__':
         }
         
         # Process data
-        result = manager.process(sample_data)
-        print(f"Operation completed: {result['operation_type']}")
-        print(f"Performance metrics: {result['performance_metrics']}")
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Executing VectorBT operation...", total=100)
+            
+            result = manager.process(sample_data)
+            progress.update(task, completed=100)
+        
+        # Display results
+        console.print("\n📊 [bold blue]VectorBT Operation Results:[/bold blue]")
+        table = Table(title="Operation Summary", box=box.ROUNDED)
+        table.add_column("Property", style="cyan")
+        table.add_column("Value", style="green")
+        
+        table.add_row("Operation Type", result['operation_type'])
+        table.add_row("Success Rate", f"{result['performance_metrics']['success_rate']:.2%}")
+        table.add_row("Total Operations", f"{result['performance_metrics']['total_operations']}")
+        table.add_row("Successful Operations", f"{result['performance_metrics']['successful_operations']}")
+        table.add_row("Failed Operations", f"{result['performance_metrics']['failed_operations']}")
+        table.add_row("Avg Processing Time", f"{result['performance_metrics']['avg_processing_time']:.3f}s")
+        
+        console.print(table)
         
         # Cleanup
         manager.cleanup()
-        print("VectorBT Manager cleaned up")
+        console.print("🧹 [yellow]VectorBT Manager cleaned up[/yellow]")
     
     # Register in registry
     register_migrated_vectorbt_manager()

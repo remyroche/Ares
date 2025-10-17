@@ -8,6 +8,12 @@ to use the ModularComponent architecture.
 import sys
 import os
 from pathlib import Path
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich import print as rprint
+from rich import box
 
 # Add the project root to the path
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -439,6 +445,9 @@ class MigratedPaperTradingEngine(ModularComponent):
             return False
 
 
+# Initialize Rich console
+console = Console()
+
 def create_migrated_paper_trading_engine(config: dict = None) -> MigratedPaperTradingEngine:
     """Create a migrated paper trading engine instance."""
     return MigratedPaperTradingEngine(config)
@@ -462,7 +471,7 @@ def register_migrated_paper_trading_engine():
         }
     )
     
-    print("Migrated Paper Trading Engine registered successfully")
+    console.print("✅ [bold green]Migrated Paper Trading Engine registered successfully[/bold green]")
 
 
 if __name__ == '__main__':
@@ -494,9 +503,16 @@ if __name__ == '__main__':
     # Create migrated component
     engine = create_migrated_paper_trading_engine(config)
     
+    # Display banner
+    console.print(Panel.fit(
+        "[bold blue]Paper Trading Engine Migration Demo[/bold blue]\n"
+        "Demonstrating migrated paper trading engine functionality",
+        border_style="blue"
+    ))
+    
     # Initialize
     if engine.initialize():
-        print("Paper Trading Engine initialized successfully")
+        console.print("✅ [bold green]Paper Trading Engine initialized successfully[/bold green]")
         
         # Example data
         sample_data = {
@@ -510,14 +526,55 @@ if __name__ == '__main__':
         }
         
         # Process data
-        result = engine.process(sample_data)
-        print(f"Trading completed: {len(result['trading_results'])} trades executed")
-        print(f"Portfolio state: {result['portfolio_state']}")
-        print(f"Performance metrics: {result['performance_metrics']}")
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Processing trading signals...", total=100)
+            
+            result = engine.process(sample_data)
+            progress.update(task, completed=100)
+        
+        # Display results
+        console.print("\n📊 [bold blue]Trading Results:[/bold blue]")
+        
+        # Portfolio state table
+        portfolio_table = Table(title="Portfolio State", box=box.ROUNDED)
+        portfolio_table.add_column("Property", style="cyan")
+        portfolio_table.add_column("Value", style="green")
+        
+        portfolio_state = result['portfolio_state']
+        portfolio_table.add_row("Total Value", f"${portfolio_state['total_value']:,.2f}")
+        portfolio_table.add_row("Cash", f"${portfolio_state['cash']:,.2f}")
+        portfolio_table.add_row("Unrealized P&L", f"${portfolio_state['unrealized_pnl']:,.2f}")
+        portfolio_table.add_row("Realized P&L", f"${portfolio_state['realized_pnl']:,.2f}")
+        portfolio_table.add_row("Total Commission", f"${portfolio_state['total_commission']:,.2f}")
+        
+        console.print(portfolio_table)
+        
+        # Performance metrics table
+        performance_table = Table(title="Performance Metrics", box=box.ROUNDED)
+        performance_table.add_column("Metric", style="cyan")
+        performance_table.add_column("Value", style="green")
+        
+        performance_metrics = result['performance_metrics']
+        performance_table.add_row("Trades Executed", f"{len(result['trading_results'])}")
+        performance_table.add_row("Total Trades", f"{performance_metrics['total_trades']}")
+        performance_table.add_row("Winning Trades", f"{performance_metrics['winning_trades']}")
+        performance_table.add_row("Losing Trades", f"{performance_metrics['losing_trades']}")
+        performance_table.add_row("Win Rate", f"{performance_metrics['win_rate']:.2%}")
+        performance_table.add_row("Avg Win", f"${performance_metrics['avg_win']:,.2f}")
+        performance_table.add_row("Avg Loss", f"${performance_metrics['avg_loss']:,.2f}")
+        performance_table.add_row("Profit Factor", f"{performance_metrics['profit_factor']:.2f}")
+        
+        console.print(performance_table)
         
         # Cleanup
         engine.cleanup()
-        print("Paper Trading Engine cleaned up")
+        console.print("🧹 [yellow]Paper Trading Engine cleaned up[/yellow]")
     
     # Register in registry
     register_migrated_paper_trading_engine()

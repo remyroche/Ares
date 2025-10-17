@@ -19,6 +19,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import json
 import time
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich.text import Text
+from rich import print as rprint
+from rich.prompt import Confirm, Prompt
+from rich.syntax import Syntax
+from rich.tree import Tree
+from rich import box
 
 # Add the project root to the path
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.parent.parent))
@@ -46,6 +56,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize Rich console
+console = Console()
 
 class BacktestingComponentMigrationManager:
     """Manager for migrating existing backtesting components."""
@@ -150,13 +163,13 @@ class BacktestingComponentMigrationManager:
         file_path = component_info['file']
         class_name = component_info['class']
         
-        logger.info(f"Analyzing component: {component_name}")
-        logger.info(f"File: {file_path}")
-        logger.info(f"Class: {class_name}")
+        console.print(f"\n🔍 [bold blue]Analyzing component:[/bold blue] {component_name}")
+        console.print(f"📁 [dim]File:[/dim] {file_path}")
+        console.print(f"🏗️  [dim]Class:[/dim] {class_name}")
         
         # Check if file exists
         if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
+            console.print(f"❌ [bold red]File not found:[/bold red] {file_path}")
             return {
                 'component_name': component_name,
                 'status': 'error',
@@ -176,14 +189,14 @@ class BacktestingComponentMigrationManager:
                 'migration_recommendation': self._get_migration_recommendation(analysis)
             }
             
-            logger.info(f"Analysis completed for {component_name}")
-            logger.info(f"Compatibility score: {analysis.compatibility_score:.2f}")
-            logger.info(f"Migration complexity: {analysis.migration_complexity}")
+            console.print(f"✅ [bold green]Analysis completed for[/bold green] {component_name}")
+            console.print(f"📊 [cyan]Compatibility score:[/cyan] {analysis.compatibility_score:.2f}")
+            console.print(f"⚙️  [yellow]Migration complexity:[/yellow] {analysis.migration_complexity}")
             
             return result
             
         except Exception as e:
-            logger.error(f"Error analyzing component {component_name}: {e}")
+            console.print(f"❌ [bold red]Error analyzing component[/bold red] {component_name}: {e}")
             return {
                 'component_name': component_name,
                 'status': 'error',
@@ -192,19 +205,31 @@ class BacktestingComponentMigrationManager:
     
     def analyze_all_components(self) -> Dict[str, Any]:
         """Analyze all components."""
-        logger.info("Analyzing all components...")
+        console.print("\n🔍 [bold blue]Analyzing all components...[/bold blue]")
         
         results = {}
-        for component_name in self.components_to_migrate:
-            try:
-                results[component_name] = self.analyze_component(component_name)
-            except Exception as e:
-                logger.error(f"Error analyzing {component_name}: {e}")
-                results[component_name] = {
-                    'component_name': component_name,
-                    'status': 'error',
-                    'error': str(e)
-                }
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Analyzing components...", total=len(self.components_to_migrate))
+            
+            for component_name in self.components_to_migrate:
+                try:
+                    progress.update(task, description=f"Analyzing {component_name}")
+                    results[component_name] = self.analyze_component(component_name)
+                    progress.advance(task)
+                except Exception as e:
+                    console.print(f"❌ [bold red]Error analyzing[/bold red] {component_name}: {e}")
+                    results[component_name] = {
+                        'component_name': component_name,
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                    progress.advance(task)
         
         # Generate summary
         total_components = len(self.components_to_migrate)
@@ -219,7 +244,7 @@ class BacktestingComponentMigrationManager:
             'results': results
         }
         
-        logger.info(f"Analysis completed: {analyzed_components}/{total_components} components analyzed")
+        console.print(f"\n✅ [bold green]Analysis completed:[/bold green] {analyzed_components}/{total_components} components analyzed")
         
         return summary
     
@@ -232,9 +257,9 @@ class BacktestingComponentMigrationManager:
         file_path = component_info['file']
         class_name = component_info['class']
         
-        logger.info(f"Migrating component: {component_name}")
-        logger.info(f"File: {file_path}")
-        logger.info(f"Class: {class_name}")
+        console.print(f"\n🚀 [bold blue]Migrating component:[/bold blue] {component_name}")
+        console.print(f"📁 [dim]File:[/dim] {file_path}")
+        console.print(f"🏗️  [dim]Class:[/dim] {class_name}")
         
         try:
             # First analyze the component
@@ -244,13 +269,13 @@ class BacktestingComponentMigrationManager:
             if strategy is None:
                 strategy = self._get_migration_recommendation(analysis)
             
-            logger.info(f"Using migration strategy: {strategy}")
+            console.print(f"🎯 [cyan]Using migration strategy:[/cyan] {strategy}")
             
             # Migrate the component
             result = self.migrator.migrate_component(file_path, class_name, strategy)
             
             if result.success:
-                logger.info(f"Migration successful for {component_name}")
+                console.print(f"✅ [bold green]Migration successful for[/bold green] {component_name}")
                 
                 # Register the migrated component
                 self._register_migrated_component(component_name, result, component_info)
@@ -263,7 +288,7 @@ class BacktestingComponentMigrationManager:
                     'registered': True
                 }
             else:
-                logger.error(f"Migration failed for {component_name}: {result.issues}")
+                console.print(f"❌ [bold red]Migration failed for[/bold red] {component_name}: {result.issues}")
                 return {
                     'component_name': component_name,
                     'status': 'failed',
@@ -273,7 +298,7 @@ class BacktestingComponentMigrationManager:
                 }
                 
         except Exception as e:
-            logger.error(f"Error migrating component {component_name}: {e}")
+            console.print(f"❌ [bold red]Error migrating component[/bold red] {component_name}: {e}")
             return {
                 'component_name': component_name,
                 'status': 'error',
@@ -282,7 +307,7 @@ class BacktestingComponentMigrationManager:
     
     def migrate_all_components(self, strategy: Optional[str] = None) -> Dict[str, Any]:
         """Migrate all components."""
-        logger.info("Migrating all components...")
+        console.print("\n🚀 [bold blue]Migrating all components...[/bold blue]")
         
         results = {}
         successful_migrations = 0
@@ -294,25 +319,41 @@ class BacktestingComponentMigrationManager:
             key=lambda x: {'high': 0, 'medium': 1, 'low': 2}[x[1]['priority']]
         )
         
-        for component_name, component_info in sorted_components:
-            try:
-                logger.info(f"Migrating component: {component_name} (priority: {component_info['priority']})")
-                result = self.migrate_component(component_name, strategy)
-                results[component_name] = result
-                
-                if result['status'] == 'migrated':
-                    successful_migrations += 1
-                else:
-                    failed_migrations += 1
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("Migrating components...", total=len(sorted_components))
+            
+            for component_name, component_info in sorted_components:
+                try:
+                    priority_color = {'high': 'red', 'medium': 'yellow', 'low': 'green'}[component_info['priority']]
+                    progress.update(task, description=f"Migrating {component_name} ({component_info['priority']} priority)")
                     
-            except Exception as e:
-                logger.error(f"Error migrating {component_name}: {e}")
-                results[component_name] = {
-                    'component_name': component_name,
-                    'status': 'error',
-                    'error': str(e)
-                }
-                failed_migrations += 1
+                    result = self.migrate_component(component_name, strategy)
+                    results[component_name] = result
+                    
+                    if result['status'] == 'migrated':
+                        successful_migrations += 1
+                        console.print(f"✅ [bold green]{component_name}[/bold green] migrated successfully")
+                    else:
+                        failed_migrations += 1
+                        console.print(f"❌ [bold red]{component_name}[/bold red] migration failed")
+                    
+                    progress.advance(task)
+                    
+                except Exception as e:
+                    console.print(f"❌ [bold red]Error migrating[/bold red] {component_name}: {e}")
+                    results[component_name] = {
+                        'component_name': component_name,
+                        'status': 'error',
+                        'error': str(e)
+                    }
+                    failed_migrations += 1
+                    progress.advance(task)
         
         summary = {
             'total_components': len(self.components_to_migrate),
@@ -322,7 +363,7 @@ class BacktestingComponentMigrationManager:
             'results': results
         }
         
-        logger.info(f"Migration completed: {successful_migrations}/{len(self.components_to_migrate)} components migrated successfully")
+        console.print(f"\n✅ [bold green]Migration completed:[/bold green] {successful_migrations}/{len(self.components_to_migrate)} components migrated successfully")
         
         return summary
     
@@ -357,10 +398,10 @@ class BacktestingComponentMigrationManager:
                 }
             )
             
-            logger.info(f"Component {component_name} registered in registry")
+            console.print(f"📝 [green]Component {component_name} registered in registry[/green]")
             
         except Exception as e:
-            logger.error(f"Error registering component {component_name}: {e}")
+            console.print(f"❌ [bold red]Error registering component[/bold red] {component_name}: {e}")
     
     def create_wrapper_component(self, component_name: str) -> Dict[str, Any]:
         """Create a wrapper component for backward compatibility."""
@@ -396,7 +437,7 @@ class BacktestingComponentMigrationManager:
                 }
             )
             
-            logger.info(f"Wrapper created for component {component_name}")
+            console.print(f"🔧 [green]Wrapper created for component[/green] {component_name}")
             
             return {
                 'component_name': component_name,
@@ -406,7 +447,7 @@ class BacktestingComponentMigrationManager:
             }
             
         except Exception as e:
-            logger.error(f"Error creating wrapper for {component_name}: {e}")
+            console.print(f"❌ [bold red]Error creating wrapper for[/bold red] {component_name}: {e}")
             return {
                 'component_name': component_name,
                 'status': 'error',
@@ -425,12 +466,19 @@ class BacktestingComponentMigrationManager:
         with open(output_file, 'w') as f:
             json.dump(report, f, indent=2, default=str)
         
-        logger.info(f"Migration report saved to: {output_file}")
+        console.print(f"📄 [green]Migration report saved to:[/green] {output_file}")
         return output_file
 
 
 def main():
     """Main function for the migration script."""
+    # Display banner
+    console.print(Panel.fit(
+        "[bold blue]Backtesting Components Migration Tool[/bold blue]\n"
+        "Migrate existing backtesting components to ModularComponent architecture",
+        border_style="blue"
+    ))
+    
     parser = argparse.ArgumentParser(description='Migrate existing backtesting components to ModularComponent')
     parser.add_argument('--analyze', action='store_true', help='Analyze all components')
     parser.add_argument('--analyze-component', type=str, help='Analyze a specific component')
@@ -446,6 +494,7 @@ def main():
     
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+        console.print("🔍 [yellow]Verbose logging enabled[/yellow]")
     
     manager = BacktestingComponentMigrationManager()
     
@@ -453,30 +502,108 @@ def main():
         if args.analyze:
             results = manager.analyze_all_components()
             output_file = manager.generate_migration_report(results, args.output)
-            print(f"Analysis completed. Report saved to: {output_file}")
+            
+            # Display analysis summary
+            table = Table(title="Analysis Summary", box=box.ROUNDED)
+            table.add_column("Component", style="cyan")
+            table.add_column("Status", style="green")
+            table.add_column("Compatibility", style="yellow")
+            table.add_column("Complexity", style="magenta")
+            
+            for component_name, result in results.items():
+                if result['status'] == 'analyzed':
+                    analysis = result['analysis']
+                    table.add_row(
+                        component_name,
+                        "✅ Analyzed",
+                        f"{analysis['compatibility_score']:.2f}",
+                        analysis['migration_complexity']
+                    )
+                else:
+                    table.add_row(component_name, "❌ Error", "N/A", "N/A")
+            
+            console.print(table)
+            console.print(f"\n📄 [green]Analysis completed. Report saved to:[/green] {output_file}")
             
         elif args.analyze_component:
             result = manager.analyze_component(args.analyze_component)
-            print(json.dumps(result, indent=2, default=str))
+            
+            # Display component analysis
+            if result['status'] == 'analyzed':
+                analysis = result['analysis']
+                console.print(f"\n📊 [bold blue]Component Analysis:[/bold blue] {args.analyze_component}")
+                console.print(f"📁 File: {result['file_path']}")
+                console.print(f"🏗️  Class: {result['class_name']}")
+                console.print(f"📈 Compatibility Score: {analysis['compatibility_score']:.2f}")
+                console.print(f"⚙️  Migration Complexity: {analysis['migration_complexity']}")
+                console.print(f"🎯 Recommended Strategy: {result['migration_recommendation']}")
+            else:
+                console.print(f"❌ [bold red]Analysis failed:[/bold red] {result.get('error', 'Unknown error')}")
             
         elif args.migrate:
             result = manager.migrate_component(args.migrate, args.strategy)
-            print(json.dumps(result, indent=2, default=str))
+            
+            # Display migration result
+            if result['status'] == 'migrated':
+                console.print(f"✅ [bold green]Migration successful for[/bold green] {args.migrate}")
+                console.print(f"🎯 Strategy: {result['strategy']}")
+                console.print(f"📝 Registered: {result['registered']}")
+            else:
+                console.print(f"❌ [bold red]Migration failed for[/bold red] {args.migrate}")
+                console.print(f"🎯 Strategy: {result['strategy']}")
+                if 'error' in result:
+                    console.print(f"💥 Error: {result['error']}")
             
         elif args.migrate_all:
             results = manager.migrate_all_components(args.strategy)
             output_file = manager.generate_migration_report(results, args.output)
-            print(f"Migration completed. Report saved to: {output_file}")
+            
+            # Display migration summary
+            table = Table(title="Migration Summary", box=box.ROUNDED)
+            table.add_column("Component", style="cyan")
+            table.add_column("Status", style="green")
+            table.add_column("Strategy", style="yellow")
+            table.add_column("Registered", style="magenta")
+            
+            for component_name, result in results.items():
+                status_style = "green" if result['status'] == 'migrated' else "red"
+                status_text = "✅ Migrated" if result['status'] == 'migrated' else f"❌ {result['status'].title()}"
+                
+                table.add_row(
+                    component_name,
+                    status_text,
+                    result.get('strategy', 'N/A'),
+                    "Yes" if result.get('registered', False) else "No"
+                )
+            
+            console.print(table)
+            console.print(f"\n📄 [green]Migration completed. Report saved to:[/green] {output_file}")
             
         elif args.create_wrapper:
             result = manager.create_wrapper_component(args.create_wrapper)
-            print(json.dumps(result, indent=2, default=str))
+            
+            if result['status'] == 'wrapped':
+                console.print(f"✅ [bold green]Wrapper created for[/bold green] {args.create_wrapper}")
+                console.print(f"📝 Registered: {result['registered']}")
+            else:
+                console.print(f"❌ [bold red]Wrapper creation failed for[/bold red] {args.create_wrapper}")
+                if 'error' in result:
+                    console.print(f"💥 Error: {result['error']}")
             
         else:
-            parser.print_help()
+            console.print("\n[bold yellow]Available Commands:[/bold yellow]")
+            console.print("  [cyan]--analyze[/cyan]              Analyze all components")
+            console.print("  [cyan]--analyze-component NAME[/cyan]  Analyze specific component")
+            console.print("  [cyan]--migrate NAME[/cyan]         Migrate specific component")
+            console.print("  [cyan]--migrate-all[/cyan]          Migrate all components")
+            console.print("  [cyan]--create-wrapper NAME[/cyan]  Create wrapper for component")
+            console.print("\n[bold yellow]Options:[/bold yellow]")
+            console.print("  [cyan]--strategy STRATEGY[/cyan]    Migration strategy (direct, wrapper, refactor, rewrite)")
+            console.print("  [cyan]--output FILE[/cyan]          Output file for reports")
+            console.print("  [cyan]--verbose[/cyan]              Enable verbose logging")
             
     except Exception as e:
-        logger.error(f"Error: {e}")
+        console.print(f"❌ [bold red]Error:[/bold red] {e}")
         sys.exit(1)
 
 

@@ -433,14 +433,19 @@ class LiveTradingScheduler:
             # Create bar split for this evaluation
             bar_split = await self.nowcaster.create_bar_split()
 
-            # This would integrate with your HMM training pipeline
-            # For now, return mock data with nowcasting information
+            # Generate realistic mock regime data
+            regime_data = self._generate_mock_regime_data(len(complete_bars))
+
             result = {
-                'regime_states': np.random.randint(0, 20, len(complete_bars)).tolist(),
-                'regime_probabilities': np.random.rand(len(complete_bars), 20).tolist(),
-                'regime_confidence': np.random.rand(len(complete_bars)).tolist(),
-                'n_regimes': 20,
-                'n_features': 100,
+                'regime_states': regime_data['regime_states'],
+                'regime_probabilities': regime_data['regime_probabilities'],
+                'regime_confidence': regime_data['regime_confidence'],
+                'regime_transitions': regime_data['regime_transitions'],
+                'regime_persistence': regime_data['regime_persistence'],
+                'regime_volatility': regime_data['regime_volatility'],
+                'regime_trend': regime_data['regime_trend'],
+                'n_regimes': regime_data['n_regimes'],
+                'n_features': regime_data['n_features'],
                 'execution_time': datetime.now().isoformat(),
                 'nowcasting_info': {
                     'bar_completion': bar_split.split_ratio,
@@ -466,13 +471,19 @@ class LiveTradingScheduler:
     async def _execute_analyst(self) -> Dict[str, Any]:
         """Execute Analyst model for trade decisions."""
         try:
-            # This would integrate with your Analyst training pipeline
-            # For now, return mock data
+            # Generate realistic mock trade signals data
+            trade_signals_data = self._generate_mock_trade_signals_data()
+
             result = {
-                'trade_signals': np.random.choice([0, 1], 100, p=[0.7, 0.3]).tolist(),
-                'confidence_scores': np.random.rand(100).tolist(),
-                'green_light_periods': np.random.choice([True, False], 100, p=[0.3, 0.7]).tolist(),
-                'n_features': 300,
+                'trade_signals': trade_signals_data['trade_signals'],
+                'confidence_scores': trade_signals_data['confidence_scores'],
+                'green_light_periods': trade_signals_data['green_light_periods'],
+                'signal_strength': trade_signals_data['signal_strength'],
+                'market_conditions': trade_signals_data['market_conditions'],
+                'risk_assessment': trade_signals_data['risk_assessment'],
+                'feature_importance': trade_signals_data['feature_importance'],
+                'model_ensemble_weights': trade_signals_data['model_ensemble_weights'],
+                'n_features': trade_signals_data['n_features'],
                 'execution_time': datetime.now().isoformat()
             }
 
@@ -488,13 +499,19 @@ class LiveTradingScheduler:
     async def _execute_tactician(self) -> Dict[str, Any]:
         """Execute Tactician model for timing decisions."""
         try:
-            # This would integrate with your Tactician training pipeline
-            # For now, return mock data
+            # Generate realistic mock timing signals data
+            timing_signals_data = self._generate_mock_timing_signals_data()
+
             result = {
-                'timing_signals': np.random.choice([0, 1], 100, p=[0.8, 0.2]).tolist(),
-                'price_change_predictions': np.random.normal(0, 0.01, 100).tolist(),
-                'confidence_scores': np.random.rand(100).tolist(),
-                'n_features': 50,
+                'timing_signals': timing_signals_data['timing_signals'],
+                'price_change_predictions': timing_signals_data['price_change_predictions'],
+                'confidence_scores': timing_signals_data['confidence_scores'],
+                'entry_timing': timing_signals_data['entry_timing'],
+                'exit_timing': timing_signals_data['exit_timing'],
+                'position_sizing': timing_signals_data['position_sizing'],
+                'risk_metrics': timing_signals_data['risk_metrics'],
+                'market_microstructure': timing_signals_data['market_microstructure'],
+                'n_features': timing_signals_data['n_features'],
                 'execution_time': datetime.now().isoformat()
             }
 
@@ -595,6 +612,358 @@ class LiveTradingScheduler:
         if model_type in self.model_configs:
             self.model_configs[model_type].execution_interval_seconds = interval_seconds
             tprint_info(f"📊 {model_type.value.upper()} execution interval updated to {interval_seconds}s")
+
+    def _generate_mock_regime_data(self, n_bars: int) -> Dict[str, Any]:
+        """Generate realistic mock regime states data."""
+        try:
+            # Define regime types with realistic characteristics
+            regime_types = [
+                'trending_up', 'trending_down', 'sideways', 'high_volatility',
+                'low_volatility', 'mean_reversion', 'breakout', 'consolidation',
+                'reversal', 'accumulation', 'distribution', 'exhaustion',
+                'momentum', 'contrarian', 'scalping', 'swing', 'position',
+                'arbitrage', 'news_driven', 'algorithmic'
+            ]
+            
+            n_regimes = len(regime_types)
+            
+            # Generate regime states with persistence (regimes don't change too frequently)
+            regime_states = []
+            current_regime = np.random.randint(0, n_regimes)
+            
+            for i in range(n_bars):
+                # 80% chance to stay in same regime, 20% chance to change
+                if np.random.random() < 0.8 and i > 0:
+                    regime_states.append(current_regime)
+                else:
+                    current_regime = np.random.randint(0, n_regimes)
+                    regime_states.append(current_regime)
+            
+            # Generate regime probabilities (should sum to 1 for each bar)
+            regime_probabilities = []
+            for i in range(n_bars):
+                probs = np.random.dirichlet(np.ones(n_regimes) * 2)  # Dirichlet distribution
+                # Boost the probability of the actual regime
+                probs[regime_states[i]] *= np.random.uniform(1.5, 3.0)
+                probs = probs / probs.sum()  # Renormalize
+                regime_probabilities.append(probs.tolist())
+            
+            # Generate regime confidence (higher for more stable regimes)
+            regime_confidence = []
+            for i, regime in enumerate(regime_states):
+                base_confidence = np.random.uniform(0.6, 0.95)
+                # Higher confidence for regimes that persist
+                if i > 0 and regime == regime_states[i-1]:
+                    base_confidence *= np.random.uniform(1.1, 1.3)
+                regime_confidence.append(min(base_confidence, 1.0))
+            
+            # Generate regime transition matrix
+            transition_matrix = np.random.dirichlet(np.ones(n_regimes), size=n_regimes)
+            # Make diagonal elements higher (regimes tend to persist)
+            np.fill_diagonal(transition_matrix, transition_matrix.diagonal() * np.random.uniform(2, 4))
+            # Renormalize
+            transition_matrix = transition_matrix / transition_matrix.sum(axis=1, keepdims=True)
+            
+            # Calculate regime transitions
+            regime_transitions = []
+            for i in range(1, n_bars):
+                transition = {
+                    'from_regime': regime_states[i-1],
+                    'to_regime': regime_states[i],
+                    'transition_probability': transition_matrix[regime_states[i-1], regime_states[i]],
+                    'transition_time': i
+                }
+                regime_transitions.append(transition)
+            
+            # Calculate regime persistence
+            regime_persistence = []
+            for i, regime in enumerate(regime_states):
+                persistence = 1
+                # Count consecutive same regimes
+                j = i - 1
+                while j >= 0 and regime_states[j] == regime:
+                    persistence += 1
+                    j -= 1
+                regime_persistence.append(persistence)
+            
+            # Generate regime-specific characteristics
+            regime_volatility = []
+            regime_trend = []
+            
+            for regime in regime_states:
+                regime_name = regime_types[regime]
+                
+                # Volatility based on regime type
+                if 'high_volatility' in regime_name or 'breakout' in regime_name:
+                    vol = np.random.uniform(0.03, 0.08)
+                elif 'low_volatility' in regime_name or 'sideways' in regime_name:
+                    vol = np.random.uniform(0.005, 0.02)
+                else:
+                    vol = np.random.uniform(0.01, 0.04)
+                regime_volatility.append(vol)
+                
+                # Trend based on regime type
+                if 'trending_up' in regime_name or 'momentum' in regime_name:
+                    trend = np.random.uniform(0.01, 0.05)
+                elif 'trending_down' in regime_name or 'reversal' in regime_name:
+                    trend = np.random.uniform(-0.05, -0.01)
+                else:
+                    trend = np.random.uniform(-0.01, 0.01)
+                regime_trend.append(trend)
+            
+            return {
+                'regime_states': regime_states,
+                'regime_probabilities': regime_probabilities,
+                'regime_confidence': regime_confidence,
+                'regime_transitions': regime_transitions,
+                'regime_persistence': regime_persistence,
+                'regime_volatility': regime_volatility,
+                'regime_trend': regime_trend,
+                'n_regimes': n_regimes,
+                'n_features': 100,
+                'regime_types': regime_types,
+                'transition_matrix': transition_matrix.tolist()
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate mock regime data: {e}")
+            return {
+                'regime_states': [],
+                'regime_probabilities': [],
+                'regime_confidence': [],
+                'regime_transitions': [],
+                'regime_persistence': [],
+                'regime_volatility': [],
+                'regime_trend': [],
+                'n_regimes': 0,
+                'n_features': 0
+            }
+
+    def _generate_mock_trade_signals_data(self) -> Dict[str, Any]:
+        """Generate realistic mock trade signals data."""
+        try:
+            n_signals = 100
+            
+            # Generate trade signals with realistic distribution
+            # 70% no signal, 20% buy, 10% sell
+            signal_choices = [0, 1, -1]  # 0=hold, 1=buy, -1=sell
+            signal_probs = [0.7, 0.2, 0.1]
+            trade_signals = np.random.choice(signal_choices, n_signals, p=signal_probs).tolist()
+            
+            # Generate confidence scores (higher for stronger signals)
+            confidence_scores = []
+            for signal in trade_signals:
+                if signal == 0:
+                    # Lower confidence for hold signals
+                    conf = np.random.uniform(0.3, 0.7)
+                else:
+                    # Higher confidence for buy/sell signals
+                    conf = np.random.uniform(0.6, 0.95)
+                confidence_scores.append(conf)
+            
+            # Generate green light periods (when conditions are favorable)
+            green_light_periods = []
+            for i in range(n_signals):
+                # Green light more likely when confidence is high
+                base_prob = 0.3
+                if confidence_scores[i] > 0.7:
+                    base_prob = 0.6
+                elif confidence_scores[i] > 0.5:
+                    base_prob = 0.4
+                
+                green_light = np.random.random() < base_prob
+                green_light_periods.append(green_light)
+            
+            # Generate signal strength (0-1 scale)
+            signal_strength = []
+            for i, signal in enumerate(trade_signals):
+                if signal == 0:
+                    strength = np.random.uniform(0.1, 0.4)
+                else:
+                    strength = np.random.uniform(0.5, 1.0)
+                signal_strength.append(strength)
+            
+            # Generate market conditions
+            market_conditions = []
+            condition_types = ['bullish', 'bearish', 'neutral', 'volatile', 'trending', 'sideways']
+            for i in range(n_signals):
+                condition = {
+                    'type': np.random.choice(condition_types),
+                    'strength': np.random.uniform(0.3, 1.0),
+                    'volatility': np.random.uniform(0.01, 0.05),
+                    'momentum': np.random.uniform(-0.02, 0.02),
+                    'volume_trend': np.random.uniform(0.8, 1.5)
+                }
+                market_conditions.append(condition)
+            
+            # Generate risk assessment
+            risk_assessment = []
+            for i in range(n_signals):
+                risk = {
+                    'var_95': np.random.uniform(0.01, 0.04),
+                    'expected_shortfall': np.random.uniform(0.015, 0.05),
+                    'max_drawdown_risk': np.random.uniform(0.05, 0.15),
+                    'liquidation_risk': np.random.uniform(0.01, 0.08),
+                    'correlation_risk': np.random.uniform(0.2, 0.8)
+                }
+                risk_assessment.append(risk)
+            
+            # Generate feature importance
+            feature_names = [
+                'price_momentum', 'volume_profile', 'volatility_regime', 'trend_strength',
+                'support_resistance', 'technical_indicators', 'market_sentiment',
+                'liquidity_conditions', 'correlation_structure', 'regime_persistence'
+            ]
+            feature_importance = {}
+            importance_values = np.random.dirichlet(np.ones(len(feature_names)))
+            for i, feature in enumerate(feature_names):
+                feature_importance[feature] = float(importance_values[i])
+            
+            # Generate model ensemble weights
+            model_names = ['trend_model', 'momentum_model', 'reversion_model', 'volatility_model', 'ensemble_model']
+            model_weights = np.random.dirichlet(np.ones(len(model_names)))
+            model_ensemble_weights = dict(zip(model_names, model_weights.tolist()))
+            
+            return {
+                'trade_signals': trade_signals,
+                'confidence_scores': confidence_scores,
+                'green_light_periods': green_light_periods,
+                'signal_strength': signal_strength,
+                'market_conditions': market_conditions,
+                'risk_assessment': risk_assessment,
+                'feature_importance': feature_importance,
+                'model_ensemble_weights': model_ensemble_weights,
+                'n_features': 300
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate mock trade signals data: {e}")
+            return {
+                'trade_signals': [],
+                'confidence_scores': [],
+                'green_light_periods': [],
+                'signal_strength': [],
+                'market_conditions': [],
+                'risk_assessment': [],
+                'feature_importance': {},
+                'model_ensemble_weights': {},
+                'n_features': 0
+            }
+
+    def _generate_mock_timing_signals_data(self) -> Dict[str, Any]:
+        """Generate realistic mock timing signals data."""
+        try:
+            n_signals = 100
+            
+            # Generate timing signals (when to enter/exit)
+            # 80% no timing signal, 15% entry, 5% exit
+            timing_choices = [0, 1, -1]  # 0=wait, 1=enter, -1=exit
+            timing_probs = [0.8, 0.15, 0.05]
+            timing_signals = np.random.choice(timing_choices, n_signals, p=timing_probs).tolist()
+            
+            # Generate price change predictions
+            price_change_predictions = []
+            for i, signal in enumerate(timing_signals):
+                if signal == 1:  # Entry signal - expect positive price change
+                    change = np.random.uniform(0.001, 0.02)  # 0.1% to 2%
+                elif signal == -1:  # Exit signal - expect negative price change
+                    change = np.random.uniform(-0.02, -0.001)  # -2% to -0.1%
+                else:  # Wait signal - small random change
+                    change = np.random.uniform(-0.005, 0.005)  # -0.5% to 0.5%
+                price_change_predictions.append(change)
+            
+            # Generate confidence scores
+            confidence_scores = []
+            for i, signal in enumerate(timing_signals):
+                if signal == 0:
+                    conf = np.random.uniform(0.4, 0.7)
+                else:
+                    conf = np.random.uniform(0.6, 0.9)
+                confidence_scores.append(conf)
+            
+            # Generate entry timing details
+            entry_timing = []
+            for i in range(n_signals):
+                timing = {
+                    'optimal_entry_time': np.random.uniform(0, 60),  # seconds within minute
+                    'entry_window': np.random.uniform(5, 30),  # seconds
+                    'urgency_score': np.random.uniform(0.1, 1.0),
+                    'market_impact': np.random.uniform(0.001, 0.01)
+                }
+                entry_timing.append(timing)
+            
+            # Generate exit timing details
+            exit_timing = []
+            for i in range(n_signals):
+                timing = {
+                    'optimal_exit_time': np.random.uniform(0, 60),
+                    'exit_window': np.random.uniform(5, 30),
+                    'urgency_score': np.random.uniform(0.1, 1.0),
+                    'market_impact': np.random.uniform(0.001, 0.01)
+                }
+                exit_timing.append(timing)
+            
+            # Generate position sizing recommendations
+            position_sizing = []
+            for i in range(n_signals):
+                sizing = {
+                    'recommended_size': np.random.uniform(0.1, 1.0),
+                    'max_size': np.random.uniform(0.5, 2.0),
+                    'kelly_fraction': np.random.uniform(0.05, 0.25),
+                    'risk_per_trade': np.random.uniform(0.01, 0.05),
+                    'leverage': np.random.uniform(1.0, 3.0)
+                }
+                position_sizing.append(sizing)
+            
+            # Generate risk metrics
+            risk_metrics = []
+            for i in range(n_signals):
+                risk = {
+                    'var_95': np.random.uniform(0.01, 0.03),
+                    'expected_shortfall': np.random.uniform(0.015, 0.04),
+                    'max_drawdown': np.random.uniform(0.02, 0.08),
+                    'sharpe_ratio': np.random.uniform(0.5, 2.0),
+                    'sortino_ratio': np.random.uniform(0.7, 2.5)
+                }
+                risk_metrics.append(risk)
+            
+            # Generate market microstructure data
+            market_microstructure = []
+            for i in range(n_signals):
+                microstructure = {
+                    'bid_ask_spread': np.random.uniform(0.0001, 0.001),
+                    'order_book_imbalance': np.random.uniform(-0.5, 0.5),
+                    'liquidity_score': np.random.uniform(0.3, 1.0),
+                    'volume_profile': np.random.uniform(0.5, 2.0),
+                    'price_impact': np.random.uniform(0.0001, 0.005)
+                }
+                market_microstructure.append(microstructure)
+            
+            return {
+                'timing_signals': timing_signals,
+                'price_change_predictions': price_change_predictions,
+                'confidence_scores': confidence_scores,
+                'entry_timing': entry_timing,
+                'exit_timing': exit_timing,
+                'position_sizing': position_sizing,
+                'risk_metrics': risk_metrics,
+                'market_microstructure': market_microstructure,
+                'n_features': 50
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate mock timing signals data: {e}")
+            return {
+                'timing_signals': [],
+                'price_change_predictions': [],
+                'confidence_scores': [],
+                'entry_timing': [],
+                'exit_timing': [],
+                'position_sizing': [],
+                'risk_metrics': [],
+                'market_microstructure': [],
+                'n_features': 0
+            }
 
 # Convenience functions
 

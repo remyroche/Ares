@@ -210,7 +210,7 @@ class PartialBarNowcaster:
             return pd.DataFrame()
 
     async def _get_historical_complete_bars(self, n_bars: int) -> pd.DataFrame:
-        """Get historical complete hourly bars."""
+        """Get historical complete hourly bars with realistic market data."""
         try:
             # This would integrate with your data source
             # For now, return mock data
@@ -221,25 +221,7 @@ class PartialBarNowcaster:
             timestamps = pd.date_range(start_time, end_time, freq='1H', inclusive='left')
 
             # Generate realistic mock data
-            np.random.seed(42)  # For reproducibility
-            n_points = len(timestamps)
-
-            # Generate price data with some trend and volatility
-            base_price = 50000.0
-            returns = np.random.normal(0, 0.02, n_points)  # 2% volatility
-            prices = [base_price]
-            for ret in returns[1:]:
-                prices.append(prices[-1] * (1 + ret))
-
-            historical_data = pd.DataFrame({
-                'timestamp': timestamps,
-                'open': prices,
-                'high': [p * (1 + abs(np.random.normal(0, 0.01))) for p in prices],
-                'low': [p * (1 - abs(np.random.normal(0, 0.01))) for p in prices],
-                'close': prices,
-                'volume': np.random.lognormal(12, 0.3, n_points),
-                'is_complete': True
-            })
+            historical_data = self._generate_mock_historical_data(timestamps)
 
             tprint_debug(f"📈 Generated {len(historical_data)} historical complete bars")
             return historical_data
@@ -294,24 +276,7 @@ class PartialBarNowcaster:
             timestamps = pd.date_range(start_time, current_time, freq='1min')
 
             # Generate realistic partial OHLCV data
-            np.random.seed(int(current_time.timestamp()))
-            base_price = 50000.0
-
-            # Generate price progression
-            price_changes = np.random.normal(0, 0.001, len(timestamps))  # 0.1% volatility per minute
-            prices = [base_price]
-            for change in price_changes[1:]:
-                prices.append(prices[-1] * (1 + change))
-
-            partial_data = pd.DataFrame({
-                'timestamp': timestamps,
-                'open': prices,
-                'high': [p * (1 + abs(np.random.normal(0, 0.005))) for p in prices],
-                'low': [p * (1 - abs(np.random.normal(0, 0.005))) for p in prices],
-                'close': prices,
-                'volume': np.random.lognormal(8, 0.2, len(timestamps)),
-                'is_complete': False
-            })
+            partial_data = self._generate_mock_partial_data(timestamps, current_time)
 
             tprint_debug(f"📊 Generated {len(partial_data)} minutes of partial data")
             return partial_data
@@ -410,6 +375,230 @@ class PartialBarNowcaster:
         """Update the last evaluation time."""
         self.last_evaluation_time = datetime.now()
         tprint_debug(f"⏰ Updated evaluation time: {self.last_evaluation_time}")
+
+    def _generate_mock_historical_data(self, timestamps: pd.DatetimeIndex) -> pd.DataFrame:
+        """Generate realistic mock historical market data."""
+        try:
+            np.random.seed(42)  # For reproducibility
+            n_points = len(timestamps)
+
+            # Generate realistic price data with trends, volatility clusters, and mean reversion
+            base_price = 3000.0  # ETH-like price
+            prices = [base_price]
+            
+            # Create different market regimes
+            regime_length = n_points // 4
+            regimes = []
+            for i in range(0, n_points, regime_length):
+                regime_type = np.random.choice(['trending', 'sideways', 'volatile', 'mean_reverting'])
+                regimes.extend([regime_type] * min(regime_length, n_points - i))
+            
+            # Generate price movements based on regimes
+            for i in range(1, n_points):
+                regime = regimes[i] if i < len(regimes) else 'sideways'
+                
+                if regime == 'trending':
+                    # Trending regime with momentum
+                    trend = np.random.uniform(-0.002, 0.002)  # -0.2% to 0.2% per hour
+                    volatility = np.random.uniform(0.01, 0.03)  # 1-3% volatility
+                    change = trend + np.random.normal(0, volatility)
+                elif regime == 'sideways':
+                    # Sideways regime with mean reversion
+                    mean_reversion = -0.1 * (prices[i-1] - base_price) / base_price
+                    volatility = np.random.uniform(0.005, 0.015)  # 0.5-1.5% volatility
+                    change = mean_reversion + np.random.normal(0, volatility)
+                elif regime == 'volatile':
+                    # High volatility regime
+                    volatility = np.random.uniform(0.02, 0.05)  # 2-5% volatility
+                    change = np.random.normal(0, volatility)
+                else:  # mean_reverting
+                    # Mean reversion with moderate volatility
+                    mean_reversion = -0.2 * (prices[i-1] - base_price) / base_price
+                    volatility = np.random.uniform(0.01, 0.02)  # 1-2% volatility
+                    change = mean_reversion + np.random.normal(0, volatility)
+                
+                new_price = prices[i-1] * (1 + change)
+                prices.append(new_price)
+
+            # Generate OHLCV data
+            historical_data = []
+            for i, (timestamp, close) in enumerate(zip(timestamps, prices)):
+                # Generate realistic OHLC
+                volatility_factor = abs(close - prices[i-1]) / prices[i-1] if i > 0 else 0.01
+                volatility_factor = max(volatility_factor, 0.005)  # Minimum volatility
+                
+                # Open price (previous close with small gap)
+                if i == 0:
+                    open_price = close
+                else:
+                    gap = np.random.normal(0, volatility_factor * 0.1)
+                    open_price = prices[i-1] * (1 + gap)
+                
+                # High and low with realistic ranges
+                high_range = np.random.uniform(0.001, volatility_factor * 2)
+                low_range = np.random.uniform(0.001, volatility_factor * 2)
+                
+                high = max(open_price, close) * (1 + high_range)
+                low = min(open_price, close) * (1 - low_range)
+                
+                # Ensure OHLC consistency
+                high = max(open_price, close, high)
+                low = min(open_price, close, low)
+                
+                # Generate volume with correlation to price movement
+                price_change = abs(close - open_price) / open_price if open_price > 0 else 0
+                base_volume = 1000
+                volume_factor = 1 + price_change * 10  # Higher volume on bigger moves
+                volume = base_volume * volume_factor * np.random.lognormal(0, 0.3)
+                
+                # Add technical indicators
+                rsi = self._calculate_rsi(prices[:i+1]) if i >= 14 else 50
+                sma_20 = np.mean(prices[max(0, i-19):i+1]) if i >= 19 else close
+                sma_50 = np.mean(prices[max(0, i-49):i+1]) if i >= 49 else close
+                
+                historical_data.append({
+                    'timestamp': timestamp,
+                    'open': open_price,
+                    'high': high,
+                    'low': low,
+                    'close': close,
+                    'volume': volume,
+                    'is_complete': True,
+                    'regime': regimes[i] if i < len(regimes) else 'sideways',
+                    'rsi': rsi,
+                    'sma_20': sma_20,
+                    'sma_50': sma_50,
+                    'volatility': volatility_factor,
+                    'price_change': price_change
+                })
+
+            df = pd.DataFrame(historical_data)
+            
+            # Add additional technical indicators
+            df['returns'] = df['close'].pct_change()
+            df['volatility_20'] = df['returns'].rolling(20).std()
+            df['bb_upper'] = df['sma_20'] + (df['volatility_20'] * 2)
+            df['bb_lower'] = df['sma_20'] - (df['volatility_20'] * 2)
+            df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+            
+            return df
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate mock historical data: {e}")
+            return pd.DataFrame()
+
+    def _generate_mock_partial_data(self, timestamps: pd.DatetimeIndex, current_time: datetime) -> pd.DataFrame:
+        """Generate realistic mock partial bar data."""
+        try:
+            np.random.seed(int(current_time.timestamp()))
+            n_minutes = len(timestamps)
+            
+            # Start with a base price (could be from previous hour's close)
+            base_price = 3000.0
+            
+            # Generate price progression with realistic intraday patterns
+            prices = [base_price]
+            
+            # Create intraday volatility pattern (higher at open/close, lower midday)
+            for i in range(1, n_minutes):
+                # Intraday volatility pattern
+                minute_of_hour = i % 60
+                if minute_of_hour < 15 or minute_of_hour > 45:  # First/last 15 minutes
+                    vol_multiplier = 1.5
+                else:  # Middle 30 minutes
+                    vol_multiplier = 0.8
+                
+                # Base volatility per minute
+                base_vol = 0.0005  # 0.05% per minute
+                volatility = base_vol * vol_multiplier
+                
+                # Add some momentum from previous moves
+                momentum = 0.0
+                if i > 1:
+                    recent_change = (prices[i-1] - prices[i-2]) / prices[i-2]
+                    momentum = recent_change * 0.1  # 10% momentum carryover
+                
+                # Generate price change
+                change = momentum + np.random.normal(0, volatility)
+                new_price = prices[i-1] * (1 + change)
+                prices.append(new_price)
+
+            # Generate OHLCV data for each minute
+            partial_data = []
+            for i, (timestamp, close) in enumerate(zip(timestamps, prices)):
+                # Generate realistic minute-level OHLC
+                volatility_factor = abs(close - prices[i-1]) / prices[i-1] if i > 0 else 0.001
+                volatility_factor = max(volatility_factor, 0.0005)  # Minimum volatility
+                
+                # Open price
+                if i == 0:
+                    open_price = close
+                else:
+                    gap = np.random.normal(0, volatility_factor * 0.2)
+                    open_price = prices[i-1] * (1 + gap)
+                
+                # High and low
+                high_range = np.random.uniform(0.0001, volatility_factor)
+                low_range = np.random.uniform(0.0001, volatility_factor)
+                
+                high = max(open_price, close) * (1 + high_range)
+                low = min(open_price, close) * (1 - low_range)
+                
+                # Ensure OHLC consistency
+                high = max(open_price, close, high)
+                low = min(open_price, close, low)
+                
+                # Generate volume with intraday patterns
+                minute_of_hour = i % 60
+                if minute_of_hour < 5 or minute_of_hour > 55:  # First/last 5 minutes
+                    volume_multiplier = 2.0
+                elif minute_of_hour < 15 or minute_of_hour > 45:  # First/last 15 minutes
+                    volume_multiplier = 1.5
+                else:  # Middle period
+                    volume_multiplier = 0.8
+                
+                base_volume = 100
+                price_change = abs(close - open_price) / open_price if open_price > 0 else 0
+                volume = base_volume * volume_multiplier * (1 + price_change * 5) * np.random.lognormal(0, 0.2)
+                
+                partial_data.append({
+                    'timestamp': timestamp,
+                    'open': open_price,
+                    'high': high,
+                    'low': low,
+                    'close': close,
+                    'volume': volume,
+                    'is_complete': False,
+                    'minute_of_hour': minute_of_hour,
+                    'volatility': volatility_factor,
+                    'price_change': price_change
+                })
+
+            return pd.DataFrame(partial_data)
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate mock partial data: {e}")
+            return pd.DataFrame()
+
+    def _calculate_rsi(self, prices: List[float], period: int = 14) -> float:
+        """Calculate RSI for a list of prices."""
+        if len(prices) < period + 1:
+            return 50.0  # Neutral RSI if not enough data
+        
+        deltas = [prices[i] - prices[i-1] for i in range(1, len(prices))]
+        gains = [delta if delta > 0 else 0 for delta in deltas]
+        losses = [-delta if delta < 0 else 0 for delta in deltas]
+        
+        avg_gain = np.mean(gains[-period:])
+        avg_loss = np.mean(losses[-period:])
+        
+        if avg_loss == 0:
+            return 100.0
+        
+        rs = avg_gain / avg_loss
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
 
     async def get_nowcasting_stats(self) -> Dict[str, Any]:
         """Get statistics about the nowcasting process."""

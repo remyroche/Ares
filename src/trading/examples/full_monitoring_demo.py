@@ -562,46 +562,223 @@ def create_advanced_mock_model(model_name: str):
         def __init__(self, model_name: str):
             self.model_name = model_name
             self.model_type = model_name.split('_')[0]  # analyst/tactician/hmm
+            self.is_fitted = True
+            self.n_features_in_ = 0
+            self.feature_names_in_ = []
 
             # Define realistic feature names based on model type
             if 'analyst' in model_name:
                 self.feature_names = [
                     'close', 'sma_20', 'sma_50', 'rsi', 'macd', 'bb_position',
                     'volume', 'volatility_20', 'returns_1', 'returns_5', 'returns_20',
-                    'volume_ratio', 'price_momentum', 'trend_strength'
+                    'volume_ratio', 'price_momentum', 'trend_strength', 'atr_14',
+                    'stoch_k', 'stoch_d', 'williams_r', 'cci', 'adx', 'di_plus',
+                    'di_minus', 'aroon_up', 'aroon_down', 'obv', 'mfi', 'trix',
+                    'ultimate_oscillator', 'roc', 'momentum', 'rate_of_change'
                 ]
+                self.n_features_in_ = len(self.feature_names)
+                self.feature_names_in_ = self.feature_names.copy()
             elif 'tactician' in model_name:
                 self.feature_names = [
                     'close', 'volume', 'volatility_20', 'rsi', 'macd',
                     'bb_position', 'support_level', 'resistance_level',
-                    'momentum_score', 'timing_indicator'
+                    'momentum_score', 'timing_indicator', 'price_velocity',
+                    'volume_acceleration', 'volatility_regime', 'trend_consistency',
+                    'breakout_strength', 'reversal_probability', 'entry_timing',
+                    'exit_timing', 'risk_adjusted_return', 'sharpe_ratio'
                 ]
+                self.n_features_in_ = len(self.feature_names)
+                self.feature_names_in_ = self.feature_names.copy()
             else:  # hmm
                 self.feature_names = [
                     'returns_1', 'returns_5', 'volatility_5', 'volatility_20',
-                    'volume_ratio', 'regime_features'
+                    'volume_ratio', 'regime_features', 'hidden_state_1', 'hidden_state_2',
+                    'hidden_state_3', 'transition_prob', 'emission_prob', 'log_likelihood',
+                    'state_persistence', 'regime_stability', 'transition_frequency'
                 ]
+                self.n_features_in_ = len(self.feature_names)
+                self.feature_names_in_ = self.feature_names.copy()
+
+            # Initialize random state for consistent results
+            np.random.seed(hash(model_name) % 2**32)
 
         def predict(self, X):
-            """Mock prediction method."""
+            """Mock prediction method with realistic behavior."""
             if hasattr(X, '__len__'):
-                return np.random.uniform(0.4, 0.9, len(X))
+                n_samples = len(X)
+                # Generate predictions based on model type
+                if 'analyst' in self.model_name:
+                    # Analyst predictions tend to be more conservative
+                    base_pred = np.random.beta(2, 3, n_samples)  # Skewed towards lower values
+                elif 'tactician' in self.model_name:
+                    # Tactician predictions are more binary
+                    base_pred = np.random.choice([0.2, 0.8], n_samples, p=[0.7, 0.3])
+                else:  # hmm
+                    # HMM predictions are more uniform
+                    base_pred = np.random.uniform(0.3, 0.9, n_samples)
+                
+                return base_pred
             else:
-                return np.random.uniform(0.4, 0.9)
+                # Single prediction
+                if 'analyst' in self.model_name:
+                    return np.random.beta(2, 3)
+                elif 'tactician' in self.model_name:
+                    return np.random.choice([0.2, 0.8], p=[0.7, 0.3])
+                else:
+                    return np.random.uniform(0.3, 0.9)
 
         def predict_proba(self, X):
-            """Mock probability prediction."""
+            """Mock probability prediction with realistic distributions."""
             pred = self.predict(X)
             if hasattr(pred, '__len__'):
+                # Add some noise to make it more realistic
+                noise = np.random.normal(0, 0.05, len(pred))
+                pred = np.clip(pred + noise, 0.0, 1.0)
                 return [[1-p, p] for p in pred]
             else:
+                noise = np.random.normal(0, 0.05)
+                pred = np.clip(pred + noise, 0.0, 1.0)
                 return [[1-pred, pred]]
 
         def get_feature_importance(self):
-            """Mock feature importance for SHAP."""
-            importance = np.random.exponential(0.1, len(self.feature_names))
-            importance = importance / importance.sum()  # Normalize
+            """Mock feature importance for SHAP with realistic distributions."""
+            # Create more realistic feature importance based on model type
+            if 'analyst' in self.model_name:
+                # Technical indicators should have higher importance
+                tech_indicators = ['rsi', 'macd', 'bb_position', 'sma_20', 'sma_50']
+                importance = np.random.exponential(0.15, len(self.feature_names))
+                
+                # Boost technical indicators
+                for i, feature in enumerate(self.feature_names):
+                    if feature in tech_indicators:
+                        importance[i] *= np.random.uniform(1.5, 3.0)
+                        
+            elif 'tactician' in self.model_name:
+                # Timing and momentum features should be important
+                timing_features = ['timing_indicator', 'momentum_score', 'price_velocity']
+                importance = np.random.exponential(0.12, len(self.feature_names))
+                
+                # Boost timing features
+                for i, feature in enumerate(self.feature_names):
+                    if feature in timing_features:
+                        importance[i] *= np.random.uniform(1.3, 2.5)
+            else:  # hmm
+                # Regime and state features should be important
+                regime_features = ['regime_features', 'hidden_state_1', 'hidden_state_2', 'hidden_state_3']
+                importance = np.random.exponential(0.1, len(self.feature_names))
+                
+                # Boost regime features
+                for i, feature in enumerate(self.feature_names):
+                    if feature in regime_features:
+                        importance[i] *= np.random.uniform(1.4, 2.8)
+
+            # Normalize to sum to 1
+            importance = importance / importance.sum()
+            
             return dict(zip(self.feature_names, importance))
+
+        def get_shap_values(self, X, explainer_type='tree'):
+            """Mock SHAP values for explainability."""
+            if hasattr(X, '__len__'):
+                n_samples = len(X)
+                n_features = len(self.feature_names)
+            else:
+                n_samples = 1
+                n_features = len(self.feature_names)
+                X = [X]
+
+            # Generate realistic SHAP values
+            shap_values = np.random.normal(0, 0.1, (n_samples, n_features))
+            
+            # Make some features more important (higher absolute SHAP values)
+            important_features = np.random.choice(n_features, size=max(1, n_features//3), replace=False)
+            for idx in important_features:
+                shap_values[:, idx] *= np.random.uniform(2.0, 4.0)
+            
+            return shap_values
+
+        def get_lime_explanation(self, X, num_features=5):
+            """Mock LIME explanation for interpretability."""
+            if hasattr(X, '__len__'):
+                n_samples = len(X)
+            else:
+                n_samples = 1
+                X = [X]
+
+            explanations = []
+            for i in range(n_samples):
+                # Select top features for explanation
+                feature_importance = self.get_feature_importance()
+                sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+                
+                explanation = {
+                    'feature_weights': dict(sorted_features[:num_features]),
+                    'intercept': np.random.normal(0, 0.1),
+                    'prediction': self.predict(X[i] if n_samples > 1 else X),
+                    'explanation_type': 'lime',
+                    'num_features': num_features
+                }
+                explanations.append(explanation)
+            
+            return explanations[0] if n_samples == 1 else explanations
+
+        def get_model_confidence(self, X):
+            """Get model confidence for predictions."""
+            predictions = self.predict(X)
+            if hasattr(predictions, '__len__'):
+                # Confidence based on prediction certainty
+                confidence = np.abs(predictions - 0.5) * 2  # Higher for more extreme predictions
+                return confidence.tolist()
+            else:
+                return abs(predictions - 0.5) * 2
+
+        def get_feature_contributions(self, X):
+            """Get feature contributions for each prediction."""
+            shap_values = self.get_shap_values(X)
+            if len(shap_values.shape) == 1:
+                shap_values = shap_values.reshape(1, -1)
+            
+            contributions = []
+            for i in range(shap_values.shape[0]):
+                contrib = dict(zip(self.feature_names, shap_values[i]))
+                contributions.append(contrib)
+            
+            return contributions[0] if len(contributions) == 1 else contributions
+
+        def get_model_metrics(self):
+            """Get mock model performance metrics."""
+            return {
+                'accuracy': np.random.uniform(0.65, 0.85),
+                'precision': np.random.uniform(0.60, 0.80),
+                'recall': np.random.uniform(0.55, 0.75),
+                'f1_score': np.random.uniform(0.58, 0.78),
+                'auc_roc': np.random.uniform(0.70, 0.90),
+                'log_loss': np.random.uniform(0.3, 0.7),
+                'training_samples': np.random.randint(10000, 100000),
+                'validation_samples': np.random.randint(2000, 10000),
+                'feature_count': len(self.feature_names),
+                'model_complexity': np.random.uniform(0.1, 0.9)
+            }
+
+        def get_explainability_report(self, X):
+            """Generate comprehensive explainability report."""
+            predictions = self.predict(X)
+            shap_values = self.get_shap_values(X)
+            lime_explanation = self.get_lime_explanation(X)
+            feature_importance = self.get_feature_importance()
+            confidence = self.get_model_confidence(X)
+            
+            return {
+                'predictions': predictions,
+                'shap_values': shap_values.tolist() if hasattr(shap_values, 'tolist') else shap_values,
+                'lime_explanation': lime_explanation,
+                'feature_importance': feature_importance,
+                'confidence': confidence,
+                'top_positive_features': sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5],
+                'top_negative_features': sorted(feature_importance.items(), key=lambda x: x[1])[:5],
+                'model_metrics': self.get_model_metrics(),
+                'explanation_quality': np.random.uniform(0.7, 0.95)
+            }
 
     return AdvancedMockModel(model_name)
 

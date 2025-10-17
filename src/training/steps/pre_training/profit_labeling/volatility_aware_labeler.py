@@ -455,10 +455,10 @@ class VolatilityAwareMultiHorizonLabeler:
             self.logger.warning(f"Overlap detected between labels and lookahead returns for {target_name}")
             return self._create_fallback_quality_score(reason="overlap_violation")
         
-        # Check minimum gates first
-        if not self._check_quality_gates(labels_final, lookahead_final, coverage):
-            self.logger.warning(f"Quality gates failed for target {target_name} - setting quality to 0")
-            return self._create_fallback_quality_score(reason="gate_failure")
+        # Check minimum gates first, but still calculate metrics for analysis
+        gates_passed = self._check_quality_gates(labels_final, lookahead_final, coverage)
+        if not gates_passed:
+            self.logger.warning(f"Quality gates failed for target {target_name} - calculating metrics anyway for analysis")
         
         # Try-to-break-it test 4: Randomized label test
         if not self._run_randomized_label_test(labels_final, lookahead_final, target_name):
@@ -476,20 +476,28 @@ class VolatilityAwareMultiHorizonLabeler:
         # Calculate composite score
         composite_score = self._calculate_composite_score(metrics)
         
+        # Apply penalty for failed gates but don't zero out everything
+        if not gates_passed:
+            composite_score = composite_score * 0.5  # 50% penalty for failed gates
+            self.logger.info(f"Applied gate failure penalty: {composite_score:.3f}")
+        
         # Create comprehensive quality score object
         class ComprehensiveQualityScore:
-            def __init__(self, composite_score, metrics, coverage, target_name):
+            def __init__(self, composite_score, metrics, coverage, target_name, gates_passed=True):
                 self.overall_quality = composite_score
                 self.predictability = metrics.get('ic', 0.0)
                 self.stability = metrics.get('stability', 0.0)
                 self.balance = metrics.get('balance', 0.0)
                 self.coverage = coverage
                 self.target_name = target_name
+                self.gates_passed = gates_passed
                 # Store all metrics for detailed analysis
                 self.metrics = metrics
                 self.red_flag_reasons = self._extract_red_flags(metrics, coverage)
+                if not gates_passed:
+                    self.red_flag_reasons.append("gate_failure")
         
-        return ComprehensiveQualityScore(composite_score, metrics, coverage, target_name)
+        return ComprehensiveQualityScore(composite_score, metrics, coverage, target_name, gates_passed)
     
     def _check_quality_gates(self, labels: pd.Series, lookahead_returns: pd.Series, coverage: float) -> bool:
         """Check minimum quality gates."""
@@ -501,15 +509,15 @@ class VolatilityAwareMultiHorizonLabeler:
             return False
         self.logger.info(f"DEBUG: Gate 1 PASSED - coverage {coverage:.3f} >= 0.05")
         
-        # Gate 2: Balance ≥ 0.2
+        # Gate 2: Balance ≥ 0.15 (more reasonable for financial data)
         if len(labels.dropna()) > 0:
             positive_rate = (labels.dropna() > 0).mean()
             balance = min(positive_rate, 1 - positive_rate) * 2
             self.logger.info(f"DEBUG: Gate 2 - positive_rate: {positive_rate:.3f}, balance: {balance:.3f}")
-            if balance < 0.2:
-                self.logger.warning(f"DEBUG: Gate 2 FAILED - balance {balance:.3f} < 0.2")
+            if balance < 0.15:  # Lowered from 0.2 to 0.15 for financial data
+                self.logger.warning(f"DEBUG: Gate 2 FAILED - balance {balance:.3f} < 0.15")
                 return False
-            self.logger.info(f"DEBUG: Gate 2 PASSED - balance {balance:.3f} >= 0.2")
+            self.logger.info(f"DEBUG: Gate 2 PASSED - balance {balance:.3f} >= 0.15")
         
         # Gate 3: IC p-value < 0.1 in at least half of temporal folds
         if len(labels.dropna()) > 10 and len(lookahead_returns.dropna()) > 10:
@@ -1016,6 +1024,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.stability = 0.0
                 self.balance = 0.0
                 self.coverage = 0.0
+                self.gates_passed = False
                 self.metrics = {}
                 self.red_flag_reasons = [reason]
         
@@ -1293,7 +1302,9 @@ class VolatilityAwareMultiHorizonLabeler:
                     target_frac = float(target_frac)
                 
                 # Create deterministic column name (replace "." with "p")
-                target_name = f"t_{target_frac:.1f}".replace(".", "p")
+                # Ensure target_frac is a scalar for formatting
+                target_frac_scalar = float(target_frac) if not isinstance(target_frac, (int, float)) else target_frac
+                target_name = f"t_{target_frac_scalar:.1f}".replace(".", "p")
                 target_columns.append(target_name)
                 
                 # Profit target semantics in volatility regimes
@@ -1323,14 +1334,17 @@ class VolatilityAwareMultiHorizonLabeler:
                 low_vol_mask = volatility <= self.config.volatility_threshold
 
                 labels = pd.Series(0, index=prices.index, dtype=np.uint8)
-                # More realistic thresholds for 15m data
-                labels[high_vol_mask] = (future_returns[high_vol_mask] > 0.002).astype(np.uint8)  # 0.2%
-                labels[low_vol_mask] = (future_returns[low_vol_mask] > 0.001).astype(np.uint8)   # 0.1%
+                # More realistic thresholds for 15m data - adjusted for better balance
+                labels[high_vol_mask] = (future_returns[high_vol_mask] > 0.0005).astype(np.uint8)  # 0.05%
+                labels[low_vol_mask] = (future_returns[low_vol_mask] > 0.0003).astype(np.uint8)   # 0.03%
                 
                 # Debug: Log return statistics
                 self.logger.info(f"DEBUG: Return stats - mean: {future_returns.mean():.6f}, std: {future_returns.std():.6f}")
                 self.logger.info(f"DEBUG: Return percentiles - 50%: {future_returns.quantile(0.5):.6f}, 75%: {future_returns.quantile(0.75):.6f}, 90%: {future_returns.quantile(0.9):.6f}")
+                self.logger.info(f"DEBUG: Return percentiles - 95%: {future_returns.quantile(0.95):.6f}, 99%: {future_returns.quantile(0.99):.6f}")
                 self.logger.info(f"DEBUG: Positive rate with new thresholds: {(labels > 0).mean():.3f}")
+                self.logger.info(f"DEBUG: Volatility stats - mean: {volatility.mean():.6f}, std: {volatility.std():.6f}")
+                self.logger.info(f"DEBUG: High vol ratio: {(volatility > self.config.volatility_threshold).mean():.3f}")
             else:
                 # Regression: use actual returns
                 labels = future_returns

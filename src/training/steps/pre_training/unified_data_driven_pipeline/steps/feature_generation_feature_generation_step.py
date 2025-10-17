@@ -19,9 +19,6 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.training.steps.pre_training.components.base_component import (
-    ComponentConfig, ComponentResult
-)
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
     ModularComponent
 )

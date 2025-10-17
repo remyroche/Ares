@@ -369,21 +369,265 @@ class BaseExchange(IExchangeClient, ABC):
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time trade data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle trade data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for trades subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket trades
+            if hasattr(self.exchange, 'watch_trades'):
+                try:
+                    # Use WebSocket if available
+                    async for trade in self.exchange.watch_trades(market_id):
+                        trade_data = {
+                            'symbol': symbol,
+                            'id': trade.get('id'),
+                            'timestamp': trade.get('timestamp'),
+                            'datetime': trade.get('datetime'),
+                            'side': trade.get('side'),
+                            'amount': trade.get('amount'),
+                            'price': trade.get('price'),
+                            'cost': trade.get('cost'),
+                            'fee': trade.get('fee'),
+                            'info': trade.get('info', {})
+                        }
+                        await callback(trade_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket trades failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_trades(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_trades(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to trades for {symbol}: {e}")
+            raise
 
     async def subscribe_ticker(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time ticker data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle ticker data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for ticker subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket ticker
+            if hasattr(self.exchange, 'watch_ticker'):
+                try:
+                    # Use WebSocket if available
+                    async for ticker in self.exchange.watch_ticker(market_id):
+                        ticker_data = {
+                            'symbol': symbol,
+                            'timestamp': ticker.get('timestamp'),
+                            'datetime': ticker.get('datetime'),
+                            'high': ticker.get('high'),
+                            'low': ticker.get('low'),
+                            'bid': ticker.get('bid'),
+                            'bidVolume': ticker.get('bidVolume'),
+                            'ask': ticker.get('ask'),
+                            'askVolume': ticker.get('askVolume'),
+                            'vwap': ticker.get('vwap'),
+                            'open': ticker.get('open'),
+                            'close': ticker.get('close'),
+                            'last': ticker.get('last'),
+                            'previousClose': ticker.get('previousClose'),
+                            'change': ticker.get('change'),
+                            'percentage': ticker.get('percentage'),
+                            'average': ticker.get('average'),
+                            'baseVolume': ticker.get('baseVolume'),
+                            'quoteVolume': ticker.get('quoteVolume'),
+                            'info': ticker.get('info', {})
+                        }
+                        await callback(ticker_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket ticker failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_ticker(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_ticker(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to ticker for {symbol}: {e}")
+            raise
 
     async def subscribe_order_book(
         self,
         symbol: str,
         callback: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        raise NotImplementedError
+        """
+        Subscribe to real-time order book data for a symbol.
+        
+        Args:
+            symbol: Trading symbol to subscribe to
+            callback: Async callback function to handle order book data
+            
+        Note:
+            This is a base implementation that provides polling fallback.
+            Subclasses should override with WebSocket implementation if available.
+        """
+        try:
+            if not self.exchange:
+                self.logger.warning(f"No exchange client available for order book subscription on {symbol}")
+                return
+                
+            market_id = await self._get_market_id(symbol)
+            
+            # Check if exchange supports WebSocket order book
+            if hasattr(self.exchange, 'watch_order_book'):
+                try:
+                    # Use WebSocket if available
+                    async for order_book in self.exchange.watch_order_book(market_id):
+                        order_book_data = {
+                            'symbol': symbol,
+                            'timestamp': order_book.get('timestamp'),
+                            'datetime': order_book.get('datetime'),
+                            'nonce': order_book.get('nonce'),
+                            'bids': order_book.get('bids', []),
+                            'asks': order_book.get('asks', []),
+                            'info': order_book.get('info', {})
+                        }
+                        await callback(order_book_data)
+                except Exception as e:
+                    self.logger.warning(f"WebSocket order book failed for {symbol}: {e}, falling back to polling")
+                    await self._poll_order_book(market_id, symbol, callback)
+            else:
+                # Fallback to polling
+                await self._poll_order_book(market_id, symbol, callback)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to subscribe to order book for {symbol}: {e}")
+            raise
+
+    # --- Polling helper methods for subscription fallbacks ---
+    async def _poll_trades(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll trades data as fallback when WebSocket is not available."""
+        try:
+            last_trade_id = None
+            while True:
+                try:
+                    trades = await self.exchange.fetch_trades(market_id, limit=100)
+                    if trades:
+                        # Filter new trades
+                        if last_trade_id:
+                            trades = [t for t in trades if t.get('id', 0) > last_trade_id]
+                        
+                        for trade in trades:
+                            trade_data = {
+                                'symbol': symbol,
+                                'id': trade.get('id'),
+                                'timestamp': trade.get('timestamp'),
+                                'datetime': trade.get('datetime'),
+                                'side': trade.get('side'),
+                                'amount': trade.get('amount'),
+                                'price': trade.get('price'),
+                                'cost': trade.get('cost'),
+                                'fee': trade.get('fee'),
+                                'info': trade.get('info', {})
+                            }
+                            await callback(trade_data)
+                            last_trade_id = trade.get('id', last_trade_id)
+                    
+                    # Poll every 1 second
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    self.logger.warning(f"Error polling trades for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll trades for {symbol}: {e}")
+
+    async def _poll_ticker(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll ticker data as fallback when WebSocket is not available."""
+        try:
+            while True:
+                try:
+                    ticker = await self.exchange.fetch_ticker(market_id)
+                    if ticker:
+                        ticker_data = {
+                            'symbol': symbol,
+                            'timestamp': ticker.get('timestamp'),
+                            'datetime': ticker.get('datetime'),
+                            'high': ticker.get('high'),
+                            'low': ticker.get('low'),
+                            'bid': ticker.get('bid'),
+                            'bidVolume': ticker.get('bidVolume'),
+                            'ask': ticker.get('ask'),
+                            'askVolume': ticker.get('askVolume'),
+                            'vwap': ticker.get('vwap'),
+                            'open': ticker.get('open'),
+                            'close': ticker.get('close'),
+                            'last': ticker.get('last'),
+                            'previousClose': ticker.get('previousClose'),
+                            'change': ticker.get('change'),
+                            'percentage': ticker.get('percentage'),
+                            'average': ticker.get('average'),
+                            'baseVolume': ticker.get('baseVolume'),
+                            'quoteVolume': ticker.get('quoteVolume'),
+                            'info': ticker.get('info', {})
+                        }
+                        await callback(ticker_data)
+                    
+                    # Poll every 2 seconds
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    self.logger.warning(f"Error polling ticker for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll ticker for {symbol}: {e}")
+
+    async def _poll_order_book(self, market_id: str, symbol: str, callback: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
+        """Poll order book data as fallback when WebSocket is not available."""
+        try:
+            while True:
+                try:
+                    order_book = await self.exchange.fetch_order_book(market_id, limit=20)
+                    if order_book:
+                        order_book_data = {
+                            'symbol': symbol,
+                            'timestamp': order_book.get('timestamp'),
+                            'datetime': order_book.get('datetime'),
+                            'nonce': order_book.get('nonce'),
+                            'bids': order_book.get('bids', []),
+                            'asks': order_book.get('asks', []),
+                            'info': order_book.get('info', {})
+                        }
+                        await callback(order_book_data)
+                    
+                    # Poll every 3 seconds
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    self.logger.warning(f"Error polling order book for {symbol}: {e}")
+                    await asyncio.sleep(5)  # Wait longer on error
+        except Exception as e:
+            self.logger.error(f"Failed to poll order book for {symbol}: {e}")
 
     # --- Convenience polling helpers ---
     async def fetch_price(self, symbol: str) -> float | None:

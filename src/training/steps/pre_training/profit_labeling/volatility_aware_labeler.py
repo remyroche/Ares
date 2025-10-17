@@ -8,7 +8,13 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 from enum import Enum
 import pandas as pd
 import numpy as np
-from src.utils.logger import system_logger
+# Robust logger fallback
+try:
+    from src.utils.logger import system_logger  # type: ignore
+except Exception:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    system_logger = logging.getLogger("system")
 
 # Import the missing function from multi_horizon_profit_labeler
 try:
@@ -106,9 +112,12 @@ class VolatilityAwareConfig:
         self.regime_config = RegimeConfig()
         self.optimal_entry_detection = OptimalEntryDetectionConfig()
         
-        # Initialize bar construction configuration
-        from .bar_construction import BarConstructionConfig
-        self.bar_construction = BarConstructionConfig()
+        # Make bar_construction optional to avoid import-time crashes
+        try:
+            from .bar_construction import BarConstructionConfig  # type: ignore
+            self.bar_construction = BarConstructionConfig()
+        except Exception:
+            self.bar_construction = None
         
         # Initialize noise gating configuration
         self.noise_gating = NoiseGatingConfig()
@@ -328,6 +337,10 @@ class VolatilityAwareMultiHorizonLabeler:
             if data.index.duplicated().any():
                 self.logger.warning("Duplicate index values detected - proceeding with caution")
             
+            # Validate inputs
+            if price_column not in data.columns:
+                raise ValueError(f"price_column '{price_column}' not in data columns {list(data.columns)}")
+
             # Edge case handling: constant price
             price_series = data[price_column]
             if price_series.nunique() <= 1:
@@ -408,15 +421,21 @@ class VolatilityAwareMultiHorizonLabeler:
             self._log_comprehensive_outcome_report(result_labels, quality_scores, metadata, training_strategy, performance_config)
             
             # Logging & observability - single-line KPI
-            coverage = metadata["non_null_labels"] / metadata["total_labels"] if metadata["total_labels"] > 0 else 0
-            positive_rate = (result_labels > 0).sum() / metadata["total_labels"] if metadata["total_labels"] > 0 else 0
+            # "coverage" was misleading: you want actual signal rate, not non-null count (labels are 0/±1)
+            if isinstance(result_labels, pd.DataFrame):
+                signal_rate = (result_labels != 0).stack().mean() if result_labels.size else 0.0
+                positive_rate = (result_labels > 0).stack().mean() if result_labels.size else 0.0
+            else:
+                signal_rate = (result_labels != 0).mean() if len(result_labels) else 0.0
+                positive_rate = (result_labels > 0).mean() if len(result_labels) else 0.0
+            coverage = signal_rate
             
             self.logger.info(f"Labels generated: {metadata['total_labels']} rows, {n_targets} targets, "
                            f"coverage {coverage:.1%}, positive rate {positive_rate:.1%}, "
                            f"vol window {self.config.volatility.window}/{self.config.volatility.enabled}")
             
             # Warn on suspicious states
-            if coverage < 0.01:
+            if coverage < 0.01 and metadata["total_labels"] > 0:
                 self.logger.warning(f"Very low coverage: {coverage:.1%} - check data quality")
             if positive_rate == 0:
                 self.logger.warning("No positive labels found - check thresholds")
@@ -758,6 +777,7 @@ class VolatilityAwareMultiHorizonLabeler:
             # Quality gate 3 passed
         else:
             # Gate 3 skipped due to insufficient data
+            pass
         
         # All quality gates passed
         return True

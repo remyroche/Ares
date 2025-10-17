@@ -7,6 +7,7 @@ with multi-objective optimization, economic validation, and VectorBT optimizatio
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 import warnings
@@ -20,8 +21,6 @@ from dataclasses import dataclass
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent, ComponentConfig, ComponentResult
 )
-from src.utils.common_operations import safe_dataframe_operation
-from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 # Import battle-tested feature selection components
 try:
@@ -49,6 +48,38 @@ except ImportError:
     EconomicValidationResult = None
     EnhancedVectorBTOptimizer = None
 
+def _cols(obj: Any) -> List[str]:
+    """Normalize selected_features to column names list."""
+    if obj is None:
+        return []
+    if isinstance(obj, pd.DataFrame):
+        return list(obj.columns)
+    if hasattr(obj, "tolist"):
+        return list(obj.tolist())
+    return list(obj)
+
+def _safe_to_meta(obj: Any) -> Dict[str, Any]:
+    """Safely convert object to serializable metadata."""
+    if obj is None:
+        return {}
+    # Prefer a method if available
+    for attr in ("to_dict", "model_dump", "dict"):
+        if hasattr(obj, attr) and callable(getattr(obj, attr)):
+            try:
+                return getattr(obj, attr)()
+            except Exception:
+                pass
+    # Fallback: shallow, serializable subset
+    out = {}
+    for k, v in getattr(obj, "__dict__", {}).items():
+        if isinstance(v, (str, int, float, bool, type(None))):
+            out[k] = v
+        elif isinstance(v, (list, tuple)) and all(isinstance(x, (str, int, float, bool, type(None))) for x in v):
+            out[k] = list(v)
+        elif isinstance(v, dict) and all(isinstance(x, (str, int, float, bool, type(None))) for x in v.values()):
+            out[k] = v
+    return out
+
 @dataclass
 class FeatureSelectionResult:
     """Sophisticated result of feature selection step."""
@@ -67,6 +98,29 @@ class FeatureSelectionResult:
     stability_metrics: Dict[str, Any]
     artifacts: Dict[str, Any]
     error_message: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert result to serializable dictionary."""
+        return {
+            'success': self.success,
+            'selected_features': {
+                'columns': list(self.selected_features.columns),
+                'shape': self.selected_features.shape,
+                'preview': self.selected_features.head(5).to_dict('records') if not self.selected_features.empty else []
+            },
+            'selection_metadata': self.selection_metadata,
+            'selection_metrics': self.selection_metrics,
+            'selection_strategy': self.selection_strategy,
+            'feature_importance': self.feature_importance,
+            'economic_validation': self.economic_validation,
+            'multi_objective_results': self.multi_objective_results,
+            'vectorbt_optimizations': self.vectorbt_optimizations,
+            'quality_metrics': self.quality_metrics,
+            'diversity_metrics': self.diversity_metrics,
+            'stability_metrics': self.stability_metrics,
+            'artifacts': self.artifacts,
+            'error_message': self.error_message
+        }
 
 class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
     """Sophisticated feature selection step using battle-tested components."""
@@ -108,6 +162,41 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
             self.economic_evaluator = None
             self.vectorbt_optimizer = None
 
+    def _apply_overrides(self, overrides: Optional[Dict[str, Any]]):
+        """Apply custom configuration overrides."""
+        if not overrides or not BATTLE_TESTED_COMPONENTS_AVAILABLE:
+            return
+        for k, v in overrides.items():
+            if hasattr(self.feature_selection_config, k):
+                setattr(self.feature_selection_config, k, v)
+
+    def _filter_data_by_parameters(self, data: pd.DataFrame, targets: pd.Series, 
+                                  lookback_days: Optional[int], start_date: Optional[str], 
+                                  end_date: Optional[str]) -> Tuple[pd.DataFrame, pd.Series]:
+        """Filter data based on lookback_days, start_date, and end_date parameters."""
+        if lookback_days is not None:
+            # Use last N days of data
+            data = data.tail(lookback_days)
+            targets = targets.tail(lookback_days)
+        
+        if start_date is not None:
+            try:
+                start_dt = pd.to_datetime(start_date)
+                data = data[data.index >= start_dt]
+                targets = targets[targets.index >= start_dt]
+            except Exception as e:
+                self.logger.warning(f"Invalid start_date format: {e}")
+        
+        if end_date is not None:
+            try:
+                end_dt = pd.to_datetime(end_date)
+                data = data[data.index <= end_dt]
+                targets = targets[targets.index <= end_dt]
+            except Exception as e:
+                self.logger.warning(f"Invalid end_date format: {e}")
+        
+        return data, targets
+
     async def execute(self,
                      data: pd.DataFrame,
                      targets: pd.Series,
@@ -125,6 +214,8 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
         self.logger.info("🎯 Starting sophisticated feature selection step with multi-objective optimization")
 
         try:
+            # Apply data filtering based on parameters
+            data, targets = self._filter_data_by_parameters(data, targets, lookback_days, start_date, end_date)
             if not BATTLE_TESTED_COMPONENTS_AVAILABLE:
                 # Fallback to basic feature selection
                 return await self._fallback_feature_selection(
@@ -148,7 +239,7 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
             return selection_result
 
         except Exception as e:
-            self.logger.error(f"❌ Sophisticated feature selection step failed with exception: {e}")
+            self.logger.error(f"❌ Sophisticated feature selection step failed with exception: {e}", exc_info=True)
             return FeatureSelectionResult(
                 success=False,
                 selected_features=pd.DataFrame(),
@@ -174,69 +265,86 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
         try:
             if not BATTLE_TESTED_COMPONENTS_AVAILABLE:
                 raise ImportError("Battle-tested feature selection components not available")
+            
+            # Apply custom overrides if provided
+            self._apply_overrides(custom_overrides)
                 
             # Step 1: Battle-tested multi-stage feature selection
             self.logger.info("🔄 Stage 1: Battle-tested multi-stage feature selection")
-            battle_tested_selector = BattleTestedFeatureSelector()
-            advanced_result = battle_tested_selector.select_features(data, targets)
+            advanced_result = await asyncio.to_thread(
+                self.battle_tested_selector.select_features, data, targets
+            )
             
             if not advanced_result.success:
                 raise Exception(f"Advanced feature selection failed: {advanced_result.error_message}")
             
+            # Normalize selected features to column names
+            cols1 = _cols(advanced_result.selected_features)
+            df1 = data[cols1].copy()
+            
             # Step 2: Multi-objective optimization
             self.logger.info("🎯 Stage 2: Multi-objective optimization")
-            multi_objective_result = self.multi_objective_selector.optimize_features(
-                data[advanced_result.selected_features], targets
+            multi_objective_result = await asyncio.to_thread(
+                self.multi_objective_selector.optimize_features, df1, targets
             )
+            
+            # Normalize multi-objective selected features
+            cols2 = _cols(multi_objective_result.selected_features)
+            df2 = df1[cols2].copy()
             
             # Step 3: Economic validation
             self.logger.info("💰 Stage 3: Economic validation")
-            economic_result = self.economic_evaluator.validate_features(
-                data[multi_objective_result.selected_features], targets, symbol, timeframe
+            economic_result = await asyncio.to_thread(
+                self.economic_evaluator.validate_features, df2, targets, symbol, timeframe
             )
+            
+            # Normalize economic validated features
+            cols3 = _cols(economic_result.validated_features)
+            df3 = df2[cols3].copy()
             
             # Step 4: VectorBT optimization
             self.logger.info("⚡ Stage 4: VectorBT optimization")
-            vectorbt_result = self.vectorbt_optimizer.optimize_features(
-                data[economic_result.validated_features], targets
+            vectorbt_result = await asyncio.to_thread(
+                self.vectorbt_optimizer.optimize_features, df3, targets
             )
             
-            # Step 5: Compile sophisticated result
-            selected_features_df = data[vectorbt_result.optimized_features]
+            # Normalize vectorbt optimized features
+            cols4 = _cols(vectorbt_result.optimized_features)
+            selected_features_df = df3[cols4].copy()
             
             return FeatureSelectionResult(
                 success=True,
                 selected_features=selected_features_df,
                 selection_metadata={
-                    'advanced_selection': advanced_result.__dict__,
-                    'multi_objective': multi_objective_result.__dict__,
-                    'economic_validation': economic_result.__dict__,
-                    'vectorbt_optimization': vectorbt_result.__dict__
+                    'advanced_selection': _safe_to_meta(advanced_result),
+                    'multi_objective': _safe_to_meta(multi_objective_result),
+                    'economic_validation': _safe_to_meta(economic_result),
+                    'vectorbt_optimization': _safe_to_meta(vectorbt_result)
                 },
                 selection_metrics={
-                    'advanced_metrics': advanced_result.quality_metrics,
-                    'multi_objective_metrics': multi_objective_result.objective_values,
-                    'economic_metrics': economic_result.validation_metrics,
-                    'vectorbt_metrics': vectorbt_result.optimization_metrics
+                    'advanced_metrics': getattr(advanced_result, 'quality_metrics', {}),
+                    'multi_objective_metrics': getattr(multi_objective_result, 'objective_values', {}),
+                    'economic_metrics': getattr(economic_result, 'validation_metrics', {}),
+                    'vectorbt_metrics': getattr(vectorbt_result, 'optimization_metrics', {})
                 },
                 selection_strategy="sophisticated_multi_stage",
-                feature_importance=advanced_result.feature_importance,
-                economic_validation=economic_result.__dict__,
-                multi_objective_results=multi_objective_result.__dict__,
-                vectorbt_optimizations=vectorbt_result.__dict__,
-                quality_metrics=advanced_result.quality_metrics,
-                diversity_metrics=advanced_result.diversity_metrics,
-                stability_metrics=advanced_result.stability_metrics,
+                feature_importance=getattr(advanced_result, 'feature_importance', {}),
+                economic_validation=_safe_to_meta(economic_result),
+                multi_objective_results=_safe_to_meta(multi_objective_result),
+                vectorbt_optimizations=_safe_to_meta(vectorbt_result),
+                quality_metrics=getattr(advanced_result, 'quality_metrics', {}),
+                diversity_metrics=getattr(advanced_result, 'diversity_metrics', {}),
+                stability_metrics=getattr(advanced_result, 'stability_metrics', {}),
                 artifacts={
-                    'advanced_result': advanced_result.__dict__,
-                    'multi_objective_result': multi_objective_result.__dict__,
-                    'economic_result': economic_result.__dict__,
-                    'vectorbt_result': vectorbt_result.__dict__
+                    'advanced_result': _safe_to_meta(advanced_result),
+                    'multi_objective_result': _safe_to_meta(multi_objective_result),
+                    'economic_result': _safe_to_meta(economic_result),
+                    'vectorbt_result': _safe_to_meta(vectorbt_result)
                 }
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Sophisticated feature selection failed: {e}")
+            self.logger.error(f"❌ Sophisticated feature selection failed: {e}", exc_info=True)
             return FeatureSelectionResult(
                 success=False,
                 selected_features=pd.DataFrame(),
@@ -260,30 +368,33 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
         """Fallback feature selection when sophisticated components are not available."""
         
         try:
-            # Ensure data and targets are aligned and numeric
-            # Align indexes
-            common_index = data.index.intersection(targets.index)
-            if len(common_index) == 0:
-                raise ValueError("No common index between data and targets")
+            # Align data and targets first, then drop NaNs together
+            df = pd.concat([data, targets.rename("target")], axis=1).dropna()
+            if len(df) == 0:
+                raise ValueError("No valid data after alignment and NaN removal")
             
-            data_aligned = data.loc[common_index]
-            targets_aligned = targets.loc[common_index]
+            # Select only numeric columns
+            numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+            if "target" not in numeric_columns:
+                raise ValueError("Target column is not numeric")
             
-            # Select only numeric columns and drop rows with NaNs
-            numeric_columns = data_aligned.select_dtypes(include=[np.number]).columns
-            data_numeric = data_aligned[numeric_columns].dropna()
-            targets_numeric = targets_aligned.dropna()
+            # Remove target from feature columns
+            feature_columns = [col for col in numeric_columns if col != "target"]
+            if len(feature_columns) == 0:
+                raise ValueError("No numeric feature columns found")
             
-            # Re-align after dropping NaNs
-            common_index_clean = data_numeric.index.intersection(targets_numeric.index)
-            if len(common_index_clean) == 0:
-                raise ValueError("No valid data after cleaning NaNs")
+            X = df[feature_columns]
+            y = df["target"]
             
-            data_clean = data_numeric.loc[common_index_clean]
-            targets_clean = targets_numeric.loc[common_index_clean]
+            # Time-shift features to prevent target leakage
+            X_shifted = X.shift(1).dropna()
+            y_aligned = y.loc[X_shifted.index]
             
-            # Basic feature selection using correlation
-            correlations = data_clean.corrwith(targets_clean).abs().sort_values(ascending=False)
+            if len(X_shifted) == 0:
+                raise ValueError("No valid data after time-shifting")
+            
+            # Basic feature selection using correlation (on training period only)
+            correlations = X_shifted.corrwith(y_aligned).abs().sort_values(ascending=False)
             
             # Drop NaN correlations and ensure we have at least one feature
             correlations_clean = correlations.dropna()
@@ -294,8 +405,8 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
             n_features = max(1, min(len(correlations_clean), int(len(correlations_clean) * 0.2)))
             selected_features = correlations_clean.head(n_features).index.tolist()
             
-            # Create selected features dataframe
-            selected_data = data_clean[selected_features]
+            # Create selected features dataframe using original data (not shifted)
+            selected_data = data[selected_features]
             
             # Calculate basic feature importance
             feature_importance = correlations_clean[selected_features].to_dict()
@@ -317,6 +428,7 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
             )
             
         except Exception as e:
+            self.logger.error(f"❌ Fallback feature selection failed: {e}", exc_info=True)
             return FeatureSelectionResult(
                 success=False,
                 selected_features=pd.DataFrame(),
@@ -340,6 +452,7 @@ async def handle_feature_generation_feature_selection_step(
     timeframe: str = "15m",
     direction: str = "longs",
     custom_overrides: Optional[Dict[str, Any]] = None,
+    seed: int = 42,
     **kwargs
 ) -> FeatureSelectionResult:
     """
@@ -350,18 +463,20 @@ async def handle_feature_generation_feature_selection_step(
         timeframe: Timeframe (default: "15m")
         direction: Direction (default: "longs")
         custom_overrides: Custom configuration overrides (optional)
+        seed: Random seed for deterministic data generation (default: 42)
         **kwargs: Additional arguments
 
     Returns:
         Sophisticated FeatureSelectionResult with comprehensive selection results
     """
-    # Create sample data for feature selection (in real usage, this would come from data loading)
+    # Create deterministic sample data for feature selection
+    rng = np.random.default_rng(seed=seed)
     sample_data = pd.DataFrame({
-        'open': np.random.randn(1000).cumsum() + 100,
-        'high': np.random.randn(1000).cumsum() + 105,
-        'low': np.random.randn(1000).cumsum() + 95,
-        'close': np.random.randn(1000).cumsum() + 100,
-        'volume': np.random.randint(1000, 10000, 1000)
+        'open': rng.normal(size=1000).cumsum() + 100,
+        'high': rng.normal(size=1000).cumsum() + 105,
+        'low': rng.normal(size=1000).cumsum() + 95,
+        'close': rng.normal(size=1000).cumsum() + 100,
+        'volume': rng.integers(1000, 10000, 1000)
     })
 
     # Generate targets using the labeling system with proper error handling

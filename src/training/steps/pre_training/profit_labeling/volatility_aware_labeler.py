@@ -430,13 +430,16 @@ class VolatilityAwareMultiHorizonLabeler:
         labels_aligned, prices_aligned = _align_like(labels, prices)
         self.logger.info(f"DEBUG: After alignment - labels: {len(labels_aligned)}, prices: {len(prices_aligned)}")
         
-        # Only calculate quality for trade opportunities (positive labels)
-        trade_opportunities = labels_aligned[labels_aligned > 0]
+        # Only calculate quality for trade opportunities (non-zero labels: positive for longs, negative for shorts)
+        trade_opportunities = labels_aligned[labels_aligned != 0]
         if len(trade_opportunities) == 0:
             self.logger.warning(f"No trade opportunities found for {target_name}")
             return self._create_fallback_quality_score(reason="no_trade_opportunities")
         
+        long_opportunities = len(trade_opportunities[trade_opportunities > 0])
+        short_opportunities = len(trade_opportunities[trade_opportunities < 0])
         self.logger.info(f"DEBUG: Found {len(trade_opportunities)} trade opportunities out of {len(labels_aligned)} total samples")
+        self.logger.info(f"DEBUG: Long opportunities: {long_opportunities}, Short opportunities: {short_opportunities}")
         
         # Calculate potential profit for each trade opportunity
         potential_profits = self._calculate_potential_profits(trade_opportunities, prices_aligned, target_name)
@@ -467,7 +470,7 @@ class VolatilityAwareMultiHorizonLabeler:
         return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name)
     
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
-        """Calculate potential profit as max distance between min/max in 90min period."""
+        """Calculate potential profit based on signal direction in 90min period."""
         potential_profits = []
         
         for opportunity_idx in trade_opportunities.index:
@@ -478,11 +481,21 @@ class VolatilityAwareMultiHorizonLabeler:
             if window_end > window_start:
                 window_prices = prices.iloc[window_start:window_end]
                 if len(window_prices) > 1:
-                    # Calculate potential profit as (max - min) / min
-                    min_price = window_prices.min()
-                    max_price = window_prices.max()
-                    if min_price > 0:
-                        potential_profit = (max_price - min_price) / min_price
+                    start_price = window_prices.iloc[0]
+                    signal_direction = trade_opportunities.loc[opportunity_idx]
+                    
+                    if start_price > 0:
+                        if signal_direction > 0:  # Long signal
+                            # For longs: (max - start) / start (upward movement)
+                            max_price = window_prices.max()
+                            potential_profit = (max_price - start_price) / start_price
+                        elif signal_direction < 0:  # Short signal
+                            # For shorts: (start - min) / start (downward movement)
+                            min_price = window_prices.min()
+                            potential_profit = (start_price - min_price) / start_price
+                        else:  # No signal (shouldn't happen in trade_opportunities)
+                            potential_profit = 0.0
+                        
                         potential_profits.append(potential_profit)
                     else:
                         potential_profits.append(0.0)
@@ -1243,8 +1256,16 @@ class VolatilityAwareMultiHorizonLabeler:
                     )
                     pass_status = "✅ PASS" if (not red_flags and has_meaningful_metrics) else "❌ FAIL"
                     
+                    # Get direction info if available
+                    direction_info = ""
+                    if hasattr(quality, 'potential_profits') and len(quality.potential_profits) > 0:
+                        long_profits = quality.potential_profits[quality.potential_profits > 0]
+                        short_profits = quality.potential_profits[quality.potential_profits < 0]
+                        if len(long_profits) > 0 and len(short_profits) > 0:
+                            direction_info = f" | Long: {len(long_profits)}, Short: {len(short_profits)}"
+                    
                     self.logger.info(f"  🏆 {target_name} Trade Opportunity Quality: {pass_status}{red_flag_text}")
-                    self.logger.info(f"     IC: {ic_med:.4f} | HitRate: {hit_rate:.3f} | Coverage: {coverage:.1%}")
+                    self.logger.info(f"     IC: {ic_med:.4f} | HitRate: {hit_rate:.3f} | Coverage: {coverage:.1%}{direction_info}")
                     self.logger.info(f"     Stability: {stability:.3f} | Sharpe: {sharpe_norm:.3f} | Uplift: {uplift_bps:.1f}bps")
                     self.logger.info(f"     Avg Potential Profit: {avg_potential_profit:.1f}bps | Max: {max_potential_profit:.1f}bps | Overall: {quality.overall_quality:.3f}")
                     
@@ -1422,8 +1443,10 @@ class VolatilityAwareMultiHorizonLabeler:
                 
                 # Generate labels for this target
                 if self.config.label_type == LabelDefinitionType.BINARY:
-                    # Binary classification: 1 if return > threshold, 0 otherwise
-                    target_labels = (future_returns > effective_target).astype(np.uint8)
+                    # Binary classification: 1 if return > threshold (long), -1 if return < -threshold (short), 0 otherwise
+                    long_signals = (future_returns > effective_target).astype(np.int8)
+                    short_signals = (future_returns < -effective_target).astype(np.int8)
+                    target_labels = long_signals - short_signals  # 1 for long, -1 for short, 0 for no signal
                 else:
                     # Regression: use actual returns
                     target_labels = future_returns
@@ -1442,22 +1465,29 @@ class VolatilityAwareMultiHorizonLabeler:
                 low_vol_mask = volatility <= self.config.volatility_threshold
 
                 labels = pd.Series(0, index=prices.index, dtype=np.uint8)
-                # Proper thresholds for 90min period (6*15m): 0.5% minimum, higher with volatility
+                # Use existing volatility-modulated threshold logic with 0.5% minimum
                 base_threshold = 0.005  # 0.5% minimum
-                high_vol_threshold = base_threshold * 1.5  # 0.75% for high volatility
-                low_vol_threshold = base_threshold  # 0.5% for low volatility
                 
-                labels[high_vol_mask] = (future_returns[high_vol_mask] > high_vol_threshold).astype(np.uint8)
-                labels[low_vol_mask] = (future_returns[low_vol_mask] > low_vol_threshold).astype(np.uint8)
+                # Apply volatility modulation: effective_target = base_target * clip(1 + k*(vol/vol_mean - 1), 0.5, 2.0)
+                k = self.config.volatility.sensitivity  # Tunable parameter
+                effective_threshold = base_threshold * np.clip(1.0 + k * (vol_normalized - 1.0), 0.5, 2.0)
+                
+                # Generate both long and short signals
+                long_signals = (future_returns > effective_threshold).astype(np.int8)
+                short_signals = (future_returns < -effective_threshold).astype(np.int8)
+                labels = long_signals - short_signals  # 1 for long, -1 for short, 0 for no signal
                 
                 # Debug: Log return statistics
                 self.logger.info(f"DEBUG: Return stats - mean: {future_returns.mean():.6f}, std: {future_returns.std():.6f}")
                 self.logger.info(f"DEBUG: Return percentiles - 50%: {future_returns.quantile(0.5):.6f}, 75%: {future_returns.quantile(0.75):.6f}, 90%: {future_returns.quantile(0.9):.6f}")
                 self.logger.info(f"DEBUG: Return percentiles - 95%: {future_returns.quantile(0.95):.6f}, 99%: {future_returns.quantile(0.99):.6f}")
-                self.logger.info(f"DEBUG: Profit thresholds - high_vol: {high_vol_threshold:.4f}, low_vol: {low_vol_threshold:.4f}")
-                self.logger.info(f"DEBUG: Positive rate with new thresholds: {(labels > 0).mean():.3f}")
+                self.logger.info(f"DEBUG: Volatility-modulated thresholds - base: {base_threshold:.4f}, effective range: {effective_threshold.min():.4f} to {effective_threshold.max():.4f}")
+                long_rate = (labels > 0).mean()
+                short_rate = (labels < 0).mean()
+                signal_rate = (labels != 0).mean()
+                self.logger.info(f"DEBUG: Signal rates - Long: {long_rate:.3f}, Short: {short_rate:.3f}, Total: {signal_rate:.3f}")
                 self.logger.info(f"DEBUG: Volatility stats - mean: {volatility.mean():.6f}, std: {volatility.std():.6f}")
-                self.logger.info(f"DEBUG: High vol ratio: {(volatility > self.config.volatility_threshold).mean():.3f}")
+                self.logger.info(f"DEBUG: Volatility sensitivity (k): {k}")
             else:
                 # Regression: use actual returns
                 labels = future_returns

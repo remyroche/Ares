@@ -768,6 +768,766 @@ class ModularComponent(ABC):
         """Validate data with component-specific rules. Override in subclasses."""
         return {'errors': [], 'warnings': [], 'metadata': {}}
 
+    # ============================================================================
+    # CONFIGURATION MANAGEMENT METHODS
+    # ============================================================================
+
+    def get_config(self, key: str = None, default: Any = None) -> Any:
+        """
+        Get configuration value(s).
+        
+        Args:
+            key: Configuration key to retrieve. If None, returns entire config dict.
+            default: Default value if key not found (only used when key is provided).
+            
+        Returns:
+            Any: Configuration value or entire config dictionary.
+        """
+        if key is None:
+            return self.config.copy()
+        
+        if key in self.config:
+            return self.config[key]
+        
+        # Check for nested keys (e.g., 'parent.child')
+        if '.' in key:
+            keys = key.split('.')
+            value = self.config
+            try:
+                for k in keys:
+                    value = value[k]
+                return value
+            except (KeyError, TypeError):
+                pass
+        
+        return default
+
+    def update_config(self, config: Dict[str, Any]) -> None:
+        """
+        Update component configuration.
+        
+        Args:
+            config: Dictionary of configuration updates.
+        """
+        if not isinstance(config, dict):
+            raise TypeError("Configuration must be a dictionary")
+        
+        # Validate configuration keys
+        for key, value in config.items():
+            if not isinstance(key, str):
+                raise TypeError(f"Configuration key must be string, got {type(key)}")
+        
+        # Update configuration
+        self.config.update(config)
+        
+        # Log configuration update
+        self.logger.debug(f"Updated configuration for component {self.name}: {list(config.keys())}")
+        
+        # Trigger configuration change callback if implemented
+        if hasattr(self, '_on_config_changed'):
+            try:
+                self._on_config_changed(config)
+            except Exception as e:
+                self.logger.warning(f"Configuration change callback failed: {e}")
+
+    def validate_config(self) -> bool:
+        """
+        Validate component configuration.
+        
+        Returns:
+            bool: True if configuration is valid, False otherwise.
+        """
+        try:
+            # Check required configuration parameters
+            required_config = self.get_required_config()
+            missing_config = []
+            
+            for key in required_config:
+                if key not in self.config:
+                    missing_config.append(key)
+            
+            if missing_config:
+                self.logger.error(f"Missing required configuration keys: {missing_config}")
+                return False
+            
+            # Validate configuration values
+            validation_errors = []
+            
+            for key, value in self.config.items():
+                try:
+                    self._validate_config_value(key, value)
+                except ValueError as e:
+                    validation_errors.append(f"Invalid value for '{key}': {e}")
+            
+            if validation_errors:
+                self.logger.error(f"Configuration validation errors: {validation_errors}")
+                return False
+            
+            # Component-specific configuration validation
+            if hasattr(self, '_validate_component_config'):
+                try:
+                    component_validation = self._validate_component_config()
+                    if not component_validation:
+                        self.logger.error("Component-specific configuration validation failed")
+                        return False
+                except Exception as e:
+                    self.logger.error(f"Component configuration validation error: {e}")
+                    return False
+            
+            self.logger.debug(f"Configuration validation passed for component {self.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Configuration validation failed: {e}")
+            return False
+
+    def _validate_config_value(self, key: str, value: Any) -> None:
+        """
+        Validate a single configuration value.
+        
+        Args:
+            key: Configuration key.
+            value: Configuration value.
+            
+        Raises:
+            ValueError: If value is invalid.
+        """
+        # Basic type validation based on key patterns
+        if key.endswith('_mb') and not isinstance(value, (int, float)):
+            raise ValueError(f"Memory configuration must be numeric, got {type(value)}")
+        
+        if key.endswith('_seconds') and not isinstance(value, (int, float)):
+            raise ValueError(f"Time configuration must be numeric, got {type(value)}")
+        
+        if key.endswith('_enabled') and not isinstance(value, bool):
+            raise ValueError(f"Boolean configuration must be bool, got {type(value)}")
+        
+        if key.endswith('_factor') and (not isinstance(value, (int, float)) or value <= 0):
+            raise ValueError(f"Factor configuration must be positive numeric, got {value}")
+
+    # ============================================================================
+    # STATE MANAGEMENT METHODS
+    # ============================================================================
+
+    def set_state(self, key: str, value: Any) -> None:
+        """
+        Set component state.
+        
+        Args:
+            key: State key.
+            value: State value.
+        """
+        if not isinstance(key, str):
+            raise TypeError("State key must be a string")
+        
+        # Store previous value for change tracking
+        previous_value = self._state.get(key)
+        
+        # Set new value
+        self._state[key] = value
+        
+        # Log state change if value changed
+        if previous_value != value:
+            self.logger.debug(f"State changed for {self.name}: {key} = {value}")
+            
+            # Trigger state change callback if implemented
+            if hasattr(self, '_on_state_changed'):
+                try:
+                    self._on_state_changed(key, value, previous_value)
+                except Exception as e:
+                    self.logger.warning(f"State change callback failed: {e}")
+
+    def get_state(self, key: str, default: Any = None) -> Any:
+        """
+        Get component state.
+        
+        Args:
+            key: State key.
+            default: Default value if key not found.
+            
+        Returns:
+            Any: State value or default.
+        """
+        if not isinstance(key, str):
+            raise TypeError("State key must be a string")
+        
+        return self._state.get(key, default)
+
+    def clear_state(self) -> None:
+        """
+        Clear all component state.
+        """
+        state_keys = list(self._state.keys())
+        self._state.clear()
+        
+        if state_keys:
+            self.logger.debug(f"Cleared state for {self.name}: {state_keys}")
+
+    def get_all_state(self) -> Dict[str, Any]:
+        """
+        Get all component state.
+        
+        Returns:
+            Dict[str, Any]: Copy of all state.
+        """
+        return self._state.copy()
+
+    def has_state(self, key: str) -> bool:
+        """
+        Check if state key exists.
+        
+        Args:
+            key: State key to check.
+            
+        Returns:
+            bool: True if key exists, False otherwise.
+        """
+        return key in self._state
+
+    def remove_state(self, key: str) -> Any:
+        """
+        Remove state key and return its value.
+        
+        Args:
+            key: State key to remove.
+            
+        Returns:
+            Any: Removed value or None if key didn't exist.
+        """
+        return self._state.pop(key, None)
+
+    # ============================================================================
+    # PERFORMANCE MONITORING METHODS
+    # ============================================================================
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive performance statistics.
+        
+        Returns:
+            Dict[str, Any]: Performance statistics including rates and averages.
+        """
+        stats = self.performance_stats.copy()
+        
+        # Calculate additional metrics
+        total_ops = stats['total_operations']
+        if total_ops > 0:
+            stats['success_rate'] = stats['successful_operations'] / total_ops
+            stats['failure_rate'] = stats['failed_operations'] / total_ops
+            stats['avg_processing_time'] = stats['total_time'] / total_ops
+        else:
+            stats['success_rate'] = 0.0
+            stats['failure_rate'] = 0.0
+            stats['avg_processing_time'] = 0.0
+        
+        # Add component-specific performance data
+        if hasattr(self, '_get_component_performance_stats'):
+            try:
+                component_stats = self._get_component_performance_stats()
+                stats.update(component_stats)
+            except Exception as e:
+                self.logger.warning(f"Failed to get component performance stats: {e}")
+        
+        return stats
+
+    def reset_stats(self) -> None:
+        """
+        Reset performance statistics.
+        """
+        old_stats = self.performance_stats.copy()
+        self.performance_stats = {
+            'total_operations': 0,
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'total_time': 0.0
+        }
+        
+        self.logger.debug(f"Reset performance statistics for {self.name}: {old_stats}")
+
+    def _update_performance_stats(self, success: bool, processing_time: float) -> None:
+        """
+        Update performance statistics.
+        
+        Args:
+            success: Whether operation was successful.
+            processing_time: Time taken for operation in seconds.
+        """
+        self.performance_stats['total_operations'] += 1
+        
+        if success:
+            self.performance_stats['successful_operations'] += 1
+        else:
+            self.performance_stats['failed_operations'] += 1
+        
+        self.performance_stats['total_time'] += processing_time
+
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """
+        Get performance summary with additional analysis.
+        
+        Returns:
+            Dict[str, Any]: Performance summary with trends and analysis.
+        """
+        stats = self.get_performance_stats()
+        
+        # Add performance analysis
+        summary = {
+            'component_name': self.name,
+            'performance_stats': stats,
+            'performance_grade': self._calculate_performance_grade(stats),
+            'recommendations': self._get_performance_recommendations(stats)
+        }
+        
+        return summary
+
+    def _calculate_performance_grade(self, stats: Dict[str, Any]) -> str:
+        """
+        Calculate performance grade based on statistics.
+        
+        Args:
+            stats: Performance statistics.
+            
+        Returns:
+            str: Performance grade (A, B, C, D, F).
+        """
+        success_rate = stats.get('success_rate', 0)
+        avg_time = stats.get('avg_processing_time', 0)
+        
+        if success_rate >= 0.95 and avg_time <= 0.1:
+            return 'A'
+        elif success_rate >= 0.90 and avg_time <= 0.5:
+            return 'B'
+        elif success_rate >= 0.80 and avg_time <= 1.0:
+            return 'C'
+        elif success_rate >= 0.70:
+            return 'D'
+        else:
+            return 'F'
+
+    def _get_performance_recommendations(self, stats: Dict[str, Any]) -> List[str]:
+        """
+        Get performance improvement recommendations.
+        
+        Args:
+            stats: Performance statistics.
+            
+        Returns:
+            List[str]: List of recommendations.
+        """
+        recommendations = []
+        
+        success_rate = stats.get('success_rate', 0)
+        avg_time = stats.get('avg_processing_time', 0)
+        
+        if success_rate < 0.90:
+            recommendations.append("Consider improving error handling to increase success rate")
+        
+        if avg_time > 1.0:
+            recommendations.append("Consider optimizing processing logic to reduce execution time")
+        
+        if stats.get('total_operations', 0) == 0:
+            recommendations.append("Component has not been used - consider testing")
+        
+        return recommendations
+
+    # ============================================================================
+    # LIFECYCLE MANAGEMENT METHODS
+    # ============================================================================
+
+    def is_initialized(self) -> bool:
+        """
+        Check if component is initialized.
+        
+        Returns:
+            bool: True if initialized, False otherwise.
+        """
+        return self._initialized
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get comprehensive component status.
+        
+        Returns:
+            Dict[str, Any]: Component status including health, performance, and state.
+        """
+        status = {
+            'name': self.name,
+            'initialized': self._initialized,
+            'health': self._calculate_health_status(),
+            'config': self.config.copy(),
+            'performance_stats': self.get_performance_stats(),
+            'state_keys': list(self._state.keys()),
+            'dependencies': self.get_dependencies(),
+            'capabilities': self.get_processing_capabilities()
+        }
+        
+        # Add component-specific status if available
+        if hasattr(self, '_get_component_status'):
+            try:
+                component_status = self._get_component_status()
+                status.update(component_status)
+            except Exception as e:
+                self.logger.warning(f"Failed to get component status: {e}")
+        
+        return status
+
+    def _calculate_health_status(self) -> str:
+        """
+        Calculate component health status.
+        
+        Returns:
+            str: Health status (healthy, warning, critical).
+        """
+        if not self._initialized:
+            return 'critical'
+        
+        stats = self.performance_stats
+        total_ops = stats['total_operations']
+        
+        if total_ops == 0:
+            return 'warning'  # No operations yet
+        
+        success_rate = stats['successful_operations'] / total_ops
+        failure_rate = stats['failed_operations'] / total_ops
+        
+        if failure_rate > 0.5:
+            return 'critical'
+        elif failure_rate > 0.1 or success_rate < 0.8:
+            return 'warning'
+        else:
+            return 'healthy'
+
+    def get_health_report(self) -> Dict[str, Any]:
+        """
+        Get detailed health report.
+        
+        Returns:
+            Dict[str, Any]: Comprehensive health report.
+        """
+        status = self.get_status()
+        stats = self.get_performance_stats()
+        
+        return {
+            'component_name': self.name,
+            'overall_health': status['health'],
+            'initialization_status': self._initialized,
+            'performance_metrics': {
+                'total_operations': stats['total_operations'],
+                'success_rate': stats['success_rate'],
+                'failure_rate': stats['failure_rate'],
+                'avg_processing_time': stats['avg_processing_time']
+            },
+            'configuration_status': self.validate_config(),
+            'state_size': len(self._state),
+            'recommendations': self._get_health_recommendations(status, stats)
+        }
+
+    def _get_health_recommendations(self, status: Dict[str, Any], stats: Dict[str, Any]) -> List[str]:
+        """
+        Get health improvement recommendations.
+        
+        Args:
+            status: Component status.
+            stats: Performance statistics.
+            
+        Returns:
+            List[str]: List of health recommendations.
+        """
+        recommendations = []
+        
+        if not self._initialized:
+            recommendations.append("Initialize component before use")
+        
+        if not self.validate_config():
+            recommendations.append("Fix configuration issues")
+        
+        if stats['failure_rate'] > 0.1:
+            recommendations.append("Investigate and fix frequent failures")
+        
+        if stats['avg_processing_time'] > 1.0:
+            recommendations.append("Optimize processing performance")
+        
+        return recommendations
+
+    # ============================================================================
+    # SERIALIZATION METHODS
+    # ============================================================================
+
+    def serialize(self) -> Dict[str, Any]:
+        """
+        Serialize component for persistence.
+        
+        Returns:
+            Dict[str, Any]: Serialized component data.
+        """
+        try:
+            serialized = {
+                'component_class': self.__class__.__name__,
+                'name': self.name,
+                'config': self.config.copy(),
+                'state': self._state.copy(),
+                'performance_stats': self.performance_stats.copy(),
+                'initialized': self._initialized,
+                'timestamp': time.time(),
+                'version': getattr(self, 'version', '1.0.0')
+            }
+            
+            # Add component-specific serialization if available
+            if hasattr(self, '_serialize_component_data'):
+                try:
+                    component_data = self._serialize_component_data()
+                    serialized['component_data'] = component_data
+                except Exception as e:
+                    self.logger.warning(f"Component serialization failed: {e}")
+            
+            self.logger.debug(f"Serialized component {self.name}")
+            return serialized
+            
+        except Exception as e:
+            self.logger.error(f"Serialization failed for component {self.name}: {e}")
+            raise
+
+    def deserialize(self, data: Dict[str, Any]) -> None:
+        """
+        Deserialize component from persisted data.
+        
+        Args:
+            data: Serialized component data.
+        """
+        try:
+            # Validate serialized data
+            required_keys = ['name', 'config', 'state', 'performance_stats']
+            missing_keys = [key for key in required_keys if key not in data]
+            if missing_keys:
+                raise ValueError(f"Missing required keys in serialized data: {missing_keys}")
+            
+            # Restore basic properties
+            self.name = data['name']
+            self.config = data.get('config', {})
+            self._state = data.get('state', {})
+            self.performance_stats = data.get('performance_stats', {
+                'total_operations': 0,
+                'successful_operations': 0,
+                'failed_operations': 0,
+                'total_time': 0.0
+            })
+            self._initialized = data.get('initialized', False)
+            
+            # Restore component-specific data if available
+            if 'component_data' in data and hasattr(self, '_deserialize_component_data'):
+                try:
+                    self._deserialize_component_data(data['component_data'])
+                except Exception as e:
+                    self.logger.warning(f"Component deserialization failed: {e}")
+            
+            self.logger.debug(f"Deserialized component {self.name}")
+            
+        except Exception as e:
+            self.logger.error(f"Deserialization failed for component {self.name}: {e}")
+            raise
+
+    def save_to_file(self, filepath: str) -> None:
+        """
+        Save component to file.
+        
+        Args:
+            filepath: Path to save file.
+        """
+        import json
+        import os
+        
+        try:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
+            # Serialize and save
+            serialized_data = self.serialize()
+            
+            with open(filepath, 'w') as f:
+                json.dump(serialized_data, f, indent=2, default=str)
+            
+            self.logger.info(f"Saved component {self.name} to {filepath}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save component to file: {e}")
+            raise
+
+    def load_from_file(self, filepath: str) -> None:
+        """
+        Load component from file.
+        
+        Args:
+            filepath: Path to load file from.
+        """
+        import json
+        
+        try:
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            
+            self.deserialize(data)
+            self.logger.info(f"Loaded component {self.name} from {filepath}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load component from file: {e}")
+            raise
+
+    # ============================================================================
+    # SAFE PROCESSING METHODS
+    # ============================================================================
+
+    def _safe_process(self, data: Any, **kwargs) -> Any:
+        """
+        Safely process data with comprehensive error handling and performance tracking.
+        
+        Args:
+            data: Input data to process.
+            **kwargs: Additional processing parameters.
+            
+        Returns:
+            Any: Processed data.
+            
+        Raises:
+            ValueError: If input validation fails.
+            RuntimeError: If processing fails.
+            MemoryError: If memory requirements exceed limits.
+        """
+        start_time = time.time()
+        success = False
+        result = None
+        
+        try:
+            # Pre-processing validation
+            if not self._initialized:
+                raise RuntimeError(f"Component {self.name} is not initialized")
+            
+            # Validate input
+            validation_result = self.validate_input(data)
+            if not validation_result.is_valid:
+                raise ValueError(f"Input validation failed: {validation_result.errors}")
+            
+            # Check processing capability
+            if not self.can_process(data):
+                raise ValueError(f"Component {self.name} cannot process the given data")
+            
+            # Check memory requirements
+            if not self._check_memory_usage(data):
+                raise MemoryError(f"Insufficient memory to process data in component {self.name}")
+            
+            # Log processing start
+            self.logger.debug(f"Starting processing in component {self.name}")
+            
+            # Process the data
+            result = self.process(data, **kwargs)
+            success = True
+            
+            # Log processing completion
+            self.logger.debug(f"Processing completed successfully in component {self.name}")
+            
+        except Exception as e:
+            # Log error details
+            self.logger.error(f"Processing failed in component {self.name}: {str(e)}")
+            
+            # Handle specific error types
+            if isinstance(e, (ValueError, RuntimeError, MemoryError)):
+                raise
+            else:
+                # Wrap unexpected errors
+                raise RuntimeError(f"Unexpected error in component {self.name}: {str(e)}") from e
+                
+        finally:
+            # Update performance statistics
+            processing_time = time.time() - start_time
+            self._update_performance_stats(success, processing_time)
+            self._log_operation("process", success, processing_time)
+            
+            # Store processing metadata
+            self.set_state('last_processing_time', processing_time)
+            self.set_state('last_processing_success', success)
+            if success:
+                self.set_state('last_processing_result_type', type(result).__name__)
+        
+        return result
+
+    def _check_memory_usage(self, data: Any) -> bool:
+        """
+        Check if there's enough memory to process the data.
+        
+        Args:
+            data: Data to check memory for.
+            
+        Returns:
+            bool: True if sufficient memory available, False otherwise.
+        """
+        try:
+            # Get memory requirements
+            memory_req = self.get_memory_requirements(data)
+            estimated_memory = memory_req.get('estimated_memory_mb', 0)
+            
+            # Get memory limit from config
+            memory_limit = self.get_config('memory_limit_mb', 1024)  # Default 1GB
+            
+            # Check if estimated memory exceeds limit
+            if estimated_memory > memory_limit:
+                self.logger.warning(f"Estimated memory usage ({estimated_memory:.2f}MB) exceeds limit ({memory_limit}MB)")
+                return False
+            
+            # Additional memory checks could be added here (e.g., system memory check)
+            return True
+            
+        except Exception as e:
+            self.logger.warning(f"Memory check failed: {e}")
+            return True  # Allow processing if check fails
+
+    def _log_operation(self, operation: str, success: bool, processing_time: float) -> None:
+        """
+        Log operation details with appropriate level.
+        
+        Args:
+            operation: Operation name.
+            success: Whether operation was successful.
+            processing_time: Time taken for operation.
+        """
+        status = "SUCCESS" if success else "FAILED"
+        message = f"Operation '{operation}' {status} in {processing_time:.4f}s"
+        
+        if success:
+            self.logger.debug(message)
+        else:
+            self.logger.error(message)
+        
+        # Log performance warnings
+        if processing_time > self.get_config('slow_operation_threshold', 5.0):
+            self.logger.warning(f"Slow operation detected: {operation} took {processing_time:.4f}s")
+
+    def _validate_dependencies(self, dependencies: List[str]) -> bool:
+        """
+        Validate that all dependencies are available.
+        
+        Args:
+            dependencies: List of dependency names.
+            
+        Returns:
+            bool: True if all dependencies available, False otherwise.
+        """
+        try:
+            for dep in dependencies:
+                if dep == 'pandas':
+                    import pandas
+                elif dep == 'numpy':
+                    import numpy
+                elif dep == 'sklearn':
+                    import sklearn
+                else:
+                    # Try generic import
+                    __import__(dep)
+            
+            return True
+            
+        except ImportError as e:
+            self.logger.warning(f"Dependency check failed: {e}")
+            return False
+
 class ExampleModularComponent(ModularComponent):
     """Example implementation of ModularComponent for demonstration purposes."""
 

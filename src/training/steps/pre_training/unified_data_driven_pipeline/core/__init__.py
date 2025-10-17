@@ -75,6 +75,18 @@ from .modular_pipeline_integration import (
     integrate_with_consolidated_pipeline
 )
 
+from .modular_monitoring import (
+    ModularComponentMonitor,
+    ComponentMetrics,
+    PipelineMetrics,
+    create_monitor
+)
+
+from .modular_dashboard import (
+    ModularDashboard,
+    create_dashboard
+)
+
 __all__ = [
     # Configuration
     'UnifiedPipelineConfig',
@@ -132,5 +144,13 @@ __all__ = [
     # Pipeline integration
     'ModularPipelineOrchestrator',
     'create_modular_pipeline_orchestrator',
-    'integrate_with_consolidated_pipeline'
+    'integrate_with_consolidated_pipeline',
+    
+    # Monitoring and dashboard
+    'ModularComponentMonitor',
+    'ComponentMetrics',
+    'PipelineMetrics',
+    'create_monitor',
+    'ModularDashboard',
+    'create_dashboard'
 ]

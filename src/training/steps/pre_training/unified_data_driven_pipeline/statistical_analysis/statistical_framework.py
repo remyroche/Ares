@@ -188,12 +188,91 @@ class StatisticalTest(ABC):
     """Abstract base class for statistical tests."""
 
     def test(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-        """Perform the statistical test."""
-        raise NotImplementedError("Subclasses must implement the test method")
+        """
+        Perform the statistical test.
+        
+        Args:
+            data: Input DataFrame containing the data to test
+            **kwargs: Additional keyword arguments specific to the test
+            
+        Returns:
+            Dictionary containing test results including statistics, p-values, and other relevant metrics
+        """
+        # Validate input data
+        if data is None or data.empty:
+            raise ValueError("Input data cannot be None or empty")
+        
+        if not isinstance(data, pd.DataFrame):
+            raise TypeError("Input data must be a pandas DataFrame")
+        
+        # Basic data validation
+        if data.shape[0] < 2:
+            raise ValueError("Data must contain at least 2 samples for statistical testing")
+        
+        # Log test initiation
+        tprint_info(f"Performing statistical test on {data.shape[0]} samples, {data.shape[1]} features")
+        
+        # Default implementation - subclasses should override this
+        results = {
+            'test_type': self.__class__.__name__,
+            'n_samples': data.shape[0],
+            'n_features': data.shape[1],
+            'data_shape': data.shape,
+            'missing_values': data.isnull().sum().sum(),
+            'test_performed': False,
+            'message': 'Default implementation - subclass should override test method'
+        }
+        
+        tprint_warning("Using default test implementation - subclass should override test method")
+        return results
 
     def is_significant(self, result: Dict[str, Any], alpha: float = 0.05) -> bool:
-        """Check if the result is statistically significant."""
-        raise NotImplementedError("Subclasses must implement the is_significant method")
+        """
+        Check if the test result is statistically significant.
+        
+        Args:
+            result: Dictionary containing test results from the test method
+            alpha: Significance level (default: 0.05)
+            
+        Returns:
+            Boolean indicating whether the result is statistically significant
+        """
+        # Validate inputs
+        if result is None:
+            raise ValueError("Test result cannot be None")
+        
+        if not isinstance(result, dict):
+            raise TypeError("Test result must be a dictionary")
+        
+        if not (0 < alpha < 1):
+            raise ValueError("Alpha must be between 0 and 1")
+        
+        # Default implementation - look for p-value in result
+        if 'pvalue' in result:
+            p_value = result['pvalue']
+            if isinstance(p_value, (int, float)) and not pd.isna(p_value):
+                return p_value < alpha
+        
+        # Look for p_values (plural) in result
+        if 'p_values' in result:
+            p_values = result['p_values']
+            if isinstance(p_values, (list, tuple, np.ndarray)):
+                # Check if any p-value is significant
+                return any(isinstance(p, (int, float)) and not pd.isna(p) and p < alpha for p in p_values)
+            elif isinstance(p_values, pd.DataFrame):
+                # For DataFrame, check if any value is significant
+                return (p_values < alpha).any().any()
+        
+        # Look for significance indicators
+        if 'is_significant' in result:
+            return bool(result['is_significant'])
+        
+        if 'significant' in result:
+            return bool(result['significant'])
+        
+        # Default: assume not significant if no clear indicator
+        tprint_warning("No clear significance indicator found in result - assuming not significant")
+        return False
 
 class NormalityTest(StatisticalTest):
     """Test for normality using multiple methods."""

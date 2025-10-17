@@ -223,34 +223,39 @@ def apply_negative_learning_patches():
     logger.info("🔧 Applying negative learning patches to training functions...")
 
     try:
-        # Note: Analyst models training has been migrated to ModularComponent architecture
-        # and no longer needs patches. Only tactician components remain.
-        
-        # Import tactician training module
-        try:
-            from . import tactician_models_training
-            tactician_available = True
-        except ImportError:
-            tactician_available = False
-            logger.warning("⚠️ Tactician models training not available")
+        # Import the training modules
+        from . import analyst_models_training
+        from . import tactician_models_training
 
-        # Patch Tactician training functions (if available)
-        if tactician_available:
-            if hasattr(tactician_models_training, 'execute_tactician_models_training'):
-                tactician_models_training.execute_tactician_models_training = patch_tactician_training_function(
-                    tactician_models_training.execute_tactician_models_training
+        # Patch Analyst training functions
+        if hasattr(analyst_models_training, 'execute_analyst_models_training'):
+            analyst_models_training.execute_analyst_models_training = patch_analyst_training_function(
+                analyst_models_training.execute_analyst_models_training
+            )
+            logger.info("✅ Patched execute_analyst_models_training")
+
+        if hasattr(analyst_models_training, 'AnalystModelsTrainingStep'):
+            if hasattr(analyst_models_training.AnalystModelsTrainingStep, 'train_analyst_models'):
+                analyst_models_training.AnalystModelsTrainingStep.train_analyst_models = patch_analyst_training_function(
+                    analyst_models_training.AnalystModelsTrainingStep.train_analyst_models
                 )
-                logger.info("✅ Patched execute_tactician_models_training")
+                logger.info("✅ Patched AnalystModelsTrainingStep.train_analyst_models")
 
-            if hasattr(tactician_models_training, 'TacticianModelsTrainingStep'):
-                if hasattr(tactician_models_training.TacticianModelsTrainingStep, 'train_tactician_models'):
-                    tactician_models_training.TacticianModelsTrainingStep.train_tactician_models = patch_tactician_training_function(
-                        tactician_models_training.TacticianModelsTrainingStep.train_tactician_models
-                    )
-                    logger.info("✅ Patched TacticianModelsTrainingStep.train_tactician_models")
+        # Patch Tactician training functions
+        if hasattr(tactician_models_training, 'execute_tactician_models_training'):
+            tactician_models_training.execute_tactician_models_training = patch_tactician_training_function(
+                tactician_models_training.execute_tactician_models_training
+            )
+            logger.info("✅ Patched execute_tactician_models_training")
 
-        logger.info("✅ Negative learning patches applied successfully")
-        logger.info("ℹ️ Note: Analyst components now use ModularComponent architecture with built-in negative learning support")
+        if hasattr(tactician_models_training, 'TacticianModelsTrainingStep'):
+            if hasattr(tactician_models_training.TacticianModelsTrainingStep, 'train_tactician_models'):
+                tactician_models_training.TacticianModelsTrainingStep.train_tactician_models = patch_tactician_training_function(
+                    tactician_models_training.TacticianModelsTrainingStep.train_tactician_models
+                )
+                logger.info("✅ Patched TacticianModelsTrainingStep.train_tactician_models")
+
+        logger.info("✅ All negative learning patches applied successfully")
 
     except Exception as e:
         logger.error(f"Failed to apply negative learning patches: {e}")

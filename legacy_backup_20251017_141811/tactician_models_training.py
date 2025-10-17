@@ -2,10 +2,11 @@
 Tactician Models Training - Base Model Training Module
 
 This module handles training of individual Tactician base models:
-- LGBM + small GRU model
-- CatBoost model
-- Causal Dilated TCN model
-- Stacker LGBM Calibrated (meta-learner)
+- RandomSurvivalForest model
+- XGBoost model
+- ElasticNetCV model
+- NAS (Neural Architecture Search) model
+- TAS (Tree-based Architecture Search) model
 
 The Tactician operates on the 15m timeframe and decides WHEN to trade using only
 Analyst-provided green-signal filtered windows (>0.4% confidence threshold), refining entries after the
@@ -164,6 +165,12 @@ class TacticianModelType(Enum):
     CAUSAL_TCN = "CAUSAL_TCN"  # Causal Dilated TCN
     STACKER_LGBM_CALIBRATED = "STACKER_LGBM_CALIBRATED"  # Meta-learner
 
+    # Legacy models (for backward compatibility)
+    RANDOM_SURVIVAL_FOREST = "RANDOM_SURVIVAL_FOREST"
+    XGBOOST = "XGBOOST"
+    ELASTIC_NET_CV = "ELASTIC_NET_CV"
+    NAS = "NAS"
+    TAS = "TAS"
 
 @dataclass
 class TacticianModelsTrainingConfig:
@@ -194,6 +201,8 @@ class TacticianModelsTrainingConfig:
             TacticianModelType.CATBOOST,
             TacticianModelType.CAUSAL_TCN,
             TacticianModelType.STACKER_LGBM_CALIBRATED,
+            TacticianModelType.NAS,
+            TacticianModelType.TAS,
         ]
 
         if self.model_types is None:
@@ -201,7 +210,9 @@ class TacticianModelsTrainingConfig:
                 TacticianModelType.LGBM_GRU,
                 TacticianModelType.CATBOOST,
                 TacticianModelType.CAUSAL_TCN,
-                TacticianModelType.STACKER_LGBM_CALIBRATED
+                TacticianModelType.STACKER_LGBM_CALIBRATED,
+                TacticianModelType.NAS,
+                TacticianModelType.TAS
             ]
         else:
             normalized_types: List[TacticianModelType] = []
@@ -435,6 +446,7 @@ class TacticianModelsTrainingStep:
                 try:
                     tprint_info(f"🔧 Training {model_type.value} model...")
 
+                    if model_type in {TacticianModelType.NAS, TacticianModelType.TAS}:
                         training_result = await self._train_nas_tas_timing_models(
                             model_type=model_type,
                             training_data=training_data,
@@ -718,6 +730,12 @@ class TacticianModelsTrainingStep:
                 return await self._train_causal_tcn(X, y, sample_weight, **kwargs)
             elif model_type == TacticianModelType.STACKER_LGBM_CALIBRATED:
                 return await self._train_stacker_lgbm_calibrated(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.RANDOM_SURVIVAL_FOREST:
+                return await self._train_random_survival_forest(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.XGBOOST:
+                return await self._train_xgboost(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.ELASTIC_NET_CV:
+                return await self._train_elastic_net_cv(X, y, sample_weight, **kwargs)
             else:
                 raise ValueError(f"Unknown model type: {model_type}")
 

@@ -2,7 +2,7 @@
 Tactician Training Pipeline - Unified Pipeline for Base and Ensemble Training
 
 This pipeline orchestrates the training of Tactician models by:
-1. Training base models (LGBM+GRU, CatBoost, Causal Dilated TCN, Stacker LGBM Calibrated)
+1. Training base models (RandomSurvivalForest, XGBoost, ElasticNetCV)
 2. Training ensemble models with full feature integration
 
 The pipeline supports both short and long timeframes with proper feature differentiation.
@@ -27,7 +27,7 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 
-# Import tactician training components
+# Import new modular training components
 try:
     from .tactician_models_training import (
         TacticianModelsTrainingStep, TacticianModelsTrainingConfig,
@@ -48,9 +48,6 @@ try:
 except ImportError as e:
     print(f"❌ CRITICAL: Failed to import ensemble training: {e}")
     ENSEMBLE_TRAINING_AVAILABLE = False
-
-# Note: This pipeline will be replaced by ModularComponent architecture
-# when tactician components are migrated
 
 # Enhanced imports with comprehensive error handling
 try:
@@ -132,7 +129,10 @@ class TacticianTrainingPipelineConfig:
         if self.base_model_types is None:
             self.base_model_types = [
                 TacticianModelType.RANDOM_SURVIVAL_FOREST,
+                TacticianModelType.XGBOOST,
                 TacticianModelType.ELASTIC_NET_CV,
+                TacticianModelType.NAS,
+                TacticianModelType.TAS,
             ]
         else:
             normalized_types: List[TacticianModelType] = []

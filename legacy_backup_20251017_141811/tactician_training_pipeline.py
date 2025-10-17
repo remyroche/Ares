@@ -27,7 +27,7 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 
-# Import tactician training components
+# Import new modular training components
 try:
     from .tactician_models_training import (
         TacticianModelsTrainingStep, TacticianModelsTrainingConfig,
@@ -48,9 +48,6 @@ try:
 except ImportError as e:
     print(f"❌ CRITICAL: Failed to import ensemble training: {e}")
     ENSEMBLE_TRAINING_AVAILABLE = False
-
-# Note: This pipeline will be replaced by ModularComponent architecture
-# when tactician components are migrated
 
 # Enhanced imports with comprehensive error handling
 try:

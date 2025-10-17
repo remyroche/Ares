@@ -28,7 +28,19 @@ from .unified_data_driven_pipeline.core.migration_utils import (
     create_component_wrapper, migrate_component, generate_migration_report
 )
 
-# Import existing components (only tactician components remain to be migrated)
+# Import existing components
+try:
+    from .analyst_models_training import AnalystModelsTrainingStep
+    ANALYST_MODELS_AVAILABLE = True
+except ImportError:
+    ANALYST_MODELS_AVAILABLE = False
+
+try:
+    from .analyst_ensemble_training import AnalystEnsembleTrainingStep
+    ANALYST_ENSEMBLE_AVAILABLE = True
+except ImportError:
+    ANALYST_ENSEMBLE_AVAILABLE = False
+
 try:
     from .tactician_models_training import TacticianModelsTrainingStep
     TACTICIAN_MODELS_AVAILABLE = True
@@ -36,15 +48,10 @@ except ImportError:
     TACTICIAN_MODELS_AVAILABLE = False
 
 try:
-    from .tactician_ensemble_training import TacticianEnsembleTrainingStep
-    TACTICIAN_ENSEMBLE_AVAILABLE = True
+    from .ml_based_entry_timing_labeler import MLEntryTimingLabeler
+    ML_LABELER_AVAILABLE = True
 except ImportError:
-    TACTICIAN_ENSEMBLE_AVAILABLE = False
-
-# Analyst and ML components have been migrated to ModularComponent architecture
-ANALYST_MODELS_AVAILABLE = False
-ANALYST_ENSEMBLE_AVAILABLE = False
-ML_LABELER_AVAILABLE = False
+    ML_LABELER_AVAILABLE = False
 
 
 class ModelsTrainingMigrationManager:
@@ -56,25 +63,28 @@ class ModelsTrainingMigrationManager:
         self.backup_dir = Path("migration_backups")
         self.migration_log = []
         
-        # Component mapping (only tactician components remain to be migrated)
+        # Component mapping
         self.component_mapping = {
+            'analyst_models': {
+                'class': AnalystModelsTrainingStep if ANALYST_MODELS_AVAILABLE else None,
+                'migrated_class': 'AnalystModelsTrainingModular',
+                'file': 'analyst_models_training_modular.py'
+            },
+            'analyst_ensemble': {
+                'class': AnalystEnsembleTrainingStep if ANALYST_ENSEMBLE_AVAILABLE else None,
+                'migrated_class': 'AnalystEnsembleTrainingModular',
+                'file': 'analyst_ensemble_training_modular.py'
+            },
             'tactician_models': {
                 'class': TacticianModelsTrainingStep if TACTICIAN_MODELS_AVAILABLE else None,
                 'migrated_class': 'TacticianModelsTrainingModular',
                 'file': 'tactician_models_training_modular.py'
             },
-            'tactician_ensemble': {
-                'class': TacticianEnsembleTrainingStep if TACTICIAN_ENSEMBLE_AVAILABLE else None,
-                'migrated_class': 'TacticianEnsembleTrainingModular',
-                'file': 'tactician_ensemble_training_modular.py'
+            'ml_labeler': {
+                'class': MLEntryTimingLabeler if ML_LABELER_AVAILABLE else None,
+                'migrated_class': 'MLEntryTimingLabelerModular',
+                'file': 'ml_entry_timing_labeler_modular.py'
             }
-        }
-        
-        # Note: Analyst and ML components have been successfully migrated
-        self.migrated_components = {
-            'analyst_models': 'AnalystModelsTrainingModular',
-            'analyst_ensemble': 'AnalystEnsembleTrainingModular', 
-            'ml_labeler': 'MLEntryTimingLabelerModular'
         }
     
     def analyze_components(self, components: List[str] = None) -> Dict[str, Any]:
@@ -283,10 +293,12 @@ class ModelsTrainingMigrationManager:
         # Create backup directory
         backup_path.mkdir(parents=True, exist_ok=True)
         
-        # Backup current files (only tactician components remain)
+        # Backup current files
         files_to_backup = [
+            'src/training/steps/models_training/analyst_models_training.py',
+            'src/training/steps/models_training/analyst_ensemble_training.py',
             'src/training/steps/models_training/tactician_models_training.py',
-            'src/training/steps/models_training/tactician_ensemble_training.py'
+            'src/training/steps/models_training/ml_based_entry_timing_labeler.py'
         ]
         
         for file_path in files_to_backup:

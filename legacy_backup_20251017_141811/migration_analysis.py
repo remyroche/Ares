@@ -19,7 +19,25 @@ from src.training.steps.models_training.unified_data_driven_pipeline.core.migrat
     ModelsTrainingMigrationUtils, analyze_component, generate_migration_report
 )
 
-# Import existing components for analysis (only tactician components remain)
+# Import existing components for analysis
+try:
+    from src.training.steps.models_training.analyst_models_training import (
+        AnalystModelsTrainingStep, AnalystModelsTrainingConfig, AnalystModelsTrainingResult
+    )
+    ANALYST_MODELS_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import analyst_models_training: {e}")
+    ANALYST_MODELS_AVAILABLE = False
+
+try:
+    from src.training.steps.models_training.analyst_ensemble_training import (
+        AnalystEnsembleTrainingStep, AnalystEnsembleTrainingConfig, AnalystEnsembleTrainingResult
+    )
+    ANALYST_ENSEMBLE_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import analyst_ensemble_training: {e}")
+    ANALYST_ENSEMBLE_AVAILABLE = False
+
 try:
     from src.training.steps.models_training.tactician_models_training import (
         TacticianModelsTrainingStep, TacticianModelsTrainingConfig, TacticianModelsTrainingResult
@@ -30,18 +48,13 @@ except ImportError as e:
     TACTICIAN_MODELS_AVAILABLE = False
 
 try:
-    from src.training.steps.models_training.tactician_ensemble_training import (
-        TacticianEnsembleTrainingStep, TacticianEnsembleTrainingConfig, TacticianEnsembleTrainingResult
+    from src.training.steps.models_training.ml_based_entry_timing_labeler import (
+        MLEntryTimingLabeler, MLEntryTimingConfig, MLEntryTimingResult
     )
-    TACTICIAN_ENSEMBLE_AVAILABLE = True
+    ML_LABELER_AVAILABLE = True
 except ImportError as e:
-    print(f"Warning: Could not import tactician_ensemble_training: {e}")
-    TACTICIAN_ENSEMBLE_AVAILABLE = False
-
-# Analyst and ML components have been successfully migrated to ModularComponent architecture
-ANALYST_MODELS_AVAILABLE = False
-ANALYST_ENSEMBLE_AVAILABLE = False
-ML_LABELER_AVAILABLE = False
+    print(f"Warning: Could not import ml_based_entry_timing_labeler: {e}")
+    ML_LABELER_AVAILABLE = False
 
 
 def analyze_models_training_components():
@@ -52,8 +65,22 @@ def analyze_models_training_components():
     # Initialize migration utils
     migration_utils = ModelsTrainingMigrationUtils()
     
-    # Collect components to analyze (only tactician components remain)
+    # Collect components to analyze
     components_to_analyze = []
+    
+    if ANALYST_MODELS_AVAILABLE:
+        components_to_analyze.extend([
+            AnalystModelsTrainingStep,
+            AnalystModelsTrainingConfig,
+            AnalystModelsTrainingResult
+        ])
+    
+    if ANALYST_ENSEMBLE_AVAILABLE:
+        components_to_analyze.extend([
+            AnalystEnsembleTrainingStep,
+            AnalystEnsembleTrainingConfig,
+            AnalystEnsembleTrainingResult
+        ])
     
     if TACTICIAN_MODELS_AVAILABLE:
         components_to_analyze.extend([
@@ -62,17 +89,12 @@ def analyze_models_training_components():
             TacticianModelsTrainingResult
         ])
     
-    if TACTICIAN_ENSEMBLE_AVAILABLE:
+    if ML_LABELER_AVAILABLE:
         components_to_analyze.extend([
-            TacticianEnsembleTrainingStep,
-            TacticianEnsembleTrainingConfig,
-            TacticianEnsembleTrainingResult
+            MLEntryTimingLabeler,
+            MLEntryTimingConfig,
+            MLEntryTimingResult
         ])
-    
-    # Note: Analyst and ML components have been successfully migrated
-    print("✅ Analyst models training: MIGRATED to ModularComponent")
-    print("✅ Analyst ensemble training: MIGRATED to ModularComponent") 
-    print("✅ ML entry timing labeler: MIGRATED to ModularComponent")
     
     # Filter to only classes (not dataclasses/enums)
     class_components = [comp for comp in components_to_analyze if inspect.isclass(comp)]

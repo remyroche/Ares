@@ -384,8 +384,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 "volatility_window": self.config.volatility.window
             }
             
-            # Comprehensive sanity checklist and logging
-            self._log_quality_sanity_check(result_labels, quality_scores, metadata)
+            # Comprehensive outcome reporting
+            self._log_comprehensive_outcome_report(result_labels, quality_scores, metadata, training_strategy, performance_config)
             
             # Logging & observability - single-line KPI
             coverage = metadata["non_null_labels"] / metadata["total_labels"] if metadata["total_labels"] > 0 else 0
@@ -1529,6 +1529,399 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.red_flag_reasons = [reason]
         
         return {'default': FallbackQualityScore(reason)}
+    
+    def _log_comprehensive_outcome_report(self, labels: Union[pd.Series, pd.DataFrame], quality_scores: Dict[str, Any], 
+                                        metadata: Dict[str, Any], training_strategy: Dict[str, Any], 
+                                        performance_config: Dict[str, Any]) -> None:
+        """Generate comprehensive, human-readable outcome report."""
+        self.logger.info("=" * 80)
+        self.logger.info("🎯 VOLATILITY-AWARE LABELING OUTCOME REPORT")
+        self.logger.info("=" * 80)
+        
+        # 1. EXECUTIVE SUMMARY
+        self._log_executive_summary(labels, quality_scores, metadata)
+        
+        # 2. LABELING PERFORMANCE
+        self._log_labeling_performance(labels, metadata)
+        
+        # 3. QUALITY ANALYSIS
+        self._log_quality_analysis(quality_scores)
+        
+        # 4. TRADE OPPORTUNITIES ANALYSIS
+        self._log_trade_opportunities_analysis(quality_scores)
+        
+        # 5. TRAINING STRATEGY RECOMMENDATIONS
+        self._log_training_strategy_recommendations(training_strategy)
+        
+        # 6. PERFORMANCE OPTIMIZATION
+        self._log_performance_optimization(performance_config)
+        
+        # 7. RISK ASSESSMENT & WARNINGS
+        self._log_risk_assessment(quality_scores, metadata)
+        
+        # 8. NEXT STEPS & RECOMMENDATIONS
+        self._log_next_steps_recommendations(quality_scores, training_strategy, performance_config)
+        
+        self.logger.info("=" * 80)
+        self.logger.info("📋 REPORT COMPLETE")
+        self.logger.info("=" * 80)
+    
+    def _log_executive_summary(self, labels: Union[pd.Series, pd.DataFrame], quality_scores: Dict[str, Any], metadata: Dict[str, Any]) -> None:
+        """Log executive summary of labeling results."""
+        self.logger.info("📊 EXECUTIVE SUMMARY")
+        self.logger.info("-" * 40)
+        
+        # Basic statistics
+        total_labels = metadata.get("total_labels", 0)
+        non_null_labels = metadata.get("non_null_labels", 0)
+        coverage = non_null_labels / total_labels if total_labels > 0 else 0
+        
+        # Count opportunities
+        total_opportunities = 0
+        high_quality_targets = 0
+        for quality in quality_scores.values():
+            if hasattr(quality, 'opportunity_scores'):
+                total_opportunities += len(quality.opportunity_scores)
+            if hasattr(quality, 'overall_quality') and quality.overall_quality > 0.6:
+                high_quality_targets += 1
+        
+        # Overall assessment
+        if coverage > 0.1 and total_opportunities > 10:
+            status = "✅ SUCCESS"
+            status_emoji = "🎉"
+        elif coverage > 0.05 and total_opportunities > 5:
+            status = "⚠️ PARTIAL SUCCESS"
+            status_emoji = "⚠️"
+        else:
+            status = "❌ NEEDS ATTENTION"
+            status_emoji = "🚨"
+        
+        self.logger.info(f"{status_emoji} Overall Status: {status}")
+        self.logger.info(f"📈 Data Coverage: {coverage:.1%} ({non_null_labels:,} / {total_labels:,} samples)")
+        self.logger.info(f"🎯 Trade Opportunities: {total_opportunities:,} identified")
+        self.logger.info(f"⭐ High-Quality Targets: {high_quality_targets} / {len(quality_scores)}")
+        self.logger.info(f"⏱️ Processing Time: {metadata.get('processing_time', 0):.2f}s")
+    
+    def _log_labeling_performance(self, labels: Union[pd.Series, pd.DataFrame], metadata: Dict[str, Any]) -> None:
+        """Log detailed labeling performance metrics."""
+        self.logger.info("")
+        self.logger.info("📈 LABELING PERFORMANCE")
+        self.logger.info("-" * 40)
+        
+        if isinstance(labels, pd.DataFrame):
+            self.logger.info("Multi-Target Analysis:")
+            for col in labels.columns:
+                coverage = labels[col].notna().sum() / len(labels[col]) if len(labels[col]) > 0 else 0
+                positive_rate = (labels[col] > 0).mean() if len(labels[col]) > 0 else 0
+                negative_rate = (labels[col] < 0).mean() if len(labels[col]) > 0 else 0
+                signal_rate = (labels[col] != 0).mean() if len(labels[col]) > 0 else 0
+                
+                self.logger.info(f"  🎯 {col}:")
+                self.logger.info(f"     Coverage: {coverage:.1%} | Signals: {signal_rate:.1%} | Long: {positive_rate:.1%} | Short: {negative_rate:.1%}")
+        else:
+            coverage = labels.notna().sum() / len(labels) if len(labels) > 0 else 0
+            positive_rate = (labels > 0).mean() if len(labels) > 0 else 0
+            negative_rate = (labels < 0).mean() if len(labels) > 0 else 0
+            signal_rate = (labels != 0).mean() if len(labels) > 0 else 0
+            
+            self.logger.info(f"Single Target Analysis:")
+            self.logger.info(f"  Coverage: {coverage:.1%} | Signals: {signal_rate:.1%} | Long: {positive_rate:.1%} | Short: {negative_rate:.1%}")
+        
+        # Configuration info
+        self.logger.info(f"⚙️ Configuration:")
+        self.logger.info(f"  Label Type: {metadata.get('label_type', 'unknown')}")
+        self.logger.info(f"  Volatility Enabled: {metadata.get('volatility_enabled', False)}")
+        self.logger.info(f"  Volatility Window: {metadata.get('volatility_window', 'N/A')}")
+    
+    def _log_quality_analysis(self, quality_scores: Dict[str, Any]) -> None:
+        """Log detailed quality analysis."""
+        self.logger.info("")
+        self.logger.info("⭐ QUALITY ANALYSIS")
+        self.logger.info("-" * 40)
+        
+        if not quality_scores:
+            self.logger.warning("  ⚠️ No quality scores available")
+            return
+        
+        # Overall quality statistics
+        quality_values = []
+        for quality in quality_scores.values():
+            if hasattr(quality, 'overall_quality'):
+                quality_values.append(quality.overall_quality)
+        
+        if quality_values:
+            avg_quality = np.mean(quality_values)
+            min_quality = np.min(quality_values)
+            max_quality = np.max(quality_values)
+            
+            self.logger.info(f"📊 Overall Quality Statistics:")
+            self.logger.info(f"  Average: {avg_quality:.3f} | Range: {min_quality:.3f} - {max_quality:.3f}")
+            
+            # Quality distribution
+            excellent = sum(1 for q in quality_values if q >= 0.8)
+            good = sum(1 for q in quality_values if 0.6 <= q < 0.8)
+            fair = sum(1 for q in quality_values if 0.4 <= q < 0.6)
+            poor = sum(1 for q in quality_values if q < 0.4)
+            
+            self.logger.info(f"📈 Quality Distribution:")
+            self.logger.info(f"  🏆 Excellent (≥0.8): {excellent} targets")
+            self.logger.info(f"  ✅ Good (0.6-0.8): {good} targets")
+            self.logger.info(f"  ⚠️ Fair (0.4-0.6): {fair} targets")
+            self.logger.info(f"  ❌ Poor (<0.4): {poor} targets")
+        
+        # Per-target detailed analysis
+        self.logger.info(f"")
+        self.logger.info(f"🎯 Per-Target Analysis:")
+        for target_name, quality in quality_scores.items():
+            if hasattr(quality, 'overall_quality'):
+                self._log_target_quality_details(target_name, quality)
+    
+    def _log_target_quality_details(self, target_name: str, quality: Any) -> None:
+        """Log detailed quality information for a specific target."""
+        overall_quality = getattr(quality, 'overall_quality', 0)
+        predictability = getattr(quality, 'predictability', 0)
+        stability = getattr(quality, 'stability', 0)
+        coverage = getattr(quality, 'coverage', 0)
+        
+        # Quality badge
+        if overall_quality >= 0.8:
+            badge = "🏆 EXCELLENT"
+        elif overall_quality >= 0.6:
+            badge = "✅ GOOD"
+        elif overall_quality >= 0.4:
+            badge = "⚠️ FAIR"
+        else:
+            badge = "❌ POOR"
+        
+        self.logger.info(f"  {badge} {target_name}:")
+        self.logger.info(f"     Overall Quality: {overall_quality:.3f}")
+        self.logger.info(f"     Predictability (IC): {predictability:.4f}")
+        self.logger.info(f"     Stability: {stability:.3f}")
+        self.logger.info(f"     Coverage: {coverage:.1%}")
+        
+        # Opportunity metrics
+        if hasattr(quality, 'avg_potential_profit'):
+            avg_profit = quality.avg_potential_profit * 10000  # Convert to bps
+            max_profit = quality.max_potential_profit * 10000
+            self.logger.info(f"     Avg Potential Profit: {avg_profit:.1f}bps | Max: {max_profit:.1f}bps")
+        
+        # Red flags
+        red_flags = getattr(quality, 'red_flag_reasons', [])
+        if red_flags:
+            self.logger.info(f"     🚨 Red Flags: {', '.join(red_flags)}")
+    
+    def _log_trade_opportunities_analysis(self, quality_scores: Dict[str, Any]) -> None:
+        """Log detailed trade opportunities analysis."""
+        self.logger.info("")
+        self.logger.info("🎯 TRADE OPPORTUNITIES ANALYSIS")
+        self.logger.info("-" * 40)
+        
+        total_opportunities = 0
+        total_long_opportunities = 0
+        total_short_opportunities = 0
+        total_potential_profit = 0
+        
+        for target_name, quality in quality_scores.items():
+            if hasattr(quality, 'opportunity_scores') and len(quality.opportunity_scores) > 0:
+                n_opportunities = len(quality.opportunity_scores)
+                total_opportunities += n_opportunities
+                
+                # Count long/short opportunities
+                if hasattr(quality, 'potential_profits'):
+                    long_ops = (quality.potential_profits > 0).sum()
+                    short_ops = (quality.potential_profits < 0).sum()
+                    total_long_opportunities += long_ops
+                    total_short_opportunities += short_ops
+                    total_potential_profit += quality.potential_profits.sum()
+                
+                self.logger.info(f"  📊 {target_name}: {n_opportunities:,} opportunities")
+                if hasattr(quality, 'avg_potential_profit'):
+                    avg_profit = quality.avg_potential_profit * 10000
+                    self.logger.info(f"     Avg Potential Profit: {avg_profit:.1f}bps")
+        
+        if total_opportunities > 0:
+            self.logger.info(f"")
+            self.logger.info(f"📈 Summary Statistics:")
+            self.logger.info(f"  Total Opportunities: {total_opportunities:,}")
+            self.logger.info(f"  Long Opportunities: {total_long_opportunities:,}")
+            self.logger.info(f"  Short Opportunities: {total_short_opportunities:,}")
+            if total_potential_profit > 0:
+                avg_total_profit = (total_potential_profit / total_opportunities) * 10000
+                self.logger.info(f"  Average Potential Profit: {avg_total_profit:.1f}bps")
+        else:
+            self.logger.warning("  ⚠️ No trade opportunities identified")
+    
+    def _log_training_strategy_recommendations(self, training_strategy: Dict[str, Any]) -> None:
+        """Log training strategy recommendations."""
+        self.logger.info("")
+        self.logger.info("🎓 TRAINING STRATEGY RECOMMENDATIONS")
+        self.logger.info("-" * 40)
+        
+        # Gating recommendations
+        gating = training_strategy.get('gating', {})
+        included_targets = sum(1 for gate in gating.values() if gate.get('include_in_training', False))
+        total_targets = len(gating)
+        
+        self.logger.info(f"🚪 Gating Strategy:")
+        self.logger.info(f"  Targets Included: {included_targets} / {total_targets}")
+        
+        for target_name, gate_info in gating.items():
+            status = "✅ INCLUDE" if gate_info.get('include_in_training', False) else "❌ EXCLUDE"
+            reason = gate_info.get('gate_reason', 'Unknown')
+            self.logger.info(f"    {status} {target_name}: {reason}")
+        
+        # Weighting strategy
+        weighting = training_strategy.get('weighting', {})
+        self.logger.info(f"")
+        self.logger.info(f"⚖️ Weighting Strategy:")
+        for target_name, weight_info in weighting.items():
+            strategy = weight_info.get('weight_strategy', 'unknown')
+            weight_stats = weight_info.get('weight_stats', {})
+            self.logger.info(f"  {target_name}: {strategy}")
+            if weight_stats:
+                self.logger.info(f"    Mean: {weight_stats.get('mean', 0):.3f} | Std: {weight_stats.get('std', 0):.3f}")
+        
+        # Curriculum learning
+        curriculum = training_strategy.get('curriculum_learning', {})
+        self.logger.info(f"")
+        self.logger.info(f"📚 Curriculum Learning:")
+        for target_name, curriculum_info in curriculum.items():
+            level = curriculum_info.get('difficulty_level', 'unknown')
+            order = curriculum_info.get('training_order', 999)
+            self.logger.info(f"  {target_name}: {level.upper()} (Order: {order})")
+    
+    def _log_performance_optimization(self, performance_config: Dict[str, Any]) -> None:
+        """Log performance optimization settings."""
+        self.logger.info("")
+        self.logger.info("⚡ PERFORMANCE OPTIMIZATION")
+        self.logger.info("-" * 40)
+        
+        memory_analysis = performance_config.get('memory_analysis', {})
+        parallel_config = performance_config.get('parallel_config', {})
+        chunking_config = performance_config.get('chunking_config', {})
+        
+        # Memory analysis
+        data_size_mb = memory_analysis.get('data_size_mb', 0)
+        needs_optimization = memory_analysis.get('needs_optimization', False)
+        target_chunk_size = memory_analysis.get('target_chunk_size', 0)
+        
+        self.logger.info(f"💾 Memory Analysis:")
+        self.logger.info(f"  Data Size: {data_size_mb:.1f} MB")
+        self.logger.info(f"  Optimization Needed: {'Yes' if needs_optimization else 'No'}")
+        if needs_optimization:
+            self.logger.info(f"  Target Chunk Size: {target_chunk_size:,} samples")
+        
+        # Parallel processing
+        n_workers = parallel_config.get('n_workers', 1)
+        n_folds = parallel_config.get('n_folds', 5)
+        enable_parallel = parallel_config.get('enable_parallel', False)
+        
+        self.logger.info(f"")
+        self.logger.info(f"🔄 Parallel Processing:")
+        self.logger.info(f"  Workers: {n_workers} | Folds: {n_folds}")
+        self.logger.info(f"  Parallel Enabled: {'Yes' if enable_parallel else 'No'}")
+        
+        # Chunking strategy
+        if chunking_config.get('enabled', False):
+            strategy = chunking_config.get('strategy', 'unknown')
+            n_chunks = chunking_config.get('n_chunks', 0)
+            self.logger.info(f"")
+            self.logger.info(f"📦 Chunking Strategy:")
+            self.logger.info(f"  Strategy: {strategy.upper()} | Chunks: {n_chunks}")
+    
+    def _log_risk_assessment(self, quality_scores: Dict[str, Any], metadata: Dict[str, Any]) -> None:
+        """Log risk assessment and warnings."""
+        self.logger.info("")
+        self.logger.info("⚠️ RISK ASSESSMENT & WARNINGS")
+        self.logger.info("-" * 40)
+        
+        warnings = []
+        
+        # Check for low quality targets
+        low_quality_count = 0
+        for quality in quality_scores.values():
+            if hasattr(quality, 'overall_quality') and quality.overall_quality < 0.3:
+                low_quality_count += 1
+        
+        if low_quality_count > 0:
+            warnings.append(f"Low quality targets: {low_quality_count} targets below 0.3 quality score")
+        
+        # Check for insufficient opportunities
+        total_opportunities = 0
+        for quality in quality_scores.values():
+            if hasattr(quality, 'opportunity_scores'):
+                total_opportunities += len(quality.opportunity_scores)
+        
+        if total_opportunities < 10:
+            warnings.append(f"Insufficient opportunities: Only {total_opportunities} opportunities identified")
+        
+        # Check for high volatility in quality scores
+        quality_values = [q.overall_quality for q in quality_scores.values() if hasattr(q, 'overall_quality')]
+        if len(quality_values) > 1:
+            quality_std = np.std(quality_values)
+            if quality_std > 0.3:
+                warnings.append(f"High quality variance: {quality_std:.3f} standard deviation across targets")
+        
+        # Check for red flags
+        red_flag_count = 0
+        for quality in quality_scores.values():
+            red_flags = getattr(quality, 'red_flag_reasons', [])
+            red_flag_count += len(red_flags)
+        
+        if red_flag_count > 0:
+            warnings.append(f"Red flags detected: {red_flag_count} total red flags across targets")
+        
+        if warnings:
+            for warning in warnings:
+                self.logger.warning(f"  🚨 {warning}")
+        else:
+            self.logger.info("  ✅ No significant risks identified")
+    
+    def _log_next_steps_recommendations(self, quality_scores: Dict[str, Any], training_strategy: Dict[str, Any], 
+                                      performance_config: Dict[str, Any]) -> None:
+        """Log next steps and recommendations."""
+        self.logger.info("")
+        self.logger.info("🚀 NEXT STEPS & RECOMMENDATIONS")
+        self.logger.info("-" * 40)
+        
+        # Count included targets
+        gating = training_strategy.get('gating', {})
+        included_targets = sum(1 for gate in gating.values() if gate.get('include_in_training', False))
+        
+        if included_targets == 0:
+            self.logger.info("  🚨 CRITICAL: No targets passed quality gates")
+            self.logger.info("     → Review profit thresholds and volatility settings")
+            self.logger.info("     → Consider relaxing quality requirements")
+            self.logger.info("     → Check data quality and preprocessing")
+        elif included_targets < len(gating) // 2:
+            self.logger.info("  ⚠️ WARNING: Less than half of targets passed quality gates")
+            self.logger.info("     → Consider adjusting quality thresholds")
+            self.logger.info("     → Review individual target performance")
+        else:
+            self.logger.info("  ✅ GOOD: Majority of targets passed quality gates")
+        
+        # Memory optimization recommendations
+        memory_analysis = performance_config.get('memory_analysis', {})
+        if memory_analysis.get('needs_optimization', False):
+            self.logger.info("  💾 Memory optimization recommended:")
+            self.logger.info("     → Use chunked processing for large datasets")
+            self.logger.info("     → Consider data streaming for very large datasets")
+        
+        # Training recommendations
+        curriculum = training_strategy.get('curriculum_learning', {})
+        expert_targets = [t for t, c in curriculum.items() if c.get('difficulty_level') == 'expert']
+        
+        if expert_targets:
+            self.logger.info(f"  🎓 Training recommendations:")
+            self.logger.info(f"     → Start with expert targets: {', '.join(expert_targets)}")
+            self.logger.info(f"     → Use curriculum learning for progressive training")
+        
+        # Performance recommendations
+        parallel_config = performance_config.get('parallel_config', {})
+        if parallel_config.get('enable_parallel', False):
+            self.logger.info("  ⚡ Performance recommendations:")
+            self.logger.info(f"     → Use {parallel_config.get('n_workers', 1)} parallel workers")
+            self.logger.info(f"     → Implement reproducible seed management")
     
     def performance_sanity(self, data: pd.DataFrame, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """

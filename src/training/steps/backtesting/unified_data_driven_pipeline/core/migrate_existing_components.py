@@ -137,21 +137,8 @@ class BacktestingComponentMigrationManager:
                 'priority': 'medium'
             },
             
-            # NAS TAS components
-            'walk_forward_analyzer': {
-                'file': 'src/training/steps/backtesting/nas_tas_deprecated/walk_forward_analyzer.py',
-                'class': 'WalkForwardAnalyzer',
-                'type': ComponentType.WALK_FORWARD_ANALYZER,
-                'dependencies': ['data_loader', 'backtesting_engine'],
-                'priority': 'medium'
-            },
-            'performance_attribution': {
-                'file': 'src/training/steps/backtesting/nas_tas_deprecated/performance_attribution.py',
-                'class': 'PerformanceAttribution',
-                'type': ComponentType.PERFORMANCE_ATTRIBUTION,
-                'dependencies': ['backtesting_engine', 'performance_analyzer'],
-                'priority': 'low'
-            }
+            # Note: NAS TAS components (walk_forward_analyzer, performance_attribution) 
+            # have been removed as they were deprecated and replaced by modular components
         }
     
     def analyze_component(self, component_name: str) -> Dict[str, Any]:

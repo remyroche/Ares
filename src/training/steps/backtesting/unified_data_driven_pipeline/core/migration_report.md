@@ -122,21 +122,20 @@ All major backtesting components have been successfully migrated to the ModularC
 
 ### 3. NAS TAS Components
 
-#### ✅ Walk Forward Analyzer
-- **Original File**: `src/training/steps/backtesting/nas_tas_deprecated/walk_forward_analyzer.py`
-- **Status**: Ready for migration
-- **Component Type**: `WALK_FORWARD_ANALYZER`
-- **Migration Strategy**: Wrapper
+#### ❌ Walk Forward Analyzer
+- **Status**: **REMOVED** - Deprecated files deleted
+- **Reason**: These components were part of the deprecated NAS-TAS system
+- **Replacement**: Use modular components in the new architecture
+- **Note**: Original files backed up to `/workspace/backup_legacy_code/`
 
-#### ✅ Performance Attribution
-- **Original File**: `src/training/steps/backtesting/nas_tas_deprecated/performance_attribution.py`
-- **Status**: Ready for migration
-- **Component Type**: `PERFORMANCE_ATTRIBUTION`
-- **Migration Strategy**: Wrapper
+#### ❌ Performance Attribution
+- **Status**: **REMOVED** - Deprecated files deleted
+- **Reason**: These components were part of the deprecated NAS-TAS system
+- **Replacement**: Use modular components in the new architecture
+- **Note**: Original files backed up to `/workspace/backup_legacy_code/`
 
-#### ✅ Validation Orchestrator
-- **Original File**: `src/training/steps/backtesting/nas_tas_deprecated/validation_orchestrator.py`
-- **Status**: Ready for migration
+#### ❌ Validation Orchestrator
+- **Status**: **REMOVED** - Deprecated files deleted
 - **Component Type**: `VALIDATION_ORCHESTRATOR`
 - **Migration Strategy**: Wrapper
 

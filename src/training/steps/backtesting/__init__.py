@@ -1,4 +1,4 @@
-from .consolidated_backtesting_step import ConsolidatedBacktestingStep, ConsolidatedBacktestingConfig, ConsolidatedBacktestingResults, BacktestingMode
+# Note: consolidated_backtesting_step has been removed as it was legacy code
 from .final_parameters_optimization import FinalParametersOptimizer
 
 # New backtesting steps
@@ -185,11 +185,7 @@ from .unified_data_driven_pipeline.core.component_monitor import (
 )
 
 __all__ = [
-    # Original consolidated backtesting
-    'ConsolidatedBacktestingStep',
-    'ConsolidatedBacktestingConfig',
-    'ConsolidatedBacktestingResults',
-    'BacktestingMode',
+    # Note: Original consolidated backtesting components have been removed
     'FinalParametersOptimizer',
 
     # New backtesting steps

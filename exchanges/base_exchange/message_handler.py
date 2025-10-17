@@ -156,7 +156,7 @@ class ExchangeMessageHandler:
     Provides routing, queuing, and processing capabilities.
     """
 
-    def __init__(self):
+    def __init__(self, exchange_registry: Optional[Any] = None):
         self.logger = logging.getLogger("ExchangeMessageHandler")
         self.message_queue = MessageQueue()
         self.pending_messages: Dict[str, ExchangeMessage] = {}
@@ -164,6 +164,8 @@ class ExchangeMessageHandler:
         self.response_handlers: Dict[str, Callable] = {}
         self._processing_task: Optional[asyncio.Task] = None
         self._running = False
+        self.exchange_registry = exchange_registry
+        self.default_target_exchanges = ["binance", "okx"]
 
     async def start(self) -> None:
         """Start the message handler"""
@@ -313,10 +315,9 @@ class ExchangeMessageHandler:
             exchange_specific_params=kwargs
         )
 
-        # If no target exchanges specified, send to all
+        # If no target exchanges specified, use default target exchanges
         if not target_exchanges:
-            # This would be determined by the exchange registry
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            target_exchanges = self.default_target_exchanges
 
         return await self.send_message(order_message, target_exchanges)
 
@@ -348,7 +349,7 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            target_exchanges = self.default_target_exchanges
 
         return await self.send_message(data_message, target_exchanges)
 
@@ -377,7 +378,7 @@ class ExchangeMessageHandler:
         )
 
         if not target_exchanges:
-            target_exchanges = ["binance", "okx"]  # Placeholder
+            target_exchanges = self.default_target_exchanges
 
         return await self.send_message(batch_message, target_exchanges)
 
@@ -504,6 +505,34 @@ class ExchangeMessageHandler:
             "active_handlers": len(self.message_handlers),
             "running": self._running
         }
+    
+    async def get_available_target_exchanges(self) -> List[str]:
+        """Get list of available target exchanges"""
+        if self.exchange_registry and hasattr(self.exchange_registry, 'get_active_exchanges'):
+            try:
+                active_exchanges = await self.exchange_registry.get_active_exchanges()
+                # Filter to only include our default target exchanges
+                return [ex for ex in active_exchanges if ex in self.default_target_exchanges]
+            except Exception as e:
+                self.logger.warning(f"Error getting active exchanges: {e}")
+        
+        return self.default_target_exchanges
+    
+    def set_default_target_exchanges(self, exchanges: List[str]) -> None:
+        """Set the default target exchanges"""
+        self.default_target_exchanges = exchanges
+        self.logger.info(f"Set default target exchanges: {exchanges}")
+    
+    async def update_target_exchanges_from_registry(self) -> None:
+        """Update target exchanges based on registry status"""
+        if self.exchange_registry and hasattr(self.exchange_registry, 'get_active_exchanges'):
+            try:
+                active_exchanges = await self.exchange_registry.get_active_exchanges()
+                # Update to only include active exchanges from our default list
+                self.default_target_exchanges = [ex for ex in self.default_target_exchanges if ex in active_exchanges]
+                self.logger.info(f"Updated target exchanges from registry: {self.default_target_exchanges}")
+            except Exception as e:
+                self.logger.warning(f"Error updating target exchanges from registry: {e}")
 
     async def clear_queue(self, priority: Optional[MessagePriority] = None) -> int:
         """

@@ -118,6 +118,62 @@ class TradingOrchestrator:
         """Register a trading signal handler"""
         self.signal_handlers.append(handler)
         self.logger.info(f"Registered signal handler: {handler.__name__}")
+    
+    def unregister_signal_handler(self, handler: Callable[[TradingSignal], Awaitable[None]]) -> bool:
+        """Unregister a trading signal handler"""
+        try:
+            self.signal_handlers.remove(handler)
+            self.logger.info(f"Unregistered signal handler: {handler.__name__}")
+            return True
+        except ValueError:
+            self.logger.warning(f"Signal handler not found: {handler.__name__}")
+            return False
+    
+    def get_registered_handlers(self) -> List[str]:
+        """Get list of registered signal handler names"""
+        return [handler.__name__ for handler in self.signal_handlers]
+    
+    def clear_signal_handlers(self) -> None:
+        """Clear all registered signal handlers"""
+        handler_count = len(self.signal_handlers)
+        self.signal_handlers.clear()
+        self.logger.info(f"Cleared {handler_count} signal handlers")
+    
+    async def register_signal_handler_with_validation(
+        self, 
+        handler: Callable[[TradingSignal], Awaitable[None]],
+        validate_signals: bool = True,
+        min_confidence: float = 0.0
+    ) -> bool:
+        """Register a signal handler with validation options"""
+        try:
+            # Create a wrapper with validation if requested
+            if validate_signals:
+                async def validated_handler(signal: TradingSignal) -> None:
+                    # Validate signal before passing to handler
+                    if signal.confidence < min_confidence:
+                        self.logger.warning(f"Signal rejected due to low confidence: {signal.confidence} < {min_confidence}")
+                        return
+                    
+                    # Validate signal structure
+                    if not signal.symbol or not signal.action or signal.quantity <= 0:
+                        self.logger.warning(f"Invalid signal structure: {signal}")
+                        return
+                    
+                    # Call the original handler
+                    await handler(signal)
+                
+                self.signal_handlers.append(validated_handler)
+                self.logger.info(f"Registered validated signal handler: {handler.__name__} (min_confidence: {min_confidence})")
+            else:
+                self.signal_handlers.append(handler)
+                self.logger.info(f"Registered signal handler: {handler.__name__}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error registering signal handler: {e}")
+            return False
 
     async def submit_signal(self, signal: TradingSignal) -> bool:
         """Submit a trading signal for execution"""
@@ -275,15 +331,162 @@ class TradingOrchestrator:
             return False
 
     async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
-        """Get order status"""
+        """Get order status with enhanced tracking"""
         try:
-            # This would need to be implemented in the trading receiver
-            # For now, return a placeholder
-            return {"status": "unknown", "order_id": order_id}
+            # Try to get order status from trading receiver
+            response = await self.trading_receiver.get_order_status(
+                self.config.exchange_name,
+                symbol,
+                order_id
+            )
+
+            if response.success:
+                order_data = response.data
+                
+                # Enhanced order status information
+                enhanced_status = {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "status": order_data.get("status", "unknown"),
+                    "exchange": self.config.exchange_name,
+                    "timestamp": datetime.now().isoformat(),
+                    "raw_response": order_data
+                }
+                
+                # Add mapping information if available
+                if "internal_order_id" in order_data:
+                    enhanced_status["internal_order_id"] = order_data["internal_order_id"]
+                if "exchange_order_id" in order_data:
+                    enhanced_status["exchange_order_id"] = order_data["exchange_order_id"]
+                if "mapped_status" in order_data:
+                    enhanced_status["mapped_status"] = order_data["mapped_status"]
+                
+                # Add order details if available
+                if "side" in order_data:
+                    enhanced_status["side"] = order_data["side"]
+                if "quantity" in order_data:
+                    enhanced_status["quantity"] = order_data["quantity"]
+                if "price" in order_data:
+                    enhanced_status["price"] = order_data["price"]
+                if "filled_quantity" in order_data:
+                    enhanced_status["filled_quantity"] = order_data["filled_quantity"]
+                if "remaining_quantity" in order_data:
+                    enhanced_status["remaining_quantity"] = order_data["remaining_quantity"]
+                
+                return enhanced_status
+            else:
+                return {
+                    "order_id": order_id,
+                    "symbol": symbol,
+                    "status": "error",
+                    "error": response.error,
+                    "exchange": self.config.exchange_name,
+                    "timestamp": datetime.now().isoformat()
+                }
 
         except Exception as e:
             self.logger.error(f"Error getting order status: {e}")
-            return {"status": "error", "error": str(e)}
+            return {
+                "order_id": order_id,
+                "symbol": symbol,
+                "status": "error",
+                "error": str(e),
+                "exchange": self.config.exchange_name,
+                "timestamp": datetime.now().isoformat()
+            }
+
+    async def get_order_statistics(self) -> Dict[str, Any]:
+        """Get order statistics and tracking information"""
+        try:
+            # Get order statistics from trading receiver if available
+            order_stats = {}
+            if hasattr(self.trading_receiver, 'get_order_statistics'):
+                order_stats = await self.trading_receiver.get_order_statistics()
+            
+            # Get active orders count
+            active_orders_count = len(self.active_orders)
+            
+            # Calculate order success rate
+            total_orders = self.stats["executed_trades"]
+            successful_orders = self.stats["successful_trades"]
+            order_success_rate = (successful_orders / total_orders * 100) if total_orders > 0 else 0.0
+            
+            return {
+                "active_orders_count": active_orders_count,
+                "total_orders": total_orders,
+                "successful_orders": successful_orders,
+                "failed_orders": self.stats["failed_trades"],
+                "order_success_rate": order_success_rate,
+                "receiver_order_stats": order_stats,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting order statistics: {e}")
+            return {"error": str(e)}
+    
+    async def get_all_orders(self, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all orders with optional status filtering"""
+        try:
+            orders = []
+            
+            # Get orders from trading receiver if available
+            if hasattr(self.trading_receiver, 'get_all_orders'):
+                receiver_orders = await self.trading_receiver.get_all_orders()
+                orders.extend(receiver_orders)
+            
+            # Add local active orders
+            for order_id, order_info in self.active_orders.items():
+                order_data = {
+                    "order_id": order_id,
+                    "symbol": order_info.get("symbol", ""),
+                    "side": order_info.get("side", ""),
+                    "quantity": order_info.get("quantity", 0),
+                    "price": order_info.get("price"),
+                    "status": order_info.get("status", "unknown"),
+                    "timestamp": order_info.get("timestamp", datetime.now().isoformat()),
+                    "source": "local"
+                }
+                orders.append(order_data)
+            
+            # Apply status filter if specified
+            if status_filter:
+                orders = [order for order in orders if order.get("status", "").lower() == status_filter.lower()]
+            
+            return orders
+            
+        except Exception as e:
+            self.logger.error(f"Error getting all orders: {e}")
+            return []
+    
+    async def get_order_history(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get order history from trade history"""
+        try:
+            # Get recent trades from trade history
+            recent_trades = self.trade_history[-limit:] if self.trade_history else []
+            
+            # Convert to order format
+            orders = []
+            for trade in recent_trades:
+                order_data = {
+                    "order_id": trade.get("order_id", ""),
+                    "symbol": trade.get("symbol", ""),
+                    "side": trade.get("action", ""),
+                    "quantity": trade.get("quantity", 0),
+                    "price": trade.get("price"),
+                    "status": trade.get("status", "completed"),
+                    "timestamp": trade.get("timestamp", datetime.now()).isoformat() if isinstance(trade.get("timestamp"), datetime) else str(trade.get("timestamp", "")),
+                    "confidence": trade.get("confidence", 0),
+                    "strategy": trade.get("strategy", ""),
+                    "source": "history"
+                }
+                orders.append(order_data)
+            
+            return orders
+            
+        except Exception as e:
+            self.logger.error(f"Error getting order history: {e}")
+            return []
 
     async def get_statistics(self) -> Dict[str, Any]:
         """Get trading statistics"""
@@ -295,9 +498,13 @@ class TradingOrchestrator:
             total_trades = self.stats["executed_trades"]
             win_rate = (self.stats["successful_trades"] / total_trades * 100) if total_trades > 0 else 0.0
 
+            # Get order statistics
+            order_stats = await self.get_order_statistics()
+
             return {
                 "orchestrator_stats": self.stats,
                 "receiver_stats": receiver_stats,
+                "order_stats": order_stats,
                 "total_signals": self.stats["total_signals"],
                 "total_trades": total_trades,
                 "successful_trades": self.stats["successful_trades"],
@@ -409,11 +616,7 @@ class TradingOrchestrator:
                 success = await self.submit_signal(signal)
 
                 # Notify other handlers
-                for handler in self.signal_handlers:
-                    try:
-                        await handler(signal)
-                    except Exception as e:
-                        self.logger.error(f"Error in signal handler: {e}")
+                await self._notify_signal_handlers(signal)
 
             except Exception as e:
                 self.logger.error(f"Error in internal signal handler: {e}")
@@ -421,6 +624,59 @@ class TradingOrchestrator:
         # Note: This would be registered with the signal source
         # For now, this is a placeholder
         self.logger.info("Signal handler registered")
+    
+    async def _notify_signal_handlers(self, signal: TradingSignal) -> None:
+        """Notify all registered signal handlers"""
+        if not self.signal_handlers:
+            return
+        
+        # Create tasks for all handlers to run concurrently
+        tasks = []
+        for handler in self.signal_handlers:
+            task = asyncio.create_task(self._call_signal_handler(handler, signal))
+            tasks.append(task)
+        
+        # Wait for all handlers to complete
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+    
+    async def _call_signal_handler(self, handler: Callable, signal: TradingSignal) -> None:
+        """Call a single signal handler with error handling"""
+        try:
+            await handler(signal)
+        except Exception as e:
+            self.logger.error(f"Error in signal handler {handler.__name__}: {e}")
+    
+    async def process_external_signal(self, signal_data: Dict[str, Any]) -> bool:
+        """Process a signal from external source"""
+        try:
+            # Convert signal data to TradingSignal object
+            signal = TradingSignal(
+                symbol=signal_data.get("symbol", ""),
+                action=signal_data.get("action", ""),
+                quantity=float(signal_data.get("quantity", 0)),
+                price=signal_data.get("price"),
+                confidence=float(signal_data.get("confidence", 0)),
+                strategy=signal_data.get("strategy", "external"),
+                metadata=signal_data.get("metadata", {}),
+                timestamp=datetime.fromisoformat(signal_data.get("timestamp", datetime.now().isoformat()))
+            )
+            
+            # Process the signal
+            return await self.submit_signal(signal)
+            
+        except Exception as e:
+            self.logger.error(f"Error processing external signal: {e}")
+            return False
+    
+    async def get_signal_handler_status(self) -> Dict[str, Any]:
+        """Get status of signal handlers"""
+        return {
+            "total_handlers": len(self.signal_handlers),
+            "handler_names": self.get_registered_handlers(),
+            "trading_active": self._trading_active,
+            "last_signal_time": self.trade_history[-1].get("timestamp").isoformat() if self.trade_history else None
+        }
 
     async def pause_trading(self) -> None:
         """Pause trading operations"""
@@ -485,3 +741,39 @@ class TradingOrchestrator:
 
         except Exception as e:
             self.logger.error(f"Error updating performance metrics: {e}")
+    
+    def create_test_signal_handler(self, name: str = "test_handler") -> Callable[[TradingSignal], Awaitable[None]]:
+        """Create a test signal handler for demonstration"""
+        async def test_handler(signal: TradingSignal) -> None:
+            """Test signal handler that logs signals"""
+            self.logger.info(f"[{name}] Received signal: {signal.symbol} {signal.action} {signal.quantity} @ {signal.price} (confidence: {signal.confidence})")
+        
+        return test_handler
+    
+    async def test_signal_handling(self) -> Dict[str, Any]:
+        """Test signal handling functionality"""
+        try:
+            # Create a test signal
+            test_signal = TradingSignal(
+                symbol="ETHUSDT",
+                action="buy",
+                quantity=0.1,
+                price=2000.0,
+                confidence=0.8,
+                strategy="test",
+                metadata={"test": True}
+            )
+            
+            # Test signal processing
+            success = await self.submit_signal(test_signal)
+            
+            return {
+                "test_signal_processed": success,
+                "signal_handlers_count": len(self.signal_handlers),
+                "handler_names": self.get_registered_handlers(),
+                "trading_active": self._trading_active
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error testing signal handling: {e}")
+            return {"error": str(e)}

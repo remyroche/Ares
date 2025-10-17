@@ -7,15 +7,12 @@ and advanced validation frameworks from the Ares ecosystem.
 
 from __future__ import annotations
 
-import warnings
 import logging
-import json
 import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
-from pathlib import Path
 from dataclasses import dataclass
+import enum
 
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent, ComponentConfig, ComponentResult
@@ -66,6 +63,37 @@ except ImportError:
     def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
+def make_json_safe(obj: Any) -> Any:
+    """
+    Convert objects to JSON-safe format by handling common serialization issues.
+    
+    Args:
+        obj: Object to convert to JSON-safe format
+        
+    Returns:
+        JSON-safe version of the object
+    """
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    elif isinstance(obj, (list, tuple)):
+        return [make_json_safe(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {str(k): make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, enum.Enum):
+        return obj.value
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif hasattr(obj, '__dict__'):
+        # Convert object to dict and make it JSON-safe
+        return make_json_safe(obj.__dict__)
+    else:
+        # For other types, try to convert to string
+        return str(obj)
+
 @dataclass
 class FinalValidationResult:
     """Enhanced result of final validation step."""
@@ -83,10 +111,22 @@ class FinalValidationResult:
 class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
     """Enhanced final validation step using QualityAlertSystem."""
 
+    # Type hints for conditionally initialized attributes
+    quality_alert_system: Optional[QualityAlertSystem]
+    quality_scorer: Optional[ComprehensiveQualityScorer]
+    advanced_metrics: Optional[AdvancedQualityMetrics]
+    validation_manager: Optional[ValidationManager]
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the enhanced final validation step."""
         super().__init__(config or ComponentConfig())
         self.logger = logging.getLogger(__name__)
+        
+        # Extract validation-specific parameters from config
+        custom_params = self.config.custom_params or {}
+        self.min_validation_score = custom_params.get('min_validation_score', 70)
+        self.min_rows = custom_params.get('min_rows', 100)
+        self.blocking_severities = custom_params.get('blocking_severities', ['critical', 'blocker', 'error'])
         
         # Initialize validation components
         if VALIDATION_COMPONENTS_AVAILABLE:
@@ -102,7 +142,7 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
             # Initialize validation manager
             self.validation_manager = ValidationManager()
         else:
-            self.logger.warning("⚠️ Advanced validation components not available, using fallback")
+            tprint_warning("⚠️ Advanced validation components not available, using fallback")
             self.quality_alert_system = None
             self.quality_scorer = None
             self.advanced_metrics = None
@@ -111,9 +151,22 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
     async def execute(self,
                      training_input: Dict[str, Any],
                      pipeline_state: Dict[str, Any]) -> ComponentResult:
-        """Execute enhanced final validation step using QualityAlertSystem."""
+        """
+        Execute enhanced final validation step using QualityAlertSystem.
+        
+        Uses advanced validation components when available, falls back to basic validation otherwise.
+        
+        Returns:
+            ComponentResult with success status, artifacts, and metadata containing:
+            - validation_score: Overall quality score (0-100)
+            - quality_level: Quality level assessment
+            - validation_metadata: Detailed validation results
+            - quality_alerts: List of quality issues found
+            - comprehensive_metrics: Detailed metrics breakdown
+            - validation_recommendations: Actionable recommendations
+        """
 
-        self.logger.info("🔍 Starting enhanced final validation step with comprehensive quality assessment")
+        tprint_info("🔍 Starting enhanced final validation step with comprehensive quality assessment")
 
         # Extract parameters from training_input
         data = training_input.get('data')
@@ -153,17 +206,17 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
             )
 
             if component_result.success:
-                self.logger.info(f"✅ Enhanced final validation completed successfully")
-                self.logger.info(f"📊 Validation Score: {validation_result.validation_score:.3f} ({validation_result.quality_level})")
-                self.logger.info(f"🚨 Quality Alerts: {len(validation_result.quality_alerts)}")
-                self.logger.info(f"💡 Recommendations: {len(validation_result.validation_recommendations)}")
+                tprint_success("✅ Enhanced final validation completed successfully")
+                tprint_info(f"📊 Validation Score: {validation_result.validation_score:.3f} ({validation_result.quality_level})")
+                tprint_info(f"🚨 Quality Alerts: {len(validation_result.quality_alerts)}")
+                tprint_info(f"💡 Recommendations: {len(validation_result.validation_recommendations)}")
             else:
-                self.logger.error(f"❌ Final validation failed: {component_result.error_message}")
+                tprint_error(f"❌ Final validation failed: {component_result.error_message}")
 
             return component_result
 
         except Exception as e:
-            self.logger.error(f"❌ Enhanced final validation step failed with exception: {e}")
+            tprint_error(f"❌ Enhanced final validation step failed with exception: {e}")
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -202,8 +255,13 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
             )
             
             # Determine overall success and quality level
-            success = (quality_score.overall_score >= 70 and 
-                      len(quality_alerts) == 0 and 
+            # Only consider configured severity levels as blocking
+            blocking_alerts = [alert for alert in quality_alerts 
+                             if hasattr(alert, 'severity') and 
+                             alert.severity in self.blocking_severities]
+            
+            success = (quality_score.overall_score >= self.min_validation_score and 
+                      len(blocking_alerts) == 0 and 
                       validation_result.success)
             
             quality_level = quality_score.level.value if quality_score.level else "unknown"
@@ -214,11 +272,11 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
                 validation_score=quality_score.overall_score,
                 quality_level=quality_level,
                 validation_metadata={
-                    'quality_score_details': quality_score.__dict__,
-                    'advanced_assessment': advanced_assessment.__dict__,
-                    'validation_result': validation_result.__dict__
+                    'quality_score_details': make_json_safe(quality_score),
+                    'advanced_assessment': make_json_safe(advanced_assessment),
+                    'validation_result': make_json_safe(validation_result)
                 },
-                quality_alerts=[alert.__dict__ for alert in quality_alerts],
+                quality_alerts=[make_json_safe(alert) for alert in quality_alerts],
                 comprehensive_metrics={
                     'quality_breakdown': quality_score.component_scores,
                     'advanced_metrics': advanced_assessment.metrics,
@@ -226,15 +284,15 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
                 },
                 validation_recommendations=recommendations,
                 artifacts={
-                    'quality_score': quality_score.__dict__,
-                    'advanced_assessment': advanced_assessment.__dict__,
-                    'quality_alerts': [alert.__dict__ for alert in quality_alerts],
-                    'validation_result': validation_result.__dict__
+                    'quality_score': make_json_safe(quality_score),
+                    'advanced_assessment': make_json_safe(advanced_assessment),
+                    'quality_alerts': [make_json_safe(alert) for alert in quality_alerts],
+                    'validation_result': make_json_safe(validation_result)
                 }
             )
             
         except Exception as e:
-            self.logger.error(f"❌ Enhanced final validation failed: {e}")
+            tprint_error(f"❌ Enhanced final validation failed: {e}")
             return FinalValidationResult(
                 success=False,
                 validation_score=0.0,
@@ -252,21 +310,40 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
         """Generate validation recommendations based on assessment results."""
         recommendations = []
         
-        # Quality score recommendations
+        # Quality score recommendations with specific guidance
         if quality_score.overall_score < 80:
-            recommendations.append("Consider improving data quality - score below 80")
+            recommendations.append(f"Data quality score {quality_score.overall_score:.1f} is below 80 - review data completeness and accuracy")
+            if hasattr(quality_score, 'component_scores'):
+                low_scores = [(k, v) for k, v in quality_score.component_scores.items() if v < 70]
+                if low_scores:
+                    recommendations.append(f"Focus on improving: {', '.join([f'{k} ({v:.1f})' for k, v in low_scores])}")
         
-        # Alert-based recommendations
+        # Alert-based recommendations with specific alert details
         if quality_alerts:
             recommendations.append(f"Address {len(quality_alerts)} quality alerts")
+            # Include top 2-3 specific alerts for guidance
+            top_alerts = quality_alerts[:3]
+            for i, alert in enumerate(top_alerts, 1):
+                alert_type = getattr(alert, 'type', 'unknown')
+                alert_message = getattr(alert, 'message', 'No details available')
+                recommendations.append(f"  {i}. {alert_type}: {alert_message}")
         
-        # Advanced assessment recommendations
+        # Advanced assessment recommendations with specific issues
         if hasattr(advanced_assessment, 'issues') and advanced_assessment.issues:
             recommendations.append(f"Resolve {len(advanced_assessment.issues)} data issues")
+            # Include top 2-3 specific issues
+            top_issues = advanced_assessment.issues[:3]
+            for i, issue in enumerate(top_issues, 1):
+                issue_desc = str(issue) if not isinstance(issue, dict) else issue.get('description', str(issue))
+                recommendations.append(f"  {i}. {issue_desc}")
         
-        # Validation result recommendations
+        # Validation result recommendations with specific failures
         if not validation_result.success:
             recommendations.append("Review validation failures and data integrity")
+            if hasattr(validation_result, 'failures') and validation_result.failures:
+                for i, failure in enumerate(validation_result.failures[:2], 1):
+                    failure_desc = str(failure) if not isinstance(failure, dict) else failure.get('description', str(failure))
+                    recommendations.append(f"  {i}. Validation failure: {failure_desc}")
         
         return recommendations
 
@@ -280,25 +357,45 @@ class FeatureGenerationFinalValidationStep(BasePreTrainingComponent):
                 'has_data': not data.empty,
                 'has_required_columns': all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']),
                 'no_all_nan': not data.isnull().all().any(),
-                'sufficient_rows': len(data) >= 100,
+                'sufficient_rows': len(data) >= self.min_rows,
                 'no_infinite_values': not np.isinf(data.select_dtypes(include=[np.number])).any().any()
             }
+            
+            # Identify failing checks
+            failing_checks = [check_name for check_name, passed in basic_checks.items() if not passed]
             
             success = all(basic_checks.values())
             validation_score = sum(basic_checks.values()) / len(basic_checks) * 100
             
+            # Generate specific recommendations based on failing checks
+            recommendations = []
+            if not success:
+                if 'has_data' in failing_checks:
+                    recommendations.append("Ensure data is loaded and not empty")
+                if 'has_required_columns' in failing_checks:
+                    missing_cols = [col for col in ['open', 'high', 'low', 'close', 'volume'] if col not in data.columns]
+                    recommendations.append(f"Add missing required columns: {missing_cols}")
+                if 'no_all_nan' in failing_checks:
+                    nan_cols = data.columns[data.isnull().all()].tolist()
+                    recommendations.append(f"Remove or fix columns with all NaN values: {nan_cols}")
+                if 'sufficient_rows' in failing_checks:
+                    recommendations.append(f"Ensure at least {self.min_rows} rows of data (current: {len(data)})")
+                if 'no_infinite_values' in failing_checks:
+                    recommendations.append("Remove infinite values from numeric columns")
+                recommendations.append("Install validation components for enhanced assessment")
+            
             return ComponentResult(
                 success=success,
-                artifacts={'basic_checks': basic_checks},
+                artifacts={'basic_checks': basic_checks, 'failing_checks': failing_checks},
                 metadata={
                     'validation_score': validation_score,
                     'quality_level': 'basic',
-                    'validation_metadata': {'method': 'fallback_basic'},
-                    'quality_alerts': [] if success else [{'type': 'basic_validation_failed'}],
+                    'validation_metadata': {'method': 'fallback_basic', 'failing_checks': failing_checks},
+                    'quality_alerts': [] if success else [{'type': 'basic_validation_failed', 'failing_checks': failing_checks}],
                     'comprehensive_metrics': basic_checks,
-                    'validation_recommendations': [] if success else ['Install validation components for enhanced assessment']
+                    'validation_recommendations': recommendations
                 },
-                error_message=None if success else "Basic validation failed"
+                error_message=None if success else f"Basic validation failed: {', '.join(failing_checks)}"
             )
             
         except Exception as e:
@@ -334,7 +431,7 @@ async def handle_feature_generation_final_validation_step(
     exchange: str = "binance",
     custom_overrides: Optional[Dict[str, Any]] = None,
     **kwargs
-) -> FinalValidationResult:
+) -> ComponentResult:
     """
     Handle feature generation final validation step command.
 
@@ -351,7 +448,7 @@ async def handle_feature_generation_final_validation_step(
         **kwargs: Additional arguments
 
     Returns:
-        FinalValidationResult with validation results
+        ComponentResult with validation results
     """
     # Create sample data for validation (in real usage, this would come from data loading)
     sample_data = pd.DataFrame({
@@ -365,18 +462,23 @@ async def handle_feature_generation_final_validation_step(
     # Create step instance and execute
     step = FeatureGenerationFinalValidationStep()
 
-    return await step.execute(
-        data=sample_data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        intensity=intensity,
-        lookback_days=lookback_days,
-        start_date=start_date,
-        end_date=end_date,
-        exchange=exchange,
-        custom_overrides=custom_overrides
-    )
+    # Build proper training_input dict and pipeline_state
+    training_input = {
+        'data': sample_data,
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'direction': direction,
+        'intensity': intensity,
+        'lookback_days': lookback_days,
+        'start_date': start_date,
+        'end_date': end_date,
+        'exchange': exchange,
+        'custom_overrides': custom_overrides
+    }
+    
+    pipeline_state = {}
+
+    return await step.execute(training_input, pipeline_state)
 
 # Register component with factory
 def _register_feature_generation_final_validation_step():

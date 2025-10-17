@@ -221,32 +221,9 @@ def _lazy_import_quality_utilities():
 # Import ExchangeInterface from the proper location
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
-# Simple data standardization
-class UnifiedOHLCVStandardizer:
-    """Simple data standardizer."""
-    def __init__(self, *args, **kwargs):
-        pass
-    
-    def standardize(self, data):
-        return data
-
-# Simple parquet management
-class KlinesParquetManager:
-    """Simple parquet manager."""
-    def __init__(self, data_dir):
-        self.data_dir = data_dir
-    
-    async def store_klines(self, data, symbol, interval, **kwargs):
-        return {"success": True, "file_path": "dummy.parquet"}
-    
-    def write_data(self, df, symbol, interval, data_type="raw", overwrite=False):
-        return True
-    
-    def get_compression_stats(self):
-        return {"total_file_size_mb": 0.0, "compression_ratio": 1.0}
-    
-    async def load_klines(self, symbol, interval, **kwargs):
-        return pd.DataFrame()
+# Import the proper classes from their locations
+from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+from src.utils.data.klines_parquet import KlinesParquetManager
 
 class StorageConfig:
     """Simple storage config."""

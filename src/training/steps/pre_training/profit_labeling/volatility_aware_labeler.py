@@ -187,7 +187,8 @@ class OptimalEntryDetectionConfig:
         self.horizons = []
         self.target_profits = []
         self.multi_size_thresholds = []
-        self.max_windows = 10
+        # Max bars to resolve an opportunity (your "6 bars max")
+        self.max_windows = 6
 
 
 class NoiseGatingConfig:
@@ -402,6 +403,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 "label_type": self.config.label_type.value,
                 "total_labels": len(result_labels),
                 "non_null_labels": result_labels.notna().sum() if isinstance(result_labels, pd.Series) else result_labels.notna().sum().sum(),
+                "n_signals": int(((result_labels != 0).sum() if isinstance(result_labels, pd.Series) else (result_labels != 0).sum().sum())),
                 "quality_scores": quality_scores,
                 "opportunity_data": opportunity_data,  # Downstream-ready opportunity data
                 "training_strategy": training_strategy,  # Score-to-training mapping
@@ -511,7 +513,7 @@ class VolatilityAwareMultiHorizonLabeler:
         
         # Create trade opportunity quality score object
         class TradeOpportunityQualityScore:
-            def __init__(self, composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights):
+            def __init__(self, composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights, trade_opportunities):
                 self.overall_quality = composite_score
                 self.predictability = metrics.get('ic', 0.0)
                 self.stability = metrics.get('stability', 0.0)
@@ -528,45 +530,40 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Store all metrics for detailed analysis
                 self.metrics = metrics
                 self.red_flag_reasons = self._extract_trade_opportunity_red_flags(metrics, potential_profits)
+                # Keep the true signal directions for downstream artifacts
+                self.signal_directions = trade_opportunities.copy()
         
-        return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights)
+        return TradeOpportunityQualityScore(composite_score, metrics, potential_profits, target_name, opportunity_scores, opportunity_weights, trade_opportunities)
     
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
-        """Calculate potential profit based on signal direction in 90min period."""
-        potential_profits = []
-        
-        for opportunity_idx in trade_opportunities.index:
-            # Get 90min window (6 * 15min periods) starting from opportunity
-            window_start = opportunity_idx
-            window_end = min(opportunity_idx + 6, len(prices) - 1)
-            
-            if window_end > window_start:
-                window_prices = prices.iloc[window_start:window_end]
-                if len(window_prices) > 1:
-                    start_price = window_prices.iloc[0]
-                    signal_direction = trade_opportunities.loc[opportunity_idx]
-                    
-                    if start_price > 0:
-                        if signal_direction > 0:  # Long signal
-                            # For longs: (max - start) / start (upward movement)
-                            max_price = window_prices.max()
-                            potential_profit = (max_price - start_price) / start_price
-                        elif signal_direction < 0:  # Short signal
-                            # For shorts: (start - min) / start (downward movement)
-                            min_price = window_prices.min()
-                            potential_profit = (start_price - min_price) / start_price
-                        else:  # No signal (shouldn't happen in trade_opportunities)
-                            potential_profit = 0.0
-                        
-                        potential_profits.append(potential_profit)
-                    else:
-                        potential_profits.append(0.0)
-                else:
-                    potential_profits.append(0.0)
+        """Calculate potential profit based on signal direction over a fixed lookahead window (default: 6 bars ≈ 90min on 15m data)."""
+        # Derive window length from lookahead_periods if you want parity, or keep 6 as a separate hyperparameter.
+        window_len = 6  # consider promoting to config
+        # Map index label -> positional index once
+        pos = pd.Series(np.arange(len(prices)), index=prices.index)
+        out = {}
+        for ts, signal in trade_opportunities.items():
+            if ts not in pos.index:
+                out[ts] = 0.0
+                continue
+            i = int(pos.loc[ts])
+            j = min(i + window_len, len(prices) - 1)
+            if j <= i:
+                out[ts] = 0.0
+                continue
+            window = prices.iloc[i:j+1]
+            start = window.iloc[0]
+            if start <= 0 or len(window) < 2:
+                out[ts] = 0.0
+                continue
+            if signal > 0:
+                potential = (window.max() - start) / start
+            elif signal < 0:
+                potential = (start - window.min()) / start
             else:
-                potential_profits.append(0.0)
-        
-        return pd.Series(potential_profits, index=trade_opportunities.index)
+                potential = 0.0
+            out[ts] = float(potential)
+        return pd.Series(out).reindex(trade_opportunities.index)
     
     def _calculate_trade_opportunity_metrics(self, trade_opportunities: pd.Series, potential_profits: pd.Series, target_name: str) -> Dict[str, float]:
         """Calculate metrics specific to trade opportunities."""
@@ -1270,7 +1267,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 # Create DataFrame with all opportunity information
                 opportunity_df = pd.DataFrame({
                     'opportunity_index': quality.opportunity_scores.index,
-                    'signal_direction': quality.opportunity_scores.index.map(lambda idx: 1 if idx in quality.opportunity_scores.index else 0),  # Will be updated with actual signal direction
+                    'signal_direction': quality.signal_directions.reindex(quality.opportunity_scores.index).fillna(0).astype(int),
                     'potential_profit': quality.potential_profits,
                     'quality_score': quality.opportunity_scores,
                     'weight': quality.opportunity_weights,
@@ -1646,7 +1643,7 @@ class VolatilityAwareMultiHorizonLabeler:
         if isinstance(labels, pd.DataFrame):
             self.logger.info("Multi-Target Analysis:")
             for col in labels.columns:
-                coverage = labels[col].notna().sum() / len(labels[col]) if len(labels[col]) > 0 else 0
+                coverage = (labels[col] != 0).mean() if len(labels[col]) > 0 else 0
                 positive_rate = (labels[col] > 0).mean() if len(labels[col]) > 0 else 0
                 negative_rate = (labels[col] < 0).mean() if len(labels[col]) > 0 else 0
                 signal_rate = (labels[col] != 0).mean() if len(labels[col]) > 0 else 0
@@ -1654,7 +1651,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 self.logger.info(f"  🎯 {col}:")
                 self.logger.info(f"     Coverage: {coverage:.1%} | Signals: {signal_rate:.1%} | Long: {positive_rate:.1%} | Short: {negative_rate:.1%}")
         else:
-            coverage = labels.notna().sum() / len(labels) if len(labels) > 0 else 0
+            coverage = (labels != 0).mean() if len(labels) > 0 else 0
             positive_rate = (labels > 0).mean() if len(labels) > 0 else 0
             negative_rate = (labels < 0).mean() if len(labels) > 0 else 0
             signal_rate = (labels != 0).mean() if len(labels) > 0 else 0
@@ -2123,9 +2120,9 @@ class VolatilityAwareMultiHorizonLabeler:
             return target_qualities
         
         # Apply Benjamini-Hochberg FDR control
-        from scipy.stats import false_discovery_control
         try:
-            fdr_adjusted = false_discovery_control(ic_pvalues)
+            from statsmodels.stats.multitest import fdrcorrection
+            _, fdr_adjusted = fdrcorrection(ic_pvalues, alpha=0.10, method="indep")
             
             # Filter targets that pass FDR control
             filtered_qualities = {}
@@ -2142,8 +2139,8 @@ class VolatilityAwareMultiHorizonLabeler:
             
             return filtered_qualities if filtered_qualities else target_qualities
             
-        except ImportError:
-            # Fallback if scipy.stats.false_discovery_control not available
+        except Exception:
+            # Fallback if statsmodels is unavailable
             self.logger.warning("FDR control not available - using raw p-values")
             return target_qualities
     
@@ -2170,11 +2167,11 @@ class VolatilityAwareMultiHorizonLabeler:
         # Coverage and Positive Rate per target
         if isinstance(labels, pd.DataFrame):
             for col in labels.columns:
-                coverage = labels[col].notna().sum() / len(labels[col]) if len(labels[col]) > 0 else 0
+                coverage = (labels[col] != 0).mean() if len(labels[col]) > 0 else 0
                 positive_rate = (labels[col] > 0).mean() if len(labels[col]) > 0 else 0
                 self.logger.info(f"  📊 Target {col}: Coverage {coverage:.1%}, Positive Rate {positive_rate:.1%}")
         else:
-            coverage = labels.notna().sum() / len(labels) if len(labels) > 0 else 0
+            coverage = (labels != 0).mean() if len(labels) > 0 else 0
             positive_rate = (labels > 0).mean() if len(labels) > 0 else 0
             self.logger.info(f"  📊 Single target: Coverage {coverage:.1%}, Positive Rate {positive_rate:.1%}")
         
@@ -2351,6 +2348,129 @@ class VolatilityAwareMultiHorizonLabeler:
                 elif positive_rate > 0.99:
                     self.logger.warning(f"⚠️ Single target: Very high positive rate {positive_rate:.1%}")
 
+    def _generate_barrier_labels(
+        self,
+        prices: pd.Series,
+        volatility: pd.Series,
+        profit_targets: Optional[List[float]] = None,
+        horizon_bars: int = 6,
+        tie_policy: str = "neutral"
+    ) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Generate barrier-based labels that check if TP or SL is hit first within H bars.
+        
+        This method creates labels by checking, for each bar t, whether an upper or lower 
+        barrier is reached first within the next H bars. It uses high/low if present; 
+        otherwise it falls back to close. It's volatility-modulated and honors long/short switches.
+        
+        Args:
+            prices: Price series (close prices)
+            volatility: Volatility series for modulation
+            profit_targets: List of profit targets in decimal form
+            horizon_bars: Number of bars to look ahead (default: 6)
+            tie_policy: How to handle ties ("neutral", "conservative", "optimistic")
+            
+        Returns:
+            Series for single target, DataFrame for multiple targets
+        """
+        # Use OHLC if available, otherwise fall back to close
+        if hasattr(prices, 'high') and hasattr(prices, 'low'):
+            high_prices = prices.high
+            low_prices = prices.low
+        else:
+            # Fallback to close prices
+            high_prices = low_prices = prices
+        
+        # Volatility normalization (leak-free: use lagged EMA mean)
+        vol_mean = volatility.ewm(span=100, adjust=False).mean().shift(1).fillna(volatility.mean())
+        vol_normalized = volatility / vol_mean
+        
+        # Default profit targets if not provided
+        if profit_targets is None:
+            profit_targets = [0.005]  # 50 bps default
+        
+        # Generate labels for each target
+        if len(profit_targets) == 1:
+            # Single target case
+            target = profit_targets[0]
+            labels = self._generate_single_barrier_labels(
+                prices, high_prices, low_prices, volatility, vol_normalized, 
+                target, horizon_bars, tie_policy
+            )
+            return labels
+        else:
+            # Multi-target case
+            label_dict = {}
+            for i, target in enumerate(profit_targets):
+                target_labels = self._generate_single_barrier_labels(
+                    prices, high_prices, low_prices, volatility, vol_normalized,
+                    target, horizon_bars, tie_policy
+                )
+                # Use basis points naming
+                bps = int(round(target * 10_000))
+                target_name = f"t_{bps}bps"
+                label_dict[target_name] = target_labels
+            
+            return pd.DataFrame(label_dict)
+    
+    def _generate_single_barrier_labels(
+        self,
+        prices: pd.Series,
+        high_prices: pd.Series,
+        low_prices: pd.Series,
+        volatility: pd.Series,
+        vol_normalized: pd.Series,
+        target: float,
+        horizon_bars: int,
+        tie_policy: str
+    ) -> pd.Series:
+        """Generate barrier labels for a single target."""
+        # Volatility modulation
+        k = self.config.volatility.sensitivity
+        effective_target = target * np.clip(1.0 + k * (vol_normalized - 1.0), 0.5, 2.0)
+        
+        # Calculate barriers
+        upper_barriers = prices * (1 + effective_target)
+        lower_barriers = prices * (1 - effective_target)
+        
+        # Initialize labels
+        labels = pd.Series(0, index=prices.index, dtype=np.int8)
+        
+        # Check each bar for barrier hits within horizon
+        for i in range(len(prices) - horizon_bars):
+            if i + horizon_bars >= len(prices):
+                continue
+                
+            current_price = prices.iloc[i]
+            if current_price <= 0:
+                continue
+                
+            # Get price window
+            price_window = prices.iloc[i+1:i+horizon_bars+1]
+            high_window = high_prices.iloc[i+1:i+horizon_bars+1]
+            low_window = low_prices.iloc[i+1:i+horizon_bars+1]
+            
+            # Check barriers
+            upper_hit = (high_window >= upper_barriers.iloc[i]).any()
+            lower_hit = (low_window <= lower_barriers.iloc[i]).any()
+            
+            # Determine label based on which barrier is hit first
+            if upper_hit and lower_hit:
+                # Both hit - use tie policy
+                if tie_policy == "conservative":
+                    labels.iloc[i] = -1  # Assume stop hit first
+                elif tie_policy == "optimistic":
+                    labels.iloc[i] = 1   # Assume target hit first
+                else:  # neutral
+                    labels.iloc[i] = 0
+            elif upper_hit:
+                labels.iloc[i] = 1   # Target hit
+            elif lower_hit:
+                labels.iloc[i] = -1  # Stop hit
+            # else: labels.iloc[i] = 0 (already initialized)
+        
+        return labels
+
     def _generate_volatility_labels(
         self,
         prices: pd.Series,
@@ -2393,10 +2513,9 @@ class VolatilityAwareMultiHorizonLabeler:
                 else:
                     target_frac = float(target_frac)
                 
-                # Create deterministic column name (replace "." with "p")
-                # Ensure target_frac is a scalar for formatting
-                target_frac_scalar = float(target_frac) if not isinstance(target_frac, (int, float)) else target_frac
-                target_name = f"t_{target_frac_scalar:.1f}".replace(".", "p")
+                # Name like t_50bps for 0.005, or t_100bps for 0.01
+                bps = int(round(float(target_frac) * 10_000))
+                target_name = f"t_{bps}bps"
                 target_columns.append(target_name)
                 
                 # Profit target semantics in volatility regimes
@@ -2429,10 +2548,6 @@ class VolatilityAwareMultiHorizonLabeler:
         else:
             # Single target case - return Series
             if self.config.label_type == LabelDefinitionType.BINARY:
-                # Use volatility threshold for single target
-                high_vol_mask = volatility > self.config.volatility_threshold
-                low_vol_mask = volatility <= self.config.volatility_threshold
-
                 labels = pd.Series(0, index=prices.index, dtype=np.uint8)
                 # Use volatility-modulated threshold logic with configurable base target
                 base_threshold = self.config.multi_target.target_profit / 100.0  # Convert percentage to decimal

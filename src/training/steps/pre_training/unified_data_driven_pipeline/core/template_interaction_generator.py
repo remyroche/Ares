@@ -77,45 +77,68 @@ class FeatureStore:
     """Standardizes, aligns, and serves Series by semantic role."""
     
     def __init__(self, features: Union[pd.DataFrame, Dict[str, pd.Series], List[FeatureSpec]]):
+        tprint_debug("🏗️ Initializing FeatureStore...")
         self._raw = {}
         if isinstance(features, pd.DataFrame):
+            tprint_debug(f"📊 DataFrame input: {features.shape[0]} rows, {features.shape[1]} columns")
             for col in features.columns:
                 self._raw[col] = FeatureSpec(name=col, series=features[col], role="unknown")
         elif isinstance(features, dict):
+            tprint_debug(f"📊 Dict input: {len(features)} features")
             for k, v in features.items():
                 self._raw[k] = FeatureSpec(name=k, series=v, role="unknown")
         elif isinstance(features, list):
+            tprint_debug(f"📊 List input: {len(features)} FeatureSpec objects")
             for fs in features:
                 self._raw[fs.name] = fs
         else:
+            tprint_warning(f"⚠️ Unknown input type: {type(features)}")
             self._raw = {}
 
+        tprint_debug(f"🔍 Inferring common index from {len(self._raw)} features...")
         self._index = self._infer_common_index()
+        tprint_debug(f"📏 Common index length: {len(self._index)}")
+        
         self._registry_by_role: Dict[str, List[str]] = {}
         self._cache: Dict[str, pd.Series] = {}
         self._op_cache: Dict[str, pd.Series] = {}  # Cache for operations
 
         # sanitize, align, enforce float dtype
+        tprint_debug("🧹 Sanitizing and aligning features...")
+        processed_count = 0
         for k, fs in self._raw.items():
             s = fs.series
             if not s.index.equals(self._index):
+                tprint_debug(f"🔄 Reindexing {k}: {len(s)} -> {len(self._index)}")
                 s = s.reindex(self._index)
             s = s.astype("float64")
             # simple preprocessing hooks
             wins = fs.preprocess.get("winsor")
             if wins is not None:
                 lo, hi = wins
+                tprint_debug(f"✂️ Winsorizing {k}: ({lo}, {hi})")
                 s = s.clip(s.quantile(lo), s.quantile(hi))
             if fs.scale == "zscore":
+                tprint_debug(f"📏 Z-scoring {k}")
                 s = (s - s.mean()) / (s.std(ddof=0) + 1e-12)
             self._raw[k].series = s
+            processed_count += 1
+
+        tprint_debug(f"✅ Processed {processed_count} features")
 
         # default role inference (keeps your heuristics)
+        tprint_debug("🏷️ Inferring feature roles...")
+        role_counts = {}
         for k, fs in self._raw.items():
             if fs.role == "unknown":
                 fs.role = self._infer_role_from_name(fs.name)
+                tprint_debug(f"🏷️ {k} -> {fs.role}")
 
             self._registry_by_role.setdefault(fs.role, []).append(k)
+            role_counts[fs.role] = role_counts.get(fs.role, 0) + 1
+
+        tprint_debug(f"📊 Role distribution: {role_counts}")
+        tprint_success(f"✅ FeatureStore initialized with {len(self._raw)} features across {len(self._registry_by_role)} roles")
 
     def _infer_common_index(self) -> pd.Index:
         idxs = [fs.series.index for fs in self._raw.values() if isinstance(fs.series, pd.Series)]
@@ -142,15 +165,29 @@ class FeatureStore:
         return self._index
 
     def by_role(self, role: str) -> List[str]:
-        return self._registry_by_role.get(role, [])
+        names = self._registry_by_role.get(role, [])
+        tprint_debug(f"🔍 Role '{role}': {len(names)} features")
+        return names
 
     def get(self, name: str) -> pd.Series:
         if name in self._cache:
+            tprint_debug(f"💾 Cache hit for {name}")
             return self._cache[name]
+            
+        if name not in self._raw:
+            tprint_error(f"❌ Feature {name} not found in store")
+            raise KeyError(f"Feature {name} not found")
+            
+        tprint_debug(f"🔍 Loading feature {name}")
         s = self._raw[name].series
         # final NaN policy: forward-fill then drop leading
+        nan_before = s.isna().sum()
         s = s.ffill()
+        nan_after = s.isna().sum()
+        if nan_before != nan_after:
+            tprint_debug(f"🔧 Forward-filled {nan_before - nan_after} NaNs in {name}")
         self._cache[name] = s
+        tprint_debug(f"✅ Loaded {name}: {len(s)} values, {s.isna().sum()} NaNs")
         return s
 
     def get_cached_op(self, op_key: str) -> Optional[pd.Series]:
@@ -592,37 +629,53 @@ class TemplateInteractionGenerator:
             # Generate core interactions
             core_interactions = []
             if self.config.enable_core_templates:
-                tprint_debug("Generating core interactions...")
+                tprint_info("🎯 Generating core interactions...")
+                tprint_debug(f"📊 Core budget: {budget_allocation['core']}")
+                tprint_debug(f"📊 Parallel processing: {self.config.enable_parallel and VECTORBT_AVAILABLE}")
+                
                 if self.config.enable_parallel and VECTORBT_AVAILABLE:
+                    tprint_debug("🚀 Using parallel processing for core interactions")
                     core_interactions = self._generate_core_interactions_parallel(
                         base_store, targets, budget_allocation['core']
                     )
                 else:
+                    tprint_debug("🐌 Using sequential processing for core interactions")
                     core_interactions = self._generate_core_interactions_vectorbt(
                         base_store, targets, budget_allocation['core']
                     )
                 tprint_success(f"✅ Generated {len(core_interactions)} core interactions")
+            else:
+                tprint_debug("⏭️ Skipping core interactions (disabled)")
 
             # Generate HTF-aware interactions
             htf_interactions = []
             if self.config.enable_htf_templates:
-                tprint_debug("Generating HTF-aware interactions...")
+                tprint_info("🎯 Generating HTF-aware interactions...")
+                tprint_debug(f"📊 HTF budget: {budget_allocation['htf_aware']}")
                 htf_interactions = self._generate_htf_interactions_vectorbt(
                     base_store, htf_store, targets, budget_allocation['htf_aware']
                 )
                 tprint_success(f"✅ Generated {len(htf_interactions)} HTF interactions")
+            else:
+                tprint_debug("⏭️ Skipping HTF interactions (disabled)")
 
             # Combine all interactions
             all_interactions = core_interactions + htf_interactions
 
             # Apply interaction heredity if enabled
             if self.config.enable_interaction_heredity:
+                tprint_info("🧬 Applying interaction heredity...")
                 all_interactions = self._apply_interaction_heredity(all_interactions, base_store, htf_store)
+            else:
+                tprint_debug("⏭️ Skipping interaction heredity (disabled)")
 
             # Apply VectorBT-based feature selection
+            tprint_info("🔍 Applying feature selection...")
             selected_interactions = self._apply_vectorbt_feature_selection(all_interactions, targets)
+            tprint_debug(f"📊 Selection: {len(all_interactions)} -> {len(selected_interactions)}")
             
             # Ensure all interactions are properly aligned
+            tprint_info("🔧 Aligning interactions...")
             selected_interactions = self._align_interactions(selected_interactions)
 
             # Update performance stats
@@ -633,10 +686,20 @@ class TemplateInteractionGenerator:
                 'total_generation_time': generation_time,
                 'interactions_generated': len(selected_interactions)
             })
+            
+            tprint_debug(f"📊 Performance stats updated:")
+            tprint_debug(f"   • Total generations: {self.performance_stats['total_generations']}")
+            tprint_debug(f"   • Successful generations: {self.performance_stats['successful_generations']}")
+            tprint_debug(f"   • Total generation time: {self.performance_stats['total_generation_time']:.3f}s")
+            tprint_debug(f"   • Interactions generated: {self.performance_stats['interactions_generated']}")
 
             tprint_success(f"✅ Template interaction generation completed in {generation_time:.3f}s")
-            tprint_info(f"📊 Total interactions: {len(selected_interactions)}")
-            tprint_info(f"📊 Core: {len(core_interactions)}, HTF: {len(htf_interactions)}")
+            tprint_info(f"📊 Final results:")
+            tprint_info(f"   • Total interactions: {len(selected_interactions)}")
+            tprint_info(f"   • Core interactions: {len(core_interactions)}")
+            tprint_info(f"   • HTF interactions: {len(htf_interactions)}")
+            tprint_info(f"   • VectorBT optimized: {VECTORBT_AVAILABLE}")
+            tprint_info(f"   • Generation time: {generation_time:.3f}s")
 
             return selected_interactions
 
@@ -645,7 +708,10 @@ class TemplateInteractionGenerator:
             return _generate_interactions()
         except Exception as e:
             tprint_error(f"❌ Template interaction generation failed: {e}")
+            import traceback
+            tprint_debug(f"🔍 Full traceback: {traceback.format_exc()}")
             self.performance_stats['failed_generations'] += 1
+            tprint_debug(f"📊 Failed generations: {self.performance_stats['failed_generations']}")
             return []
 
     def _normalize_base_features(self, base_features: Union[pd.DataFrame, Dict[str, pd.Series], None]) -> Dict[str, pd.Series]:
@@ -891,13 +957,18 @@ class TemplateInteractionGenerator:
                                                targets: Optional[pd.Series],
                                                base_store: FeatureStore = None) -> List[GeneratedInteraction]:
         """Generate interactions from a template using VectorBT optimization."""
+        tprint_debug(f"🎯 Generating interactions for template: {template.name}")
         interactions = []
 
         try:
             # Get feature combinations for this template
             feature_combinations = self._get_feature_combinations(template, feature_groups, base_store)
+            tprint_debug(f"📊 Found {len(feature_combinations)} combinations for {template.name}")
 
-            for combination in feature_combinations:
+            valid_count = 0
+            for i, combination in enumerate(feature_combinations):
+                tprint_debug(f"🔧 Processing combination {i+1}/{len(feature_combinations)}: {combination.get('name', 'unknown')}")
+                
                 try:
                     # Generate interaction using VectorBT
                     interaction_series = self._calculate_interaction_vectorbt(template, combination, base_store)
@@ -923,13 +994,23 @@ class TemplateInteractionGenerator:
                             )
 
                             interactions.append(interaction)
+                            valid_count += 1
+                            tprint_debug(f"✅ Created interaction: {interaction.name} (score={utility_score:.4f})")
+                        else:
+                            tprint_debug(f"⚠️ Rejected {combination['name']}: utility score {utility_score:.4f} < {self.config.min_utility_score}")
+                    else:
+                        tprint_debug(f"⚠️ Invalid interaction for {combination['name']}")
 
                 except Exception as e:
-                    tprint_debug(f"Template interaction generation failed: {e}")
+                    tprint_debug(f"❌ Template interaction generation failed for {combination.get('name', 'unknown')}: {e}")
                     continue
 
+            tprint_success(f"✅ Template {template.name}: {valid_count}/{len(feature_combinations)} valid interactions")
+
         except Exception as e:
-            tprint_warning(f"Template {template.name} failed: {e}")
+            tprint_error(f"❌ Template {template.name} failed: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
 
         return interactions
 
@@ -938,12 +1019,26 @@ class TemplateInteractionGenerator:
                                  feature_groups: Dict[str, List[str]],
                                  base_store: FeatureStore = None) -> List[Dict[str, Any]]:
         """Get feature combinations for a template."""
+        tprint_debug(f"🔍 Getting feature combinations for {template.name}")
+        tprint_debug(f"📋 Required features: {template.required_features}")
+        tprint_debug(f"📊 Max instances: {template.max_instances}")
+        
         combinations = []
 
         # Get required feature lists
         required_lists = [feature_groups.get(req, []) for req in template.required_features]
+        
+        for i, (req, features) in enumerate(zip(template.required_features, required_lists)):
+            tprint_debug(f"📊 {req}: {len(features)} features {features[:3]}{'...' if len(features) > 3 else ''}")
 
         # Generate Cartesian product
+        total_combinations = 1
+        for features in required_lists:
+            total_combinations *= len(features)
+        
+        tprint_debug(f"📊 Total possible combinations: {total_combinations}")
+        
+        combo_count = 0
         for combo in product(*required_lists):
             combination = dict(zip(template.required_features, combo))
             combinations.append({
@@ -952,8 +1047,11 @@ class TemplateInteractionGenerator:
                 'combination': combination,
                 'params': template.metadata.get("defaults", {})
             })
+            combo_count += 1
 
-        return combinations[:template.max_instances]
+        result = combinations[:template.max_instances]
+        tprint_debug(f"✅ Generated {len(result)} combinations (limited by max_instances={template.max_instances})")
+        return result
 
     def _calculate_interaction_vectorbt(self,
                                       template: InteractionTemplate,
@@ -972,107 +1070,148 @@ class TemplateInteractionGenerator:
             params: Template parameters
         """
         params = params or {}
+        tprint_debug(f"🔧 Calculating {template.name} with combination {combination.get('name', 'unknown')}")
+        tprint_debug(f"📋 Template: {template.name}, Type: {template.template_type}")
+        tprint_debug(f"📊 Params: {params}")
+        
         try:
             # Build local resolver for required vars
             def S(name):
                 # check both stores
                 if base_store and name in base_store.names():
+                    tprint_debug(f"🔍 Found {name} in base_store")
                     return base_store.get(name)
                 if htf_store and name in htf_store.names():
+                    tprint_debug(f"🔍 Found {name} in htf_store")
                     return htf_store.get(name)
                 # allow direct Series injection via combo
+                tprint_debug(f"🔍 Looking for {name} in combination")
                 return combination["combination"].get(name, None)
 
             # Pull Series for required roles
             role_to_name = combination["combination"]  # e.g. {"price_feature": "close", "volatility_feature": "rv"}
+            tprint_debug(f"🔗 Role mapping: {role_to_name}")
             series = {}
+            missing_features = []
+            
             for role, name in role_to_name.items():
+                tprint_debug(f"🔍 Resolving {role} -> {name}")
                 if base_store and name in base_store.names():
                     series[role] = base_store.get(name)
+                    tprint_debug(f"✅ {role} resolved from base_store: {name}")
                 elif htf_store and name in htf_store.names():
                     series[role] = htf_store.get(name)
+                    tprint_debug(f"✅ {role} resolved from htf_store: {name}")
                 else:
-                    tprint_debug(f"Feature {name} not found in stores")
-                    return None
+                    tprint_error(f"❌ Feature {name} not found in stores for role {role}")
+                    missing_features.append(name)
+
+            if missing_features:
+                tprint_error(f"❌ Missing features: {missing_features}")
+                return None
 
             # Dispatch by template
             name = template.name
+            tprint_debug(f"🎯 Processing template: {name}")
 
             if name == "price_vol_interaction":
+                tprint_debug(f"💰 Calculating price-volatility interaction")
                 s = self.formula_ops["mul"](series["price_feature"], series["volatility_feature"])
 
             elif name == "momentum_meanrev_interaction":
+                tprint_debug(f"📈 Calculating momentum-mean reversion interaction")
                 s = self.formula_ops["mul"](series["momentum_feature"], series["mean_reversion_feature"])
 
             elif name == "liquidity_price_interaction":
+                tprint_debug(f"💧 Calculating liquidity-price interaction")
                 s = self.formula_ops["mul"](series["liquidity_feature"], series["price_feature"])
 
             elif name == "vol_volume_interaction":
+                tprint_debug(f"📊 Calculating volatility-volume interaction")
                 s = self.formula_ops["mul"](series["volatility_feature"], series["volume_feature"])
 
             elif name == "tod_interaction":
+                tprint_debug(f"🕐 Calculating time-of-day interaction")
                 s = self.formula_ops["mul"](series["feature"], series["tod_indicator"])
 
             elif name == "cross_sectional_interaction":
+                tprint_debug(f"📊 Calculating cross-sectional interaction")
                 s = self.formula_ops["sub"](series["feature"], series["market_feature"])
 
             elif name == "regime_interaction":
+                tprint_debug(f"🏛️ Calculating regime interaction")
                 s = self.formula_ops["mul"](series["feature"], series["regime_indicator"])
 
             elif name == "lag_interaction":
+                tprint_debug(f"⏰ Calculating lag interaction")
                 s = self.formula_ops["mul"](series["feature"], series["feature_lag"])
 
             elif name == "polynomial_interaction":
+                tprint_debug(f"📐 Calculating polynomial interaction (x²)")
                 s = self.formula_ops["pow"](series["feature"], 2)
 
             elif name == "ratio_interaction":
                 eps = params.get("epsilon", 1e-6)
+                tprint_debug(f"➗ Calculating ratio interaction (eps={eps})")
                 s = self.formula_ops["div"](series["feature1"], series["feature2"], eps)
 
             elif name == "difference_interaction":
+                tprint_debug(f"➖ Calculating difference interaction")
                 s = self.formula_ops["sub"](series["feature1"], series["feature2"])
 
             elif name == "product_interaction":
+                tprint_debug(f"✖️ Calculating product interaction")
                 s = self.formula_ops["mul"](series["feature1"], series["feature2"])
 
             elif name == "conditional_interaction":
                 th = params.get("threshold", 0.0)
+                tprint_debug(f"🔀 Calculating conditional interaction (threshold={th})")
                 mask = self.formula_ops["gt"](series["condition"], th)
                 s = self.formula_ops["mul"](series["feature"], mask)
 
             elif name == "rolling_interaction":
                 window = int(params.get("window", 20))
+                tprint_debug(f"📈 Calculating rolling interaction (window={window})")
                 s = self._op_rolling_mean(series["feature"], window)
 
             elif name == "zscore_interaction":
+                tprint_debug(f"📏 Calculating z-score interaction")
                 s = self._op_zscore(series["feature"])
 
             # HTF-aware
             elif name == "htf_trend_liquidity_interaction":
+                tprint_debug(f"📈🔄 Calculating HTF trend-liquidity interaction")
                 s = self.formula_ops["mul"](series["htf_trend_feature"], series["base_liquidity_feature"])
 
             elif name == "htf_vol_signal_interaction":
+                tprint_debug(f"📊📈 Calculating HTF volatility-signal interaction")
                 s = self.formula_ops["mul"](series["htf_volatility_feature"], series["base_signal_feature"])
 
             elif name == "htf_momentum_conflict_interaction":
+                tprint_debug(f"⚔️📈 Calculating HTF momentum conflict interaction")
                 s = self.formula_ops["mul"](series["htf_momentum_feature"], -series["base_momentum_feature"])
 
             elif name == "htf_regime_base_interaction":
+                tprint_debug(f"🏛️📊 Calculating HTF regime-base interaction")
                 s = self.formula_ops["mul"](series["htf_regime_feature"], series["base_feature"])
 
             elif name == "htf_anchor_deviation_interaction":
+                tprint_debug(f"⚓📏 Calculating HTF anchor-deviation interaction")
                 s = self.formula_ops["mul"](series["htf_anchor_feature"], series["base_deviation_feature"])
 
             else:
-                tprint_debug(f"Unknown template: {name}")
+                tprint_error(f"❌ Unknown template: {name}")
                 return None
 
             # Ensure proper naming and alignment
             s.name = f"{template.name}_{combination['name']}"
+            tprint_debug(f"✅ Generated interaction: {s.name} ({len(s)} values, {s.isna().sum()} NaNs)")
             return s
 
         except Exception as e:
-            tprint_debug(f"VectorBT interaction calc error [{template.name}]: {e}")
+            tprint_error(f"❌ VectorBT interaction calc error [{template.name}]: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
             return None
 
     def _generate_htf_template_interactions_vectorbt(self,
@@ -1160,81 +1299,116 @@ class TemplateInteractionGenerator:
 
     def _is_valid_interaction(self, series: pd.Series) -> bool:
         """Check if an interaction series is valid."""
+        tprint_debug(f"🔍 Validating interaction: {series.name}")
+        
         if series is None or series.empty:
+            tprint_debug(f"❌ Invalid: series is None or empty")
             return False
 
         # Check for all NaN values
         if series.isna().all():
+            tprint_debug(f"❌ Invalid: all values are NaN")
             return False
 
         # Check for infinite values
         if np.isinf(series).any():
+            inf_count = np.isinf(series).sum()
+            tprint_debug(f"❌ Invalid: {inf_count} infinite values found")
             return False
 
         # Check for constant values (no variance)
         if series.nunique() <= 1:
+            tprint_debug(f"❌ Invalid: constant series (unique values: {series.nunique()})")
             return False
 
+        tprint_debug(f"✅ Valid interaction: {len(series)} values, {series.isna().sum()} NaNs, {series.nunique()} unique")
         return True
 
     def _calculate_utility_score(self, interaction_series: pd.Series, targets: Optional[pd.Series]) -> float:
         """Calculate robust utility score for an interaction."""
+        tprint_debug(f"📊 Calculating utility score for {interaction_series.name}")
         try:
             s = interaction_series.dropna()
             if s.empty:
+                tprint_debug(f"⚠️ Empty series after dropna for {interaction_series.name}")
                 return 0.0
+                
+            tprint_debug(f"📏 Series stats: {len(s)} values, mean={s.mean():.4f}, std={s.std():.4f}")
                 
             if targets is None:
                 # Unsupervised proxy
                 var_score = float(s.var())
                 # Anti-noise regularizer
                 nz = s.ne(0).mean()
-                return max(0.0, var_score) * (0.5 + 0.5 * nz)
+                score = max(0.0, var_score) * (0.5 + 0.5 * nz)
+                tprint_debug(f"📊 Unsupervised score: var={var_score:.4f}, non_zero={nz:.4f}, final={score:.4f}")
+                return score
 
             aligned = pd.concat([s, targets], axis=1).dropna()
             if len(aligned) < 50:
+                tprint_debug(f"⚠️ Insufficient aligned data: {len(aligned)} < 50")
                 return 0.0
                 
             x, y = aligned.iloc[:,0], aligned.iloc[:,1]
             pear = x.corr(y) or 0.0
             spear = x.corr(y, method="spearman") or 0.0
             
+            tprint_debug(f"📊 Correlations: Pearson={pear:.4f}, Spearman={spear:.4f}")
+            
             # Rolling IC stability
             roll_ic = x.rolling(100).corr(y).dropna()
             stab = 1.0 - roll_ic.std() if len(roll_ic) >= 10 else 0.0
+            tprint_debug(f"📊 Rolling IC stability: {stab:.4f} (from {len(roll_ic)} windows)")
             
             # Blend scores
-            return float(0.5*abs(pear) + 0.4*abs(spear) + 0.1*max(0.0, stab))
+            final_score = float(0.5*abs(pear) + 0.4*abs(spear) + 0.1*max(0.0, stab))
+            tprint_debug(f"✅ Final utility score: {final_score:.4f}")
+            return final_score
             
         except Exception as e:
-            tprint_debug(f"Utility score calculation failed: {e}")
+            tprint_error(f"❌ Utility score calculation failed for {interaction_series.name}: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
             return 0.0
 
     def _apply_interaction_heredity(self, interactions: List[GeneratedInteraction], 
                                   base_store: FeatureStore = None, 
                                   htf_store: FeatureStore = None) -> List[GeneratedInteraction]:
         """Apply interaction heredity (keep ≥1 parent if interaction survives)."""
+        tprint_debug(f"🧬 Applying interaction heredity to {len(interactions)} interactions")
+        
         if not interactions:
+            tprint_debug(f"📊 No interactions to process for heredity")
             return interactions
             
         keep = {i.name: i for i in interactions}
         parent_needed = set()
 
+        # Collect all parent features
         for i in interactions:
             for p in i.parent_features:
                 parent_needed.add(p)
+                tprint_debug(f"👨‍👩‍👧‍👦 Parent needed: {p} (from {i.name})")
+
+        tprint_debug(f"📊 Total unique parents needed: {len(parent_needed)}")
 
         # Create lightweight GeneratedInteraction wrappers for missing parents
+        added_parents = 0
         for p in parent_needed:
             if p in keep:
+                tprint_debug(f"✅ Parent {p} already present")
                 continue
                 
             # Find parent series from stores
             parent_series = None
             if base_store and p in base_store.names():
                 parent_series = base_store.get(p)
+                tprint_debug(f"🔍 Found parent {p} in base_store")
             elif htf_store and p in htf_store.names():
                 parent_series = htf_store.get(p)
+                tprint_debug(f"🔍 Found parent {p} in htf_store")
+            else:
+                tprint_warning(f"⚠️ Parent {p} not found in any store")
                 
             if parent_series is not None:
                 # Synthesize a parent feature as passthrough
@@ -1248,8 +1422,12 @@ class TemplateInteractionGenerator:
                     metadata={"heredity": True}
                 )
                 keep[p] = gi
+                added_parents += 1
+                tprint_debug(f"✅ Added parent {p} (heredity)")
 
-        return list(keep.values())
+        result = list(keep.values())
+        tprint_success(f"✅ Heredity complete: {len(interactions)} -> {len(result)} (added {added_parents} parents)")
+        return result
 
     def _apply_vectorbt_feature_selection(self,
                                         interactions: List[GeneratedInteraction],
@@ -1280,7 +1458,10 @@ class TemplateInteractionGenerator:
                                       interactions: List[GeneratedInteraction],
                                       targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
         """Filter highly correlated interactions using greedy forward selection."""
+        tprint_debug(f"🔍 Filtering {len(interactions)} interactions for correlation")
+        
         if len(interactions) <= 1:
+            tprint_debug(f"📊 Skipping correlation filter: {len(interactions)} interactions")
             return interactions
 
         try:
@@ -1288,31 +1469,45 @@ class TemplateInteractionGenerator:
             chosen = []
             chosen_df = None
             max_r = self.config.max_correlation_threshold
+            tprint_debug(f"📏 Max correlation threshold: {max_r}")
 
-            for cand in sorted(interactions, key=lambda x: x.utility_score, reverse=True):
+            for i, cand in enumerate(sorted(interactions, key=lambda x: x.utility_score, reverse=True)):
+                tprint_debug(f"🔍 Evaluating candidate {i+1}/{len(interactions)}: {cand.name} (score={cand.utility_score:.4f})")
+                
                 s = cand.feature_series
                 if s is None or s.isna().all():
+                    tprint_debug(f"⚠️ Skipping {cand.name}: invalid series")
                     continue
                     
                 if chosen_df is None:
                     chosen.append(cand)
                     chosen_df = pd.DataFrame({cand.name: s})
+                    tprint_debug(f"✅ First choice: {cand.name}")
                     continue
                     
                 df = pd.concat([chosen_df, s.rename(cand.name)], axis=1).dropna()
                 if df.shape[0] < 50:
+                    tprint_debug(f"⚠️ Skipping {cand.name}: insufficient aligned data ({df.shape[0]} < 50)")
                     continue
                     
                 # Check max absolute corr vs existing chosen
                 c = df.corr().iloc[:-1, -1].abs().max()
+                tprint_debug(f"📊 Max correlation with chosen: {c:.4f}")
+                
                 if c <= max_r:
                     chosen.append(cand)
                     chosen_df = df.dropna()
+                    tprint_debug(f"✅ Added {cand.name} (corr={c:.4f} <= {max_r})")
+                else:
+                    tprint_debug(f"❌ Rejected {cand.name} (corr={c:.4f} > {max_r})")
 
+            tprint_success(f"✅ Correlation filtering: {len(interactions)} -> {len(chosen)} interactions")
             return chosen
 
         except Exception as e:
-            tprint_warning(f"Correlation filtering failed: {e}")
+            tprint_error(f"❌ Correlation filtering failed: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
             return interactions
 
     # Fallback methods for when VectorBT is not available
@@ -1401,51 +1596,86 @@ class TemplateInteractionGenerator:
 
     def to_dataframe(self, interactions: List[GeneratedInteraction]) -> pd.DataFrame:
         """Convert interactions to aligned DataFrame."""
+        tprint_debug(f"📊 Converting {len(interactions)} interactions to DataFrame")
+        
         if not interactions:
+            tprint_debug(f"📊 No interactions to convert")
             return pd.DataFrame()
         
         try:
             # Create DataFrame from interactions
             data = {}
+            valid_count = 0
+            
             for interaction in interactions:
                 if interaction.feature_series is not None:
                     data[interaction.name] = interaction.feature_series
+                    valid_count += 1
+                    tprint_debug(f"✅ Added {interaction.name}: {len(interaction.feature_series)} values")
+                else:
+                    tprint_debug(f"⚠️ Skipping {interaction.name}: no feature series")
             
             if not data:
+                tprint_warning(f"⚠️ No valid data for DataFrame creation")
                 return pd.DataFrame()
                 
             df = pd.DataFrame(data)
-            return df.sort_index()
+            tprint_debug(f"📊 Created DataFrame: {df.shape[0]} rows, {df.shape[1]} columns")
+            tprint_debug(f"📊 Index range: {df.index.min()} to {df.index.max()}")
+            tprint_debug(f"📊 NaN count: {df.isna().sum().sum()}")
+            
+            result = df.sort_index()
+            tprint_success(f"✅ DataFrame conversion complete: {valid_count}/{len(interactions)} interactions")
+            return result
             
         except Exception as e:
-            tprint_warning(f"Failed to create DataFrame from interactions: {e}")
+            tprint_error(f"❌ Failed to create DataFrame from interactions: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
             return pd.DataFrame()
 
     def _align_interactions(self, interactions: List[GeneratedInteraction]) -> List[GeneratedInteraction]:
         """Ensure all interactions are properly aligned to a common index."""
+        tprint_debug(f"🔧 Aligning {len(interactions)} interactions to common index")
+        
         if not interactions:
+            tprint_debug(f"📊 No interactions to align")
             return interactions
             
         try:
             # Find common index
             indices = [i.feature_series.index for i in interactions if i.feature_series is not None]
             if not indices:
+                tprint_warning(f"⚠️ No valid series found for alignment")
                 return interactions
                 
+            tprint_debug(f"📏 Found {len(indices)} valid series for alignment")
             common_index = indices[0]
-            for idx in indices[1:]:
+            tprint_debug(f"📏 Initial common index length: {len(common_index)}")
+            
+            for i, idx in enumerate(indices[1:], 1):
+                before_len = len(common_index)
                 common_index = common_index.intersection(idx)
+                after_len = len(common_index)
+                tprint_debug(f"📏 Intersection {i}: {before_len} -> {after_len}")
                 
             if len(common_index) == 0:
-                tprint_warning("No common index found for interactions")
+                tprint_error(f"❌ No common index found for interactions")
                 return interactions
+                
+            tprint_debug(f"✅ Common index length: {len(common_index)}")
                 
             # Align all interactions
             aligned_interactions = []
+            aligned_count = 0
+            
             for interaction in interactions:
                 if interaction.feature_series is not None:
+                    original_len = len(interaction.feature_series)
                     aligned_series = interaction.feature_series.reindex(common_index)
                     aligned_series = aligned_series.astype("float64")
+                    
+                    tprint_debug(f"🔧 Aligned {interaction.name}: {original_len} -> {len(aligned_series)}")
                     
                     # Create new interaction with aligned series
                     aligned_interaction = GeneratedInteraction(
@@ -1458,13 +1688,18 @@ class TemplateInteractionGenerator:
                         metadata=interaction.metadata
                     )
                     aligned_interactions.append(aligned_interaction)
+                    aligned_count += 1
                 else:
+                    tprint_debug(f"⚠️ Skipping {interaction.name}: no feature series")
                     aligned_interactions.append(interaction)
                     
+            tprint_success(f"✅ Alignment complete: {aligned_count}/{len(interactions)} interactions aligned")
             return aligned_interactions
             
         except Exception as e:
-            tprint_warning(f"Failed to align interactions: {e}")
+            tprint_error(f"❌ Failed to align interactions: {e}")
+            import traceback
+            tprint_debug(f"🔍 Traceback: {traceback.format_exc()}")
             return interactions
 
 # Convenience functions

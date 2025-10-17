@@ -20,13 +20,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from datetime import datetime
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.spatial.distance import pdist, squareform
-from sklearn.metrics import mean_squared_error
-from sklearn.preprocessing import StandardScaler
 
 # Import ML Commons utilities
 try:
@@ -35,7 +33,6 @@ try:
         Solution, ParetoFront, compute_pareto_front,
         select_knee_point, compute_hypervolume
     )
-    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator
     ML_COMMONS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"ML Commons not available: {e}")
@@ -48,17 +45,12 @@ try:
 except ImportError:
     PURGED_KFOLD_AVAILABLE = False
 
-# Import VectorBT for financial metrics
-try:
-    import vectorbt as vbt
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
+# VectorBT import removed - not used in this implementation
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
     safe_divide, safe_correlation, safe_mean, safe_std,
-    validate_finite, validate_positive, memory_checkpoint
+    validate_finite, validate_positive
 )
 
 
@@ -156,6 +148,9 @@ class BattleTestedPeriodLookbackOptimizer:
             )
         else:
             self.purged_kfold = None
+        
+        # Initialize evaluation cache
+        self._evaluation_cache = {}
     
     def optimize(self, 
                 data: pd.DataFrame, 
@@ -283,19 +278,19 @@ class BattleTestedPeriodLookbackOptimizer:
         """Perform coarse grid search for initial exploration."""
         tprint_info("🔍 Performing coarse grid search")
         
-        # Define coarse grid
-        periods = np.logspace(
+        # Define coarse grid - FIXED: Remove duplicates
+        periods = sorted(set(np.logspace(
             np.log10(self.config.min_period), 
             np.log10(self.config.max_period), 
             num=10, 
             dtype=int
-        )
-        lookbacks = np.logspace(
+        )))
+        lookbacks = sorted(set(np.logspace(
             np.log10(self.config.min_lookback), 
             np.log10(self.config.max_lookback), 
             num=10, 
             dtype=int
-        )
+        )))
         
         results = []
         total_combinations = len(periods) * len(lookbacks)
@@ -317,6 +312,9 @@ class BattleTestedPeriodLookbackOptimizer:
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to evaluate period={period}, lookback={lookback}: {e}")
                     continue
+        
+        # Normalize metrics across all combinations
+        results = self._normalize_metrics(results)
         
         # Sort by composite score
         results.sort(key=lambda x: x.composite_score, reverse=True)
@@ -368,6 +366,9 @@ class BattleTestedPeriodLookbackOptimizer:
                     except Exception as e:
                         tprint_warning(f"⚠️ Failed to evaluate period={period}, lookback={lookback}: {e}")
                         continue
+        
+        # Normalize metrics across all combinations
+        fine_results = self._normalize_metrics(fine_results)
         
         # Sort by composite score
         fine_results.sort(key=lambda x: x.composite_score, reverse=True)
@@ -427,6 +428,9 @@ class BattleTestedPeriodLookbackOptimizer:
             else:
                 tpe_results = fine_results[:5]  # Fallback to top fine results
             
+            # Normalize metrics across TPE results
+            tpe_results = self._normalize_metrics(tpe_results)
+            
             tprint_info(f"🧠 Bayesian TPE optimization completed: {len(tpe_results)} combinations")
             return tpe_results
             
@@ -443,11 +447,13 @@ class BattleTestedPeriodLookbackOptimizer:
             return tpe_results
         
         try:
-            # Create Pareto solutions
+            # Create Pareto solutions - FIXED: Include turnover with correct direction
             solutions = []
             for i, combo in enumerate(tpe_results):
+                # Get raw turnover for proper direction (lower is better)
+                turnover_raw = combo.metadata.get('turnover_raw', 0.0)
                 solution = Solution(
-                    values=[combo.ic_score, combo.sharpe_score, combo.stability_score],
+                    values=[combo.ic_score, combo.sharpe_score, combo.stability_score, -turnover_raw],
                     metadata={'combo': combo, 'index': i}
                 )
                 solutions.append(solution)
@@ -489,9 +495,10 @@ class BattleTestedPeriodLookbackOptimizer:
                     tprint_warning(f"⚠️ Combo period={combo.period}, lookback={combo.lookback} failed OOF Sharpe threshold: {combo.oof_sharpe:.4f}")
                     continue
                 
-                # Check turnover constraint
-                if combo.turnover_score > self.config.max_turnover:
-                    tprint_warning(f"⚠️ Combo period={combo.period}, lookback={combo.lookback} exceeded turnover limit: {combo.turnover_score:.4f}")
+                # Check turnover constraint - FIXED: Use raw turnover instead of normalized score
+                turnover_raw = combo.metadata.get('turnover_raw', 0.0)
+                if turnover_raw > self.config.max_turnover:
+                    tprint_warning(f"⚠️ Combo period={combo.period}, lookback={combo.lookback} exceeded turnover limit: {turnover_raw:.4f}")
                     continue
                 
                 validated_combos.append(combo)
@@ -510,6 +517,11 @@ class BattleTestedPeriodLookbackOptimizer:
                                       period: int, 
                                       lookback: int) -> Optional[PeriodLookbackCombo]:
         """Evaluate a specific period + lookback combination."""
+        # FIXED: Check cache first to avoid duplicate evaluations
+        cache_key = (period, lookback, tuple(feature_columns))
+        if cache_key in self._evaluation_cache:
+            return self._evaluation_cache[cache_key]
+        
         try:
             # Generate features with this period/lookback combination
             features = self._generate_features_with_period_lookback(
@@ -519,11 +531,14 @@ class BattleTestedPeriodLookbackOptimizer:
             if features is None or features.empty:
                 return None
             
-            # Calculate scores
-            ic_score = self._calculate_ic_score(features, targets)
-            sharpe_score = self._calculate_sharpe_score(features, targets)
-            stability_score = self._calculate_stability_score(features, targets)
-            turnover_score = self._calculate_turnover_score(features, targets)
+            # CRITICAL FIX: Align targets with features after dropna()
+            targets_aligned = targets.loc[features.index]
+            
+            # Calculate scores with aligned targets
+            ic_score = self._calculate_ic_score(features, targets_aligned)
+            sharpe_score = self._calculate_sharpe_score(features, targets_aligned)
+            stability_score = self._calculate_stability_score(features, targets_aligned)
+            turnover_score, turnover_raw = self._calculate_turnover_score(features, targets_aligned)
             
             # Calculate composite score
             composite_score = (
@@ -533,10 +548,10 @@ class BattleTestedPeriodLookbackOptimizer:
                 self.config.turnover_weight * turnover_score
             )
             
-            # Calculate OOF metrics
-            oof_ic, oof_sharpe = self._calculate_oof_metrics(features, targets)
+            # Calculate OOF metrics with aligned targets
+            oof_ic, oof_sharpe = self._calculate_oof_metrics(features, targets_aligned)
             
-            return PeriodLookbackCombo(
+            result = PeriodLookbackCombo(
                 period=period,
                 lookback=lookback,
                 ic_score=ic_score,
@@ -548,12 +563,19 @@ class BattleTestedPeriodLookbackOptimizer:
                 oof_sharpe=oof_sharpe,
                 metadata={
                     'feature_count': len(features.columns),
-                    'data_points': len(features)
+                    'data_points': len(features),
+                    'turnover_raw': turnover_raw
                 }
             )
             
+            # Cache the result
+            self._evaluation_cache[cache_key] = result
+            return result
+            
         except Exception as e:
             tprint_warning(f"⚠️ Failed to evaluate period={period}, lookback={lookback}: {e}")
+            # Cache None result to avoid re-evaluating failed combinations
+            self._evaluation_cache[cache_key] = None
             return None
     
     def _generate_features_with_period_lookback(self, 
@@ -594,16 +616,18 @@ class BattleTestedPeriodLookbackOptimizer:
             return None
     
     def _calculate_ic_score(self, features: pd.DataFrame, targets: pd.Series) -> float:
-        """Calculate Information Coefficient score."""
+        """Calculate Information Coefficient score using rank correlation."""
         try:
-            # Calculate IC for each feature and take the mean
-            ics = []
-            for col in features.columns:
-                ic = safe_correlation(features[col], targets)
-                if not np.isnan(ic):
-                    ics.append(abs(ic))
+            # FIXED: Use proper rank IC calculation
+            # Calculate signal as mean of features
+            signal = features.mean(axis=1)
             
-            return np.mean(ics) if ics else 0.0
+            # Align signal and targets
+            signal, targets_aligned = signal.align(targets, join='inner')
+            
+            # Calculate Spearman rank correlation
+            ic = stats.spearmanr(signal, targets_aligned, nan_policy='omit').correlation
+            return self._finite_or_zero(ic)
             
         except Exception:
             return 0.0
@@ -611,14 +635,14 @@ class BattleTestedPeriodLookbackOptimizer:
     def _calculate_sharpe_score(self, features: pd.DataFrame, targets: pd.Series) -> float:
         """Calculate Sharpe ratio score."""
         try:
-            # Calculate returns
-            returns = targets.pct_change().dropna()
-            if len(returns) < 2:
+            # FIXED: Don't apply pct_change to returns - targets are already returns
+            returns = targets
+            if len(returns) < 2 or returns.std() == 0:
                 return 0.0
             
             # Calculate Sharpe ratio
             sharpe = safe_divide(returns.mean(), returns.std())
-            return max(0.0, sharpe) if not np.isnan(sharpe) else 0.0
+            return max(0.0, self._finite_or_zero(sharpe))
             
         except Exception:
             return 0.0
@@ -629,46 +653,62 @@ class BattleTestedPeriodLookbackOptimizer:
             if self.purged_kfold is None:
                 return 0.5  # Default stability score
             
-            correlations = []
-            for train_idx, val_idx in self.purged_kfold.split(features.index):
+            # FIXED: Use positional indices instead of index-based splitting
+            idx = np.arange(len(features))
+            fold_ics = []
+            
+            for train_idx, val_idx in self.purged_kfold.split(idx):
                 if len(train_idx) < 10 or len(val_idx) < 5:
                     continue
                 
-                train_corr = safe_correlation(
-                    features.iloc[train_idx].mean(axis=1), 
-                    targets.iloc[train_idx]
-                )
-                val_corr = safe_correlation(
-                    features.iloc[val_idx].mean(axis=1), 
-                    targets.iloc[val_idx]
-                )
+                # Calculate signal for validation fold
+                signal_val = features.iloc[val_idx].mean(axis=1)
+                targets_val = targets.iloc[val_idx]
                 
-                if not np.isnan(train_corr) and not np.isnan(val_corr):
-                    correlations.append(val_corr)
+                # Calculate IC for this fold using Spearman correlation
+                ic_val = stats.spearmanr(signal_val, targets_val, nan_policy='omit').correlation
+                if not np.isnan(ic_val):
+                    fold_ics.append(ic_val)
             
-            if not correlations:
+            if not fold_ics:
                 return 0.0
             
-            # Stability is inverse of standard deviation
-            stability = 1.0 / (1.0 + np.std(correlations))
-            return min(stability, 1.0)
+            # Stability is inverse of standard deviation of fold ICs
+            stability = 1.0 / (1.0 + np.std(fold_ics))
+            return min(self._finite_or_zero(stability), 1.0)
             
         except Exception:
             return 0.0
     
-    def _calculate_turnover_score(self, features: pd.DataFrame, targets: pd.Series) -> float:
-        """Calculate turnover score (lower is better)."""
+    def _calculate_turnover_score(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[float, float]:
+        """Calculate turnover score based on position changes (lower is better)."""
         try:
-            # Calculate feature changes as proxy for turnover
-            feature_changes = features.diff().abs().sum(axis=1)
-            turnover = feature_changes.mean()
+            # FIXED: Calculate turnover based on position changes, not feature volatility
+            # Create signal from features
+            signal = features.mean(axis=1)
+            
+            # Z-score the signal
+            signal_mean = signal.mean()
+            signal_std = signal.std()
+            if signal_std == 0:
+                return 1.0, 0.0  # No turnover if no variation
+            
+            signal_z = (signal - signal_mean) / signal_std
+            
+            # Create simple long/short position proxy
+            position = np.sign(signal_z)
+            
+            # Calculate turnover as average absolute change in position
+            turnover_raw = position.diff().abs().fillna(0).mean()
             
             # Normalize turnover score (lower is better)
-            turnover_score = 1.0 / (1.0 + turnover)
-            return turnover_score
+            turnover_score = 1.0 / (1.0 + turnover_raw)
+            
+            # Store raw turnover for economic validation
+            return turnover_score, turnover_raw
             
         except Exception:
-            return 0.5
+            return 0.5, 0.0
     
     def _calculate_oof_metrics(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[float, float]:
         """Calculate out-of-fold IC and Sharpe metrics."""
@@ -676,25 +716,27 @@ class BattleTestedPeriodLookbackOptimizer:
             if self.purged_kfold is None:
                 return 0.0, 0.0
             
+            # FIXED: Use positional indices instead of index-based splitting
+            idx = np.arange(len(features))
             oof_ics = []
             oof_sharpes = []
             
-            for train_idx, val_idx in self.purged_kfold.split(features.index):
+            for train_idx, val_idx in self.purged_kfold.split(idx):
                 if len(train_idx) < 10 or len(val_idx) < 5:
                     continue
                 
                 val_features = features.iloc[val_idx]
                 val_targets = targets.iloc[val_idx]
                 
-                # Calculate IC
-                ic = safe_correlation(val_features.mean(axis=1), val_targets)
+                # Calculate IC using Spearman correlation
+                signal_val = val_features.mean(axis=1)
+                ic = stats.spearmanr(signal_val, val_targets, nan_policy='omit').correlation
                 if not np.isnan(ic):
                     oof_ics.append(ic)
                 
-                # Calculate Sharpe
-                returns = val_targets.pct_change().dropna()
-                if len(returns) > 1:
-                    sharpe = safe_divide(returns.mean(), returns.std())
+                # Calculate Sharpe - FIXED: Don't apply pct_change to returns
+                if len(val_targets) > 1 and val_targets.std() > 0:
+                    sharpe = safe_divide(val_targets.mean(), val_targets.std())
                     if not np.isnan(sharpe):
                         oof_sharpes.append(sharpe)
             
@@ -705,6 +747,51 @@ class BattleTestedPeriodLookbackOptimizer:
             
         except Exception:
             return 0.0, 0.0
+    
+    def _normalize_metrics(self, combos: List[PeriodLookbackCombo]) -> List[PeriodLookbackCombo]:
+        """Normalize metrics across combinations to prevent scale domination."""
+        if not combos:
+            return combos
+        
+        # Extract metrics
+        ic_scores = np.array([c.ic_score for c in combos])
+        sharpe_scores = np.array([c.sharpe_score for c in combos])
+        stability_scores = np.array([c.stability_score for c in combos])
+        turnover_scores = np.array([c.turnover_score for c in combos])
+        
+        # Normalize each metric to [0, 1] using robust percentiles
+        def _normalize_robust(arr):
+            arr = np.asarray(arr, float)
+            lo, hi = np.nanpercentile(arr, 5), np.nanpercentile(arr, 95)
+            if hi == lo:
+                return np.zeros_like(arr)
+            return np.clip((arr - lo) / (hi - lo), 0, 1)
+        
+        ic_norm = _normalize_robust(ic_scores)
+        sharpe_norm = _normalize_robust(sharpe_scores)
+        stability_norm = _normalize_robust(stability_scores)
+        turnover_norm = _normalize_robust(turnover_scores)
+        
+        # Update combinations with normalized scores
+        for i, combo in enumerate(combos):
+            combo.ic_score = ic_norm[i]
+            combo.sharpe_score = sharpe_norm[i]
+            combo.stability_score = stability_norm[i]
+            combo.turnover_score = turnover_norm[i]
+            
+            # Recalculate composite score with normalized metrics
+            combo.composite_score = (
+                self.config.ic_weight * combo.ic_score +
+                self.config.sharpe_weight * combo.sharpe_score +
+                self.config.stability_weight * combo.stability_score +
+                self.config.turnover_weight * combo.turnover_score
+            )
+        
+        return combos
+    
+    def _finite_or_zero(self, x: float) -> float:
+        """Safety function to clamp values to finite and non-negative where intended."""
+        return float(x) if np.isfinite(x) else 0.0
     
     def _generate_final_selections(self, 
                                  validated_combos: List[PeriodLookbackCombo],

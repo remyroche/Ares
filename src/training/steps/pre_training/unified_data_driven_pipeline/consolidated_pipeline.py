@@ -188,7 +188,7 @@ from .enhanced_components.advanced_lookback_optimizer import (
 from .enhanced_components.feature_bank_integration import (
     FeatureBankIntegration, FeatureBankConfig
 )
-from .enhanced_components.modular_architecture import (
+from .core.modular_architecture import (
     create_modular_architecture, ValidationLevel, ErrorSeverity, ErrorCategory
 )
 from .enhanced_components.enhanced_feature_generator import (

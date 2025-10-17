@@ -69,6 +69,24 @@ from .migration_utils import (
     create_advanced_migration
 )
 
+from .modular_pipeline_integration import (
+    ModularPipelineOrchestrator,
+    create_modular_pipeline_orchestrator,
+    integrate_with_consolidated_pipeline
+)
+
+from .modular_monitoring import (
+    ModularComponentMonitor,
+    ComponentMetrics,
+    PipelineMetrics,
+    create_monitor
+)
+
+from .modular_dashboard import (
+    ModularDashboard,
+    create_dashboard
+)
+
 __all__ = [
     # Configuration
     'UnifiedPipelineConfig',
@@ -121,5 +139,18 @@ __all__ = [
     'validate_migration_compatibility',
     'generate_migration_report',
     'create_simple_migration',
-    'create_advanced_migration'
+    'create_advanced_migration',
+    
+    # Pipeline integration
+    'ModularPipelineOrchestrator',
+    'create_modular_pipeline_orchestrator',
+    'integrate_with_consolidated_pipeline',
+    
+    # Monitoring and dashboard
+    'ModularComponentMonitor',
+    'ComponentMetrics',
+    'PipelineMetrics',
+    'create_monitor',
+    'ModularDashboard',
+    'create_dashboard'
 ]

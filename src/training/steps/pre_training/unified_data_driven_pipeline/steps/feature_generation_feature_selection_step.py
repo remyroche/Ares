@@ -18,8 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 
 # Import tprint utilities
@@ -102,54 +102,16 @@ def _safe_to_meta(obj: Any) -> Dict[str, Any]:
     return out
 
 @dataclass
-class FeatureSelectionResult:
-    """Sophisticated result of feature selection step."""
-
-    success: bool
-    selected_features: pd.DataFrame
-    selection_metadata: Dict[str, Any]
-    selection_metrics: Dict[str, Any]
-    selection_strategy: str
-    feature_importance: Dict[str, float]
-    economic_validation: Dict[str, Any]
-    multi_objective_results: Dict[str, Any]
-    vectorbt_optimizations: Dict[str, Any]
-    quality_metrics: Dict[str, Any]
-    diversity_metrics: Dict[str, Any]
-    stability_metrics: Dict[str, Any]
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert result to serializable dictionary."""
-        return {
-            'success': self.success,
-            'selected_features': {
-                'columns': list(self.selected_features.columns),
-                'shape': self.selected_features.shape,
-                'preview': self.selected_features.head(5).to_dict('records') if not self.selected_features.empty else []
-            },
-            'selection_metadata': self.selection_metadata,
-            'selection_metrics': self.selection_metrics,
-            'selection_strategy': self.selection_strategy,
-            'feature_importance': self.feature_importance,
-            'economic_validation': self.economic_validation,
-            'multi_objective_results': self.multi_objective_results,
-            'vectorbt_optimizations': self.vectorbt_optimizations,
-            'quality_metrics': self.quality_metrics,
-            'diversity_metrics': self.diversity_metrics,
-            'stability_metrics': self.stability_metrics,
-            'artifacts': self.artifacts,
-            'error_message': self.error_message
-        }
-
-class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
+class FeatureGenerationFeatureSelectionStep(ModularComponent):
     """Sophisticated feature selection step using battle-tested components."""
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         """Initialize the sophisticated feature selection step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        super().__init__(name, config or {}, logger)
+            name="feature_generation_feature_selection_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize battle-tested feature selection components
         if BATTLE_TESTED_COMPONENTS_AVAILABLE:
@@ -518,88 +480,82 @@ class FeatureGenerationFeatureSelectionStep(BasePreTrainingComponent):
                 error_message=str(e)
             )
 
-# Command handler for ares_launcher integration
-async def handle_feature_generation_feature_selection_step(
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-    seed: int = 42,
-    **kwargs
-) -> FeatureSelectionResult:
-    """
-    Handle sophisticated feature generation feature selection step command.
-
-    Args:
-        symbol: Trading symbol (default: "ETHUSDT")
-        timeframe: Timeframe (default: "15m")
-        direction: Direction (default: "longs")
-        custom_overrides: Custom configuration overrides (optional)
-        seed: Random seed for deterministic data generation (default: 42)
-        **kwargs: Additional arguments
-
-    Returns:
-        Sophisticated FeatureSelectionResult with comprehensive selection results
-    """
-    # Create deterministic sample data for feature selection
-    rng = np.random.default_rng(seed=seed)
-    sample_data = pd.DataFrame({
-        'open': rng.normal(size=1000).cumsum() + 100,
-        'high': rng.normal(size=1000).cumsum() + 105,
-        'low': rng.normal(size=1000).cumsum() + 95,
-        'close': rng.normal(size=1000).cumsum() + 100,
-        'volume': rng.integers(1000, 10000, 1000)
-    })
-
-    # Generate targets using the labeling system with proper error handling
-    try:
-        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import ConsolidatedPipelineRunner
-        runner = ConsolidatedPipelineRunner()
+    # Required abstract methods from ModularComponent
+    def _initialize_resources(self) -> bool:
+        """Initialize component-specific resources."""
+        try:
+            # Initialize battle-tested feature selection components
+            if BATTLE_TESTED_COMPONENTS_AVAILABLE:
+                self.battle_tested_selector = BattleTestedFeatureSelector()
+                self.multi_objective_selector = MultiObjectiveFeatureSelector()
+                self.economic_evaluator = EconomicPeriodEvaluator()
+                self.vectorbt_optimizer = EnhancedVectorBTOptimizer()
+            else:
+                self.battle_tested_selector = None
+                self.multi_objective_selector = None
+                self.economic_evaluator = None
+                self.vectorbt_optimizer = None
             
-        # Use public API if available, otherwise fallback to private with error handling
-        if hasattr(runner, 'generate_targets'):
-            targets = runner.generate_targets(sample_data, symbol, timeframe, direction)
-        elif hasattr(runner, '_generate_targets'):
-            targets = runner._generate_targets(sample_data, symbol, timeframe, direction)
-        else:
-            # Fallback: create simple targets based on price movement
-            targets = pd.Series(
-                (sample_data['close'].pct_change() > 0).astype(int),
-                index=sample_data.index,
-                name='target'
-            ).dropna()
-    except Exception as e:
-        # Fallback: create simple targets based on price movement
-        targets = pd.Series(
-            (sample_data['close'].pct_change() > 0).astype(int),
-            index=sample_data.index,
-            name='target'
-        ).dropna()
+            # Set initial state
+            self.set_state('initialized_at', datetime.now().isoformat())
+            self.set_state('selection_count', 0)
+            return True
+        except Exception as e:
+            self.logger.error(f"Resource initialization failed: {e}")
+            return False
+    
+    def _cleanup_resources(self) -> None:
+        """Cleanup component-specific resources."""
+        self.set_state('cleaned_up_at', datetime.now().isoformat())
+        self.set_state('selection_count', 0)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data with component logic."""
+        # Increment selection count
+        count = self.get_state('selection_count', 0)
+        self.set_state('selection_count', count + 1)
+        
+        # Basic processing - return data as-is for now
+        # The actual feature selection is done in the execute method
+        return data
+    
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        """Get validation rules for this component."""
+        return {
+            'min_size': 100,
+            'max_size': 1000000,
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'data_types': ['pandas.DataFrame'],
+            'max_nan_ratio': 0.1,
+            'min_unique_values': 2
+        }
+    
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        """Validate data with component-specific rules."""
+        errors = []
+        warnings = []
+        metadata = {}
+        
+        if isinstance(data, pd.DataFrame):
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                errors.append(f"Missing required columns: {missing_columns}")
+            
+            # Check data size
+            if len(data) < 100:
+                warnings.append("Data size is small (< 100 rows)")
+            
+            # Check for NaN values
+            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+            if nan_ratio > 0.1:
+                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
+            
+            metadata['data_shape'] = data.shape
+            metadata['nan_ratio'] = nan_ratio
+            metadata['columns'] = list(data.columns)
+        
+        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
-    # Create sophisticated step instance and execute
-    step = FeatureGenerationFeatureSelectionStep()
-
-    return await step.execute(
-        data=sample_data,
-        targets=targets,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        custom_overrides=custom_overrides
-    )
-
-# Register component with factory
-def _register_feature_generation_feature_selection_step():
-    """Register the sophisticated FeatureGenerationFeatureSelectionStep component with the factory."""
-    try:
-        from src.training.steps.pre_training.components import ComponentFactory
-        ComponentFactory.register_component(
-            'feature_generation_feature_selection_step',
-            FeatureGenerationFeatureSelectionStep
-        )
-    except ImportError:
-        # Component factory not available, skip registration
-        pass
-
-# Register the component when module is imported
-_register_feature_generation_feature_selection_step()
+# Command handler for ares_launcher integration

@@ -19,8 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass
 
-from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
@@ -53,26 +53,16 @@ except ImportError:
     FeatureBank = None
 
 @dataclass
-class FeatureGenerationResult:
-    """Enhanced result of feature generation step."""
-
-    success: bool
-    generated_features: pd.DataFrame
-    feature_metadata: Dict[str, Any]
-    generation_metrics: Dict[str, Any]
-    optimization_stats: Dict[str, Any]
-    feature_categories: List[str]
-    vectorbt_optimizations: Dict[str, Any]
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-
-class FeatureGenerationStep(BasePreTrainingComponent):
+class FeatureGenerationStep(ModularComponent):
     """Enhanced feature generation step using AutoOptimizedFeatureGenerator."""
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         """Initialize the enhanced feature generation step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        super().__init__(name, config or {}, logger)
+            name="feature_generation_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
         
         # Initialize feature generation components
         if FEATURE_GENERATION_AVAILABLE:
@@ -267,110 +257,3 @@ class FeatureGenerationStep(BasePreTrainingComponent):
 
 
     # Required utility methods for BasePreTrainingComponent
-    def safe_dataframe_operation(self, operation_func, *args, **kwargs):
-        """Safe dataframe operation wrapper."""
-        return safe_dataframe_operation(operation_func, *args, **kwargs)
-
-    def safe_matrix_multiply(self, a, b):
-        """Safe matrix multiplication."""
-        return safe_matrix_multiply(a, b)
-
-    def optimize_dataframe_for_matrix_ops(self, df):
-        """Optimize dataframe for matrix operations."""
-        return optimize_dataframe(df)
-
-    def _serialize_config(self, config, _depth=0) -> Dict[str, Any]:
-        """Serialize configuration object to plain types for JSON serialization with recursion guard."""
-        if _depth > 3:  # prevent runaway recursion
-            return str(config)
-            
-        serialized = {}
-        for key, value in config.__dict__.items():
-            if hasattr(value, 'value'):  # Enum
-                serialized[key] = value.value
-            elif isinstance(value, (list, tuple, set)):
-                serialized[key] = [self._serialize_config(x, _depth+1) for x in value]
-            elif hasattr(value, '__dict__'):  # Object with __dict__
-                serialized[key] = self._serialize_config(value, _depth+1)
-            else:
-                serialized[key] = value
-        return serialized
-
-    def process(self, data: Any) -> Any:
-        """Process the input data and return the result."""
-        # This method is required by the abstract base class
-        # The actual processing is done in the execute method
-        return data
-
-    def validate(self, data: Any) -> bool:
-        """Validate the input data."""
-        # This method is required by the abstract base class
-        # Basic validation - check if data is not None and has required columns
-        if data is None:
-            return False
-        if not isinstance(data, pd.DataFrame) or data.empty:
-            return False
-        return True
-
-# Command handler for ares_launcher integration
-async def handle_feature_generation_step(
-    data: Optional[pd.DataFrame] = None,
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-    **kwargs
-) -> FeatureGenerationResult:
-    """
-    Handle enhanced feature generation step command.
-
-    Args:
-        data: Input DataFrame with OHLCV data (optional, will generate sample if None)
-        symbol: Trading symbol (default: "ETHUSDT")
-        timeframe: Timeframe (default: "15m")
-        direction: Direction (default: "longs")
-        custom_overrides: Custom configuration overrides (optional)
-        **kwargs: Additional arguments
-
-    Returns:
-        Enhanced FeatureGenerationResult with comprehensive generation results
-    """
-    # Create sample data for feature generation (only for testing/demo)
-    # In production, this should be replaced with actual data loading
-    if data is None:
-        sample_data = pd.DataFrame({
-            'open': np.random.randn(1000).cumsum() + 100,
-            'high': np.random.randn(1000).cumsum() + 105,
-            'low': np.random.randn(1000).cumsum() + 95,
-            'close': np.random.randn(1000).cumsum() + 100,
-            'volume': np.random.randint(1000, 10000, 1000)
-        })
-    else:
-        sample_data = data
-
-    # Create enhanced step instance and execute
-    step = FeatureGenerationStep()
-
-    return await step.execute(
-        data=sample_data,
-        symbol=symbol,
-        timeframe=timeframe,
-        direction=direction,
-        custom_overrides=custom_overrides
-    )
-
-# Register component with factory
-def _register_feature_generation_step():
-    """Register the FeatureGenerationStep component with the factory."""
-    try:
-        from src.training.steps.pre_training.components import ComponentFactory
-        ComponentFactory.register_component(
-            'feature_generation_step',
-            FeatureGenerationStep
-        )
-    except ImportError:
-        # Component factory not available, skip registration
-        pass
-
-# Register the component when module is imported
-_register_feature_generation_step()

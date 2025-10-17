@@ -16,30 +16,24 @@ from dataclasses import dataclass
 from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
     run_interaction_generation_step
 )
-from src.training.steps.pre_training.components.base_component import (
-    BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
+    ModularComponent
 )
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 
 @dataclass
-class InteractionGenerationResult:
-    """Result of interaction generation step."""
-
-    success: bool
-    generated_interactions: int
-    interaction_metadata: Dict[str, Any]
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-
-class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
+class FeatureGenerationInteractionGenerationStep(ModularComponent):
     """Interaction generation step that calls the consolidated pipeline."""
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
+    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         """Initialize the interaction generation step."""
-        super().__init__(config or ComponentConfig())
-        self.logger = logging.getLogger(__name__)
+        super().__init__(name, config or {}, logger)
+            name="feature_generation_interaction_generation_step",
+            config=config_dict,
+            logger=logging.getLogger(__name__)
+        )
 
     async def execute(self,
                      training_input: Dict[str, Any],
@@ -113,109 +107,3 @@ class FeatureGenerationInteractionGenerationStep(BasePreTrainingComponent):
             )
 
     # Required utility methods for BasePreTrainingComponent
-    def safe_dataframe_operation(self, operation_func, *args, **kwargs):
-        """Safe dataframe operation wrapper."""
-        return safe_dataframe_operation(operation_func, *args, **kwargs)
-
-    def safe_matrix_multiply(self, a, b):
-        """Safe matrix multiplication."""
-        return safe_matrix_multiply(a, b)
-
-    def optimize_dataframe_for_matrix_ops(self, df):
-        """Optimize dataframe for matrix operations."""
-        return optimize_dataframe(df)
-
-# Command handler for ares_launcher integration
-async def handle_feature_generation_interaction_generation_step(
-    symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
-    direction: str = "longs",
-    intensity: str = "blank",
-    lookback_days: Optional[int] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    exchange: str = "binance",
-    custom_overrides: Optional[Dict[str, Any]] = None,
-    **kwargs
-) -> InteractionGenerationResult:
-    """
-    Handle feature generation interaction generation step command.
-
-    Args:
-        symbol: Trading symbol (default: "ETHUSDT")
-        timeframe: Timeframe (default: "15m")
-        direction: Direction (default: "longs")
-        intensity: Pipeline intensity (default: "blank")
-        lookback_days: Lookback days (optional)
-        start_date: Start date (optional)
-        end_date: End date (optional)
-        exchange: Exchange (default: "binance")
-        custom_overrides: Custom configuration overrides (optional)
-        **kwargs: Additional arguments
-
-    Returns:
-        InteractionGenerationResult with generation results
-    """
-    # Only generate sample data if not provided
-    data = kwargs.get('data')
-    if data is None:
-        # Create sample data for generation (in real usage, this would come from data loading)
-        sample_data = pd.DataFrame({
-            'open': np.random.randn(1000).cumsum() + 100,
-            'high': np.random.randn(1000).cumsum() + 105,
-            'low': np.random.randn(1000).cumsum() + 95,
-            'close': np.random.randn(1000).cumsum() + 100,
-            'volume': np.random.randint(1000, 10000, 1000)
-        })
-    else:
-        # Validate provided data
-        if not isinstance(data, pd.DataFrame):
-            raise ValueError(f"Expected pandas DataFrame, got {type(data)}")
-        
-        required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
-        if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
-        
-        sample_data = data
-
-    # Validate mutually exclusive date parameters
-    if lookback_days is not None and (start_date is not None or end_date is not None):
-        raise ValueError("Cannot specify both lookback_days and start_date/end_date")
-
-    # Create step instance and execute with proper signature
-    step = FeatureGenerationInteractionGenerationStep()
-    
-    # Build training_input dict and pass explicit pipeline_state
-    training_input = {
-        'data': sample_data,
-        'symbol': symbol,
-        'timeframe': timeframe,
-        'direction': direction,
-        'intensity': intensity,
-        'lookback_days': lookback_days,
-        'start_date': start_date,
-        'end_date': end_date,
-        'exchange': exchange,
-        'custom_overrides': custom_overrides
-    }
-    
-    pipeline_state = {}
-
-    return await step.execute(training_input, pipeline_state)
-
-# Register component with factory
-def _register_feature_generation_interaction_generation_step():
-    """Register the feature generation interaction generation step component with the factory."""
-    try:
-        from src.training.steps.pre_training.components import ComponentFactory
-        ComponentFactory.register_component(
-            'feature_generation_interaction_generation_step',
-            FeatureGenerationInteractionGenerationStep
-        )
-    except ImportError:
-        # Component factory not available, skip registration
-        pass
-
-# Register the component when module is imported
-_register_feature_generation_interaction_generation_step()

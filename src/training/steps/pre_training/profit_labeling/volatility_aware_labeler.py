@@ -537,8 +537,8 @@ class VolatilityAwareMultiHorizonLabeler:
     
     def _calculate_potential_profits(self, trade_opportunities: pd.Series, prices: pd.Series, target_name: str) -> pd.Series:
         """Calculate potential profit based on signal direction over a fixed lookahead window (default: 6 bars ≈ 90min on 15m data)."""
-        # Derive window length from lookahead_periods if you want parity, or keep 6 as a separate hyperparameter.
-        window_len = 6  # consider promoting to config
+        # Use the same horizon as the labeling window for consistency
+        window_len = self.config.optimal_entry_detection.max_windows
         # Map index label -> positional index once
         pos = pd.Series(np.arange(len(prices)), index=prices.index)
         out = {}

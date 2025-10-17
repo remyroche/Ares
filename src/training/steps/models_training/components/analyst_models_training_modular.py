@@ -3,13 +3,10 @@ Analyst Models Training - ModularComponent Implementation
 
 This module provides a ModularComponent implementation of the Analyst Models Training
 that handles training of individual Analyst base models:
-- TCN (Temporal Convolutional Network) model
 - LightGBM model
-- Ridge Regression model
-- Elastic Net model
-- Random Forest model
-- NAS (Neural Architecture Search) model
-- TAS (Tree-based Architecture Search) model
+- LightGBM + PatchTST features model
+- CatBoost model
+- Stacker LGBM Calibrated (meta-learner)
 
 The Analyst operates on the dedicated 15m timeframe and decides IF we trade by
 screening market conditions and producing the green-signal gating that the
@@ -41,13 +38,10 @@ from ..unified_data_driven_pipeline.core.modular_architecture import (
 
 class AnalystModelType(Enum):
     """Types of Analyst models."""
-    TCN = "tcn"
     LIGHTGBM = "lightgbm"
-    RIDGE = "ridge"
-    ELASTIC_NET = "elastic_net"
-    RANDOM_FOREST = "random_forest"
-    NAS = "nas"
-    TAS = "tas"
+    LIGHTGBM_PATCHTST = "lightgbm_patchtst"
+    CATBOOST = "catboost"
+    STACKER_LGBM_CALIBRATED = "stacker_lgbm_calibrated"
 
 
 @dataclass
@@ -99,7 +93,7 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
         default_config = {
             'model': {
                 'type': 'multi_model',
-                'model_types': ['tcn', 'lightgbm', 'ridge', 'elastic_net', 'random_forest'],
+                'model_types': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
                 'regime_aware': True
             },
             'training': {
@@ -385,55 +379,20 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
     def _train_single_model(self, model_type: AnalystModelType, data: Any, config: Dict[str, Any]) -> Any:
         """Train a single model."""
         try:
-            if model_type == AnalystModelType.TCN:
-                return self._train_tcn_model(data, config)
-            elif model_type == AnalystModelType.LIGHTGBM:
+            if model_type == AnalystModelType.LIGHTGBM:
                 return self._train_lightgbm_model(data, config)
-            elif model_type == AnalystModelType.RIDGE:
-                return self._train_ridge_model(data, config)
-            elif model_type == AnalystModelType.ELASTIC_NET:
-                return self._train_elastic_net_model(data, config)
-            elif model_type == AnalystModelType.RANDOM_FOREST:
-                return self._train_random_forest_model(data, config)
-            elif model_type == AnalystModelType.NAS:
-                return self._train_nas_model(data, config)
-            elif model_type == AnalystModelType.TAS:
-                return self._train_tas_model(data, config)
+            elif model_type == AnalystModelType.LIGHTGBM_PATCHTST:
+                return self._train_lightgbm_patchtst_model(data, config)
+            elif model_type == AnalystModelType.CATBOOST:
+                return self._train_catboost_model(data, config)
+            elif model_type == AnalystModelType.STACKER_LGBM_CALIBRATED:
+                return self._train_stacker_lgbm_calibrated_model(data, config)
             else:
                 self.logger.warning(f"Unknown model type: {model_type}")
                 return None
                 
         except Exception as e:
             self.logger.error(f"Failed to train {model_type.value}: {e}")
-            return None
-    
-    def _train_tcn_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train TCN model."""
-        try:
-            # Placeholder implementation - would integrate with actual TCN training
-            self.logger.info("Training TCN model (placeholder)")
-            
-            # Simulate training
-            X_train = data['X_train']
-            y_train = data['y_train']
-            
-            # Create mock model
-            model = {
-                'type': 'tcn',
-                'architecture': config['architecture'],
-                'layers': config['layers'],
-                'filters': config['filters'],
-                'kernel_size': config['kernel_size'],
-                'dilation_rate': config['dilation_rate'],
-                'trained': True,
-                'config': config,
-                'training_samples': len(X_train)
-            }
-            
-            return model
-            
-        except Exception as e:
-            self.logger.error(f"TCN training failed: {e}")
             return None
     
     def _train_lightgbm_model(self, data: Any, config: Dict[str, Any]) -> Any:
@@ -449,11 +408,11 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             # Create mock model
             model = {
                 'type': 'lightgbm',
-                'algorithm': config['algorithm'],
-                'n_estimators': config['n_estimators'],
-                'max_depth': config['max_depth'],
-                'learning_rate': config['learning_rate'],
-                'num_leaves': config['num_leaves'],
+                'algorithm': 'lightgbm',
+                'n_estimators': config.get('n_estimators', 1000),
+                'max_depth': config.get('max_depth', 6),
+                'learning_rate': config.get('learning_rate', 0.1),
+                'num_leaves': config.get('num_leaves', 31),
                 'trained': True,
                 'config': config,
                 'training_samples': len(X_train)
@@ -465,11 +424,11 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             self.logger.error(f"LightGBM training failed: {e}")
             return None
     
-    def _train_ridge_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train Ridge model."""
+    def _train_lightgbm_patchtst_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train LightGBM + PatchTST features model."""
         try:
-            # Placeholder implementation - would integrate with actual Ridge training
-            self.logger.info("Training Ridge model (placeholder)")
+            # Placeholder implementation - would integrate with actual LightGBM + PatchTST training
+            self.logger.info("Training LightGBM + PatchTST model (placeholder)")
             
             # Simulate training
             X_train = data['X_train']
@@ -477,10 +436,14 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             
             # Create mock model
             model = {
-                'type': 'ridge',
-                'algorithm': config['algorithm'],
-                'alpha': config['alpha'],
-                'solver': config['solver'],
+                'type': 'lightgbm_patchtst',
+                'algorithm': 'lightgbm',
+                'n_estimators': config.get('n_estimators', 1000),
+                'max_depth': config.get('max_depth', 6),
+                'learning_rate': config.get('learning_rate', 0.1),
+                'num_leaves': config.get('num_leaves', 31),
+                'patchtst_features': True,
+                'patchtst_config': config.get('patchtst_config', {}),
                 'trained': True,
                 'config': config,
                 'training_samples': len(X_train)
@@ -489,14 +452,14 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             return model
             
         except Exception as e:
-            self.logger.error(f"Ridge training failed: {e}")
+            self.logger.error(f"LightGBM + PatchTST training failed: {e}")
             return None
     
-    def _train_elastic_net_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train ElasticNet model."""
+    def _train_catboost_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train CatBoost model."""
         try:
-            # Placeholder implementation - would integrate with actual ElasticNet training
-            self.logger.info("Training ElasticNet model (placeholder)")
+            # Placeholder implementation - would integrate with actual CatBoost training
+            self.logger.info("Training CatBoost model (placeholder)")
             
             # Simulate training
             X_train = data['X_train']
@@ -504,11 +467,12 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             
             # Create mock model
             model = {
-                'type': 'elastic_net',
-                'algorithm': config['algorithm'],
-                'alpha': config['alpha'],
-                'l1_ratio': config['l1_ratio'],
-                'max_iter': config['max_iter'],
+                'type': 'catboost',
+                'algorithm': 'catboost',
+                'iterations': config.get('iterations', 1000),
+                'learning_rate': config.get('learning_rate', 0.1),
+                'depth': config.get('depth', 6),
+                'l2_leaf_reg': config.get('l2_leaf_reg', 3),
                 'trained': True,
                 'config': config,
                 'training_samples': len(X_train)
@@ -517,14 +481,14 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             return model
             
         except Exception as e:
-            self.logger.error(f"ElasticNet training failed: {e}")
+            self.logger.error(f"CatBoost training failed: {e}")
             return None
     
-    def _train_random_forest_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train Random Forest model."""
+    def _train_stacker_lgbm_calibrated_model(self, data: Any, config: Dict[str, Any]) -> Any:
+        """Train Stacker LGBM Calibrated (meta-learner) model."""
         try:
-            # Placeholder implementation - would integrate with actual Random Forest training
-            self.logger.info("Training Random Forest model (placeholder)")
+            # Placeholder implementation - would integrate with actual Stacker LGBM Calibrated training
+            self.logger.info("Training Stacker LGBM Calibrated model (placeholder)")
             
             # Simulate training
             X_train = data['X_train']
@@ -532,11 +496,15 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             
             # Create mock model
             model = {
-                'type': 'random_forest',
-                'algorithm': config['algorithm'],
-                'n_estimators': config['n_estimators'],
-                'max_depth': config['max_depth'],
-                'min_samples_split': config['min_samples_split'],
+                'type': 'stacker_lgbm_calibrated',
+                'algorithm': 'lightgbm',
+                'n_estimators': config.get('n_estimators', 1000),
+                'max_depth': config.get('max_depth', 6),
+                'learning_rate': config.get('learning_rate', 0.1),
+                'num_leaves': config.get('num_leaves', 31),
+                'calibrated': True,
+                'meta_learner': True,
+                'base_models': config.get('base_models', ['lightgbm', 'lightgbm_patchtst', 'catboost']),
                 'trained': True,
                 'config': config,
                 'training_samples': len(X_train)
@@ -545,61 +513,7 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             return model
             
         except Exception as e:
-            self.logger.error(f"Random Forest training failed: {e}")
-            return None
-    
-    def _train_nas_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train NAS model."""
-        try:
-            # Placeholder implementation - would integrate with actual NAS training
-            self.logger.info("Training NAS model (placeholder)")
-            
-            # Simulate training
-            X_train = data['X_train']
-            y_train = data['y_train']
-            
-            # Create mock model
-            model = {
-                'type': 'nas',
-                'algorithm': config['algorithm'],
-                'search_space': config['search_space'],
-                'max_trials': config['max_trials'],
-                'trained': True,
-                'config': config,
-                'training_samples': len(X_train)
-            }
-            
-            return model
-            
-        except Exception as e:
-            self.logger.error(f"NAS training failed: {e}")
-            return None
-    
-    def _train_tas_model(self, data: Any, config: Dict[str, Any]) -> Any:
-        """Train TAS model."""
-        try:
-            # Placeholder implementation - would integrate with actual TAS training
-            self.logger.info("Training TAS model (placeholder)")
-            
-            # Simulate training
-            X_train = data['X_train']
-            y_train = data['y_train']
-            
-            # Create mock model
-            model = {
-                'type': 'tas',
-                'algorithm': config['algorithm'],
-                'search_space': config['search_space'],
-                'max_trials': config['max_trials'],
-                'trained': True,
-                'config': config,
-                'training_samples': len(X_train)
-            }
-            
-            return model
-            
-        except Exception as e:
-            self.logger.error(f"TAS training failed: {e}")
+            self.logger.error(f"Stacker LGBM Calibrated training failed: {e}")
             return None
     
     def _evaluate_models(self, data: Any, models: Dict[str, Any]) -> Dict[str, Any]:

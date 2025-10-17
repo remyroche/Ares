@@ -3,9 +3,9 @@ Analyst Ensemble Training - ModularComponent Implementation
 
 This module provides a ModularComponent implementation of the Analyst Ensemble Training
 that handles training of Analyst ensemble models that combine:
-- Base models (TCN, LightGBM, Ridge, ElasticNet, RandomForest, NAS, TAS)
+- Base models (LightGBM, LightGBM+PatchTST, CatBoost, Stacker LGBM Calibrated)
 - HMM regime features and probabilities
-- NAS models per-regime for enhanced trading signal generation
+- Meta-learner ensemble for enhanced trading signal generation
 - Multi-timeframe features and cross-timeframe analysis
 - Technical indicators and market data
 - Outputs from base Analyst models
@@ -54,7 +54,6 @@ class AnalystEnsembleTrainingConfig:
     ensemble_method: EnsembleMethod
     ensemble_params: Dict[str, Any]
     hmm_config: Dict[str, Any]
-    nas_config: Dict[str, Any]
     regime_aware: bool = True
     timeframe: str = "15m"
     auto_save: bool = True
@@ -117,10 +116,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             'hmm_config': {
                 'n_components': 3,
                 'covariance_type': 'full'
-            },
-            'nas_config': {
-                'search_space': 'default',
-                'max_trials': 50
             },
             'regime_aware': True,
             'timeframe': '15m',

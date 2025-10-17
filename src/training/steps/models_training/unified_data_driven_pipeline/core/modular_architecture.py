@@ -25,8 +25,15 @@ from typing import Any, Dict, List, Optional, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import traceback
-import psutil
 import gc
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 # Core dependencies for ML training
 try:
@@ -862,6 +869,10 @@ class ModularComponent(ABC):
     def _check_memory_usage(self, data: Any) -> bool:
         """Check if sufficient memory available."""
         try:
+            if not PSUTIL_AVAILABLE:
+                self.logger.warning("psutil not available, skipping memory check")
+                return True
+            
             # Estimate memory usage
             memory_usage = self.get_memory_requirements(data)
             estimated_memory = memory_usage.get('estimated_memory_mb', 0)

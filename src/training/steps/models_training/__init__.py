@@ -43,13 +43,44 @@ from .unified_data_driven_pipeline.core import (
 
 # Import base components
 from .components.base_component import BaseModelsTrainingComponent
-from .components.analyst_training_pipeline_modular import (
-    AnalystTrainingPipelineModular,
-    AnalystModelType,
-    AnalystTrainingConfig,
-    AnalystTrainingResult,
-    create_analyst_training_pipeline
+
+# Import migrated components
+from .components.analyst_models_training_modular import (
+    AnalystModelsTrainingModular,
+    AnalystModelType as AnalystModelsModelType,
+    AnalystModelsTrainingConfig,
+    AnalystModelsTrainingResult,
+    create_analyst_models_training
 )
+
+from .components.analyst_ensemble_training_modular import (
+    AnalystEnsembleTrainingModular,
+    EnsembleMethod,
+    AnalystEnsembleTrainingConfig,
+    AnalystEnsembleTrainingResult,
+    create_analyst_ensemble_training
+)
+
+from .components.ml_entry_timing_labeler_modular import (
+    MLEntryTimingLabelerModular,
+    LabelingMethod,
+    MLModelType,
+    MLEntryTimingConfig,
+    MLEntryTimingResult,
+    create_ml_entry_timing_labeler
+)
+
+from .unified_training_pipeline_modular import (
+    UnifiedTrainingPipelineModular,
+    TrainingPhase,
+    UnifiedTrainingConfig,
+    UnifiedTrainingResult,
+    create_unified_training_pipeline
+)
+
+# Import migration utilities
+from .migrate_components import ModelsTrainingMigrationManager
+from .validate_migrations import MigrationValidator
 
 __version__ = "2.0.0"
 
@@ -80,10 +111,33 @@ __all__ = [
     # Base components
     'BaseModelsTrainingComponent',
     
-    # Analyst training pipeline
-    'AnalystTrainingPipelineModular',
-    'AnalystModelType',
-    'AnalystTrainingConfig',
-    'AnalystTrainingResult',
-    'create_analyst_training_pipeline'
+    # Migrated components
+    'AnalystModelsTrainingModular',
+    'AnalystModelsModelType',
+    'AnalystModelsTrainingConfig',
+    'AnalystModelsTrainingResult',
+    'create_analyst_models_training',
+    
+    'AnalystEnsembleTrainingModular',
+    'EnsembleMethod',
+    'AnalystEnsembleTrainingConfig',
+    'AnalystEnsembleTrainingResult',
+    'create_analyst_ensemble_training',
+    
+    'MLEntryTimingLabelerModular',
+    'LabelingMethod',
+    'MLModelType',
+    'MLEntryTimingConfig',
+    'MLEntryTimingResult',
+    'create_ml_entry_timing_labeler',
+    
+    'UnifiedTrainingPipelineModular',
+    'TrainingPhase',
+    'UnifiedTrainingConfig',
+    'UnifiedTrainingResult',
+    'create_unified_training_pipeline',
+    
+    # Migration utilities
+    'ModelsTrainingMigrationManager',
+    'MigrationValidator'
 ]

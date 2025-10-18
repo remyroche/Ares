@@ -289,7 +289,10 @@ class UnifiedMatrixOperations:
             if VECTORBT_ROLLING_AVAILABLE:
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer()
                 if self.rolling_optimizer:
-                    self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                    # Reduced verbosity - only log once per session
+                    if not hasattr(UnifiedMatrixOperations, '_logged_rolling_init'):
+                        self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                        UnifiedMatrixOperations._logged_rolling_init = True
                 else:
                     self.logger.info("ℹ️ VectorBTRollingOptimizer not available")
             else:

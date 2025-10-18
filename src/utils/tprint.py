@@ -249,6 +249,17 @@ class TPrintManager:
 
     def __init__(self, config: Optional[TPrintConfig] = None):
         self.config = config or TPrintConfig()
+        # Minimal mode to reduce overhead in hot loops: set env TPRINT_MINIMAL=1
+        try:
+            self.minimal_mode = bool(int(os.getenv('TPRINT_MINIMAL', '0')))
+        except Exception:
+            self.minimal_mode = False
+        if self.minimal_mode:
+            # Disable colors, file logging, and python logger integration
+            self.config.use_colors = False
+            self.config.output_to_file = False
+            self.config.log_to_python_logger = False
+            self.config.integrate_with_logging = False
         self._timestamp_cache: Dict[str, str] = {}
         self._last_timestamp_time = 0.0
         self._file_handle: Optional[TextIO] = None
@@ -379,6 +390,15 @@ class TPrintManager:
 
     def _write_to_outputs(self, message: str, level: LogLevel, **kwargs):
         """Write message to configured outputs."""
+        # Fast path for minimal mode
+        if getattr(self, 'minimal_mode', False):
+            try:
+                _original_print(message)
+            except BrokenPipeError:
+                sys.stdout.close()
+                sys.exit(0)
+            return
+
         colored_message = self._get_colored_message(level, message)
 
         # Filter out tprint-specific parameters that print() doesn't accept
@@ -640,15 +660,31 @@ def tprint(*args, **kwargs) -> None:
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function (including color for backward compatibility)
+            - include_traceback: bool = True - Include traceback if error message detected
+            - traceback_depth: int = None - Override default traceback depth
+            - show_locals: bool = None - Override show_locals config
 
     Example:
         tprint("User logged in")  # [2025-01-11 06:30:15] User logged in
         tprint("Value:", 42)      # [2025-01-11 06:30:15] Value: 42
         tprint("Message", color="blue")  # [2025-01-11 06:30:15] Message (with blue color)
+        tprint("Error occurred")  # [2025-01-11 06:30:15] Error occurred + traceback if in exception context
     """
+    # Extract traceback-related kwargs
+    include_traceback = kwargs.pop('include_traceback', True)
+    traceback_depth = kwargs.pop('traceback_depth', None)
+    show_locals = kwargs.pop('show_locals', None)
+    
     # Handle color parameter for backward compatibility
     color = kwargs.pop('color', None)
     bold = kwargs.pop('bold', False)
+
+    # Check if this looks like an error message
+    is_error_message = False
+    if args:
+        message_str = str(args[0]).lower()
+        error_indicators = ['error', 'failed', 'exception', 'traceback', 'crash', 'fatal', 'critical', '❌', '🚨']
+        is_error_message = any(indicator in message_str for indicator in error_indicators)
 
     if color:
         # Map color names to log levels for backward compatibility
@@ -664,6 +700,14 @@ def tprint(*args, **kwargs) -> None:
         _global_manager._log(level, *args, **kwargs)
     else:
         _global_manager._log_without_level(*args, **kwargs)
+
+    # Add traceback if this is an error message and we're in an exception context
+    if is_error_message and include_traceback and _global_manager.config.include_traceback:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        if exc_type is not None:
+            tb_str = _global_manager._format_traceback(exc_value, show_locals, traceback_depth)
+            if tb_str:
+                _global_manager._write_to_outputs(tb_str, LogLevel.ERROR)
 
 def tprint_debug(*args, **kwargs) -> None:
     """

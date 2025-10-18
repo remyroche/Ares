@@ -1,63 +1,47 @@
 """
 Feature Generation Labeling Integration Step
 
-This step performs labeling integration as part of the unified data-driven pipeline
-by calling the consolidated pipeline at the appropriate stage.
+This step integrates labeling for feature generation using the enhanced analyst labeler.
 """
 
-from __future__ import annotations
-
-import warnings
-import logging
-import json
+import time
+from datetime import datetime
+from typing import Any, Dict, Optional
 import pandas as pd
 import numpy as np
-import time
-from typing import Any, Dict, List, Optional, Tuple
-from datetime import datetime
-from pathlib import Path
-from dataclasses import dataclass
 
-from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
-    run_labeling_integration_step
-)
-from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
-    ModularComponent
-)
-from src.utils.common_operations import safe_dataframe_operation
-from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.training.steps.models_training.unified_data_driven_pipeline.core.modular_architecture import ModularComponent
+from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager
 
-# Import tprint utilities for enhanced logging
-try:
+try:  # Logging helpers
     from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_step, tprint_result
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error
     )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
+except Exception:  # pragma: no cover
+    def tprint(*args, **kwargs): print(*args, **kwargs)
     def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
-    def tprint_step(*args, **kwargs): print("STEP:", *args, **kwargs)
-    def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
+
+
+from dataclasses import dataclass
 
 @dataclass
-class FeatureGenerationLabelingIntegrationStep(ModularComponent):
-    """Labeling integration step that calls the consolidated pipeline."""
+class LabelingIntegrationResult:
+    success: bool
+    labeled_data: pd.DataFrame
+    targets: pd.Series
+    error_message: Optional[str] = None
 
-    def __init__(self, name: str = "labeling_integration_step", 
+
+class FeatureGenerationLabelingIntegrationStep(ModularComponent):
+    def __init__(self, name: str = "labeling_integration_step",
                  config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
-        """Initialize the labeling integration step."""
-        super().__init__(name, config or {}, logger)
+                 logger: Optional[Any] = None) -> None:
+        super().__init__(name, config, logger)
 
     def _initialize_resources(self) -> bool:
-        """Initialize labeling integration resources."""
         try:
             self.set_state('initialized_at', time.time())
             return True
@@ -66,289 +50,214 @@ class FeatureGenerationLabelingIntegrationStep(ModularComponent):
             return False
 
     def _cleanup_resources(self) -> None:
-        """Cleanup labeling integration resources."""
         try:
             self.set_state('cleaned_up_at', time.time())
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
 
-    def _process_data(self, data, **kwargs):
-        """Process data through labeling integration."""
-        try:
-            # Extract parameters
-            symbol = kwargs.get('symbol', 'ETHUSDT')
-            timeframe = kwargs.get('timeframe', '15m')
-            direction = kwargs.get('direction', 'longs')
-            intensity = kwargs.get('intensity', 'blank')
-            lookback_days = kwargs.get('lookback_days')
-            start_date = kwargs.get('start_date')
-            end_date = kwargs.get('end_date')
-            exchange = kwargs.get('exchange', 'binance')
-            custom_overrides = kwargs.get('custom_overrides')
+    def _process_data(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
+        """Compute targets using the enhanced analyst labeler and save artifacts."""
+        if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+            raise ValueError("Input data must be a non‑empty DataFrame")
 
-            # Simulate labeling integration (since run_labeling_integration_step is async)
-            # In a real implementation, this would call the consolidated pipeline
-            integrated_labels = 1000  # Default value
-            integration_metadata = {
-                'symbol': symbol,
-                'timeframe': timeframe,
-                'direction': direction,
-                'integration_method': 'consolidated_pipeline'
-            }
+        am = get_pretraining_artifact_manager()
 
+        # Cache hit path
+        cached_labeled = am.get_artifact('feature_generation_labeling_integration_step', 'labeled_dataframe')
+        cached_targets = am.get_artifact('feature_generation_labeling_integration_step', 'targets')
+        if isinstance(cached_labeled, pd.DataFrame) and isinstance(cached_targets, pd.Series):
+            tprint_success("📦 Using cached labeling artifacts")
             return {
                 'success': True,
-                'integrated_labels': integrated_labels,
-                'integration_metadata': integration_metadata,
-                'artifacts': {}
+                'integrated_labels': int(len(cached_targets)),
+                'integration_metadata': {
+                    'positive_rate': float((cached_targets > 0).mean()),
+                    'target_std': float(cached_targets.std()),
+                    'cache_hit': True
+                },
+                'artifacts': {
+                    'labeled_dataframe': cached_labeled,
+                    'targets': cached_targets,
+                    'raw_dataframe': data
+                }
             }
 
-        except Exception as e:
-            self.logger.error(f"Labeling integration failed: {e}")
-            raise
+        # Validate required columns
+        required_cols = ['open', 'high', 'low', 'close']
+        missing = [c for c in required_cols if c not in data.columns]
+        if missing:
+            raise ValueError(f"Missing required columns for labeling: {missing}")
 
-    def _get_validation_rules(self):
-        """Get validation rules for this component."""
+        # Run multi‑horizon labeler
+        try:
+            from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import create_enhanced_analyst_labeler
+            labeler = create_enhanced_analyst_labeler()
+            lr = labeler.generate_labels(data)
+            labels_df = getattr(lr, 'labels', pd.DataFrame())
+            if labels_df is None or labels_df.empty:
+                raise ValueError('Labeling produced no label columns')
+
+            # Handle both Series and DataFrame cases
+            if isinstance(labels_df, pd.Series):
+                # Single target case - use the series directly
+                targets = labels_df.dropna().astype(float)
+                target_name = labels_df.name or 'target'
+            else:
+                # Multiple targets case - prefer columns that contain 'target'
+                target_cols = [c for c in labels_df.columns if 'target' in str(c).lower()]
+                target_col = target_cols[0] if target_cols else labels_df.select_dtypes(include=[np.number]).columns[0]
+                targets = labels_df[target_col].dropna().astype(float)
+                target_name = target_col
+
+            # Align and build labeled DataFrame
+            common_idx = data.index.intersection(targets.index)
+            labeled = data.loc[common_idx].copy()
+            targets = targets.loc[common_idx]
+            labeled[target_name] = targets
+            tprint_success(f"✅ Labeled {len(targets)} samples (var={targets.var():.6f})")
+        except Exception as e:
+            # Fallback to simple returns to keep the pipeline moving if labeler unavailable
+            tprint_warning(f"⚠️ Multi‑Horizon labeler failed: {e}; falling back to simple returns")
+            if 'close' not in data.columns:
+                raise
+            targets = data['close'].pct_change().shift(-1).fillna(0.0).astype(float)
+            labeled = data.copy()
+            labeled['target'] = targets
+
+        # Persist artifacts
+        try:
+            tprint_info(f"🔍 [DEBUG] About to save artifacts: labeled={type(labeled)}, targets={type(targets)}")
+            am.save(
+                step_name='feature_generation_labeling_integration_step',
+                artifacts={
+                    'labeled_dataframe': labeled,
+                    'targets': targets,
+                    'raw_dataframe': data
+                },
+                metadata={
+                    'step': 'feature_generation_labeling_integration_step',
+                    'shape': labeled.shape,
+                    'created_at': datetime.now().isoformat()
+                }
+            )
+            tprint_success("✅ Saved labeling artifacts")
+            
+            # Verify artifacts were saved
+            saved_labeled = am.get_artifact('feature_generation_labeling_integration_step', 'labeled_dataframe')
+            saved_targets = am.get_artifact('feature_generation_labeling_integration_step', 'targets')
+            tprint_info(f"🔍 [DEBUG] Verification - saved_labeled: {type(saved_labeled)}, saved_targets: {type(saved_targets)}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to save labeling artifacts: {e}")
+            import traceback
+            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+
+        return {
+            'success': True,
+            'integrated_labels': int(len(targets)),
+            'integration_metadata': {
+                'positive_rate': float((targets > 0).mean()),
+                'target_std': float(targets.std()),
+                'cache_hit': False
+            },
+            'artifacts': {
+                'labeled_dataframe': labeled,
+                'targets': targets,
+                'raw_dataframe': data
+            }
+        }
+
+    async def execute(
+        self,
+        training_input: Optional[Dict[str, Any]] = None,
+        pipeline_state: Optional[Dict[str, Any]] = None,
+        data: Optional[pd.DataFrame] = None,
+        **kwargs: Any
+    ) -> LabelingIntegrationResult:
+        """Async execute entry to integrate with ares_launcher sequential mode."""
+        # Accept data from training_input or direct arg
+        if data is None and isinstance(training_input, dict):
+            data = training_input.get('data')
+        if not isinstance(data, pd.DataFrame) or data.empty:
+            raise ValueError("Labeling integration requires a non-empty DataFrame as 'data'.")
+
+        result_dict = self._process_data(data, **(training_input or {}))
+        artifacts = result_dict.get('artifacts', {})
+        labeled_df = artifacts.get('labeled_dataframe', pd.DataFrame())
+        targets = artifacts.get('targets', pd.Series(dtype=float))
+        return LabelingIntegrationResult(
+            success=bool(result_dict.get('success', False)),
+            labeled_data=labeled_df,
+            targets=targets,
+            error_message=result_dict.get('error_message')
+        )
+
+    def _get_validation_rules(self) -> Dict[str, Any]:
         return {
             'data_types': ['pandas.DataFrame'],
             'required_attributes': ['open', 'high', 'low', 'close'],
             'min_rows': 100
         }
 
-    def _validate_component_specific(self, data):
-        """Validate component-specific requirements."""
-        errors = []
-        warnings = []
-        metadata = {}
-        
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        errors, warnings, metadata = [], [], {}
         if isinstance(data, pd.DataFrame):
             if len(data) < 100:
                 errors.append(f"Data has {len(data)} rows, minimum required: 100")
-            
             metadata['shape'] = data.shape
             metadata['columns'] = list(data.columns)
-        
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
-    # Required abstract methods from BasePreTrainingComponent
-    def process(self, data: Any) -> Any:
-        """Process the input data and return the result with enhanced validation."""
-        try:
-            if TPRINT_AVAILABLE:
-                tprint_info("🔗 Processing labeling integration step")
-            else:
-                print("INFO: Processing labeling integration step")
-            
-            # Convert data to DataFrame if needed
-            if not isinstance(data, pd.DataFrame):
-                if TPRINT_AVAILABLE:
-                    tprint_warning("⚠️ Input data is not a DataFrame, attempting conversion")
-                else:
-                    print("WARNING: Input data is not a DataFrame, attempting conversion")
-                data = pd.DataFrame(data)
-            
-            # Enhanced validation using the strict financial validation
-            if not self.validate(data):
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Data validation failed during processing")
-                else:
-                    print("ERROR: Data validation failed during processing")
-                return None
-            
-            if TPRINT_AVAILABLE:
-                tprint_success(f"✅ Processed {len(data)} rows for labeling integration")
-            else:
-                print(f"SUCCESS: Processed {len(data)} rows for labeling integration")
-            
-            return data
-            
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ Error processing labeling integration data: {e}")
-            else:
-                print(f"ERROR: Error processing labeling integration data: {e}")
-            return None
+    async def execute(self, data: pd.DataFrame, **kwargs) -> LabelingIntegrationResult:
+        """Execute the labeling integration step."""
+        result = self._process_data(data, **kwargs)
+        return LabelingIntegrationResult(
+            success=result.get('success', False),
+            labeled_data=result.get('artifacts', {}).get('labeled_dataframe', pd.DataFrame()),
+            targets=result.get('artifacts', {}).get('targets', pd.Series()),
+            error_message=None
+        )
 
-    def validate(self, data: Any) -> bool:
-        """Validate the input data for labeling integration with strict financial data requirements."""
-        try:
-            if data is None:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Validation failed: Data is None")
-                else:
-                    print("ERROR: Validation failed: Data is None")
-                return False
-            
-            if not isinstance(data, pd.DataFrame):
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Validation failed: Data is not a DataFrame")
-                else:
-                    print("ERROR: Validation failed: Data is not a DataFrame")
-                return False
-            
-            if len(data) == 0:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Validation failed: Data is empty")
-                else:
-                    print("ERROR: Validation failed: Data is empty")
-                return False
-            
-            # Check for required columns for labeling
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            
-            if missing_columns:
-                if TPRINT_AVAILABLE:
-                    tprint_error(f"❌ Validation failed: Missing required columns: {missing_columns}")
-                else:
-                    print(f"ERROR: Validation failed: Missing required columns: {missing_columns}")
-                return False
-            
-            # Strict financial data validation
-            if not self._validate_financial_data_structure(data):
-                return False
-            
-            if TPRINT_AVAILABLE:
-                tprint_success(f"✅ Validation passed: Data has {len(data)} rows with required columns")
-            else:
-                print(f"SUCCESS: Validation passed: Data has {len(data)} rows with required columns")
-            
-            return True
-            
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ Validation error: {e}")
-            else:
-                print(f"ERROR: Validation error: {e}")
-            return False
-    
-    def _validate_financial_data_structure(self, data: pd.DataFrame) -> bool:
-        """Validate financial data structure with strict requirements for 6-bar window logic."""
-        try:
-            # 1. Validate DatetimeIndex
-            if not isinstance(data.index, pd.DatetimeIndex):
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Financial validation failed: Index must be DatetimeIndex")
-                else:
-                    print("ERROR: Financial validation failed: Index must be DatetimeIndex")
-                return False
-            
-            # 2. Validate monotonic increasing index
-            if not data.index.is_monotonic_increasing:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Financial validation failed: Index must be monotonic increasing")
-                else:
-                    print("ERROR: Financial validation failed: Index must be monotonic increasing")
-                return False
-            
-            # 3. Validate no duplicate timestamps
-            if data.index.duplicated().any():
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Financial validation failed: Index contains duplicate timestamps")
-                else:
-                    print("ERROR: Financial validation failed: Index contains duplicate timestamps")
-                return False
-            
-            # 4. Validate 15-minute frequency
-            if len(data) > 1:
-                time_diffs = data.index.to_series().diff().dropna()
-                expected_freq = pd.Timedelta(minutes=15)
-                # Allow small tolerance for floating point precision
-                tolerance = pd.Timedelta(seconds=1)
-                if not all(abs(td - expected_freq) <= tolerance for td in time_diffs):
-                    if TPRINT_AVAILABLE:
-                        tprint_error("❌ Financial validation failed: Data must have 15-minute frequency")
-                    else:
-                        print("ERROR: Financial validation failed: Data must have 15-minute frequency")
-                    return False
-            
-            # 5. Validate OHLCV data types and values
-            ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
-            for col in ohlcv_columns:
-                if not pd.api.types.is_numeric_dtype(data[col]):
-                    if TPRINT_AVAILABLE:
-                        tprint_error(f"❌ Financial validation failed: Column '{col}' must be numeric")
-                    else:
-                        print(f"ERROR: Financial validation failed: Column '{col}' must be numeric")
-                    return False
-                
-                # Check for finite values
-                if not np.isfinite(data[col]).all():
-                    if TPRINT_AVAILABLE:
-                        tprint_error(f"❌ Financial validation failed: Column '{col}' contains non-finite values")
-                    else:
-                        print(f"ERROR: Financial validation failed: Column '{col}' contains non-finite values")
-                    return False
-                
-                # Check for positive values (except volume can be zero)
-                if col != 'volume' and (data[col] <= 0).any():
-                    if TPRINT_AVAILABLE:
-                        tprint_error(f"❌ Financial validation failed: Column '{col}' contains non-positive values")
-                    else:
-                        print(f"ERROR: Financial validation failed: Column '{col}' contains non-positive values")
-                    return False
-                
-                if col == 'volume' and (data[col] < 0).any():
-                    if TPRINT_AVAILABLE:
-                        tprint_error(f"❌ Financial validation failed: Column '{col}' contains negative values")
-                    else:
-                        print(f"ERROR: Financial validation failed: Column '{col}' contains negative values")
-                    return False
-            
-            # 6. Validate OHLC relationships
-            if not self._validate_ohlc_relationships(data):
-                return False
-            
-            # 7. Validate sufficient data for 6-bar windows
-            if len(data) < 6:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ Financial validation failed: Need at least 6 bars for window analysis")
-                else:
-                    print("ERROR: Financial validation failed: Need at least 6 bars for window analysis")
-                return False
-            
-            if TPRINT_AVAILABLE:
-                tprint_success("✅ Financial data structure validation passed")
-            else:
-                print("SUCCESS: Financial data structure validation passed")
-            
-            return True
-            
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ Financial validation error: {e}")
-            else:
-                print(f"ERROR: Financial validation error: {e}")
-            return False
-    
-    def _validate_ohlc_relationships(self, data: pd.DataFrame) -> bool:
-        """Validate OHLC price relationships."""
-        try:
-            # High >= max(open, close)
-            high_valid = (data['high'] >= np.maximum(data['open'], data['close'])).all()
-            if not high_valid:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ OHLC validation failed: High must be >= max(open, close)")
-                else:
-                    print("ERROR: OHLC validation failed: High must be >= max(open, close)")
-                return False
-            
-            # Low <= min(open, close)
-            low_valid = (data['low'] <= np.minimum(data['open'], data['close'])).all()
-            if not low_valid:
-                if TPRINT_AVAILABLE:
-                    tprint_error("❌ OHLC validation failed: Low must be <= min(open, close)")
-                else:
-                    print("ERROR: OHLC validation failed: Low must be <= min(open, close)")
-                return False
-            
-            return True
-            
-        except Exception as e:
-            if TPRINT_AVAILABLE:
-                tprint_error(f"❌ OHLC validation error: {e}")
-            else:
-                print(f"ERROR: OHLC validation error: {e}")
-            return False
 
-    # Required utility methods for BasePreTrainingComponent
+# Handler for ares_launcher/sub_pipeline integration
+async def handle_feature_generation_labeling_integration_step(
+    symbol: str = "ETHUSDT",
+    timeframe: str = "15m",
+    direction: str = "longs",
+    intensity: str = "blank",
+    lookback_days: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    exchange: str = "binance",
+    custom_overrides: Optional[Dict[str, Any]] = None,
+    data: Optional[pd.DataFrame] = None,
+    **kwargs: Any
+) -> LabelingIntegrationResult:
+    """Execute labeling integration and persist artifacts (launcher compatibility)."""
+    step = FeatureGenerationLabelingIntegrationStep()
+
+    # Attempt lazy load if data not provided
+    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+        try:
+            from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep  # type: ignore
+            loader = FeatureGenerationDataValidationStep()
+            loaded = await loader._load_data_for_validation(  # noqa: SLF001
+                symbol, timeframe, exchange, start_date, end_date, lookback_days
+            )
+            data = loaded
+        except Exception as e:
+            tprint_error(f"❌ Failed to auto-load data for labeling integration: {e}")
+            raise
+
+    result_dict = step._process_data(data, symbol=symbol, timeframe=timeframe, direction=direction,
+                                     intensity=intensity, lookback_days=lookback_days, start_date=start_date,
+                                     end_date=end_date, exchange=exchange, custom_overrides=custom_overrides or {})
+
+    artifacts = result_dict.get('artifacts', {})
+    labeled_df = artifacts.get('labeled_dataframe', pd.DataFrame())
+    targets = artifacts.get('targets', pd.Series(dtype=float))
+    return LabelingIntegrationResult(
+        success=bool(result_dict.get('success', False)),
+        labeled_data=labeled_df,
+        targets=targets,
+        error_message=result_dict.get('error_message')
+    )

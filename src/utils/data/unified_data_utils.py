@@ -30,7 +30,6 @@ from .quality.data_quality import DataQualityFramework, QualityResult, QualityTh
 from .processing.data_processing import DataProcessor
 from .quality.data_cleaning import DataCleaner
 from .processing.transformers import DataStreamingManager
-from .validation.validators import CrossStepValidator
 from src.utils.logger import system_logger
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,7 @@ class UnifiedDataUtils:
         self.quality_framework = DataQualityFramework(quality_thresholds)
         self.data_processor = DataProcessor()
         self.data_cleaner = DataCleaner()
-        self.cross_step_validator = CrossStepValidator()
+        self._cross_step_validator = None
 
         # Initialize streaming manager if enabled
         if enable_streaming:
@@ -83,6 +82,14 @@ class UnifiedDataUtils:
             self.streaming_manager = None
 
         self.logger.info('🚀 Unified Data Utils initialized')
+    
+    @property
+    def cross_step_validator(self):
+        """Lazy import of CrossStepValidator to avoid circular imports."""
+        if self._cross_step_validator is None:
+            from .validation.validators import CrossStepValidator
+            self._cross_step_validator = CrossStepValidator()
+        return self._cross_step_validator
 
     def process_and_validate(
         self,

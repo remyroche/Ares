@@ -48,12 +48,7 @@ from .entropy import (
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
+    # VectorBT 0.28.1 doesn't have these functions in vectorbt.generic - will use pandas fallbacks
     rolling_mean = None
     rolling_std = None
     rolling_var = None
@@ -69,6 +64,10 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Import optimized rolling operations - NOW USING NEW OPTIMIZED VERSION
@@ -110,7 +109,7 @@ except ImportError:
 
 # Import Unified Vectorization Manager
 try:
-    from ...utils.ml_common.unified_vectorization_manager import (
+    from src.utils.ml_common.unified_vectorization_manager import (
         get_unified_vectorization_manager,
         OperationType,
         OperationConfig,
@@ -125,7 +124,10 @@ logger = logging.getLogger(__name__)
 # Centralized utility imports
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 # Removed VectorBTScaler import to avoid circular import
-from ..core.feature_bank import get_global_feature_bank
+# Lazy import to avoid circular dependency
+def get_global_feature_bank():
+    from src.feature_generation.core.feature_bank import get_global_feature_bank as _get_global_feature_bank
+    return _get_global_feature_bank()
 
 # LegacyRSIGenerator, LegacyMACDGenerator, LegacyStochasticGenerator, and LegacyWilliamsRGenerator removed - use VectorBT versions instead
 
@@ -525,7 +527,8 @@ class RSIGenerator(VectorizedFeatureGenerator):
             close = data['close']
 
             # Traditional RSI calculation using VectorBT optimization
-            delta = close.diff()
+            from ...utils.error_handling import safe_diff
+            delta = safe_diff(close)
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
 
@@ -568,7 +571,8 @@ class RSIGenerator(VectorizedFeatureGenerator):
             # For other base calculations, calculate RSI on base values
             base_values = self.base_calculator.calculate(data)
 
-            delta = base_values.diff()
+            from ...utils.error_handling import safe_diff
+            delta = safe_diff(base_values)
             gain = (delta.where(delta > 0, 0)).rolling(window=self.period).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=self.period).mean()
             rs = gain / loss.replace(0, 1)
@@ -734,7 +738,10 @@ class StochasticGenerator(VectorizedFeatureGenerator):
                 lowest_low = low.rolling(window=self.k_period).min()
                 highest_high = high.rolling(window=self.k_period).max()
 
-            k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+            # Handle division by zero when highest_high equals lowest_low
+            with np.errstate(divide='ignore', invalid='ignore'):
+                k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
+                k_percent = np.where(highest_high == lowest_low, np.nan, k_percent)
 
             return k_percent
         else:
@@ -743,7 +750,10 @@ class StochasticGenerator(VectorizedFeatureGenerator):
 
             lowest_low = base_values.rolling(window=self.k_period).min()
             highest_high = base_values.rolling(window=self.k_period).max()
-            k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
+            # Handle division by zero when highest_high equals lowest_low
+            with np.errstate(divide='ignore', invalid='ignore'):
+                k_percent = 100 * ((base_values - lowest_low) / (highest_high - lowest_low))
+                k_percent = np.where(highest_high == lowest_low, np.nan, k_percent)
 
             return k_percent
 
@@ -833,7 +843,10 @@ class WilliamsRGenerator(VectorizedFeatureGenerator):
                 highest_high = high.rolling(window=self.period).max()
                 lowest_low = low.rolling(window=self.period).min()
 
-            williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
+            # Handle division by zero when highest_high equals lowest_low
+            with np.errstate(divide='ignore', invalid='ignore'):
+                williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
+                williams_r = np.where(highest_high == lowest_low, np.nan, williams_r)
 
             return williams_r
         else:
@@ -842,7 +855,10 @@ class WilliamsRGenerator(VectorizedFeatureGenerator):
 
             highest_high = base_values.rolling(window=self.period).max()
             lowest_low = base_values.rolling(window=self.period).min()
-            williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
+            # Handle division by zero when highest_high equals lowest_low
+            with np.errstate(divide='ignore', invalid='ignore'):
+                williams_r = -100 * ((highest_high - base_values) / (highest_high - lowest_low))
+                williams_r = np.where(highest_high == lowest_low, np.nan, williams_r)
 
             return williams_r
 
@@ -897,8 +913,11 @@ class MomentumOscillatorGenerator(VectorizedFeatureGenerator):
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
 
-        # Calculate momentum
+        # Calculate momentum with proper handling of initial NaN values
         momentum = base_values - base_values.shift(self.period)
+        
+        # Set the first 'period' values to 0 instead of NaN for better feature quality
+        momentum.iloc[:self.period] = 0.0
 
         return momentum
 
@@ -953,20 +972,17 @@ class RateOfChangeGenerator(VectorizedFeatureGenerator):
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
 
-        # Calculate ROC with math validation using safe math utilities
+        # Calculate ROC with proper handling of initial NaN values
         shifted_values = base_values.shift(self.period)
-
-        # Use safe percentage change calculation
-        roc_values = []
-        for i in range(len(base_values)):
-            current_val = base_values.iloc[i]
-            shifted_val = shifted_values.iloc[i]
-
-            # Use safe percentage change function
-            roc_val = safe_percentage_change(shifted_val, current_val)
-            roc_values.append(roc_val)
-
-        roc_series = pd.Series(roc_values, index=data.index, name=f'roc_{self.period}_{self.base_calculation.value}')
+        
+        # Use pandas pct_change for more robust calculation
+        roc_series = base_values.pct_change(periods=self.period) * 100
+        
+        # Replace non-finite values caused by zero denominators and set leading window to 0
+        roc_series = roc_series.replace([np.inf, -np.inf], np.nan)
+        roc_series = roc_series.fillna(0.0)
+        roc_series.iloc[:self.period] = 0.0
+        roc_series.name = f'roc_{self.period}_{self.base_calculation.value}'
 
         # Validate that all values are finite and provide detailed information
         try:
@@ -1091,43 +1107,50 @@ class MACDDeltaGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.slow + self.signal:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
 
-        # Calculate MACD
-        ema_fast = self._calculate_ema(close, self.fast)
-        ema_slow = self._calculate_ema(close, self.slow)
-        macd_line = ema_fast - ema_slow
+        # Calculate MACD using pandas ewm for better reliability
+        try:
+            # Calculate EMA fast and slow using pandas ewm
+            ema_fast = close.ewm(span=self.fast).mean()
+            ema_slow = close.ewm(span=self.slow).mean()
 
-        # Calculate signal line
-        signal_line = self._calculate_ema(macd_line, self.signal)
+            # Check for NaN values in EMAs
+            if ema_fast.isna().all() or ema_slow.isna().all():
+                return pd.Series(np.full(len(close), np.nan), index=data.index)
 
-        # Calculate MACD delta
-        macd_delta = macd_line - signal_line
+            macd_line = ema_fast - ema_slow
+
+            # Calculate signal line
+            signal_line = macd_line.ewm(span=self.signal).mean()
+
+            # Check for NaN values in signal line
+            if signal_line.isna().all():
+                return pd.Series(np.full(len(close), np.nan), index=data.index)
+
+            # Calculate MACD delta
+            macd_delta = macd_line - signal_line
+
+        except Exception as e:
+            logger.warning(f"MACD calculation failed: {e}")
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
 
         # Calculate crossover flags
         crossover_flags = np.zeros(len(close))
         for i in range(1, len(close)):
-            if not (np.isnan(macd_line[i]) or np.isnan(signal_line[i]) or
-                   np.isnan(macd_line[i-1]) or np.isnan(signal_line[i-1])):
+            if not (pd.isna(macd_line.iloc[i]) or pd.isna(signal_line.iloc[i]) or
+                   pd.isna(macd_line.iloc[i-1]) or pd.isna(signal_line.iloc[i-1])):
                 # Bullish crossover
-                if macd_line[i-1] <= signal_line[i-1] and macd_line[i] > signal_line[i]:
+                if macd_line.iloc[i-1] <= signal_line.iloc[i-1] and macd_line.iloc[i] > signal_line.iloc[i]:
                     crossover_flags[i] = 1
                 # Bearish crossover
-                elif macd_line[i-1] >= signal_line[i-1] and macd_line[i] < signal_line[i]:
+                elif macd_line.iloc[i-1] >= signal_line.iloc[i-1] and macd_line.iloc[i] < signal_line.iloc[i]:
                     crossover_flags[i] = -1
 
         return pd.Series(macd_delta, index=data.index)
 
-    def _calculate_ema(self, prices: np.ndarray, period: int) -> np.ndarray:
-        """Calculate Exponential Moving Average."""
-        alpha = 2.0 / (period + 1)
-        ema = np.full(len(prices), np.nan)
-        ema[period - 1] = np.mean(prices[:period])
-        for i in range(period, len(prices)):
-            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
-        return ema
 
 class RSIZScoreGenerator(VectorizedFeatureGenerator):
     """Generator for RSI z-score (enhancement to existing RSI)."""
@@ -1467,7 +1490,10 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
 
         # Volume momentum
         volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
-        volume_momentum = (volume - volume_ma) / volume_ma
+        # Handle division by zero for volume momentum
+        with np.errstate(divide='ignore', invalid='ignore'):
+            volume_momentum = (volume - volume_ma) / volume_ma
+            volume_momentum = np.where(volume_ma == 0, np.nan, volume_momentum)
 
         return volume_momentum
 

@@ -134,6 +134,12 @@ class OptimizationConfig:
     # Constraints
     constraints: Optional[Dict[str, Any]] = None
 
+    # Pruning and history control
+    enable_pruner: bool = True
+    pruner_type: str = 'hyperband'  # 'hyperband', 'successive_halving', 'median'
+    pruner_params: Dict[str, Any] = None
+    max_trial_history: int = 200  # cap stored trial summaries to limit memory
+
     def validate(self) -> None:
         """Validate configuration parameters."""
         if self.n_trials <= 0:
@@ -1397,9 +1403,26 @@ class BayesianTPEOptimizer:
                 group=self.config.group
             )
 
+            # Configure pruner if enabled
+            pruner = None
+            if self.config.enable_pruner:
+                try:
+                    ptype = (self.config.pruner_type or 'median').lower()
+                    pparams = self.config.pruner_params or {}
+                    if ptype == 'median':
+                        pruner = optuna.pruners.MedianPruner(**pparams)
+                    elif ptype in ('successive_halving', 'sha'):
+                        pruner = optuna.pruners.SuccessiveHalvingPruner(**pparams)
+                    elif ptype == 'hyperband':
+                        pruner = optuna.pruners.HyperbandPruner(**pparams)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Failed to initialize pruner: {e}")
+                    pruner = None
+
             self.study = optuna.create_study(
                 direction=self.config.direction,
                 sampler=sampler,
+                pruner=pruner,
                 study_name=f"tpe_optimization_{int(time.time())}"
             )
 
@@ -1416,16 +1439,17 @@ class BayesianTPEOptimizer:
             best_value = self.study.best_value
 
             # Convert Optuna trials to our format
-            trials = [
-                {
-                    'trial': trial.number,
-                    'stage': 'tpe',
-                    'params': trial.params,
-                    'value': trial.value,
-                    'duration': trial.duration.total_seconds() if trial.duration else None
-                }
-                for trial in self.study.trials
-            ]
+            # Cap trial summaries to limit memory usage
+            all_trials = self.study.trials
+            if self.config.max_trial_history and len(all_trials) > self.config.max_trial_history:
+                all_trials = all_trials[-self.config.max_trial_history:]
+            trials = [{
+                'trial': t.number,
+                'stage': 'tpe',
+                'params': t.params,
+                'value': t.value,
+                'duration': t.duration.total_seconds() if t.duration else None
+            } for t in all_trials]
 
             return {
                 'best_params': best_params,

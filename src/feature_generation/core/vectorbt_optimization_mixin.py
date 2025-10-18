@@ -295,7 +295,8 @@ class VectorBTOptimizationMixin:
             self.logger.warning(f"VectorBT RSI failed: {e}, using manual calculation")
             # Fallback to manual calculation
             close = data['close']
-            delta = close.diff()
+            from ...utils.error_handling import safe_diff
+            delta = safe_diff(close)
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
 
@@ -521,6 +522,35 @@ class VectorBTOptimizationMixin:
             'total_operations': 0,
             'total_time': 0.0
         }
+
+    def _optimized_rolling_operation(self, data: pd.Series, operation: str,
+                                   window: int, **kwargs) -> pd.Series:
+        """Perform optimized rolling operation using centralized VectorBTRollingOptimizer."""
+        if not hasattr(self, 'rolling_optimizer'):
+            from ..utils.consolidated_rolling_optimizer import get_global_rolling_optimizer
+            self.rolling_optimizer = get_global_rolling_optimizer()
+
+        try:
+            if operation == 'mean':
+                return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
+            elif operation == 'std':
+                return self.rolling_optimizer.rolling_std(data, window, **kwargs)
+            elif operation == 'var':
+                return self.rolling_optimizer.rolling_var(data, window, **kwargs)
+            elif operation == 'min':
+                return self.rolling_optimizer.rolling_min(data, window, **kwargs)
+            elif operation == 'max':
+                return self.rolling_optimizer.rolling_max(data, window, **kwargs)
+            elif operation == 'sum':
+                return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
+            elif operation == 'quantile':
+                quantile_value = kwargs.get('quantile_value', 0.5)
+                return self.rolling_optimizer.rolling_quantile(data, window, quantile_value, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            logger.warning(f"Optimized rolling operation failed: {e}, using fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for VectorBT processing."""

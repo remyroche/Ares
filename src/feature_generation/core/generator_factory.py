@@ -56,6 +56,34 @@ class GeneratorFactory:
         # This would be populated with actual generator classes
         # For now, we'll create a basic structure
         pass
+    
+    def populate_from_feature_bank(self, feature_bank) -> None:
+        """
+        Populate the generator factory with generators from a FeatureBank.
+        
+        Args:
+            feature_bank: FeatureBank instance to get generators from
+        """
+        try:
+            # Get all generators from the feature bank's registry
+            for category in FeatureCategory:
+                generators = feature_bank.get_generators_by_category(category)
+                for generator in generators:
+                    # Register the generator in the factory
+                    self.register_generator(
+                        generator.config.name,
+                        generator.__class__,
+                        GeneratorConfig(
+                            name=generator.config.name,
+                            category=generator.config.category,
+                            generator_class=generator.__class__,
+                            required_columns=generator.config.required_columns,
+                            description=generator.config.description
+                        )
+                    )
+            logger.info(f"Populated generator factory with {len(self._generators)} generators")
+        except Exception as e:
+            logger.error(f"Failed to populate generator factory: {e}")
 
     def register_generator(self, name: str, generator_class: Type[FeatureGenerator],
                           config: Optional[GeneratorConfig] = None) -> None:
@@ -79,19 +107,42 @@ class GeneratorFactory:
 
         self._generators[name] = config
         self._custom_generators[name] = generator_class
-        logger.info(f"Registered generator: {name}")
+        logger.debug(f"Registered generator: {name}")
 
-    def create_generator(self, name: str, **kwargs) -> Optional[FeatureGenerator]:
+    def create_generator(self, name_or_config: Union[str, FeatureConfig], **kwargs) -> Optional[FeatureGenerator]:
         """
-        Create a generator instance by name.
+        Create a generator instance by name or from a FeatureConfig.
 
         Args:
-            name: Generator name
-            **kwargs: Generator parameters
+            name_or_config: Generator name string or FeatureConfig object
+            **kwargs: Generator parameters (ignored if FeatureConfig provided)
 
         Returns:
             Generator instance or None if not found
         """
+        # Handle FeatureConfig objects
+        if isinstance(name_or_config, FeatureConfig):
+            try:
+                # Extract the generator name from the config
+                generator_name = name_or_config.name
+                if generator_name not in self._generators:
+                    logger.error(f"Generator not found: {generator_name}")
+                    return None
+                
+                config = self._generators[generator_name]
+                
+                # Create generator instance with the provided FeatureConfig
+                generator = config.generator_class(name_or_config)
+                
+                logger.debug(f"Created generator from config: {generator_name}")
+                return generator
+                
+            except Exception as e:
+                logger.error(f"Failed to create generator from config {name_or_config.name}: {e}")
+                return None
+        
+        # Handle string names (original behavior)
+        name = name_or_config
         if name not in self._generators:
             logger.error(f"Generator not found: {name}")
             return None

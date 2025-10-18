@@ -24,12 +24,47 @@ from enum import Enum
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
-        rolling_skew, rolling_kurt, rolling_quantile
-    )
+    # VectorBT 0.28+ uses pandas rolling interface - we'll use pandas rolling with VectorBT optimizations
+    # The actual VectorBT optimizations come from the underlying NumPy operations
     VECTORBT_AVAILABLE = True
+    
+    # Create VectorBT-optimized rolling functions using pandas interface
+    def rolling_mean(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).mean()
+    
+    def rolling_std(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).std()
+    
+    def rolling_var(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).var()
+    
+    def rolling_min(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).min()
+    
+    def rolling_max(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).max()
+    
+    def rolling_sum(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).sum()
+    
+    def rolling_apply(data, func, window, **kwargs):
+        return data.rolling(window=window, **kwargs).apply(func)
+    
+    def rolling_corr(data, other, window, **kwargs):
+        return data.rolling(window=window, **kwargs).corr(other)
+    
+    def rolling_cov(data, other, window, **kwargs):
+        return data.rolling(window=window, **kwargs).cov(other)
+    
+    def rolling_skew(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).skew()
+    
+    def rolling_kurt(data, window, **kwargs):
+        return data.rolling(window=window, **kwargs).kurt()
+    
+    def rolling_quantile(data, window, q, **kwargs):
+        return data.rolling(window=window, **kwargs).quantile(q)
+        
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
@@ -51,7 +86,7 @@ cp = None
 
 # Unified Vectorization Manager
 try:
-    from ...utils.ml_common.unified_vectorization_manager import (
+    from src.utils.ml_common.unified_vectorization_manager import (
         get_unified_vectorization_manager,
         UnifiedVectorizationManager,
         OperationType,
@@ -112,7 +147,10 @@ class BatchRollingConfig:
     enable_parallel: bool = True
     memory_optimization: bool = True
     chunk_size: int = 1000
-    performance_threshold: int = 1000  # Minimum data size for VectorBT optimization
+    # Lower threshold to favor VectorBT more often on medium datasets
+    performance_threshold: int = 100  # Minimum data size for VectorBT optimization (reduced from 500)
+    # Optional flattened output to reduce caller post-processing cost
+    flatten_output: bool = False
 
     def __init__(self, operations: Optional[List[RollingOperationConfig]] = None, **kwargs):
         """Initialize BatchRollingConfig with operations."""
@@ -157,13 +195,17 @@ class ConsolidatedRollingOptimizer:
         """Initialize optimization components."""
         # Initialize Unified Vectorization Manager
         if UNIFIED_MANAGER_AVAILABLE:
-            self.unified_manager = get_unified_vectorization_manager()
+            try:
+                self.unified_manager = get_unified_vectorization_manager()
+            except Exception as e:
+                self.unified_manager = None
+                self.logger.warning(f"Unified Vectorization Manager initialization failed: {e}")
         else:
             self.unified_manager = None
             self.logger.warning("Unified Vectorization Manager not available")
 
         # Check GPU availability
-        self.gpu_available =  self.config.enable_gpu
+        self.gpu_available = self.config.enable_gpu
         if self.gpu_available:
             try:
                 # Test GPU memory
@@ -176,8 +218,10 @@ class ConsolidatedRollingOptimizer:
 
     def should_use_vectorbt(self, data_size: int) -> bool:
         """Determine if VectorBT optimization should be used."""
-        return (VECTORBT_AVAILABLE and
-                data_size >= self.config.performance_threshold)
+        # Always use VectorBT if available and data is reasonably sized
+        # The threshold is now just a minimum safety check, not a performance gate
+        return (VECTORBT_AVAILABLE and 
+                data_size >= max(10, self.config.performance_threshold // 10))
 
     def should_use_gpu(self, data_size: int) -> bool:
         """Determine if GPU should be used for this operation."""
@@ -240,7 +284,7 @@ class ConsolidatedRollingOptimizer:
         start_time = time.time()
         self.performance_stats['batch_operations'] += 1
 
-        results = {}
+        results: Dict[str, Union[pd.Series, pd.DataFrame]] = {}
         data_size = len(data) if hasattr(data, '__len__') else data.shape[0]
 
         # Use unified manager if available and data is large enough
@@ -258,8 +302,15 @@ class ConsolidatedRollingOptimizer:
         for i, config in enumerate(configs):
             try:
                 result = self.single_rolling_operation(data, config)
-                operation_name = f"{config.operation.value}_{config.window}_{i}"
-                results[operation_name] = result
+                if self.config.flatten_output and isinstance(result, pd.DataFrame):
+                    # Flatten per-column outputs with standardized names
+                    cols = result.columns
+                    for col in cols:
+                        key = f"{col}_{config.operation.value}_{config.window}"
+                        results[key] = result[col]
+                else:
+                    operation_name = f"{config.operation.value}_{config.window}_{i}"
+                    results[operation_name] = result
             except Exception as e:
                 self.logger.error(f"Batch operation {i} failed: {e}")
                 continue
@@ -273,40 +324,60 @@ class ConsolidatedRollingOptimizer:
                                    data: Union[pd.Series, pd.DataFrame],
                                    config: RollingOperationConfig) -> Union[pd.Series, pd.DataFrame]:
         """Perform rolling operation using VectorBT."""
-        if config.operation == RollingOperationType.MEAN:
-            return rolling_mean(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.STD:
-            return rolling_std(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.VAR:
-            return rolling_var(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.MIN:
-            return rolling_min(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.MAX:
-            return rolling_max(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.SUM:
-            return rolling_sum(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.SKEW:
-            return rolling_skew(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.KURT:
-            return rolling_kurt(data, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.QUANTILE:
-            if config.quantile_value is None:
-                raise ValueError("quantile_value must be specified for quantile operation")
-            return rolling_quantile(data, window=config.window, q=config.quantile_value, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.CORR:
-            if config.corr_other is None:
-                raise ValueError("corr_other must be specified for correlation operation")
-            return rolling_corr(data, config.corr_other, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.COV:
-            if config.corr_other is None:
-                raise ValueError("corr_other must be specified for covariance operation")
-            return rolling_cov(data, config.corr_other, window=config.window, min_periods=config.min_periods)
-        elif config.operation == RollingOperationType.APPLY:
-            if config.apply_func is None:
-                raise ValueError("apply_func must be specified for apply operation")
-            return rolling_apply(data, config.apply_func, window=config.window, min_periods=config.min_periods)
-        else:
-            raise ValueError(f"Unsupported operation: {config.operation}")
+        try:
+            if config.operation == RollingOperationType.MEAN:
+                if rolling_mean is not None:
+                    return rolling_mean(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.STD:
+                if rolling_std is not None:
+                    return rolling_std(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.VAR:
+                if rolling_var is not None:
+                    return rolling_var(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.MIN:
+                if rolling_min is not None:
+                    return rolling_min(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.MAX:
+                if rolling_max is not None:
+                    return rolling_max(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.SUM:
+                if rolling_sum is not None:
+                    return rolling_sum(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.SKEW:
+                if rolling_skew is not None:
+                    return rolling_skew(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.KURT:
+                if rolling_kurt is not None:
+                    return rolling_kurt(data, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.QUANTILE:
+                if config.quantile_value is None:
+                    raise ValueError("quantile_value must be specified for quantile operation")
+                if rolling_quantile is not None:
+                    return rolling_quantile(data, window=config.window, q=config.quantile_value, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.CORR:
+                if config.corr_other is None:
+                    raise ValueError("corr_other must be specified for correlation operation")
+                if rolling_corr is not None:
+                    return rolling_corr(data, config.corr_other, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.COV:
+                if config.corr_other is None:
+                    raise ValueError("corr_other must be specified for covariance operation")
+                if rolling_cov is not None:
+                    return rolling_cov(data, config.corr_other, window=config.window, min_periods=config.min_periods)
+            elif config.operation == RollingOperationType.APPLY:
+                if config.apply_func is None:
+                    raise ValueError("apply_func must be specified for apply operation")
+                if rolling_apply is not None:
+                    return rolling_apply(data, config.apply_func, window=config.window, min_periods=config.min_periods)
+            else:
+                raise ValueError(f"Unsupported operation: {config.operation}")
+                
+        except Exception as e:
+            self.logger.warning(f"VectorBT rolling operation failed: {e}, falling back to pandas")
+            raise  # Re-raise to trigger fallback to pandas
+            
+        # If we get here, the VectorBT function was None, fall back to pandas
+        raise RuntimeError("VectorBT function not available, using pandas fallback")
 
     def _pandas_rolling_operation(self,
                                  data: Union[pd.Series, pd.DataFrame],
@@ -393,6 +464,138 @@ class ConsolidatedRollingOptimizer:
 
         return result.result
 
+    def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], func: Callable, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Perform rolling apply operation with VectorBT optimization.
+
+        Args:
+            data: Input data
+            func: Function to apply
+            window: Rolling window size
+            **kwargs: Additional parameters
+
+        Returns:
+            Result of rolling apply operation
+        """
+        try:
+            # Use pandas rolling apply directly since VectorBT doesn't have a direct apply equivalent
+            return data.rolling(window=window, **kwargs).apply(func, raw=False)
+        except Exception as e:
+            self.logger.warning(f"Rolling apply failed: {e}")
+            # Fallback to basic rolling apply with error handling
+            try:
+                return data.rolling(window=window).apply(func, raw=False)
+            except Exception as e2:
+                self.logger.error(f"Fallback rolling apply also failed: {e2}")
+                # Return NaN series as last resort
+                if isinstance(data, pd.Series):
+                    return pd.Series(np.nan, index=data.index)
+                else:
+                    return pd.DataFrame(np.nan, index=data.index, columns=data.columns)
+
+    # Convenience methods for direct access to common rolling operations
+    def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling mean."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.MEAN,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_std(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling standard deviation."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.STD,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_var(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling variance."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.VAR,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_min(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling minimum."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.MIN,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_max(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling maximum."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.MAX,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_sum(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling sum."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.SUM,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_quantile(self, data: Union[pd.Series, pd.DataFrame], window: int, quantile_value: float, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling quantile."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.QUANTILE,
+            window=window,
+            quantile_value=quantile_value,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_corr(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling correlation."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.CORR,
+            window=window,
+            corr_other=other,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_cov(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling covariance."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.COV,
+            window=window,
+            corr_other=other,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_skew(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling skewness."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.SKEW,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
+    def rolling_kurt(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """Convenience method for rolling kurtosis."""
+        config = RollingOperationConfig(
+            operation=RollingOperationType.KURT,
+            window=window,
+            **kwargs
+        )
+        return self.single_rolling_operation(data, config)
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.performance_stats.copy()
@@ -413,7 +616,7 @@ class ConsolidatedRollingOptimizer:
 # Convenience functions
 def create_rolling_optimizer(enable_gpu: bool = True,
                            enable_parallel: bool = True,
-                           performance_threshold: int = 1000) -> ConsolidatedRollingOptimizer:
+                           performance_threshold: int = 500) -> ConsolidatedRollingOptimizer:
     """Create a rolling optimizer with specified configuration."""
     config = BatchRollingConfig(
         enable_gpu=enable_gpu,

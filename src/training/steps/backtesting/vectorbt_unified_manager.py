@@ -28,7 +28,7 @@ import json
 
 # VectorBT imports
 from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+from src.feature_selection.vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework
 
 # Common utilities
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory

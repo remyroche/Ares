@@ -38,10 +38,10 @@ class DirectionType(Enum):
 
 # Import enhanced utilities for comprehensive logging and operations
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
-from src.utils.common_operations import (
-    safe_divide, safe_mean, safe_std, validate_finite, optimize_dataframe_dtypes,
-    calculate_data_quality_metrics, get_dataframe_info
-)
+from src.utils.common_operations import safe_divide
+from src.utils.math_validation import safe_mean, safe_std, validate_finite
+from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
+from src.utils.hardware.memory_optimization import optimize_dataframe_dtypes
 from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
 # Define ExecutionMode locally as fallback
@@ -86,9 +86,11 @@ except ImportError:
 from src.core.decorators import handles_errors, traced, log_execution_time
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_performance
 from src.utils.common_operations import (
-    safe_json_load, safe_json_dump, ensure_directory, safe_file_exists,
-    timed_operation, format_bytes, get_memory_usage, optimize_memory
+    safe_json_load, ensure_directory, safe_file_exists,
+    timed_operation, format_bytes, get_memory_usage
 )
+from src.utils.core.common import safe_json_dump
+from src.utils.hardware.m1_memory_optimizer import optimize_memory
 
 # Import sub-pipelines with optional imports
 try:
@@ -208,7 +210,7 @@ class MainPipelineConfig:
             'regime_data_splitting', 'sr_feature_integration'
         ],
         PipelineStage.PRE_TRAINING: [
-            'multi_horizon_profit_labeler',
+            'analyst-labeler', 'tactician-labeler', 'multi_horizon_profit_labeler',
             'interactive_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [

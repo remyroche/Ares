@@ -1,5 +1,4 @@
 """
-import warnings
 Tactician Entry Labeler - Differentiated Entry Timing Labels for Tactician Models
 
 This module provides entry timing label generation for Tactician models,
@@ -10,10 +9,11 @@ Key Features:
 - Local maxima/minima detection with peak filtering
 - Enhanced entry quality scoring (adaptive multi-factor)
 - Regime-aware labeling with adaptive thresholds
-- Trains on ALL market data (not just Analyst green lights)
+- Trains on ALL market data independently
 """
 
 import time
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple
@@ -81,6 +81,27 @@ from src.training.steps.pre_training.components.component_factory import Compone
 from src.training.steps.pre_training.components.contracts import PipelineState
 from src.training.steps.pre_training.components import ComponentFactory
 from src.training.steps.pre_training.validation.schemas import validate_raw_ohlcv, SchemaValidationException
+from src.utils.ml_common.labeling.meta_labeling import (
+    triple_barrier_labels,
+    compute_volatility,
+    purged_kfold_splits,
+)
+
+# Import CMI complementarity components
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.cmi_complementarity import (
+        CMIComplementarityScorer, CMIComplementarityConfig
+    )
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.analyst_side_info import (
+        AnalystSideInfoHandler, AnalystSideInfoConfig
+    )
+    CMI_COMPLEMENTARITY_AVAILABLE = True
+except ImportError:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
+    CMIComplementarityScorer = None
+    CMIComplementarityConfig = None
+    AnalystSideInfoHandler = None
+    AnalystSideInfoConfig = None
 
 @dataclass
 class TacticianLabelingConfig:
@@ -89,7 +110,7 @@ class TacticianLabelingConfig:
     # Entry timing optimization
     min_entry_window_minutes: int = 3
     max_entry_window_minutes: int = 60
-    entry_quality_threshold: float = 0.25
+    entry_quality_threshold: float = 0.05
 
     # Price movement expectations (percentage values)
     max_adverse_movement_pct: float = 0.5
@@ -116,8 +137,19 @@ class TacticianLabelingConfig:
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
 
+    # Complementarity with Analyst
+    # When available, restrict entry timing to Analyst opportunity windows to reduce redundancy
+    use_analyst_windows_if_available: bool = True
+    # Gating window around Analyst anchor (in bars, not minutes)
+    gating_pre_bars: int = 4   # e.g., 4 bars ≈ 60m on 15m data
+    gating_post_bars: int = 0  # keep ex-ante by default
+
     # VectorBT optimization settings
     # vectorbt_config: Optional[VectorBTConfig] = None
+    
+    # CMI complementarity settings
+    enable_cmi_complementarity: bool = True
+    cmi_config: Optional[Dict[str, Any]] = None
 
 class TacticianDifferentiatedLabeler:
     """Create differentiated entry timing labels for the Tactician pipeline."""
@@ -143,12 +175,463 @@ class TacticianDifferentiatedLabeler:
 
         # Initialize enhanced quality scorer
         self._initialize_quality_scorer()
+        
+        # Initialize CMI complementarity components if available
+        if CMI_COMPLEMENTARITY_AVAILABLE and config.enable_cmi_complementarity:
+            # CMI configuration for Tactician labeling
+            cmi_config = CMIComplementarityConfig(
+                per_family_budget=(5, 15),  # Min/max features per family
+                upstream_multiplier=3,  # Total budget to RFE = 3× per-family
+                max_total_features=60,  # Maximum total features to select
+                enable_regime_awareness=True,  # Compute R(X|A) per regime
+                compute_timeout_seconds=300.0,  # 5 min hard limit
+                enable_synergy=True,  # Enable synergy computation
+                beta_synergy=0.25  # Synergy bonus weight
+            )
+            self.cmi_scorer = CMIComplementarityScorer(cmi_config)
+            self.analyst_handler = AnalystSideInfoHandler()
+            tprint_info("✅ CMI complementarity components initialized for Tactician labeling")
+        else:
+            self.cmi_scorer = None
+            self.analyst_handler = None
+            if not CMI_COMPLEMENTARITY_AVAILABLE:
+                tprint_warning("⚠️ CMI complementarity components not available")
+            else:
+                tprint_info("📊 CMI complementarity disabled in config")
+
+    def emit_analyst_side_info(self, pipeline_state: Dict[str, Any], 
+                              targets: Optional[pd.Series] = None,
+                              data_index: Optional[pd.Index] = None) -> Dict[str, Any]:
+        """
+        Emit Analyst side information for CMI complementarity.
+        
+        Args:
+            pipeline_state: Pipeline state containing Analyst artifacts
+            targets: Target series for computing I(Y;A)
+            data_index: Index to align side information with data
+            
+        Returns:
+            Dict containing Analyst side information and diagnostics
+        """
+        try:
+            if not CMI_COMPLEMENTARITY_AVAILABLE or self.analyst_handler is None:
+                return {
+                    'analyst_side_info': None,
+                    'cmi_enabled': False,
+                    'reason': 'CMI complementarity not available'
+                }
+            
+            # Extract Analyst side information
+            analyst_result = self.analyst_handler.extract_side_info(
+                pipeline_state, targets, data_index
+            )
+            
+            if analyst_result.is_valid:
+                tprint_info(f"✅ Analyst side information extracted: {analyst_result.source}")
+                tprint_info(f"📊 Analyst signal strength I(Y;A): {analyst_result.I_Y_A:.6f}")
+                
+                return {
+                    'analyst_side_info': analyst_result.A,
+                    'cmi_enabled': True,
+                    'analyst_source': analyst_result.source,
+                    'analyst_dims': analyst_result.n_dims,
+                    'I_Y_A': analyst_result.I_Y_A,
+                    'degraded_to_unconditional': analyst_result.degraded_to_unconditional,
+                    'extraction_metadata': analyst_result.extraction_metadata
+                }
+            else:
+                tprint_warning("⚠️ Analyst side information extraction failed")
+                return {
+                    'analyst_side_info': None,
+                    'cmi_enabled': False,
+                    'error': 'Analyst side info extraction failed',
+                    'extraction_metadata': analyst_result.extraction_metadata
+                }
+                
+        except Exception as e:
+            tprint_error(f"❌ Analyst side information emission failed: {e}")
+            return {
+                'analyst_side_info': None,
+                'cmi_enabled': False,
+                'error': str(e)
+            }
+
+    def generate_from_analyst_windows(
+        self,
+        data: pd.DataFrame,
+        opportunity_windows: List[Dict[str, Any]],
+        analyst_oof_score: Optional[pd.Series] = None,
+        pre_bars: int = 0,
+        post_bars: int = 0,
+    ) -> Dict[str, Any]:
+        """Build a windowed dataset for entry timing using Analyst windows.
+
+        - Creates within-window targets: y=1 at anchor, y=0 at other bars inside [start, anchor+post_bars].
+        - Builds past-only features (multi-scale returns/vol + optional Analyst OOF channel).
+        - Returns features X, labels y, window_id and meta.
+
+        Args:
+            data: OHLCV DataFrame indexed by timestamp (must include 'close').
+            opportunity_windows: List of dicts with keys {'start','end','anchor','direction'} timestamps.
+            analyst_oof_score: Optional ex-ante score Series aligned to data.index (strictly OOS/OOS-like).
+            pre_bars: Additional bars before anchor to include (default 0 for full [start, anchor]).
+            post_bars: Additional bars after anchor to include (default 0 to keep ex-ante).
+
+        Returns:
+            Dict with keys: {'X','y','window_id','meta'}
+        """
+        tprint_info("🧱 Building Tactician windowed dataset from Analyst windows")
+        
+        # ==================== INPUT VALIDATION ====================
+        if not isinstance(data, pd.DataFrame) or len(data) == 0:
+            raise ValueError("data must be a non-empty DataFrame")
+        if 'close' not in data.columns:
+            raise ValueError("data must contain 'close' column")
+        if not opportunity_windows:
+            raise ValueError("opportunity_windows is empty")
+        
+        # Import validation utilities
+        try:
+            from src.utils.ml_common.validation import (
+                validate_temporal_consistency,
+                validate_window_quality,
+                assert_past_only,
+                benchmark_stage
+            )
+            VALIDATION_AVAILABLE = True
+        except ImportError as e:
+            tprint_warning(f"⚠️ Validation utilities not available: {e}")
+            VALIDATION_AVAILABLE = False
+        
+        validation_results = {}
+        
+        if VALIDATION_AVAILABLE:
+            try:
+                # 1. Pre-processing validation: Temporal alignment and window quality
+                with benchmark_stage("tactician_input_validation") as input_metrics:
+                    # Validate temporal alignment between data and analyst_oof_score
+                    if analyst_oof_score is not None:
+                        temporal_artifacts = {
+                            'data': data,
+                            'analyst_oof_score': analyst_oof_score
+                        }
+                        
+                        temporal_result = validate_temporal_consistency(
+                            temporal_artifacts,
+                            list(temporal_artifacts.keys()),
+                            config={
+                                'require_exact_match': False,
+                                'tolerance_seconds': 60,  # 1 minute tolerance
+                                'check_data_hash': False
+                            }
+                        )
+                        validation_results['input_temporal'] = temporal_result
+                        input_metrics.custom_metrics = {
+                            'temporal_alignment_passed': temporal_result['success']
+                        }
+                    
+                    # Validate window quality
+                    window_artifacts = {
+                        'opportunity_windows': opportunity_windows,
+                        'data': data
+                    }
+                    
+                    window_result = validate_window_quality(
+                        window_artifacts,
+                        config={
+                            'require_min_windows': 1,
+                            'max_overlap_ratio': 0.3,  # Allow up to 30% overlap
+                            'min_coverage_ratio': 0.001,
+                            'strict_mode': False
+                        }
+                    )
+                    validation_results['input_windows'] = window_result
+                    input_metrics.custom_metrics.update({
+                        'total_windows': window_result['results']['windows'].total_windows if window_result['results'] else 0,
+                        'valid_windows': window_result['results']['windows'].valid_windows if window_result['results'] else 0,
+                        'window_validation_passed': window_result['success']
+                    })
+                
+                tprint_info(f"✅ Input validation completed: {len(validation_results)} checks")
+                
+            except Exception as validation_error:
+                tprint_warning(f"⚠️ Input validation failed: {validation_error}")
+                validation_results['input_validation_error'] = str(validation_error)
+
+        # Positional index mapping for fast slicing
+        pos = pd.Series(np.arange(len(data)), index=data.index)
+
+        # Initialize window mask and IDs
+        mask = pd.Series(False, index=data.index)
+        window_id = pd.Series(-1, index=data.index, dtype=int)
+        y = pd.Series(0, index=data.index, dtype=int)
+
+        valid_windows = 0
+        for k, w in enumerate(opportunity_windows):
+            try:
+                start_ts = pd.Timestamp(w.get('start'))
+                anchor_ts = pd.Timestamp(w.get('anchor'))
+                if start_ts not in pos.index or anchor_ts not in pos.index:
+                    continue
+                i = int(pos.loc[start_ts])
+                a = int(pos.loc[anchor_ts])
+                # Clip to [start, anchor] by default; allow pre/post adjustments
+                left = max(0, min(i, a) - max(0, pre_bars))
+                right = min(len(data) - 1, max(i, a) + max(0, post_bars))
+                # Require at least 2 bars in window
+                if right <= left:
+                    continue
+                idx_slice = data.index[left:right + 1]
+                mask.loc[idx_slice] = True
+                window_id.loc[idx_slice] = k
+                # Anchor label
+                y.loc[anchor_ts] = 1
+                valid_windows += 1
+            except Exception as e:
+                tprint_warning(f"⚠️ Skipping malformed window {k}: {e}")
+                continue
+
+        if valid_windows == 0:
+            raise ValueError("No valid analyst windows could be mapped to data index")
+
+        # Past-only base features
+        close = data['close']
+        ret_1 = close.pct_change(1)
+        ret_2 = close.pct_change(2)
+        rv_5 = ret_1.rolling(5).std()
+        rv_10 = ret_1.rolling(10).std()
+        # Shift by 1 to remove any chance of using current bar info
+        feats = pd.DataFrame({
+            'ret_1': ret_1.shift(1),
+            'ret_2': ret_2.shift(1),
+            'rv_5': rv_5.shift(1),
+            'rv_10': rv_10.shift(1),
+        }, index=data.index)
+
+        # Analyst OOF channel (strictly past-only)
+        if analyst_oof_score is not None and isinstance(analyst_oof_score, pd.Series):
+            aligned, _ = analyst_oof_score.align(data.index.to_series(), join='right')
+            analyst_lag1 = aligned.shift(1)
+            analyst_ema5 = analyst_lag1.ewm(span=5, adjust=False).mean()
+            feats['analyst_oof_lag1'] = analyst_lag1
+            feats['analyst_oof_ema5'] = analyst_ema5
+
+        # Restrict to window mask
+        X = feats[mask].copy()
+        yw = y[mask].copy()
+        wid = window_id[mask].copy()
+
+        # Drop rows with NA features
+        valid = ~X.isna().any(axis=1)
+        X = X[valid]
+        yw = yw[valid]
+        wid = wid[valid]
+
+        # Cast types for compactness
+        X = X.astype(np.float32)
+        yw = yw.astype(np.int8)
+        wid = wid.astype(np.int32)
+
+        # ---- Profit-aware auxiliary targets inside windows ----
+        y_success_w = None
+        r_H_w = None
+        time_to_hit_w = None
+        direction_w = None
+
+        try:
+            # Compute triple-barrier success given entry at t, realized return to horizon, time-to-hit
+            y_success = pd.Series(0, index=data.index, dtype=np.int8)
+            r_H = pd.Series(np.nan, index=data.index, dtype=np.float32)
+            time_to_hit = pd.Series(np.nan, index=data.index, dtype=np.float32)
+            direction_series = pd.Series(0, index=data.index, dtype=np.int8)
+
+            tp = float(self.config.min_favorable_movement_pct) / 100.0 if hasattr(self.config, 'min_favorable_movement_pct') else 0.005
+            sl = float(self.config.max_adverse_movement_pct) / 100.0 if hasattr(self.config, 'max_adverse_movement_pct') else 0.005
+
+            pos_idx = pd.Series(np.arange(len(data)), index=data.index)
+
+            for w in opportunity_windows:
+                try:
+                    start_ts = pd.Timestamp(w.get('start'))
+                    anchor_ts = pd.Timestamp(w.get('anchor'))
+                    end_ts = pd.Timestamp(w.get('end')) if w.get('end') is not None else anchor_ts
+                    if start_ts not in pos_idx.index or anchor_ts not in pos_idx.index:
+                        continue
+                    i = int(pos_idx.loc[start_ts])
+                    a = int(pos_idx.loc[anchor_ts])
+                    e = int(pos_idx.loc[end_ts]) if end_ts in pos_idx.index else a
+                    left = max(0, min(i, a) - max(0, pre_bars))
+                    right = min(len(data) - 1, max(e, a) + max(0, post_bars))
+                    if right <= left:
+                        continue
+                    d = int(np.sign(w.get('direction', 1) or 1))
+                    for j in range(left, right + 1):
+                        ts_j = data.index[j]
+                        if ts_j not in X.index:
+                            continue
+                        s = float(close.iloc[j])
+                        if not np.isfinite(s) or s <= 0:
+                            continue
+                        if j >= right:
+                            r_H.loc[ts_j] = 0.0
+                            y_success.loc[ts_j] = 0
+                            time_to_hit.loc[ts_j] = np.nan
+                            direction_series.loc[ts_j] = d
+                            continue
+                        path_vals = close.iloc[j + 1:right + 1].values
+                        if d >= 0:
+                            tp_price = s * (1.0 + tp)
+                            sl_price = s * (1.0 - sl)
+                            up_cross_idx = np.where(path_vals >= tp_price)[0]
+                            dn_cross_idx = np.where(path_vals <= sl_price)[0]
+                        else:
+                            tp_price = s * (1.0 - tp)
+                            sl_price = s * (1.0 + sl)
+                            up_cross_idx = np.where(path_vals <= tp_price)[0]
+                            dn_cross_idx = np.where(path_vals >= sl_price)[0]
+
+                        up_idx = int(up_cross_idx[0]) if up_cross_idx.size > 0 else None
+                        dn_idx = int(dn_cross_idx[0]) if dn_cross_idx.size > 0 else None
+
+                        succ = 0
+                        hit_offset = np.nan
+                        if up_idx is not None and dn_idx is not None:
+                            succ = 1 if up_idx < dn_idx else 0
+                            hit_offset = min(up_idx, dn_idx) + 1
+                        elif up_idx is not None:
+                            succ = 1
+                            hit_offset = up_idx + 1
+                        elif dn_idx is not None:
+                            succ = 0
+                            hit_offset = dn_idx + 1
+
+                        y_success.loc[ts_j] = int(succ)
+                        time_to_hit.loc[ts_j] = float(hit_offset) if np.isfinite(hit_offset) else np.nan
+                        r_val = (float(close.iloc[right]) - s) / s
+                        r_H.loc[ts_j] = np.float32(r_val)
+                        direction_series.loc[ts_j] = d
+                except Exception as e:
+                    tprint_warning(f"⚠️ Aux target computation error in window: {e}")
+                    continue
+
+            y_success_w = y_success.loc[X.index].fillna(0).astype(np.int8)
+            r_H_w = r_H.loc[X.index].fillna(0).astype(np.float32)
+            time_to_hit_w = time_to_hit.loc[X.index].astype(np.float32)
+            direction_w = direction_series.loc[X.index].astype(np.int8)
+        except Exception as aux_exc:
+            tprint_warning(f"⚠️ Skipped profit-aware aux targets: {aux_exc}")
+
+        meta = {
+            'n_windows': int(valid_windows),
+            'n_samples': int(len(X)),
+            'features': list(X.columns),
+        }
+        
+        # ==================== OUTPUT VALIDATION ====================
+        if VALIDATION_AVAILABLE:
+            try:
+                # 2. Post-processing validation: Leakage detection
+                with benchmark_stage("tactician_leakage_validation") as leakage_metrics:
+                    leakage_result = assert_past_only(
+                        X=X,
+                        y=yw,
+                        horizon_bars=1,
+                        strict_mode=False  # Don't fail on warnings
+                    )
+                    validation_results['leakage'] = leakage_result
+                    leakage_metrics.custom_metrics = {
+                        'leakage_detected': leakage_result.has_leakage,
+                        'leakage_sources_count': len(leakage_result.leakage_sources),
+                        'suspicious_features': len(leakage_result.shift_analysis.get('suspicious_features', [])),
+                        'high_correlation_features': len(leakage_result.correlation_analysis.get('high_correlation_features', []))
+                    }
+                
+                # 3. Final validation: Dataset quality
+                with benchmark_stage("tactician_dataset_validation") as dataset_metrics:
+                    # Check basic dataset properties
+                    dataset_issues = []
+                    
+                    if len(X) == 0:
+                        dataset_issues.append("Empty feature matrix")
+                    
+                    if len(yw) == 0:
+                        dataset_issues.append("Empty target vector")
+                    
+                    if len(X.columns) == 0:
+                        dataset_issues.append("No features generated")
+                    
+                    # Check for high NA ratios
+                    na_ratios = X.isna().sum() / len(X)
+                    high_na_features = na_ratios[na_ratios > 0.5].index.tolist()
+                    if high_na_features:
+                        dataset_issues.append(f"High NA ratio features: {high_na_features}")
+                    
+                    # Check target distribution
+                    target_dist = yw.value_counts()
+                    if len(target_dist) == 1:
+                        dataset_issues.append("Single-class target distribution")
+                    elif target_dist.get(1, 0) / len(yw) < 0.01:  # Less than 1% positive labels
+                        dataset_issues.append("Very low positive label rate")
+                    
+                    dataset_metrics.custom_metrics = {
+                        'dataset_issues_count': len(dataset_issues),
+                        'high_na_features_count': len(high_na_features),
+                        'target_distribution': target_dist.to_dict(),
+                        'feature_count': len(X.columns),
+                        'sample_count': len(X)
+                    }
+                    
+                    validation_results['dataset_quality'] = {
+                        'success': len(dataset_issues) == 0,
+                        'issues': dataset_issues,
+                        'metrics': dataset_metrics.custom_metrics
+                    }
+                
+                # Add validation results to metadata
+                meta['validation_results'] = validation_results
+                
+                # Log validation summary
+                validation_passed = all(
+                    result.get('success', True) if isinstance(result, dict) else True
+                    for result in validation_results.values()
+                    if not isinstance(result, str)  # Skip error messages
+                )
+                
+                if validation_passed:
+                    tprint_success("✅ All validation checks passed")
+                else:
+                    tprint_warning("⚠️ Some validation checks failed - see details above")
+                    for check_name, result in validation_results.items():
+                        if isinstance(result, dict) and not result.get('success', True):
+                            tprint_warning(f"   → {check_name}: {result.get('issues', result.get('leakage_sources', 'Unknown issues'))}")
+                
+            except Exception as validation_error:
+                tprint_warning(f"⚠️ Output validation failed: {validation_error}")
+                validation_results['output_validation_error'] = str(validation_error)
+                meta['validation_results'] = validation_results
+        
+        tprint_success(f"✅ Built windowed dataset: windows={valid_windows}, samples={len(X)}, features={len(X.columns)}")
+        result: Dict[str, Any] = {'X': X, 'y': yw, 'window_id': wid, 'meta': meta}
+        if y_success_w is not None:
+            result['targets'] = {
+                'y_success': y_success_w,
+                'r_H': r_H_w,
+                'time_to_hit': time_to_hit_w,
+                'direction': direction_w,
+            }
+        return result
 
     def _initialize_quality_scorer(self):
         """Initialize the enhanced entry quality scorer based on configuration."""
         tprint_info("🎯 Initializing enhanced entry quality scorer")
         try:
-            from src.training.steps.models_training.enhanced_entry_quality_scorer import (
+            # Try to import from the legacy backup location
+            import sys
+            import os
+            legacy_path = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'legacy_backup_20251017_141811')
+            if legacy_path not in sys.path:
+                sys.path.insert(0, legacy_path)
+            from enhanced_entry_quality_scorer import (
                 create_enhanced_scorer,
                 ScoringMethod,
                 EnhancedScoringConfig
@@ -201,16 +684,16 @@ class TacticianDifferentiatedLabeler:
         """Initialize VectorBT optimizer if available."""
         try:
             # Try to import VectorBT optimizer
-            from .profit_labeling.vectorbt_optimizer import get_vectorbt_optimizer, VectorBTConfig
+            from .unified_data_driven_pipeline.core.vectorbt_optimizer import create_vectorbt_optimizer, VectorBTConfig
             tprint_info("⚡ Initializing VectorBT optimizer")
             
             vectorbt_config = VectorBTConfig(
                 enable_vectorbt=True,
-                vectorbt_threshold=self.config.vectorbt_config.get('threshold', 1000),
-                performance_monitoring=True,
-                memory_efficiency_mode=True
+                enable_parallel=True,
+                memory_efficient=True,
+                batch_size=self.config.vectorbt_config.get('threshold', 1000)
             )
-            self.vectorbt_optimizer = get_vectorbt_optimizer(vectorbt_config)
+            self.vectorbt_optimizer = create_vectorbt_optimizer(vectorbt_config)
             tprint_success(f"✅ VectorBT optimizer initialized: {self.vectorbt_optimizer.__class__.__name__}")
         except (ImportError, AttributeError, Exception) as e:
             tprint_warning(f"⚠️ VectorBT optimizer not available, using fallback methods: {e}")
@@ -255,12 +738,13 @@ class TacticianDifferentiatedLabeler:
         self,
         data: pd.DataFrame,
         analyst_signals: Optional[pd.Series] = None,
-        regime_assignments: Optional[pd.Series] = None
+        regime_assignments: Optional[pd.Series] = None,
+        pipeline_state: Optional[Dict[str, Any]] = None
     ) -> Tuple[pd.Series, Dict[str, float]]:
         """
-        Generate entry timing labels for all data (not constrained to Analyst signals).
+        Generate entry timing labels for all data independently.
 
-        CHANGE: Now trains on ALL data, not just Analyst green light periods.
+        Trains on ALL data without any dependency on Analyst signals.
         """
         tprint_info("🎯 Creating tactician entry timing labels for ALL market data")
 
@@ -324,17 +808,83 @@ class TacticianDifferentiatedLabeler:
 
         labels = pd.Series(0.0, index=data.index, dtype=float)
 
-        # CHANGE: Process ALL data, not just Analyst green light periods
-        # Create sliding windows across entire dataset
+        # Emit Analyst side information for CMI complementarity if enabled
+        analyst_side_info_result = None
+        if (CMI_COMPLEMENTARITY_AVAILABLE and 
+            self.config.enable_cmi_complementarity and 
+            pipeline_state is not None):
+            tprint_info("🎯 Emitting Analyst side information for CMI complementarity")
+            analyst_side_info_result = self.emit_analyst_side_info(
+                pipeline_state, targets=None, data_index=data.index
+            )
+            
+            if analyst_side_info_result.get('cmi_enabled', False):
+                tprint_success("✅ Analyst side information emitted successfully")
+                # Store in pipeline state for downstream use
+                pipeline_state['analyst_side_info'] = analyst_side_info_result
+                # CRITICAL: Set tactician_mode flag to enable CMI in downstream steps
+                pipeline_state['tactician_mode'] = True
+                tprint_info("🔧 Tactician mode enabled for CMI complementarity")
+            else:
+                tprint_warning("⚠️ Analyst side information emission failed or disabled")
+
+        # Process ALL data or gate to Analyst windows
+        # Create sliding windows across entire dataset (bars proxy)
         tprint_info(f"📊 Processing {len(data)} candles for entry opportunities")
 
-        # Vectorized approach to avoid O(n²) nested loops with DataFrame operations
         window_size = self.config.max_entry_window_minutes
 
         # Pre-allocate arrays for better performance
-        entry_indices = data.index[:-window_size]  # All potential entry points
-        future_window_starts = np.arange(1, len(data) - window_size + 1)  # Start indices for future windows
-        future_window_ends = future_window_starts + window_size  # End indices for future windows
+        full_entry_indices = data.index[:-window_size]  # All potential entry points
+        full_future_window_starts = np.arange(1, len(data) - window_size + 1)  # Start indices for future windows
+        full_future_window_ends = full_future_window_starts + window_size  # End indices for future windows
+
+        # Optional gating with Analyst windows to reduce redundancy
+        if (
+            analyst_signals is not None
+            and isinstance(analyst_signals, pd.Series)
+            and self.config.use_analyst_windows_if_available
+        ):
+            tprint_info("🎯 Gating entry search to Analyst windows (complementary mode)")
+            # Align to data index and binarize
+            aligned_signals, _ = analyst_signals.align(data.index.to_series(), join='right')
+            aligned_signals = aligned_signals.fillna(0)
+            aligned_signals = (aligned_signals > 0).astype(bool)
+
+            # Build allowed mask around each Analyst anchor
+            allowed_mask = pd.Series(False, index=data.index)
+            # Map index → positional location for slicing
+            pos = pd.Series(np.arange(len(data)), index=data.index)
+            pre_bars = max(0, int(self.config.gating_pre_bars))
+            post_bars = max(0, int(self.config.gating_post_bars))
+            anchors = aligned_signals[aligned_signals].index
+            for ts in anchors:
+                if ts not in pos.index:
+                    continue
+                i = int(pos.loc[ts])
+                start_i = max(0, i - pre_bars)
+                end_i = min(len(data) - 1, i + post_bars)
+                allowed_mask.iloc[start_i : end_i + 1] = True
+
+            # Restrict entry indices to allowed zones
+            if allowed_mask.any():
+                mask_for_entries = allowed_mask.loc[full_entry_indices]
+                valid_positions = np.where(mask_for_entries.values)[0]
+                entry_indices = full_entry_indices[valid_positions]
+                future_window_starts = full_future_window_starts[valid_positions]
+                future_window_ends = full_future_window_ends[valid_positions]
+                tprint_info(f"🧪 Analyst-gated entries: {len(entry_indices)} (from {len(full_entry_indices)})")
+            else:
+                # If no allowed zones computed, fall back to full processing
+                tprint_warning("⚠️ Analyst windows produced empty gating; falling back to full dataset")
+                entry_indices = full_entry_indices
+                future_window_starts = full_future_window_starts
+                future_window_ends = full_future_window_ends
+        else:
+            # Independent mode (no Analyst signals available or disabled)
+            entry_indices = full_entry_indices
+            future_window_starts = full_future_window_starts
+            future_window_ends = full_future_window_ends
 
         # Vectorized quality score calculation with VectorBT optimization
         scores = np.zeros(len(entry_indices))
@@ -389,6 +939,22 @@ class TacticianDifferentiatedLabeler:
         data_info = get_dataframe_info(data)
         tprint_info(f"📊 Data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")
 
+        # Add CMI diagnostics to quality metrics
+        if analyst_side_info_result is not None:
+            quality_metrics['cmi_diagnostics'] = {
+                'cmi_enabled': analyst_side_info_result.get('cmi_enabled', False),
+                'analyst_source': analyst_side_info_result.get('analyst_source', 'none'),
+                'analyst_dims': analyst_side_info_result.get('analyst_dims', 0),
+                'I_Y_A': analyst_side_info_result.get('I_Y_A', 0.0),
+                'degraded_to_unconditional': analyst_side_info_result.get('degraded_to_unconditional', False),
+                'extraction_metadata': analyst_side_info_result.get('extraction_metadata', {})
+            }
+        else:
+            quality_metrics['cmi_diagnostics'] = {
+                'cmi_enabled': False,
+                'reason': 'CMI complementarity not available or disabled'
+            }
+
         tprint_success(
             "✅ Entry labeling completed on ALL data ("
             f"{int((labels > 0).sum())} optimal entries, quality={quality_metrics.get('overall_quality', 0):.3f})"
@@ -433,20 +999,21 @@ class TacticianDifferentiatedLabeler:
 
         if final_entry_count == 0:
             error_msg = (
-                "Peak filtering resulted in no usable entry labels for training. "
-                f"Original entries: {len(scores)}, Peak threshold: {self.config.entry_quality_threshold}, "
-                f"Min window: {self.config.min_entry_window_minutes} minutes. "
-                "Consider lowering the entry quality threshold or minimum window requirements."
+                "Peak filtering produced 0 entry labels after filtering. "
+                f"Original non-zero entries: {len(scores)} | quality_threshold={self.config.entry_quality_threshold} | "
+                f"min_window={self.config.min_entry_window_minutes}m. "
+                "This can happen with strict settings or short date ranges. "
+                "Try lowering the entry_quality_threshold, reducing min_entry_window_minutes, or extending the data range."
             )
             tprint_error(f"❌ {error_msg}")
             raise ValueError(error_msg)
 
-        # Warn if we have very few entries (might indicate overly strict filtering)
+        # Warn if we have very few entries (might indicate strict settings)
         if final_entry_count < 10:
             warning_msg = (
-                f"Peak filtering resulted in very few entry labels ({final_entry_count}). "
-                "Training data may be insufficient for reliable model training. "
-                "Consider adjusting entry quality threshold or minimum window requirements."
+                f"Few entry labels after peak filtering: {final_entry_count}. "
+                "This may be expected under strict thresholds, rate limits, or short date ranges. "
+                "To increase entries, lower entry_quality_threshold, reduce min_entry_window_minutes, or extend data."
             )
             tprint_warning(f"⚠️ {warning_msg}")
             warnings.warn(warning_msg, UserWarning, stacklevel=2)
@@ -477,7 +1044,10 @@ class TacticianDifferentiatedLabeler:
             for idx, score in zip(peak_indices, peak_scores):
                 filtered_labels.loc[idx] = score
         else:
-            tprint_warning("⚠️ No peaks found with current threshold")
+            tprint_warning(
+                f"⚠️ No peaks found with current threshold (quality_threshold={self.config.entry_quality_threshold}, "
+                f"min_window={self.config.min_entry_window_minutes}m) — applying fallback to keep best available entry if any"
+            )
 
         # If no peaks found but we have high-quality entries, keep the best
         if filtered_labels.sum() == 0 and len(scores) > 0:
@@ -560,7 +1130,10 @@ class TacticianDifferentiatedLabeler:
                     else:
                         tprint_info(f"⏭️ Skipped peak: score {current_score:.4f}, min_distance {min_distance:.1f}min")
         else:
-            tprint_warning("⚠️ No peaks found after VectorBT processing")
+            tprint_warning(
+                f"⚠️ No peaks found after VectorBT processing (quality_threshold={self.config.entry_quality_threshold}, "
+                f"min_window={self.config.min_entry_window_minutes}m) — applying fallback to keep best available entry if any"
+            )
 
         # Create filtered labels
         filtered_labels = pd.Series(0.0, index=labels.index, dtype=float)
@@ -610,27 +1183,27 @@ class TacticianDifferentiatedLabeler:
         volatility_window = min(20, window_size)
         tprint_info(f"🔍 Calculating volatility with window {volatility_window}")
         rolling_volatility = self._safe_vectorbt_operation(
-            'calculate_volatility',
-            self.vectorbt_optimizer.calculate_volatility,
-            close_prices.pct_change(), window=volatility_window, annualize=False
+            'rolling_std',
+            lambda data: self.vectorbt_optimizer.rolling_operation(data, 'std', volatility_window).result_data,
+            close_prices.pct_change()
         )
 
         # Calculate rolling price statistics
         tprint_info(f"📊 Calculating rolling price statistics with window {window_size}")
         rolling_max_high = self._safe_vectorbt_operation(
             'rolling_max',
-            self.vectorbt_optimizer.rolling_max,
-            high_prices, window=window_size
+            lambda data: self.vectorbt_optimizer.rolling_operation(data, 'max', window_size).result_data,
+            high_prices
         )
         rolling_min_low = self._safe_vectorbt_operation(
             'rolling_min',
-            self.vectorbt_optimizer.rolling_min,
-            low_prices, window=window_size
+            lambda data: self.vectorbt_optimizer.rolling_operation(data, 'min', window_size).result_data,
+            low_prices
         )
         rolling_mean_close = self._safe_vectorbt_operation(
             'rolling_mean',
-            self.vectorbt_optimizer.rolling_mean,
-            close_prices, window=window_size
+            lambda data: self.vectorbt_optimizer.rolling_operation(data, 'mean', window_size).result_data,
+            close_prices
         )
 
         # Pre-allocate scores array
@@ -886,7 +1459,7 @@ class TacticianDifferentiatedLabeler:
 
         # Calculate quality components
         risk_reward_ratio = favorable_move / (adverse_move + 1e-8)
-        timing_score = safe_divide(1.0, 1.0 + safe_divide(len(future_data), self.config.max_entry_window_minutes), default=0.0)
+        timing_score = safe_divide(1.0, 1.0 + safe_divide(len(future_data), self.config.max_entry_window_minutes), fill_value=0.0)
 
         tprint_info(f"📊 Risk-reward ratio: {risk_reward_ratio:.2f}, Timing score: {timing_score:.3f}")
 
@@ -910,19 +1483,23 @@ class TacticianDifferentiatedLabeler:
         if len(future_data) >= 2:
             returns = future_data['close'].pct_change().dropna()
             if not returns.empty:
-                # Use VectorBT optimized volatility calculation
-                volatility_result = self._safe_vectorbt_operation(
-                    'calculate_volatility',
-                    self.vectorbt_optimizer.calculate_volatility,
-                    returns, window=len(returns), annualize=False
-                )
-                volatility = volatility_result.iloc[-1] if volatility_result is not None and len(volatility_result) > 0 else returns.std()
+                # Use VectorBT optimized volatility calculation if available
+                if self.vectorbt_optimizer is not None:
+                    volatility_result = self._safe_vectorbt_operation(
+                        'calculate_volatility',
+                        self.vectorbt_optimizer.calculate_volatility,
+                        returns, window=len(returns), annualize=False
+                    )
+                    volatility = volatility_result.iloc[-1] if volatility_result is not None and len(volatility_result) > 0 else returns.std()
+                else:
+                    # Fallback to standard deviation
+                    volatility = returns.std()
             else:
                 volatility = 0.0
         else:
             volatility = 0.0
 
-        volatility_score = safe_divide(1.0, 1.0 + safe_divide(volatility * 100, 10.0), default=1.0)
+        volatility_score = safe_divide(1.0, 1.0 + safe_divide(volatility * 100, 10.0), fill_value=1.0)
         tprint_info(f"📊 Volatility: {volatility:.4f}, Volatility score: {volatility_score:.3f}")
         return volatility_score
 
@@ -975,7 +1552,8 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             for key in ['min_entry_window_minutes', 'max_entry_window_minutes',
                        'entry_quality_threshold', 'max_adverse_movement_pct',
                        'min_favorable_movement_pct', 'entry_quality_scoring_method',
-                       'enable_regime_adaptive_labeling']:
+                       'enable_regime_adaptive_labeling',
+                       'use_analyst_windows_if_available', 'gating_pre_bars', 'gating_post_bars']:
                 if key in custom_params:
                     setattr(tactician_config, key, custom_params[key])
                     tprint_info(f"   → {key}: {custom_params[key]}")
@@ -1031,24 +1609,41 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                 if data is None:
                     raise ValueError("No input data provided and no prepared_data in pipeline state")
 
-            # Extract analyst signals and regime assignments if available
-            analyst_predictions = pipeline_state.get('analyst_predictions')
-            analyst_signals = None
-            if analyst_predictions is not None:
-                if isinstance(analyst_predictions, pd.DataFrame):
-                    # Try to extract signals from various possible column names
-                    for col in ['analyst_signal', 'green_light', 'signal', 'confidence']:
-                        if col in analyst_predictions.columns:
-                            analyst_signals = analyst_predictions[col]
-                            break
-
+            # Extract regime assignments if available (independent of analyst signals)
             regime_assignments = pipeline_state.get('regime_assignments')
             if regime_assignments is not None:
                 if isinstance(regime_assignments, pd.DataFrame):
                     regime_assignments = regime_assignments.iloc[:, 0]  # Take first column
                 tprint_info(f"📊 Using regime assignments for adaptive labeling")
 
-            # Generate labels with error handling
+            # Try to source Analyst-derived signals to enable complementary gating
+            analyst_signals = None
+            try:
+                if 'tactician_entry_labels' in pipeline_state:
+                    cand = pipeline_state.get('tactician_entry_labels')
+                    if hasattr(cand, 'index'):
+                        analyst_signals = cand
+                        tprint_info("🔗 Using Analyst-provided tactician_entry_labels for gating")
+                elif 'analyst_profit_labeler_artifacts' in pipeline_state:
+                    apla = pipeline_state.get('analyst_profit_labeler_artifacts')
+                    mhlr = None
+                    if isinstance(apla, dict):
+                        mhlr = apla.get('multi_horizon_labeling_result')
+                    else:
+                        mhlr = getattr(apla, 'multi_horizon_labeling_result', None)
+                    if isinstance(mhlr, dict):
+                        lab = mhlr.get('labels')
+                        if lab is not None:
+                            if hasattr(lab, 'columns') and 'opportunity' in lab.columns:
+                                analyst_signals = (lab['opportunity'] > 0).astype(int)
+                                tprint_info("🔗 Derived analyst_signals from Analyst labels (opportunity column)")
+                            elif hasattr(lab, 'dtype'):
+                                analyst_signals = (lab > 0).astype(int)
+                                tprint_info("🔗 Derived analyst_signals from Analyst label series")
+            except Exception as _sig_e:
+                tprint_warning(f"⚠️ Failed to derive Analyst gating signals: {_sig_e}")
+
+            # Generate labels with error handling (with Analyst gating if available)
             try:
                 labels, quality_metrics = self.labeler.create_entry_timing_labels(
                     data=data,
@@ -1099,7 +1694,59 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             # Calculate sample weights for target weighting in downstream steps
             # Higher quality entries get higher weights for better model training
             sample_weights = self._calculate_sample_weights(labels, quality_metrics)
-            tprint_success(f"✅ Calculated sample weights for target weighting: min={sample_weights.min():.3f}, max={sample_weights.max():.3f}, mean={sample_weights.mean():.3f}")
+            try:
+                tprint_success(f"✅ Calculated sample weights for target weighting: min={float(np.min(sample_weights)):.3f}, max={float(np.max(sample_weights)):.3f}, mean={float(np.mean(sample_weights)):.3f}")
+            except Exception:
+                pass
+
+            # Optional: combine with Analyst confidence to emphasize high-quality Analyst opportunities
+            try:
+                apla = pipeline_state.get('analyst_profit_labeler_artifacts')
+                analyst_conf_series = None
+                if apla is not None:
+                    mhlr = apla.get('multi_horizon_labeling_result') if isinstance(apla, dict) else getattr(apla, 'multi_horizon_labeling_result', None)
+                    if isinstance(mhlr, dict):
+                        conf = mhlr.get('confidence_scores')
+                        if isinstance(conf, pd.DataFrame) and len(conf) > 0:
+                            if 'opportunity' in conf.columns:
+                                analyst_conf_series = conf['opportunity']
+                            else:
+                                # Use max across numeric columns as a simple composite
+                                num_cols = conf.select_dtypes(include=[np.number])
+                                if len(num_cols.columns) > 0:
+                                    analyst_conf_series = num_cols.max(axis=1)
+                        elif isinstance(conf, pd.Series):
+                            analyst_conf_series = conf
+                        # Fallback to labels if confidence not present
+                        if analyst_conf_series is None:
+                            lab = mhlr.get('labels')
+                            if isinstance(lab, pd.DataFrame) and len(lab) > 0:
+                                if 'opportunity' in lab.columns:
+                                    analyst_conf_series = lab['opportunity'].astype(float)
+                                else:
+                                    num_cols = lab.select_dtypes(include=[np.number])
+                                    if len(num_cols.columns) > 0:
+                                        analyst_conf_series = num_cols.max(axis=1).astype(float)
+                            elif isinstance(lab, pd.Series):
+                                analyst_conf_series = lab.astype(float)
+
+                if analyst_conf_series is not None:
+                    # Align and normalize to [0,1]
+                    analyst_conf_series = analyst_conf_series.reindex(data.index).fillna(0.0)
+                    denom = float(np.nanpercentile(analyst_conf_series.values, 95)) if len(analyst_conf_series) > 0 else 1.0
+                    if denom <= 0:
+                        denom = 1.0
+                    analyst_conf_norm = (analyst_conf_series / denom).clip(0.0, 1.0)
+
+                    # Combine with base weights; keep a floor so samples outside windows aren’t zeroed if allowed
+                    base_weights = pd.Series(sample_weights, index=data.index) if not isinstance(sample_weights, pd.Series) else sample_weights
+                    combined_weights = (base_weights * (0.5 + 0.5 * analyst_conf_norm)).astype(float)
+                    # Replace sample_weights with combined
+                    sample_weights = combined_weights
+
+                    tprint_info("🔗 Applied Analyst confidence weighting to Tactician sample weights")
+            except Exception as w_e:
+                tprint_warning(f"⚠️ Analyst weight fusion skipped: {w_e}")
 
             # Save labeled data to parquet file for persistence
             from pathlib import Path
@@ -1127,7 +1774,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'confidence_scores': confidence_df,
                     'eligibility_masks': eligibility_df,
                     'quality_scores': quality_scores,
-                    'sample_weights': sample_weights,  # Add sample weights for target weighting
+                    'sample_weights': sample_weights,  # Add fused sample weights for target weighting
                     'normalization_factors': {
                         'scaling_reference': 'Entry quality normalized scoring',
                         'quality_threshold': quality_metrics.get('quality_threshold', 0.0),
@@ -1165,11 +1812,13 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
             # Create result
             result = ComponentResult(
                 success=True,
-                processed_data=label_df,
+                artifacts={
+                    'processed_data': label_df,
+                    **artifacts
+                },
                 metadata={
                     'component': 'tactician_entry_labeler',
                     'timeframe': self.config.get('parameters', {}).get('timeframe', '15m') if self.config and isinstance(self.config, dict) else '15m',
-                    'artifacts': artifacts,
                     'n_entry_points': int((labels > 0).sum()),
                     'quality_metrics': quality_metrics,
                     'direction_settings': {
@@ -1293,22 +1942,21 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'quality_scores': quality_scores,
                     'sample_weights': {
                         'enabled': True,
-                        'min_weight': float(sample_weights.min()),
-                        'max_weight': float(sample_weights.max()),
-                        'mean_weight': float(sample_weights.mean()),
-                        'std_weight': float(sample_weights.std()),
-                        'method': 'quality_based_weighting',
-                        'description': 'Sample weights calculated based on entry quality scores for improved model training'
+                        'min_weight': float(pd.Series(sample_weights).min()),
+                        'max_weight': float(pd.Series(sample_weights).max()),
+                        'mean_weight': float(pd.Series(sample_weights).mean()),
+                        'std_weight': float(pd.Series(sample_weights).std()),
+                        'method': 'tactician_quality_x_analyst_confidence',
+                        'description': 'Weights = Tactician quality weighting fused with Analyst confidence (0.5 + 0.5*conf)'
                     },
                     'data_quality': data_quality,
                     'data_info': {
                         'input_rows': len(data),
                         'input_columns': len(data.columns),
-                        'analyst_signals_available': analyst_signals is not None,
-                        'analyst_signals_count': int(analyst_signals.sum()) if analyst_signals is not None and hasattr(analyst_signals, 'sum') else None,
                         'regime_assignments_available': regime_assignments is not None,
                         'regime_count': int(regime_assignments.nunique()) if regime_assignments is not None and hasattr(regime_assignments, 'nunique') else None,
                         'target_weighting_enabled': True,
+                        'independent_training': True,
                     },
                     'confidence_statistics': {
                         'mean_confidence': float(confidence_df.iloc[:, 0].mean()) if len(confidence_df) > 0 else 0.0,

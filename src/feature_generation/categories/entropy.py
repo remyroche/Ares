@@ -27,6 +27,9 @@ import warnings
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
+# Logger import
+from src.utils.logger import system_logger
+
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
@@ -124,7 +127,7 @@ def calculate_vectorized_entropy(series: pd.Series, window: int, use_vectorbt: b
             return entropy_normalized.fillna(0)
 
         except Exception as e:
-            logger.warning(f"VectorBT entropy calculation failed: {e}, using fallback")
+            system_logger.warning(f"VectorBT entropy calculation failed: {e}, using fallback")
             use_vectorbt = False
 
     # Fallback to optimized pandas implementation
@@ -151,7 +154,7 @@ class BaseEntropyGenerator(VectorizedFeatureGenerator):
         """Initialize VectorBT optimization components."""
         if VECTORBT_OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=False,  # Can be enabled based on hardware
                     enable_parallel=True,
                     memory_efficient=True
@@ -159,12 +162,12 @@ class BaseEntropyGenerator(VectorizedFeatureGenerator):
                 self.unified_manager = get_unified_vectorization_manager()
                 self.use_vectorbt = True
             except Exception as e:
-                logger.warning(f"VectorBT optimization initialization failed: {e}")
-                self.vectorbt_optimizer = None
+                system_logger.warning(f"VectorBT optimization initialization failed: {e}")
+                self.vectorbt_rolling_optimizer = None
                 self.unified_manager = None
                 self.use_vectorbt = False
         else:
-            self.vectorbt_optimizer = None
+            self.vectorbt_rolling_optimizer = None
             self.unified_manager = None
             self.use_vectorbt = False
 
@@ -223,7 +226,7 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
                 if hasattr(entropy_result, 'result'):
                     return entropy_result.result
             except Exception as e:
-                logger.warning(f"UnifiedVectorizationManager failed: {e}, using fallback")
+                system_logger.warning(f"UnifiedVectorizationManager failed: {e}, using fallback")
 
         # Fallback to optimized entropy calculation
         close_prices = data['close']
@@ -261,7 +264,7 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
                 )
                 return batch_result.result
             except Exception as e:
-                logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
+                system_logger.warning(f"Unified Vectorization Manager batch processing failed: {e}, using fallback")
                 # Fallback to individual processing
                 return self._process_entropy_features_individually(data, feature_configs)
         else:
@@ -286,7 +289,7 @@ class EntropyFeatureGenerator(BaseEntropyGenerator):
                         results[feature_name] = entropy
 
             except Exception as e:
-                logger.warning(f"Entropy feature {feature_name} failed: {e}")
+                system_logger.warning(f"Entropy feature {feature_name} failed: {e}")
                 results[feature_name] = pd.Series(np.nan, index=data.index)
 
         return pd.DataFrame(results, index=data.index)

@@ -38,7 +38,7 @@ from .core.framework import (
 )
 
 # VectorBT framework
-from .vectorbt import (
+from .vectorbt_extensions import (
     VectorBTUnifiedFramework,
     create_vectorbt_unified_framework,
     VectorBTFeatureSelector,

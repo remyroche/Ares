@@ -15,7 +15,7 @@ class OptimizationStrategy(ABC):
         try:
             # Reduce verbosity - only log on first initialization
             if not hasattr(self.__class__, '_initialization_logged'):
-                tprint(f"🔧 Initializing {self.__class__.__name__}...")
+                pass  # tprint statement removed
                 self.__class__._initialization_logged = True
             
             self.config = config
@@ -29,11 +29,10 @@ class OptimizationStrategy(ABC):
             
             # Only log success on first initialization
             if not hasattr(self.__class__, '_success_logged'):
-                tprint(f"✅ {self.__class__.__name__} initialized successfully")
+                pass  # tprint statement removed
                 self.__class__._success_logged = True
 
         except Exception as e:
-            tprint(f"❌ Error initializing {self.__class__.__name__}: {e}")
             raise
 
     @abstractmethod
@@ -44,29 +43,26 @@ class OptimizationStrategy(ABC):
     def get_stats(self) -> Dict[str, Any]:
         """Get optimization statistics."""
         try:
-            tprint(f"📊 Getting stats for {self.__class__.__name__}...")
             stats = self.stats.copy()
-            tprint(f"✅ Retrieved stats: {stats['optimizations_applied']} optimizations, {stats['total_time']:.3f}s total time")
+            # Only log if there are actual optimizations applied
+            if stats.get('optimizations_applied', 0) > 0:
+                pass  # tprint statement removed
             return stats
 
         except Exception as e:
-            tprint(f"❌ Error getting stats: {e}")
             return {}
 
     def reset_stats(self):
         """Reset optimization statistics."""
         try:
-            tprint(f"🔄 Resetting stats for {self.__class__.__name__}...")
             self.stats = {
                 'optimizations_applied': 0,
                 'total_time': 0.0,
                 'memory_saved_mb': 0.0,
                 'strategy_name': self.__class__.__name__
             }
-            tprint("✅ Stats reset successfully")
 
         except Exception as e:
-            tprint(f"❌ Error resetting stats: {e}")
             raise
 
 class ConservativeOptimizationStrategy(OptimizationStrategy):
@@ -75,7 +71,6 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
     def optimize_data(self, data: pd.DataFrame, generator) -> pd.DataFrame:
         """Apply conservative optimization."""
         try:
-            tprint("🔧 Starting conservative optimization...")
             start_time = time.time()
             optimized_data = data
 
@@ -83,9 +78,7 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
             if (self.config.enable_memory_optimization and
                 hasattr(generator, 'optimize_dataframe_processing')):
                 try:
-                    tprint("💾 Applying memory optimization...")
                     original_memory = data.memory_usage(deep=True).sum() / 1024 / 1024  # MB
-                    tprint(f"📊 Original memory usage: {original_memory:.2f}MB")
 
                     optimized_data = generator.optimize_dataframe_processing(data)
                     
@@ -98,27 +91,21 @@ class ConservativeOptimizationStrategy(OptimizationStrategy):
                     memory_saved = max(0, original_memory - optimized_memory)
                     self.stats['memory_saved_mb'] += memory_saved
 
-                    tprint(f"✅ Memory optimization applied: {original_memory:.2f}MB -> {optimized_memory:.2f}MB")
-                    tprint(f"💾 Memory saved: {memory_saved:.2f}MB")
-
                     if self.config.enable_optimization_logging:
                         self.logger.debug(f"Memory optimization applied: {original_memory:.2f}MB -> {optimized_memory:.2f}MB")
 
                 except Exception as e:
-                    tprint(f"❌ Memory optimization failed: {e}")
                     self.logger.warning(f"Memory optimization failed: {e}")
             else:
-                tprint("⚠️ Memory optimization disabled or not available")
+                pass  # tprint statement removed
 
             # Final data cleaning to ensure no non-finite values
             optimized_data = self._clean_non_finite_values(optimized_data)
             
             self.stats['total_time'] += time.time() - start_time
-            tprint(f"✅ Conservative optimization completed in {self.stats['total_time']:.3f}s")
             return optimized_data
 
         except Exception as e:
-            tprint(f"❌ Error in conservative optimization: {e}")
             self.logger.error(f"Error in conservative optimization: {e}")
             # Return original data on error
             return data
@@ -158,7 +145,7 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
         try:
             # Only log once per optimization session to reduce verbosity
             if not hasattr(self, '_optimization_logged'):
-                tprint("🔧 Starting balanced optimization...")
+                pass  # tprint statement removed
                 self._optimization_logged = True
             start_time = time.time()
             optimized_data = data
@@ -182,16 +169,15 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
 
                     # Only log if significant memory was saved
                     if memory_saved > 10:  # Only log if more than 10MB saved
-                        tprint(f"💾 Memory optimization: {original_memory:.2f}MB -> {optimized_memory:.2f}MB (saved {memory_saved:.2f}MB)")
+                        pass  # tprint statement removed
 
                     if self.config.enable_optimization_logging:
                         self.logger.debug(f"Memory optimization applied: {original_memory:.2f}MB -> {optimized_memory:.2f}MB")
 
                 except Exception as e:
-                    tprint(f"❌ Memory optimization failed: {e}")
                     self.logger.warning(f"Memory optimization failed: {e}")
             else:
-                tprint("⚠️ Memory optimization disabled or not available")
+                pass  # tprint statement removed
 
             # VectorBT optimization for large datasets
             if (self.config.enable_vectorbt_optimization and
@@ -208,49 +194,42 @@ class BalancedOptimizationStrategy(OptimizationStrategy):
                         self.stats['optimizations_applied'] += 1
                         # Only log if significant dataset size
                         if len(optimized_data) > 10000:
-                            tprint(f"🚀 VectorBT optimization applied for {len(optimized_data)} rows")
+                            pass  # tprint statement removed
 
                         if self.config.enable_optimization_logging:
                             self.logger.debug(f"VectorBT optimization applied for {len(optimized_data)} rows")
 
                 except Exception as e:
-                    tprint(f"❌ VectorBT optimization failed: {e}")
                     self.logger.warning(f"VectorBT optimization failed: {e}")
             else:
-                tprint("⚠️ VectorBT optimization disabled or not available")
+                pass  # tprint statement removed
 
             # Rolling operations optimization
             if (self.config.enable_rolling_optimization and
                 hasattr(generator, 'enable_rolling_cache')):
                 try:
-                    tprint("🔄 Applying rolling operations optimization...")
                     if hasattr(generator, 'enable_rolling_cache'):
                         generator.enable_rolling_cache = self.config.enable_rolling_cache
                         generator.rolling_cache_size = self.config.rolling_cache_size
                         self.stats['optimizations_applied'] += 1
-                        tprint(f"✅ Rolling operations optimization enabled (cache size: {self.config.rolling_cache_size})")
 
                         if self.config.enable_optimization_logging:
                             self.logger.debug("Rolling operations optimization enabled")
                     else:
-                        tprint("⚠️ Rolling cache not available on generator")
+                        pass  # tprint statement removed
 
                 except Exception as e:
-                    tprint(f"❌ Rolling operations optimization failed: {e}")
                     self.logger.warning(f"Rolling operations optimization failed: {e}")
             else:
-                tprint("⚠️ Rolling operations optimization disabled or not available")
+                pass  # tprint statement removed
 
             # Final data cleaning to ensure no non-finite values
             optimized_data = self._clean_non_finite_values(optimized_data)
             
             self.stats['total_time'] += time.time() - start_time
-            tprint(f"✅ Balanced optimization completed in {self.stats['total_time']:.3f}s")
-            tprint(f"📊 Total optimizations applied: {self.stats['optimizations_applied']}")
             return optimized_data
 
         except Exception as e:
-            tprint(f"❌ Error in balanced optimization: {e}")
             self.logger.error(f"Error in balanced optimization: {e}")
             # Return original data on error
             return data

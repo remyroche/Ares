@@ -27,25 +27,24 @@ from src.utils.logger import system_logger
 from src.utils.common_operations import (
     validate_dataframe_columns,
     safe_dataframe_operation,
-    validate_positive,
-    validate_range,
     safe_int,
     safe_float,
-    get_dataframe_info,
-    create_data_quality_report,
     ensure_directory,
     safe_json_dump,
     safe_json_load,
     format_bytes,
     timed_operation,
-    memory_checkpoint,
     optimize_memory,
-    check_disk_space,
     safe_divide,
     safe_mean,
     safe_std,
     safe_correlation
 )
+from src.utils.math_validation import validate_positive, validate_range
+from src.utils.common_utilities import get_dataframe_info, create_data_quality_report
+from src.training.steps.market_analysis.components.memory_manager import memory_checkpoint
+
+# check_disk_space removed - not found in codebase
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
     get_vectorized_processing_core,

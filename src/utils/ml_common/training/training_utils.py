@@ -19,7 +19,21 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer
 from src.utils.logger import system_logger
 
-from src.utils.ml_common.models import EnhancedModelFactory, ModelType, ModelConfig
+# Lazy import to avoid circular dependency
+def get_enhanced_model_factory():
+    """Lazy import for EnhancedModelFactory to avoid circular dependencies."""
+    from src.utils.ml_common.models import EnhancedModelFactory
+    return EnhancedModelFactory
+
+def get_model_type():
+    """Lazy import for ModelType to avoid circular dependencies."""
+    from src.utils.ml_common.models import ModelType
+    return ModelType
+
+def get_model_config():
+    """Lazy import for ModelConfig to avoid circular dependencies."""
+    from src.utils.ml_common.models import ModelConfig
+    return ModelConfig
 from src.utils.ml_common.optimization import HierarchicalHPO, HierarchicalHPOConfig, HPOPhaseConfig
 from src.utils.ml_common.optimization.overfitting_prevention import OverfittingPrevention, OverfittingPreventionConfig
 from src.utils.ml_common.evaluation.evaluation_utils import EvaluationUtils
@@ -61,7 +75,7 @@ class TrainingUtils:
             config = BaseTrainingConfig(**config_dict)
 
         self.config = config
-        self.model_factory = EnhancedModelFactory()
+        self.model_factory = get_enhanced_model_factory()()
         self.overfitting_prevention = OverfittingPrevention(
             OverfittingPreventionConfig() if config.enable_overfitting_prevention else None
         )

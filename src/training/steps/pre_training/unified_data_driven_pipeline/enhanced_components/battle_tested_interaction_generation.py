@@ -167,7 +167,7 @@ class BattleTestedInteractionGenerator:
         if PURGED_KFOLD_AVAILABLE:
             self.purged_kfold = PurgedKFoldTime(
                 n_splits=self.config.n_splits,
-                embargo_td=pd.Timedelta(days=self.config.embargo_days)
+                embargo=pd.Timedelta(days=self.config.embargo_days)
             )
         else:
             self.purged_kfold = None

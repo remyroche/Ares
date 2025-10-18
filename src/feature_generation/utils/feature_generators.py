@@ -2456,10 +2456,27 @@ def create_cdl_harami_config(**kwargs) -> Dict[str, Any]:
 
 # Compatibility redirect for new unified feature generation system
 # This allows existing code to continue working while we migrate to the new system
-try:
-    from .feature_generators_compatibility import FeatureGenerators as CompatibleFeatureGenerators
-except ImportError:
-    CompatibleFeatureGenerators = None
+# Use lazy import to avoid circular dependency
+def _get_compatible_feature_generators():
+    try:
+        from .feature_generators_compatibility import FeatureGenerators as CompatibleFeatureGenerators
+        return CompatibleFeatureGenerators
+    except ImportError:
+        return None
+
+# Create a lazy wrapper
+class LazyCompatibleFeatureGenerators:
+    def __init__(self):
+        self._compatible_class = None
+    
+    def __getattr__(self, name):
+        if self._compatible_class is None:
+            self._compatible_class = _get_compatible_feature_generators()
+        if self._compatible_class is None:
+            raise AttributeError(f"'{name}' not found - compatibility layer not available")
+        return getattr(self._compatible_class, name)
+
+CompatibleFeatureGenerators = LazyCompatibleFeatureGenerators
 
 # VectorBT imports for native optimization
 try:

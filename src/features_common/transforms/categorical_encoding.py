@@ -17,7 +17,7 @@ import logging
 
 # Import VectorBT components
 try:
-    from src.features_common.vectorbt.unified_manager import UnifiedVectorizationManager
+    from src.features_common.vectorbt_extensions.unified_manager import UnifiedVectorizationManager
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False

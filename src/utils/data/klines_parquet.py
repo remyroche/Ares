@@ -780,6 +780,14 @@ class KlinesParquetManager:
                     if start_date is not None:
                         # Convert string to datetime if needed
                         if isinstance(start_date, str):
+                            # Handle numpy array inputs
+                            if isinstance(start_date, np.ndarray):
+                                if start_date.size == 1:
+                                    start_date = start_date.item()
+                                else:
+                                    self.logger.warning(f"Invalid start_date format: numpy array with {start_date.size} elements")
+                                    return None
+
                             start_date = pd.to_datetime(start_date)
                         start_date_str = start_date.date() if hasattr(start_date, 'date') else str(start_date)
                         max_date_str = max_date.date() if hasattr(max_date, 'date') else str(max_date)
@@ -793,6 +801,14 @@ class KlinesParquetManager:
                     if end_date is not None:
                         # Convert string to datetime if needed
                         if isinstance(end_date, str):
+                            # Handle numpy array inputs
+                            if isinstance(end_date, np.ndarray):
+                                if end_date.size == 1:
+                                    end_date = end_date.item()
+                                else:
+                                    self.logger.warning(f"Invalid end_date format: numpy array with {end_date.size} elements")
+                                    return None
+
                             end_date = pd.to_datetime(end_date)
                         end_date_str = end_date.date() if hasattr(end_date, 'date') else str(end_date)
                         if end_date.date() > max_date.date():

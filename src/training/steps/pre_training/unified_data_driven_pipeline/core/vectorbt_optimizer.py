@@ -43,15 +43,29 @@ except ImportError:
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
-        scale, rank, zscore, winsorize, clip, quantile
-    )
     from vectorbt.portfolio import Portfolio
     from vectorbt.returns import Returns
+
+    # VectorBT 0.28.1 doesn't have these rolling functions in vectorbt.generic
+    # These will use pandas fallbacks instead
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+
     VECTORBT_AVAILABLE = True
-    tprint_info("✅ VectorBT imported successfully")
+    tprint_info("✅ VectorBT imported successfully (v0.28.1)")
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None

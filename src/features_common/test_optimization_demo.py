@@ -90,7 +90,7 @@ def demonstrate_optimization_benefits():
     print("\n🔧 Test 2: VectorBT Manager with All Optimizations")
     print("-" * 50)
 
-    from src.features_common.vectorbt import get_unified_vectorbt_manager
+    from src.features_common.vectorbt_extensions import get_unified_vectorbt_manager
 
     # Get unified VectorBT manager
     vectorbt_manager = get_unified_vectorbt_manager()

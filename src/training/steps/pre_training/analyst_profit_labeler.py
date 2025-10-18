@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+import numpy as np
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
@@ -101,13 +102,13 @@ class AnalystProfitLabelerConfig:
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    # Single horizon: 90 minutes (6 periods of 15m)
-    horizons: List[int] = field(default_factory=lambda: [90])  # 90 minutes = 6 * 15m periods
+    # Single horizon default: 60 minutes (4 periods of 15m)
+    horizons: List[int] = field(default_factory=lambda: [60])  # 60 minutes = 4 * 15m periods
 
     # Profit target (percentage points) - Simplified to single 0.5% threshold modulated by volatility
     # Note: This is a percentage point, not fractional return (0.005 = 0.5%)
     # The threshold will be dynamically adjusted based on market volatility
-    target_profit: float = 0.5
+    target_profit: float = 0.6
     
     # For backward compatibility and metadata consistency, expose as target_profits list
     @property
@@ -116,8 +117,8 @@ class AnalystProfitLabelerConfig:
         return [self.target_profit]
 
     # Volatility-aware settings
-    # Disable volatility normalization for simpler percentage-based targets
-    use_volatility_normalization: bool = False
+    # Enable volatility normalization so base 0.5% scales with regime
+    use_volatility_normalization: bool = True
     volatility_window: int = 20
 
     # Label quality thresholds
@@ -446,6 +447,18 @@ class AnalystProfitLabeler:
             tprint_info(f"📈 Configuring volatility: enabled={self.config.use_volatility_normalization}, window={self.config.volatility_window}")
             labeler_config.volatility.enabled = self.config.use_volatility_normalization
             labeler_config.volatility.window = self.config.volatility_window
+            # Ensure threshold scaling never drops below base target for Analyst
+            if hasattr(labeler_config, 'multi_target'):
+                labeler_config.multi_target.min_threshold_multiplier = 1.0
+                labeler_config.multi_target.max_threshold_multiplier = 2.0
+            # Sensitivity: higher -> more scaling in volatile regimes
+            if hasattr(labeler_config, 'volatility'):
+                labeler_config.volatility.sensitivity = 1.2
+
+            # Enable rate control: cap opportunities per day (data-driven calibration)
+            if hasattr(labeler_config, 'rate_control'):
+                labeler_config.rate_control.enabled = True
+                labeler_config.rate_control.max_ops_per_day = 8
 
             # Configure quality scoring - disable for initial labeling to ensure labels are generated
             # Quality filtering can be applied during feature selection/training
@@ -497,6 +510,75 @@ class AnalystProfitLabeler:
         except Exception as e:
             tprint_error(f"❌ Failed to create labeler: {e}")
             raise
+
+    def _condense_labels_single_per_window(
+        self,
+        labels_bool: pd.Series,
+        prices: pd.Series,
+        window_minutes: int,
+        base_period_minutes: int,
+        long_only: bool = True
+    ) -> pd.Series:
+        """Reduce multiple signals to a single label per fixed time window, choosing local extrema.
+
+        - If long_only=True: pick the local minimum close within each window (best entry).
+        - If shorts are allowed: pick min for long signals and max for short signals when a mixed window occurs.
+        """
+        try:
+            if len(labels_bool) == 0:
+                return labels_bool
+
+            # Ensure alignment
+            labels_aligned, prices_aligned = labels_bool.align(prices, join='inner')
+            values = labels_aligned.astype(bool).values
+            close_vals = prices_aligned.values
+
+            bars_per_window = max(1, int((window_minutes + base_period_minutes - 1) // base_period_minutes))
+
+            out = pd.Series(False, index=labels_aligned.index)
+            signal_idx = np.flatnonzero(values)
+            i = 0
+            n = len(values)
+
+            while i < len(signal_idx):
+                s = signal_idx[i]
+                window_end = min(n - 1, s + bars_per_window - 1)
+
+                # Define window slice
+                sl = slice(s, window_end + 1)
+
+                # Choose extremum index within the window
+                if long_only:
+                    local_pos = int(np.argmin(close_vals[sl]))
+                else:
+                    # If shorts allowed, default to long extremum; extending to direction-aware is trivial
+                    local_pos = int(np.argmin(close_vals[sl]))
+
+                chosen = s + local_pos
+                out.iloc[chosen] = True
+
+                # Skip all signals covered by this window
+                j = i + 1
+                while j < len(signal_idx) and signal_idx[j] <= window_end:
+                    j += 1
+                i = j
+
+            reduced = int(values.sum())
+            final = int(out.sum())
+            if reduced:
+                tprint_info(
+                    f"🔧 Applied single-label per {window_minutes}m window: {reduced} -> {final} ({(reduced-final)/reduced:.1%} reduction)"
+                )
+            else:
+                tprint_info(f"🔧 Single-label window applied: 0 signals")
+
+            # Reindex to original index if alignment trimmed anything
+            out_full = pd.Series(False, index=labels_bool.index)
+            out_full.loc[out.index] = out
+            return out_full
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to condense labels per window: {e}")
+            return labels_bool
 
     def generate_labels(
         self,
@@ -597,6 +679,9 @@ class AnalystProfitLabeler:
                 # Check if any horizon/target combination shows a profitable opportunity
                 consolidated_labels = pd.Series([False] * len(data), index=data.index, name='opportunity', dtype=bool)
 
+                # Collect anchor times from Analyst labeler for Tactician (WHEN) integration
+                anchor_times: List[pd.Timestamp] = []
+
                 for horizon_idx, horizon_minutes in enumerate(self.config.horizons):
                     tprint_info(f"📈 Checking horizon {horizon_idx + 1}/{len(self.config.horizons)}: {horizon_minutes}min")
 
@@ -634,6 +719,16 @@ class AnalystProfitLabeler:
                         if isinstance(horizon_series, pd.Series):
                             consolidated_labels = consolidated_labels | (horizon_series > 0).astype(bool)
                         
+                        # Collect anchor times from metadata for Tactician entry labels
+                        try:
+                            win_meta = horizon_result.metadata.get('opportunity_windows', []) if hasattr(horizon_result, 'metadata') else []
+                            for w in win_meta:
+                                ts = w.get('anchor')
+                                if ts is not None:
+                                    anchor_times.append(pd.Timestamp(ts))
+                        except Exception:
+                            pass
+
                         # Collect quality scores from this horizon
                         if hasattr(horizon_result, 'quality_scores') and horizon_result.quality_scores:
                             for target_name, quality in horizon_result.quality_scores.items():
@@ -645,8 +740,23 @@ class AnalystProfitLabeler:
                     else:
                         tprint_warning(f"⚠️ Failed to generate labels for {horizon_minutes}min horizon")
 
+                # Enforce a single label per 60m window and place at local extremum
+                consolidated_labels = self._condense_labels_single_per_window(
+                    labels_bool=consolidated_labels,
+                    prices=data['close'] if 'close' in data.columns else data.iloc[:, 0],
+                    window_minutes=60,
+                    base_period_minutes=self.config.base_period_minutes,
+                    long_only=self.config.enable_long_positions and not self.config.enable_short_positions
+                )
+
                 # Convert boolean series to integer (0 or 1)
                 consolidated_labels = consolidated_labels.astype(int)
+
+                # Build Tactician entry label series (1 at Analyst anchor bars)
+                tactician_entry_labels = pd.Series(0, index=data.index, dtype=int)
+                if anchor_times:
+                    anchor_times_unique = sorted(set([ts for ts in anchor_times if ts in tactician_entry_labels.index]))
+                    tactician_entry_labels.loc[anchor_times_unique] = 1
 
                 # Track detailed opportunity statistics
                 total_opportunities = consolidated_labels.sum()
@@ -708,7 +818,10 @@ class AnalystProfitLabeler:
                         'opportunity_rate': opportunity_rate,
                         'days_in_data': days_in_data,
                         'opportunities_per_day': total_opportunities / days_in_data,
-                        'quality_scores': final_quality_scores
+                        'quality_scores': final_quality_scores,
+                        # Expose anchor timestamps and a ready-to-use Tactician entry label series
+                        'tactician_entry_labels': tactician_entry_labels,
+                        'opportunity_windows': anchor_times_unique if anchor_times else []
                     },
                     success=True,
                     quality_scores=final_quality_scores
@@ -1373,15 +1486,22 @@ class AnalystProfitLabeler:
             tprint_success(f"✅ Label summary generated: {summary['n_samples']} samples, {summary['n_targets']} targets, {summary['n_horizons']} horizons")
 
             # Final decision summary
-            total_expected_labels = sum(horizon['expected_labels'] for horizon in summary.get('horizon_breakdown', {}).values())
-            
-            # Get raw opportunity count from the labeling result
+            # Compute expected labels directly from produced labels instead of relying on external breakdowns
+            # Expected = number of positive opportunity flags in the final (post-filter) labels
+            total_expected_labels = 0
             raw_opportunities = 0
             if hasattr(result, 'labels') and result.labels is not None:
                 if isinstance(result.labels, pd.DataFrame):
-                    raw_opportunities = (result.labels == 1).sum().sum()
+                    # Count both raw positives and expected positives from the final labels
+                    # Treat any numeric column where value == 1 as an opportunity
+                    numeric_cols = [c for c in result.labels.columns if pd.api.types.is_numeric_dtype(result.labels[c])]
+                    if numeric_cols:
+                        expected_per_col = [(result.labels[c] == 1).sum() for c in numeric_cols]
+                        total_expected_labels = sum(int(x) for x in expected_per_col)
+                        raw_opportunities = total_expected_labels
                 elif isinstance(result.labels, pd.Series):
-                    raw_opportunities = (result.labels == 1).sum()
+                    total_expected_labels = int((result.labels == 1).sum())
+                    raw_opportunities = total_expected_labels
             
             tprint_info("🎯 Final Labeling Decision:")
             tprint_info(f"   📊 Raw opportunities found: {raw_opportunities:,} (before quality filtering)")
@@ -1396,7 +1516,8 @@ class AnalystProfitLabeler:
             
             if total_expected_labels > 0:
                 tprint_success(f"✅ Analyst labels will be generated: {total_expected_labels} total labels (after quality filtering)")
-                if raw_opportunities > 0:
+                # When using consolidated labels, expected equals raw; keep the filtered-out line only if meaningful
+                if raw_opportunities > total_expected_labels:
                     filtered_out = raw_opportunities - total_expected_labels
                     tprint_info(f"   📊 Filtered out: {filtered_out:,} opportunities ({filtered_out/raw_opportunities:.1%} of raw count)")
             else:
@@ -1535,6 +1656,110 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 regime_assignments=regime_assignments
             )
 
+            # ==================== VALIDATION PIPELINE ====================
+            tprint_info("🔍 Running validation pipeline...")
+            
+            # Import validation utilities
+            try:
+                from src.utils.ml_common.validation import (
+                    validate_temporal_consistency,
+                    validate_window_quality,
+                    benchmark_stage,
+                    BenchmarkConfig
+                )
+                VALIDATION_AVAILABLE = True
+            except ImportError as e:
+                tprint_warning(f"⚠️ Validation utilities not available: {e}")
+                VALIDATION_AVAILABLE = False
+            
+            # Validation results container
+            validation_results = {}
+            
+            if VALIDATION_AVAILABLE:
+                try:
+                    # 1. Temporal alignment validation
+                    with benchmark_stage("analyst_temporal_validation") as temporal_metrics:
+                        temporal_artifacts = {
+                            'input_data': data,
+                            'labels': labeling_result.labels if hasattr(labeling_result, 'labels') else None,
+                            'tactician_entry_labels': getattr(labeling_result.metadata, 'tactician_entry_labels', None) if hasattr(labeling_result, 'metadata') else None
+                        }
+                        
+                        # Filter out None artifacts
+                        temporal_artifacts = {k: v for k, v in temporal_artifacts.items() if v is not None}
+                        
+                        if len(temporal_artifacts) > 1:
+                            temporal_result = validate_temporal_consistency(
+                                temporal_artifacts,
+                                list(temporal_artifacts.keys()),
+                                config={
+                                    'require_exact_match': False,  # Allow some tolerance
+                                    'tolerance_seconds': 300,  # 5 minutes tolerance
+                                    'check_data_hash': False
+                                }
+                            )
+                            validation_results['temporal'] = temporal_result
+                            temporal_metrics.custom_metrics = {
+                                'artifacts_validated': len(temporal_artifacts),
+                                'temporal_alignment_passed': temporal_result['success']
+                            }
+                        else:
+                            tprint_warning("⚠️ Insufficient artifacts for temporal validation")
+                    
+                    # 2. Window quality assessment
+                    with benchmark_stage("analyst_window_validation") as window_metrics:
+                        # Extract opportunity windows from metadata
+                        opportunity_windows = []
+                        if hasattr(labeling_result, 'metadata') and labeling_result.metadata:
+                            if hasattr(labeling_result.metadata, 'opportunity_windows'):
+                                opportunity_windows = labeling_result.metadata.opportunity_windows
+                            elif isinstance(labeling_result.metadata, dict):
+                                opportunity_windows = labeling_result.metadata.get('opportunity_windows', [])
+                        
+                        if opportunity_windows:
+                            window_artifacts = {
+                                'opportunity_windows': opportunity_windows,
+                                'data': data
+                            }
+                            
+                            window_result = validate_window_quality(
+                                window_artifacts,
+                                config={
+                                    'require_min_windows': 1,
+                                    'max_overlap_ratio': 0.2,  # Allow up to 20% overlap
+                                    'min_coverage_ratio': 0.001,  # Very low threshold
+                                    'strict_mode': False  # Don't fail on warnings
+                                }
+                            )
+                            validation_results['windows'] = window_result
+                            window_metrics.custom_metrics = {
+                                'total_windows': window_result['results']['windows'].total_windows if window_result['results'] else 0,
+                                'valid_windows': window_result['results']['windows'].valid_windows if window_result['results'] else 0,
+                                'window_validation_passed': window_result['success']
+                            }
+                        else:
+                            tprint_warning("⚠️ No opportunity windows found for validation")
+                    
+                    # Log validation summary
+                    validation_passed = all(
+                        result.get('success', False) 
+                        for result in validation_results.values()
+                    )
+                    
+                    if validation_passed:
+                        tprint_success("✅ All validation checks passed")
+                    else:
+                        tprint_warning("⚠️ Some validation checks failed - see details above")
+                        for check_name, result in validation_results.items():
+                            if not result.get('success', False):
+                                tprint_warning(f"   → {check_name}: {result.get('error', 'Unknown error')}")
+                    
+                except Exception as validation_error:
+                    tprint_warning(f"⚠️ Validation pipeline failed: {validation_error}")
+                    validation_results['error'] = str(validation_error)
+            else:
+                tprint_warning("⚠️ Skipping validation pipeline - utilities not available")
+
             # Create artifacts bundle
             from src.training.steps.pre_training.components.contracts import GenericArtifacts
 
@@ -1579,6 +1804,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 'method': 'analyst_profit_labeling',
                 'timeframe': self.labeler.config.timeframe if hasattr(self.labeler.config, 'timeframe') else '15m',
                 'summary': self.labeler.get_label_summary(labeling_result),
+                'validation_results': validation_results,  # Add validation results to report
                 'horizons': self.labeler.config.horizons,
                 'target_profits': self.labeler.config.target_profits,
             }
@@ -1759,6 +1985,7 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                         'target_breakdown': target_breakdown,
                         'labels_generated': labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame) and len(labeling_result.labels) > 0,
                         'no_labels_reason': 'Quality thresholds not met' if labeling_result.labels is None or (isinstance(labeling_result.labels, pd.DataFrame) and len(labeling_result.labels) == 0) else None,
+                        'tactician_entry_labels_count': int(labeling_result.metadata.get('tactician_entry_labels', pd.Series(dtype=int)).sum()) if isinstance(labeling_result.metadata.get('tactician_entry_labels'), pd.Series) else 0,
                     },
                     'quality_metrics': {
                         target_name: {

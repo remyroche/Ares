@@ -523,6 +523,14 @@ class VectorizationConfig:
     enable_caching: bool = True
     cache_size: int = 1000
 
+    # CPU core thresholds (for compatibility)
+    parallel_cpu_cores_threshold: int = 4
+    vectorbt_parallel_cpu_cores_threshold: int = 2
+
+    # GPU configuration (for compatibility)
+    gpu_data_size_threshold: int = 1000000
+    enable_gpu_fallback: bool = True
+
 @dataclass
 class PerformanceConfig:
     """Configuration for performance monitoring and optimization."""

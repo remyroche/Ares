@@ -113,7 +113,10 @@ class BatchMatrixProcessor:
             if VECTORBT_ROLLING_AVAILABLE:
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer()
                 if self.rolling_optimizer:
-                    logger.debug("✅ VectorBTRollingOptimizer initialized")
+                    # Reduced verbosity - only log once per session
+                    if not hasattr(BatchMatrixOperations, '_logged_rolling_init'):
+                        logger.debug("✅ VectorBTRollingOptimizer initialized")
+                        BatchMatrixOperations._logged_rolling_init = True
                 else:
                     logger.info("ℹ️ VectorBTRollingOptimizer not available")
             else:

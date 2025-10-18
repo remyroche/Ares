@@ -185,11 +185,11 @@ class NegativeLearningFeatureGenerator:
         }
 
         # Initialize VectorBT optimizer if available
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if VECTORBT_AVAILABLE:
             try:
                 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
                 tprint("✅ VectorBT optimizer initialized for NegativeLearningFeatureGenerator")
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
@@ -286,10 +286,10 @@ class NegativeLearningFeatureGenerator:
                              returns: pd.Series,
                              window: int) -> pd.Series:
         """Calculate rolling information coefficient."""
-        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
             try:
                 # Use VectorBT for optimized rolling correlation
-                rolling_corr = self.vectorbt_optimizer.rolling_corr(
+                rolling_corr = self.vectorbt_rolling_optimizer.rolling_corr(
                     feature_values, returns, window
                 )
                 return rolling_corr
@@ -337,9 +337,9 @@ class NegativeLearningFeatureGenerator:
                                       rolling_ic: pd.Series) -> Optional[FailureContext]:
         """Detect high volatility failure context."""
         # Calculate rolling volatility
-        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
             try:
-                rolling_vol = self.vectorbt_optimizer.rolling_std(returns, window=20)
+                rolling_vol = self.vectorbt_rolling_optimizer.rolling_std(returns, window=20)
             except Exception:
                 rolling_vol = returns.rolling(window=20).std()
         else:
@@ -378,10 +378,10 @@ class NegativeLearningFeatureGenerator:
                             rolling_ic: pd.Series) -> Optional[FailureContext]:
         """Detect chop (sideways market) failure context."""
         # Calculate price range over different windows
-        if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
             try:
-                rolling_max = self.vectorbt_optimizer.rolling_max(returns, window=20)
-                rolling_min = self.vectorbt_optimizer.rolling_min(returns, window=20)
+                rolling_max = self.vectorbt_rolling_optimizer.rolling_max(returns, window=20)
+                rolling_min = self.vectorbt_rolling_optimizer.rolling_min(returns, window=20)
             except Exception:
                 rolling_max = returns.rolling(window=20).max()
                 rolling_min = returns.rolling(window=20).min()
@@ -426,9 +426,9 @@ class NegativeLearningFeatureGenerator:
             spread = feature_values['high'] - feature_values['low']
         else:
             # Use price volatility as spread proxy
-            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
                 try:
-                    spread = self.vectorbt_optimizer.rolling_std(returns, window=5)
+                    spread = self.vectorbt_rolling_optimizer.rolling_std(returns, window=5)
                 except Exception:
                     spread = returns.rolling(window=5).std()
             else:
@@ -535,9 +535,9 @@ class NegativeLearningFeatureGenerator:
         """Create context mask for a failure context."""
         if context.context_type == FailureContextType.HIGH_VOLATILITY:
             # High volatility mask
-            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
                 try:
-                    rolling_vol = self.vectorbt_optimizer.rolling_std(features['close'], window=20)
+                    rolling_vol = self.vectorbt_rolling_optimizer.rolling_std(features['close'], window=20)
                 except Exception:
                     rolling_vol = features['close'].rolling(window=20).std()
             else:
@@ -547,10 +547,10 @@ class NegativeLearningFeatureGenerator:
 
         elif context.context_type == FailureContextType.CHOP:
             # Chop mask
-            if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+            if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
                 try:
-                    rolling_max = self.vectorbt_optimizer.rolling_max(features['close'], window=20)
-                    rolling_min = self.vectorbt_optimizer.rolling_min(features['close'], window=20)
+                    rolling_max = self.vectorbt_rolling_optimizer.rolling_max(features['close'], window=20)
+                    rolling_min = self.vectorbt_rolling_optimizer.rolling_min(features['close'], window=20)
                 except Exception:
                     rolling_max = features['close'].rolling(window=20).max()
                     rolling_min = features['close'].rolling(window=20).min()
@@ -566,9 +566,9 @@ class NegativeLearningFeatureGenerator:
             if 'high' in features.columns and 'low' in features.columns:
                 spread = features['high'] - features['low']
             else:
-                if self.vectorbt_optimizer and VECTORBT_AVAILABLE:
+                if self.vectorbt_rolling_optimizer and VECTORBT_AVAILABLE:
                     try:
-                        spread = self.vectorbt_optimizer.rolling_std(features['close'], window=5)
+                        spread = self.vectorbt_rolling_optimizer.rolling_std(features['close'], window=5)
                     except Exception:
                         spread = features['close'].rolling(window=5).std()
                 else:

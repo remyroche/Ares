@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
 # Import VectorBT framework
-from ..vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework, create_vectorbt_unified_framework
-from ..vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+from ..vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework, create_vectorbt_unified_framework
+from ..vectorbt_extensions.vectorbt_config import VectorBTFeatureSelectionConfig
 
 # Import tprint for consistent logging
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug

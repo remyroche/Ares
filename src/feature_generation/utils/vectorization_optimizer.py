@@ -60,6 +60,14 @@ class VectorizationConfig:
     profile_memory_usage: bool = True
     profile_execution_time: bool = True
 
+    # CPU Core Thresholds (for compatibility with unified_vectorization_manager)
+    parallel_cpu_cores_threshold: int = 4
+    vectorbt_parallel_cpu_cores_threshold: int = 2
+
+    # GPU Configuration (for compatibility)
+    gpu_data_size_threshold: int = 1000000
+    enable_gpu_fallback: bool = True
+
 class VectorizationOptimizer:
     """
     Advanced vectorization optimizer for feature engineering operations.
@@ -90,7 +98,10 @@ class VectorizationOptimizer:
         # Initialize components
         self._initialize_components()
 
-        self.logger.info("✅ Vectorization Optimizer initialized")
+        # Reduced verbosity - only log once per session
+        if not hasattr(VectorizationOptimizer, '_logged_initialization'):
+            self.logger.info("✅ Vectorization Optimizer initialized")
+            VectorizationOptimizer._logged_initialization = True
 
     def _initialize_components(self):
         """Initialize optimization components."""
@@ -98,16 +109,25 @@ class VectorizationOptimizer:
             # Initialize matrix operations
             if self.config.enable_gpu_acceleration:
                 self.matrix_ops = get_unified_matrix_operations()
-                self.logger.info("✅ Matrix operations initialized")
+                # Reduced verbosity - only log once per session
+                if not hasattr(VectorizationOptimizer, '_logged_matrix_init'):
+                    self.logger.info("✅ Matrix operations initialized")
+                    VectorizationOptimizer._logged_matrix_init = True
 
             # Initialize hardware manager
             self.hardware_manager = get_unified_hardware_manager()
             self.hardware_manager.optimize_for_workload(WorkloadType.FEATURE_ENGINEERING)
-            self.logger.info("✅ Hardware manager initialized")
+            # Reduced verbosity - only log once per session
+            if not hasattr(VectorizationOptimizer, '_logged_hardware_init'):
+                self.logger.info("✅ Hardware manager initialized")
+                VectorizationOptimizer._logged_hardware_init = True
 
             # Initialize vectorized core
             self.vectorized_core = get_vectorized_processing_core()
-            self.logger.info("✅ Vectorized core initialized")
+            # Reduced verbosity - only log once per session
+            if not hasattr(VectorizationOptimizer, '_logged_core_init'):
+                self.logger.info("✅ Vectorized core initialized")
+                VectorizationOptimizer._logged_core_init = True
 
             # Set optimal worker counts
             if self.config.max_workers is None:

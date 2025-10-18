@@ -81,9 +81,8 @@ except ImportError:
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 try:
-
+    import cupy as cp
 except ImportError:
-
     cp = None
 
 # Local imports
@@ -152,7 +151,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_optimizer = None
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -173,7 +172,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT Rolling Optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=getattr(config, 'gpu_accelerated', False),
                     enable_parallel=True,
                     memory_efficient=True
@@ -459,12 +458,12 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                skewness = self.vectorbt_optimizer.rolling_skew(prices_series, window)
+                skewness = self.vectorbt_rolling_optimizer.rolling_skew(prices_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling skew failed: {e}, using pandas fallback")
-                skewness = prices_series.rolling(window=window).skew()
+                skewness = prices_series.rolling(window).skew()
         else:
-            skewness = prices_series.rolling(window=window).skew()
+            skewness = prices_series.rolling(window).skew()
 
         return skewness.fillna(0).values
 
@@ -478,12 +477,12 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                kurtosis = self.vectorbt_optimizer.rolling_kurt(prices_series, window)
+                kurtosis = self.vectorbt_rolling_optimizer.rolling_kurt(prices_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling kurt failed: {e}, using pandas fallback")
-                kurtosis = prices_series.rolling(window=window).kurt()
+                kurtosis = prices_series.rolling(window).kurt()
         else:
-            kurtosis = prices_series.rolling(window=window).kurt()
+            kurtosis = prices_series.rolling(window).kurt()
 
         return kurtosis.fillna(0).values
 
@@ -497,19 +496,19 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                normality = self.vectorbt_optimizer.rolling_apply(
+                normality = self.vectorbt_rolling_optimizer.rolling_apply(
                     prices_series,
                     lambda x: jarque_bera(x)[1] if len(x) >= 4 else 0,  # p-value
                     window
                 )
             except Exception as e:
                 tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-                normality = prices_series.rolling(window=window).apply(
+                normality = prices_series.rolling(window).apply(
                     lambda x: jarque_bera(x)[1] if len(x) >= 4 else 0,
                     raw=False
                 )
         else:
-            normality = prices_series.rolling(window=window).apply(
+            normality = prices_series.rolling(window).apply(
                 lambda x: jarque_bera(x)[1] if len(x) >= 4 else 0,
                 raw=False
             )
@@ -523,23 +522,24 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         # OPTIMIZED: Use VectorBT rolling operations
         prices_series = pd.Series(prices)
-        price_changes = prices_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series)
 
         if self.vectorbt_optimizer:
             try:
-                autocorr = self.vectorbt_optimizer.rolling_apply(
+                autocorr = self.vectorbt_rolling_optimizer.rolling_apply(
                     price_changes,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                     window
                 )
             except Exception as e:
                 tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-                autocorr = price_changes.rolling(window=window).apply(
+                autocorr = price_changes.rolling(window).apply(
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                     raw=False
                 )
         else:
-            autocorr = price_changes.rolling(window=window).apply(
+            autocorr = price_changes.rolling(window).apply(
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 raw=False
             )
@@ -557,15 +557,15 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         # Calculate rolling mean and std
         if self.vectorbt_optimizer:
             try:
-                rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window)
-                rolling_std = self.vectorbt_optimizer.rolling_std(prices_series, window)
+                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window)
+                rolling_std = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling operations failed: {e}, using pandas fallback")
-                rolling_mean = prices_series.rolling(window=window).mean()
-                rolling_std = prices_series.rolling(window=window).std()
+                rolling_mean = prices_series.rolling(window).mean()
+                rolling_std = prices_series.rolling(window).std()
         else:
-            rolling_mean = prices_series.rolling(window=window).mean()
-            rolling_std = prices_series.rolling(window=window).std()
+            rolling_mean = prices_series.rolling(window).mean()
+            rolling_std = prices_series.rolling(window).std()
 
         # Persistence based on coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -583,12 +583,12 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                correlation = self.vectorbt_optimizer.rolling_corr(prices_series, volume_series, window)
+                correlation = self.vectorbt_rolling_optimizer.rolling_corr(prices_series, volume_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling corr failed: {e}, using pandas fallback")
-                correlation = prices_series.rolling(window=window).corr(volume_series)
+                correlation = prices_series.rolling(window).corr(volume_series)
         else:
-            correlation = prices_series.rolling(window=window).corr(volume_series)
+            correlation = prices_series.rolling(window).corr(volume_series)
 
         return correlation.fillna(0).values
 
@@ -602,12 +602,12 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                correlation = self.vectorbt_optimizer.rolling_corr(prices_series, range_series, window)
+                correlation = self.vectorbt_rolling_optimizer.rolling_corr(prices_series, range_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling corr failed: {e}, using pandas fallback")
-                correlation = prices_series.rolling(window=window).corr(range_series)
+                correlation = prices_series.rolling(window).corr(range_series)
         else:
-            correlation = prices_series.rolling(window=window).corr(range_series)
+            correlation = prices_series.rolling(window).corr(range_series)
 
         return correlation.fillna(0).values
 
@@ -622,14 +622,14 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         # Calculate rolling statistics for both windows
         if self.vectorbt_optimizer:
             try:
-                rolling_mean1 = self.vectorbt_optimizer.rolling_mean(prices_series, window)
+                rolling_mean1 = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window)
                 rolling_mean2 = rolling_mean1.shift(-window)
             except Exception as e:
                 tprint(f"VectorBT rolling operations failed: {e}, using pandas fallback")
-                rolling_mean1 = prices_series.rolling(window=window).mean()
+                rolling_mean1 = prices_series.rolling(window).mean()
                 rolling_mean2 = rolling_mean1.shift(-window)
         else:
-            rolling_mean1 = prices_series.rolling(window=window).mean()
+            rolling_mean1 = prices_series.rolling(window).mean()
             rolling_mean2 = rolling_mean1.shift(-window)
 
         # Calculate change ratios
@@ -645,19 +645,20 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         # OPTIMIZED: Use VectorBT rolling operations
         prices_series = pd.Series(prices)
-        price_changes = prices_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series)
 
         if self.vectorbt_optimizer:
             try:
-                rolling_std = self.vectorbt_optimizer.rolling_std(price_changes, window)
-                rolling_mean = self.vectorbt_optimizer.rolling_mean(price_changes.abs(), window)
+                rolling_std = self.vectorbt_rolling_optimizer.rolling_std(price_changes, window)
+                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(price_changes.abs(), window)
             except Exception as e:
                 tprint(f"VectorBT rolling operations failed: {e}, using pandas fallback")
-                rolling_std = price_changes.rolling(window=window).std()
-                rolling_mean = price_changes.abs().rolling(window=window).mean()
+                rolling_std = price_changes.rolling(window).std()
+                rolling_mean = price_changes.abs().rolling(window).mean()
         else:
-            rolling_std = price_changes.rolling(window=window).std()
-            rolling_mean = price_changes.abs().rolling(window=window).mean()
+            rolling_std = price_changes.rolling(window).std()
+            rolling_mean = price_changes.abs().rolling(window).mean()
 
         # Transition probability based on volatility changes
         transition_prob = rolling_std / (rolling_mean + 1e-8)
@@ -675,15 +676,15 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         if self.vectorbt_optimizer:
             try:
-                rolling_std = self.vectorbt_optimizer.rolling_std(prices_series, window)
-                rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window)
+                rolling_std = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window)
+                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window)
             except Exception as e:
                 tprint(f"VectorBT rolling operations failed: {e}, using pandas fallback")
-                rolling_std = prices_series.rolling(window=window).std()
-                rolling_mean = prices_series.rolling(window=window).mean()
+                rolling_std = prices_series.rolling(window).std()
+                rolling_mean = prices_series.rolling(window).mean()
         else:
-            rolling_std = prices_series.rolling(window=window).std()
-            rolling_mean = prices_series.rolling(window=window).mean()
+            rolling_std = prices_series.rolling(window).std()
+            rolling_mean = prices_series.rolling(window).mean()
 
         # Stability based on coefficient of variation
         cv = rolling_std / (rolling_mean + 1e-8)
@@ -702,19 +703,19 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         # Calculate rolling quantiles for consistency
         if self.vectorbt_optimizer:
             try:
-                q25 = self.vectorbt_optimizer.rolling_quantile(prices_series, window, q=0.25)
-                q75 = self.vectorbt_optimizer.rolling_quantile(prices_series, window, q=0.75)
+                q25 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, window, q=0.25)
+                q75 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, window, q=0.75)
             except Exception as e:
                 tprint(f"VectorBT rolling quantile failed: {e}, using pandas fallback")
-                q25 = prices_series.rolling(window=window).quantile(0.25)
-                q75 = prices_series.rolling(window=window).quantile(0.75)
+                q25 = prices_series.rolling(window).quantile(0.25)
+                q75 = prices_series.rolling(window).quantile(0.75)
         else:
-            q25 = prices_series.rolling(window=window).quantile(0.25)
-            q75 = prices_series.rolling(window=window).quantile(0.75)
+            q25 = prices_series.rolling(window).quantile(0.25)
+            q75 = prices_series.rolling(window).quantile(0.75)
 
         # Consistency based on interquartile range
         iqr = q75 - q25
-        rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window) if self.vectorbt_optimizer else prices_series.rolling(window=window).mean()
+        rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window) if self.vectorbt_optimizer else prices_series.rolling(window).mean()
         consistency = 1 - (iqr / (rolling_mean + 1e-8))
         consistency = consistency.clip(0, 1)
 
@@ -733,12 +734,12 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
             # Use VectorBT native functions for enhanced calculations
             if self.vectorbt_optimizer:
                 # Rolling quantiles for distribution analysis
-                q10 = self.vectorbt_optimizer.rolling_quantile(prices_series, window=20, q=0.1)
-                q90 = self.vectorbt_optimizer.rolling_quantile(prices_series, window=20, q=0.9)
+                q10 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, 20, q=0.1)
+                q90 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, 20, q=0.9)
 
                 # Rolling skewness and kurtosis for distribution shape
-                rolling_skew = self.vectorbt_optimizer.rolling_skew(prices_series, window=20)
-                rolling_kurt = self.vectorbt_optimizer.rolling_kurt(prices_series, window=20)
+                rolling_skew = self.vectorbt_rolling_optimizer.rolling_skew(prices_series, 20)
+                rolling_kurt = self.vectorbt_rolling_optimizer.rolling_kurt(prices_series, 20)
 
                 # Enhanced statistical features
                 features['price_quantile_range'] = (q90 - q10).fillna(0).values
@@ -746,7 +747,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                 features['price_kurtosis_enhanced'] = rolling_kurt.fillna(0).values
 
                 # Rolling rank for position analysis
-                rolling_rank = self.vectorbt_optimizer.rolling_rank(prices_series, window=20)
+                rolling_rank = self.vectorbt_rolling_optimizer.rolling_rank(prices_series, 20)
                 features['price_rank'] = rolling_rank.fillna(0).values
 
         except Exception as e:
@@ -763,22 +764,23 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         try:
             prices_series = pd.Series(prices)
-            price_changes = prices_series.diff()
+            from ...utils.error_handling import safe_diff
+            price_changes = safe_diff(prices_series)
 
             if self.vectorbt_optimizer:
                 # Rolling autocorrelation using VectorBT
-                rolling_autocorr = self.vectorbt_optimizer.rolling_apply(
+                rolling_autocorr = self.vectorbt_rolling_optimizer.rolling_apply(
                     price_changes,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-                    window=20
+20
                 )
                 features['price_autocorrelation_enhanced'] = rolling_autocorr.fillna(0).values
 
                 # Rolling correlation with lagged values
                 if len(price_changes) > 40:
                     lagged_changes = price_changes.shift(1)
-                    rolling_corr = self.vectorbt_optimizer.rolling_corr(
-                        price_changes, lagged_changes, window=20
+                    rolling_corr = self.vectorbt_rolling_optimizer.rolling_corr(
+                        price_changes, lagged_changes, 20
                     )
                     features['price_lag_correlation_enhanced'] = rolling_corr.fillna(0).values
 
@@ -802,8 +804,8 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                 winsorized_prices = winsorize(prices_series, limits=(0.05, 0.05))
 
                 # Calculate rolling statistics on winsorized data
-                rolling_mean_win = self.vectorbt_optimizer.rolling_mean(winsorized_prices, window=20)
-                rolling_std_win = self.vectorbt_optimizer.rolling_std(winsorized_prices, window=20)
+                rolling_mean_win = self.vectorbt_rolling_optimizer.rolling_mean(winsorized_prices, 20)
+                rolling_std_win = self.vectorbt_rolling_optimizer.rolling_std(winsorized_prices, 20)
 
                 features['winsorized_mean'] = rolling_mean_win.fillna(0).values
                 features['winsorized_std'] = rolling_std_win.fillna(0).values
@@ -814,14 +816,14 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
                                     prices_series.quantile(0.99))
 
                 # Calculate rolling quantiles using VectorBT
-                rolling_q25 = self.vectorbt_optimizer.rolling_quantile(clipped_prices, window=20, q=0.25)
-                rolling_q75 = self.vectorbt_optimizer.rolling_quantile(clipped_prices, window=20, q=0.75)
+                rolling_q25 = self.vectorbt_rolling_optimizer.rolling_quantile(clipped_prices, 20, q=0.25)
+                rolling_q75 = self.vectorbt_rolling_optimizer.rolling_quantile(clipped_prices, 20, q=0.75)
 
                 features['clipped_iqr'] = (rolling_q75 - rolling_q25).fillna(0).values
 
                 # Use VectorBT's zscore function for normalization
                 zscored_prices = zscore(prices_series, axis=0)
-                rolling_zscore_mean = self.vectorbt_optimizer.rolling_mean(zscored_prices, window=20)
+                rolling_zscore_mean = self.vectorbt_rolling_optimizer.rolling_mean(zscored_prices, 20)
 
                 features['rolling_zscore_mean'] = rolling_zscore_mean.fillna(0).values
 
@@ -842,7 +844,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
 
         # Add VectorBT optimizer stats if available
         if self.vectorbt_optimizer:
-            vectorbt_stats = self.vectorbt_optimizer.get_performance_stats()
+            vectorbt_stats = self.vectorbt_rolling_optimizer.get_performance_stats()
             stats['vectorbt_stats'] = vectorbt_stats
 
         # Add unified optimizer stats if available
@@ -869,7 +871,7 @@ class RegimeStatisticalFeatureGenerator(VectorizedFeatureGenerator):
         }
 
         if self.vectorbt_optimizer:
-            self.vectorbt_optimizer.reset_stats()
+            self.vectorbt_rolling_optimizer.reset_stats()
 
 class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for structural trend regime features optimized for 15m timeframe."""
@@ -880,7 +882,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_optimizer = None
         self.performance_stats = {
             'vectorbt_operations': 0,
@@ -901,7 +903,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         if OPTIMIZATION_AVAILABLE:
             try:
                 # Initialize VectorBT Rolling Optimizer
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=getattr(config, 'gpu_accelerated', False),
                     enable_parallel=True,
                     memory_efficient=True
@@ -1216,14 +1218,14 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Pre-calculate rolling statistics using VectorBT
-        rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window) if self.vectorbt_optimizer else self._vectorbt_rolling_operation(prices_series, "mean", window)
-        rolling_std = self.vectorbt_optimizer.rolling_std(prices_series, window) if self.vectorbt_optimizer else self._vectorbt_rolling_operation(prices_series, "std", window)
+        rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window) if self.vectorbt_optimizer else self._vectorbt_rolling_operation(prices_series, "mean", window)
+        rolling_std = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window) if self.vectorbt_optimizer else self._vectorbt_rolling_operation(prices_series, "std", window)
 
         # OPTIMIZED: Use VectorBT native functions for enhanced calculations
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Calculate rolling linear regression using VectorBT
-                rolling_slope = self.vectorbt_optimizer.rolling_apply(
+                rolling_slope = self.vectorbt_rolling_optimizer.rolling_apply(
                     prices_series,
                     lambda x: np.polyfit(np.arange(len(x)), x, 1)[0] if len(x) == window else 0,
                     window
@@ -1237,7 +1239,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
             except Exception:
                 # Fallback to simpler calculation
-                rolling_slope = self.vectorbt_optimizer.rolling_apply(
+                rolling_slope = self.vectorbt_rolling_optimizer.rolling_apply(
                     prices_series,
                     lambda x: np.polyfit(np.arange(len(x)), x, 1)[0] if len(x) == window else 0,
                     window
@@ -1258,25 +1260,26 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Calculate price changes vectorized
-        price_changes = prices_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series)
 
         # OPTIMIZED: Use VectorBT native functions for enhanced calculations
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT's rank function for direction analysis
-                price_ranks = self.vectorbt_optimizer.rolling_rank(price_changes, window)
+                price_ranks = self.vectorbt_rolling_optimizer.rolling_rank(price_changes, window)
 
                 # Calculate direction consistency using ranks
                 positive_ranks = (price_ranks > 0.5).astype(int)
                 negative_ranks = (price_ranks < 0.5).astype(int)
 
-                positive_changes = self.vectorbt_optimizer.rolling_sum(positive_ranks, window).fillna(0)
-                negative_changes = self.vectorbt_optimizer.rolling_sum(negative_ranks, window).fillna(0)
+                positive_changes = self.vectorbt_rolling_optimizer.rolling_sum(positive_ranks, window).fillna(0)
+                negative_changes = self.vectorbt_rolling_optimizer.rolling_sum(negative_ranks, window).fillna(0)
 
             except Exception:
                 # Fallback to standard calculation
-                positive_changes = self.vectorbt_optimizer.rolling_sum((price_changes > 0).astype(int), window).fillna(0)
-                negative_changes = self.vectorbt_optimizer.rolling_sum((price_changes < 0).astype(int), window).fillna(0)
+                positive_changes = self.vectorbt_rolling_optimizer.rolling_sum((price_changes > 0).astype(int), window).fillna(0)
+                negative_changes = self.vectorbt_rolling_optimizer.rolling_sum((price_changes < 0).astype(int), window).fillna(0)
         else:
             positive_changes = self._vectorbt_rolling_operation((price_changes > 0).astype(int), "sum", window).fillna(0)
             negative_changes = self._vectorbt_rolling_operation((price_changes < 0).astype(int), "sum", window).fillna(0)
@@ -1301,11 +1304,12 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Calculate price changes for autocorrelation
-        price_changes = prices_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series)
 
         # OPTIMIZED: Use VectorBT rolling apply for autocorrelation
         if self.vectorbt_optimizer:
-            persistence = self.vectorbt_optimizer.rolling_apply(
+            persistence = self.vectorbt_rolling_optimizer.rolling_apply(
                 price_changes,
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 window
@@ -1325,8 +1329,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Pre-calculate rolling statistics using VectorBT
         if self.vectorbt_optimizer:
-            rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window)
-            rolling_std = self.vectorbt_optimizer.rolling_std(prices_series, window)
+            rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window)
+            rolling_std = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window)
         else:
             rolling_mean = self._vectorbt_rolling_operation(prices_series, "mean", window)
             rolling_std = self._vectorbt_rolling_operation(prices_series, "std", window)
@@ -1347,12 +1351,13 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Calculate first and second differences vectorized
-        first_diff = prices_series.diff()
-        second_diff = first_diff.diff()
+        from ...utils.error_handling import safe_diff
+        first_diff = safe_diff(prices_series)
+        second_diff = safe_diff(first_diff)
 
         # Rolling acceleration using VectorBT
         if self.vectorbt_optimizer:
-            acceleration = self.vectorbt_optimizer.rolling_mean(second_diff, window)
+            acceleration = self.vectorbt_rolling_optimizer.rolling_mean(second_diff, window)
         else:
             acceleration = self._vectorbt_rolling_operation(second_diff, "mean", window)
 
@@ -1368,7 +1373,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Calculate rolling volatility using VectorBT
         if self.vectorbt_optimizer:
-            rolling_vol = self.vectorbt_optimizer.rolling_std(prices_series, window)
+            rolling_vol = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window)
         else:
             rolling_vol = self._vectorbt_rolling_operation(prices_series, "std", window)
 
@@ -1389,8 +1394,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Calculate rolling highs and lows using VectorBT
         if self.vectorbt_optimizer:
-            rolling_highs = self.vectorbt_optimizer.rolling_max(prices_series, window)
-            rolling_lows = self.vectorbt_optimizer.rolling_min(prices_series, window)
+            rolling_highs = self.vectorbt_rolling_optimizer.rolling_max(prices_series, window)
+            rolling_lows = self.vectorbt_rolling_optimizer.rolling_min(prices_series, window)
         else:
             rolling_highs = self._vectorbt_rolling_operation(prices_series, "max", window)
             rolling_lows = self._vectorbt_rolling_operation(prices_series, "min", window)
@@ -1414,8 +1419,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Calculate rolling price levels using VectorBT
         if self.vectorbt_optimizer:
-            rolling_highs = self.vectorbt_optimizer.rolling_max(prices_series, window)
-            rolling_lows = self.vectorbt_optimizer.rolling_min(prices_series, window)
+            rolling_highs = self.vectorbt_rolling_optimizer.rolling_max(prices_series, window)
+            rolling_lows = self.vectorbt_rolling_optimizer.rolling_min(prices_series, window)
         else:
             rolling_highs = self._vectorbt_rolling_operation(prices_series, "max", window)
             rolling_lows = self._vectorbt_rolling_operation(prices_series, "min", window)
@@ -1436,8 +1441,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Calculate rolling price level consistency using VectorBT
         if self.vectorbt_optimizer:
-            rolling_std = self.vectorbt_optimizer.rolling_std(prices_series, window)
-            rolling_mean = self.vectorbt_optimizer.rolling_mean(prices_series, window)
+            rolling_std = self.vectorbt_rolling_optimizer.rolling_std(prices_series, window)
+            rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(prices_series, window)
         else:
             rolling_std = self._vectorbt_rolling_operation(prices_series, "std", window)
             rolling_mean = self._vectorbt_rolling_operation(prices_series, "mean", window)
@@ -1457,11 +1462,12 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Calculate rolling price changes for trend detection
-        price_changes = price_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(price_series)
 
         # Calculate rolling means using VectorBT
         if self.vectorbt_optimizer:
-            trend1 = self.vectorbt_optimizer.rolling_mean(price_changes, window)
+            trend1 = self.vectorbt_rolling_optimizer.rolling_mean(price_changes, window)
         else:
             trend1 = self._vectorbt_rolling_operation(price_changes, "mean", window)
 
@@ -1482,12 +1488,13 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Calculate rolling price changes for trend analysis
-        price_changes = price_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(price_series)
 
         # Calculate rolling volatility using VectorBT
         if self.vectorbt_optimizer:
-            trend_vol = self.vectorbt_optimizer.rolling_std(price_changes, window)
-            trend_mean = self.vectorbt_optimizer.rolling_mean(price_changes, window).abs()
+            trend_vol = self.vectorbt_rolling_optimizer.rolling_std(price_changes, window)
+            trend_mean = self.vectorbt_rolling_optimizer.rolling_mean(price_changes, window).abs()
         else:
             trend_vol = self._vectorbt_rolling_operation(price_changes, "std", window)
             trend_mean = self._vectorbt_rolling_operation(price_changes, "mean", window).abs()
@@ -1506,12 +1513,13 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Calculate second differences for momentum
-        first_diff = price_series.diff()
-        second_diff = first_diff.diff()
+        from ...utils.error_handling import safe_diff
+        first_diff = safe_diff(price_series)
+        second_diff = safe_diff(first_diff)
 
         # Rolling momentum using VectorBT
         if self.vectorbt_optimizer:
-            momentum = self.vectorbt_optimizer.rolling_mean(second_diff, window)
+            momentum = self.vectorbt_rolling_optimizer.rolling_mean(second_diff, window)
         else:
             momentum = self._vectorbt_rolling_operation(second_diff, "mean", window)
 
@@ -1527,8 +1535,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Calculate rolling coefficient of variation using VectorBT
         if self.vectorbt_optimizer:
-            rolling_std = self.vectorbt_optimizer.rolling_std(price_series, window)
-            rolling_mean = self.vectorbt_optimizer.rolling_mean(price_series, window)
+            rolling_std = self.vectorbt_rolling_optimizer.rolling_std(price_series, window)
+            rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(price_series, window)
         else:
             rolling_std = self._vectorbt_rolling_operation(price_series, "std", window)
             rolling_mean = self._vectorbt_rolling_operation(price_series, "mean", window)
@@ -1548,11 +1556,12 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Calculate price changes for autocorrelation
-        price_changes = price_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(price_series)
 
         # OPTIMIZED: Use VectorBT rolling apply for autocorrelation
         if self.vectorbt_optimizer:
-            persistence = self.vectorbt_optimizer.rolling_apply(
+            persistence = self.vectorbt_rolling_optimizer.rolling_apply(
                 price_changes,
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 window
@@ -1571,12 +1580,13 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Calculate price changes for entropy
-        price_changes = price_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(price_series)
 
         # Rolling entropy using VectorBT
         if self.vectorbt_optimizer:
-            rolling_std = self.vectorbt_optimizer.rolling_std(price_changes, window)
-            rolling_mean = self.vectorbt_optimizer.rolling_mean(price_changes, window).abs()
+            rolling_std = self.vectorbt_rolling_optimizer.rolling_std(price_changes, window)
+            rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(price_changes, window).abs()
         else:
             rolling_std = self._vectorbt_rolling_operation(price_changes, "std", window)
             rolling_mean = self._vectorbt_rolling_operation(price_changes, "mean", window).abs()
@@ -1599,12 +1609,12 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
             # Use VectorBT native functions for enhanced calculations
             if self.vectorbt_optimizer:
                 # Rolling quantiles for trend distribution analysis
-                q25 = self.vectorbt_optimizer.rolling_quantile(prices_series, window=20, q=0.25)
-                q75 = self.vectorbt_optimizer.rolling_quantile(prices_series, window=20, q=0.75)
+                q25 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, 20, q=0.25)
+                q75 = self.vectorbt_rolling_optimizer.rolling_quantile(prices_series, 20, q=0.75)
 
                 # Rolling skewness and kurtosis for trend shape analysis
-                rolling_skew = self.vectorbt_optimizer.rolling_skew(prices_series, window=20)
-                rolling_kurt = self.vectorbt_optimizer.rolling_kurt(prices_series, window=20)
+                rolling_skew = self.vectorbt_rolling_optimizer.rolling_skew(prices_series, 20)
+                rolling_kurt = self.vectorbt_rolling_optimizer.rolling_kurt(prices_series, 20)
 
                 # Enhanced trend features
                 features['trend_quartile_range'] = (q75 - q25).fillna(0).values
@@ -1612,12 +1622,12 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
                 features['trend_kurtosis'] = rolling_kurt.fillna(0).values
 
                 # Rolling rank for trend position analysis
-                rolling_rank = self.vectorbt_optimizer.rolling_rank(prices_series, window=20)
+                rolling_rank = self.vectorbt_rolling_optimizer.rolling_rank(prices_series, 20)
                 features['trend_rank'] = rolling_rank.fillna(0).values
 
                 # Price position within rolling range
-                rolling_min = self.vectorbt_optimizer.rolling_min(prices_series, window=20)
-                rolling_max = self.vectorbt_optimizer.rolling_max(prices_series, window=20)
+                rolling_min = self.vectorbt_rolling_optimizer.rolling_min(prices_series, 20)
+                rolling_max = self.vectorbt_rolling_optimizer.rolling_max(prices_series, 20)
                 price_position = (prices_series - rolling_min) / (rolling_max - rolling_min + 1e-8)
                 features['trend_position'] = price_position.fillna(0.5).values
 
@@ -1637,22 +1647,23 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
             prices_series = pd.Series(prices)
 
             # Calculate price changes for correlation analysis
-            price_changes = prices_series.diff()
+            from ...utils.error_handling import safe_diff
+            price_changes = safe_diff(prices_series)
 
             if self.vectorbt_optimizer:
                 # Rolling autocorrelation using VectorBT
-                rolling_autocorr = self.vectorbt_optimizer.rolling_apply(
+                rolling_autocorr = self.vectorbt_rolling_optimizer.rolling_apply(
                     price_changes,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-                    window=20
+20
                 )
                 features['price_autocorrelation'] = rolling_autocorr.fillna(0).values
 
                 # Rolling correlation with lagged values
                 if len(price_changes) > 40:
                     lagged_changes = price_changes.shift(1)
-                    rolling_corr = self.vectorbt_optimizer.rolling_corr(
-                        price_changes, lagged_changes, window=20
+                    rolling_corr = self.vectorbt_rolling_optimizer.rolling_corr(
+                        price_changes, lagged_changes, 20
                     )
                     features['price_lag_correlation'] = rolling_corr.fillna(0).values
 
@@ -1662,20 +1673,22 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
                         # Rolling correlation with volume if available
                         if 'volume' in data.columns and len(data['volume']) > 20:
                             volume_series = data['volume']
-                            volume_changes = volume_series.diff()
+                            from ...utils.error_handling import safe_diff
+                            volume_changes = safe_diff(volume_series)
 
-                            price_volume_corr = self.vectorbt_optimizer.rolling_corr(
-                                price_changes, volume_changes, window=20
+                            price_volume_corr = self.vectorbt_rolling_optimizer.rolling_corr(
+                                price_changes, volume_changes, 20
                             )
                             features['price_volume_correlation'] = price_volume_corr.fillna(0).values
 
                         # Rolling correlation with high-low range if available
                         if 'high' in data.columns and 'low' in data.columns:
                             hl_range = data['high'] - data['low']
-                            range_changes = hl_range.diff()
+                            from ...utils.error_handling import safe_diff
+                            range_changes = safe_diff(hl_range)
 
-                            price_range_corr = self.vectorbt_optimizer.rolling_corr(
-                                price_changes, range_changes, window=20
+                            price_range_corr = self.vectorbt_rolling_optimizer.rolling_corr(
+                                price_changes, range_changes, 20
                             )
                             features['price_range_correlation'] = price_range_corr.fillna(0).values
 
@@ -1702,8 +1715,8 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
                 winsorized_prices = winsorize(prices_series, limits=(0.05, 0.05))
 
                 # Calculate rolling statistics on winsorized data
-                rolling_mean_win = self.vectorbt_optimizer.rolling_mean(winsorized_prices, window=20)
-                rolling_std_win = self.vectorbt_optimizer.rolling_std(winsorized_prices, window=20)
+                rolling_mean_win = self.vectorbt_rolling_optimizer.rolling_mean(winsorized_prices, 20)
+                rolling_std_win = self.vectorbt_rolling_optimizer.rolling_std(winsorized_prices, 20)
 
                 features['winsorized_mean'] = rolling_mean_win.fillna(0).values
                 features['winsorized_std'] = rolling_std_win.fillna(0).values
@@ -1714,14 +1727,14 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
                                     prices_series.quantile(0.99))
 
                 # Calculate rolling quantiles using VectorBT
-                rolling_q25 = self.vectorbt_optimizer.rolling_quantile(clipped_prices, window=20, q=0.25)
-                rolling_q75 = self.vectorbt_optimizer.rolling_quantile(clipped_prices, window=20, q=0.75)
+                rolling_q25 = self.vectorbt_rolling_optimizer.rolling_quantile(clipped_prices, 20, q=0.25)
+                rolling_q75 = self.vectorbt_rolling_optimizer.rolling_quantile(clipped_prices, 20, q=0.75)
 
                 features['clipped_iqr'] = (rolling_q75 - rolling_q25).fillna(0).values
 
                 # Use VectorBT's zscore function for normalization
                 zscored_prices = zscore(prices_series, axis=0)
-                rolling_zscore_mean = self.vectorbt_optimizer.rolling_mean(zscored_prices, window=20)
+                rolling_zscore_mean = self.vectorbt_rolling_optimizer.rolling_mean(zscored_prices, 20)
 
                 features['rolling_zscore_mean'] = rolling_zscore_mean.fillna(0).values
 
@@ -1742,7 +1755,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
 
         # Add VectorBT optimizer stats if available
         if self.vectorbt_optimizer:
-            vectorbt_stats = self.vectorbt_optimizer.get_performance_stats()
+            vectorbt_stats = self.vectorbt_rolling_optimizer.get_performance_stats()
             stats['vectorbt_stats'] = vectorbt_stats
 
         # Add unified optimizer stats if available
@@ -1769,7 +1782,7 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         }
 
         if self.vectorbt_optimizer:
-            self.vectorbt_optimizer.reset_stats()
+            self.vectorbt_rolling_optimizer.reset_stats()
 
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str,
                                   window: int, **kwargs) -> pd.Series:
@@ -1782,20 +1795,20 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
             # Use VectorBT Rolling Optimizer if available
             if self.vectorbt_optimizer:
                 if operation == 'mean':
-                    result = self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    result = self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    result = self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    result = self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    result = self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    result = self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_sum(data, window, **kwargs)
                 elif operation == 'apply':
                     func = kwargs.get('func')
-                    result = self.vectorbt_optimizer.rolling_apply(data, window, func, **kwargs)
+                    result = self.vectorbt_rolling_optimizer.rolling_apply(data, window, func, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
 
@@ -1804,20 +1817,20 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
             else:
                 # Direct VectorBT usage
                 if operation == 'mean':
-                    result = rolling_mean(data, window=window, **kwargs)
+                    result = rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    result = rolling_std(data, window=window, **kwargs)
+                    result = rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    result = rolling_var(data, window=window, **kwargs)
+                    result = rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    result = rolling_min(data, window=window, **kwargs)
+                    result = rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    result = rolling_max(data, window=window, **kwargs)
+                    result = rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    result = rolling_sum(data, window=window, **kwargs)
+                    result = rolling_sum(data, window, **kwargs)
                 elif operation == 'apply':
                     func = kwargs.get('func')
-                    result = rolling_apply(data, window=window, func=func, **kwargs)
+                    result = rolling_apply(data, func, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
 
@@ -1836,39 +1849,39 @@ class RegimeStructuralTrendFeatureGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and len(data) > 100:  # Use VectorBT for larger datasets
             try:
                 if operation == 'mean':
-                    return rolling_mean(data, window=window, **kwargs)
+                    return rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    return rolling_std(data, window=window, **kwargs)
+                    return rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    return rolling_var(data, window=window, **kwargs)
+                    return rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    return rolling_min(data, window=window, **kwargs)
+                    return rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    return rolling_max(data, window=window, **kwargs)
+                    return rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    return rolling_sum(data, window=window, **kwargs)
+                    return rolling_sum(data, window, **kwargs)
                 elif operation == 'apply':
                     func = kwargs.get('func')
-                    return rolling_apply(data, window=window, func=func, **kwargs)
+                    return rolling_apply(data, func, window, **kwargs)
             except Exception:
                 pass  # Fall back to pandas
 
         # Pandas fallback
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return data.rolling(window).mean()
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return data.rolling(window).std()
         elif operation == 'var':
-            return data.rolling(window=window).var()
+            return data.rolling(window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return data.rolling(window).min()
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return data.rolling(window).max()
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return data.rolling(window).sum()
         elif operation == 'apply':
             func = kwargs.get('func')
-            return data.rolling(window=window).apply(func, **kwargs)
+            return data.rolling(window).apply(func, **kwargs)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -1881,11 +1894,11 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=getattr(config, 'gpu_accelerated', False),
                     enable_parallel=True
                 )
@@ -2152,25 +2165,26 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         vol_series = pd.Series(vol)
 
         # Calculate volatility changes for autocorrelation
-        vol_changes = vol_series.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(vol_series)
 
         # Use VectorBT rolling apply for autocorrelation calculation
         if self.vectorbt_optimizer:
             try:
-                persistence = self.vectorbt_optimizer.rolling_apply(
+                persistence = self.vectorbt_rolling_optimizer.rolling_apply(
                     vol_changes,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-                    window=lag+1
+lag+1
                 ).fillna(0).values
             except Exception as e:
                 tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-                persistence = vol_changes.rolling(window=lag+1).apply(
+                persistence = vol_changes.rolling(lag+1).apply(
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                     raw=False
                 ).fillna(0).values
         else:
             # Fallback to pandas
-            persistence = vol_changes.rolling(window=lag+1).apply(
+            persistence = vol_changes.rolling(lag+1).apply(
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 raw=False
             ).fillna(0).values
@@ -2205,20 +2219,20 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         # Use VectorBT rolling apply for autocorrelation calculation
         if self.vectorbt_optimizer:
             try:
-                clustering = self.vectorbt_optimizer.rolling_apply(
+                clustering = self.vectorbt_rolling_optimizer.rolling_apply(
                     squared_returns,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-                    window=window
+window
                 ).fillna(0).values
             except Exception as e:
                 tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-                clustering = squared_returns.rolling(window=window).apply(
+                clustering = squared_returns.rolling(window).apply(
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                     raw=False
                 ).fillna(0).values
         else:
             # Fallback to pandas
-            clustering = squared_returns.rolling(window=window).apply(
+            clustering = squared_returns.rolling(window).apply(
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 raw=False
             ).fillna(0).values
@@ -2315,7 +2329,8 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         rolling_vol = self._vectorbt_rolling_operation(returns_series, "std", vol_window_size)
 
         # Vectorized transition probability using volatility changes
-        vol_changes = rolling_vol.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(rolling_vol)
         vol_mean = self._vectorbt_rolling_operation(rolling_vol, "mean", window)
 
         # Transition probability based on volatility change rate
@@ -2360,20 +2375,20 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         # Use VectorBT rolling apply for autocorrelation calculation
         if self.vectorbt_optimizer:
             try:
-                persistence = self.vectorbt_optimizer.rolling_apply(
+                persistence = self.vectorbt_rolling_optimizer.rolling_apply(
                     rolling_vol,
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
-                    window=window
+window
                 ).fillna(0)
             except Exception as e:
                 tprint(f"VectorBT rolling apply failed: {e}, using pandas fallback")
-                persistence = rolling_vol.rolling(window=window).apply(
+                persistence = rolling_vol.rolling(window).apply(
                     lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                     raw=False
                 ).fillna(0)
         else:
             # Fallback to pandas
-            persistence = rolling_vol.rolling(window=window).apply(
+            persistence = rolling_vol.rolling(window).apply(
                 lambda x: x.autocorr(lag=1) if len(x) > 1 else 0,
                 raw=False
             ).fillna(0)
@@ -2386,36 +2401,36 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if self.vectorbt_optimizer:
             try:
                 if operation == 'mean':
-                    return self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    return self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    return self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    return self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_sum(data, window, **kwargs)
                 elif operation == 'apply':
                     func = kwargs.get('func')
                     if func is not None:
-                        return self.vectorbt_optimizer.rolling_apply(data, func, window, **kwargs)
+                        return self.vectorbt_rolling_optimizer.rolling_apply(data, func, window, **kwargs)
                     else:
                         raise ValueError("Function must be provided for rolling apply operation")
                 elif operation == 'corr':
                     other = kwargs.get('other')
                     if other is not None:
-                        return self.vectorbt_optimizer.rolling_corr(data, other, window, **kwargs)
+                        return self.vectorbt_rolling_optimizer.rolling_corr(data, other, window, **kwargs)
                     else:
                         raise ValueError("Other series must be provided for rolling correlation")
                 elif operation == 'quantile':
                     q = kwargs.get('q', 0.5)
-                    return self.vectorbt_optimizer.rolling_quantile(data, window, q=q, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_quantile(data, window, q=q, **kwargs)
                 elif operation == 'skew':
-                    return self.vectorbt_optimizer.rolling_skew(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_skew(data, window, **kwargs)
                 elif operation == 'kurt':
-                    return self.vectorbt_optimizer.rolling_kurt(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_kurt(data, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
             except Exception as e:
@@ -2427,7 +2442,7 @@ class RegimeVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     def _pandas_rolling_operation(self, data: pd.Series, operation: str,
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
-        rolling_obj = data.rolling(window=window, **kwargs)
+        rolling_obj = data.rolling(window, **kwargs)
 
         if operation == 'mean':
             return rolling_obj.mean()
@@ -2472,11 +2487,11 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=getattr(config, 'gpu_accelerated', False),
                     enable_parallel=True
                 )
@@ -2787,7 +2802,7 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
         # Vectorized autocorrelation using rolling correlation with shifted series
         vol_shifted = vol_series.shift(1)
-        autocorr = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
+        autocorr = vol_series.rolling(window).corr(vol_shifted).fillna(0)
 
         persistence[window:] = autocorr[window:]
         return persistence
@@ -2834,7 +2849,7 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
 
         # Vectorized autocorrelation using rolling correlation with shifted series
         vol_shifted = vol_series.shift(1)
-        clustering = vol_series.rolling(window=window).corr(vol_shifted).fillna(0)
+        clustering = vol_series.rolling(window).corr(vol_shifted).fillna(0)
 
         return clustering.values
 
@@ -2890,7 +2905,7 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         price_series = pd.Series(prices)
 
         # Fix: corr() method expects a Series, not a Rolling object
-        correlation = vol_series.rolling(window=window).corr(price_series).fillna(0)
+        correlation = vol_series.rolling(window).corr(price_series).fillna(0)
 
         return correlation.values
 
@@ -2904,12 +2919,13 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Calculate price changes
-        price_changes = prices_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series)
 
         # Vectorized volume-weighted calculation
         # Calculate rolling volume sums and price change sums
         vol_sum = self._vectorbt_rolling_operation(volume_series, "sum", window)
-        vol_price_sum = (volume_series * price_changes).rolling(window=window).sum()
+        vol_price_sum = (volume_series * price_changes).rolling(window).sum()
 
         # Volume-weighted price change
         weighted_change = vol_price_sum / (vol_sum + 1e-8)
@@ -2926,12 +2942,14 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         prices_series = pd.Series(prices)
 
         # Calculate price and volume changes
-        price_changes = prices_series.diff().abs()
-        vol_changes = volume_series.diff()
+        from ...utils.error_handling import safe_diff
+        price_changes = safe_diff(prices_series).abs()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(volume_series)
 
         # Vectorized impact calculation
         # Calculate rolling correlation between volume changes and price changes
-        impact = vol_changes.rolling(window=window).corr(price_changes).fillna(0)
+        impact = vol_changes.rolling(window).corr(price_changes).fillna(0)
 
         return impact.values
 
@@ -2964,7 +2982,8 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume_series = pd.Series(volume)
 
         # Calculate rolling volume changes for transition probability
-        vol_changes = volume_series.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(volume_series)
         vol_volatility = self._vectorbt_rolling_operation(vol_changes, "std", window)
         vol_mean = self._vectorbt_rolling_operation(volume_series, "mean", window)
 
@@ -2983,7 +3002,8 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume_series = pd.Series(volume)
 
         # Calculate volume changes for momentum
-        vol_changes = volume_series.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(volume_series)
         vol_mean = self._vectorbt_rolling_operation(volume_series, "mean", window)
 
         # Vectorized momentum calculation
@@ -3018,11 +3038,12 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume_series = pd.Series(volume)
 
         # Calculate volume changes for autocorrelation
-        vol_changes = volume_series.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(volume_series)
 
         # Vectorized persistence using rolling correlation with shifted series
         vol_changes_shifted = vol_changes.shift(1)
-        persistence = vol_changes.rolling(window=window).corr(vol_changes_shifted).fillna(0)
+        persistence = vol_changes.rolling(window).corr(vol_changes_shifted).fillna(0)
 
         return persistence.values
 
@@ -3035,7 +3056,8 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume_series = pd.Series(volume)
 
         # Calculate volume changes for entropy
-        vol_changes = volume_series.diff()
+        from ...utils.error_handling import safe_diff
+        vol_changes = safe_diff(volume_series)
 
         # Vectorized entropy using rolling coefficient of variation
         rolling_std = self._vectorbt_rolling_operation(vol_changes, "std", window)
@@ -3052,17 +3074,17 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
         if self.vectorbt_optimizer:
             try:
                 if operation == 'mean':
-                    return self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    return self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    return self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    return self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_sum(data, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
             except Exception as e:
@@ -3075,17 +3097,17 @@ class RegimeVolumeFeatureGenerator(VectorizedFeatureGenerator):
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return data.rolling(window).mean()
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return data.rolling(window).std()
         elif operation == 'var':
-            return data.rolling(window=window).var()
+            return data.rolling(window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return data.rolling(window).min()
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return data.rolling(window).max()
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return data.rolling(window).sum()
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -3107,11 +3129,11 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             self.unified_manager = get_unified_optimization_system()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -3130,10 +3152,10 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT rolling apply for vectorized entropy calculation
-                entropy_series = self.vectorbt_optimizer.rolling_apply(
+                entropy_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_shannon_entropy_vectorized,
-                    window=window
+window
                 )
                 return entropy_series
             except Exception as e:
@@ -3188,11 +3210,11 @@ class RegimeComplexityGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             self.unified_manager = get_unified_optimization_system()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -3211,10 +3233,10 @@ class RegimeComplexityGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT rolling apply for vectorized complexity calculation
-                complexity_series = self.vectorbt_optimizer.rolling_apply(
+                complexity_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_sample_entropy_vectorized,
-                    window=window
+window
                 )
                 return complexity_series
             except Exception as e:
@@ -3295,11 +3317,11 @@ class RegimeFractalDimensionGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             self.unified_manager = get_unified_optimization_system()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -3318,10 +3340,10 @@ class RegimeFractalDimensionGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT rolling apply for vectorized fractal dimension calculation
-                fractal_series = self.vectorbt_optimizer.rolling_apply(
+                fractal_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_higuchi_fractal_dimension_vectorized,
-                    window=window
+window
                 )
                 return fractal_series
             except Exception as e:
@@ -3405,11 +3427,11 @@ class RegimeHurstExponentGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             self.unified_manager = get_unified_optimization_system()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -3428,10 +3450,10 @@ class RegimeHurstExponentGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT rolling apply for vectorized Hurst exponent calculation
-                hurst_series = self.vectorbt_optimizer.rolling_apply(
+                hurst_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_hurst_exponent_vectorized,
-                    window=window
+window
                 )
                 return hurst_series
             except Exception as e:
@@ -3525,11 +3547,11 @@ class RegimeMemoryStrengthGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             self.unified_manager = get_unified_optimization_system()
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
@@ -3548,10 +3570,10 @@ class RegimeMemoryStrengthGenerator(VectorizedFeatureGenerator):
         if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
             try:
                 # Use VectorBT rolling apply for vectorized memory strength calculation
-                memory_series = self.vectorbt_optimizer.rolling_apply(
+                memory_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_memory_strength_vectorized,
-                    window=window
+window
                 )
                 return memory_series
             except Exception as e:
@@ -3754,9 +3776,9 @@ class RegimeFeatureConfig:
     trade_duration_minutes: Tuple[int, int] = (5, 30)
 
     # Feature selection
-    max_features_per_category: int = 30
-    total_max_features: int = 100
-    enable_feature_selection: bool = True
+    max_features_per_category: int = 100  # Increased to allow more features per category
+    total_max_features: int = 500  # Increased to accommodate all desired features
+    enable_feature_selection: bool = False  # Disable to generate all features
 
     # Composite scoring weights (exposed for NAS/TAS tuning)
     persistence_weight: float = 0.5
@@ -3850,11 +3872,11 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         self._latest_intensity_scalers: Dict[str, float] = {}
 
         # Initialize VectorBT optimizers
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(
                     enable_gpu=getattr(config, 'enable_gpu_acceleration', False),
                     enable_parallel=getattr(config, 'enable_parallel_processing', True)
                 )
@@ -3891,21 +3913,21 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         if self.vectorbt_optimizer:
             try:
                 if operation == 'mean':
-                    return self.vectorbt_optimizer.rolling_mean(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_mean(data, window, **kwargs)
                 elif operation == 'std':
-                    return self.vectorbt_optimizer.rolling_std(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_std(data, window, **kwargs)
                 elif operation == 'var':
-                    return self.vectorbt_optimizer.rolling_var(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_var(data, window, **kwargs)
                 elif operation == 'min':
-                    return self.vectorbt_optimizer.rolling_min(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_min(data, window, **kwargs)
                 elif operation == 'max':
-                    return self.vectorbt_optimizer.rolling_max(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_max(data, window, **kwargs)
                 elif operation == 'sum':
-                    return self.vectorbt_optimizer.rolling_sum(data, window, **kwargs)
+                    return self.vectorbt_rolling_optimizer.rolling_sum(data, window, **kwargs)
                 elif operation == 'corr':
                     other = kwargs.get('other')
                     if other is not None:
-                        return self.vectorbt_optimizer.rolling_corr(data, other, window, **kwargs)
+                        return self.vectorbt_rolling_optimizer.rolling_corr(data, other, window, **kwargs)
                 else:
                     raise ValueError(f"Unsupported operation: {operation}")
             except Exception as e:
@@ -3917,21 +3939,21 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return data.rolling(window).mean()
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return data.rolling(window).std()
         elif operation == 'var':
-            return data.rolling(window=window).var()
+            return data.rolling(window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return data.rolling(window).min()
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return data.rolling(window).max()
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return data.rolling(window).sum()
         elif operation == 'corr':
             other = kwargs.get('other')
             if other is not None:
-                return data.rolling(window=window).corr(other)
+                return data.rolling(window).corr(other)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -4018,9 +4040,17 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
 
             # OPTIMIZED: Apply quality filters only (no trading feature filter needed - all features are regime-focused)
             if getattr(self.regime_config, 'enable_feature_selection', True):
+                tprint(f"🎯 STAGE 1: Starting feature selection pipeline")
+                tprint(f"   📊 Input features: {len(features)} total features to evaluate")
+                
                 filter_start = time.time()
+                tprint(f"🔍 STAGE 2: Applying quality filters...")
                 filtered_features, quality_stats = self._apply_quality_filters(features, optimized_data)
+                filter_time = time.time() - filter_start
+                tprint(f"   ✅ Quality filtering completed in {filter_time:.2f}s")
+                tprint(f"   📈 Features passed quality filters: {len(filtered_features)}/{len(features)} ({len(filtered_features)/len(features)*100:.1f}%)")
 
+                tprint(f"⚖️ STAGE 3: Applying intensity weighting...")
                 # Apply intensity weighting prior to feature selection
                 filtered_features, intensity_scalers, quality_stats = self._apply_intensity_weighting(
                     filtered_features,
@@ -4028,28 +4058,45 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 )
                 if intensity_scalers:
                     self._latest_intensity_scalers = intensity_scalers
+                    tprint(f"   ✅ Intensity weighting applied to {len(intensity_scalers)} features")
                 else:
                     self._latest_intensity_scalers = {
                         name: 1.0 for name in filtered_features.keys()
                     }
+                    tprint(f"   ℹ️ No intensity weighting applied (using default 1.0)")
 
                 # Ensure we keep exactly the configured number of features for optimal performance
                 target_features = getattr(self.regime_config, 'total_max_features', 100)
+                max_per_category = getattr(self.regime_config, 'max_features_per_category', 100)
                 self._latest_target_count = target_features
+                
+                tprint(f"🎯 STAGE 4: Final feature selection")
+                tprint(f"   📊 Target features: {target_features}")
+                tprint(f"   📊 Max per category: {max_per_category}")
+                tprint(f"   📊 Available features: {len(filtered_features)}")
 
                 if len(filtered_features) > target_features:
                     tprint(f"🔍 Feature selection: {len(filtered_features)} → {target_features} features")
+                    selection_start = time.time()
                     filtered_features, quality_stats = self._select_top_features(
                         filtered_features,
                         quality_stats,
                         target_features
                     )
+                    selection_time = time.time() - selection_start
+                    tprint(f"   ✅ Selection completed in {selection_time:.2f}s")
                 elif len(filtered_features) < target_features:
                     tprint(f"⚠️ Only {len(filtered_features)} features available (target: {target_features})")
+                    tprint(f"   💡 Consider relaxing quality filters or increasing generator count")
                 else:
                     tprint(f"✅ Perfect: {len(filtered_features)} features (target: {target_features})")
 
                 features = filtered_features
+                tprint(f"🎉 STAGE 5: Feature selection completed!")
+                tprint(f"   📊 Final features selected: {len(features)}")
+                tprint(f"   📊 Target was: {target_features}")
+                tprint(f"   📊 Success rate: {len(features)/target_features*100:.1f}% of target")
+                
                 # Persist the latest stats aligned with the selected features
                 self._latest_quality_stats = {
                     name: quality_stats.get(name, {})
@@ -4200,6 +4247,9 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
 
     def _apply_quality_filters(self, features: Dict[str, np.ndarray], data: pd.DataFrame) -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[str, float]]]:
         """Apply quality filters and compute per-feature quality statistics."""
+        tprint(f"🔍 Quality Filtering Details:")
+        tprint(f"   📊 Total input features: {len(features)}")
+        
         filtered_features: Dict[str, np.ndarray] = {}
         quality_stats: Dict[str, Dict[str, float]] = {}
 
@@ -4211,33 +4261,44 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             name: feature_array for name, feature_array in features.items()
             if feature_array is not None and len(feature_array) > 0
         }
+        tprint(f"   ✅ Valid features (non-null, non-empty): {len(valid_features)}")
 
         # Batch process features by type for efficiency
         statistical_features = {
             name: feature_array for name, feature_array in valid_features.items()
             if any(pattern in name.lower() for pattern in statistical_patterns)
         }
+        tprint(f"   📈 Statistical features: {len(statistical_features)}")
 
         other_features = {
             name: feature_array for name, feature_array in valid_features.items()
             if not any(pattern in name.lower() for pattern in statistical_patterns)
         }
+        tprint(f"   🔧 Other features: {len(other_features)}")
 
         # Process statistical features with relaxed criteria
+        tprint(f"   🔍 Processing {len(statistical_features)} statistical features (relaxed criteria)...")
+        statistical_passed = 0
         for name, feature_array in statistical_features.items():
             passed, metrics = self._is_high_quality_regime_feature(feature_array, relaxed=True)
             if passed:
                 filtered_features[name] = feature_array
+                statistical_passed += 1
                 if metrics:
                     quality_stats[name] = metrics
+        tprint(f"   ✅ Statistical features passed: {statistical_passed}/{len(statistical_features)} ({statistical_passed/len(statistical_features)*100:.1f}%)")
 
         # Process other features with standard criteria
+        tprint(f"   🔍 Processing {len(other_features)} other features (standard criteria)...")
+        other_passed = 0
         for name, feature_array in other_features.items():
             passed, metrics = self._is_high_quality_regime_feature(feature_array)
             if passed:
                 filtered_features[name] = feature_array
+                other_passed += 1
                 if metrics:
                     quality_stats[name] = metrics
+        tprint(f"   ✅ Other features passed: {other_passed}/{len(other_features)} ({other_passed/len(other_features)*100:.1f}%)")
 
         tprint(f"📊 Quality filter results: {len(filtered_features)}/{len(features)} features passed")
         if quality_stats:
@@ -4343,10 +4404,17 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             if not features:
                 return features, quality_stats
 
+            tprint(f"🎯 Top Feature Selection Details:")
+            tprint(f"   📊 Input features: {len(features)}")
+            tprint(f"   📊 Target count: {target_count}")
+
             persistence_weight = getattr(self.regime_config, 'persistence_weight', 0.5)
             noise_penalty_weight = getattr(self.regime_config, 'noise_penalty_weight', 0.3)
             stability_weight = getattr(self.regime_config, 'stability_weight', 0.2)
             max_per_category = getattr(self.regime_config, 'max_features_per_category', target_count)
+            
+            tprint(f"   ⚖️ Scoring weights: persistence={persistence_weight}, noise_penalty={noise_penalty_weight}, stability={stability_weight}")
+            tprint(f"   📊 Max per category: {max_per_category}")
 
             composite_scores: Dict[str, float] = {}
             variances: Dict[str, float] = {}
@@ -4416,6 +4484,11 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             )
             if categories_capped:
                 tprint(f"   ➤ Category caps reached for: {', '.join(categories_capped)}")
+            
+            # Show category breakdown
+            tprint(f"   📊 Category breakdown:")
+            for category, count in sorted(category_counts.items()):
+                tprint(f"      • {category}: {count} features")
 
             preview_count = min(5, len(selected_features))
             if preview_count:
@@ -4506,7 +4579,8 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             if 'close' in data.columns:
                 # OPTIMIZED: Use vectorized trend strength calculation
                 close_prices = data['close']
-                price_changes = close_prices.diff()
+                from ...utils.error_handling import safe_diff
+                price_changes = safe_diff(close_prices)
 
                 # Vectorized trend strength using rolling slope approximation
                 trend_strength = price_changes.rolling(20).mean().abs()
@@ -4542,7 +4616,9 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             # Regime transition stability
             if 'close' in data.columns:
                 returns = data['close'].pct_change().dropna()
-                regime_changes = (returns.rolling(5).std().diff() != 0).astype(int)
+                from ...utils.error_handling import safe_diff
+                rolling_std = returns.rolling(5).std()
+                regime_changes = (safe_diff(rolling_std) != 0).astype(int)
                 stability = 1.0 - regime_changes.rolling(20).mean()
                 features['regime_transition_stability'] = stability.fillna(0.5).values
 
@@ -4599,23 +4675,23 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 'valid_length': float(len(valid_values))
             }
 
-            # Apply very lenient quality thresholds to preserve ~100 features
-            # Regime features are expected to change with market regimes, so be permissive
+            # Apply extremely lenient quality thresholds to preserve ~500 features
+            # Regime features are expected to change with market regimes, so be very permissive
             if relaxed:
-                # Very lenient thresholds for statistical features
-                result = (regime_persistence > 0.05 and  # Very low bar for autocorrelation
-                         noise_ratio < 5.0 and      # Allow high variability for regime changes
-                         temporal_stability > -1.0 and # Allow negative stability (regime transitions)
-                         len(valid_values) >= 3)
+                # Extremely lenient thresholds for statistical features
+                result = (regime_persistence > 0.01 and  # Extremely low bar for autocorrelation
+                         noise_ratio < 10.0 and     # Allow very high variability for regime changes
+                         temporal_stability > -2.0 and # Allow very negative stability (regime transitions)
+                         len(valid_values) >= 2)    # Allow very short sequences
                 tprint(f"   Statistical feature: persistence={regime_persistence:.3f}, noise={noise_ratio:.3f}, stability={temporal_stability:.3f}, valid_vals={len(valid_values)}, result={result}")
                 return result, metrics
             else:
-                # Very lenient thresholds for ALL regime features
-                # Goal: Keep ~100 features instead of filtering to 37
-                result = (regime_persistence > 0.05 and  # Very low bar for autocorrelation
-                         noise_ratio < 4.0 and      # Allow high noise for regime transitions
-                         temporal_stability > -0.5 and # Allow negative stability for regime changes
-                         len(valid_values) >= 3)
+                # Extremely lenient thresholds for ALL regime features
+                # Goal: Keep ~500 features instead of filtering to 103
+                result = (regime_persistence > 0.01 and  # Extremely low bar for autocorrelation
+                         noise_ratio < 8.0 and      # Allow very high noise for regime transitions
+                         temporal_stability > -1.5 and # Allow very negative stability for regime changes
+                         len(valid_values) >= 2)   # Allow very short sequences
                 tprint(f"   Regime feature: persistence={regime_persistence:.3f}, noise={noise_ratio:.3f}, stability={temporal_stability:.3f}, valid_vals={len(valid_values)}, result={result}")
                 return result, metrics
 

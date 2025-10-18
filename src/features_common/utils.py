@@ -118,7 +118,7 @@ def rolling_sum(data, window, **kwargs):
     else:
         raise ValueError("Data must be pandas DataFrame or Series")
 
-def rolling_apply(data, window, func, **kwargs):
+def rolling_apply(data, func, window, **kwargs):
     """Rolling apply using pandas."""
     if isinstance(data, pd.DataFrame):
         return data.rolling(window=window, **kwargs).apply(func)

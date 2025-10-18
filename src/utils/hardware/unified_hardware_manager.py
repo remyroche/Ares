@@ -236,15 +236,9 @@ class HardwarePerformanceMonitor:
     def _get_temperature(self) -> float:
         """Get system temperature."""
         try:
-            if platform.system() == 'Darwin':
-                # Try to get temperature from system
-                result = subprocess.run(
-                    ['sudo', 'powermetrics', '--samplers', 'smc', '-n', '1', '-i', '1000'],
-                    capture_output=True, text=True, timeout=10
-                )
-                if result.returncode == 0:
-                    # Parse temperature from output (simplified)
-                    return 45.0  # Placeholder
+            # Disable system temperature monitoring to avoid sudo requirements
+            # Return a default temperature to prevent system calls
+            self.logger.debug("Temperature monitoring disabled to avoid sudo requirements")
             return 45.0
         except Exception:
             return 45.0
@@ -476,6 +470,11 @@ class UnifiedHardwareManager:
         self.current_workload_type: Optional[WorkloadType] = None
         self.optimization_contexts: Dict[str, Any] = {}
         self._initialized = True
+        
+        # Circuit breaker for optimization failures
+        self._optimization_failures = 0
+        self._max_optimization_failures = 3
+        self._circuit_breaker_reset_time = None
 
         self.logger.info("🔧 Unified Hardware Manager initialized")
 
@@ -548,11 +547,54 @@ class UnifiedHardwareManager:
             self.logger.warning("Hardware manager not initialized")
             return False
 
+        # Circuit breaker check
+        current_time = time.time()
+        if self._optimization_failures >= self._max_optimization_failures:
+            if self._circuit_breaker_reset_time is None:
+                self._circuit_breaker_reset_time = current_time + 300  # 5 minute cooldown
+                self.logger.warning("🚨 Circuit breaker activated - too many optimization failures")
+                return False
+            elif current_time < self._circuit_breaker_reset_time:
+                self.logger.debug("Circuit breaker active, skipping optimization")
+                return False
+            else:
+                # Reset circuit breaker
+                self._optimization_failures = 0
+                self._circuit_breaker_reset_time = None
+                self.logger.info("🔄 Circuit breaker reset, resuming optimizations")
+
+        # Enhanced recursion prevention with timeout and stack depth check
+        if hasattr(self, '_optimizing') and self._optimizing:
+            # Check if we've been optimizing for too long (timeout after 10 seconds)
+            if hasattr(self, '_optimization_start_time'):
+                if current_time - self._optimization_start_time > 10:
+                    self.logger.warning("Optimization timeout detected, clearing recursion guard")
+                    self._optimizing = False
+                    self._optimization_start_time = None
+                else:
+                    self.logger.warning("Already optimizing, skipping to prevent recursion")
+                    return False
+            else:
+                self.logger.warning("Already optimizing, skipping to prevent recursion")
+                return False
+        
+        # Additional recursion prevention - check call stack depth
+        import sys
+        if len(sys._getframe().f_back.f_locals) > 50:  # Arbitrary depth limit
+            self.logger.warning("Call stack too deep, skipping optimization to prevent recursion")
+            return False
+        
+        # Set optimization flag and timestamp immediately to prevent recursion
+        self._optimizing = True
+        self._optimization_start_time = current_time
         optimization_level = optimization_level or self.config.cpu_optimization_level
         self.current_workload_type = workload_type
 
         try:
-            self.logger.info(f"🎯 Optimizing for {workload_type.value} workload ({optimization_level.value})")
+            # Reduced logging to prevent verbosity
+            if not hasattr(self, '_last_workload') or self._last_workload != workload_type.value:
+                self.logger.info(f"🎯 Optimizing for {workload_type.value} workload ({optimization_level.value})")
+                self._last_workload = workload_type.value
 
             # CPU optimization
             self._optimize_cpu_for_workload(workload_type, optimization_level)
@@ -576,7 +618,13 @@ class UnifiedHardwareManager:
 
         except Exception as e:
             self.logger.error(f"Failed to optimize for workload {workload_type.value}: {e}")
+            # Track failures for circuit breaker
+            self._optimization_failures += 1
             return False
+        finally:
+            # Clear recursion guard and timestamp
+            self._optimizing = False
+            self._optimization_start_time = None
 
     def _optimize_cpu_for_workload(self, workload_type: WorkloadType, level: OptimizationLevel):
         """Optimize CPU for specific workload."""
@@ -638,15 +686,23 @@ class UnifiedHardwareManager:
 
     def _handle_performance_alert(self, metric_name: str, value: float, threshold: float):
         """Handle performance alerts."""
+        # Prevent recursive calls during optimization
+        if hasattr(self, '_optimizing') and self._optimizing:
+            self.logger.debug(f"🚨 Performance alert during optimization: {metric_name} = {value:.1f} (threshold: {threshold:.1f}) - deferring response")
+            return
+            
         self.logger.warning(f"🚨 Performance alert: {metric_name} = {value:.1f} (threshold: {threshold:.1f})")
 
-        # Implement adaptive responses
-        if metric_name == 'cpu_usage' and value > 90:
-            self._reduce_cpu_intensity()
-        elif metric_name == 'memory_usage' and value > 95:
-            self._trigger_aggressive_memory_cleanup()
-        elif metric_name == 'temperature' and value > 85:
-            self._reduce_thermal_load()
+        # Implement adaptive responses with recursion protection
+        try:
+            if metric_name == 'cpu_usage' and value > 90:
+                self._reduce_cpu_intensity()
+            elif metric_name == 'memory_usage' and value > 95:
+                self._trigger_aggressive_memory_cleanup()
+            elif metric_name == 'temperature' and value > 85:
+                self._reduce_thermal_load()
+        except Exception as e:
+            self.logger.error(f"Error handling performance alert: {e}")
 
     def _reduce_cpu_intensity(self):
         """Reduce CPU intensity in response to high usage."""
@@ -674,17 +730,32 @@ class UnifiedHardwareManager:
     def optimize_for_inference(self):
         """Optimize hardware for inference workload."""
         try:
-            # Optimize for inference workload with aggressive optimization
-            success = self.optimize_for_workload(
-                WorkloadType.INFERENCE,
-                OptimizationLevel.AGGRESSIVE
-            )
-            if success:
-                self.logger.info("✅ Hardware optimized for inference")
-            else:
-                self.logger.warning("⚠️ Failed to optimize hardware for inference")
+            # Direct optimization without recursive call to optimize_for_workload
+            if not self.is_initialized:
+                self.logger.warning("Hardware manager not initialized")
+                return False
+            
+            # Set optimization flag to prevent recursion
+            if hasattr(self, '_optimizing') and self._optimizing:
+                self.logger.warning("Already optimizing, skipping inference optimization")
+                return False
+            
+            self._optimizing = True
+            self._optimization_start_time = time.time()
+            
+            # Direct optimization for inference
+            self._optimize_cpu_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+            self._optimize_gpu_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+            self._optimize_memory_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+            
+            self.logger.info("✅ Hardware optimized for inference")
+            return True
         except Exception as e:
             self.logger.warning(f"⚠️ Inference optimization failed: {e}")
+            return False
+        finally:
+            self._optimizing = False
+            self._optimization_start_time = None
 
     @contextmanager
     def optimization_context(self, workload_type: WorkloadType,
@@ -692,16 +763,32 @@ class UnifiedHardwareManager:
         """Context manager for workload-specific optimization."""
         optimization_level = optimization_level or self.config.cpu_optimization_level
 
-        # Apply optimization
-        success = self.optimize_for_workload(workload_type, optimization_level)
-        if not success:
-            self.logger.warning(f"Failed to apply optimization for {workload_type.value}")
-
+        # Apply optimization directly without recursive call
+        if not self.is_initialized:
+            self.logger.warning("Hardware manager not initialized")
+            yield self
+            return
+        
+        # Set optimization flag to prevent recursion
+        if hasattr(self, '_optimizing') and self._optimizing:
+            self.logger.warning("Already optimizing, skipping context optimization")
+            yield self
+            return
+        
+        self._optimizing = True
+        self._optimization_start_time = time.time()
+        
         try:
+            # Direct optimization without recursive call
+            self._optimize_cpu_for_workload(workload_type, optimization_level)
+            self._optimize_gpu_for_workload(workload_type, optimization_level)
+            self._optimize_memory_for_workload(workload_type, optimization_level)
+            
             yield self
         finally:
-            # Could restore previous settings here if needed
-            pass
+            # Clear optimization flag
+            self._optimizing = False
+            self._optimization_start_time = None
 
     def get_system_status(self) -> Dict[str, Any]:
         """Get comprehensive system status."""

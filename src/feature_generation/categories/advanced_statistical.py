@@ -144,10 +144,10 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         self.min_periods = min_periods
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -155,10 +155,10 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         """Generate Hurst exponent feature."""
         close = data['close']
 
-        if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+        if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
             try:
                 # Use VectorBT rolling apply for Hurst exponent calculation
-                hurst_series = self.vectorbt_optimizer.rolling_apply(
+                hurst_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._calculate_hurst_exponent,
                     window=self.window,
@@ -267,10 +267,10 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         self.threshold = threshold
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -278,10 +278,10 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         """Generate jump indicators feature."""
         close = data['close']
 
-        if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+        if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
             try:
                 # Use VectorBT rolling apply for jump detection
-                jump_series = self.vectorbt_optimizer.rolling_apply(
+                jump_series = self.vectorbt_rolling_optimizer.rolling_apply(
                     close,
                     self._detect_jumps,
                     window=self.window

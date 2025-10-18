@@ -192,7 +192,9 @@ validate_multi_timeframe_alignment = validate_multi_timeframe_data_quality
 validate_multi_timeframe_processing = validate_multi_timeframe_data_quality
 validate_file_operation = secure_data_processing
 validate_dataframe_operation = validate_data_quality
-validate_file_size = lambda max_size_mb = 100: validates
+def validate_file_size(max_size_mb: int = 100) -> Callable:
+    """Validate file size decorator."""
+    return validates(max_size_mb=max_size_mb)
 secure_file_path = secure_data_processing
 sanitize_string = secure_data_processing
 __all__ = ['ValidationLevel', 'PerformanceLevel', 'PipelineStage', 'PipelineValidationLevel', 'validate_data_quality', 'validate_feature_engineering_with_lookahead_bias_detection', 'validate_klines_data_quality', 'validate_multi_timeframe_data_quality', 'validate_ohlcv_data_quality', 'validate_wavelet_data_quality', 'validate_hmm_data_requirements', 'validate_hmm_regime_discovery', 'validate_step_comprehensive', 'validate_step2_operation', 'validate_step3_comprehensive', 'validate_step3_5_comprehensive', 'validate_step4_comprehensive', 'validate_step5_comprehensive', 'validate_step6_comprehensive', 'monitor_step_execution', 'monitor_feature_engineering', 'monitor_pipeline_performance', 'monitor_pipeline_step', 'quality_gate', 'secure_data_processing', 'prevent_data_leakage', 'ensure_data_integrity', 'secure_step_execution', 'validate_pipeline_step', 'validate_pipeline_input', 'optimize_memory_usage', 'enforce_ndarray', 'validate_feature_engineering_pipeline', 'artifact_versioning', 'deterministic_seed', 'idempotent_step', 'smart_validation_cache', 'create_step_decorator', 'comprehensive_validation', 'time_budget_watchdog', 'comprehensive_data_validation', 'validate_constant_features', 'validate_low_variance_features', 'validate_data_completeness', 'validate_datetime_index', 'validate_memory_optimized_data_quality', 'validate_multi_timeframe_alignment', 'validate_multi_timeframe_processing', 'validate_file_operation', 'validate_dataframe_operation', 'validate_file_size', 'secure_file_path', 'sanitize_string']

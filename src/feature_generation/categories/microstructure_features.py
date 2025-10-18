@@ -135,10 +135,10 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -336,7 +336,8 @@ class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
                 features['amihud_illiquidity'] = amihud_illiquidity.rolling(window=20).mean().values
 
             # Roll's lambda (simplified)
-            price_changes = close.diff()
+            from ...utils.error_handling import safe_diff
+            price_changes = safe_diff(close)
             if VECTORBT_AVAILABLE:
                 roll_lambda = rolling_std(price_changes, window=20)
                 features['roll_lambda'] = roll_lambda.values
@@ -703,10 +704,10 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -735,7 +736,7 @@ class VectorBTTakerBuyRatioGenerator(VectorBTFeatureGenerator):
             # Taker buy ratio (simplified: positive price change with volume)
             taker_buy_ratio = np.where(price_change > 0, volume, 0)
 
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 # Use VectorBT rolling operations
                 taker_buy_sum = rolling_sum(taker_buy_ratio, window=self.window)
                 total_volume = rolling_sum(volume, window=self.window)
@@ -762,10 +763,10 @@ class VectorBTTakerSellRatioGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -794,7 +795,7 @@ class VectorBTTakerSellRatioGenerator(VectorBTFeatureGenerator):
             # Taker sell ratio (simplified: negative price change with volume)
             taker_sell_ratio = np.where(price_change < 0, volume, 0)
 
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 # Use VectorBT rolling operations
                 taker_sell_sum = rolling_sum(taker_sell_ratio, window=self.window)
                 total_volume = rolling_sum(volume, window=self.window)
@@ -821,10 +822,10 @@ class VectorBTMarketAggressionIndexGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -852,7 +853,7 @@ class VectorBTMarketAggressionIndexGenerator(VectorBTFeatureGenerator):
             volume_change = volume.pct_change()
 
             # Market aggression index (correlation between price and volume changes)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 aggression_index = rolling_corr(price_change, volume_change, window=self.window)
             else:
                 aggression_index = price_change.rolling(window=self.window).corr(volume_change)
@@ -873,10 +874,10 @@ class VectorBTOrderFlowImbalanceGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -903,7 +904,7 @@ class VectorBTOrderFlowImbalanceGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow imbalance (volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
             else:
                 vw_price_change = (price_change * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
@@ -924,10 +925,10 @@ class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -957,7 +958,7 @@ class VectorBTBidAskImbalanceGenerator(VectorBTFeatureGenerator):
             # Relative spread as imbalance measure
             relative_spread = spread / mid_price
 
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 imbalance = rolling_mean(relative_spread, window=self.window)
             else:
                 imbalance = relative_spread.rolling(window=self.window).mean()
@@ -978,10 +979,10 @@ class VectorBTMarketOrderFlowGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1008,7 +1009,7 @@ class VectorBTMarketOrderFlowGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Market order flow (volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 order_flow = rolling_sum(price_change * volume, window=self.window)
             else:
                 order_flow = (price_change * volume).rolling(window=self.window).sum()
@@ -1029,10 +1030,10 @@ class VectorBTVolumeWeightedOrderFlowGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1059,7 +1060,7 @@ class VectorBTVolumeWeightedOrderFlowGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Volume-weighted order flow
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_order_flow = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
             else:
                 vw_order_flow = (price_change * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
@@ -1080,10 +1081,10 @@ class VectorBTOrderFlowMomentumGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1110,12 +1111,18 @@ class VectorBTOrderFlowMomentumGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow momentum (rate of change of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
-                momentum = vw_price_change.diff()
+                # Ensure we have a Series for diff operation using safe_diff
+                from ...utils.error_handling import safe_diff
+                if isinstance(vw_price_change, pd.Series):
+                    momentum = safe_diff(vw_price_change)
+                else:
+                    momentum = safe_diff(pd.Series(vw_price_change))
             else:
                 vw_price_change = (price_change * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
-                momentum = vw_price_change.diff()
+                from ...utils.error_handling import safe_diff
+                momentum = safe_diff(vw_price_change)
 
             return momentum.fillna(0)
 
@@ -1133,10 +1140,10 @@ class VectorBTOrderFlowVolatilityGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1163,7 +1170,7 @@ class VectorBTOrderFlowVolatilityGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow volatility (volatility of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
                 volatility = rolling_std(vw_price_change, window=self.window)
             else:
@@ -1186,10 +1193,10 @@ class VectorBTOrderFlowTrendStrengthGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1216,7 +1223,7 @@ class VectorBTOrderFlowTrendStrengthGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow trend strength (autocorrelation of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
                 trend_strength = rolling_corr(vw_price_change, vw_price_change.shift(1), window=self.window)
             else:
@@ -1239,10 +1246,10 @@ class VectorBTOrderFlowConsistencyGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1269,7 +1276,7 @@ class VectorBTOrderFlowConsistencyGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow consistency (inverse of volatility of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
                 volatility = rolling_std(vw_price_change, window=self.window)
                 consistency = 1 / (1 + volatility)
@@ -1294,10 +1301,10 @@ class VectorBTOrderFlowAccelerationGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1324,14 +1331,22 @@ class VectorBTOrderFlowAccelerationGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow acceleration (second derivative of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
-                velocity = vw_price_change.diff()
-                acceleration = velocity.diff()
+                # Ensure we have Series for diff operations using safe_diff
+                from ...utils.error_handling import safe_diff
+                if isinstance(vw_price_change, pd.Series):
+                    velocity = safe_diff(vw_price_change)
+                    acceleration = safe_diff(velocity)
+                else:
+                    vw_series = pd.Series(vw_price_change)
+                    velocity = safe_diff(vw_series)
+                    acceleration = safe_diff(velocity)
             else:
                 vw_price_change = (price_change * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
-                velocity = vw_price_change.diff()
-                acceleration = velocity.diff()
+                from ...utils.error_handling import safe_diff
+                velocity = safe_diff(vw_price_change)
+                acceleration = safe_diff(velocity)
 
             return acceleration.fillna(0)
 
@@ -1349,10 +1364,10 @@ class VectorBTOrderFlowJerkGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1379,16 +1394,25 @@ class VectorBTOrderFlowJerkGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow jerk (third derivative of volume-weighted price change)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
-                velocity = vw_price_change.diff()
-                acceleration = velocity.diff()
-                jerk = acceleration.diff()
+                # Ensure we have Series for diff operations using safe_diff
+                from ...utils.error_handling import safe_diff
+                if isinstance(vw_price_change, pd.Series):
+                    velocity = safe_diff(vw_price_change)
+                    acceleration = safe_diff(velocity)
+                    jerk = safe_diff(acceleration)
+                else:
+                    vw_series = pd.Series(vw_price_change)
+                    velocity = safe_diff(vw_series)
+                    acceleration = safe_diff(velocity)
+                    jerk = safe_diff(acceleration)
             else:
                 vw_price_change = (price_change * volume).rolling(window=self.window).sum() / volume.rolling(window=self.window).sum()
-                velocity = vw_price_change.diff()
-                acceleration = velocity.diff()
-                jerk = acceleration.diff()
+                from ...utils.error_handling import safe_diff
+                velocity = safe_diff(vw_price_change)
+                acceleration = safe_diff(velocity)
+                jerk = safe_diff(acceleration)
 
             return jerk.fillna(0)
 
@@ -1406,10 +1430,10 @@ class VectorBTOrderFlowRegimeGenerator(VectorBTFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if OPTIMIZATION_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 
@@ -1436,7 +1460,7 @@ class VectorBTOrderFlowRegimeGenerator(VectorBTFeatureGenerator):
             price_change = close.pct_change()
 
             # Order flow regime (based on volume-weighted price change and volatility)
-            if VECTORBT_AVAILABLE and self.vectorbt_optimizer:
+            if VECTORBT_AVAILABLE and self.vectorbt_rolling_optimizer:
                 vw_price_change = rolling_sum(price_change * volume, window=self.window) / rolling_sum(volume, window=self.window)
                 volatility = rolling_std(vw_price_change, window=self.window)
                 regime = np.where(vw_price_change > volatility, 1, np.where(vw_price_change < -volatility, -1, 0))
@@ -1520,7 +1544,8 @@ class AnalystTickImbalanceGenerator(VectorizedFeatureGenerator):
             close = data['close']
 
             # Calculate price changes
-            price_change = close.diff()
+            from ...utils.error_handling import safe_diff
+            price_change = safe_diff(close)
 
             # Tick imbalance (simplified: positive vs negative changes)
             tick_imbalance = np.where(price_change > 0, 1, np.where(price_change < 0, -1, 0))
@@ -1566,10 +1591,16 @@ class CorwinSchultzSpreadMomentumGenerator(VectorizedFeatureGenerator):
             # Calculate Corwin-Schultz spread (simplified)
             if VECTORBT_AVAILABLE:
                 spread = rolling_mean(hl_range, window=self.window)
-                spread_momentum = spread.diff()
+                # Ensure we have Series for diff operation using safe_diff
+                from ...utils.error_handling import safe_diff
+                if isinstance(spread, pd.Series):
+                    spread_momentum = safe_diff(spread)
+                else:
+                    spread_momentum = safe_diff(pd.Series(spread))
             else:
                 spread = hl_range.rolling(window=self.window).mean()
-                spread_momentum = spread.diff()
+                from ...utils.error_handling import safe_diff
+                spread_momentum = safe_diff(spread)
 
             return spread_momentum.fillna(0)
 

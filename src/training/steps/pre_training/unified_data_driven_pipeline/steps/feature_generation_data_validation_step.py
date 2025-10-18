@@ -20,8 +20,13 @@ from dataclasses import dataclass
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
     ModularComponent
 )
+from src.training.common.component_result import ComponentResult
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.training.steps.pre_training.utils.artifact_manager import (
+    get_pretraining_artifact_manager,
+    ArtifactKeys,
+)
 
 # Import advanced quality validation components
 try:
@@ -60,6 +65,20 @@ except ImportError:
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
     def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
+
+@dataclass
+class DataValidationResult:
+    """Result from data validation step."""
+    success: bool
+    data_quality_score: float
+    quality_level: str
+    validation_metadata: Dict[str, Any]
+    quality_breakdown: Dict[str, Any]
+    issues: List[str]
+    warnings: List[str]
+    recommendations: List[str]
+    artifacts: Dict[str, Any]
+    error_message: Optional[str] = None
 
 @dataclass
 class FeatureGenerationDataValidationStep(ModularComponent):
@@ -141,6 +160,17 @@ class FeatureGenerationDataValidationStep(ModularComponent):
             )
 
         try:
+            # Log detailed data information for debugging
+            self.logger.info(f"🔍 Data Validation Details:")
+            self.logger.info(f"   📊 Data shape: {data.shape}")
+            self.logger.info(f"   📊 Data columns: {list(data.columns)}")
+            self.logger.info(f"   📊 Data types: {data.dtypes.to_dict()}")
+            if len(data) > 0:
+                self.logger.info(f"   📊 First few rows:\n{data.head()}")
+                self.logger.info(f"   📊 Data range: {data.index.min()} to {data.index.max()}")
+            else:
+                self.logger.warning(f"   ⚠️ EMPTY DATASET: {data.shape} - This will cause quality assessment to fail!")
+
             # Use ModularComponent's safe processing
             if not self.is_initialized():
                 if not self.initialize():
@@ -162,6 +192,7 @@ class FeatureGenerationDataValidationStep(ModularComponent):
             # Convert result to ComponentResult
             component_result = ComponentResult(
                 success=quality_result.success,
+                artifacts=quality_result.artifacts,
                 metadata={
                     'data_quality_score': quality_result.data_quality_score,
                     'quality_level': quality_result.quality_level,
@@ -170,7 +201,6 @@ class FeatureGenerationDataValidationStep(ModularComponent):
                     'issues': quality_result.issues,
                     'warnings': quality_result.warnings,
                     'recommendations': quality_result.recommendations,
-                    'artifacts': quality_result.artifacts
                 },
                 error_message=quality_result.error_message
             )
@@ -251,6 +281,42 @@ class FeatureGenerationDataValidationStep(ModularComponent):
             
             quality_level = quality_score.level.value if quality_score.level else "unknown"
             
+            # Log detailed quality assessment results
+            self.logger.info(f"🔍 Quality Assessment Details:")
+            self.logger.info(f"   📊 Overall Score: {quality_score.overall_score}")
+            self.logger.info(f"   📊 Quality Level: {quality_score.level}")
+            self.logger.info(f"   📊 Component Scores: {quality_score.component_scores}")
+            
+            # Log the specific issues for debugging
+            if quality_score.issues:
+                self.logger.warning(f"🔍 Data Quality Issues Found ({len(quality_score.issues)}):")
+                for i, issue in enumerate(quality_score.issues, 1):
+                    self.logger.warning(f"   {i}. {issue}")
+            
+            if quality_score.warnings:
+                self.logger.warning(f"⚠️ Data Quality Warnings ({len(quality_score.warnings)}):")
+                for i, warning in enumerate(quality_score.warnings, 1):
+                    self.logger.warning(f"   {i}. {warning}")
+            
+            if quality_score.recommendations:
+                self.logger.info(f"💡 Data Quality Recommendations ({len(quality_score.recommendations)}):")
+                for i, recommendation in enumerate(quality_score.recommendations, 1):
+                    self.logger.info(f"   {i}. {recommendation}")
+            
+            # Log basic quality result details
+            if hasattr(basic_quality_result, 'quality_score'):
+                self.logger.info(f"🔍 Basic Quality Score: {basic_quality_result.quality_score}")
+            if hasattr(basic_quality_result, 'issues'):
+                self.logger.info(f"🔍 Basic Quality Issues: {basic_quality_result.issues}")
+            
+            # Log advanced assessment details
+            if hasattr(advanced_assessment, 'overall_score'):
+                self.logger.info(f"🔍 Advanced Assessment Score: {advanced_assessment.overall_score}")
+            if hasattr(advanced_assessment, 'metrics'):
+                self.logger.info(f"🔍 Advanced Assessment Metrics: {len(advanced_assessment.metrics)} metrics")
+                for metric in advanced_assessment.metrics[:5]:  # Show first 5 metrics
+                    self.logger.info(f"   📊 {metric.name}: {metric.value} (threshold: {metric.threshold}, severity: {metric.severity})")
+
             # Compile comprehensive result
             return DataValidationResult(
                 success=success,
@@ -270,7 +336,9 @@ class FeatureGenerationDataValidationStep(ModularComponent):
                     'quality_report': quality_score.__dict__,
                     'basic_validation': basic_quality_result.__dict__,
                     'advanced_metrics': advanced_assessment.__dict__,
-                    'alerts': [alert.__dict__ for alert in alerts]
+                    'alerts': [alert.__dict__ for alert in alerts],
+                    'validated_dataframe': data.copy(),
+                    'raw_dataframe': data.copy()
                 },
                 error_message=None if success else f"Data quality validation failed: {len(quality_score.issues)} issues found"
             )
@@ -317,6 +385,7 @@ class FeatureGenerationDataValidationStep(ModularComponent):
                     'warnings': [],
                     'recommendations': ['Install quality components for enhanced validation']
                 },
+                artifacts={'validated_dataframe': data.copy(), 'raw_dataframe': data.copy()},
                 error_message=None if success else "Basic validation failed"
             )
             
@@ -326,5 +395,200 @@ class FeatureGenerationDataValidationStep(ModularComponent):
                 metadata={},
                 error_message=str(e)
             )
+
+    async def _load_data_for_validation(self, symbol: str, timeframe: str, exchange: str, 
+                                       start_date: Optional[str] = None, end_date: Optional[str] = None,
+                                       lookback_days: Optional[int] = None) -> pd.DataFrame:
+        """Load data for validation from historical data directory."""
+        
+        try:
+            # Import the data loading function
+            from src.utils.data.klines_parquet import load_klines_from_parquet
+            
+            # Convert timeframe to interval format
+            interval_map = {
+                '1m': '1m',
+                '5m': '5m', 
+                '15m': '15m',
+                '30m': '30m',
+                '1h': '1h',
+                '4h': '4h',
+                '1d': '1d'
+            }
+            interval = interval_map.get(timeframe, '15m')
+            
+            # Load data from parquet files without date filters first
+            # This ensures we get the actual data range
+            data = load_klines_from_parquet(
+                symbol=symbol,
+                interval=interval,
+                start_date=None,  # Don't apply date filters yet
+                end_date=None,    # Don't apply date filters yet
+                data_type="processed",  # Use processed data
+                data_dir="historical_data",
+                exchange=exchange
+            )
+            
+            if data is None or data.empty:
+                # Try loading from consolidated file if partitioned data fails
+                consolidated_path = f"historical_data/features_binance_{symbol}_consolidated.parquet"
+                if Path(consolidated_path).exists():
+                    self.logger.info(f"📁 Loading from consolidated file: {consolidated_path}")
+                    data = pd.read_parquet(consolidated_path)
+                else:
+                    # Try loading from 1m consolidated file
+                    consolidated_1m_path = f"historical_data/binance/{symbol.lower()}/processed/{symbol.lower()}_1m/features_{symbol.lower()}_1m_consolidated.parquet"
+                    if Path(consolidated_1m_path).exists():
+                        self.logger.info(f"📁 Loading from 1m consolidated file: {consolidated_1m_path}")
+                        data = pd.read_parquet(consolidated_1m_path)
+                    else:
+                        raise ValueError(f"No data found for {symbol} {timeframe} in {exchange}")
+            
+            if data is None or data.empty:
+                raise ValueError(f"Failed to load data for {symbol} {timeframe}")
+            
+            # Apply dynamic date filtering based on actual data range
+            if 'timestamp' in data.columns and len(data) > 0:
+                # Get the actual data range
+                data_start = data['timestamp'].min()
+                data_end = data['timestamp'].max()
+                
+                self.logger.info(f"📊 Data range: {data_start} to {data_end}")
+                
+                # If lookback_days is specified, use the last N days of data
+                if lookback_days and lookback_days > 0:
+                    # Use the last N days from the end of the data
+                    end_date = data_end
+                    start_date = end_date - pd.Timedelta(days=lookback_days)
+                    data = data[(data['timestamp'] >= start_date) & (data['timestamp'] <= end_date)]
+                    self.logger.info(f"📊 Applied lookback filter: {start_date} to {end_date} ({lookback_days} days)")
+                elif start_date or end_date:
+                    # Apply the specified date filters
+                    if start_date:
+                        # Handle numpy array inputs
+                        if isinstance(start_date, np.ndarray):
+                            if start_date.size == 1:
+                                start_date = start_date.item()
+                            else:
+                                self.logger.warning(f"Invalid start_date format: numpy array with {start_date.size} elements")
+                                return data
+
+                        start_dt = pd.to_datetime(start_date, utc=True)
+                        data = data[data['timestamp'] >= start_dt]
+                    if end_date:
+                        # Handle numpy array inputs
+                        if isinstance(end_date, np.ndarray):
+                            if end_date.size == 1:
+                                end_date = end_date.item()
+                            else:
+                                self.logger.warning(f"Invalid end_date format: numpy array with {end_date.size} elements")
+                                return data
+
+                        end_dt = pd.to_datetime(end_date, utc=True)
+                        data = data[data['timestamp'] <= end_dt]
+                    self.logger.info(f"📊 Applied date filters: {start_date} to {end_date}")
+                else:
+                    # Use the most recent data (last 30 days by default)
+                    end_date = data_end
+                    start_date = end_date - pd.Timedelta(days=30)
+                    data = data[(data['timestamp'] >= start_date) & (data['timestamp'] <= end_date)]
+                    self.logger.info(f"📊 Using default 30-day window: {start_date} to {end_date}")
+            
+            self.logger.info(f"✅ Loaded data: {len(data)} rows, {len(data.columns)} columns")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load data for validation: {e}")
+            raise
+
+
+# Handler function for ares_launcher integration
+async def handle_feature_generation_data_validation_step(
+    symbol: str = "ETHUSDT",
+    timeframe: str = "15m", 
+    exchange: str = "binance",
+    direction: str = "longs",
+    intensity: str = "blank",
+    lookback_days: int = None,
+    start_date: str = None,
+    end_date: str = None,
+    custom_overrides: dict = None,
+    **kwargs
+) -> ComponentResult:
+    """
+    Handler function for feature generation data validation step.
+    
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        timeframe: Timeframe (e.g., "15m")
+        exchange: Exchange name (e.g., "binance")
+        direction: Trading direction (e.g., "longs")
+        intensity: Intensity level (e.g., "blank")
+        lookback_days: Number of days to look back
+        start_date: Start date for data
+        end_date: End date for data
+        custom_overrides: Custom configuration overrides
+        **kwargs: Additional arguments
+        
+    Returns:
+        ComponentResult: Result of the data validation step
+    """
+    artifact_manager = get_pretraining_artifact_manager()
+
+    try:
+        # Create the step instance
+        step = FeatureGenerationDataValidationStep(
+            name="data_validation_step",
+            config={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange,
+                'direction': direction,
+                'intensity': intensity,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'custom_overrides': custom_overrides
+            }
+        )
+        
+        # Create training input
+        training_input = {
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'exchange': exchange,
+            'direction': direction,
+            'intensity': intensity,
+            'lookback_days': lookback_days,
+            'start_date': start_date,
+            'end_date': end_date,
+            'custom_overrides': custom_overrides
+        }
+        
+        # Execute the step
+        result = await step.execute(
+            training_input=training_input,
+            pipeline_state={},
+            **kwargs
+        )
+
+        if isinstance(result, ComponentResult) and result.success:
+            artifact_manager.save(
+                'feature_generation_data_validation_step',
+                result.artifacts,
+                metadata=result.metadata
+            )
+
+        return result
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Handler function failed: {e}")
+        return ComponentResult(
+            success=False,
+            metadata={},
+            error_message=str(e)
+        )
 
     # Required utility methods for BasePreTrainingComponent

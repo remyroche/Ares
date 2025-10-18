@@ -11,7 +11,8 @@ from .component_factory import BaseComponent, ComponentConfig
 try:
     from src.training.steps.pre_training.analyst_profit_labeler import AnalystProfitLabelerComponent
     ANALYST_PROFIT_LABELER_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Failed to import AnalystProfitLabelerComponent: {e}")
     ANALYST_PROFIT_LABELER_AVAILABLE = False
     AnalystProfitLabelerComponent = None
 
@@ -122,7 +123,7 @@ class ComponentRegistry:
         
         # Register feature generation period lookback optimization step
         if FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE and FeatureGenerationPeriodLookbackOptimizationStep is not None:
-            ComponentFactory.register_component('feature_generation_period_lookback_optimization_step', FeatureGenerationPeriodLookbackOptimizationStep)
+            ComponentFactory.register_component('feature_generation_period_lookback_optimization', FeatureGenerationPeriodLookbackOptimizationStep)
         
         # Register feature generation vectorization step
         if FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE and FeatureGenerationVectorizationStep is not None:

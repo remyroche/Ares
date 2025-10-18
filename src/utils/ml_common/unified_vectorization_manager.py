@@ -256,10 +256,13 @@ class UnifiedVectorizationManager:
             self.feature_selection_available = False
 
         try:
-            # Technical indicators
+            # Technical indicators - use lazy import to avoid circular dependency
             tprint("🔄 Loading technical indicators...")
-            from ...feature_generation.utils.feature_generators import FeatureGenerators
-            self.technical_indicators = FeatureGenerators()
+            def _load_technical_indicators():
+                from ...feature_generation.utils.feature_generators import FeatureGenerators
+                return FeatureGenerators()
+            
+            self.technical_indicators = _load_technical_indicators()
             self.technical_indicators_available = True
             tprint("✅ Technical indicators loaded")
         except Exception as e:
@@ -363,6 +366,16 @@ class UnifiedVectorizationManager:
         # Execute operation with selected strategy
         tprint("🔄 Executing operation with selected strategy...")
         result, metadata = self._execute_with_strategy(strategy, operation_type, data, config, **kwargs)
+        if metadata.get('fallback_strategy'):
+            try:
+                fallback_strategy = OptimizationStrategy(metadata['fallback_strategy'])
+                tprint(f"ℹ️ Strategy downgraded to {fallback_strategy.value} after capability check")
+                strategy = fallback_strategy
+            except ValueError:
+                tprint(f"ℹ️ Strategy downgraded to {metadata['fallback_strategy']} after capability check")
+                strategy = OptimizationStrategy.VECTORIZED_CPU
+            finally:
+                metadata.pop('fallback_strategy', None)
         tprint("✅ Operation execution completed")
 
         # Calculate performance metrics
@@ -537,7 +550,9 @@ class UnifiedVectorizationManager:
         else:
             # Fallback to CPU execution
             self.logger.warning(f"⚠️ GPU acceleration not available for {operation_type.value}, falling back to CPU")
-            return self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+            result, fallback_metadata = self._execute_vectorized_cpu(operation_type, data, config, **kwargs)
+            fallback_metadata['fallback_strategy'] = OptimizationStrategy.VECTORIZED_CPU.value
+            return result, fallback_metadata
 
         return result, metadata
 
@@ -1096,6 +1111,21 @@ class UnifiedVectorizationManager:
                 }
 
         return results
+
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame processing for enhanced performance.
+        This is an alias for optimize_dataframe for compatibility.
+
+        Args:
+            data: Input DataFrame
+
+        Returns:
+            Optimized DataFrame
+        """
+        # For now, just return the data as-is
+        # In a full implementation, this would optimize the DataFrame
+        return data
 
 # Convenience functions for common operations
 def optimize_feature_engineering(data: pd.DataFrame,

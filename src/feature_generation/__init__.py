@@ -43,6 +43,11 @@ Usage:
 """
 
 import logging
+import os
+
+# Ensure VectorBT optimizations are enabled when the package is available.
+# This matches the runtime requirement without forcing users to export the variable manually.
+os.environ.setdefault("ARES_ENABLE_VECTORBT", "1")
 
 # Configure tprint to reduce verbosity for feature generation
 try:

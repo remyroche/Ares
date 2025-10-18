@@ -847,6 +847,103 @@ def get_klines_manager() -> KlinesParquetManager:
         get_klines_manager._instance = KlinesParquetManager()
     return get_klines_manager._instance
 
+def process_klines_data(df: pd.DataFrame,
+                       symbol: str,
+                       exchange: str,
+                       interval: str,
+                       config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """Process klines data using the KlinesParquetManager.
+    
+    Args:
+        df: Input DataFrame containing klines data
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        exchange: Exchange name (e.g., "binance")
+        interval: Data interval (e.g., "1m")
+        config: Optional configuration dictionary
+        
+    Returns:
+        Processed DataFrame with optimizations applied
+    """
+    # Create manager instance
+    manager = KlinesParquetManager(config)
+    
+    # Validate data first
+    if not validate_klines_data(df):
+        tprint_error("❌ Klines data validation failed")
+        return pd.DataFrame()
+    
+    # Apply comprehensive optimizations
+    processed_df = manager._apply_comprehensive_optimizations(df, symbol, exchange, interval)
+    
+    tprint_success(f"✅ Processed {len(processed_df)} klines records for {symbol} {interval}")
+    return processed_df
+
+def validate_klines_data(df: pd.DataFrame, 
+                        required_columns: Optional[List[str]] = None,
+                        min_rows: int = 1,
+                        allow_duplicates: bool = True) -> bool:
+    """Validate klines data structure and content.
+    
+    Args:
+        df: DataFrame containing klines data
+        required_columns: List of required columns (default: OHLCV + timestamp)
+        min_rows: Minimum number of rows required
+        allow_duplicates: Whether to allow duplicate timestamps
+        
+    Returns:
+        True if data is valid, False otherwise
+    """
+    if df is None:
+        tprint_error("❌ DataFrame is None")
+        return False
+    
+    if df.empty:
+        tprint_error("❌ DataFrame is empty")
+        return False
+    
+    if len(df) < min_rows:
+        tprint_error(f"❌ DataFrame has {len(df)} rows, minimum required: {min_rows}")
+        return False
+    
+    # Default required columns for klines data
+    if required_columns is None:
+        required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+    
+    # Check for required columns
+    missing_cols = set(required_columns) - set(df.columns)
+    if missing_cols:
+        tprint_error(f"❌ Missing required columns: {missing_cols}")
+        return False
+    
+    # Check for duplicate timestamps if not allowed
+    if not allow_duplicates and 'timestamp' in df.columns:
+        if df['timestamp'].duplicated().any():
+            tprint_error("❌ DataFrame contains duplicate timestamps")
+            return False
+    
+    # Validate OHLCV data integrity
+    ohlcv_cols = ['open', 'high', 'low', 'close', 'volume']
+    for col in ohlcv_cols:
+        if col in df.columns:
+            if df[col].isnull().any():
+                tprint_warning(f"⚠️ Column {col} contains null values")
+            if (df[col] < 0).any():
+                tprint_warning(f"⚠️ Column {col} contains negative values")
+    
+    # Validate OHLC relationships
+    if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+        invalid_ohlc = (
+            (df['high'] < df['low']) |
+            (df['high'] < df['open']) |
+            (df['high'] < df['close']) |
+            (df['low'] > df['open']) |
+            (df['low'] > df['close'])
+        )
+        if invalid_ohlc.any():
+            tprint_warning(f"⚠️ Found {invalid_ohlc.sum()} rows with invalid OHLC relationships")
+    
+    return True
+
 if __name__ == "__main__":
     # Example usage
     import numpy as np

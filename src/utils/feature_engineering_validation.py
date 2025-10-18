@@ -24,7 +24,7 @@ class FeatureEngineeringValidator:
         self.feature_calculations = {}
         self._register_standard_calculations()
 
-    def validate_engineered_features(self, original_df: pd.DataFrame, features_df: pd.DataFrame, feature_config: dict[str, Any], validate_calculations: bool = True, check_dependencies: bool = True) -> ValidationResult:
+    def validate_engineered_features(self, original_df: pd.DataFrame, features_df: pd.DataFrame, feature_config: dict[str, Any], validate_calculations: bool = True, check_dependencies: bool = True, context: str = None) -> ValidationResult:
         """
         Comprehensive validation of engineered features.
 

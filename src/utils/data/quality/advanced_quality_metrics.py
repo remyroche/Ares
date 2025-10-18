@@ -624,7 +624,11 @@ class AdvancedQualityMetrics:
 
         for metric in metrics:
             weight = severity_weights.get(metric.severity, 0.5)
-            penalty = min(metric.value / metric.threshold, 1.0) * weight * 20  # Max 20 points per metric
+            # Avoid division by zero
+            if metric.threshold == 0:
+                penalty = 0.0  # No penalty if threshold is 0
+            else:
+                penalty = min(metric.value / metric.threshold, 1.0) * weight * 20  # Max 20 points per metric
             total_penalty += penalty
             total_weight += weight
 

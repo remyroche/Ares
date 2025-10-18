@@ -317,4 +317,15 @@ class CrossStepValidator:
         self.data_lineage.clear()
         self.consistency_issues.clear()
         self.logger.info('🔄 Cross-step validation state reset')
-cross_step_validator = CrossStepValidator()
+# Lazy initialization to avoid circular imports
+_cross_step_validator = None
+
+def get_cross_step_validator():
+    """Get or create CrossStepValidator instance."""
+    global _cross_step_validator
+    if _cross_step_validator is None:
+        _cross_step_validator = CrossStepValidator()
+    return _cross_step_validator
+
+# For backward compatibility
+cross_step_validator = get_cross_step_validator()

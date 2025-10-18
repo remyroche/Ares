@@ -311,6 +311,35 @@ class FeatureSelectionCacheManager:
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         return self.cache.get_cache_stats()
+    
+    def clear_old_entries(self, max_age_seconds: Optional[int] = None) -> int:
+        """
+        Clear old cache entries to free up memory.
+        
+        Args:
+            max_age_seconds: Maximum age of entries to keep (None for default TTL)
+            
+        Returns:
+            Number of entries cleared
+        """
+        try:
+            if max_age_seconds is None:
+                max_age_seconds = self.config.default_ttl_seconds
+            
+            # Use the unified cache's cleanup method
+            cleared = self.cache.cleanup_old_entries(max_age_seconds)
+            
+            # Update statistics
+            self.stats['evictions'] += cleared
+            
+            if cleared > 0:
+                self.logger.info(f"🧹 Cleared {cleared} old cache entries")
+            
+            return cleared
+            
+        except Exception as e:
+            self.logger.error(f"Error clearing old entries: {e}")
+            return 0
 
 def cached_feature_selection(cache_manager: FeatureSelectionCacheManager):
     """Decorator for caching feature selection operations."""

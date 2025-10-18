@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Example usage of Tactician/Analyst labeling integration in UnifiedDataDrivenPipeline.
+Example usage of independent labeling in UnifiedDataDrivenPipeline.
 
-This example shows how to configure and use the tactician/analyst labeling system
+This example shows how to configure and use independent labeling systems
 instead of the traditional triple barrier labeling.
 """
 
@@ -21,7 +21,7 @@ def create_analyst_config():
     config = create_full_config()
 
     # Configure for analyst labeling
-    config.labeling_system = "tactician_analyst"
+    config.labeling_system = "independent_labeling"
     config.labeling_type = "analyst"
     config.enable_labeling_optimization = True
     config.labeling_quality_threshold = 0.7
@@ -33,7 +33,7 @@ def create_tactician_config():
     config = create_full_config()
 
     # Configure for tactician labeling
-    config.labeling_system = "tactician_analyst"
+    config.labeling_system = "independent_labeling"
     config.labeling_type = "tactician"
     config.enable_labeling_optimization = True
     config.labeling_quality_threshold = 0.7
@@ -53,7 +53,7 @@ def create_triple_barrier_config():
 
 def main():
     """Demonstrate different labeling configurations."""
-    print("🏷️ Tactician/Analyst Labeling Integration Example")
+    print("🏷️ Independent Labeling Example")
     print("=" * 60)
 
     # Example 1: Analyst labeling
@@ -62,7 +62,7 @@ def main():
     print(f"   - Labeling System: {analyst_config.labeling_system}")
     print(f"   - Labeling Type: {analyst_config.labeling_type}")
     print(f"   - Quality Threshold: {analyst_config.labeling_quality_threshold}")
-    print("   - Purpose: 'Should we trade?' based on expected PnL > fees + slippage")
+    print("   - Purpose: 'Should we trade?' based on expected PnL > fees + slippage (independent)")
 
     # Example 2: Tactician labeling
     print("\n2. Tactician Labeling Configuration:")
@@ -70,7 +70,7 @@ def main():
     print(f"   - Labeling System: {tactician_config.labeling_system}")
     print(f"   - Labeling Type: {tactician_config.labeling_type}")
     print(f"   - Quality Threshold: {tactician_config.labeling_quality_threshold}")
-    print("   - Purpose: Direction/magnitude based on max favorable/adverse excursion")
+    print("   - Purpose: Direction/magnitude based on max favorable/adverse excursion (independent)")
 
     # Example 3: Triple barrier fallback
     print("\n3. Triple Barrier Fallback Configuration:")

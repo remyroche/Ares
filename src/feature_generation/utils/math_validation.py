@@ -117,10 +117,30 @@ def validate_finite(value, name="value"):
 def safe_percentage_change(old_value, new_value):
     """Safely calculate percentage change."""
     try:
-        if old_value == 0:
-            return 0.0
-        return ((new_value - old_value) / old_value) * 100
+        # Handle pandas Series inputs
+        if hasattr(old_value, 'values') and hasattr(new_value, 'values'):
+            # Both inputs are pandas Series or similar
+            result = pd.Series(index=old_value.index, dtype=float)
+            for i in range(len(old_value)):
+                try:
+                    current_old = old_value.iloc[i]
+                    current_new = new_value.iloc[i]
+                    if pd.isna(current_old) or current_old == 0:
+                        result.iloc[i] = 0.0
+                    else:
+                        result.iloc[i] = ((current_new - current_old) / current_old) * 100
+                except (ZeroDivisionError, ValueError, TypeError):
+                    result.iloc[i] = 0.0
+            return result
+        else:
+            # Handle scalar inputs
+            if old_value is None or (isinstance(old_value, float) and np.isnan(old_value)) or old_value == 0:
+                return 0.0
+            return ((new_value - old_value) / old_value) * 100
     except Exception:
+        # Return appropriate type based on input
+        if hasattr(old_value, 'values') and hasattr(new_value, 'values'):
+            return pd.Series(0.0, index=old_value.index)
         return 0.0
 
 class MathValidationError(Exception):

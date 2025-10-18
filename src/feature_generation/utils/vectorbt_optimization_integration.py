@@ -122,9 +122,12 @@ class VectorBTOptimizationManager:
             'memory_savings': 0.0
         }
 
-        logger.info(f"VectorBTOptimizationManager initialized: "
-                   f"GPU={enable_gpu}, Memory={memory_efficient}, "
-                   f"Parallel={enable_parallel}")
+        # Reduced verbosity - only log once per session
+        if not hasattr(VectorBTOptimizationManager, '_logged_initialization'):
+            logger.info(f"VectorBTOptimizationManager initialized: "
+                       f"GPU={enable_gpu}, Memory={memory_efficient}, "
+                       f"Parallel={enable_parallel}")
+            VectorBTOptimizationManager._logged_initialization = True
 
     def scale_data(self, data: Union[pd.Series, pd.DataFrame],
                    method: str = 'zscore', **kwargs) -> Union[pd.Series, pd.DataFrame]:

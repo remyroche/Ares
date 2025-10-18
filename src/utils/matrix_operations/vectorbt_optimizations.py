@@ -158,7 +158,10 @@ class VectorBTOptimizedOperations:
             if VECTORBT_ROLLING_AVAILABLE:
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer()
                 if self.rolling_optimizer:
-                    self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                    # Reduced verbosity - only log once per session
+                    if not hasattr(VectorBTOptimizations, '_logged_rolling_init'):
+                        self.logger.debug("✅ VectorBTRollingOptimizer initialized")
+                        VectorBTOptimizations._logged_rolling_init = True
                 else:
                     self.logger.info("ℹ️ VectorBTRollingOptimizer not available")
             else:
@@ -499,11 +502,13 @@ class VectorBTOptimizedOperations:
         # Enhanced moving average crossovers with VectorBT
         if 'sma_9' in result.columns and 'sma_21' in result.columns:
             result['sma_cross_9_21'] = (result['sma_9'] > result['sma_21']).astype(int)
-            result['sma_cross_signal'] = result['sma_cross_9_21'].diff().fillna(0)
+            from ...feature_generation.utils.error_handling import safe_diff
+            result['sma_cross_signal'] = safe_diff(result['sma_cross_9_21']).fillna(0)
 
         if 'ema_12' in result.columns and 'ema_26' in result.columns:
             result['ema_cross_12_26'] = (result['ema_12'] > result['ema_26']).astype(int)
-            result['ema_cross_signal'] = result['ema_cross_12_26'].diff().fillna(0)
+            from ...feature_generation.utils.error_handling import safe_diff
+            result['ema_cross_signal'] = safe_diff(result['ema_cross_12_26']).fillna(0)
 
         # Additional VectorBT-optimized moving average features
         if 'sma_50' in result.columns and 'sma_200' in result.columns:
@@ -536,7 +541,8 @@ class VectorBTOptimizedOperations:
         result['macd_signal'] = macd.signal
         result['macd_histogram'] = macd.histogram
         result['macd_bullish'] = (result['macd'] > result['macd_signal']).astype(int)
-        result['macd_cross'] = (result['macd'] > result['macd_signal']).astype(int).diff().fillna(0)
+        from ...feature_generation.utils.error_handling import safe_diff
+        result['macd_cross'] = safe_diff((result['macd'] > result['macd_signal']).astype(int)).fillna(0)
 
         # ROC using VectorBT
         roc_period = config.get('roc_period', 10)
@@ -1093,7 +1099,8 @@ class VectorBTOptimizedOperations:
 
             # Price patterns using VectorBT
             result['price_change'] = data['close'].pct_change()
-            result['price_change_abs'] = data['close'].diff()
+            from ...feature_generation.utils.error_handling import safe_diff
+            result['price_change_abs'] = safe_diff(data['close'])
 
             # Support and Resistance levels
             result['resistance'] = data['high'].rolling(window=20, min_periods=1).max()

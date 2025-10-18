@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional, Tuple
 import logging
 from dataclasses import dataclass
 
-from src.utils.common_operations import validate_positive
+from src.utils.math_validation import validate_positive
 from src.utils.math_validation import safe_divide, safe_log
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning
 from src.utils.logger import system_logger

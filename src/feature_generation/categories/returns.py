@@ -80,7 +80,10 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-                self.logger.info("✅ VectorBTRollingOptimizer initialized for returns features")
+                # Reduced verbosity - only log once per session
+                if not hasattr(ReturnsFeatureGenerator, '_logged_rolling_init'):
+                    self.logger.info("✅ VectorBTRollingOptimizer initialized for returns features")
+                    ReturnsFeatureGenerator._logged_rolling_init = True
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
 
@@ -243,7 +246,9 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
 
         # Fallback to numpy - use safe division
         shifted_prices = np.roll(prices, period)
-        returns = (prices - shifted_prices) / shifted_prices.replace(0, np.nan)
+        # Convert to pandas Series for replace method
+        shifted_prices_series = pd.Series(shifted_prices)
+        returns = (prices - shifted_prices) / shifted_prices_series.replace(0, np.nan)
         returns[:period] = np.nan
         return returns
 
@@ -256,7 +261,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
                 'last_close': float(closes.iloc[-1]),
                 'close_history': close_history
             }
-            if not feature_len(data) == 0:
+            if not len(data) == 0:
                 last_return = feature_data.iloc[-1]
                 if pd.notna(last_return):
                     state_update['last_return'] = float(last_return)
@@ -465,12 +470,16 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
                     # For multiple periods, use rolling operations
                     returns = self.rolling_optimizer.rolling_apply(
                         values_series,
-                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
-                        window=self.period
+                        window=self.period,
+                        func=lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) >= self.period and x.iloc[0] != 0 else np.nan
                     )
 
-                # Apply log transformation to returns
-                log_returns = np.log(1 + returns)
+                # Apply log transformation to returns - handle edge cases
+                # Ensure returns are within valid range for log(1 + x)
+                safe_returns = np.clip(returns, -0.999, 10)  # Clip to prevent log(0) and extreme values
+                log_returns = np.where(np.isfinite(safe_returns),
+                                     np.log(1 + safe_returns),
+                                     np.nan)
                 return log_returns
 
             except Exception as e:
@@ -487,7 +496,12 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         ratio = values / shifted_values
         ratio = np.where(np.isfinite(ratio) & (ratio > 0), ratio, np.nan)
 
-        log_returns = np.log(ratio)
+        # More robust log returns calculation - handle edge cases
+        # Check for valid ratios (finite, positive, not too close to zero)
+        valid_ratio_mask = np.isfinite(ratio) & (ratio > 1e-10) & (ratio < 1e10)
+        log_returns = np.where(valid_ratio_mask,
+                              np.log(ratio),
+                              np.nan)
 
         return pd.Series(log_returns, index=data.index)
 
@@ -570,8 +584,8 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
                     # For multiple periods, use rolling operations
                     simple_returns = self.rolling_optimizer.rolling_apply(
                         values_series,
-                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) == self.period and x.iloc[0] != 0 else np.nan,
-                        window=self.period
+                        lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if len(x) >= self.period and x.iloc[0] != 0 else np.nan,
+                        self.period
                     )
 
                 return simple_returns
@@ -656,7 +670,7 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
             return pd.Series(np.full(len(values), np.nan), index=data.index)
 
         # Calculate returns using vectorized operations - use safe division
-        returns = np.diff(values) / values[:-1].replace(0, np.nan)
+        returns = np.diff(values) / pd.Series(values[:-1]).replace(0, np.nan)
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
 
         # Vectorized rolling cumulative returns calculation
@@ -802,7 +816,7 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
             return pd.Series(np.full(len(values), np.nan), index=data.index)
 
         # Calculate returns using vectorized operations - use safe division
-        returns = np.diff(values) / values[:-1].replace(0, np.nan)
+        returns = np.diff(values) / pd.Series(values[:-1]).replace(0, np.nan)
         returns = np.concatenate([[np.nan], returns])  # Add NaN for first value
 
         # Vectorized rolling volatility calculation
@@ -1367,7 +1381,10 @@ class VectorBTOptimizedReturnsGenerator(VectorizedFeatureGenerator):
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
-                self.logger.info("✅ VectorBTRollingOptimizer initialized for optimized returns features")
+                # Reduced verbosity - only log once per session
+                if not hasattr(self.__class__, '_logged_rolling_init'):
+                    self.logger.info("✅ VectorBTRollingOptimizer initialized for optimized returns features")
+                    self.__class__._logged_rolling_init = True
             except Exception as e:
                 self.logger.warning(f"⚠️ VectorBTRollingOptimizer initialization failed: {e}")
 

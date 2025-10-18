@@ -17,7 +17,16 @@ from enum import Enum
 import pandas as pd
 import numpy as np
 
-from ..core.feature_generator import FeatureGenerator, FeatureConfig
+# Lazy import to avoid circular dependency
+def _get_feature_generator_imports():
+    try:
+        from ...core.feature_generator import Any, FeatureConfig
+        return Any, FeatureConfig
+    except ImportError as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Any import failed: {e}")
+        return None, None
 
 # VectorBT imports for native optimization
 try:
@@ -105,7 +114,7 @@ class LookbackOptimizer:
 
         # Try to import the existing optimization system
         try:
-            from ..utils.feature_generation_optimization import (
+            from ..feature_generation_optimization import (
                 FeatureGenerationOptimizer,
                 FeatureOptimizationConfig as LegacyConfig
             )
@@ -123,7 +132,7 @@ class LookbackOptimizer:
         self.logger.info("✅ LookbackOptimizer initialized")
 
     def optimize_lookback(self,
-                         generator: FeatureGenerator,
+                         generator: Any,
                          data: pd.DataFrame,
                          target_column: str,
                          regime_column: Optional[str] = None) -> int:
@@ -165,7 +174,7 @@ class LookbackOptimizer:
         return result.optimal_lookback
 
     def _optimize_with_legacy_system(self,
-                                   generator: FeatureGenerator,
+                                   generator: Any,
                                    data: pd.DataFrame,
                                    target_column: str,
                                    regime_column: Optional[str] = None) -> FeatureOptimizationResult:
@@ -202,7 +211,7 @@ class LookbackOptimizer:
         )
 
     def _simple_optimization(self,
-                           generator: FeatureGenerator,
+                           generator: Any,
                            data: pd.DataFrame,
                            target_column: str) -> FeatureOptimizationResult:
         """Simple optimization fallback."""
@@ -302,7 +311,7 @@ class LookbackOptimizer:
         return (mean_score - margin_error, mean_score + margin_error)
 
     def optimize_multiple_features(self,
-                                 generators: List[FeatureGenerator],
+                                 generators: List[Any],
                                  data: pd.DataFrame,
                                  target_column: str,
                                  regime_column: Optional[str] = None) -> Dict[str, int]:
@@ -389,7 +398,7 @@ class LookbackOptimizer:
         return summary
 
 # Convenience functions
-def optimize_feature_lookbacks(generators: List[FeatureGenerator],
+def optimize_feature_lookbacks(generators: List[Any],
                              data: pd.DataFrame,
                              target_column: str,
                              config: Optional[FeatureOptimizationConfig] = None,

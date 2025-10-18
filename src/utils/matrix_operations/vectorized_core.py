@@ -533,11 +533,11 @@ class VectorizedCore:
                         if (df[col].max() < np.finfo(np.float32).max and
                             df[col].min() > np.finfo(np.float32).min and
                             np.isfinite(df[col]).all()):
-                            df[col] = df[col].astype(np.float32)
+                            df[col] = df[col].astype(np.float32, copy=False)
                     elif hasattr(df[col], 'dtype') and df[col].dtype == np.int64:
                         # Check if smaller integer type is sufficient
                         if df[col].max() < np.iinfo(np.int32).max:
-                            df[col] = df[col].astype(np.int32)
+                            df[col] = df[col].astype(np.int32, copy=False)
                 else:
                     # Fallback when numpy is not available
                     if hasattr(df[col], 'dtype'):
@@ -546,14 +546,14 @@ class VectorizedCore:
                                 # Try to convert to float32 if values are within range and finite
                                 if (df[col].max() < 3.4e38 and df[col].min() > -3.4e38 and
                                     df[col].notna().all() and not df[col].isin([np.inf, -np.inf]).any()):
-                                    df[col] = df[col].astype('float32')
+                                    df[col] = df[col].astype('float32', copy=False)
                             except (ValueError, OverflowError):
                                 pass
                         elif 'int64' in str(df[col].dtype):
                             try:
                                 # Try to convert to int32 if values are within range
                                 if df[col].max() < 2147483647 and df[col].min() > -2147483648:
-                                    df[col] = df[col].astype('int32')
+                                    df[col] = df[col].astype('int32', copy=False)
                             except (ValueError, OverflowError):
                                 pass
 
@@ -562,69 +562,113 @@ class VectorizedCore:
     def vectorized_rolling_features(self, data: 'pd.DataFrame',
                                   windows: List[int] = [5, 10, 20, 50],
                                   features: List[str] = None) -> 'pd.DataFrame':
-        """Create vectorized rolling features using VectorBT optimization with enhanced performance."""
-        # Try VectorBT optimization first if available
-        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
-            try:
-                vectorbt_ops = get_vectorbt_optimized_operations()
-                result = vectorbt_ops.rolling_features(data, windows, features)
-                self.logger.info("✅ Rolling features computed using VectorBT optimization")
-                return result
-            except Exception as e:
-                self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, falling back to standard method")
+        """Create vectorized rolling features using coalesced wide-matrix kernels.
 
-        # Enhanced fallback implementation with better performance
+        Prefers the VectorBT operation batcher wide kernels when available,
+        falls back to VectorBT optimized ops, then to efficient pandas coalesced ops.
+        """
+        # Determine feature columns
         if features is None:
             features = data.select_dtypes(include=[np.number]).columns.tolist()
 
         with self.memory_checkpoint("rolling_features"):
             # Optimize data types for better performance
             data_optimized = self.optimize_dataframe_for_processing(data)
+            df_in = data_optimized[features]
 
-            result_dfs = []
+            # 1) Try coalesced wide-matrix via the VectorBT batcher
+            try:
+                from src.feature_generation.utils.vectorbt_operation_batcher import get_global_batcher
+                batcher = get_global_batcher()
+                frames = []
+                # Core ops through the batcher
+                for op in ['mean', 'std', 'min', 'max']:
+                    out = batcher.rolling_dataframe(df_in, windows, operation=op)
+                    # Use conventional naming consistent with prior outputs
+                    out = out.rename(columns=lambda c: c.replace(f"_{op}_", f"_rolling_{op}_"))
+                    frames.append(out)
 
-            # Process windows in batches for better memory efficiency
-            batch_size = min(5, len(windows))  # Process up to 5 windows at a time
-            for i in range(0, len(windows), batch_size):
-                batch_windows = windows[i:i + batch_size]
-                batch_features = {}
+                # Additional ops with pandas (coalesced across columns)
+                for w in sorted(set(int(w) for w in windows)):
+                    rolled = df_in.rolling(window=w, min_periods=1)
+                    q25 = rolled.quantile(0.25).rename(columns=lambda c: f"{c}_rolling_quantile_25_{w}")
+                    q75 = rolled.quantile(0.75).rename(columns=lambda c: f"{c}_rolling_quantile_75_{w}")
+                    med = rolled.median().rename(columns=lambda c: f"{c}_rolling_median_{w}")
+                    skew = rolled.skew().rename(columns=lambda c: f"{c}_rolling_skew_{w}")
+                    kurt = rolled.kurt().rename(columns=lambda c: f"{c}_rolling_kurt_{w}")
+                    # Range and CV built from min/max/mean already computed
+                    try:
+                        mn = df_in.rolling(window=w, min_periods=1).min()
+                        mx = df_in.rolling(window=w, min_periods=1).max()
+                        rng = (mx - mn).rename(columns=lambda c: f"{c}_rolling_range_{w}")
+                    except Exception:
+                        rng = None
+                    try:
+                        m = df_in.rolling(window=w, min_periods=1).mean()
+                        s = df_in.rolling(window=w, min_periods=1).std()
+                        cv = (s / m).fillna(0).rename(columns=lambda c: f"{c}_rolling_cv_{w}")
+                    except Exception:
+                        cv = None
+                    frames.extend([f for f in [med, q25, q75, skew, kurt, rng, cv] if f is not None])
 
-                for window in batch_windows:
-                    for col in features:
-                        if col in data_optimized.columns:
-                            series = data_optimized[col]
+                if frames:
+                    combined = pd.concat(frames, axis=1)
+                    # Downcast to float32 where possible
+                    try:
+                        num_cols = combined.select_dtypes(include=[np.number]).columns
+                        if len(num_cols) > 0:
+                            combined[num_cols] = combined[num_cols].astype('float32', copy=False)
+                    except Exception:
+                        pass
+                    return pd.concat([data_optimized, combined], axis=1)
+                return data_optimized
+            except Exception as e:
+                self.logger.warning(f"⚠️ Wide-matrix batcher path failed: {e}")
 
-                            # Enhanced vectorized rolling calculations with better performance
-                            rolling = series.rolling(window=window, min_periods=1)
+            # 2) Try VectorBT optimized operations as a secondary fast path
+            if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+                try:
+                    vectorbt_ops = get_vectorbt_optimized_operations()
+                    result = vectorbt_ops.rolling_features(data, windows, features)
+                    self.logger.info("✅ Rolling features computed using VectorBT optimization")
+                    return result
+                except Exception as e:
+                    self.logger.warning(f"⚠️ VectorBT rolling features failed: {e}, using pandas coalesced fallback")
 
-                            batch_features.update({
-                                f'{col}_rolling_mean_{window}': rolling.mean(),
-                                f'{col}_rolling_std_{window}': rolling.std(),
-                                f'{col}_rolling_min_{window}': rolling.min(),
-                                f'{col}_rolling_max_{window}': rolling.max(),
-                                f'{col}_rolling_skew_{window}': rolling.skew(),
-                                f'{col}_rolling_kurt_{window}': rolling.kurt(),
-                                f'{col}_rolling_median_{window}': rolling.median(),
-                                f'{col}_rolling_quantile_25_{window}': rolling.quantile(0.25),
-                                f'{col}_rolling_quantile_75_{window}': rolling.quantile(0.75),
-                            })
+            # 3) Efficient pandas coalesced fallback across columns/windows
+            frames = []
+            for w in sorted(set(int(w) for w in windows)):
+                rolled = df_in.rolling(window=w, min_periods=1)
+                frames.extend([
+                    rolled.mean().rename(columns=lambda c: f"{c}_rolling_mean_{w}"),
+                    rolled.std().rename(columns=lambda c: f"{c}_rolling_std_{w}"),
+                    rolled.min().rename(columns=lambda c: f"{c}_rolling_min_{w}"),
+                    rolled.max().rename(columns=lambda c: f"{c}_rolling_max_{w}"),
+                    rolled.median().rename(columns=lambda c: f"{c}_rolling_median_{w}"),
+                    rolled.quantile(0.25).rename(columns=lambda c: f"{c}_rolling_quantile_25_{w}"),
+                    rolled.quantile(0.75).rename(columns=lambda c: f"{c}_rolling_quantile_75_{w}"),
+                    rolled.skew().rename(columns=lambda c: f"{c}_rolling_skew_{w}"),
+                    rolled.kurt().rename(columns=lambda c: f"{c}_rolling_kurt_{w}"),
+                ])
+                # Derived range and CV
+                try:
+                    mn = rolled.min()
+                    mx = rolled.max()
+                    frames.append((mx - mn).rename(columns=lambda c: f"{c}_rolling_range_{w}"))
+                    m = rolled.mean()
+                    s = rolled.std()
+                    frames.append((s / m).fillna(0).rename(columns=lambda c: f"{c}_rolling_cv_{w}"))
+                except Exception:
+                    pass
 
-                            # Additional enhanced features
-                            batch_features[f'{col}_rolling_range_{window}'] = (
-                                batch_features[f'{col}_rolling_max_{window}'] -
-                                batch_features[f'{col}_rolling_min_{window}']
-                            )
-
-                            batch_features[f'{col}_rolling_cv_{window}'] = (
-                                batch_features[f'{col}_rolling_std_{window}'] /
-                                batch_features[f'{col}_rolling_mean_{window}']
-                            ).fillna(0)
-
-                result_dfs.append(pd.DataFrame(batch_features, index=data_optimized.index))
-
-            # Combine all features efficiently
-            if result_dfs:
-                combined = pd.concat(result_dfs, axis=1)
+            if frames:
+                combined = pd.concat(frames, axis=1)
+                try:
+                    num_cols = combined.select_dtypes(include=[np.number]).columns
+                    if len(num_cols) > 0:
+                        combined[num_cols] = combined[num_cols].astype('float32', copy=False)
+                except Exception:
+                    pass
                 return pd.concat([data_optimized, combined], axis=1)
             return data_optimized
 

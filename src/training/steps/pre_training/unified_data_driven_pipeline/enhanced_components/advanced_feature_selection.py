@@ -55,10 +55,10 @@ except ImportError:
 
 # Import feature selection utilities
 try:
-    from src.feature_selection.vectorbt import VectorBTFeatureSelectionConfig
+    from src.feature_selection.vectorbt_extensions import VectorBTFeatureSelectionConfig
     from src.feature_selection.core import get_feature_selection_framework
-    from src.feature_selection.vectorbt.vectorbt_mrmr_selector import VectorBTMRMRSelector
-    from src.feature_selection.vectorbt.vectorbt_rfe_selector import VectorBTRFESelector
+    from src.feature_selection.vectorbt_extensions.vectorbt_mrmr_selector import VectorBTMRMRSelector
+    from src.feature_selection.vectorbt_extensions.vectorbt_rfe_selector import VectorBTRFESelector
     from src.training.utils.feature_selection.selection_methods import MRMRSelector, RecursiveFeatureEliminator, FeatureImportanceRanker
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError:
@@ -73,6 +73,22 @@ try:
 except ImportError:
     LGBM_SHAP_AVAILABLE = False
     tprint_warning("⚠️ LightGBM/SHAP not available. Install with: pip install lightgbm shap")
+
+# Import CMI complementarity components
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.cmi_complementarity import (
+        CMIComplementarityScorer, CMIComplementarityConfig
+    )
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.analyst_side_info import (
+        AnalystSideInfoHandler, AnalystSideInfoConfig
+    )
+    CMI_COMPLEMENTARITY_AVAILABLE = True
+except ImportError:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
+    CMIComplementarityScorer = None
+    CMIComplementarityConfig = None
+    AnalystSideInfoHandler = None
+    AnalystSideInfoConfig = None
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +211,24 @@ class AdvancedFeatureSelector:
                 'spectral_wavelet': 0.9
             }
 
+        # Initialize CMI complementarity components if available
+        if CMI_COMPLEMENTARITY_AVAILABLE:
+            # CMI configuration for advanced feature selection
+            cmi_config = CMIComplementarityConfig(
+                per_family_budget=(5, 15),  # Min/max features per family
+                upstream_multiplier=3,  # Total budget to RFE = 3× per-family
+                max_total_features=60,  # Maximum total features to select
+                enable_regime_awareness=True,  # Compute R(X|A) per regime
+                compute_timeout_seconds=300.0,  # 5 min hard limit
+                enable_synergy=True,  # Enable synergy computation
+                beta_synergy=0.25  # Synergy bonus weight
+            )
+            self.cmi_scorer = CMIComplementarityScorer(cmi_config)
+            self.analyst_handler = AnalystSideInfoHandler()
+        else:
+            self.cmi_scorer = None
+            self.analyst_handler = None
+
         # Performance tracking
         self.performance_stats = {
             'total_selections': 0,
@@ -204,7 +238,8 @@ class AdvancedFeatureSelector:
             'features_analyzed': 0,
             'vectorbt_operations': 0,
             'diversity_operations': 0,
-            'stability_operations': 0
+            'stability_operations': 0,
+            'cmi_prefilter_operations': 0
         }
 
         tprint_info("🎯 Advanced Feature Selector initialized")
@@ -1100,6 +1135,63 @@ class AdvancedFeatureSelector:
         except:
             return 0.0
 
+    def prefilter_by_cmi(self, X: pd.DataFrame, y: pd.Series, A: np.ndarray, 
+                         family_tags: Optional[Dict[str, str]] = None,
+                         cv_splits: Optional[List[Tuple[np.ndarray, np.ndarray]]] = None,
+                         pipeline_state: Optional[Dict[str, Any]] = None) -> np.ndarray:
+        """
+        Prefilter features using CMI complementarity scoring.
+        
+        Args:
+            X: Feature matrix (n_samples, n_features)
+            y: Target series
+            A: Analyst side information (n_samples, n_A_dims)
+            family_tags: Feature family assignments
+            cv_splits: Pre-computed CV splits
+            pipeline_state: Pipeline state for regime information
+            
+        Returns:
+            Boolean mask of features passing CMI thresholds
+        """
+        try:
+            # Check if CMI complementarity is available and enabled
+            if not CMI_COMPLEMENTARITY_AVAILABLE or self.cmi_scorer is None:
+                tprint_warning("⚠️ CMI complementarity not available, returning all features")
+                return np.ones(len(X.columns), dtype=bool)
+            
+            # Check if in Tactician mode
+            if pipeline_state is None or not pipeline_state.get('tactician_mode', False):
+                tprint_info("📊 Not in Tactician mode, skipping CMI prefiltering")
+                tprint_info("🔧 Analyst mode detected - CMI complementarity disabled")
+                return np.ones(len(X.columns), dtype=bool)
+            
+            tprint_info("🎯 Starting CMI complementarity prefiltering")
+            tprint_info("🔧 Tactician mode detected - CMI complementarity enabled")
+            self.performance_stats['cmi_prefilter_operations'] += 1
+            
+            # Apply CMI complementarity scoring
+            cmi_result = self.cmi_scorer.score_features(
+                X, y, A, family_tags, cv_splits, pipeline_state
+            )
+            
+            if cmi_result.is_valid and cmi_result.selected_features:
+                # Create boolean mask for selected features
+                selected_features = set(cmi_result.selected_features)
+                mask = np.array([col in selected_features for col in X.columns])
+                
+                tprint_success(f"✅ CMI prefiltering: {len(X.columns)} → {mask.sum()} features")
+                tprint_info(f"📊 Noise floor: {cmi_result.noise_floor:.6f}")
+                tprint_info(f"📊 ΔPerf threshold: {cmi_result.delta_perf_threshold:.6f}")
+                
+                return mask
+            else:
+                tprint_warning("⚠️ CMI complementarity scoring failed, returning all features")
+                return np.ones(len(X.columns), dtype=bool)
+                
+        except Exception as e:
+            tprint_error(f"❌ CMI prefiltering failed: {e}")
+            return np.ones(len(X.columns), dtype=bool)
+
     def _lightweight_screening(self, data: pd.DataFrame, targets: Optional[pd.Series]) -> List[str]:
         """Lightweight screening using computationally efficient methods."""
         tprint_debug("🔍 Starting lightweight screening")
@@ -1175,7 +1267,7 @@ class AdvancedFeatureSelector:
 
             # Handle non-numeric data
             numeric_data = data.select_dtypes(include=[np.number])
-            if numeric_len(data) == 0:
+            if len(numeric_data) == 0:
                 return list(data.columns)
 
             mi_scores = mutual_info_regression(numeric_data, targets, random_state=42)

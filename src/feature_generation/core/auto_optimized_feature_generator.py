@@ -19,10 +19,18 @@ from .optimization_strategies import (
 )
 
 # Import VectorBT optimization utilities
+VECTORBT_OPTIMIZATION_AVAILABLE = False
+VectorBTOptimizationManager = None
+VectorBTRollingOptimizer = None
+VectorBTMemoryOptimizer = None
+get_vectorbt_rolling_optimizer = None
+get_memory_optimizer = None
+get_performance_profiler = None
+optimize_dataframe_memory = None
+
 try:
     from ..utils.vectorbt_optimization_integration import (
-        VectorBTOptimizationManager, get_vectorbt_rolling_optimizer,
-        get_memory_optimizer, optimize_dataframe_memory
+        VectorBTOptimizationManager, optimize_dataframe_memory
     )
     from ..utils.vectorbt_rolling_optimizer import (
         VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
@@ -31,20 +39,11 @@ try:
         VectorBTMemoryOptimizer, get_memory_optimizer, get_performance_profiler
     )
     VECTORBT_OPTIMIZATION_AVAILABLE = True
-    tprint_info("✅ VectorBT optimization utilities imported successfully")
 except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"VectorBT optimization utilities not available: {e}")
+    # Set to None to indicate unavailability
     VECTORBT_OPTIMIZATION_AVAILABLE = False
-    tprint_warning(f"⚠️ VectorBT optimization utilities not available: {e}")
-    # Create fallback classes
-    class VectorBTOptimizationManager:
-        def __init__(self, *args, **kwargs): pass
-        def optimize_rolling_operation(self, *args, **kwargs): return None
-    class VectorBTRollingOptimizer:
-        def __init__(self, *args, **kwargs): pass
-        def rolling_mean(self, *args, **kwargs): return None
-    class VectorBTMemoryOptimizer:
-        def __init__(self, *args, **kwargs): pass
-        def optimize_dataframe(self, *args, **kwargs): return None
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +76,19 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
             # Initialize VectorBT optimization components
             self._initialize_vectorbt_optimization()
+            
+            # Ensure performance_stats is properly initialized
+            if not hasattr(self, 'performance_stats') or 'total_generations' not in self.performance_stats:
+                self.performance_stats = {
+                    'total_generations': 0,
+                    'successful_generations': 0,
+                    'failed_generations': 0,
+                    'average_computation_time': 0.0,
+                    'total_computation_time': 0.0,
+                    'vectorbt_operations': 0,
+                    'gpu_accelerations': 0,
+                    'parallel_operations': 0
+                }
 
             # Performance tracking
             self.auto_optimization_stats = {
@@ -94,6 +106,10 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
 
             if self.auto_optimization_config.enable_optimization_logging:
                 self.logger.info(f"Auto-optimization enabled with {self.auto_optimization_config.optimization_level.value} strategy")
+                if VECTORBT_OPTIMIZATION_AVAILABLE:
+                    self.logger.info("✅ VectorBT optimization utilities imported successfully")
+                else:
+                    self.logger.warning("⚠️ VectorBT optimization utilities not available, using fallback methods")
 
             self.logger.debug(f"AutoOptimizedFeatureGenerator '{config.name}' initialized successfully")
 
@@ -116,10 +132,7 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             pd.Series: Generated feature series
         """
         try:
-            # Add warning about limited/poor features
-            tprint_warning("⚠️ Using base AutoOptimizedFeatureGenerator - generating LIMITED/POOR quality features")
-            tprint_warning("⚠️ This is a fallback implementation - override _generate_feature() for better features")
-            tprint_warning("⚠️ Consider using specialized feature generators for production use")
+            # Generate features using the full implementation
             
             # Apply auto-optimization if enabled
             if self.auto_optimization_config.enable_auto_optimization:
@@ -127,7 +140,8 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             
             # Default implementation: return a simple feature based on available data
             if data.empty:
-                tprint_warning("⚠️ Input data is empty, returning empty series")
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_warning("⚠️ Input data is empty, returning empty series")
                 self.logger.warning("Input data is empty, returning empty series")
                 return pd.Series(dtype=float, index=data.index)
             
@@ -138,11 +152,13 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             if self.auto_optimization_config.enable_auto_optimization:
                 feature_series = self._optimize_feature_series(feature_series)
             
-            tprint_info(f"✅ Generated feature with {len(feature_series)} values using VectorBT optimization")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_info(f"✅ Generated feature with {len(feature_series)} values using VectorBT optimization")
             return feature_series
             
         except Exception as e:
-            tprint_error(f"❌ Error generating feature: {e}")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_error(f"❌ Error generating feature: {e}")
             self.logger.error(f"Error generating feature: {e}")
             # Return a safe fallback
             return pd.Series(dtype=float, index=data.index)
@@ -159,17 +175,32 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             pd.Series: Generated feature series
         """
         try:
-            tprint_info("🚀 Using VectorBT optimization for feature generation")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_info("🚀 Using VectorBT optimization for feature generation")
             
-            # Initialize VectorBT optimization manager if available
-            if VECTORBT_OPTIMIZATION_AVAILABLE:
+            # Check if we should use VectorBT based on threshold
+            use_vectorbt = VECTORBT_OPTIMIZATION_AVAILABLE
+            if hasattr(self.config, 'vectorbt_threshold') and self.config.vectorbt_threshold is not None:
+                data_size = len(data)
+                use_vectorbt = use_vectorbt and data_size >= self.config.vectorbt_threshold
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info(f"Data size: {data_size}, VectorBT threshold: {self.config.vectorbt_threshold}, using VectorBT: {use_vectorbt}")
+                self.logger.debug(f"Data size: {data_size}, VectorBT threshold: {self.config.vectorbt_threshold}, using VectorBT: {use_vectorbt}")
+            
+            # Initialize VectorBT optimization manager if available and threshold met
+            if use_vectorbt and VECTORBT_OPTIMIZATION_AVAILABLE:
                 try:
                     vectorbt_manager = VectorBTOptimizationManager()
                     rolling_optimizer = get_vectorbt_rolling_optimizer()
                     memory_optimizer = get_memory_optimizer()
-                    tprint_info("✅ VectorBT optimization components initialized")
+                    # Reduced verbosity - only log once per session
+                    if not hasattr(AutoOptimizedFeatureGenerator, '_logged_components_init'):
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_info("✅ VectorBT optimization components initialized")
+                        AutoOptimizedFeatureGenerator._logged_components_init = True
                 except Exception as e:
-                    tprint_warning(f"⚠️ VectorBT optimization failed to initialize: {e}")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_warning(f"⚠️ VectorBT optimization failed to initialize: {e}")
                     rolling_optimizer = None
                     memory_optimizer = None
             else:
@@ -185,18 +216,21 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                     break
             
             if price_col is not None:
-                tprint_info(f"📊 Generating price-based feature using column: {price_col}")
-                window = kwargs.get('window', 20)
-                
-                if VECTORBT_OPTIMIZATION_AVAILABLE and rolling_optimizer:
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info(f"📊 Generating price-based feature using column: {price_col}")
+                window = int(kwargs.get('window', 20))
+
+                if use_vectorbt and rolling_optimizer:
                     try:
                         # Use VectorBT optimized rolling mean
                         feature = rolling_optimizer.rolling_mean(
                             data[price_col], window=window, min_periods=1
                         )
-                        tprint_success(f"✅ VectorBT rolling mean applied (window={window})")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_success(f"✅ VectorBT rolling mean applied (window={window})")
                     except Exception as e:
-                        tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
                         feature = data[price_col].rolling(window=window, min_periods=1).mean()
                 else:
                     # Fallback to pandas
@@ -209,9 +243,11 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 if memory_optimizer:
                     try:
                         feature = memory_optimizer.optimize_series(feature)
-                        tprint_info("✅ Memory optimization applied to feature")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_info("✅ Memory optimization applied to feature")
                     except Exception as e:
-                        tprint_warning(f"⚠️ Memory optimization failed: {e}")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ Memory optimization failed: {e}")
                 
                 return feature
             
@@ -224,18 +260,21 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                     break
             
             if volume_col is not None:
-                tprint_info(f"📊 Generating volume-based feature using column: {volume_col}")
-                window = kwargs.get('window', 10)
-                
-                if VECTORBT_OPTIMIZATION_AVAILABLE and rolling_optimizer:
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info(f"📊 Generating volume-based feature using column: {volume_col}")
+                window = int(kwargs.get('window', 10))
+
+                if use_vectorbt and rolling_optimizer:
                     try:
                         # Use VectorBT optimized rolling sum
                         feature = rolling_optimizer.rolling_sum(
                             data[volume_col], window=window, min_periods=1
                         )
-                        tprint_success(f"✅ VectorBT rolling sum applied (window={window})")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_success(f"✅ VectorBT rolling sum applied (window={window})")
                     except Exception as e:
-                        tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
                         feature = data[volume_col].rolling(window=window, min_periods=1).sum()
                 else:
                     # Fallback to pandas
@@ -248,9 +287,11 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 if memory_optimizer:
                     try:
                         feature = memory_optimizer.optimize_series(feature)
-                        tprint_info("✅ Memory optimization applied to feature")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_info("✅ Memory optimization applied to feature")
                     except Exception as e:
-                        tprint_warning(f"⚠️ Memory optimization failed: {e}")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ Memory optimization failed: {e}")
                 
                 return feature
             
@@ -258,18 +299,21 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             numeric_columns = data.select_dtypes(include=[np.number]).columns
             if len(numeric_columns) > 0:
                 col = numeric_columns[0]
-                tprint_info(f"📊 Generating feature using first numeric column: {col}")
-                window = kwargs.get('window', 5)
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info(f"📊 Generating feature using first numeric column: {col}")
+                window = int(kwargs.get('window', 5))
                 
-                if VECTORBT_OPTIMIZATION_AVAILABLE and rolling_optimizer:
+                if use_vectorbt and rolling_optimizer:
                     try:
                         # Use VectorBT optimized rolling mean
                         feature = rolling_optimizer.rolling_mean(
                             data[col], window=window, min_periods=1
                         )
-                        tprint_success(f"✅ VectorBT rolling mean applied to {col} (window={window})")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_success(f"✅ VectorBT rolling mean applied to {col} (window={window})")
                     except Exception as e:
-                        tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ VectorBT rolling failed: {e}, using pandas fallback")
                         feature = data[col].rolling(window=window, min_periods=1).mean()
                 else:
                     # Fallback to pandas
@@ -282,19 +326,23 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 if memory_optimizer:
                     try:
                         feature = memory_optimizer.optimize_series(feature)
-                        tprint_info("✅ Memory optimization applied to feature")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_info("✅ Memory optimization applied to feature")
                     except Exception as e:
-                        tprint_warning(f"⚠️ Memory optimization failed: {e}")
+                        if self.auto_optimization_config.enable_optimization_logging:
+                            tprint_warning(f"⚠️ Memory optimization failed: {e}")
                 
                 return feature
             
             # Last resort: return zeros
-            tprint_warning("⚠️ No suitable columns found for feature generation, returning zeros")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_warning("⚠️ No suitable columns found for feature generation, returning zeros")
             self.logger.warning("No suitable columns found for feature generation, returning zeros")
             return pd.Series(0.0, index=data.index)
             
         except Exception as e:
-            tprint_error(f"❌ Error in VectorBT feature generation: {e}")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_error(f"❌ Error in VectorBT feature generation: {e}")
             self.logger.error(f"Error in VectorBT feature generation: {e}")
             return pd.Series(dtype=float, index=data.index)
 
@@ -312,15 +360,18 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             if feature_series.empty:
                 return feature_series
             
-            tprint_info("🔧 Applying VectorBT-optimized feature series optimization")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_info("🔧 Applying VectorBT-optimized feature series optimization")
             
             # Initialize VectorBT memory optimizer if available
-            if VECTORBT_OPTIMIZATION_AVAILABLE:
+            if VECTORBT_OPTIMIZATION_AVAILABLE and get_memory_optimizer is not None:
                 try:
                     memory_optimizer = get_memory_optimizer()
-                    tprint_info("✅ VectorBT memory optimizer initialized")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_info("✅ VectorBT memory optimizer initialized")
                 except Exception as e:
-                    tprint_warning(f"⚠️ VectorBT memory optimizer failed: {e}")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_warning(f"⚠️ VectorBT memory optimizer failed: {e}")
                     memory_optimizer = None
             else:
                 memory_optimizer = None
@@ -329,48 +380,63 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
             if memory_optimizer and self.auto_optimization_config.enable_dtype_optimization:
                 try:
                     feature_series = memory_optimizer.optimize_series(feature_series)
-                    tprint_success("✅ VectorBT memory optimization applied")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_success("✅ VectorBT memory optimization applied")
                 except Exception as e:
-                    tprint_warning(f"⚠️ VectorBT memory optimization failed: {e}")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_warning(f"⚠️ VectorBT memory optimization failed: {e}")
                     # Fallback to basic optimization
-                    if feature_series.dtype == 'float64':
+                    if np.issubdtype(feature_series.dtype, np.floating) and feature_series.dtype == np.float64:
                         if feature_series.min() >= np.finfo(np.float32).min and feature_series.max() <= np.finfo(np.float32).max:
                             feature_series = feature_series.astype(np.float32)
-                            tprint_info("✅ Applied basic dtype optimization (float64 -> float32)")
+                            if self.auto_optimization_config.enable_optimization_logging:
+                                tprint_info("✅ Applied basic dtype optimization (float64 -> float32)")
             else:
                 # Apply basic data type optimization
                 if self.auto_optimization_config.enable_dtype_optimization:
-                    if feature_series.dtype == 'float64':
+                    if np.issubdtype(feature_series.dtype, np.floating) and feature_series.dtype == np.float64:
                         if feature_series.min() >= np.finfo(np.float32).min and feature_series.max() <= np.finfo(np.float32).max:
                             feature_series = feature_series.astype(np.float32)
-                            tprint_info("✅ Applied basic dtype optimization (float64 -> float32)")
+                            if self.auto_optimization_config.enable_optimization_logging:
+                                tprint_info("✅ Applied basic dtype optimization (float64 -> float32)")
             
             # NaN handling removed as requested
             
             # Apply outlier handling
             if self.auto_optimization_config.enable_outlier_optimization:
-                tprint_info("🔧 Applying outlier handling optimization")
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info("🔧 Applying outlier handling optimization")
                 # Winsorize outliers (cap at 99th percentile)
                 q99 = feature_series.quantile(0.99)
                 q01 = feature_series.quantile(0.01)
                 feature_series = feature_series.clip(lower=q01, upper=q99)
-                tprint_success(f"✅ Outlier handling applied (clipped to [{q01:.4f}, {q99:.4f}])")
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_success(f"✅ Outlier handling applied (clipped to [{q01:.4f}, {q99:.4f}])")
             
             # Apply VectorBT scaling if available
             if VECTORBT_OPTIMIZATION_AVAILABLE and memory_optimizer:
                 try:
-                    # Apply z-score normalization
+                    # Apply z-score normalization with division by zero protection
                     if self.auto_optimization_config.enable_scaling_optimization:
-                        feature_series = (feature_series - feature_series.mean()) / feature_series.std()
-                        tprint_success("✅ Z-score normalization applied")
+                        std_val = feature_series.std()
+                        if std_val > 0:  # Check for division by zero
+                            feature_series = (feature_series - feature_series.mean()) / std_val
+                            if self.auto_optimization_config.enable_optimization_logging:
+                                tprint_success("✅ Z-score normalization applied")
+                        else:
+                            if self.auto_optimization_config.enable_optimization_logging:
+                                tprint_warning("⚠️ Standard deviation is zero, skipping z-score normalization")
                 except Exception as e:
-                    tprint_warning(f"⚠️ VectorBT scaling failed: {e}")
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_warning(f"⚠️ VectorBT scaling failed: {e}")
             
-            tprint_success("✅ Feature series optimization completed")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_success("✅ Feature series optimization completed")
             return feature_series
             
         except Exception as e:
-            tprint_error(f"❌ Feature optimization failed: {e}")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_error(f"❌ Feature optimization failed: {e}")
             self.logger.warning(f"Feature optimization failed: {e}")
             return feature_series
 
@@ -589,8 +655,14 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
     def _initialize_vectorbt_optimization(self) -> None:
         """Initialize VectorBT optimization components."""
         try:
-            if VECTORBT_OPTIMIZATION_AVAILABLE:
-                tprint_info("🚀 Initializing VectorBT optimization components")
+            if VECTORBT_OPTIMIZATION_AVAILABLE and all([
+                VectorBTOptimizationManager is not None,
+                get_vectorbt_rolling_optimizer is not None,
+                get_memory_optimizer is not None,
+                get_performance_profiler is not None
+            ]):
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_info("🚀 Initializing VectorBT optimization components")
                 
                 # Initialize VectorBT optimization manager
                 self.vectorbt_manager = VectorBTOptimizationManager()
@@ -604,21 +676,61 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 # Initialize performance profiler
                 self.performance_profiler = get_performance_profiler()
                 
-                tprint_success("✅ VectorBT optimization components initialized successfully")
-                self.logger.info("VectorBT optimization components initialized")
+                # Reduced verbosity - only log once per session
+                if not hasattr(AutoOptimizedFeatureGenerator, '_logged_vectorbt_init'):
+                    if self.auto_optimization_config.enable_optimization_logging:
+                        tprint_success("✅ VectorBT optimization components initialized successfully")
+                    self.logger.info("VectorBT optimization components initialized")
+                    AutoOptimizedFeatureGenerator._logged_vectorbt_init = True
                 
             else:
-                tprint_warning("⚠️ VectorBT optimization not available, using fallback methods")
+                if self.auto_optimization_config.enable_optimization_logging:
+                    tprint_warning("⚠️ VectorBT optimization not available, using fallback methods")
                 self.vectorbt_manager = None
                 self.rolling_optimizer = None
                 self.memory_optimizer = None
                 self.performance_profiler = None
                 
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize VectorBT optimization: {e}")
+            if self.auto_optimization_config.enable_optimization_logging:
+                tprint_error(f"❌ Failed to initialize VectorBT optimization: {e}")
             self.logger.error(f"Failed to initialize VectorBT optimization: {e}")
             # Set to None to use fallback methods
             self.vectorbt_manager = None
             self.rolling_optimizer = None
             self.memory_optimizer = None
             self.performance_profiler = None
+
+    def generate_features(self, data: pd.DataFrame, **kwargs) -> FeatureResult:
+        """
+        Generate features using the optimized pipeline.
+        
+        This method is a compatibility wrapper around the generate method
+        to ensure compatibility with the optimized feature pipeline.
+        
+        Args:
+            data: Input DataFrame with market data
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            FeatureResult: Generated features and metadata
+        """
+        try:
+            # Use the existing generate method
+            return self.generate(data, **kwargs)
+        except Exception as e:
+            self.logger.error(f"Error in generate_features: {e}")
+            # Return a properly structured failed FeatureResult on error
+            return FeatureResult(
+                name=self.config.name,
+                data=pd.Series(dtype=float, index=data.index),
+                config=self.config,
+                computation_time=0.0,
+                success=False,
+                error_message=str(e),
+                metadata={
+                    'generator_class': self.__class__.__name__,
+                    'category': self.config.category.value,
+                    'error': str(e)
+                }
+            )

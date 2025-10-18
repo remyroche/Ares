@@ -836,3 +836,55 @@ async def _cpu_monte_carlo_fallback(
             'device': 'cpu',
             'error': str(e)
         }
+
+
+class M1GPUOptimizer:
+    """
+    M1 GPU Optimizer for Apple Silicon optimization.
+    
+    This class provides GPU optimization utilities for M1/M2/M3 Macs.
+    """
+    
+    def __init__(self):
+        """Initialize the M1 GPU Optimizer."""
+        self.manager = M1GPUManager()
+        self.logger = logging.getLogger(__name__)
+        
+    def optimize_tensor_operations(self, data: Any) -> Any:
+        """
+        Optimize tensor operations for M1 GPU.
+        
+        Args:
+            data: Input data to optimize
+            
+        Returns:
+            Optimized data
+        """
+        try:
+            if TORCH_AVAILABLE and torch.backends.mps.is_available():
+                if isinstance(data, torch.Tensor):
+                    return data.to('mps')
+                elif isinstance(data, np.ndarray):
+                    return torch.from_numpy(data).to('mps')
+            return data
+        except Exception as e:
+            self.logger.warning(f"GPU optimization failed: {e}")
+            return data
+    
+    def get_optimal_device(self) -> str:
+        """Get the optimal device for operations."""
+        return self.manager.get_optimal_device()
+    
+    def is_gpu_available(self) -> bool:
+        """Check if GPU is available."""
+        return self.manager.is_gpu_available()
+
+
+def get_m1_gpu_optimizer() -> M1GPUOptimizer:
+    """
+    Get an instance of M1GPUOptimizer.
+    
+    Returns:
+        M1GPUOptimizer instance
+    """
+    return M1GPUOptimizer()

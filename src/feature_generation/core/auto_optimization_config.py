@@ -21,6 +21,9 @@ class AutoOptimizationConfig:
     enable_data_compression: bool = True
     enable_chunked_processing: bool = True
     chunk_size: int = 10000
+    enable_dtype_optimization: bool = True
+    enable_outlier_optimization: bool = True
+    enable_scaling_optimization: bool = True
 
     # VectorBT optimization
     enable_vectorbt_optimization: bool = True
@@ -30,7 +33,7 @@ class AutoOptimizationConfig:
     # Rolling operations optimization
     enable_rolling_optimization: bool = True
     enable_rolling_cache: bool = True
-    rolling_cache_size: int = 100
+    rolling_cache_size: int = 500  # Increased for better cache locality
 
     # Performance monitoring
     enable_performance_monitoring: bool = True
@@ -139,6 +142,9 @@ class AutoOptimizationConfig:
             'enable_data_compression': self.enable_data_compression,
             'enable_chunked_processing': self.enable_chunked_processing,
             'chunk_size': self.chunk_size,
+            'enable_dtype_optimization': self.enable_dtype_optimization,
+            'enable_outlier_optimization': self.enable_outlier_optimization,
+            'enable_scaling_optimization': self.enable_scaling_optimization,
             'enable_vectorbt_optimization': self.enable_vectorbt_optimization,
             'vectorbt_threshold': self.vectorbt_threshold,
             'enable_gpu_acceleration': self.enable_gpu_acceleration,

@@ -119,6 +119,20 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         self._memory_usage = 0
         self._max_memory_usage = 0
 
+        # Initialize unified vectorization manager if available
+        try:
+            from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager
+            self.unified_manager = get_unified_vectorization_manager()
+        except ImportError:
+            self.unified_manager = None
+        
+        # Initialize VectorBT rolling optimizer if available
+        try:
+            from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
+            self.rolling_optimizer = VectorBTRollingOptimizer()
+        except ImportError:
+            self.rolling_optimizer = None
+
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
         if not VECTORBT_AVAILABLE:
@@ -126,7 +140,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
 
         # Configure VectorBT settings for optimal performance using newer API
         # Check if array_wrapper structure exists and set wrapper if available
-        if hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
+        if hasattr(vbt, 'settings') and hasattr(vbt.settings, 'array_wrapper') and 'wrapper' in vbt.settings['array_wrapper']:
             vbt.settings['array_wrapper']['wrapper'] = 'pandas'
         vbt.settings['caching']['enabled'] = True
 
@@ -145,9 +159,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             vbt.settings['chunking']['chunk_size'] = 10000  # Process data in chunks for memory efficiency
 
         # Array wrapper optimization (if available in this VectorBT version)
-        if hasattr(vbt.settings, 'array_wrapper') and 'optimize' in vbt.settings['array_wrapper']:
+        if hasattr(vbt, 'settings') and hasattr(vbt.settings, 'array_wrapper') and 'optimize' in vbt.settings['array_wrapper']:
             vbt.settings['array_wrapper']['optimize'] = True
-        if hasattr(vbt.settings, 'array_wrapper') and 'compress' in vbt.settings['array_wrapper']:
+        if hasattr(vbt, 'settings') and hasattr(vbt.settings, 'array_wrapper') and 'compress' in vbt.settings['array_wrapper']:
             vbt.settings['array_wrapper']['compress'] = True
 
         if self.enable_gpu:
@@ -157,10 +171,16 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     vbt.settings['gpu']['enabled'] = True
                     logger.info("✅ VectorBT GPU acceleration enabled")
                 else:
-                    logger.warning("⚠️ GPU acceleration not available in this VectorBT version")
+                    # Only log this warning once per session
+                    if not hasattr(VectorBTFeatureGenerator, '_gpu_warning_logged'):
+                        logger.warning("⚠️ GPU acceleration not available in this VectorBT version")
+                        VectorBTFeatureGenerator._gpu_warning_logged = True
                     self.enable_gpu = False
             except Exception as e:
-                logger.warning(f"⚠️ GPU acceleration not available: {e}")
+                # Only log this warning once per session
+                if not hasattr(VectorBTFeatureGenerator, '_gpu_error_logged'):
+                    logger.warning(f"⚠️ GPU acceleration not available: {e}")
+                    VectorBTFeatureGenerator._gpu_error_logged = True
                 self.enable_gpu = False
 
         if self.enable_parallel:
@@ -193,40 +213,49 @@ class VectorBTFeatureGenerator(FeatureGenerator):
 
         try:
             # Convert to VectorBT array wrapper for optimal performance
-            if not hasattr(data, '_vbt') and VECTORBT_AVAILABLE:
-                data = vbt.array_wrapper(data, freq=data.index.freq if hasattr(data.index, 'freq') else None)
+            if not hasattr(data, '_vbt') and VECTORBT_AVAILABLE and hasattr(vbt, 'array_wrapper'):
+                try:
+                    data = vbt.array_wrapper(data, freq=data.index.freq if hasattr(data.index, 'freq') else None)
+                except AttributeError:
+                    # VectorBT doesn't have array_wrapper, use data as-is
+                    pass
 
-            # Use VectorBT native rolling functions with array wrappers
-            if operation == 'mean':
-                return vbt.rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return vbt.rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return vbt.rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return vbt.rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return vbt.rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return vbt.rolling_sum(data, window=window, **kwargs)
-            elif operation == 'corr':
-                other = kwargs.get('other')
-                if other is None:
-                    raise ValueError("'other' parameter required for correlation")
-                # Convert other to array wrapper if needed
-                if not hasattr(other, '_vbt') and VECTORBT_AVAILABLE:
-                    other = vbt.array_wrapper(other, freq=other.index.freq if hasattr(other.index, 'freq') else None)
-                return vbt.rolling_corr(data, other, window=window, **kwargs)
-            elif operation == 'cov':
-                other = kwargs.get('other')
-                if other is None:
-                    raise ValueError("'other' parameter required for covariance")
-                # Convert other to array wrapper if needed
-                if not hasattr(other, '_vbt') and VECTORBT_AVAILABLE:
-                    other = vbt.array_wrapper(other, freq=other.index.freq if hasattr(other.index, 'freq') else None)
-                return vbt.rolling_cov(data, other, window=window, **kwargs)
+            # Use VectorBTRollingOptimizer if available, otherwise fallback to pandas
+            if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+                return self.rolling_optimizer.rolling_operation(data, operation, window, **kwargs)
             else:
-                raise ValueError(f"Unsupported operation: {operation}")
+                # Fallback to pandas rolling operations
+                rolling_obj = data.rolling(window=window, **{k: v for k, v in kwargs.items() if k != 'func'})
+                
+                if operation == 'mean':
+                    return rolling_obj.mean()
+                elif operation == 'std':
+                    return rolling_obj.std()
+                elif operation == 'var':
+                    return rolling_obj.var()
+                elif operation == 'min':
+                    return rolling_obj.min()
+                elif operation == 'max':
+                    return rolling_obj.max()
+                elif operation == 'sum':
+                    return rolling_obj.sum()
+                elif operation == 'corr':
+                    other = kwargs.get('other')
+                    if other is None:
+                        raise ValueError("'other' parameter required for correlation")
+                    return rolling_obj.corr(other)
+                elif operation == 'cov':
+                    other = kwargs.get('other')
+                    if other is None:
+                        raise ValueError("'other' parameter required for covariance")
+                    return rolling_obj.cov(other)
+                elif operation == 'apply':
+                    func = kwargs.get('func')
+                    if func is None:
+                        raise ValueError("'func' parameter required for apply operation")
+                    return rolling_obj.apply(func)
+                else:
+                    raise ValueError(f"Unsupported operation: {operation}")
 
         except Exception as e:
             logger.warning(f"VectorBT rolling operation failed: {e}, using pandas fallback")
@@ -253,6 +282,9 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         elif operation == 'cov':
             other = kwargs.get('other')
             return data.rolling(window=window).cov(other)
+        elif operation == 'apply':
+            func = kwargs.get('func')
+            return data.rolling(window=window).apply(func)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
@@ -424,19 +456,31 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                     operation = op_params.get('operation')
                     window = op_params.get('window')
                     column = op_params.get('column', 'close')
+                    rolling_kwargs = {
+                        k: v for k, v in op_params.items()
+                        if k not in {'operation', 'window', 'column', 'name', 'type'}
+                    }
                     results[op_name] = self._vectorbt_rolling_operation(
-                        data[column], operation, window, **op_params
+                        data[column], operation, window, **rolling_kwargs
                     )
                 elif op_type == 'indicator':
                     indicator = op_params.get('indicator')
+                    indicator_kwargs = {
+                        k: v for k, v in op_params.items()
+                        if k not in {'indicator', 'name', 'type'}
+                    }
                     results[op_name] = self._vectorbt_technical_indicator(
-                        data, indicator, **op_params
+                        data, indicator, **indicator_kwargs
                     )
                 elif op_type == 'scale':
                     method = op_params.get('method', 'zscore')
                     column = op_params.get('column', 'close')
+                    scale_kwargs = {
+                        k: v for k, v in op_params.items()
+                        if k not in {'method', 'column', 'name', 'type'}
+                    }
                     results[op_name] = self._vectorbt_scale(
-                        data[column], method, **op_params
+                        data[column], method, **scale_kwargs
                     )
 
         except Exception as e:
@@ -797,10 +841,14 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 if optimized_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
                     try:
                         # Convert to VectorBT array wrapper
-                        optimized_data[column] = vbt.array_wrapper(
-                            optimized_data[column],
-                            freq=data.index.freq if hasattr(data.index, 'freq') else None
-                        )
+                        try:
+                            optimized_data[column] = vbt.array_wrapper(
+                                optimized_data[column],
+                                freq=data.index.freq if hasattr(data.index, 'freq') else None
+                            )
+                        except AttributeError:
+                            # VectorBT doesn't have array_wrapper, use data as-is
+                            pass
                         self.vectorbt_stats['vectorbt_operations'] += 1
                     except Exception as e:
                         logger.warning(f"Failed to convert column {column} to VectorBT array: {e}")
@@ -834,6 +882,20 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'memory_limit': self.vectorbt_memory_limit_gb * 1024**3,
             'memory_usage_percentage': (self._memory_usage / (self.vectorbt_memory_limit_gb * 1024**3)) * 100
         }
+
+    def _validate_input(self, data: pd.DataFrame) -> None:
+        """
+        Validate input data for feature generation.
+        This method provides backward compatibility for code that calls _validate_input.
+
+        Args:
+            data: Input data DataFrame
+
+        Raises:
+            DataValidationError: If data validation fails
+        """
+        # Delegate to the standard _validate_data method
+        self._validate_data(data)
 
 class VectorBTVolatilityGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volatility feature generator."""

@@ -1445,7 +1445,8 @@ class TemplateInteractionGenerator:
             for interaction in interactions:
                 if interaction.feature_series is not None:
                     aligned_series = interaction.feature_series.reindex(common_index)
-                    aligned_series = aligned_series.astype("float64")
+                    # Downcast to float32 to reduce memory footprint without major precision loss
+                    aligned_series = aligned_series.astype("float32")
                     
                     # Create new interaction with aligned series
                     aligned_interaction = GeneratedInteraction(

@@ -169,7 +169,8 @@ class RollingOperationsMixin:
             elif operation == 'apply':
                 func = kwargs.get('func')
                 if func is not None:
-                    return rolling_apply(data, func, window=window, **kwargs)
+                    # VectorBT rolling_apply expects (data, window, func, **kwargs)
+                    return rolling_apply(data, window, func, **kwargs)
                 else:
                     raise ValueError("Apply operation requires 'func' parameter")
             else:

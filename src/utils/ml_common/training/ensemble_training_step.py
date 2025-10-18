@@ -23,6 +23,7 @@ import warnings
 from .base_training_step import BaseTrainingStep
 from ..config.base_training_config import EnsembleTrainingConfig
 from ..ensembles import StackingEnsembleManager, StackingEnsembleConfig
+from .training_integration import TrainingIntegrationConfig, TrainingStepEnhancer
 
 # Import vectorized training manager
 try:

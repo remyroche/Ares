@@ -206,8 +206,10 @@ class EnhancedVectorizedValidator:
                     enable_parallel=self.config.vectorbt_parallel_processing,
                     enable_memory_optimization=self.config.vectorbt_memory_optimization
                 )
-                if self.config.verbose:
+                # Reduced verbosity - only log once per session
+                if self.config.verbose and not hasattr(EnhancedVectorizedValidator, '_logged_rolling_init'):
                     tprint_success("✅ VectorBTRollingOptimizer initialized")
+                    EnhancedVectorizedValidator._logged_rolling_init = True
             except Exception as e:
                 self.logger.warning(f"VectorBT Rolling Optimizer initialization failed: {e}")
                 self.vectorbt_optimizer = None

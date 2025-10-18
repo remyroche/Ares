@@ -89,8 +89,7 @@ try:
         StabilityAnalyzer,
         # Unified CV
         UnifiedCrossValidator, UnifiedCVResult,
-        perform_cross_validation, temporal_cross_validation, nested_cross_validation,
-        cross_validation_utils
+        perform_cross_validation, temporal_cross_validation, nested_cross_validation
     )
 
     # Lookahead bias detection
@@ -194,7 +193,6 @@ try:
         # Unified CV exports
         'UnifiedCrossValidator', 'UnifiedCVResult',
         'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
-        'cross_validation_utils',
         'LookaheadBiasDetector', 'LookaheadBiasError', 'lookahead_bias_detector',
         'hyperparameter_optimization',
         'StabilityAnalyzer', 'feature_selection_stability', 'aggregate_time_blocks',

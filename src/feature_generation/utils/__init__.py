@@ -34,18 +34,28 @@ except ImportError:
 
 try:
     from .optimization import (
-        FeatureGenerationOptimizer,
+        LookbackOptimizer,
         FeatureOptimizationConfig,
         FeatureOptimizationResult,
         OptimizationMethod,
-        get_feature_optimizer,
-        optimize_feature_lookback,
+        optimize_feature_lookbacks,
         get_optimization_config,
-        LookbackOptimizer  # Backward compatibility
+        ComplementaryLookbackOptimizer,
+        TacticianFeatureOptimizer
     )
     OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     OPTIMIZATION_AVAILABLE = False
+    # Create placeholder classes for backward compatibility
+    LookbackOptimizer = None
+    FeatureOptimizationConfig = None
+    FeatureOptimizationResult = None
+    OptimizationMethod = None
+    optimize_feature_lookbacks = None
+    get_optimization_config = None
+    ComplementaryLookbackOptimizer = None
+    TacticianFeatureOptimizer = None
+    
     import logging
     logger = logging.getLogger(__name__)
     logger.warning(f"Optimization system not available: {e}")
@@ -57,6 +67,23 @@ try:
     from .enhanced_matrix_operations import EnhancedMatrixOperations
 except ImportError:
     pass
+
+# Feature generation optimization
+try:
+    from .feature_generation_optimization import (
+        FeatureGenerationOptimizer,
+        FeatureOptimizationConfig,
+        FeatureOptimizationResult,
+        OptimizationMethod,
+        get_feature_optimizer,
+        optimize_feature_lookback
+    )
+    FEATURE_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    FEATURE_OPTIMIZATION_AVAILABLE = False
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Feature generation optimization not available: {e}")
 
 # Feature validation
 try:

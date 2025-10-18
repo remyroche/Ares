@@ -42,6 +42,14 @@ class VectorizationConfig:
     enable_timing: bool = True
     log_performance: bool = True
 
+    # CPU core thresholds (for compatibility)
+    parallel_cpu_cores_threshold: int = 4
+    vectorbt_parallel_cpu_cores_threshold: int = 2
+
+    # GPU configuration (for compatibility)
+    gpu_data_size_threshold: int = 1000000
+    enable_gpu_fallback: bool = True
+
 class VectorizedFeatureSelector:
     """Feature selector with vectorized operations and hardware optimization."""
 

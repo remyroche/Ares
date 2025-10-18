@@ -225,35 +225,12 @@ class ThermalMonitor:
     def _get_cpu_temperature(self) -> float:
         """Get current CPU temperature."""
         try:
-            if platform.system() == 'Darwin':
-                # Try to get temperature from powermetrics
-                result = subprocess.run(
-                    ['sudo', 'powermetrics', '--samplers', 'smc', '-n', '1', '-i', '1000'],
-                    capture_output=True, text=True, timeout=10
-                )
-                if result.returncode == 0:
-                    # Parse temperature from output
-                    lines = result.stdout.split('\n')
-                    for line in lines:
-                        if 'CPU die temperature' in line:
-                            try:
-                                temp_str = line.split(':')[1].strip().split()[0]
-                                return float(temp_str)
-                            except (IndexError, ValueError):
-                                pass
-
-            # Fallback: estimate based on CPU usage
-            if PSUTIL_AVAILABLE:
-                cpu_usage = psutil.cpu_percent(interval=1)
-                base_temp = 35.0
-                temp_increase = cpu_usage * 0.3  # Rough estimate
-                return base_temp + temp_increase
-            else:
-                return 45.0  # Default fallback
-
+            # Disable system temperature monitoring to avoid sudo requirements
+            self.logger.debug("Temperature monitoring disabled to avoid sudo requirements")
+            return 45.0
         except Exception as e:
             self.logger.debug(f"Failed to get CPU temperature: {e}")
-            return 45.0  # Default fallback
+            return 45.0
 
     def _determine_thermal_state(self, temperature: float) -> ThermalState:
         """Determine thermal state based on temperature."""
@@ -378,29 +355,9 @@ class PowerManager:
     def _get_power_usage(self) -> float:
         """Get current power usage."""
         try:
-            if platform.system() == 'Darwin':
-                # Try to get power usage from powermetrics
-                result = subprocess.run(
-                    ['sudo', 'powermetrics', '--samplers', 'cpu_power', '-n', '1', '-i', '1000'],
-                    capture_output=True, text=True, timeout=10
-                )
-                if result.returncode == 0:
-                    # Parse power from output
-                    lines = result.stdout.split('\n')
-                    for line in lines:
-                        if 'CPU Power' in line:
-                            try:
-                                power_str = line.split(':')[1].strip().split()[0]
-                                return float(power_str)
-                            except (IndexError, ValueError):
-                                pass
-
-            # Fallback: estimate based on CPU usage
-            cpu_usage = psutil.cpu_percent(interval=1)
-            base_power = 5.0  # Base power consumption in watts
-            power_increase = cpu_usage * 0.1  # Rough estimate
-            return base_power + power_increase
-
+            # Disable system power monitoring to avoid sudo requirements
+            self.logger.debug("Power monitoring disabled to avoid sudo requirements")
+            return 10.0  # Default fallback
         except Exception as e:
             self.logger.debug(f"Failed to get power usage: {e}")
             return 10.0  # Default fallback

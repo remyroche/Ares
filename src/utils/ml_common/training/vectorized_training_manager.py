@@ -36,6 +36,9 @@ Usage Examples:
 >>> cache_stats = manager.get_cache_stats()
 """
 
+import contextlib
+import importlib
+import os
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -51,18 +54,74 @@ from sklearn.ensemble import (
     StackingRegressor, VotingRegressor, BaggingRegressor, AdaBoostRegressor
 )
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
-import joblib
 
-# Optional torch imports for MPS/GPU acceleration
 try:
-    import torch
-    from torch.cuda.amp import GradScaler, autocast
-    TORCH_AVAILABLE = True
+    import joblib
+    JOBLIB_AVAILABLE = True
 except ImportError:
-    torch = None
-    GradScaler = None
-    autocast = None
-    TORCH_AVAILABLE = False
+    joblib = None
+    JOBLIB_AVAILABLE = False
+
+try:
+    import multiprocessing
+except ImportError:
+    multiprocessing = None
+
+def _cpu_count() -> int:
+    """Robust CPU count helper that tolerates missing optional dependencies."""
+    if joblib is not None and hasattr(joblib, "cpu_count"):
+        try:
+            return joblib.cpu_count()
+        except Exception:
+            pass
+    if multiprocessing is not None and hasattr(multiprocessing, "cpu_count"):
+        try:
+            return multiprocessing.cpu_count()
+        except Exception:
+            pass
+    return os.cpu_count() or 1
+
+# Optional torch imports for MPS/GPU acceleration (lazy to avoid interpreter crashes on unsupported systems)
+torch = None  # type: ignore[assignment]
+GradScaler = None  # type: ignore[assignment]
+autocast = contextlib.nullcontext  # type: ignore[assignment]
+TORCH_AVAILABLE = False
+_TORCH_IMPORT_ERROR: Optional[Exception] = None
+
+def _ensure_torch_available() -> bool:
+    """
+    Lazily import torch to avoid hard crashes on platforms without compatible builds.
+
+    Returns:
+        bool: True if torch and AMP utilities are available, False otherwise.
+    """
+    global torch, GradScaler, autocast, TORCH_AVAILABLE, _TORCH_IMPORT_ERROR
+    if TORCH_AVAILABLE and torch is not None:
+        return True
+
+    try:
+        torch_module = importlib.import_module("torch")
+        try:
+            amp_module = importlib.import_module("torch.cuda.amp")
+            grad_scaler = getattr(amp_module, "GradScaler", None)
+            autocast_cm = getattr(amp_module, "autocast", contextlib.nullcontext)
+        except Exception:
+            grad_scaler = None
+            autocast_cm = contextlib.nullcontext
+
+        torch = torch_module  # type: ignore[assignment]
+        GradScaler = grad_scaler  # type: ignore[assignment]
+        autocast = autocast_cm  # type: ignore[assignment]
+        TORCH_AVAILABLE = True
+        _TORCH_IMPORT_ERROR = None
+        return True
+    except Exception as exc:  # pragma: no cover - environment dependent
+        torch = None  # type: ignore[assignment]
+        GradScaler = None  # type: ignore[assignment]
+        autocast = contextlib.nullcontext  # type: ignore[assignment]
+        TORCH_AVAILABLE = False
+        _TORCH_IMPORT_ERROR = exc
+        return False
 
 # Import existing utilities
 from src.utils.logger import system_logger
@@ -131,7 +190,7 @@ class VectorizedTrainingManager:
         self.logger = logger.getChild('VectorizedTrainingManager')
 
         # Configuration
-        self.max_workers = max_workers or min(32, joblib.cpu_count())
+        self.max_workers = max_workers or min(32, _cpu_count())
         self.chunk_size_mb = chunk_size_mb
         self.enable_gpu = enable_gpu and HARDWARE_OPTIMIZATIONS_AVAILABLE
         self.enable_memory_optimization = enable_memory_optimization
@@ -154,7 +213,7 @@ class VectorizedTrainingManager:
         if enable_model_persistence:
             self.model_manager = ModelManager(
                 save_path=model_save_path,
-                save_format="joblib"
+                save_format="joblib" if JOBLIB_AVAILABLE else "pickle"
             )
             self.model_persistence = ModelPersistence(PersistenceConfig(
                 base_model_dir=model_save_path,
@@ -1543,7 +1602,7 @@ class VectorizedTrainingManager:
         self.logger.info(f"🎯 Training with gradient accumulation (steps={accumulation_steps})")
 
         try:
-            if not TORCH_AVAILABLE:
+            if not _ensure_torch_available():
                 self.logger.warning("⚠️ Gradient accumulation requires PyTorch")
                 return {'success': False, 'error': 'PyTorch not available'}
 
@@ -1555,7 +1614,10 @@ class VectorizedTrainingManager:
                 return {'success': False, 'error': 'PyTorch model required'}
 
             # Enable automatic mixed precision if available
-            scaler = GradScaler() if (torch.cuda.is_available() or torch.backends.mps.is_available()) else None
+            scaler = None
+            if GradScaler is not None and torch is not None:
+                if torch.cuda.is_available() or torch.backends.mps.is_available():
+                    scaler = GradScaler()
 
             best_loss = float('inf')
             patience_counter = 0
@@ -1568,9 +1630,9 @@ class VectorizedTrainingManager:
 
                 for step, (batch_X, batch_y) in enumerate(train_loader):
                     # Move to device
-                    if torch.cuda.is_available():
+                    if torch is not None and torch.cuda.is_available():
                         batch_X, batch_y = batch_X.cuda(), batch_y.cuda()
-                    elif torch.backends.mps.is_available():
+                    elif torch is not None and torch.backends.mps.is_available():
                         batch_X, batch_y = batch_X.to('mps'), batch_y.to('mps')
 
                     # Forward pass
@@ -1603,9 +1665,9 @@ class VectorizedTrainingManager:
                     batch_count += 1
 
                     # Memory cleanup
-                    if torch.cuda.is_available():
+                    if torch is not None and torch.cuda.is_available():
                         torch.cuda.empty_cache()
-                    elif torch.backends.mps.is_available():
+                    elif torch is not None and torch.backends.mps.is_available():
                         torch.mps.empty_cache()
 
                 # Calculate average epoch loss
@@ -1844,6 +1906,9 @@ class VectorizedTrainingManager:
         self.logger.info("🚀 Training with automatic mixed precision (AMP)")
 
         try:
+            if not _ensure_torch_available():
+                self.logger.warning("⚠️ Mixed precision training requires PyTorch")
+                return {'success': False, 'error': 'PyTorch not available'}
 
             # Check if model is PyTorch
             is_pytorch = hasattr(model, 'parameters') and hasattr(model, 'to')
@@ -1851,18 +1916,19 @@ class VectorizedTrainingManager:
                 self.logger.warning("⚠️ Mixed precision training requires PyTorch models")
                 return {'success': False, 'error': 'PyTorch model required'}
 
-            if not TORCH_AVAILABLE:
-                self.logger.warning("⚠️ Mixed precision training requires PyTorch")
-                return {'success': False, 'error': 'PyTorch not available'}
-
             # Check for MPS or CUDA availability
-            has_mps = torch.backends.mps.is_available()
-            has_cuda = torch.cuda.is_available()
+            has_mps = torch.backends.mps.is_available() if torch is not None else False
+            has_cuda = torch.cuda.is_available() if torch is not None else False
 
             if not (has_mps or has_cuda):
                 self.logger.warning("⚠️ Neither MPS nor CUDA available, falling back to CPU training")
                 return self._train_cpu_fallback(model, train_loader, optimizer, criterion,
                                               max_epochs, patience)
+
+            if GradScaler is None:
+                self.logger.warning("⚠️ PyTorch AMP utilities not available, using CPU fallback")
+                return self._train_cpu_fallback(model, train_loader, optimizer, criterion,
+                                               max_epochs, patience)
 
             # Initialize gradient scaler for mixed precision
             scaler = GradScaler()

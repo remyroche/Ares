@@ -25,7 +25,7 @@ logger = system_logger.getChild('StreamingDataProcessor')
 @dataclass
 class StreamingConfig:
     """Configuration for streaming data processing."""
-    chunk_size: int = 10000
+    chunk_size: int = 6000
     max_memory_mb: float = 2048.0
     temp_dir: Optional[str] = None
     compression: str = 'gzip'
@@ -168,14 +168,20 @@ class StreamingDataProcessor:
         self.stats['memory_cleanups'] += 1
 
     def _trigger_gc(self):
-        """Trigger garbage collection."""
+        """Trigger aggressive garbage collection."""
         before_mb = self.memory_monitor.get_usage_mb()
-        gc.collect()
-        after_mb = self.memory_monitor.get_usage_mb()
-
-        freed_mb = before_mb - after_mb
-        if freed_mb > 0:
-            self.logger.info(f"🧹 Garbage collection freed {freed_mb:.2f} MB")
+        
+        # Multiple rounds of garbage collection for better cleanup
+        total_freed = 0
+        for _ in range(3):
+            gc.collect()
+            current_mb = self.memory_monitor.get_usage_mb()
+            freed = before_mb - current_mb
+            total_freed += freed
+            before_mb = current_mb
+        
+        if total_freed > 0:
+            self.logger.info(f"🧹 Aggressive garbage collection freed {total_freed:.2f} MB")
 
         self.stats['gc_triggers'] += 1
 
@@ -270,7 +276,7 @@ def get_streaming_processor(config: Optional[StreamingConfig] = None) -> Streami
         _streaming_processor = StreamingDataProcessor(config)
     return _streaming_processor
 
-def with_memory_optimization(chunk_size: int = 10000, max_memory_mb: float = 2048.0):
+def with_memory_optimization(chunk_size: int = 3000, max_memory_mb: float = 2048.0):
     """Decorator for memory-optimized processing."""
     def decorator(func):
         def wrapper(*args, **kwargs):

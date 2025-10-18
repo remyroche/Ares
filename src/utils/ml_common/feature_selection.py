@@ -348,7 +348,7 @@ class FeatureSelectionFramework:
 
             # Initialize VectorBT memory optimizer if available
             try:
-                from src.feature_selection.vectorbt.vectorbt_memory_optimizer import VectorBTMemoryOptimizer
+                from src.feature_selection.vectorbt_extensions.vectorbt_memory_optimizer import VectorBTMemoryOptimizer
                 self.vectorbt_memory_optimizer = VectorBTMemoryOptimizer()
                 _LOGGER.info("🧠 VectorBT memory optimizer initialized")
             except ImportError:

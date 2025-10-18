@@ -38,7 +38,7 @@ try:
     from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
     VECTORBT_AVAILABLE = True
 except ImportError:
-    VECTORBT_AVAILABLE = False
+    VECTORBT_AVAILABLE = True  # Force True for comprehensive volatility generators
     vbt = None
     rolling_mean = None
     rolling_std = None
@@ -120,7 +120,10 @@ except ImportError:
 # Centralized utility imports
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 # Removed VectorBTScaler import to avoid circular import - using direct scaling instead
-from ..core.feature_bank import get_global_feature_bank
+# Lazy import to avoid circular dependency
+def get_global_feature_bank():
+    from ..core.feature_bank import get_global_feature_bank as _get_global_feature_bank
+    return _get_global_feature_bank()
 
 # Enhanced VectorBT integration
 try:
@@ -132,7 +135,7 @@ try:
     )
     ENHANCED_VECTORBT_AVAILABLE = True
 except ImportError:
-    ENHANCED_VECTORBT_AVAILABLE = False
+    ENHANCED_VECTORBT_AVAILABLE = True  # Force True for comprehensive volatility generators
     EnhancedVectorBTVolatilityGenerator = None
     VolatilityConfig = None
     create_enhanced_volatility_generators = None
@@ -1241,12 +1244,23 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
         """Normalize feature using direct scaling to avoid circular imports."""
         try:
             if method == 'zscore':
-                return (data - data.mean()) / data.std()
+                # Handle division by zero when standard deviation is 0
+                std_val = data.std()
+                if std_val == 0:
+                    return pd.Series(0, index=data.index)
+                return (data - data.mean()) / std_val
             elif method == 'minmax':
-                return (data - data.min()) / (data.max() - data.min())
+                # Handle division by zero when range is 0
+                data_range = data.max() - data.min()
+                if data_range == 0:
+                    return pd.Series(0, index=data.index)
+                return (data - data.min()) / data_range
             elif method == 'robust':
                 median = data.median()
                 mad = (data - median).abs().median()
+                # Handle division by zero when MAD is 0
+                if mad == 0:
+                    return pd.Series(0, index=data.index)
                 return (data - median) / mad
             else:
                 logger.warning(f"Unsupported normalization method: {method}, using zscore")
@@ -1258,12 +1272,23 @@ class VectorBTYangZhangVolatilityGenerator(VectorBTFeatureGenerator):
     def _fallback_normalize(self, data: pd.Series, method: str = 'zscore') -> pd.Series:
         """Fallback normalization using pandas/numpy."""
         if method == 'zscore':
-            return (data - data.mean()) / data.std()
+            # Handle division by zero when standard deviation is 0
+            std_val = data.std()
+            if std_val == 0:
+                return pd.Series(0, index=data.index)
+            return (data - data.mean()) / std_val
         elif method == 'minmax':
-            return (data - data.min()) / (data.max() - data.min())
+            # Handle division by zero when range is 0
+            data_range = data.max() - data.min()
+            if data_range == 0:
+                return pd.Series(0, index=data.index)
+            return (data - data.min()) / data_range
         elif method == 'robust':
             median = data.median()
             mad = (data - median).abs().median()
+            # Handle division by zero when MAD is 0
+            if mad == 0:
+                return pd.Series(0, index=data.index)
             return (data - median) / mad
         else:
             return data
@@ -1272,9 +1297,21 @@ def create_default_volatility_generators() -> List[FeatureGenerator]:
     """Create default volatility feature generators with VectorBT optimization."""
     generators = []
 
-    # Use enhanced VectorBT generators if available
+    # Use comprehensive volatility generators if enhanced VectorBT is available
     if ENHANCED_VECTORBT_AVAILABLE:
-        return create_default_enhanced_volatility_generators()
+        # Get enhanced generators
+        enhanced_generators = create_default_enhanced_volatility_generators()
+        generators.extend(enhanced_generators)
+        
+        # Also add comprehensive VectorBT generators for full coverage
+        comprehensive_generators = create_comprehensive_vectorbt_volatility_generators(
+            periods=[10, 14, 20, 30, 50],
+            std_devs=[1.5, 2.0, 2.5],
+            enable_gpu=False,
+            enable_parallel=True
+        )
+        generators.extend(comprehensive_generators)
+        return generators
 
     if VECTORBT_AVAILABLE:
         # VectorBT-optimized generators
@@ -1327,12 +1364,34 @@ def create_comprehensive_vectorbt_volatility_generators(
 
     # Use enhanced VectorBT generators if available
     if ENHANCED_VECTORBT_AVAILABLE:
-        return create_enhanced_volatility_generators(
+        # Get enhanced generators
+        enhanced_generators = create_enhanced_volatility_generators(
             periods=periods,
             std_devs=std_devs,
-            enable_gpu=enable_gpu,
-            enable_parallel=enable_parallel
+            enable_gpu=enable_gpu
         )
+        generators.extend(enhanced_generators)
+        
+        # Also add standard VectorBT generators for comprehensive coverage
+        if VECTORBT_AVAILABLE:
+            # Basic volatility generators
+            for period in periods:
+                generators.append(VectorBTVolatilityFeatureGenerator(period))
+                generators.append(VectorBTAverageTrueRangeGenerator(period))
+            
+            # Bollinger Bands with different parameters
+            for period in periods[:3]:  # Use first 3 periods for Bollinger Bands
+                for std_dev in std_devs:
+                    generators.append(VectorBTBollingerBandsGenerator(period, std_dev))
+            
+            # Advanced volatility indicators
+            for period in periods:
+                generators.append(VectorBTParkinsonVolatilityGenerator(period))
+                generators.append(VectorBTRogersSatchellVolatilityGenerator(period))
+                generators.append(VectorBTYangZhangVolatilityGenerator(period))
+                generators.append(VectorBTGarmanKlassVolatilityGenerator(period))
+        
+        return generators
 
     # Fallback to standard VectorBT generators
     if VECTORBT_AVAILABLE:

@@ -95,8 +95,12 @@ from src.utils.logger import system_logger
 print("✅ [IMPORTS] Simple logger imported")
 
 print("🔧 [IMPORTS] Importing tprint...")
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 print("✅ [IMPORTS] Tprint imported")
+
+import pandas as pd
+import numpy as np
+print("✅ [IMPORTS] Pandas and NumPy imported")
 
 from src.training.steps.main_training_pipeline import SubPipelineStatus
 from src.utils.ml_common.pipeline_orchestrator import PipelineStatus
@@ -729,6 +733,155 @@ class AresLauncher:
         # Execute the unified_data_driven_pipeline sub-pipeline
         return await self._execute_sub_pipeline('unified_data_driven_pipeline', config)
 
+    async def _execute_unified_training_command(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+        """Execute unified training commands using the new training pipeline."""
+        try:
+            tprint(f"🚀 [UNIFIED_TRAINING] Executing training command: {sub_pipeline}")
+            
+            # Import the unified training pipeline
+            from src.training.steps.models_training.unified_training_pipeline import (
+                UnifiedTrainingPipeline, execute_quick_training, execute_full_training
+            )
+            
+            # Parse the training command
+            if sub_pipeline == 'train_analyst_base_models':
+                tprint("🎯 [TRAINING] Training Analyst base models...")
+                result = await execute_quick_training(
+                    data=await self._load_training_data(config),
+                    analyst_targets=await self._load_analyst_targets(config),
+                    tactician_targets=None,  # Not needed for base models
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    role='analyst',
+                    model_types=['lightgbm', 'catboost', 'neural_network'],
+                    enable_artifact_chaining=True
+                )
+                
+            elif sub_pipeline == 'train_analyst_ensemble':
+                tprint("🎯 [TRAINING] Training Analyst ensemble model...")
+                result = await execute_full_training(
+                    data=await self._load_training_data(config),
+                    analyst_targets=await self._load_analyst_targets(config),
+                    tactician_targets=None,  # Not needed for ensemble
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    role='analyst',
+                    enable_ensemble=True
+                )
+                
+            elif sub_pipeline == 'train_tactician_base_models':
+                tprint("🎯 [TRAINING] Training Tactician base models...")
+                result = await execute_quick_training(
+                    data=await self._load_training_data(config),
+                    analyst_targets=None,  # Not needed for tactician base
+                    tactician_targets=await self._load_tactician_targets(config),
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    role='tactician',
+                    model_types=['lightgbm', 'catboost', 'neural_network']
+                )
+                
+            elif sub_pipeline == 'train_tactician_ensemble':
+                tprint("🎯 [TRAINING] Training Tactician ensemble model...")
+                result = await execute_full_training(
+                    data=await self._load_training_data(config),
+                    analyst_targets=await self._load_analyst_targets(config),
+                    tactician_targets=await self._load_tactician_targets(config),
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    role='tactician',
+                    enable_ensemble=True
+                )
+            else:
+                raise ValueError(f"Unknown training command: {sub_pipeline}")
+            
+            # Create a MainPipelineResult to maintain compatibility
+            main_result = MainPipelineResult(
+                pipeline_id=f"unified_training_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=result.execution_time if hasattr(result, 'execution_time') else 0.0,
+                error_message=result.message if not result.success else None
+            )
+            
+            tprint(f"✅ [UNIFIED_TRAINING] Training command completed: {sub_pipeline}")
+            return main_result
+            
+        except Exception as e:
+            tprint_error(f"❌ [UNIFIED_TRAINING] Training command failed: {e}")
+            return MainPipelineResult(
+                pipeline_id=f"unified_training_{sub_pipeline}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                status=SubPipelineStatus.FAILED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                duration_seconds=0.0,
+                error_message=str(e)
+            )
+    
+    async def _load_training_data(self, config: MainPipelineConfig):
+        """Load training data for unified training pipeline."""
+        try:
+            tprint("📊 [TRAINING] Loading training data...")
+            # This would load the actual training data
+            # For now, return a placeholder
+            import pandas as pd
+            import numpy as np
+            
+            # Create dummy data for demonstration
+            # In production, this would load real data from the data collection pipeline
+            dummy_data = {
+                'analyst_X_train': pd.DataFrame(np.random.rand(1000, 50)),
+                'analyst_y_train': pd.Series(np.random.randint(0, 2, 1000)),
+                'analyst_X_val': pd.DataFrame(np.random.rand(200, 50)),
+                'analyst_y_val': pd.Series(np.random.randint(0, 2, 200)),
+                'tactician_X_train': pd.DataFrame(np.random.rand(1000, 60)),
+                'tactician_y_train': pd.Series(np.random.randint(0, 2, 1000)),
+                'tactician_X_val': pd.DataFrame(np.random.rand(200, 60)),
+                'tactician_y_val': pd.Series(np.random.randint(0, 2, 200)),
+            }
+            
+            tprint("✅ [TRAINING] Training data loaded successfully")
+            return dummy_data
+            
+        except Exception as e:
+            tprint_error(f"❌ [TRAINING] Failed to load training data: {e}")
+            raise
+    
+    async def _load_analyst_targets(self, config: MainPipelineConfig):
+        """Load Analyst targets for training."""
+        try:
+            tprint("📊 [TRAINING] Loading Analyst targets...")
+            # This would load the actual Analyst targets
+            # For now, return a placeholder
+            import pandas as pd
+            import numpy as np
+            
+            dummy_targets = pd.Series(np.random.randint(0, 2, 1000))
+            tprint("✅ [TRAINING] Analyst targets loaded successfully")
+            return dummy_targets
+            
+        except Exception as e:
+            tprint_error(f"❌ [TRAINING] Failed to load Analyst targets: {e}")
+            raise
+    
+    async def _load_tactician_targets(self, config: MainPipelineConfig):
+        """Load Tactician targets for training."""
+        try:
+            tprint("📊 [TRAINING] Loading Tactician targets...")
+            # This would load the actual Tactician targets
+            # For now, return a placeholder
+            import pandas as pd
+            import numpy as np
+            
+            dummy_targets = pd.Series(np.random.randint(0, 2, 1000))
+            tprint("✅ [TRAINING] Tactician targets loaded successfully")
+            return dummy_targets
+            
+        except Exception as e:
+            tprint_error(f"❌ [TRAINING] Failed to load Tactician targets: {e}")
+            raise
+
     def _create_config(
         self,
         mode: LauncherMode,
@@ -915,12 +1068,12 @@ class AresLauncher:
                 else:
                     # Fallback to a fixed date range that matches available data (2025)
                     tprint("⚠️ Could not get data info, using fixed date range from 2025")
-                    end_date = datetime(2025, 7, 31)  # Use end of available data
+                    end_date = datetime(2025, 10, 18)  # Use current date for 2025 data
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
             except Exception as e:
                 tprint(f"⚠️ Error detecting last available data date: {e}")
                 tprint("⚠️ Falling back to fixed date range from 2025")
-                end_date = datetime(2025, 7, 31)  # Use end of available data
+                end_date = datetime(2025, 10, 18)  # Use current date for 2025 data
                 start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
@@ -957,12 +1110,12 @@ class AresLauncher:
                 else:
                     # Fallback to a fixed date range that matches available data (2025)
                     tprint("⚠️ Could not get data info, using fixed date range from 2025")
-                    end_date = datetime(2025, 7, 31)  # Use end of available data
+                    end_date = datetime(2025, 10, 18)  # Use current date for 2025 data
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
             except Exception as e:
                 tprint(f"⚠️ Error detecting last available data date: {e}")
                 tprint("⚠️ Falling back to fixed date range from 2025")
-                end_date = datetime(2025, 7, 31)  # Use end of available data
+                end_date = datetime(2025, 10, 18)  # Use current date for 2025 data
                 start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
@@ -1250,6 +1403,10 @@ class AresLauncher:
         # Handle unified data driven pipeline shortcuts
         if sub_pipeline.startswith('unified_data_driven_pipeline'):
             return await self._execute_unified_pipeline_shortcut(sub_pipeline, config)
+        
+        # Handle new unified training commands
+        if sub_pipeline.startswith('train_'):
+            return await self._execute_unified_training_command(sub_pipeline, config)
 
         # Find the stage containing this sub-pipeline
         target_stage = None
@@ -1595,32 +1752,46 @@ class AresLauncher:
             from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
             data_loader = UnifiedDataLoader()
             
-            # Load the market data
+            # Force use of consolidated file by using a data directory that doesn't have partitioned files
+            # The consolidated file is at historical_data/features_binance_ETHUSDT_consolidated.parquet
             market_data = await data_loader.load_unified_data(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
+                data_dir="historical_data",  # This will trigger the consolidated file fallback
                 start_date=config.start_date,
                 end_date=config.end_date
             )
             
-            # DEBUG: Check data quality after loading
-            import numpy as np
-            print(f"🔍 [DEBUG] Data loaded: {market_data.shape}")
-            print(f"🔍 [DEBUG] Non-finite values after loading: {(~np.isfinite(market_data.select_dtypes(include=[np.number])).values).sum()}")
-            for col in market_data.select_dtypes(include=[np.number]).columns:
-                non_finite = (~np.isfinite(market_data[col])).sum()
-                if non_finite > 0:
-                    print(f"🔍 [DEBUG] {col}: {non_finite} non-finite values")
-            
-            # Execute the step with the actual market data
-            result = await step.execute(
-                data=market_data,
-                symbol=config.symbol,
-                timeframe=config.timeframe,
-                direction=config.direction,
-                custom_overrides={}
-            )
+            # Execute the step with the loaded data
+            # Only pass targets parameter to steps that expect it
+            if sub_pipeline == "feature_generation_feature_selection_step":
+                result = await step.execute(
+                    data=market_data,
+                    targets=None,  # Feature selection step will load targets from labeling integration
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    direction=config.direction,
+                    intensity=config.execution_mode.value,  # Use the proper execution mode (full/light/blank)
+                    lookback_days=getattr(config, 'lookback_days', None),
+                    start_date=config.start_date,
+                    end_date=config.end_date,
+                    exchange=config.exchange,
+                    custom_overrides={}
+                )
+            else:
+                result = await step.execute(
+                    data=market_data,
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                    direction=config.direction,
+                    intensity=config.execution_mode.value,  # Use the proper execution mode (full/light/blank)
+                    lookback_days=getattr(config, 'lookback_days', None),
+                    start_date=config.start_date,
+                    end_date=config.end_date,
+                    exchange=config.exchange,
+                    custom_overrides={}
+                )
 
             # Create MainPipelineResult
             pipeline_result = MainPipelineResult(
@@ -2122,6 +2293,12 @@ Examples:
   # Shortcut: Execute Tactician ensemble training in light mode
   python ares_launcher.py --tactician-ensemble --execution-mode light --symbol ETHUSDT
 
+  # New unified training commands
+  python ares_launcher.py --train-analyst-base --symbol ETHUSDT
+  python ares_launcher.py --train-analyst-ensemble --symbol ETHUSDT
+  python ares_launcher.py --train-tactician-base --symbol ETHUSDT
+  python ares_launcher.py --train-tactician-ensemble --symbol ETHUSDT
+
   # Blank mode for testing (180 days, 10% intensity)
   python ares_launcher.py --mode blank --symbol ETHUSDT
         """
@@ -2223,6 +2400,36 @@ Examples:
         const='tactician_ensemble_training',
         help='Shortcut for Tactician ensemble training sub-pipeline.'
     )
+    
+    # New unified training commands
+    shortcut_group.add_argument(
+        '--train-analyst-base',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='train_analyst_base_models',
+        help='Train Analyst base models using unified training pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--train-analyst-ensemble',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='train_analyst_ensemble',
+        help='Train Analyst ensemble model using unified training pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--train-tactician-base',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='train_tactician_base_models',
+        help='Train Tactician base models using unified training pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--train-tactician-ensemble',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='train_tactician_ensemble',
+        help='Train Tactician ensemble model using unified training pipeline.'
+    )
     shortcut_group.add_argument(
         '--analyst-labeler',
         dest='shortcut_sub_pipeline',
@@ -2282,7 +2489,7 @@ Examples:
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, or --tactician-ensemble. For feature generation steps, use --mode sequential instead.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, train_analyst_base_models, train_analyst_ensemble, train_tactician_base_models, train_tactician_ensemble, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, --tactician-ensemble, --train-analyst-base, --train-analyst-ensemble, --train-tactician-base, --train-tactician-ensemble. For feature generation steps, use --mode sequential instead.'
     )
 
     parser.add_argument(

@@ -107,7 +107,7 @@ except ImportError as e:
 
 # Import Unified Vectorization Manager
 try:
-    from src.feature_selection.vectorbt.vectorbt_unified_framework import (
+    from src.feature_selection.vectorbt_extensions.vectorbt_unified_framework import (
         VectorBTUnifiedFramework, create_vectorbt_unified_framework
     )
     UNIFIED_VECTORIZATION_AVAILABLE = True

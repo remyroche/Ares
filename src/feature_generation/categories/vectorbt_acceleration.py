@@ -69,6 +69,46 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
+def _sanitize_series_output(values: Any,
+                            index: pd.Index,
+                            name: str,
+                            fill_value: float = 0.0) -> pd.Series:
+    """
+    Convert arbitrary outputs into a numeric pandas Series suitable for downstream validation.
+    """
+    try:
+        if isinstance(values, pd.Series):
+            series = values.copy()
+        elif isinstance(values, pd.DataFrame):
+            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float, index=index)
+        elif isinstance(values, dict):
+            # Prefer common keys
+            for key in ['result', 'trend_strength', 'momentum', 'data']:
+                if key in values:
+                    return _sanitize_series_output(values[key], index, name, fill_value)
+            # Fallback: attempt to build Series from dict values
+            series = pd.Series(values)
+        elif isinstance(values, (np.ndarray, list, tuple)):
+            series = pd.Series(values)
+        elif hasattr(values, '__iter__') and not np.isscalar(values):
+            series = pd.Series(list(values))
+        else:
+            series = pd.Series([values] * len(index), index=index)
+
+        if len(series) != len(index):
+            series = series.reindex(index, fill_value=fill_value)
+        else:
+            series.index = index
+        series = pd.to_numeric(series, errors='coerce')
+        series = series.replace([np.inf, -np.inf], np.nan)
+        series = series.fillna(fill_value)
+        series.name = name
+        return series
+    except Exception as e:
+        logger.warning(f"Failed to sanitize series output for {name}: {e}")
+        return pd.Series(fill_value, index=index, name=name)
+
 class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for acceleration-based features with full VectorBT optimization."""
 
@@ -78,11 +118,11 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         # Initialize VectorBT optimization components
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
 
         if UNIFIED_VECTORIZATION_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
@@ -167,8 +207,8 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
             }
 
         # Add VectorBT optimizer stats if available
-        if self.vectorbt_optimizer and hasattr(self.vectorbt_optimizer, 'get_performance_stats'):
-            report['vectorbt_optimizer_stats'] = self.vectorbt_optimizer.get_performance_stats()
+        if self.vectorbt_rolling_optimizer and hasattr(self.vectorbt_rolling_optimizer, 'get_performance_stats'):
+            report['vectorbt_optimizer_stats'] = self.vectorbt_rolling_optimizer.get_performance_stats()
 
         # Add UnifiedVectorizationManager stats if available
         if self.unified_manager and hasattr(self.unified_manager, 'get_optimization_stats'):
@@ -197,9 +237,10 @@ class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
         # Default implementation - calculate simple price acceleration
         if 'close' in data.columns:
             close = data['close']
-            # Calculate second derivative (acceleration) of price
-            price_change = close.diff()
-            acceleration = price_change.diff()
+            # Calculate second derivative (acceleration) of price using safe_diff
+            from ...utils.error_handling import safe_diff
+            price_change = safe_diff(close)
+            acceleration = safe_diff(price_change)
             return acceleration.fillna(0)
         else:
             # Fallback for data without close price
@@ -250,13 +291,14 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
         super().__init__(config)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_unified_manager = False
 
         # Initialize VectorBT optimization components
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
 
         if UNIFIED_VECTORIZATION_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
@@ -269,10 +311,10 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
             tprint("Warning: Empty data provided for momentum calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
 
-        base_values = self.base_calculator.calculate(data)
+        base_values = pd.to_numeric(self.base_calculator.calculate(data), errors='coerce')
 
         # Enhanced VectorBT optimization with UnifiedVectorizationManager
-        if self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE:
+        if self.use_unified_manager and self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE:
             try:
                 from ...utils.ml_common.unified_vectorization_manager import OperationConfig
                 config = OperationConfig(
@@ -298,13 +340,16 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
                 except ValueError as e:
                     logger.warning(f"⚠️ {e}")
 
-                return momentum.rename(f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
+                return _sanitize_series_output(
+                    momentum, data.index,
+                    f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
+                )
 
             except Exception as e:
                 logger.warning(f"UnifiedVectorizationManager momentum calculation failed: {e}")
 
         # Use VectorBTRollingOptimizer for enhanced performance
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 # Use VectorBT rolling apply for momentum calculation
                 def momentum_func(series):
@@ -314,7 +359,7 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
                     past = series.iloc[-self.period-1]
                     return safe_percentage_change(past, current)
 
-                momentum = self.vectorbt_optimizer.rolling_apply(
+                momentum = self.vectorbt_rolling_optimizer.rolling_apply(
                     base_values, momentum_func, window=self.period + 1
                 )
 
@@ -324,7 +369,10 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
                 except ValueError as e:
                     logger.warning(f"⚠️ {e}")
 
-                return momentum.rename(f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
+                return _sanitize_series_output(
+                    momentum, data.index,
+                    f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
+                )
 
             except Exception as e:
                 logger.warning(f"VectorBTRollingOptimizer momentum calculation failed: {e}, using fallback")
@@ -339,7 +387,10 @@ class VectorBTMomentumGenerator(VectorBTFeatureGenerator):
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return momentum.rename(f'vectorbt_momentum_{self.period}_{self.base_calculation.value}')
+        return _sanitize_series_output(
+            momentum, data.index,
+            f'vectorbt_momentum_{self.period}_{self.base_calculation.value}'
+        )
 
 class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized price acceleration generator."""
@@ -367,6 +418,7 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
         super().__init__(config)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_unified_manager = False
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate acceleration using VectorBT operations."""
@@ -376,7 +428,7 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
             tprint("Warning: Empty data provided for acceleration calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}')
 
-        base_values = self.base_calculator.calculate(data)
+        base_values = pd.to_numeric(self.base_calculator.calculate(data), errors='coerce')
 
         # Calculate momentum first
         shifted_values = base_values.shift(self.period)
@@ -391,7 +443,10 @@ class VectorBTPriceAccelerationGenerator(VectorBTFeatureGenerator):
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return acceleration.rename(f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}')
+        return _sanitize_series_output(
+            acceleration, data.index,
+            f'vectorbt_acceleration_{self.period}_{self.base_calculation.value}'
+        )
 
 class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized price jerk generator."""
@@ -419,6 +474,7 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
         super().__init__(config)
         self.period = period
         self.base_calculation = base_calculation
+        self.use_unified_manager = False
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate jerk using VectorBT operations."""
@@ -428,7 +484,7 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
             tprint("Warning: Empty data provided for jerk calculation")
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_jerk_{self.period}_{self.base_calculation.value}')
 
-        base_values = self.base_calculator.calculate(data)
+        base_values = pd.to_numeric(self.base_calculator.calculate(data), errors='coerce')
 
         # Calculate momentum first
         shifted_values = base_values.shift(self.period)
@@ -446,7 +502,10 @@ class VectorBTPriceJerkGenerator(VectorBTFeatureGenerator):
         except ValueError as e:
             logger.warning(f"⚠️ {e}")
 
-        return jerk.rename(f'vectorbt_jerk_{self.period}_{self.base_calculation.value}')
+        return _sanitize_series_output(
+            jerk, data.index,
+            f'vectorbt_jerk_{self.period}_{self.base_calculation.value}'
+        )
 
 class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend strength generator."""
@@ -474,16 +533,24 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
         super().__init__(config)
         self.window = window
         self.base_calculation = base_calculation
+        self.use_unified_manager = False
+
+        # Initialize vectorbt optimizer
+        try:
+            from ...utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
+        except ImportError:
+            self.vectorbt_rolling_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate trend strength using VectorBT operations."""
         if len(data) == 0:
             return pd.Series(dtype=float, index=data.index, name=f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
 
-        base_values = self.base_calculator.calculate(data)
+        base_values = pd.to_numeric(self.base_calculator.calculate(data), errors='coerce')
 
         # Enhanced VectorBT optimization with UnifiedVectorizationManager
-        if self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE:
+        if self.use_unified_manager and self.unified_manager and UNIFIED_VECTORIZATION_AVAILABLE:
             try:
                 from ...utils.ml_common.unified_vectorization_manager import OperationConfig
                 config = OperationConfig(
@@ -500,30 +567,84 @@ class VectorBTTrendStrengthGenerator(VectorBTFeatureGenerator):
                     {'data': base_values, 'window': self.window, 'operation': 'trend_strength'},
                     config
                 )
-                return result.result.rename(f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
+                # Convert result to Series if it's a dict
+                if isinstance(result.result, dict):
+                    # Extract the main result from the dict
+                    trend_strength = result.result.get('trend_strength', result.result.get('result', result.result))
+                    if isinstance(trend_strength, pd.Series):
+                        return _sanitize_series_output(
+                            trend_strength, data.index,
+                            f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
+                        )
+                    else:
+                        # Convert to Series if needed
+                        return _sanitize_series_output(
+                            trend_strength, data.index,
+                            f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
+                        )
+                else:
+                    return _sanitize_series_output(
+                        result.result, data.index,
+                        f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
+                    )
 
             except Exception as e:
                 logger.warning(f"UnifiedVectorizationManager trend strength failed: {e}")
 
         # Use VectorBTRollingOptimizer for enhanced performance
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
-                # Calculate trend strength using VectorBT rolling correlation with time
-                time_index = pd.Series(range(len(base_values)), index=base_values.index)
-                trend_strength = self.vectorbt_optimizer.rolling_corr(
-                    base_values, time_index, window=self.window, min_periods=1
+                # Calculate trend strength using linear regression slope
+                def calculate_trend_strength(series):
+                    if len(series) < 2:
+                        return 0.0
+                    try:
+                        # Remove NaN values for calculation
+                        valid_data = series.dropna()
+                        if len(valid_data) < 2:
+                            return 0.0
+
+                        # Use linear regression to calculate trend strength
+                        x = np.arange(len(valid_data))
+                        y = valid_data.values
+                        # Calculate R-squared to measure trend strength
+                        if np.var(y) == 0:  # Avoid division by zero
+                            return 0.0
+                        slope, intercept = np.polyfit(x, y, 1)
+                        y_pred = slope * x + intercept
+                        ss_res = np.sum((y - y_pred) ** 2)
+                        ss_tot = np.sum((y - np.mean(y)) ** 2)
+                        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+                        return r_squared
+                    except:
+                        return 0.0
+
+                # Use a more reasonable min_periods - require at least 2 data points for trend calculation
+                min_periods = max(2, min(5, self.window // 4))  # More flexible min_periods
+                trend_strength = self.vectorbt_rolling_optimizer.rolling_apply(
+                    base_values, calculate_trend_strength, window=self.window, min_periods=min_periods
                 )
-                return trend_strength.rename(f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
+                return _sanitize_series_output(
+                    trend_strength, data.index,
+                    f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
+                )
             except Exception as e:
                 logger.warning(f"VectorBTRollingOptimizer trend strength failed: {e}")
 
-        # Fallback to standard VectorBT operations
-        time_index = pd.Series(range(len(base_values)), index=base_values.index)
-        trend_strength = self._vectorbt_rolling_operation(
-            base_values, 'corr', window=self.window, other=time_index
-        )
-
-        return trend_strength.rename(f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
+        # Fallback to pandas rolling if VectorBT optimizer is not available
+        min_periods = max(2, min(5, self.window // 4))  # More flexible min_periods
+        try:
+            trend_strength = base_values.rolling(window=self.window, min_periods=min_periods).apply(
+                calculate_trend_strength, raw=False
+            )
+            return _sanitize_series_output(
+                trend_strength, data.index,
+                f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}'
+            )
+        except Exception as e:
+            logger.error(f"Pandas fallback also failed: {e}")
+            # Return a series of zeros as last resort
+            return pd.Series(0.0, index=base_values.index, name=f'vectorbt_trend_strength_{self.window}_{self.base_calculation.value}')
 
 class VectorBTTrendConsistencyGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized trend consistency generator."""
@@ -563,7 +684,11 @@ class VectorBTTrendConsistencyGenerator(VectorBTFeatureGenerator):
         volatility = self._vectorbt_rolling_operation(base_values, 'std', window=self.window)
         consistency = 1.0 / (volatility + 1e-8)  # Add small epsilon to avoid division by zero
 
-        return consistency.rename(f'vectorbt_trend_consistency_{self.window}_{self.base_calculation.value}')
+        return _sanitize_series_output(
+            consistency, data.index,
+            f'vectorbt_trend_consistency_{self.window}_{self.base_calculation.value}',
+            fill_value=0.0
+        )
 
 class VectorBTVolumeAccelerationGenerator(VectorBTFeatureGenerator):
     """VectorBT-optimized volume acceleration generator."""
@@ -820,10 +945,33 @@ class VectorBTAccelerationTrendStrengthGenerator(VectorBTFeatureGenerator):
         momentum = safe_percentage_change(shifted_values, base_values)
         acceleration = momentum.diff(self.acceleration_window)
 
-        # Calculate acceleration trend strength using VectorBT
-        time_index = pd.Series(range(len(acceleration)), index=acceleration.index)
-        acceleration_trend_strength = self._vectorbt_rolling_operation(
-            acceleration, 'corr', window=self.period, other=time_index
+        # Calculate acceleration trend strength using linear regression
+        def calculate_acceleration_trend_strength(series):
+            if len(series) < 2:
+                return 0.0
+            try:
+                # Remove NaN values for calculation
+                valid_data = series.dropna()
+                if len(valid_data) < 2:
+                    return 0.0
+
+                # Use linear regression to calculate trend strength
+                x = np.arange(len(valid_data))
+                y = valid_data.values
+                # Calculate R-squared to measure trend strength
+                if np.var(y) == 0:  # Avoid division by zero
+                    return 0.0
+                slope, intercept = np.polyfit(x, y, 1)
+                y_pred = slope * x + intercept
+                ss_res = np.sum((y - y_pred) ** 2)
+                ss_tot = np.sum((y - np.mean(y)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0
+                return r_squared
+            except:
+                return 0.0
+
+        acceleration_trend_strength = acceleration.rolling(window=self.period, min_periods=2).apply(
+            calculate_acceleration_trend_strength, raw=False
         )
 
         return acceleration_trend_strength.rename(f'vectorbt_acceleration_trend_strength_{self.period}_{self.acceleration_window}_{self.base_calculation.value}')
@@ -1125,11 +1273,11 @@ class OptimizedAccelerationBatchGenerator:
 
     def __init__(self):
         """Initialize the optimized batch generator."""
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         self.unified_manager = None
 
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
-            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+            self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
 
         if UNIFIED_VECTORIZATION_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
@@ -1176,7 +1324,7 @@ class OptimizedAccelerationBatchGenerator:
                 self.logger.warning(f"UnifiedVectorizationManager batch processing failed: {e}, using VectorBT fallback")
 
         # Enhanced VectorBT batch processing
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 return self._vectorbt_batch_processing(data, feature_configs)
             except Exception as e:
@@ -1244,7 +1392,7 @@ class OptimizedAccelerationBatchGenerator:
 
     def _generate_momentum_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate momentum using optimized VectorBT operations."""
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 def momentum_func(series):
                     if len(series) < period + 1:
@@ -1253,7 +1401,7 @@ class OptimizedAccelerationBatchGenerator:
                     past = series.iloc[-period-1]
                     return safe_percentage_change(past, current)
 
-                return self.vectorbt_optimizer.rolling_apply(
+                return self.vectorbt_rolling_optimizer.rolling_apply(
                     base_values, momentum_func, window=period + 1
                 )
             except Exception as e:
@@ -1277,14 +1425,14 @@ class OptimizedAccelerationBatchGenerator:
 
     def _generate_acceleration_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate acceleration using optimized VectorBT operations."""
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 # Calculate momentum first
                 shifted_values = base_values.shift(period)
                 momentum = safe_percentage_change(shifted_values, base_values)
 
                 # Use VectorBT for acceleration calculation
-                acceleration = self.vectorbt_optimizer.rolling_apply(
+                acceleration = self.vectorbt_rolling_optimizer.rolling_apply(
                     momentum, lambda x: x.diff().iloc[-1] if len(x) > 1 else np.nan, window=period + 1
                 )
                 return acceleration
@@ -1311,7 +1459,7 @@ class OptimizedAccelerationBatchGenerator:
 
     def _generate_jerk_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate jerk using optimized VectorBT operations."""
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 # Calculate momentum and acceleration first
                 shifted_values = base_values.shift(period)
@@ -1319,7 +1467,7 @@ class OptimizedAccelerationBatchGenerator:
                 acceleration = momentum.diff(period)
 
                 # Use VectorBT for jerk calculation
-                jerk = self.vectorbt_optimizer.rolling_apply(
+                jerk = self.vectorbt_rolling_optimizer.rolling_apply(
                     acceleration, lambda x: x.diff().iloc[-1] if len(x) > 1 else np.nan, window=period + 1
                 )
                 return jerk
@@ -1348,14 +1496,14 @@ class OptimizedAccelerationBatchGenerator:
             except:
                 return 0.0
 
-        if self.vectorbt_optimizer:
-            return self.vectorbt_optimizer.rolling_apply(base_values, calculate_trend_strength, window=period)
+        if self.vectorbt_rolling_optimizer:
+            return self.vectorbt_rolling_optimizer.rolling_apply(base_values, calculate_trend_strength, period)
         else:
             return base_values.rolling(window=period).apply(calculate_trend_strength, raw=False)
 
     def _generate_trend_strength_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate trend strength using optimized VectorBT operations."""
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 def calculate_trend_strength(series):
                     if len(series) < 2:
@@ -1366,7 +1514,7 @@ class OptimizedAccelerationBatchGenerator:
                     except:
                         return 0.0
 
-                return self.vectorbt_optimizer.rolling_apply(
+                return self.vectorbt_rolling_optimizer.rolling_apply(
                     base_values, calculate_trend_strength, window=period, min_periods=1
                 )
             except Exception as e:
@@ -1400,14 +1548,14 @@ class OptimizedAccelerationBatchGenerator:
             except:
                 return 0
 
-        if self.vectorbt_optimizer:
-            return self.vectorbt_optimizer.rolling_apply(base_values, calculate_trend_consistency, window=period)
+        if self.vectorbt_rolling_optimizer:
+            return self.vectorbt_rolling_optimizer.rolling_apply(base_values, calculate_trend_consistency, period)
         else:
             return base_values.rolling(window=period).apply(calculate_trend_consistency, raw=False)
 
     def _generate_trend_consistency_vectorbt_optimized(self, data: pd.DataFrame, base_values: pd.Series, period: int, base_calculation: str) -> pd.Series:
         """Generate trend consistency using optimized VectorBT operations."""
-        if self.vectorbt_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
+        if self.vectorbt_rolling_optimizer and VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
                 def calculate_trend_consistency(series):
                     if len(series) < 2:
@@ -1418,7 +1566,7 @@ class OptimizedAccelerationBatchGenerator:
                     except:
                         return 0
 
-                return self.vectorbt_optimizer.rolling_apply(
+                return self.vectorbt_rolling_optimizer.rolling_apply(
                     base_values, calculate_trend_consistency, window=period, min_periods=1
                 )
             except Exception as e:

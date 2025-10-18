@@ -10,8 +10,11 @@ from src.utils.data.klines_parquet import get_klines_manager
 from .validation_utils import get_validator, ValidationErrorType, ValidationResult, validate_training_input, validate_pipeline_state
 from .config_utils import get_config_manager, get_path_manager
 
-# Use existing data validation utilities
-from src.utils.data.validation.validators import CrossStepValidator
+# Use existing data validation utilities - lazy import to avoid circular imports
+try:
+    from src.utils.data.validation.validators import CrossStepValidator
+except ImportError:
+    CrossStepValidator = None
 from src.utils.data.quality.data_quality import DataQualityFramework
 
 # Standardized imports from utils
@@ -20,7 +23,8 @@ from src.utils.core.common import (
     safe_json_dump,
     safe_json_load,
 )
-from src.utils.common_operations import get_logger, safe_dict_get, safe_float, safe_int, optimize_dataframe_dtypes, safe_divide, safe_log, safe_sqrt, safe_kelly_calculation, validate_positive, validate_range, MathValidationError
+from src.utils.common_operations import get_logger, safe_dict_get, safe_float, safe_int, optimize_dataframe_dtypes, safe_divide, safe_log, safe_sqrt, safe_kelly_calculation, MathValidationError
+from src.utils.math_validation import validate_positive, validate_range
 from src.utils.parquet_utils import get_parquet_utils
 # Core decorators imports
 from src.core.decorators import (

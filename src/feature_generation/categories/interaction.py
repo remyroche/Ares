@@ -12,13 +12,38 @@ from scipy import stats
 import warnings
 import logging
 
+# VectorBT rolling functions
+try:
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum
+    VECTORBT_ROLLING_AVAILABLE = True
+except ImportError:
+    VECTORBT_ROLLING_AVAILABLE = False
+    # Define fallback functions
+    def rolling_mean(data, **kwargs):
+        return data.rolling(**kwargs).mean()
+    def rolling_std(data, **kwargs):
+        return data.rolling(**kwargs).std()
+    def rolling_var(data, **kwargs):
+        return data.rolling(**kwargs).var()
+    def rolling_min(data, **kwargs):
+        return data.rolling(**kwargs).min()
+    def rolling_max(data, **kwargs):
+        return data.rolling(**kwargs).max()
+    def rolling_sum(data, **kwargs):
+        return data.rolling(**kwargs).sum()
+
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities
 try:
     from src.feature_generation.utils.vectorization_optimizer import get_vectorization_optimizer
     from src.feature_generation.utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer, VectorBTRollingOptimizer
+    # Prefer consolidated optimizer for unified VectorBT usage
+    from src.feature_generation.utils.consolidated_rolling_optimizer import (
+        get_global_rolling_optimizer as get_vectorbt_rolling_optimizer,
+        ConsolidatedRollingOptimizer as VectorBTRollingOptimizer,
+        RollingOperationType, RollingOperationConfig
+    )
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -29,6 +54,7 @@ try:
         get_unified_vectorization_manager,
         UnifiedVectorizationManager,
         OperationType,
+        OperationConfig,
         OptimizationStrategy
     )
     UNIFIED_VECTORIZATION_AVAILABLE = True
@@ -52,7 +78,8 @@ class OptimizedInteractionFeatureGenerator(VectorizedFeatureGenerator):
         self.unified_manager = None
 
         if OPTIMIZATION_AVAILABLE:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=True, enable_parallel=True)
+            # Use shared global consolidated optimizer (lower threshold, shared stats)
+            self.rolling_optimizer = get_vectorbt_rolling_optimizer()
 
         if UNIFIED_VECTORIZATION_AVAILABLE:
             self.unified_manager = get_unified_vectorization_manager()
@@ -77,36 +104,43 @@ class OptimizedInteractionFeatureGenerator(VectorizedFeatureGenerator):
         )
 
     def _optimized_rolling_operation(self, data: pd.Series, operation: str, window: int, **kwargs) -> pd.Series:
-        """Perform optimized rolling operation using VectorBTRollingOptimizer with advanced features."""
+        """Perform optimized rolling operation using the consolidated optimizer with fallbacks."""
         if self.rolling_optimizer:
             try:
-                if operation == 'mean':
-                    return self.rolling_optimizer.rolling_mean(data, window, **kwargs)
-                elif operation == 'std':
-                    return self.rolling_optimizer.rolling_std(data, window, **kwargs)
-                elif operation == 'var':
-                    return self.rolling_optimizer.rolling_var(data, window, **kwargs)
-                elif operation == 'min':
-                    return self.rolling_optimizer.rolling_min(data, window, **kwargs)
-                elif operation == 'max':
-                    return self.rolling_optimizer.rolling_max(data, window, **kwargs)
-                elif operation == 'sum':
-                    return self.rolling_optimizer.rolling_sum(data, window, **kwargs)
-                elif operation == 'corr':
-                    other = kwargs.get('other')
-                    return self.rolling_optimizer.rolling_corr(data, other, window, **kwargs)
-                elif operation == 'apply':
-                    func = kwargs.get('func')
-                    return self.rolling_optimizer.rolling_apply(data, func, window, **kwargs)
-                elif operation == 'quantile':
-                    q = kwargs.get('q', 0.5)
-                    return self.rolling_optimizer.rolling_quantile(data, window, q, **kwargs)
-                elif operation == 'skew':
-                    return self.rolling_optimizer.rolling_skew(data, window, **kwargs)
-                elif operation == 'kurt':
-                    return self.rolling_optimizer.rolling_kurt(data, window, **kwargs)
+                # Map string op to consolidated operation type
+                op_map = {
+                    'mean': RollingOperationType.MEAN,
+                    'std': RollingOperationType.STD,
+                    'var': RollingOperationType.VAR,
+                    'min': RollingOperationType.MIN,
+                    'max': RollingOperationType.MAX,
+                    'sum': RollingOperationType.SUM,
+                    'skew': RollingOperationType.SKEW,
+                    'kurt': RollingOperationType.KURT,
+                    'quantile': RollingOperationType.QUANTILE,
+                    'corr': RollingOperationType.CORR,
+                    'cov': RollingOperationType.COV,
+                    'apply': RollingOperationType.APPLY,
+                }
+                rot = op_map.get(operation)
+                if rot is None:
+                    raise ValueError(f"Unsupported operation: {operation}")
+
+                cfg_kwargs = {
+                    'operation': rot,
+                    'window': window
+                }
+                if rot == RollingOperationType.QUANTILE:
+                    cfg_kwargs['quantile_value'] = kwargs.get('q', 0.5)
+                if rot == RollingOperationType.CORR:
+                    cfg_kwargs['corr_other'] = kwargs.get('other')
+                if rot == RollingOperationType.APPLY:
+                    cfg_kwargs['apply_func'] = kwargs.get('func')
+
+                config = RollingOperationConfig(**cfg_kwargs)
+                return self.rolling_optimizer.single_rolling_operation(data, config)
             except Exception as e:
-                self.logger.warning(f"VectorBTRollingOptimizer failed: {e}, using fallback")
+                self.logger.warning(f"Consolidated rolling optimizer failed: {e}, using fallback")
 
         # Fallback to basic pandas operations
         return self._fallback_rolling_operation(data, operation, window, **kwargs)
@@ -1127,16 +1161,11 @@ class PolynomialFeatureGenerator(VectorizedFeatureGenerator):
         """Generate polynomial transformation using VectorBT."""
         values = data[self.column]
 
-        # Normalize values to prevent numerical overflow using VectorBT if available
-        if self._should_use_vectorbt(values):
-            try:
-                values_mean = rolling_mean(values, window=len(values)).iloc[-1] if len(values) > 0 else values.mean()
-                values_std = rolling_std(values, window=len(values)).iloc[-1] if len(values) > 0 else values.std()
-                values_normalized = (values - values_mean) / (values_std + 1e-8)
-            except Exception:
-                values_normalized = (values - values.mean()) / (values.std() + 1e-8)
-        else:
-            values_normalized = (values - values.mean()) / (values.std() + 1e-8)
+        # Normalize values to prevent numerical overflow without expensive rolling
+        # Use simple scalar mean/std which is O(n) and avoids N-length rolling windows
+        m = values.mean()
+        s = values.std()
+        values_normalized = (values - m) / (s + 1e-8)
 
         # Create polynomial features
         result = values_normalized ** self.degree

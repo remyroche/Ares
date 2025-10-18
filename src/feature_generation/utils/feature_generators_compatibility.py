@@ -23,7 +23,7 @@ warnings.warn(
 
 try:
     # Try to import from the new unified feature generation system
-    from ..core.feature_bank import FeatureBank as NewFeatureGenerators
+    from src.feature_generation.core.feature_bank import FeatureBank as NewFeatureGenerators
     logger.info("✅ Successfully imported FeatureBank from new unified system")
 
     # Export the new class as the old name for compatibility
@@ -33,12 +33,26 @@ except ImportError as e:
     logger.warning(f"⚠️ Failed to import from new system: {e}")
 
     # Fallback to original implementation if available
-    try:
-        from .feature_generators import FeatureGenerators as OriginalFeatureGenerators
-        FeatureGenerators = OriginalFeatureGenerators
-    except ImportError as e2:
-        logger.error(f"❌ All FeatureGenerators compatibility layers failed: {e2}")
-        raise ImportError("No compatible FeatureGenerators implementation found")
+    # Use lazy import to avoid circular dependency
+    def _get_original_feature_generators():
+        try:
+            from .feature_generators import FeatureGenerators as OriginalFeatureGenerators
+            return OriginalFeatureGenerators
+        except ImportError as e2:
+            logger.error(f"❌ All FeatureGenerators compatibility layers failed: {e2}")
+            raise ImportError("No compatible FeatureGenerators implementation found")
+    
+    # Create a lazy wrapper class
+    class LazyFeatureGenerators:
+        def __init__(self):
+            self._original_class = None
+        
+        def __getattr__(self, name):
+            if self._original_class is None:
+                self._original_class = _get_original_feature_generators()
+            return getattr(self._original_class, name)
+    
+    FeatureGenerators = LazyFeatureGenerators
 
 # VectorBT imports for native optimization
 try:
@@ -77,7 +91,7 @@ try:
             return data.rolling(window, **kwargs).sum()
         return None
     
-    def rolling_apply(data, window, func, **kwargs):
+    def rolling_apply(data, func, window, **kwargs):
         if hasattr(data, 'rolling'):
             return data.rolling(window, **kwargs).apply(func)
         return None

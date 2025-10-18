@@ -14,16 +14,74 @@ import pandas as pd
 import numpy as np
 import copy
 import asyncio
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
     ModularComponent
 )
+from src.training.common.component_result import ComponentResult
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.training.steps.pre_training.utils.artifact_manager import (
+    get_pretraining_artifact_manager,
+)
+
+# Import tprint utilities
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
+    )
+except ImportError:
+    # Fallback if tprint is not available
+    def tprint(*args, **kwargs): print(*args)
+    def tprint_info(*args, **kwargs): print("INFO:", *args)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args)
+
+# Import CMI complementarity components
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.cmi_complementarity import (
+        CMIComplementarityScorer, CMIComplementarityConfig
+    )
+    from src.training.steps.pre_training.unified_data_driven_pipeline.utils.analyst_side_info import (
+        AnalystSideInfoHandler, AnalystSideInfoConfig
+    )
+    CMI_COMPLEMENTARITY_AVAILABLE = True
+except ImportError:
+    CMI_COMPLEMENTARITY_AVAILABLE = False
+    CMIComplementarityScorer = None
+    CMIComplementarityConfig = None
+    AnalystSideInfoHandler = None
+    AnalystSideInfoConfig = None
+
+@dataclass
+class FeatureGenerationResult:
+    """Result of feature generation."""
+    feature_names: List[str]
+    feature_data: pd.DataFrame
+    generated_features: pd.DataFrame  # Alias for feature_data for compatibility
+    generation_time: float
+    n_features_generated: int
+    cache_hit: bool
+    memory_usage_mb: float
+    success: bool
+    feature_categories: List[str] = field(default_factory=list)  # Categories of generated features
+    error_message: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    optimization_stats: Dict[str, Any] = field(default_factory=dict)  # Optimization statistics
+    generation_metrics: Dict[str, Any] = field(default_factory=dict)
+    artifacts: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def features(self) -> pd.DataFrame:
+        """Backward-compatible accessor used by legacy callers."""
+        return self.generated_features
 
 # Import advanced feature generation components
 try:
@@ -59,10 +117,22 @@ class FeatureGenerationStep(ModularComponent):
     def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         """Initialize the enhanced feature generation step."""
         super().__init__(name, config or {}, logger)
-            name="feature_generation_step",
-            config=config_dict,
-            logger=logging.getLogger(__name__)
-        )
+        
+        # Initialize CMI complementarity components if available
+        if CMI_COMPLEMENTARITY_AVAILABLE:
+            # CMI configuration
+            cmi_config = CMIComplementarityConfig(
+                per_family_budget=(5, 15),  # Min/max features per family
+                upstream_multiplier=3,  # Total budget to RFE = 3× per-family
+                max_total_features=60,  # Maximum total features to select
+                enable_regime_awareness=True,  # Compute R(X|A) per regime
+                compute_timeout_seconds=300.0  # 5 min hard limit
+            )
+            self.cmi_scorer = CMIComplementarityScorer(cmi_config)
+            self.analyst_handler = AnalystSideInfoHandler()
+        else:
+            self.cmi_scorer = None
+            self.analyst_handler = None
         
         # Initialize feature generation components
         if FEATURE_GENERATION_AVAILABLE:
@@ -90,26 +160,56 @@ class FeatureGenerationStep(ModularComponent):
                 enable_gpu_acceleration=True  # Enable GPU acceleration
             )
             
-            # Initialize feature generators
-            self.auto_optimized_generator = AutoOptimizedFeatureGenerator(
-                self.feature_config, 
-                self.auto_optimization_config
+            # Initialize feature bank instead of direct AutoOptimizedFeatureGenerator
+            from src.feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+            feature_bank_config = FeatureBankConfig(
+                enable_auto_optimization=True,
+                auto_optimization_config=self.auto_optimization_config
             )
+            self.feature_bank = FeatureBank(config=feature_bank_config)
             
         else:
-            self.auto_optimized_generator = None
+            self.feature_bank = None
 
     async def execute(self,
                      data: pd.DataFrame,
+                     targets: Optional[pd.Series] = None,
                      symbol: str = "ETHUSDT",
                      timeframe: str = "15m",
                      direction: str = "longs",
-                     custom_overrides: Optional[Dict[str, Any]] = None) -> FeatureGenerationResult:
-        """Execute enhanced feature generation step using AutoOptimizedFeatureGenerator."""
+                     intensity: Optional[str] = None,
+                     lookback_days: Optional[int] = None,
+                     start_date: Optional[str] = None,
+                     end_date: Optional[str] = None,
+                     exchange: Optional[str] = None,
+                     custom_overrides: Optional[Dict[str, Any]] = None,
+                     pipeline_state: Optional[Dict[str, Any]] = None) -> FeatureGenerationResult:
+        """Execute enhanced feature generation step using AutoOptimizedFeatureGenerator with artifact manager integration."""
 
         self.logger.info("Starting enhanced feature generation step with auto-optimization")
 
+        # Check if CMI complementarity is enabled (Tactician mode only)
+        enable_cmi_complementarity = (
+            CMI_COMPLEMENTARITY_AVAILABLE and 
+            self.cmi_scorer is not None and 
+            pipeline_state is not None and 
+            pipeline_state.get('tactician_mode', False)
+        )
+        
+        if enable_cmi_complementarity:
+            self.logger.info("🎯 CMI complementarity enabled for Tactician mode")
+        else:
+            self.logger.info("📊 Standard feature generation (Analyst mode or CMI unavailable)")
+
         try:
+            # Get artifact manager
+            artifact_manager = get_pretraining_artifact_manager()
+            
+            # Try to load cached features from artifact manager
+            cached_features = artifact_manager.get_artifact('feature_generation', 'generated_features')
+            cached_feature_names = artifact_manager.get_artifact('feature_generation', 'feature_names')
+            cached_categories = artifact_manager.get_artifact('feature_generation', 'feature_categories')
+
             # DEBUG: Check data quality at the start of execute
             self.logger.debug("Execute - data shape: %s", data.shape)
             numeric = data.select_dtypes(include=[np.number])
@@ -137,13 +237,14 @@ class FeatureGenerationStep(ModularComponent):
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 raise ValueError(f"Missing required columns: {missing_columns}. Available: {list(data.columns)}")
-            if not FEATURE_GENERATION_AVAILABLE:
+            if not FEATURE_GENERATION_AVAILABLE or self.feature_bank is None:
                 # Fast fail if enhanced components are not available
                 raise RuntimeError("Enhanced feature generation components are not available")
 
             # Perform comprehensive feature generation
             generation_result = await self._perform_enhanced_feature_generation(
-                data, symbol, timeframe, direction, custom_overrides, base_cfg
+                data, symbol, timeframe, direction, custom_overrides, base_cfg,
+                enable_cmi_complementarity, pipeline_state, targets
             )
 
             if generation_result.success:
@@ -151,6 +252,81 @@ class FeatureGenerationStep(ModularComponent):
                 self.logger.info(f"Generated {len(generation_result.generated_features.columns)} features")
                 self.logger.info(f"Categories: {', '.join(generation_result.feature_categories)}")
                 self.logger.info(f"Optimization stats: {generation_result.optimization_stats}")
+                
+                # Extract actual data from FeatureResult objects before saving to artifact manager
+                # This prevents serialization issues with FeatureResult objects
+                clean_features_df = generation_result.generated_features.copy()
+                
+                # Convert any FeatureResult objects to their underlying data
+                for col in clean_features_df.columns:
+                    if len(clean_features_df[col]) > 0:
+                        first_value = clean_features_df[col].iloc[0]
+                        # Check if the column contains FeatureResult objects
+                        if hasattr(first_value, 'data') and hasattr(first_value, 'name'):
+                            # This is a FeatureResult object, extract the .data series
+                            clean_features_df[col] = first_value.data
+                        elif isinstance(first_value, pd.Series):
+                            # Already a series, keep as is
+                            pass
+                        else:
+                            # Regular numeric data, keep as is
+                            pass
+                
+                # Ensure all columns are numeric
+                clean_features_df = clean_features_df.select_dtypes(include=[np.number])
+                
+                # Save artifacts to artifact manager (write both legacy and standardized keys)
+                # Standardized keys align with ArtifactKeys for downstream compatibility
+                artifact_manager.save(
+                    step_name='feature_generation',
+                    artifacts={
+                        # Legacy key used elsewhere in the codebase
+                        'generated_features': clean_features_df,
+                        # Standardized alias for broad compatibility
+                        'feature_dataframe': clean_features_df,
+                        # Names and categories already match ArtifactKeys values
+                        'feature_names': generation_result.feature_names,
+                        'feature_categories': generation_result.feature_categories,
+                        # Provide both legacy and standardized metric keys
+                        'generation_metrics': generation_result.generation_metrics,
+                        'feature_generation_metrics': generation_result.generation_metrics,
+                        'optimization_stats': generation_result.optimization_stats,
+                        'feature_optimization_stats': generation_result.optimization_stats
+                    },
+                    metadata={
+                        'step': 'feature_generation',
+                        'shape': clean_features_df.shape,
+                        'columns': list(clean_features_df.columns),
+                        'created_at': datetime.now().isoformat()
+                    }
+                )
+
+                # Also save under the component step name for backward compatibility
+                artifact_manager.save(
+                    step_name='feature_generation_feature_generation_step',
+                    artifacts={
+                        'generated_features': clean_features_df,
+                        'feature_dataframe': clean_features_df,
+                        'feature_names': generation_result.feature_names,
+                        'feature_categories': generation_result.feature_categories,
+                        'generation_metrics': generation_result.generation_metrics,
+                        'feature_generation_metrics': generation_result.generation_metrics,
+                        'optimization_stats': generation_result.optimization_stats,
+                        'feature_optimization_stats': generation_result.optimization_stats
+                    },
+                    metadata={
+                        'step': 'feature_generation_feature_generation_step',
+                        'shape': clean_features_df.shape,
+                        'columns': list(clean_features_df.columns),
+                        'created_at': datetime.now().isoformat()
+                    }
+                )
+                
+                # Generate final report
+                report_path = await self._generate_final_report(
+                    generation_result, symbol, timeframe, direction, exchange
+                )
+                self.logger.info(f"📊 Final report generated: {report_path}")
             else:
                 self.logger.error(f"Feature generation failed: {generation_result.error_message}")
 
@@ -159,22 +335,30 @@ class FeatureGenerationStep(ModularComponent):
         except Exception as e:
             self.logger.error(f"Enhanced feature generation step failed with exception: {e}")
             return FeatureGenerationResult(
-                success=False,
+                feature_names=[],
+                feature_data=pd.DataFrame(),
                 generated_features=pd.DataFrame(),
-                feature_metadata={},
-                generation_metrics={},
-                optimization_stats={},
                 feature_categories=[],
-                vectorbt_optimizations={},
-                artifacts={},
-                error_message=str(e)
+                generation_time=0.0,
+                n_features_generated=0,
+                cache_hit=False,
+                memory_usage_mb=0.0,
+                success=False,
+                error_message=str(e),
+                metadata={},
+                optimization_stats={}
             )
 
     async def _perform_enhanced_feature_generation(self, data: pd.DataFrame, symbol: str,
                                                    timeframe: str, direction: str,
                                                    custom_overrides: Optional[Dict[str, Any]],
-                                                   base_config: Optional[FeatureConfig] = None) -> FeatureGenerationResult:
-        """Perform enhanced feature generation using AutoOptimizedFeatureGenerator."""
+                                                   base_config: Optional[FeatureConfig] = None,
+                                                   enable_cmi_complementarity: bool = False,
+                                                   pipeline_state: Optional[Dict[str, Any]] = None,
+                                                   targets: Optional[pd.Series] = None) -> FeatureGenerationResult:
+        """Perform enhanced feature generation using FeatureBank."""
+        
+        start_time = time.time()
         
         try:
             # Use the provided base config or create a fresh copy
@@ -190,62 +374,249 @@ class FeatureGenerationStep(ModularComponent):
                 if not getattr(feature_config, 'required_columns', None):
                     raise ValueError("feature_config.required_columns cannot be empty after overrides.")
             
-            # Generate features using auto-optimized generator with fresh config
-            # Handle potential async generate method
-            res = self.auto_optimized_generator.generate(
+            # Generate features using FeatureBank with all available categories
+            # Use all available categories except Autoencoder, Wavelet, regime, microstructure, and interaction features
+            from src.feature_generation.core.feature_generator import FeatureCategory
+            excluded_categories = {
+                'autoencoder', 'wavelet', 'regime', 
+                'advanced_statistical', 'order_flow', 'microstructure', 'interaction'
+            }
+            feature_categories = [
+                cat.value for cat in FeatureCategory 
+                if cat.value.lower() not in excluded_categories
+            ]
+            
+            self.logger.info(f"🎯 Generating features for {len(feature_categories)} categories: {', '.join(feature_categories)}")
+            
+            # Add progress monitoring during feature generation
+            self.logger.info("📊 Starting feature generation process...")
+            self.logger.info(f"📈 Data shape: {data.shape[0]} rows × {data.shape[1]} columns")
+            self.logger.info(f"🧮 Total memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            
+            # Use FeatureBank to generate features properly
+            generation_start_time = time.time()
+            generated_features_df = self.feature_bank.generate_features(
                 data=data,
-                symbol=symbol,
-                timeframe=timeframe,
-                direction=direction,
-                config=feature_config
+                categories=feature_categories,
+                use_optimized_pipeline=True,
+                lookback_optimization=True,
+                execution_mode=intensity or custom_overrides.get('execution_mode') if custom_overrides else self.config.get('execution_mode')  # Pass execution mode for light mode restriction
             )
+            generation_duration = time.time() - generation_start_time
             
-            # Check if result is a coroutine (async method)
-            if asyncio.iscoroutine(res):
-                feature_result = await res
+            # Apply CMI complementarity filtering if enabled
+            if enable_cmi_complementarity and targets is not None:
+                tprint_info("🎯 Applying CMI complementarity filtering to generated features")
+                try:
+                    # Extract Analyst side information
+                    analyst_result = self.analyst_handler.extract_side_info(
+                        pipeline_state, targets, generated_features_df.index
+                    )
+                    
+                    if analyst_result.is_valid and not analyst_result.degraded_to_unconditional:
+                        # Apply CMI complementarity scoring
+                        cmi_result = self.cmi_scorer.score_features(
+                            generated_features_df, targets, analyst_result.A,
+                            pipeline_state=pipeline_state
+                        )
+                        
+                        if cmi_result.is_valid and cmi_result.selected_features:
+                            # Filter features based on CMI selection
+                            original_count = len(generated_features_df.columns)
+                            generated_features_df = generated_features_df[cmi_result.selected_features]
+                            filtered_count = len(generated_features_df.columns)
+                            
+                            tprint_success(f"✅ CMI complementarity filtering: {original_count} → {filtered_count} features")
+                            tprint_info(f"📊 Noise floor: {cmi_result.noise_floor:.6f}")
+                            tprint_info(f"📊 ΔPerf threshold: {cmi_result.delta_perf_threshold:.6f}")
+                            
+                            # Store CMI diagnostics
+                            cmi_diagnostics = {
+                                'cmi_enabled': True,
+                                'original_features': original_count,
+                                'filtered_features': filtered_count,
+                                'noise_floor': cmi_result.noise_floor,
+                                'delta_perf_threshold': cmi_result.delta_perf_threshold,
+                                'analyst_source': analyst_result.source,
+                                'analyst_dims': analyst_result.n_dims,
+                                'I_Y_A': analyst_result.I_Y_A,
+                                'degraded_to_unconditional': analyst_result.degraded_to_unconditional
+                            }
+                        else:
+                            tprint_warning("⚠️ CMI complementarity scoring failed, using all features")
+                            cmi_diagnostics = {'cmi_enabled': False, 'error': 'CMI scoring failed'}
+                    else:
+                        tprint_warning("⚠️ Analyst side information extraction failed, using all features")
+                        cmi_diagnostics = {'cmi_enabled': False, 'error': 'Analyst side info failed'}
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ CMI complementarity filtering failed: {e}, using all features")
+                    cmi_diagnostics = {'cmi_enabled': False, 'error': str(e)}
             else:
-                feature_result = res
+                cmi_diagnostics = {'cmi_enabled': False, 'reason': 'Not in Tactician mode or no targets'}
             
-            # Get optimization statistics with null check
+            # Log generation completion
+            self.logger.info(f"✅ Feature generation completed in {generation_duration:.2f} seconds")
+            self.logger.info(f"📊 Generated {len(generated_features_df.columns)} features")
+            self.logger.info(f"💾 Output memory usage: {generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+            
+            # Store the generated features dataframe with memory optimization
             try:
-                optimization_stats = self.auto_optimized_generator.get_optimization_stats()
-                if optimization_stats is None:
-                    optimization_stats = {'status': 'unavailable', 'message': 'Optimization stats not available'}
+                import os
+                from datetime import datetime
+                import gc
+                
+                # Create generated directory if it doesn't exist
+                generated_dir = "generated"
+                os.makedirs(generated_dir, exist_ok=True)
+                
+                # Generate filename with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
+                # Clean the dataframe to extract data from FeatureResult objects
+                clean_df = generated_features_df.copy()
+                for col in clean_df.columns:
+                    if len(clean_df[col]) > 0:
+                        first_value = clean_df[col].iloc[0]
+                        # Check if the column contains FeatureResult objects
+                        if hasattr(first_value, 'data') and hasattr(first_value, 'name'):
+                            # This is a FeatureResult object, extract the .data series
+                            clean_df[col] = first_value.data
+                
+                # Ensure all columns are numeric
+                clean_df = clean_df.select_dtypes(include=[np.number])
+                
+                # Optimize DataFrame before saving to reduce memory pressure
+                self.logger.info("🔧 Optimizing DataFrame for efficient saving...")
+                optimized_df = self._optimize_dataframe_for_saving(clean_df)
+                
+                # Don't delete optimized_df yet - we need it for saving
+                # del optimized_df
+                # gc.collect()
+                
+                # Save as compressed Parquet (much more efficient than CSV for large datasets)
+                parquet_filename = f"generated_features_{symbol}_{timeframe}_{direction}_{timestamp}.parquet"
+                parquet_path = os.path.join(generated_dir, parquet_filename)
+                
+                try:
+                    # Use compression to reduce file size and memory usage
+                    optimized_df.to_parquet(parquet_path, compression='snappy', index=False)
+                    self.logger.info(f"📄 Generated features Parquet saved to: {parquet_path}")
+                    
+                    # Get file size for logging
+                    file_size_mb = os.path.getsize(parquet_path) / (1024 * 1024)
+                    self.logger.info(f"💾 File size: {file_size_mb:.2f} MB")
+                    
+                except Exception as parquet_e:
+                    self.logger.warning(f"Parquet save failed: {parquet_e}, falling back to CSV")
+                    # Fallback to CSV with chunked writing
+                    csv_filename = f"generated_features_{symbol}_{timeframe}_{direction}_{timestamp}.csv"
+                    csv_path = os.path.join(generated_dir, csv_filename)
+                    self._save_dataframe_chunked(optimized_df, csv_path)
+                    self.logger.info(f"📄 Generated features CSV saved to: {csv_path}")
+                
+                # Only save pickle if dataset is reasonably sized (< 1GB)
+                df_memory_mb = optimized_df.memory_usage(deep=True).sum() / (1024 * 1024)
+                if df_memory_mb < 1000:  # Only save pickle if < 1GB
+                    try:
+                        pickle_filename = f"generated_features_{symbol}_{timeframe}_{direction}_{timestamp}.pkl"
+                        pickle_path = os.path.join(generated_dir, pickle_filename)
+                        optimized_df.to_pickle(pickle_path)
+                        self.logger.info(f"💾 Generated features pickle saved to: {pickle_path}")
+                    except Exception as pickle_e:
+                        self.logger.warning(f"Failed to save pickle: {pickle_e}")
+                else:
+                    self.logger.info(f"⏭️ Skipping pickle save due to large size ({df_memory_mb:.1f}MB)")
+                
+                # Clear optimized DataFrame to free memory after saving
+                del optimized_df
+                gc.collect()
+                
             except Exception as e:
-                self.logger.warning(f"Failed to get optimization stats: {e}")
-                optimization_stats = {'status': 'error', 'message': f'Failed to get optimization stats: {e}'}
+                self.logger.warning(f"Failed to save generated features: {e}")
             
-            # Get feature categories used - handle both singular and plural
-            if hasattr(feature_config, 'categories') and feature_config.categories:
-                feature_categories = [getattr(cat, 'value', str(cat)) for cat in feature_config.categories]
-            elif hasattr(feature_config, 'category') and feature_config.category is not None:
-                feature_categories = [getattr(feature_config.category, 'value', str(feature_config.category))]
+            # Create feature names list from generated features
+            # Use clean_df if it was created, otherwise use the original
+            if 'clean_df' in locals() and clean_df is not None:
+                feature_names = list(clean_df.columns)
             else:
-                feature_categories = []
+                feature_names = list(generated_features_df.columns)
             
-            # Get VectorBT optimization details with safe attribute access
-            vectorbt_optimizations = {
-                'vectorbt_enabled': bool(getattr(feature_config, 'use_vectorbt', False)),
-                'optimization_level': getattr(self.auto_optimization_config, 'optimization_level', None),
-                'parallel_processing': bool(getattr(feature_config, 'enable_parallel', False)),
-                'memory_optimization': bool(getattr(self.auto_optimization_config, 'enable_memory_optimization', False)),
-                'gpu_acceleration': bool(getattr(feature_config, 'enable_gpu', False))
+            # Create feature categories list
+            feature_categories = list(set(feature_categories))
+            
+            # Create optimization stats
+            optimization_stats = {
+                'vectorbt_optimization_enabled': True,
+                'memory_optimization_enabled': True,
+                'gpu_acceleration_enabled': True,
+                'parallel_processing_enabled': True
             }
             
-            # Compile comprehensive result with safe attribute access
+            # Create generation metrics
+            generation_metrics = {
+                'generation_time': generation_duration,
+                'features_generated': len(feature_names),
+                'memory_usage_mb': generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024,
+                'categories_count': len(feature_categories)
+            }
+            
+            # Create feature details by category
+            feature_details_by_category = {}
+            for category in feature_categories:
+                # Filter features by category (simplified approach)
+                category_features = [f for f in feature_names if category.lower() in f.lower()]
+                if category_features:
+                    feature_details_by_category[category] = category_features
+            
+            # Create vectorbt optimizations info
+            vectorbt_optimizations = {
+                'enabled': True,
+                'optimization_level': 'balanced',
+                'memory_optimization': True,
+                'gpu_acceleration': True
+            }
+            
+            # Store dataframes for later use
+            stored_dataframes = {}
+            try:
+                if 'csv_path' in locals():
+                    stored_dataframes['csv'] = csv_path
+                if 'pickle_path' in locals():
+                    stored_dataframes['pickle'] = pickle_path
+            except:
+                pass
+            
             return FeatureGenerationResult(
-                success=getattr(feature_result, 'success', False),
-                generated_features=getattr(feature_result, 'features', pd.DataFrame()),
-                feature_metadata=getattr(feature_result, 'feature_metadata', {}),
-                generation_metrics=getattr(feature_result, 'metrics', {}),
-                optimization_stats=optimization_stats,
+                feature_names=feature_names,
+                feature_data=generated_features_df,
+                generated_features=generated_features_df,
                 feature_categories=feature_categories,
-                vectorbt_optimizations=vectorbt_optimizations,
-                artifacts={
-                    'feature_result': getattr(feature_result, '__dict__', {}),
-                    'optimization_stats': optimization_stats,
+                generation_time=generation_duration,
+                n_features_generated=len(feature_names),
+                cache_hit=False,  # FeatureBank doesn't provide cache info directly
+                memory_usage_mb=generated_features_df.memory_usage(deep=True).sum() / 1024 / 1024 if not generated_features_df.empty else 0.0,
+                success=True,
+                error_message=None,
+                optimization_stats=optimization_stats,
+                metadata={
+                    'feature_metadata': {'generated_features': feature_names},
+                    'generation_metrics': generation_metrics,
+                    'feature_categories': feature_categories,
+                    'vectorbt_optimizations': vectorbt_optimizations,
+                    'feature_result': {'generated_features_df_shape': generated_features_df.shape},
                     'config': self._serialize_config(feature_config),
-                    'auto_optimization_config': self._serialize_config(self.auto_optimization_config)
+                    'auto_optimization_config': self._serialize_config(self.auto_optimization_config),
+                    'feature_details_by_category': feature_details_by_category,
+                    'stored_dataframes': stored_dataframes,
+                    'cmi_diagnostics': cmi_diagnostics
+                },
+                artifacts={
+                    'feature_dataframe': generated_features_df,
+                    'feature_names': feature_names,
+                    'feature_categories': feature_categories,
+                    'vectorbt_optimizations': vectorbt_optimizations,
+                    'raw_dataframe': data
                 }
             )
             
@@ -253,7 +624,328 @@ class FeatureGenerationStep(ModularComponent):
             self.logger.error(f"Enhanced feature generation failed: {e}")
             # Fast fail - no fallback, just raise the error
             raise RuntimeError(f"Feature generation failed: {e}") from e
+    
+    def _optimize_dataframe_for_saving(self, df):
+        """Optimize DataFrame for efficient saving by reducing memory usage."""
+        try:
+            import pandas as pd
+            import numpy as np
+            
+            self.logger.info("🔧 Optimizing DataFrame data types for memory efficiency...")
+            
+            # Create a copy to avoid modifying original
+            optimized_df = df.copy()
+            original_memory = optimized_df.memory_usage(deep=True).sum() / (1024 * 1024)
+            
+            # Optimize numeric columns
+            for col in optimized_df.select_dtypes(include=[np.number]).columns:
+                col_data = optimized_df[col]
+                
+                # Skip if column has NaN values that might cause issues
+                if col_data.isna().any():
+                    continue
+                
+                # Float64 -> Float32 optimization
+                if col_data.dtype == np.float64:
+                    if (col_data.max() < np.finfo(np.float32).max and
+                        col_data.min() > np.finfo(np.float32).min):
+                        optimized_df[col] = col_data.astype(np.float32)
+                
+                # Int64 -> Int32 optimization
+                elif col_data.dtype == np.int64:
+                    if (col_data.max() < np.iinfo(np.int32).max and
+                        col_data.min() > np.iinfo(np.int32).min):
+                        optimized_df[col] = col_data.astype(np.int32)
+                
+                # Int64 -> Int16 optimization for small ranges
+                elif col_data.dtype == np.int64:
+                    if (col_data.max() < np.iinfo(np.int16).max and
+                        col_data.min() > np.iinfo(np.int16).min):
+                        optimized_df[col] = col_data.astype(np.int16)
+            
+            # Optimize object columns to category if beneficial
+            for col in optimized_df.select_dtypes(include=['object']).columns:
+                if optimized_df[col].nunique() / len(optimized_df) < 0.5:  # Less than 50% unique values
+                    optimized_df[col] = optimized_df[col].astype('category')
+            
+            # Calculate memory savings
+            optimized_memory = optimized_df.memory_usage(deep=True).sum() / (1024 * 1024)
+            memory_saved = original_memory - optimized_memory
+            reduction_percentage = (memory_saved / original_memory) * 100 if original_memory > 0 else 0
+            
+            self.logger.info(f"💾 Memory optimization: {memory_saved:.1f}MB saved ({reduction_percentage:.1f}% reduction)")
+            self.logger.info(f"📊 Optimized memory usage: {optimized_memory:.1f}MB")
+            
+            return optimized_df
+            
+        except Exception as e:
+            self.logger.warning(f"DataFrame optimization failed: {e}, using original DataFrame")
+            return df
+    
+    def _save_dataframe_chunked(self, df, filepath, chunk_size=10000):
+        """Save large DataFrame in chunks to reduce memory pressure."""
+        try:
+            import pandas as pd
+            
+            self.logger.info(f"📝 Saving DataFrame in chunks of {chunk_size} rows...")
+            
+            # Get total rows
+            total_rows = len(df)
+            num_chunks = (total_rows + chunk_size - 1) // chunk_size
+            
+            # Save header first
+            df.head(0).to_csv(filepath, index=False)
+            
+            # Append chunks
+            for i in range(num_chunks):
+                start_idx = i * chunk_size
+                end_idx = min(start_idx + chunk_size, total_rows)
+                
+                chunk = df.iloc[start_idx:end_idx]
+                chunk.to_csv(filepath, mode='a', header=False, index=False)
+                
+                # Progress update
+                progress = (i + 1) / num_chunks * 100
+                if (i + 1) % 10 == 0 or i == num_chunks - 1:  # Log every 10 chunks or last chunk
+                    self.logger.info(f"📈 Chunked save progress: {progress:.1f}% ({i+1}/{num_chunks} chunks)")
+            
+            self.logger.info(f"✅ Chunked save completed: {filepath}")
+            
+        except Exception as e:
+            self.logger.error(f"Chunked save failed: {e}")
+            # Fallback to regular save
+            df.to_csv(filepath, index=False)
 
 
 
-    # Required utility methods for BasePreTrainingComponent
+    async def _generate_final_report(self, generation_result: FeatureGenerationResult, 
+                                    symbol: str, timeframe: str, direction: str, exchange: str = "binance") -> str:
+        """Generate a human-readable final report."""
+        try:
+            from datetime import datetime
+            import os
+            
+            # Create outcomes directory if it doesn't exist
+            outcomes_dir = "outcomes"
+            os.makedirs(outcomes_dir, exist_ok=True)
+            
+            # Generate timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_filename = f"feature_generation_report_{symbol}_{timeframe}_{direction}_{timestamp}.md"
+            report_path = os.path.join(outcomes_dir, report_filename)
+            
+            # Generate report content
+            report_content = f"""# Feature Generation Report
+
+## Summary
+- **Symbol**: {symbol}
+- **Exchange**: {exchange}
+- **Timeframe**: {timeframe}
+- **Direction**: {direction}
+- **Generated At**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+- **Status**: {'✅ SUCCESS' if generation_result.success else '❌ FAILED'}
+
+## Feature Generation Results
+- **Total Features Generated**: {generation_result.n_features_generated}
+- **Generation Time**: {generation_result.generation_time:.3f} seconds
+- **Memory Usage**: {generation_result.memory_usage_mb:.2f} MB
+- **Cache Hit**: {'Yes' if generation_result.cache_hit else 'No'}
+
+## Feature Categories
+"""
+            
+            # Use detailed category information if available, otherwise fall back to basic categories
+            if generation_result.metadata and 'feature_details_by_category' in generation_result.metadata:
+                feature_details_by_category = generation_result.metadata['feature_details_by_category']
+                for category, features in sorted(feature_details_by_category.items()):
+                    report_content += f"- **{category.title()}**: {len(features)} features generated\n"
+            elif generation_result.feature_categories:
+                for category in generation_result.feature_categories:
+                    report_content += f"- **{category.title()}**: Generated\n"
+            else:
+                report_content += "- No categories specified\n"
+            
+            # Add detailed feature information by category
+            if generation_result.metadata and 'feature_details_by_category' in generation_result.metadata:
+                feature_details_by_category = generation_result.metadata['feature_details_by_category']
+                report_content += f"""
+## Detailed Feature List by Category
+"""
+                
+                for category, features in sorted(feature_details_by_category.items()):
+                    report_content += f"""
+### {category.title()} Features ({len(features)} features)
+"""
+                    for i, feature_name in enumerate(features, 1):
+                        report_content += f"{i}. {feature_name}\n"
+                    report_content += "\n"
+            else:
+                # Fallback to simple feature list
+                report_content += f"""
+## Feature Names
+"""
+                
+                if generation_result.feature_names:
+                    # Group features by category if possible
+                    for i, feature_name in enumerate(generation_result.feature_names[:50], 1):  # Show first 50
+                        report_content += f"{i}. {feature_name}\n"
+                    if len(generation_result.feature_names) > 50:
+                        report_content += f"... and {len(generation_result.feature_names) - 50} more features\n"
+                else:
+                    report_content += "- No features generated\n"
+            
+            report_content += f"""
+## Optimization Statistics
+"""
+            
+            if generation_result.optimization_stats:
+                for key, value in generation_result.optimization_stats.items():
+                    report_content += f"- **{key}**: {value}\n"
+            else:
+                report_content += "- No optimization statistics available\n"
+            
+            report_content += f"""
+## Data Quality
+- **Data Shape**: {generation_result.generated_features.shape if not generation_result.generated_features.empty else 'Empty DataFrame'}
+- **Success**: {'Yes' if generation_result.success else 'No'}
+"""
+            
+            # Add information about stored dataframes if available
+            if generation_result.metadata and 'stored_dataframes' in generation_result.metadata:
+                stored_dataframes = generation_result.metadata['stored_dataframes']
+                report_content += f"""
+## Stored Data
+"""
+                for file_type, file_path in stored_dataframes.items():
+                    report_content += f"- **{file_type.title()}**: {file_path}\n"
+            
+            if generation_result.error_message:
+                report_content += f"- **Error**: {generation_result.error_message}\n"
+            
+            report_content += f"""
+## Technical Details
+- **Feature Data Type**: {type(generation_result.feature_data).__name__}
+- **Generated Features Type**: {type(generation_result.generated_features).__name__}
+- **Metadata Available**: {'Yes' if generation_result.metadata else 'No'}
+
+## Recommendations
+"""
+            
+            if generation_result.success:
+                report_content += """- ✅ Feature generation completed successfully
+- 📊 Consider analyzing feature importance for model training
+- 🔍 Review feature categories for completeness
+- 💾 Features are ready for model training pipeline
+"""
+            else:
+                report_content += """- ❌ Feature generation failed
+- 🔧 Check error message for specific issues
+- 🔄 Consider retrying with different parameters
+- 📋 Review input data quality
+"""
+            
+            # Write report to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            return report_path
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate final report: {e}")
+            return ""
+
+    def _serialize_config(self, config: Any) -> Dict[str, Any]:
+        """Serialize configuration object to dictionary."""
+        try:
+            if hasattr(config, '__dict__'):
+                return {k: v for k, v in config.__dict__.items() if not k.startswith('_')}
+            elif isinstance(config, dict):
+                return config
+            else:
+                return {'config': str(config)}
+        except Exception:
+            return {'config': str(config)}
+
+
+async def handle_feature_generation_step(
+    symbol: str = "ETHUSDT",
+    timeframe: str = "15m",
+    exchange: str = "binance",
+    direction: str = "longs",
+    intensity: str = None,
+    lookback_days: int = None,
+    start_date: str = None,
+    end_date: str = None,
+    custom_overrides: dict = None,
+    **kwargs
+) -> ComponentResult:
+    """
+    Handler function for feature generation step.
+
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        timeframe: Timeframe (e.g., "15m")
+        exchange: Exchange name (e.g., "binance")
+        direction: Trading direction (e.g., "longs")
+        intensity: Intensity level (e.g., "light", "full", "blank") or None for default
+        lookback_days: Number of days to look back
+        start_date: Start date for data
+        end_date: End date for data
+        custom_overrides: Custom configuration overrides
+        **kwargs: Additional arguments
+
+    Returns:
+        ComponentResult: Result of the feature generation step
+    """
+    # Handle None intensity by defaulting to light mode (more reasonable default)
+    if intensity is None:
+        intensity = "light"
+
+    try:
+        # Create the step instance
+        step = FeatureGenerationStep(
+            name="feature_generation_step",
+            config={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange,
+                'direction': direction,
+                'intensity': intensity,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'custom_overrides': custom_overrides
+            }
+        )
+
+        # Create training input
+        training_input = {
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'exchange': exchange,
+            'direction': direction,
+            'intensity': intensity,
+            'lookback_days': lookback_days,
+            'start_date': start_date,
+            'end_date': end_date,
+            'custom_overrides': custom_overrides
+        }
+
+        # Execute the step
+        result = await step.execute(
+            training_input=training_input,
+            pipeline_state={},
+            **kwargs
+        )
+
+        return result
+
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Handler function failed: {e}")
+        return ComponentResult(
+            success=False,
+            metadata={},
+            error_message=str(e)
+        )

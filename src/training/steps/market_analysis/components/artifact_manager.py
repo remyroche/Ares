@@ -3,10 +3,16 @@ Centralized Artifact Manager for Market Analysis Pipeline.
 
 This module provides centralized artifact management with consistent naming,
 timestamps, and failure handling.
+
+Enhanced with memory optimization and computational efficiency features.
 """
 
+import gc
 import json
 import os
+import threading
+import time
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -25,6 +31,12 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
+
+try:
+    import lz4.frame
+    LZ4_AVAILABLE = True
+except ImportError:
+    LZ4_AVAILABLE = False
 
 from src.training.common.artifact_persistence import SaveReport, persist_artifacts
 from src.utils.logger import system_logger
@@ -58,6 +70,27 @@ class ArtifactManager:
         # Store base directory and artifact directory path (lazy creation)
         self.base_dir = Path(base_dir)
         self.artifact_dir = self.base_dir / f"{symbol}_{exchange}_{timeframe}_{self.session_timestamp}"
+
+        # Memory optimization settings
+        self.max_cache_size_mb = 256
+        self.enable_compression = True
+        self.compression_threshold_mb = 0.5
+        self.enable_data_type_optimization = True
+        self.enable_aggressive_cleanup = True
+        self.cleanup_interval_seconds = 300
+        
+        # Initialize memory optimization components
+        self._cache = OrderedDict()  # LRU cache
+        self._cache_size_bytes = 0
+        self._max_cache_size_bytes = self.max_cache_size_mb * 1024 * 1024
+        self._lock = threading.RLock()
+        self._last_cleanup = time.time()
+        self._performance_metrics = {
+            'cache_hits': 0,
+            'cache_misses': 0,
+            'compression_savings_mb': 0.0,
+            'optimization_savings_mb': 0.0
+        }
 
         self.logger.info(f"Artifact directory path prepared: {self.artifact_dir}")
 

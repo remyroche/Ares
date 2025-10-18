@@ -1,16 +1,26 @@
 """
 Common constants for the features_common module.
 
-This module provides shared constants to avoid circular import issues.
+Notes:
+- Do NOT import heavy optional deps (like vectorbt/numba) at module import time.
+  Importing `vectorbt` pulls in `numba`/`llvmlite`, which can be slow or fail on
+  some systems. We expose a lightweight availability probe and defer the actual
+  import to call sites that need it (see utils.get_vbt / LazyVBT).
 """
 
-# VectorBT availability check
-try:
-    import vectorbt as vbt
-    VECTORBT_AVAILABLE = True
-except ImportError:
+import os
+import importlib.util
+
+# VectorBT availability check (non-loading)
+# - Honours an env kill switch to force-disable VectorBT without importing it
+# - Uses importlib.util.find_spec to avoid triggering import-time side effects
+_env_disable_vbt = os.getenv("ARES_DISABLE_VECTORBT", "0").strip() in {"1", "true", "yes", "on"}
+if _env_disable_vbt:
     VECTORBT_AVAILABLE = False
     vbt = None
+else:
+    VECTORBT_AVAILABLE = importlib.util.find_spec("vectorbt") is not None
+    vbt = None  # actual module is loaded lazily in utils.get_vbt()
 
 # TPrint availability check
 try:

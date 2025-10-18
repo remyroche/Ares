@@ -44,7 +44,7 @@ def validate_raw_ohlcv(data: RawOHLCV) -> RawOHLCV:
     return data
 
 
-def validate_engineered_features(features: EngineeredFeatures) -> bool:
+def validate_engineered_features(features: EngineeredFeatures, context: str = None) -> bool:
     """Validate engineered features."""
     if features.features is None:
         raise SchemaValidationException("Engineered features cannot be None")

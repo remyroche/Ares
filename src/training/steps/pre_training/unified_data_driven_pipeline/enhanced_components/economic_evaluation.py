@@ -256,34 +256,9 @@ class EconomicPeriodEvaluator:
             tprint_debug(f"📊 Target data shape: {targets.shape if targets is not None else 'None'}")
             tprint_debug(f"📊 Available columns: {list(data.columns)}")
             
-            # Use UnifiedVectorizationManager if available
-            if self.vectorization_manager:
-                tprint_info("🚀 Using UnifiedVectorizationManager for economic validation")
-                try:
-                    with self.vectorization_manager.performance_monitoring("feature_selection"):
-                        result = self.vectorization_manager.optimize_operation(
-                            OperationType.FEATURE_SELECTION, 
-                            data, 
-                            targets=targets,
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            validation_type="economic"
-                        )
-                        if result:
-                            tprint_success("✅ Vectorization manager optimization completed successfully")
-                            return EconomicValidationResult(
-                                validated_features=data,
-                                economic_scores={},
-                                validation_metrics={},
-                                performance_stats=self.performance_stats,
-                                success=True
-                            )
-                        else:
-                            tprint_warning("⚠️ Vectorization manager returned no result, falling back to standard validation")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Vectorization manager failed: {e}, falling back to standard validation")
-            else:
-                tprint_info("ℹ️ UnifiedVectorizationManager not available, using standard validation")
+            # Skip UnifiedVectorizationManager for now due to missing performance_monitoring method
+            # Use standard economic validation instead
+            tprint_info("🔄 Using standard economic validation")
             
             # Fallback to economic evaluation using existing methods
             if 'close' in data.columns:
@@ -292,54 +267,62 @@ class EconomicPeriodEvaluator:
                 candidate_periods = [5, 10, 20, 50, 100, 200]
                 tprint_debug(f"📊 Price data shape: {prices.shape}")
                 tprint_debug(f"📊 Candidate periods: {candidate_periods}")
-                
-                # Evaluate periods for economic significance
-                tprint_info("🔄 Evaluating periods for economic significance")
-                evaluation_result = self.evaluate_periods(
-                    data, candidate_periods, timeframe
-                )
-                
-                if evaluation_result.success:
-                    tprint_success(f"✅ Economic evaluation successful: {evaluation_result.successful_evaluations} periods evaluated")
-                    tprint_debug(f"📊 Top periods: {evaluation_result.top_periods}")
-                    
-                    # Select features based on economic significance
-                    tprint_info("🎯 Selecting economically significant features")
-                    validated_features = self._select_economically_significant_features(
-                        data, evaluation_result, targets
-                    )
-                    
-                    tprint_success(f"✅ Selected {len(validated_features.columns)} economically significant features")
-                    tprint_debug(f"📊 Selected features: {list(validated_features.columns)}")
-                    
-                    return EconomicValidationResult(
-                        validated_features=validated_features,
-                        economic_scores=evaluation_result.economic_scores,
-                        validation_metrics=evaluation_result.performance_metrics,
-                        performance_stats=self.performance_stats,
-                        success=True
-                    )
+            else:
+                tprint_warning("⚠️ No close price data available for economic validation")
+                tprint_debug(f"📊 Available columns: {list(data.columns)}")
+                # Try to find alternative price columns
+                price_columns = [col for col in data.columns if 'price' in col.lower() or 'close' in col.lower()]
+                if price_columns:
+                    tprint_info(f"📈 Found alternative price columns: {price_columns}")
+                    prices = data[price_columns[0]]
+                    candidate_periods = [5, 10, 20, 50, 100, 200]
                 else:
-                    tprint_warning(f"⚠️ Economic evaluation failed: {evaluation_result.error_message}")
-                    # Return original data if evaluation fails
+                    tprint_warning("⚠️ No price data available for economic validation")
                     return EconomicValidationResult(
                         validated_features=data,
                         economic_scores={},
                         validation_metrics={},
                         performance_stats=self.performance_stats,
                         success=False,
-                        error_message=evaluation_result.error_message
+                        error_message="No price data available for economic validation"
                     )
+            
+            # Evaluate periods for economic significance
+            tprint_info("🔄 Evaluating periods for economic significance")
+            evaluation_result = self.evaluate_periods(
+                data, candidate_periods, timeframe
+            )
+            
+            if evaluation_result.success:
+                tprint_success(f"✅ Economic evaluation successful: {evaluation_result.successful_evaluations} periods evaluated")
+                tprint_debug(f"📊 Top periods: {evaluation_result.top_periods}")
+                
+                # Select features based on economic significance
+                tprint_info("🎯 Selecting economically significant features")
+                validated_features = self._select_economically_significant_features(
+                    data, evaluation_result, targets
+                )
+                
+                tprint_success(f"✅ Selected {len(validated_features.columns)} economically significant features")
+                tprint_debug(f"📊 Selected features: {list(validated_features.columns)}")
+                
+                return EconomicValidationResult(
+                    validated_features=validated_features,
+                    economic_scores=evaluation_result.economic_scores,
+                    validation_metrics=evaluation_result.performance_metrics,
+                    performance_stats=self.performance_stats,
+                    success=True
+                )
             else:
-                # No price data available, return original features
-                tprint_warning("⚠️ No price data available for economic validation")
-                tprint_info("ℹ️ Returning original features without economic validation")
+                tprint_warning(f"⚠️ Economic evaluation failed: {evaluation_result.error_message}")
+                # Return original data if evaluation fails
                 return EconomicValidationResult(
                     validated_features=data,
                     economic_scores={},
                     validation_metrics={},
                     performance_stats=self.performance_stats,
-                    success=True
+                    success=False,
+                    error_message=evaluation_result.error_message
                 )
                 
         except Exception as e:

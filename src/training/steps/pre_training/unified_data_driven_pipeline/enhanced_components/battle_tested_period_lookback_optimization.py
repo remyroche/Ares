@@ -17,6 +17,8 @@ import logging
 import time
 import warnings
 from dataclasses import dataclass, field
+from collections import OrderedDict
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from datetime import datetime
@@ -28,7 +30,7 @@ from scipy import stats
 
 # Import ML Commons utilities
 try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig
     from src.utils.ml_common.optimization.pareto import (
         Solution, ParetoFront, compute_pareto_front,
         select_knee_point, compute_hypervolume
@@ -94,6 +96,17 @@ class PeriodLookbackConfig:
     save_artifacts: bool = True
     artifacts_dir: str = "outcomes"
 
+    # Performance options
+    enable_signal_only: bool = True  # Compute metrics from aggregated signal instead of materializing full feature frames
+    cache_maxsize: int = 8  # Max entries per internal LRU cache
+    enable_batch_precompute: bool = True  # Batch precompute coarse-grid SMAs via VectorBT/pandas
+
+    # TPE optimizer wiring
+    tpe_enable_pruner: bool = True
+    tpe_pruner_type: str = 'hyperband'  # 'hyperband' | 'successive_halving' | 'median'
+    tpe_pruner_params: Dict[str, Any] = field(default_factory=dict)
+    tpe_max_trial_history: int = 200
+
 
 @dataclass
 class PeriodLookbackCombo:
@@ -134,9 +147,19 @@ class BattleTestedPeriodLookbackOptimizer:
         self.artifacts_dir = Path(self.config.artifacts_dir)
         self.artifacts_dir.mkdir(exist_ok=True)
         
-        # Initialize Bayesian TPE optimizer
+        # Initialize Bayesian TPE optimizer (wired with pruner & history cap)
         if ML_COMMONS_AVAILABLE:
-            self.tpe_optimizer = BayesianTPEOptimizer()
+            try:
+                tpe_cfg = OptimizationConfig(
+                    enable_pruner=self.config.tpe_enable_pruner,
+                    pruner_type=self.config.tpe_pruner_type,
+                    pruner_params=self.config.tpe_pruner_params,
+                    max_trial_history=self.config.tpe_max_trial_history,
+                )
+            except TypeError:
+                # Fallback if OptimizationConfig signature differs
+                tpe_cfg = None
+            self.tpe_optimizer = BayesianTPEOptimizer(config=tpe_cfg) if tpe_cfg is not None else BayesianTPEOptimizer()
         else:
             self.tpe_optimizer = None
             
@@ -144,13 +167,28 @@ class BattleTestedPeriodLookbackOptimizer:
         if PURGED_KFOLD_AVAILABLE:
             self.purged_kfold = PurgedKFoldTime(
                 n_splits=self.config.n_splits,
-                embargo_td=pd.Timedelta(days=self.config.embargo_days)
+                purge=pd.Timedelta(days=self.config.gap_days),
+                embargo=pd.Timedelta(days=self.config.embargo_days)
             )
         else:
             self.purged_kfold = None
         
         # Initialize evaluation cache
         self._evaluation_cache = {}
+        
+        # Lightweight LRU caches for rolling / lag features to avoid recomputation across combos
+        # Keep small max sizes to bound memory usage
+        self._rolling_feature_cache: OrderedDict = OrderedDict()   # (op, period, data_sig) -> DataFrame
+        self._lag_feature_cache: OrderedDict = OrderedDict()       # (op, lookback, data_sig) -> DataFrame
+        self._feature_cache_maxsize: int = int(self.config.cache_maxsize)
+
+        # Aggregated signal caches: store per-row means only (Series)
+        self._sma_mean_cache: OrderedDict = OrderedDict()          # (period, data_sig, columns) -> Series
+        self._lag_mean_cache: OrderedDict = OrderedDict()          # (lookback, data_sig, columns) -> Series
+        self._signal_cache_maxsize: int = int(self.config.cache_maxsize)
+
+        # Locks to protect caches in case of future parallelization
+        self._cache_lock = Lock()
     
     def optimize(self, 
                 data: pd.DataFrame, 
@@ -293,6 +331,37 @@ class BattleTestedPeriodLookbackOptimizer:
         )))
         
         results = []
+
+        # Optional: batch precompute per-row SMA means for coarse periods to reduce repetition
+        if self.config.enable_signal_only and self.config.enable_batch_precompute and len(feature_columns) > 0:
+            try:
+                from src.feature_generation.utils.vectorbt_operation_batcher import batch_rolling_operations
+                base = data[feature_columns]
+                # Build signature keys consistent with signal cache
+                if len(base) > 0:
+                    data_sig = (len(base), base.index[0], base.index[-1])
+                else:
+                    data_sig = (0, None, None)
+                cols_sig = tuple(feature_columns)
+
+                batch_results = batch_rolling_operations(base, periods, operation_name='mean')
+                for p in periods:
+                    key = f"mean_{p}"
+                    df = batch_results.get(key)
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        series = df.mean(axis=1)
+                        try:
+                            series = series.astype(np.float32)
+                        except Exception:
+                            pass
+                        sma_key = (p, data_sig, cols_sig)
+                        with self._cache_lock:
+                            self._sma_mean_cache[sma_key] = series
+                            if len(self._sma_mean_cache) > self._signal_cache_maxsize:
+                                self._sma_mean_cache.popitem(last=False)
+                tprint_info("⚡ Precomputed coarse-grid SMA means via batcher")
+            except Exception as e:
+                tprint_warning(f"⚠️ Batching SMA precompute skipped: {e}")
         total_combinations = len(periods) * len(lookbacks)
         
         for i, period in enumerate(periods):
@@ -523,22 +592,33 @@ class BattleTestedPeriodLookbackOptimizer:
             return self._evaluation_cache[cache_key]
         
         try:
-            # Generate features with this period/lookback combination
-            features = self._generate_features_with_period_lookback(
-                data, feature_columns, period, lookback
-            )
-            
-            if features is None or features.empty:
-                return None
-            
-            # CRITICAL FIX: Align targets with features after dropna()
-            targets_aligned = targets.loc[features.index]
-            
-            # Calculate scores with aligned targets
-            ic_score = self._calculate_ic_score(features, targets_aligned)
-            sharpe_score = self._calculate_sharpe_score(features, targets_aligned)
-            stability_score = self._calculate_stability_score(features, targets_aligned)
-            turnover_score, turnover_raw = self._calculate_turnover_score(features, targets_aligned)
+            if self.config.enable_signal_only:
+                # Compute aggregated signal directly (no large feature frames)
+                signal = self._get_signal_series(data, feature_columns, period, lookback)
+                if signal is None or signal.empty:
+                    return None
+                targets_aligned = targets.loc[signal.index]
+
+                ic_score = self._calculate_ic_from_signal(signal, targets_aligned)
+                sharpe_score = self._calculate_sharpe_from_signal(targets_aligned)
+                stability_score = self._calculate_stability_from_signal(signal, targets_aligned)
+                turnover_score, turnover_raw = self._calculate_turnover_from_signal(signal)
+                oof_ic, oof_sharpe = self._calculate_oof_from_signal(signal, targets_aligned)
+            else:
+                # Generate features with this period/lookback combination
+                features = self._generate_features_with_period_lookback(
+                    data, feature_columns, period, lookback
+                )
+                if features is None or features.empty:
+                    return None
+                # Align targets with features after dropna()
+                targets_aligned = targets.loc[features.index]
+                # Calculate scores with aligned targets
+                ic_score = self._calculate_ic_score(features, targets_aligned)
+                sharpe_score = self._calculate_sharpe_score(features, targets_aligned)
+                stability_score = self._calculate_stability_score(features, targets_aligned)
+                turnover_score, turnover_raw = self._calculate_turnover_score(features, targets_aligned)
+                oof_ic, oof_sharpe = self._calculate_oof_metrics(features, targets_aligned)
             
             # Calculate composite score
             composite_score = (
@@ -547,9 +627,6 @@ class BattleTestedPeriodLookbackOptimizer:
                 self.config.stability_weight * stability_score +
                 self.config.turnover_weight * turnover_score
             )
-            
-            # Calculate OOF metrics with aligned targets
-            oof_ic, oof_sharpe = self._calculate_oof_metrics(features, targets_aligned)
             
             result = PeriodLookbackCombo(
                 period=period,
@@ -577,6 +654,192 @@ class BattleTestedPeriodLookbackOptimizer:
             # Cache None result to avoid re-evaluating failed combinations
             self._evaluation_cache[cache_key] = None
             return None
+
+    def _get_signal_series(self,
+                           data: pd.DataFrame,
+                           feature_columns: List[str],
+                           period: int,
+                           lookback: int) -> Optional[pd.Series]:
+        """Compute aggregated signal Series for a (period, lookback) combo using caches.
+
+        Signal is the mean across transformed columns. With both transforms present,
+        it's the average of the per-row mean rolling SMA and the per-row mean lag.
+        """
+        try:
+            base = data[feature_columns]
+
+            # Build a compact signature for cache keys
+            if len(base) > 0:
+                data_sig = (len(base), base.index[0], base.index[-1])
+            else:
+                data_sig = (0, None, None)
+            cols_sig = tuple(feature_columns)
+
+            m_sma = None
+            m_lag = None
+
+            if period > 1:
+                sma_key = (period, data_sig, cols_sig)
+                with self._cache_lock:
+                    if sma_key in self._sma_mean_cache:
+                        m_sma = self._sma_mean_cache[sma_key]
+                        self._sma_mean_cache.move_to_end(sma_key)
+                if m_sma is None:
+                    # Compute per-row mean of rolling SMA across columns
+                    m_sma = base.rolling(window=period, min_periods=period).mean().mean(axis=1)
+                    # Downcast
+                    try:
+                        m_sma = m_sma.astype(np.float32)
+                    except Exception:
+                        pass
+                    with self._cache_lock:
+                        self._sma_mean_cache[sma_key] = m_sma
+                        if len(self._sma_mean_cache) > self._signal_cache_maxsize:
+                            self._sma_mean_cache.popitem(last=False)
+
+            if lookback > 1:
+                lag_key = (lookback, data_sig, cols_sig)
+                with self._cache_lock:
+                    if lag_key in self._lag_mean_cache:
+                        m_lag = self._lag_mean_cache[lag_key]
+                        self._lag_mean_cache.move_to_end(lag_key)
+                if m_lag is None:
+                    m_lag = base.shift(lookback).mean(axis=1)
+                    try:
+                        m_lag = m_lag.astype(np.float32)
+                    except Exception:
+                        pass
+                    with self._cache_lock:
+                        self._lag_mean_cache[lag_key] = m_lag
+                        if len(self._lag_mean_cache) > self._signal_cache_maxsize:
+                            self._lag_mean_cache.popitem(last=False)
+
+            # If neither transform applies, nothing to evaluate
+            if m_sma is None and m_lag is None:
+                return None
+
+            # Combine available components with equal weights
+            if m_sma is not None and m_lag is not None:
+                signal = (m_sma + m_lag) / 2.0
+                # Drop initial NaNs due to windows/lags
+                signal = signal.dropna()
+            else:
+                signal = (m_sma if m_sma is not None else m_lag).dropna()
+
+            if len(signal) < 10:
+                return None
+            return signal
+        except Exception as e:
+            tprint_warning(f"⚠️ Signal computation failed: {e}")
+            return None
+
+    # Metric helpers operating directly on aggregated signal
+    def _calculate_ic_from_signal(self, signal: pd.Series, targets: pd.Series) -> float:
+        try:
+            # Align again just in case
+            x, y = signal.align(targets, join='inner')
+            x = x.to_numpy(dtype=float, copy=False)
+            y = y.to_numpy(dtype=float, copy=False)
+            mask = np.isfinite(x) & np.isfinite(y)
+            if mask.sum() < 3:
+                return 0.0
+            rx = stats.rankdata(x[mask])
+            ry = stats.rankdata(y[mask])
+            ic = np.corrcoef(rx, ry)[0, 1]
+            return self._finite_or_zero(ic)
+        except Exception:
+            return 0.0
+
+    def _calculate_sharpe_from_signal(self, targets: pd.Series) -> float:
+        try:
+            if len(targets) < 2 or targets.std() == 0:
+                return 0.0
+            sharpe = safe_divide(targets.mean(), targets.std())
+            return max(0.0, self._finite_or_zero(sharpe))
+        except Exception:
+            return 0.0
+
+    def _calculate_stability_from_signal(self, signal: pd.Series, targets: pd.Series) -> float:
+        try:
+            if self.purged_kfold is None:
+                return 0.5
+            # Use positional indices
+            idx = np.arange(len(signal))
+            sig_arr = signal.to_numpy(dtype=float, copy=False)
+            tgt_arr = targets.to_numpy(dtype=float, copy=False)
+            fold_ics = []
+            splitter = (self.purged_kfold.split_positions(len(signal), getattr(signal, 'index', None))
+                        if hasattr(self.purged_kfold, 'split_positions')
+                        else self.purged_kfold.split(pd.DataFrame(index=getattr(signal, 'index', None) if hasattr(signal, 'index') else pd.RangeIndex(len(signal)))))
+            for train_idx, val_idx in splitter:
+                if len(train_idx) < 10 or len(val_idx) < 5:
+                    continue
+                s = sig_arr[val_idx]
+                t = tgt_arr[val_idx]
+                mask = np.isfinite(s) & np.isfinite(t)
+                if mask.sum() < 3:
+                    continue
+                rx = stats.rankdata(s[mask])
+                ry = stats.rankdata(t[mask])
+                ic_val = np.corrcoef(rx, ry)[0, 1]
+                if np.isfinite(ic_val):
+                    fold_ics.append(ic_val)
+            if not fold_ics:
+                return 0.0
+            stability = 1.0 / (1.0 + np.std(fold_ics))
+            return min(self._finite_or_zero(stability), 1.0)
+        except Exception:
+            return 0.0
+
+    def _calculate_turnover_from_signal(self, signal: pd.Series) -> Tuple[float, float]:
+        try:
+            x = signal.to_numpy(dtype=float, copy=False)
+            mu = np.nanmean(x)
+            sd = np.nanstd(x)
+            if not np.isfinite(sd) or sd == 0:
+                return 1.0, 0.0
+            z = (x - mu) / sd
+            pos = np.sign(z)
+            d = np.diff(pos)
+            d = np.where(np.isfinite(d), d, 0.0)
+            raw = np.nanmean(np.abs(d)) if d.size > 0 else 0.0
+            score = 1.0 / (1.0 + raw)
+            return score, raw
+        except Exception:
+            return 0.5, 0.0
+
+    def _calculate_oof_from_signal(self, signal: pd.Series, targets: pd.Series) -> Tuple[float, float]:
+        try:
+            if self.purged_kfold is None:
+                return 0.0, 0.0
+            idx = np.arange(len(signal))
+            sig_arr = signal.to_numpy(dtype=float, copy=False)
+            tgt_arr = targets.to_numpy(dtype=float, copy=False)
+            oof_ics, oof_sharpes = [], []
+            splitter = (self.purged_kfold.split_positions(len(signal), getattr(signal, 'index', None))
+                        if hasattr(self.purged_kfold, 'split_positions')
+                        else self.purged_kfold.split(pd.DataFrame(index=getattr(signal, 'index', None) if hasattr(signal, 'index') else pd.RangeIndex(len(signal)))))
+            for train_idx, val_idx in splitter:
+                if len(train_idx) < 10 or len(val_idx) < 5:
+                    continue
+                s = sig_arr[val_idx]
+                t = tgt_arr[val_idx]
+                mask = np.isfinite(s) & np.isfinite(t)
+                if mask.sum() >= 3:
+                    rx = stats.rankdata(s[mask])
+                    ry = stats.rankdata(t[mask])
+                    ic = np.corrcoef(rx, ry)[0, 1]
+                else:
+                    ic = np.nan
+                if np.isfinite(ic):
+                    oof_ics.append(ic)
+                std = np.nanstd(t)
+                if np.isfinite(std) and std > 0:
+                    oof_sharpes.append(np.nanmean(t) / std)
+            return (np.mean(oof_ics) if oof_ics else 0.0,
+                    np.mean(oof_sharpes) if oof_sharpes else 0.0)
+        except Exception:
+            return 0.0, 0.0
     
     def _generate_features_with_period_lookback(self, 
                                               data: pd.DataFrame, 
@@ -585,32 +848,81 @@ class BattleTestedPeriodLookbackOptimizer:
                                               lookback: int) -> Optional[pd.DataFrame]:
         """Generate features with specific period and lookback parameters."""
         try:
-            # This is a simplified implementation
-            # In practice, you would implement the actual feature generation logic
-            # based on the period and lookback parameters
-            
-            features = data[feature_columns].copy()
-            
-            # Apply period-based transformations
-            for col in feature_columns:
-                if period > 1:
-                    # Simple moving average as example
-                    features[f"{col}_sma_{period}"] = features[col].rolling(window=period).mean()
-            
-            # Apply lookback-based transformations
-            for col in feature_columns:
-                if lookback > 1:
-                    # Simple lookback features as example
-                    features[f"{col}_lag_{lookback}"] = features[col].shift(lookback)
-            
-            # Remove NaN values
+            # Vectorized and cached implementation to reduce Python overhead and memory churn
+            base = data[feature_columns]
+
+            # Build a lightweight data signature for caching
+            def _data_sig(df: pd.DataFrame) -> Tuple:
+                if len(df) > 0:
+                    return (len(df), df.index[0], df.index[-1], tuple(df.columns))
+                return (0, None, None, tuple(df.columns))
+
+            period_df = None
+            lookback_df = None
+
+            # Period-based transformations (rolling mean) with LRU cache
+            if period > 1:
+                pkey = ("roll_mean", period, _data_sig(base))
+                if pkey in self._rolling_feature_cache:
+                    period_df = self._rolling_feature_cache[pkey]
+                    # Move to end (recently used)
+                    self._rolling_feature_cache.move_to_end(pkey)
+                else:
+                    period_df = base.rolling(window=period, min_periods=period).mean()
+                    period_df = period_df.add_suffix(f"_sma_{period}")
+                    # Downcast to float32 when safe to cut memory in half
+                    try:
+                        period_df = period_df.astype(np.float32)
+                    except Exception:
+                        pass
+                    self._rolling_feature_cache[pkey] = period_df
+                    # Enforce LRU size
+                    if len(self._rolling_feature_cache) > self._feature_cache_maxsize:
+                        self._rolling_feature_cache.popitem(last=False)
+
+            # Lookback-based transformations (shift) with LRU cache
+            if lookback > 1:
+                lkey = ("lag", lookback, _data_sig(base))
+                if lkey in self._lag_feature_cache:
+                    lookback_df = self._lag_feature_cache[lkey]
+                    self._lag_feature_cache.move_to_end(lkey)
+                else:
+                    lookback_df = base.shift(lookback).add_suffix(f"_lag_{lookback}")
+                    try:
+                        lookback_df = lookback_df.astype(np.float32)
+                    except Exception:
+                        pass
+                    self._lag_feature_cache[lkey] = lookback_df
+                    if len(self._lag_feature_cache) > self._feature_cache_maxsize:
+                        self._lag_feature_cache.popitem(last=False)
+
+            # If neither transformation applies, nothing to evaluate
+            if period_df is None and lookback_df is None:
+                return None
+
+            # Concatenate only transformed features to keep memory lower than copying base
+            parts = []
+            if period_df is not None:
+                parts.append(period_df)
+            if lookback_df is not None:
+                parts.append(lookback_df)
+            features = pd.concat(parts, axis=1)
+
+            # Drop rows with NaNs introduced by rolling/lag
             features = features.dropna()
-            
+
+            # Quick guard: bail if too few data points post transforms
             if len(features) < 10:
                 return None
-            
+
+            # Optional memory guard per-combo to avoid large temporary frames
+            mem_mb = features.memory_usage(deep=True).sum() / (1024 * 1024)
+            if mem_mb > 1500:  # ~1.5GB guardrail for a single combo
+                tprint_warning(f"⚠️ Skipping combo (period={period}, lookback={lookback}) due to high feature memory: {mem_mb:.1f}MB")
+                return None
+
             return features
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Feature generation failed: {e}")
             return None
@@ -618,17 +930,37 @@ class BattleTestedPeriodLookbackOptimizer:
     def _calculate_ic_score(self, features: pd.DataFrame, targets: pd.Series) -> float:
         """Calculate Information Coefficient score using rank correlation."""
         try:
-            # FIXED: Use proper rank IC calculation
-            # Calculate signal as mean of features
-            signal = features.mean(axis=1)
-            
-            # Align signal and targets
-            signal, targets_aligned = signal.align(targets, join='inner')
-            
-            # Calculate Spearman rank correlation
-            ic = stats.spearmanr(signal, targets_aligned, nan_policy='omit').correlation
+            # Compute signal as row-wise mean using NumPy for speed
+            vals = features.values
+            if vals.size == 0:
+                return 0.0
+            signal = np.nanmean(vals, axis=1)
+
+            # Align to targets (features already aligned in caller, but be safe)
+            # Convert to arrays with matching index
+            if not features.index.equals(targets.index):
+                # Reindex targets to feature index
+                targets_aligned = targets.reindex(features.index)
+            else:
+                targets_aligned = targets
+
+            x = signal.astype(float)
+            y = targets_aligned.to_numpy(dtype=float, copy=False)
+
+            # Drop NaNs jointly
+            mask = np.isfinite(x) & np.isfinite(y)
+            if mask.sum() < 3:
+                return 0.0
+
+            x = x[mask]
+            y = y[mask]
+
+            # Fast Spearman via ranking + Pearson
+            rx = stats.rankdata(x)
+            ry = stats.rankdata(y)
+            ic = np.corrcoef(rx, ry)[0, 1]
             return self._finite_or_zero(ic)
-            
+
         except Exception:
             return 0.0
     
@@ -653,20 +985,33 @@ class BattleTestedPeriodLookbackOptimizer:
             if self.purged_kfold is None:
                 return 0.5  # Default stability score
             
-            # FIXED: Use positional indices instead of index-based splitting
-            idx = np.arange(len(features))
+            # FIXED: Use lightweight split by positions to avoid DataFrame reconstruction
+            n = len(features)
             fold_ics = []
-            
-            for train_idx, val_idx in self.purged_kfold.split(idx):
+
+            # Precompute signal once for speed
+            vals = features.values
+            signal_full = np.nanmean(vals, axis=1)
+
+            splitter = (self.purged_kfold.split_positions(n, getattr(features, 'index', None))
+                        if hasattr(self.purged_kfold, 'split_positions')
+                        else self.purged_kfold.split(features))
+
+            for train_idx, val_idx in splitter:
                 if len(train_idx) < 10 or len(val_idx) < 5:
                     continue
                 
-                # Calculate signal for validation fold
-                signal_val = features.iloc[val_idx].mean(axis=1)
-                targets_val = targets.iloc[val_idx]
+                # Slice precomputed signal and targets
+                signal_val = signal_full[val_idx]
+                targets_val = targets.iloc[val_idx].to_numpy(dtype=float, copy=False)
                 
                 # Calculate IC for this fold using Spearman correlation
-                ic_val = stats.spearmanr(signal_val, targets_val, nan_policy='omit').correlation
+                mask = np.isfinite(signal_val) & np.isfinite(targets_val)
+                if mask.sum() < 3:
+                    continue
+                rx = stats.rankdata(signal_val[mask])
+                ry = stats.rankdata(targets_val[mask])
+                ic_val = np.corrcoef(rx, ry)[0, 1]
                 if not np.isnan(ic_val):
                     fold_ics.append(ic_val)
             
@@ -684,13 +1029,16 @@ class BattleTestedPeriodLookbackOptimizer:
         """Calculate turnover score based on position changes (lower is better)."""
         try:
             # FIXED: Calculate turnover based on position changes, not feature volatility
-            # Create signal from features
-            signal = features.mean(axis=1)
-            
+            # Create signal from features using NumPy for speed
+            vals = features.values
+            if vals.size == 0:
+                return 1.0, 0.0
+            signal = np.nanmean(vals, axis=1)
+
             # Z-score the signal
-            signal_mean = signal.mean()
-            signal_std = signal.std()
-            if signal_std == 0:
+            signal_mean = np.nanmean(signal)
+            signal_std = np.nanstd(signal)
+            if signal_std == 0 or not np.isfinite(signal_std):
                 return 1.0, 0.0  # No turnover if no variation
             
             signal_z = (signal - signal_mean) / signal_std
@@ -699,7 +1047,11 @@ class BattleTestedPeriodLookbackOptimizer:
             position = np.sign(signal_z)
             
             # Calculate turnover as average absolute change in position
-            turnover_raw = position.diff().abs().fillna(0).mean()
+            # Use numpy diff; then average absolute changes
+            pos_diff = np.diff(position)
+            # Replace NaNs (from diff on NaNs) with 0
+            pos_diff = np.where(np.isfinite(pos_diff), pos_diff, 0.0)
+            turnover_raw = np.nanmean(np.abs(pos_diff)) if pos_diff.size > 0 else 0.0
             
             # Normalize turnover score (lower is better)
             turnover_score = 1.0 / (1.0 + turnover_raw)
@@ -716,27 +1068,45 @@ class BattleTestedPeriodLookbackOptimizer:
             if self.purged_kfold is None:
                 return 0.0, 0.0
             
-            # FIXED: Use positional indices instead of index-based splitting
-            idx = np.arange(len(features))
+            # FIXED: Use lightweight split by positions
+            n = len(features)
             oof_ics = []
             oof_sharpes = []
-            
-            for train_idx, val_idx in self.purged_kfold.split(idx):
+
+            # Precompute signal once
+            vals = features.values
+            signal_full = np.nanmean(vals, axis=1)
+
+            splitter = (self.purged_kfold.split_positions(n, getattr(features, 'index', None))
+                        if hasattr(self.purged_kfold, 'split_positions')
+                        else self.purged_kfold.split(features))
+
+            for train_idx, val_idx in splitter:
                 if len(train_idx) < 10 or len(val_idx) < 5:
                     continue
                 
-                val_features = features.iloc[val_idx]
-                val_targets = targets.iloc[val_idx]
+                # Slice arrays
+                signal_val = signal_full[val_idx]
+                val_targets = targets.iloc[val_idx].to_numpy(dtype=float, copy=False)
                 
                 # Calculate IC using Spearman correlation
-                signal_val = val_features.mean(axis=1)
-                ic = stats.spearmanr(signal_val, val_targets, nan_policy='omit').correlation
-                if not np.isnan(ic):
+                mask = np.isfinite(signal_val) & np.isfinite(val_targets)
+                if mask.sum() >= 3:
+                    rx = stats.rankdata(signal_val[mask])
+                    ry = stats.rankdata(val_targets[mask])
+                    ic = np.corrcoef(rx, ry)[0, 1]
+                else:
+                    ic = np.nan
+                if np.isfinite(ic):
                     oof_ics.append(ic)
                 
                 # Calculate Sharpe - FIXED: Don't apply pct_change to returns
-                if len(val_targets) > 1 and val_targets.std() > 0:
-                    sharpe = safe_divide(val_targets.mean(), val_targets.std())
+                if val_targets.size > 1:
+                    std = np.nanstd(val_targets)
+                    if std > 0 and np.isfinite(std):
+                        sharpe = safe_divide(np.nanmean(val_targets), std)
+                    else:
+                        sharpe = np.nan
                     if not np.isnan(sharpe):
                         oof_sharpes.append(sharpe)
             

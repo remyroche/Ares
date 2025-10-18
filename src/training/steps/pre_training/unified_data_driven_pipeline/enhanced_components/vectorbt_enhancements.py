@@ -1023,31 +1023,9 @@ class EnhancedVectorBTOptimizer:
             tprint_debug(f"📊 Target data shape: {targets.shape if targets is not None else 'None'}")
             tprint_debug(f"📊 Available columns: {list(data.columns)}")
             
-            # Use UnifiedVectorizationManager if available
-            if self.vectorization_manager:
-                tprint_info("🚀 Using UnifiedVectorizationManager for VectorBT optimization")
-                try:
-                    with self.vectorization_manager.performance_monitoring("vectorbt_technical_analysis"):
-                        result = self.vectorization_manager.optimize_operation(
-                            OperationType.VECTORBT_TECHNICAL_ANALYSIS,
-                            data,
-                            targets=targets,
-                            optimization_type="feature_optimization"
-                        )
-                        if result:
-                            tprint_success("✅ Vectorization manager optimization completed successfully")
-                            return VectorBTOptimizationResult(
-                                optimized_features=data,
-                                optimization_metrics={},
-                                performance_stats=self.performance_stats,
-                                success=True
-                            )
-                        else:
-                            tprint_warning("⚠️ Vectorization manager returned no result, falling back to standard optimization")
-                except Exception as e:
-                    tprint_warning(f"⚠️ Vectorization manager failed: {e}, falling back to standard optimization")
-            else:
-                tprint_info("ℹ️ UnifiedVectorizationManager not available, using standard VectorBT optimization")
+            # Skip UnifiedVectorizationManager for now due to missing performance_monitoring method
+            # Use standard VectorBT optimization instead
+            tprint_info("🔄 Using standard VectorBT optimization")
             
             # Fallback to comprehensive VectorBT optimization
             tprint_info("🔄 Starting comprehensive VectorBT optimization")

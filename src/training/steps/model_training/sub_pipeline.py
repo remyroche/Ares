@@ -56,14 +56,8 @@ except ImportError:
     get_current_datetime = None
 
 # Import orchestration and training steps
-try:
-    from .analyst_pre_ml_orchestration import (
-        AnalystPreMLOrchestrator, AnalystPreMLConfig, AnalystPreMLResult
-    )
-    ANALYST_PRE_ML_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: analyst_pre_ml_orchestration not available: {e}")
-    ANALYST_PRE_ML_AVAILABLE = False
+# Note: analyst_pre_ml_orchestration has been removed as it's no longer needed
+ANALYST_PRE_ML_AVAILABLE = False
 
 # Per-regime training integration is no longer used
 PER_REGIME_TRAINING_AVAILABLE = False
@@ -208,12 +202,8 @@ class ModelTrainingSubPipeline:
         self._current_pipeline_state: Dict[str, Any] = {}
 
         # Initialize orchestrators
-        if ANALYST_PRE_ML_AVAILABLE:
-            from .analyst_pre_ml_orchestration import AnalystPreMLConfig
-            config = AnalystPreMLConfig()
-            self.analyst_pre_ml = AnalystPreMLOrchestrator(config)
-        else:
-            self.analyst_pre_ml = None
+        # Note: analyst_pre_ml_orchestration has been removed
+        self.analyst_pre_ml = None
 
         if ANALYST_TRAINING_AVAILABLE:
             analyst_training_config = AnalystTrainingPipelineConfig(
@@ -618,18 +608,16 @@ class ModelTrainingSubPipeline:
                 self.logger.info('🎯 ANALYST PIPELINE (60m timeframe - IF we trade)')
                 self.logger.info('=' * 80)
 
-                # Step 1: Analyst Pre-ML Orchestration
-                analyst_pre_ml_result = await self._execute_analyst_pre_ml_orchestration(config)
-                if not analyst_pre_ml_result.success:
-                    self.logger.error(f'❌ Analyst pre-ML orchestration failed: {analyst_pre_ml_result.error_message}')
-                    return results
+                # Step 1: Analyst Pre-ML Orchestration (removed - no longer needed)
+                self.logger.info('⏭️ Skipping Analyst pre-ML orchestration (removed)')
 
-                results['analyst_results']['pre_ml'] = analyst_pre_ml_result.artifacts
-                self._current_pipeline_state['analyst_features'] = analyst_pre_ml_result.artifacts
+                # Set empty artifacts since pre-ML orchestration is no longer needed
+                results['analyst_results']['pre_ml'] = {}
+                self._current_pipeline_state['analyst_features'] = {}
                 results['completed_steps'] += 1
 
                 # Step 2: Analyst Models Training
-                analyst_models_result = await self._execute_analyst_models_training(config, analyst_pre_ml_result)
+                analyst_models_result = await self._execute_analyst_models_training(config, None)
                 if not analyst_models_result.success:
                     self.logger.error(f'❌ Analyst models training failed: {analyst_models_result.error_message}')
                     return results
@@ -711,96 +699,7 @@ class ModelTrainingSubPipeline:
 
         return results
 
-    async def _execute_analyst_pre_ml_orchestration(self, config: SubPipelineConfig) -> SubPipelineResult:
-        """Execute Analyst pre-ML orchestration (60m timeframe)."""
-        result = SubPipelineResult(
-            sub_pipeline_name='analyst_pre_ml_orchestration',
-            status=SubPipelineStatus.RUNNING,
-            start_time=datetime.now()
-        )
-
-        try:
-            if not self.analyst_pre_ml:
-                raise RuntimeError("Analyst pre-ML orchestrator not available")
-
-            self.logger.info('🔧 Executing Analyst Pre-ML Orchestration (60m)...')
-
-            training_data = self._load_market_data(config, config.analyst_timeframe)
-            regime_assignments = self._load_regime_assignments(config, config.analyst_timeframe)
-
-            regime_feature_columns = self._extract_regime_feature_columns(regime_assignments)
-
-            # Execute orchestration
-            orchestration_result = await self.analyst_pre_ml.orchestrate(
-                training_data=training_data,
-                regime_assignments=regime_assignments,
-            )
-
-            result.success = orchestration_result.success
-            result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
-            result.error_message = orchestration_result.error_message
-            artifacts: Dict[str, Any] = {
-                'selected_features': orchestration_result.selected_feature_names or [],
-                'feature_count': orchestration_result.final_feature_count,
-                'regime_feature_columns': regime_feature_columns,
-            }
-
-            step_dir = self._get_step_directory(config, 'analyst_pre_ml_orchestration', create=True)
-
-            if orchestration_result.final_features is not None:
-                feature_path = self._serialize_dataframe(
-                    orchestration_result.final_features,
-                    step_dir,
-                    'final_features.parquet'
-                )
-                artifacts['final_features_path'] = str(feature_path)
-
-            if regime_assignments is not None:
-                regime_path = self._serialize_dataframe(
-                    regime_assignments,
-                    step_dir,
-                    'regime_assignments.parquet'
-                )
-                artifacts['regime_assignments_path'] = str(regime_path)
-
-            metadata_payload = {
-                'selected_feature_count': len(orchestration_result.selected_feature_names or []),
-                'regime_feature_columns': regime_feature_columns,
-                'total_samples': getattr(orchestration_result, 'total_samples', len(training_data)),
-                'final_feature_count': getattr(orchestration_result, 'final_feature_count', None),
-            }
-            metadata_path = self._persist_metadata(
-                metadata_payload,
-                step_dir,
-                'metadata.json'
-            )
-            artifacts['metadata_path'] = str(metadata_path)
-            result.artifacts = artifacts
-            result.metadata = {
-                'total_samples': getattr(orchestration_result, 'total_samples', None),
-                'final_feature_count': getattr(orchestration_result, 'final_feature_count', None),
-                'selection_phase': getattr(orchestration_result, 'phase', None)
-            }
-
-            if result.success:
-                result.output_files = self._save_step_artifacts(
-                    config,
-                    'analyst_pre_ml_orchestration',
-                    artifacts,
-                    result.metadata
-                )
-
-                self._current_pipeline_state['analyst_regime_assignments'] = regime_assignments
-                self._current_pipeline_state['analyst_feature_frame_path'] = artifacts.get('final_features_path')
-
-        except Exception as e:
-            result.status = SubPipelineStatus.FAILED
-            result.error_message = str(e)
-            self.logger.error(f'❌ Analyst pre-ML orchestration failed: {e}')
-
-        result.end_time = datetime.now()
-        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-        return result
+    # Note: _execute_analyst_pre_ml_orchestration method removed as it's no longer needed
 
     async def _execute_analyst_models_training(
         self, config: SubPipelineConfig, pre_ml_result: SubPipelineResult
@@ -962,6 +861,36 @@ class ModelTrainingSubPipeline:
             if 'timestamp' not in training_data.columns and training_data.index.name == 'timestamp':
                 training_data = training_data.reset_index()
 
+            # Optionally merge Tactician entry labels as a feature if available (WHEN signal)
+            try:
+                tact_labels = self._current_pipeline_state.get('tactician_entry_labels')
+                if tact_labels is None:
+                    # Also check prior step artifacts if stored there
+                    prior = self._current_pipeline_state.get('analyst_profit_labeler_artifacts', {})
+                    tact_labels = prior.get('tactician_entry_labels') if isinstance(prior, dict) else None
+                if tact_labels is not None:
+                    tact_series = tact_labels
+                    if isinstance(tact_series, pd.DataFrame) and 'tactician_entry_label' in tact_series.columns:
+                        tact_series = tact_series['tactician_entry_label']
+                    if isinstance(tact_series, pd.Series):
+                        tact_df = tact_series.to_frame('tactician_entry_label').copy()
+                        tact_df['timestamp'] = tact_df.index
+                        # Merge on timestamp
+                        if 'timestamp' not in training_data.columns:
+                            training_data = training_data.reset_index()
+                            if 'index' in training_data.columns:
+                                training_data = training_data.rename(columns={'index': 'timestamp'})
+                        training_data = training_data.merge(
+                            tact_df[['timestamp', 'tactician_entry_label']],
+                            on='timestamp', how='left'
+                        )
+                        training_data['tactician_entry_label'] = training_data['tactician_entry_label'].fillna(0).astype(int)
+                        # Ensure feature columns include this tag
+                        if 'tactician_entry_label' not in feature_columns:
+                            feature_columns.append('tactician_entry_label')
+            except Exception as merge_exc:
+                self.logger.warning(f"⚠️ Skipped merging tactician entry labels into Analyst ensemble training: {merge_exc}")
+
             ensemble_result = await self.analyst_ensemble_trainer.train_analyst_ensemble(
                 training_data=training_data,
                 base_models=base_models,
@@ -1000,6 +929,89 @@ class ModelTrainingSubPipeline:
                 )
                 artifacts['predictions_path'] = str(predictions_path)
                 artifacts['predictions'] = predictions_df
+                # Derive a simple OOF/OOS-like aggregate score for downstream (row-wise mean of model predictions)
+                try:
+                    value_columns = [c for c in predictions_df.columns if c != 'timestamp']
+                    if value_columns:
+                        agg = predictions_df[value_columns].mean(axis=1)
+                        # Persist as Series indexed by timestamp
+                        ts = predictions_df['timestamp']
+                        oof_series = pd.Series(agg.values, index=ts, name='analyst_oof_score')
+                        # Save and store to pipeline state
+                        oof_df = oof_series.to_frame()
+                        oof_path = self._serialize_dataframe(
+                            oof_df, step_dir, 'analyst_oof_score.parquet'
+                        )
+                        artifacts['analyst_oof_score_path'] = str(oof_path)
+                        self._current_pipeline_state['analyst_oof_score'] = oof_series
+                        
+                        # ==================== ANALYST OOF VALIDATION ====================
+                        # Validate the analyst OOF score for downstream Tactician training
+                        try:
+                            from src.utils.ml_common.validation import (
+                                validate_temporal_consistency,
+                                validate_leakage_prevention,
+                                benchmark_stage
+                            )
+                            
+                            with benchmark_stage("analyst_oof_validation") as oof_metrics:
+                                # Validate temporal alignment between OOF score and training data
+                                oof_artifacts = {
+                                    'training_data': training_data,
+                                    'analyst_oof_score': oof_series
+                                }
+                                
+                                temporal_result = validate_temporal_consistency(
+                                    oof_artifacts,
+                                    list(oof_artifacts.keys()),
+                                    config={
+                                        'require_exact_match': False,
+                                        'tolerance_seconds': 300,  # 5 minutes tolerance for ensemble predictions
+                                        'check_data_hash': False
+                                    }
+                                )
+                                
+                                # Validate leakage prevention in OOF score
+                                leakage_result = validate_leakage_prevention(
+                                    {'analyst_oof_score': oof_series},
+                                    config={
+                                        'strict_mode': False,  # Don't fail on warnings
+                                        'horizon_bars': 1,
+                                        'check_correlations': True
+                                    }
+                                )
+                                
+                                oof_metrics.custom_metrics = {
+                                    'temporal_alignment_passed': temporal_result['success'],
+                                    'leakage_prevention_passed': leakage_result['success'],
+                                    'oof_score_length': len(oof_series),
+                                    'oof_score_range': [float(oof_series.min()), float(oof_series.max())] if len(oof_series) > 0 else [0, 0],
+                                    'oof_score_mean': float(oof_series.mean()) if len(oof_series) > 0 else 0.0
+                                }
+                                
+                                # Store validation results in artifacts
+                                artifacts['oof_validation'] = {
+                                    'temporal_result': temporal_result,
+                                    'leakage_result': leakage_result,
+                                    'validation_passed': temporal_result['success'] and leakage_result['success']
+                                }
+                                
+                                if temporal_result['success'] and leakage_result['success']:
+                                    self.logger.info("✅ Analyst OOF score validation passed")
+                                else:
+                                    self.logger.warning("⚠️ Analyst OOF score validation issues detected")
+                                    if not temporal_result['success']:
+                                        self.logger.warning(f"   → Temporal alignment: {temporal_result.get('error', 'Unknown error')}")
+                                    if not leakage_result['success']:
+                                        self.logger.warning(f"   → Leakage prevention: {leakage_result.get('error', 'Unknown error')}")
+                        
+                        except ImportError:
+                            self.logger.warning("⚠️ Validation utilities not available - skipping OOF validation")
+                        except Exception as validation_exc:
+                            self.logger.warning(f"⚠️ OOF validation failed: {validation_exc}")
+                
+                except Exception as oof_exc:
+                    self.logger.warning(f"⚠️ Failed to derive analyst_oof_score: {oof_exc}")
             else:
                 artifacts['predictions'] = None
 
@@ -1378,6 +1390,77 @@ class ModelTrainingSubPipeline:
                 )
                 artifacts['predictions_path'] = str(predictions_path)
                 artifacts['predictions'] = predictions_df
+                
+                # ==================== TACTICIAN ENSEMBLE VALIDATION ====================
+                # Validate the Tactician ensemble predictions for downstream use
+                try:
+                    from src.utils.ml_common.validation import (
+                        validate_temporal_consistency,
+                        validate_leakage_prevention,
+                        benchmark_stage
+                    )
+                    
+                    with benchmark_stage("tactician_ensemble_validation") as ensemble_metrics:
+                        # Validate temporal alignment between predictions and training data
+                        ensemble_artifacts = {
+                            'training_data': training_frame,
+                            'tactician_predictions': predictions_df
+                        }
+                        
+                        temporal_result = validate_temporal_consistency(
+                            ensemble_artifacts,
+                            list(ensemble_artifacts.keys()),
+                            config={
+                                'require_exact_match': False,
+                                'tolerance_seconds': 60,  # 1 minute tolerance
+                                'check_data_hash': False
+                            }
+                        )
+                        
+                        # Validate leakage prevention in ensemble predictions
+                        # Extract prediction columns (excluding timestamp)
+                        prediction_cols = [col for col in predictions_df.columns if col != 'timestamp']
+                        if prediction_cols:
+                            prediction_data = predictions_df[prediction_cols]
+                            leakage_result = validate_leakage_prevention(
+                                {'tactician_predictions': prediction_data},
+                                config={
+                                    'strict_mode': False,
+                                    'horizon_bars': 1,
+                                    'check_correlations': True
+                                }
+                            )
+                        else:
+                            leakage_result = {'success': False, 'error': 'No prediction columns found'}
+                        
+                        ensemble_metrics.custom_metrics = {
+                            'temporal_alignment_passed': temporal_result['success'],
+                            'leakage_prevention_passed': leakage_result['success'],
+                            'prediction_columns_count': len(prediction_cols),
+                            'predictions_length': len(predictions_df),
+                            'ensemble_models_count': len(ensemble_models)
+                        }
+                        
+                        # Store validation results in artifacts
+                        artifacts['ensemble_validation'] = {
+                            'temporal_result': temporal_result,
+                            'leakage_result': leakage_result,
+                            'validation_passed': temporal_result['success'] and leakage_result['success']
+                        }
+                        
+                        if temporal_result['success'] and leakage_result['success']:
+                            self.logger.info("✅ Tactician ensemble validation passed")
+                        else:
+                            self.logger.warning("⚠️ Tactician ensemble validation issues detected")
+                            if not temporal_result['success']:
+                                self.logger.warning(f"   → Temporal alignment: {temporal_result.get('error', 'Unknown error')}")
+                            if not leakage_result['success']:
+                                self.logger.warning(f"   → Leakage prevention: {leakage_result.get('error', 'Unknown error')}")
+                
+                except ImportError:
+                    self.logger.warning("⚠️ Validation utilities not available - skipping ensemble validation")
+                except Exception as validation_exc:
+                    self.logger.warning(f"⚠️ Ensemble validation failed: {validation_exc}")
             else:
                 artifacts['predictions'] = None
 
@@ -1429,22 +1512,19 @@ class ModelTrainingSubPipeline:
         result: Optional[SubPipelineResult] = None
 
         if sub_pipeline_name == 'analyst_pre_ml_orchestration':
-            result = await self._execute_analyst_pre_ml_orchestration(config)
-        elif sub_pipeline_name == 'analyst_models_training':
-            pre_ml_artifacts = self._load_step_artifacts(config, 'analyst_pre_ml_orchestration')
-            if pre_ml_artifacts is None:
-                raise FileNotFoundError(
-                    "Analyst pre-ML artifacts not found. Run 'analyst_pre_ml_orchestration' first or provide persisted artifacts."
-                )
-
-            pre_ml_metadata = self._load_step_metadata(config, 'analyst_pre_ml_orchestration')
-            pre_ml_result = self._build_loaded_result(
-                'analyst_pre_ml_orchestration',
-                pre_ml_artifacts,
-                pre_ml_metadata
+            # Note: analyst_pre_ml_orchestration has been removed
+            result = SubPipelineResult(
+                sub_pipeline_name='analyst_pre_ml_orchestration',
+                status=SubPipelineStatus.COMPLETED,
+                start_time=datetime.now(),
+                end_time=datetime.now(),
+                success=True,
+                artifacts={},
+                metadata={'note': 'analyst_pre_ml_orchestration has been removed'}
             )
-
-            result = await self._execute_analyst_models_training(config, pre_ml_result)
+        elif sub_pipeline_name == 'analyst_models_training':
+            # Note: analyst_pre_ml_orchestration has been removed, so we pass None
+            result = await self._execute_analyst_models_training(config, None)
         elif sub_pipeline_name == 'analyst_ensemble_training':
             models_artifacts = self._load_step_artifacts(config, 'analyst_models_training')
             if models_artifacts is None:

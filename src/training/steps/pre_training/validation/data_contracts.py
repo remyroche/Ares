@@ -45,7 +45,7 @@ def validate_feature_artifact(artifact: FeatureArtifact) -> bool:
     return True
 
 
-def validate_multi_horizon_labeling_result(result: MultiHorizonLabelingResult) -> bool:
+def validate_multi_horizon_labeling_result(result: MultiHorizonLabelingResult, context: str = None) -> bool:
     """Validate a multi-horizon labeling result."""
     if result.labels is None:
         raise DataContractValidationError("Multi-horizon labeling result labels cannot be None")

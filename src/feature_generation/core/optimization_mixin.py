@@ -92,36 +92,58 @@ class OptimizationMixin:
             self.optimization_stats['total_optimization_time'] += time.time() - start_time
 
     def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame dtypes for memory efficiency."""
+        """Optimize DataFrame dtypes for memory efficiency with early downcasting."""
+        # Always work on a copy to avoid modifying the original data
         optimized_data = data.copy()
 
         for column in optimized_data.columns:
             col_data = optimized_data[column]
 
+            # Skip optimization for columns that might lose data integrity
             if col_data.dtype == 'object':
-                # Try to convert to numeric
+                # Only try to convert if all values are actually numeric strings
                 try:
-                    optimized_data[column] = pd.to_numeric(col_data, downcast='integer')
+                    # Check if all non-null values can be converted to numeric
+                    non_null_values = col_data.dropna()
+                    if len(non_null_values) > 0:
+                        # Test conversion on a sample to avoid errors
+                        sample = non_null_values.head(10) if len(non_null_values) > 10 else non_null_values
+                        pd.to_numeric(sample, errors='coerce')
+                        # If no NaN introduced, proceed with conversion
+                        converted = pd.to_numeric(non_null_values, errors='coerce')
+                        if not converted.isna().any():
+                            # Use copy=False when possible for string→numeric conversions
+                            optimized_data[column] = pd.to_numeric(col_data, downcast='integer', copy=False)
+                        else:
+                            # Try float conversion if integer fails
+                            converted_float = pd.to_numeric(non_null_values, errors='coerce')
+                            if not converted_float.isna().any():
+                                optimized_data[column] = pd.to_numeric(col_data, downcast='float', copy=False)
                 except (ValueError, TypeError):
-                    try:
-                        optimized_data[column] = pd.to_numeric(col_data, downcast='float')
-                    except (ValueError, TypeError):
-                        # Keep as object if conversion fails
-                        pass
+                    # Keep as object if conversion fails
+                    pass
 
             elif col_data.dtype == 'int64':
-                # Downcast integers
-                if col_data.min() >= np.iinfo(np.int8).min and col_data.max() <= np.iinfo(np.int8).max:
-                    optimized_data[column] = col_data.astype(np.int8)
-                elif col_data.min() >= np.iinfo(np.int16).min and col_data.max() <= np.iinfo(np.int16).max:
-                    optimized_data[column] = col_data.astype(np.int16)
-                elif col_data.min() >= np.iinfo(np.int32).min and col_data.max() <= np.iinfo(np.int32).max:
-                    optimized_data[column] = col_data.astype(np.int32)
+                # Downcast integers with copy=False, but only if no data loss
+                try:
+                    if col_data.min() >= np.iinfo(np.int8).min and col_data.max() <= np.iinfo(np.int8).max:
+                        optimized_data[column] = col_data.astype(np.int8, copy=False)
+                    elif col_data.min() >= np.iinfo(np.int16).min and col_data.max() <= np.iinfo(np.int16).max:
+                        optimized_data[column] = col_data.astype(np.int16, copy=False)
+                    elif col_data.min() >= np.iinfo(np.int32).min and col_data.max() <= np.iinfo(np.int32).max:
+                        optimized_data[column] = col_data.astype(np.int32, copy=False)
+                except (ValueError, TypeError, OverflowError):
+                    # Keep original dtype if downcasting fails
+                    pass
 
             elif col_data.dtype == 'float64':
-                # Downcast floats
-                if col_data.min() >= np.finfo(np.float32).min and col_data.max() <= np.finfo(np.float32).max:
-                    optimized_data[column] = col_data.astype(np.float32)
+                # Downcast floats with copy=False, but only if no precision loss
+                try:
+                    if col_data.min() >= np.finfo(np.float32).min and col_data.max() <= np.finfo(np.float32).max:
+                        optimized_data[column] = col_data.astype(np.float32, copy=False)
+                except (ValueError, TypeError, OverflowError):
+                    # Keep original dtype if downcasting fails
+                    pass
 
         return optimized_data
 
@@ -137,7 +159,8 @@ class OptimizationMixin:
             for column in compressed_data.columns:
                 if compressed_data[column].dtype == 'object':
                     # Convert to category if beneficial
-                    if compressed_data[column].nunique() / len(compressed_data) < 0.5:
+                    data_length = len(compressed_data)
+                    if data_length > 0 and compressed_data[column].nunique() / data_length < 0.5:
                         compressed_data[column] = compressed_data[column].astype('category')
 
             self.optimization_stats['data_compressions'] += 1
@@ -202,12 +225,27 @@ class OptimizationMixin:
         stats = self.optimization_stats.copy()
 
         if stats['total_optimization_time'] > 0:
-            stats['average_optimization_time'] = (
-                stats['total_optimization_time'] /
-                (stats['memory_optimizations'] + stats['data_compressions'] + stats['chunked_operations'])
-            )
+            denominator = stats['memory_optimizations'] + stats['data_compressions'] + stats['chunked_operations']
+            if denominator > 0:  # Check for division by zero
+                stats['average_optimization_time'] = stats['total_optimization_time'] / denominator
+            else:
+                stats['average_optimization_time'] = 0
         else:
             stats['average_optimization_time'] = 0
+
+        # Include VectorBT performance stats if available
+        if hasattr(self, 'performance_stats'):
+            vectorbt_stats = self.performance_stats.copy()
+            # Add VectorBT stats to optimization stats
+            stats.update({
+                'vectorbt_operations': vectorbt_stats.get('vectorbt_operations', 0),
+                'pandas_fallbacks': vectorbt_stats.get('pandas_fallbacks', 0),
+                'gpu_accelerations': vectorbt_stats.get('gpu_accelerations', 0),
+                'total_operations': vectorbt_stats.get('total_operations', 0),
+                'total_time': vectorbt_stats.get('total_time', 0.0),
+                'cache_hits': vectorbt_stats.get('cache_hits', 0),
+                'cache_misses': vectorbt_stats.get('cache_misses', 0)
+            })
 
         return stats
 

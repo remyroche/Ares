@@ -155,83 +155,67 @@ class UnifiedDataLoader:
             timeframe = sanitize_string(timeframe)
             data_dir = sanitize_string(data_dir)
 
-            # Construct data path - data is in historical_data/{exchange}/{symbol}/processed/{symbol}_{timeframe}/
-            data_path = Path(data_dir) / exchange.lower() / symbol.lower() / 'processed' / f"{symbol.lower()}_{timeframe}"
+            # Construct data path - data is in historical_data/storage/{exchange}/{symbol}/{timeframe}/
+            data_path = Path(data_dir) / 'storage' / exchange.lower() / symbol.upper() / timeframe
 
             if not data_path.exists():
-                self.logger.error(f"Data path does not exist: {data_path}")
-                return None
-
-            # Get list of parquet files
-            parquet_files = list_parquet_files(data_path)
-            if not parquet_files:
-                self.logger.error(f"No parquet files found in {data_path}")
-                return None
+                self.logger.warning(f"Data path does not exist: {data_path}, trying consolidated files...")
+                # Try to find consolidated files as fallback
+                consolidated_path = Path(data_dir) / f"features_{exchange.lower()}_{symbol}_consolidated.parquet"
+                if consolidated_path.exists():
+                    self.logger.info(f"📁 Found consolidated file: {consolidated_path}")
+                    parquet_files = [str(consolidated_path)]
+                else:
+                    self.logger.error(f"Data path does not exist and no consolidated file available: {consolidated_path}")
+                    return None
+            else:
+                # Get list of parquet files
+                parquet_files = list_parquet_files(data_path)
+                if not parquet_files:
+                    # Try to find consolidated files as fallback
+                    self.logger.warning(f"No parquet files found in {data_path}, trying consolidated files...")
+                    
+                    # Try consolidated file at root level
+                    consolidated_path = Path(data_dir) / f"features_{exchange.lower()}_{symbol}_consolidated.parquet"
+                    if consolidated_path.exists():
+                        self.logger.info(f"📁 Found consolidated file: {consolidated_path}")
+                        parquet_files = [str(consolidated_path)]
+                    else:
+                        # Try 1m consolidated file
+                        consolidated_1m_path = data_path.parent / f"{symbol.lower()}_1m" / f"features_{symbol.lower()}_1m_consolidated.parquet"
+                        if consolidated_1m_path.exists():
+                            self.logger.info(f"📁 Found 1m consolidated file: {consolidated_1m_path}")
+                            parquet_files = [str(consolidated_1m_path)]
+                        else:
+                            self.logger.error(f"No parquet files found in {data_path} and no consolidated files available")
+                            return None
 
             # Load data from multiple files if date filters are applied
             if start_date or end_date:
-                # Load all files and combine them for date filtering
-                all_data = []
-                for file_path in parquet_files:
-                    file_data = await self._load_data_file(file_path, columns)
-                    if file_data is not None and not len(file_data) == 0:
-                        all_data.append(file_data)
+                # Smart loading: only load files that contain data in the required date range
+                data = await self._load_data_with_date_filters(parquet_files, start_date, end_date, columns)
+                if data is None or data.empty:
+                    self.logger.error("No data loaded with date filters, trying fallback approach")
+                    # Fallback: load the most recent file and apply date filters
+                    latest_file = max(parquet_files, key=lambda x: Path(x).stat().st_mtime if isinstance(x, str) else x.stat().st_mtime)
+                    data = await self._load_data_file(latest_file, columns)
+                    if data is not None and not data.empty:
+                        data = self._apply_date_filters(data, start_date, end_date)
+                        if data.empty:
+                            self.logger.error("No data found in the specified date range")
+                            return None
+                    else:
+                        self.logger.error("Failed to load data from fallback file")
+                        return None
                 
-                if not all_data:
-                    self.logger.error("No data loaded from any parquet files")
-                    return None
                 
-                # DEBUG: Check data quality before concatenation
-                import numpy as np
-                print(f"🔍 [DEBUG] UnifiedDataLoader - About to concatenate {len(all_data)} files")
-                total_non_finite_before = 0
-                for i, df in enumerate(all_data):
-                    non_finite = (~np.isfinite(df.select_dtypes(include=[np.number])).values).sum()
-                    total_non_finite_before += non_finite
-                    print(f"🔍 [DEBUG] UnifiedDataLoader - File {i}: shape={df.shape}, non-finite={non_finite}")
-                    if non_finite > 0:
-                        for col in df.select_dtypes(include=[np.number]).columns:
-                            col_non_finite = (~np.isfinite(df[col])).sum()
-                            if col_non_finite > 0:
-                                print(f"🔍 [DEBUG] UnifiedDataLoader - File {i} {col}: {col_non_finite} non-finite values")
-                                # Find the exact rows with non-finite values
-                                non_finite_mask = ~np.isfinite(df[col])
-                                non_finite_rows = df[non_finite_mask].index.tolist()
-                                print(f"🔍 [DEBUG] UnifiedDataLoader - File {i} {col}: Non-finite values at rows: {non_finite_rows[:5]}")
-                
-                # Combine all data
-                data = pd.concat(all_data, ignore_index=True)
-
-                # Apply forward/backward fill to handle non-finite values after concatenation
-                data = self._fix_non_finite_values(data)
-
-                # DEBUG: Check data quality after concatenation
-                total_non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
-                print(f"🔍 [DEBUG] UnifiedDataLoader - After concat: shape={data.shape}, non-finite={total_non_finite_after}")
-                if total_non_finite_after != total_non_finite_before:
-                    print(f"🔍 [DEBUG] UnifiedDataLoader - WARNING: Non-finite values changed during concatenation: {total_non_finite_before} -> {total_non_finite_after}")
-                if total_non_finite_after > 0:
-                    for col in data.select_dtypes(include=[np.number]).columns:
-                        col_non_finite = (~np.isfinite(data[col])).sum()
-                        if col_non_finite > 0:
-                            print(f"🔍 [DEBUG] UnifiedDataLoader - After concat {col}: {col_non_finite} non-finite values")
-                            # Find the exact rows with non-finite values
-                            non_finite_mask = ~np.isfinite(data[col])
-                            non_finite_rows = data[non_finite_mask].index.tolist()
-                            print(f"🔍 [DEBUG] UnifiedDataLoader - After concat {col}: Non-finite values at rows: {non_finite_rows[:5]}")
-                # Remove duplicates based on timestamp
-                if 'timestamp' in data.columns:
-                    data = data.drop_duplicates(subset=['timestamp'], keep='first')
             else:
                 # Load the most recent file only
-                latest_file = max(parquet_files, key=lambda x: x.stat().st_mtime)
+                latest_file = max(parquet_files, key=lambda x: Path(x).stat().st_mtime if isinstance(x, str) else x.stat().st_mtime)
                 data = await self._load_data_file(latest_file, columns)
                 if data is None:
                     return None
 
-            # Apply date filters if provided
-            if start_date or end_date:
-                data = self._apply_date_filters(data, start_date, end_date)
 
             # Validate schema
             if not validate_dataframe_schema(data, self.expected_schema):
@@ -258,6 +242,86 @@ class UnifiedDataLoader:
             self.logger.exception(f"Error loading unified data: {e}")
             return None
 
+    async def _load_data_with_date_filters(self, parquet_files: List[Path], 
+                                         start_date: Optional[str], 
+                                         end_date: Optional[str], 
+                                         columns: Optional[List[str]]) -> Optional[pd.DataFrame]:
+        """
+        Efficiently load data with date filters by only loading relevant files.
+        
+        Args:
+            parquet_files: List of parquet file paths
+            start_date: Start date filter (YYYY-MM-DD)
+            end_date: End date filter (YYYY-MM-DD)
+            columns: Specific columns to load
+            
+        Returns:
+            Filtered DataFrame or None if no data found
+        """
+        try:
+            self.logger.info(f"🎯 Loading data for date range: {start_date} to {end_date}")
+            
+            # For efficiency, try to load from consolidated files first
+            consolidated_files = [f for f in parquet_files if 'consolidated' in str(f)]
+            if consolidated_files:
+                self.logger.info(f"📁 Found {len(consolidated_files)} consolidated files, using most recent")
+                # Use the most recent consolidated file - ensure it's a Path object
+                latest_consolidated = max(consolidated_files, key=lambda x: Path(x).stat().st_mtime if isinstance(x, str) else x.stat().st_mtime)
+                data = await self._load_data_file(latest_consolidated, columns)
+                if data is not None and not data.empty:
+                    # Apply date filters directly
+                    data = self._apply_date_filters(data, start_date, end_date)
+                    if not data.empty:
+                        self.logger.info(f"✅ Loaded {len(data)} rows from consolidated file")
+                        return data
+            
+            # If no consolidated files or they don't contain the required data,
+            # load from partitioned files but be smart about it
+            self.logger.info("📁 No consolidated files or insufficient data, loading from partitioned files")
+            
+            # Load files in reverse chronological order (most recent first)
+            # and stop when we have enough data
+            all_data = []
+            total_rows = 0
+            max_rows_needed = 50000  # Reasonable limit for 20-180 days of 15m data
+            
+            for file_path in sorted(parquet_files, key=lambda x: Path(x).stat().st_mtime if isinstance(x, str) else x.stat().st_mtime, reverse=True):
+                if total_rows >= max_rows_needed:
+                    break
+                    
+                file_data = await self._load_data_file(file_path, columns)
+                if file_data is not None and not file_data.empty:
+                    # Apply date filters to this file's data
+                    filtered_data = self._apply_date_filters(file_data, start_date, end_date)
+                    if not filtered_data.empty:
+                        all_data.append(filtered_data)
+                        total_rows += len(filtered_data)
+                        file_name = Path(file_path).name if isinstance(file_path, str) else file_path.name
+                        self.logger.info(f"📊 Loaded {len(filtered_data)} rows from {file_name} (total: {total_rows})")
+            
+            if not all_data:
+                self.logger.error("No data found in any files for the specified date range")
+                return None
+            
+            # Combine all filtered data
+            if len(all_data) == 1:
+                data = all_data[0]
+            else:
+                data = pd.concat(all_data, ignore_index=True)
+                # Remove duplicates based on timestamp
+                if 'timestamp' in data.columns:
+                    data = data.drop_duplicates(subset=['timestamp'], keep='first')
+            
+            # Apply final data quality fixes
+            data = self._fix_non_finite_values(data)
+            
+            self.logger.info(f"✅ Efficiently loaded {len(data)} rows for date range {start_date} to {end_date}")
+            return data
+            
+        except Exception as e:
+            self.logger.error(f"Error in efficient data loading: {e}")
+            return None
+
     async def _load_data_file(self, file_path: Path, columns: Optional[List[str]] = None) -> Optional[pd.DataFrame]:
         """Load data from a single file."""
         try:
@@ -274,18 +338,18 @@ class UnifiedDataLoader:
             import numpy as np
             non_finite = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
             if non_finite > 0:
-                print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite} non-finite values IMMEDIATELY after parquet read")
+                print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name}: {non_finite} non-finite values IMMEDIATELY after parquet read")
                 for col in data.select_dtypes(include=[np.number]).columns:
                     col_non_finite = (~np.isfinite(data[col])).sum()
                     if col_non_finite > 0:
-                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: {col_non_finite} non-finite values")
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name} {col}: {col_non_finite} non-finite values")
                         # Find the exact rows with non-finite values
                         non_finite_mask = ~np.isfinite(data[col])
                         non_finite_rows = data[non_finite_mask].index.tolist()
-                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: Non-finite values at rows: {non_finite_rows[:10]}")
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name} {col}: Non-finite values at rows: {non_finite_rows[:10]}")
                         # Show the actual values
                         non_finite_values = data.loc[non_finite_mask, col].tolist()
-                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: Non-finite values: {non_finite_values[:10]}")
+                        print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name} {col}: Non-finite values: {non_finite_values[:10]}")
                         # Show context around the first non-finite value
                         if len(non_finite_rows) > 0:
                             first_bad_row = non_finite_rows[0]
@@ -299,7 +363,7 @@ class UnifiedDataLoader:
                                 if context_cols:
                                     context_window = context_window[context_cols]
                                 print(
-                                    f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name} {col}: "
+                                    f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name} {col}: "
                                     f"Context around index {first_bad_row} (position {first_bad_pos}):"
                                 )
                                 print(f"🔍 [DEBUG] Context:\n{context_window}")
@@ -314,7 +378,7 @@ class UnifiedDataLoader:
                 # DEBUG: Check if timestamp conversion introduced non-finite values
                 non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
                 if non_finite_after > non_finite:
-                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
+                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
             elif 'timestamp' not in data.columns and hasattr(data.index, 'dtype') and 'datetime' in str(data.index.dtype):
                 # If the index is datetime but not named 'timestamp', rename it
                 data = data.reset_index()
@@ -323,9 +387,9 @@ class UnifiedDataLoader:
                 # DEBUG: Check if timestamp conversion introduced non-finite values
                 non_finite_after = (~np.isfinite(data.select_dtypes(include=[np.number])).values).sum()
                 if non_finite_after > non_finite:
-                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {file_path.name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
+                    print(f"🔍 [DEBUG] UnifiedDataLoader._load_data_file - {Path(file_path).name}: {non_finite_after - non_finite} NEW non-finite values introduced during timestamp conversion")
 
-            data = self._inject_partition_metadata(data, file_path)
+            data = self._inject_partition_metadata(data, Path(file_path))
 
             if len(data) > self.max_rows:
                 self.logger.warning(f"Data has {len(data)} rows, exceeding limit of {self.max_rows}")
@@ -513,18 +577,31 @@ class UnifiedDataLoader:
                 self.logger.warning("No timestamp column found, skipping date filters")
                 return data
 
-            # Convert timestamp to datetime if needed
-            if data['timestamp'].dtype.kind in ['i', 'f']:
-                data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms', utc=True)
-            elif data['timestamp'].dtype.kind != 'M':
-                data['timestamp'] = pd.to_datetime(data['timestamp'], utc=True)
+            # Convert timestamp to datetime with robust error handling
+            data['timestamp'] = self._robust_timestamp_conversion(data['timestamp'])
 
             # Apply filters - ensure timezone consistency
             if start_date:
+                # Handle numpy array inputs
+                if isinstance(start_date, np.ndarray):
+                    if start_date.size == 1:
+                        start_date = start_date.item()
+                    else:
+                        self.logger.warning(f"Invalid start_date format: numpy array with {start_date.size} elements")
+                        return data
+
                 start_dt = pd.to_datetime(start_date, utc=True)
                 data = data[data['timestamp'] >= start_dt]
 
             if end_date:
+                # Handle numpy array inputs
+                if isinstance(end_date, np.ndarray):
+                    if end_date.size == 1:
+                        end_date = end_date.item()
+                    else:
+                        self.logger.warning(f"Invalid end_date format: numpy array with {end_date.size} elements")
+                        return data
+
                 end_dt = pd.to_datetime(end_date, utc=True)
                 data = data[data['timestamp'] <= end_dt]
 
@@ -641,6 +718,217 @@ class UnifiedDataLoader:
                 'warnings': [],
                 'stats': {}
             }
+
+    def _robust_timestamp_conversion(self, timestamp_series: pd.Series) -> pd.Series:
+        """
+        Robust timestamp conversion that handles various corruption scenarios.
+        
+        Args:
+            timestamp_series: Series containing timestamp data
+            
+        Returns:
+            Series with converted timestamps
+        """
+        try:
+            # First, try standard conversion
+            if timestamp_series.dtype.kind in ['i', 'f']:
+                # Try as Unix timestamp (seconds)
+                try:
+                    converted = pd.to_datetime(timestamp_series, unit='s', utc=True)
+                    if self._validate_timestamps(converted):
+                        return converted
+                except (pd.errors.OutOfBoundsDatetime, ValueError):
+                    pass
+                
+                # Try as Unix timestamp (milliseconds)
+                try:
+                    converted = pd.to_datetime(timestamp_series, unit='ms', utc=True)
+                    if self._validate_timestamps(converted):
+                        return converted
+                except (pd.errors.OutOfBoundsDatetime, ValueError):
+                    pass
+                
+                # Try as Unix timestamp (microseconds)
+                try:
+                    converted = pd.to_datetime(timestamp_series, unit='us', utc=True)
+                    if self._validate_timestamps(converted):
+                        return converted
+                except (pd.errors.OutOfBoundsDatetime, ValueError):
+                    pass
+                
+                # Try as Unix timestamp (nanoseconds)
+                try:
+                    converted = pd.to_datetime(timestamp_series, unit='ns', utc=True)
+                    if self._validate_timestamps(converted):
+                        return converted
+                except (pd.errors.OutOfBoundsDatetime, ValueError):
+                    pass
+            else:
+                # Try direct conversion
+                try:
+                    converted = pd.to_datetime(timestamp_series, utc=True)
+                    if self._validate_timestamps(converted):
+                        return converted
+                except (pd.errors.OutOfBoundsDatetime, ValueError):
+                    pass
+            
+            # If all standard methods fail, try corruption correction
+            self.logger.warning("Standard timestamp conversion failed, attempting corruption correction")
+            return self._correct_timestamp_corruption(timestamp_series)
+            
+        except Exception as e:
+            self.logger.error(f"Timestamp conversion failed: {e}")
+            # Return empty series as fallback
+            return pd.Series(dtype='datetime64[ns, UTC]')
+
+    def _validate_timestamps(self, timestamps: pd.Series) -> bool:
+        """
+        Validate that timestamps are within reasonable bounds.
+        
+        Args:
+            timestamps: Series of datetime objects
+            
+        Returns:
+            True if timestamps are valid, False otherwise
+        """
+        if timestamps.empty:
+            return False
+        
+        # Check for reasonable date range (2000-2030)
+        min_date = pd.Timestamp('2000-01-01', tz='UTC')
+        max_date = pd.Timestamp('2030-12-31', tz='UTC')
+        
+        valid_timestamps = timestamps.dropna()
+        if len(valid_timestamps) == 0:
+            return False
+        
+        # Check if all timestamps are within reasonable bounds
+        within_bounds = ((valid_timestamps >= min_date) & (valid_timestamps <= max_date)).all()
+        
+        # For small samples (less than 10 timestamps), be more lenient
+        if len(valid_timestamps) < 10:
+            # Just check if timestamps are reasonable (not too far in past/future)
+            # Since we're in 2025, allow current year data
+            reasonable_range = ((valid_timestamps >= pd.Timestamp('1990-01-01', tz='UTC')) & 
+                              (valid_timestamps <= pd.Timestamp('2026-12-31', tz='UTC'))).all()
+            return reasonable_range
+        
+        # Check for reasonable distribution (not all the same date)
+        unique_dates = valid_timestamps.dt.date.nunique()
+        has_variation = unique_dates > 1
+        
+        return within_bounds and has_variation
+
+    def _correct_timestamp_corruption(self, timestamp_series: pd.Series) -> pd.Series:
+        """
+        Attempt to correct various timestamp corruption patterns.
+        
+        Args:
+            timestamp_series: Series containing corrupted timestamp data
+            
+        Returns:
+            Series with corrected timestamps
+        """
+        try:
+            # Pattern 1: Check if timestamps are in milliseconds (common issue)
+            if timestamp_series.dtype.kind in ['i', 'f']:
+                # Check if values are in milliseconds range (13 digits)
+                sample_values = timestamp_series.dropna().head(10)
+                if len(sample_values) > 0:
+                    # Check if values look like milliseconds (13+ digits)
+                    max_val = sample_values.max()
+                    min_val = sample_values.min()
+                    
+                    # If values are in the range of milliseconds (13+ digits)
+                    if max_val > 1e12:  # Values are in milliseconds
+                        self.logger.info("Detected millisecond timestamps, converting to seconds")
+                        try:
+                            # Convert milliseconds to seconds
+                            corrected_values = timestamp_series / 1000
+                            converted = pd.to_datetime(corrected_values, unit='s', utc=True)
+                            self.logger.debug(f"Converted timestamps sample: {converted.head()}")
+                            self.logger.debug(f"Converted timestamps range: {converted.min()} to {converted.max()}")
+                            validation_result = self._validate_timestamps(converted)
+                            self.logger.debug(f"Validation result: {validation_result}")
+                            if validation_result:
+                                self.logger.info("Successfully corrected millisecond timestamps")
+                                return converted
+                            else:
+                                self.logger.warning("Millisecond conversion produced invalid timestamps")
+                        except Exception as e:
+                            self.logger.debug(f"Millisecond conversion failed: {e}")
+                    
+                    # If values are in the range of microseconds (16+ digits)
+                    elif max_val > 1e15:  # Values are in microseconds
+                        self.logger.info("Detected microsecond timestamps, converting to seconds")
+                        try:
+                            # Convert microseconds to seconds
+                            corrected_values = timestamp_series / 1000000
+                            converted = pd.to_datetime(corrected_values, unit='s', utc=True)
+                            if self._validate_timestamps(converted):
+                                self.logger.info("Successfully corrected microsecond timestamps")
+                                return converted
+                        except Exception as e:
+                            self.logger.debug(f"Microsecond conversion failed: {e}")
+                    
+                    # If values are in the range of nanoseconds (19+ digits)
+                    elif max_val > 1e18:  # Values are in nanoseconds
+                        self.logger.info("Detected nanosecond timestamps, converting to seconds")
+                        try:
+                            # Convert nanoseconds to seconds
+                            corrected_values = timestamp_series / 1000000000
+                            converted = pd.to_datetime(corrected_values, unit='s', utc=True)
+                            if self._validate_timestamps(converted):
+                                self.logger.info("Successfully corrected nanosecond timestamps")
+                                return converted
+                        except Exception as e:
+                            self.logger.debug(f"Nanosecond conversion failed: {e}")
+            
+            # Pattern 2: Try to extract reasonable timestamps from corrupted data
+            # Look for patterns that might be Unix timestamps with corruption
+            if timestamp_series.dtype.kind in ['i', 'f']:
+                # Try dividing by various factors to get reasonable timestamps
+                for factor in [1000, 1000000, 1000000000]:
+                    try:
+                        corrected_values = timestamp_series / factor
+                        converted = pd.to_datetime(corrected_values, unit='s', utc=True)
+                        if self._validate_timestamps(converted):
+                            self.logger.info(f"Successfully corrected timestamp by dividing by {factor}")
+                            return converted
+                    except Exception:
+                        continue
+            
+            # Pattern 3: Try to reconstruct from partial data
+            # If we have some valid timestamps, use them as reference
+            try:
+                # Convert with errors='coerce' to get NaT for invalid ones
+                converted = pd.to_datetime(timestamp_series, utc=True, errors='coerce')
+                valid_mask = converted.notna()
+                
+                if valid_mask.any():
+                    # Use valid timestamps to estimate the range
+                    valid_timestamps = converted[valid_mask]
+                    min_ts = valid_timestamps.min()
+                    max_ts = valid_timestamps.max()
+                    
+                    # Fill invalid timestamps with interpolated values
+                    if len(valid_timestamps) > 1:
+                        # Interpolate missing timestamps
+                        converted = converted.interpolate(method='time')
+                        if self._validate_timestamps(converted):
+                            self.logger.info("Successfully interpolated missing timestamps")
+                            return converted
+                
+            except Exception:
+                pass
+            
+            # If all correction attempts fail, return empty series
+            self.logger.warning("All timestamp correction attempts failed")
+            return pd.Series(dtype='datetime64[ns, UTC]')
+            
+        except Exception as e:
+            self.logger.error(f"Timestamp corruption correction failed: {e}")
+            return pd.Series(dtype='datetime64[ns, UTC]')
 
 # Example usage
 if __name__ == "__main__":

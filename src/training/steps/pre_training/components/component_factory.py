@@ -32,6 +32,15 @@ class ComponentConfig:
         if self.custom_params is None:
             self.custom_params = {}
     
+    def update(self, updates: Dict[str, Any]) -> None:
+        """Update configuration with new values."""
+        for key, value in updates.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                # Add to custom_params if not a standard attribute
+                self.custom_params[key] = value
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary for ModularComponent."""
         return {

@@ -1,5 +1,6 @@
 from src.utils.tprint import tprint
 import warnings
+from .enhanced_data_validation_framework import DataType
 
 """
 Unified Data Collection Sub-Pipeline
@@ -51,6 +52,27 @@ sys.path.insert(0, str(project_root))
 # Core imports
 import pandas as pd
 import numpy as np
+
+# VectorBT imports
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import (
+        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time

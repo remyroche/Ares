@@ -1,91 +1,145 @@
 """
 Enhanced Feature Vectorization Step
 
-This step performs advanced feature vectorization using VectorizedFeatureGenerator
-with matrix integration and VectorBT optimization.
+This step exposes feature vectorization via the unified consolidated pipeline,
+returning a lightweight result with vectorized features and performance metrics.
 """
 
 from __future__ import annotations
 
 import logging
-import pandas as pd
-import numpy as np
-import asyncio
-import inspect
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+import pandas as pd
+from tprint import tprint
 
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
     ModularComponent
 )
+from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
+    run_vectorization_step
+)
+from src.training.steps.pre_training.utils.artifact_manager import (
+    get_pretraining_artifact_manager,
+    ArtifactKeys,
+)
 
-# Import advanced vectorization components
-try:
-    from src.feature_generation.matrix_integration.matrix_processor import (
-        MatrixFeatureProcessor, VectorizedFeatureGenerator
-    )
-    from src.feature_generation.core.vectorbt_feature_generator import (
-        VectorBTFeatureGenerator
-    )
-    from src.utils.ml_common.unified_vectorization_manager import (
-        UnifiedVectorizationManager
-    )
-    VECTORIZATION_COMPONENTS_AVAILABLE = True
-except ImportError:
-    VECTORIZATION_COMPONENTS_AVAILABLE = False
-    MatrixFeatureProcessor = None
-    VectorizedFeatureGenerator = None
-    VectorBTFeatureGenerator = None
-    UnifiedVectorizationManager = None
+
+@dataclass
+class VectorizationResult:
+    success: bool
+    vectorized_features: pd.DataFrame
+    vectorization_metadata: Dict[str, Any]
+    performance_metrics: Dict[str, Any]
+    artifacts: Dict[str, Any]
+    error_message: Optional[str] = None
 
 
 @dataclass
 class FeatureGenerationVectorizationStep(ModularComponent):
-    """Enhanced vectorization step using VectorizedFeatureGenerator."""
+    """Vectorization step backed by the consolidated pipeline runner."""
 
-    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
-        """Initialize the enhanced vectorization step."""
+    def __init__(self, name: str = "vectorization_step",
+                 config: Optional[Dict[str, Any]] = None,
+                 logger: Optional[logging.Logger] = None):
         super().__init__(name, config or {}, logger)
-            name="feature_generation_vectorization_step",
-            config=config_dict,
-            logger=logging.getLogger(__name__)
-        )
-        
-        # Initialize vectorization components
-        if VECTORIZATION_COMPONENTS_AVAILABLE:
-            # Initialize matrix feature processor
-            self.matrix_processor = MatrixFeatureProcessor()
-            
-            # Initialize vectorized feature generator
-            self.vectorized_generator = VectorizedFeatureGenerator()
-            
-            # Initialize VectorBT feature generator
-            self.vectorbt_generator = VectorBTFeatureGenerator()
-            
-            # Initialize unified vectorization manager
-            self.vectorization_manager = UnifiedVectorizationManager()
-        else:
-            self.logger.warning("⚠️ Advanced vectorization components not available, using fallback")
-            self.matrix_processor = None
-            self.vectorized_generator = None
-            self.vectorbt_generator = None
-            self.vectorization_manager = None
 
     async def execute(self,
-                     training_input: Dict[str, Any],
-                     pipeline_state: Dict[str, Any]) -> ComponentResult:
-        """Execute enhanced vectorization step using VectorizedFeatureGenerator."""
+                      training_input: Dict[str, Any],
+                      pipeline_state: Dict[str, Any]) -> VectorizationResult:
+        """Execute vectorization using the consolidated pipeline runner with artifact manager integration."""
+        tprint("🚀 Starting vectorization step execution")
+        tprint(f"📥 Training input keys: {list(training_input.keys())}")
+        tprint(f"📊 Pipeline state keys: {list(pipeline_state.keys())}")
+        
+        # Get artifact manager
+        artifact_manager = get_pretraining_artifact_manager()
+        tprint("📦 Retrieved artifact manager")
+        
+        # Try to load from artifact manager first (pretraining store)
+        tprint("🔍 Checking for cached vectorized features...")
+        cached_vectorized = artifact_manager.get_artifact('vectorization', 'vectorized_features')
+        cached_metadata = artifact_manager.get_artifact('vectorization', 'vectorization_metadata')
+        cached_metrics = artifact_manager.get_artifact('vectorization', 'vectorization_metrics')
+        # Backwards-compatible step name
+        if cached_vectorized is None:
+            cached_vectorized = artifact_manager.get_artifact('feature_generation_vectorization_step', 'vectorized_features')
+            cached_metadata = cached_metadata or artifact_manager.get_artifact('feature_generation_vectorization_step', 'vectorization_metadata')
+            cached_metrics = cached_metrics or artifact_manager.get_artifact('feature_generation_vectorization_step', 'vectorization_metrics')
+        # Final fallback: enhanced artifact manager cache
+        if cached_vectorized is None:
+            try:
+                from src.utils.artifact_manager import ArtifactManager as _EnhancedAM
+                _enh = _EnhancedAM(config={})
+                cached_vectorized = _enh.retrieve_enhanced(ArtifactKeys.VECTORIZED_FEATURES)
+                cached_metadata = cached_metadata or _enh.retrieve_enhanced(ArtifactKeys.VECTORIZATION_METADATA)
+                cached_metrics = cached_metrics or _enh.retrieve_enhanced(ArtifactKeys.VECTORIZATION_METRICS)
+            except Exception:
+                pass
+        
+        if cached_vectorized is not None:
+            tprint("✅ Found cached vectorized features - returning cached result")
+            tprint(f"📊 Cached features shape: {cached_vectorized.shape if hasattr(cached_vectorized, 'shape') else 'Unknown'}")
+            self.logger.info("📦 Retrieved vectorized features from artifact manager")
+            return VectorizationResult(
+                success=True,
+                vectorized_features=cached_vectorized,
+                vectorization_metadata=cached_metadata or {},
+                performance_metrics=cached_metrics or {},
+                artifacts={'cache_hit': True},
+                error_message=None
+            )
+        else:
+            tprint("❌ No cached vectorized features found - proceeding with computation")
 
-        self.logger.info("⚡ Starting enhanced vectorization step with matrix integration and VectorBT optimization")
-
-        # Validate input data
         data = training_input.get('data')
+        tprint(f"📊 Input data type: {type(data)}")
+        tprint(f"📊 Input data shape: {data.shape if hasattr(data, 'shape') else 'No shape attribute'}")
+        tprint(f"📊 Input data empty: {data.empty if hasattr(data, 'empty') else 'No empty attribute'}")
+        
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
-            msg = "Input 'data' must be a non-empty pandas DataFrame."
-            self.logger.error(msg)
-            return ComponentResult(success=False, artifacts={}, metadata={}, error_message=msg)
+            tprint("🔍 Auto-loading features for vectorization")
+            period_features = artifact_manager.get_dataframe(
+                'feature_generation_period_lookback_optimization_step',
+                ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME
+            )
+            interaction_features = artifact_manager.get_dataframe(
+                'feature_generation_interaction_generation_step',
+                ArtifactKeys.INTERACTION_FEATURES
+            )
 
-        # Extract parameters from training_input
+            frames = []
+            if isinstance(period_features, pd.DataFrame) and not period_features.empty:
+                tprint(f"📊 Loaded period/lookback features: shape={period_features.shape}")
+                frames.append(period_features)
+            if isinstance(interaction_features, pd.DataFrame) and not interaction_features.empty:
+                tprint(f"📊 Loaded interaction features: shape={interaction_features.shape}")
+                frames.append(interaction_features)
+
+            if frames:
+                data = pd.concat(frames, axis=1, join='outer')
+                data = data.loc[:, ~data.columns.duplicated()]
+                data = data.dropna(axis=0, how='all')
+                tprint(f"✅ Combined period + interaction features: shape={data.shape}")
+
+        if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+            tprint("⚠️ Period + interaction features unavailable; falling back to selected/generation artifacts")
+            data = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            if data is None or data.empty:
+                data = artifact_manager.get_dataframe('feature_generation_feature_generation_step', ArtifactKeys.FEATURE_DATAFRAME)
+            if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+                tprint("❌ Invalid input data - returning error result")
+                return VectorizationResult(
+                    success=False,
+                    vectorized_features=pd.DataFrame(),
+                    vectorization_metadata={},
+                    performance_metrics={},
+                    artifacts={},
+                    error_message="Input 'data' must be a non-empty pandas DataFrame."
+                )
+
         symbol = training_input.get('symbol', 'ETHUSDT')
         timeframe = training_input.get('timeframe', '15m')
         direction = training_input.get('direction', 'longs')
@@ -95,203 +149,366 @@ class FeatureGenerationVectorizationStep(ModularComponent):
         end_date = training_input.get('end_date')
         exchange = training_input.get('exchange', 'binance')
         custom_overrides = training_input.get('custom_overrides')
-
-        try:
-            if not VECTORIZATION_COMPONENTS_AVAILABLE:
-                # Fast fail instead of fallback
-                msg = "Advanced vectorization components not available. Install required dependencies."
-                self.logger.error(msg)
-                return ComponentResult(success=False, artifacts={}, metadata={}, error_message=msg)
-
-            # Perform comprehensive vectorization
-            vectorization_result = await self._perform_enhanced_vectorization(
-                data, symbol, timeframe, direction, custom_overrides
-            )
-
-            if not vectorization_result.success:
-                return ComponentResult(success=False, artifacts={}, metadata={}, error_message=vectorization_result.error_message)
-
-            # Extract final_features for consistent artifact
-            final_features = vectorization_result.vectorization_metadata.get('unified_management', {}).get('final_features')
-            if final_features is None and 'unified_result' in vectorization_result.artifacts:
-                unified_dict = vectorization_result.artifacts['unified_result']
-                final_features = getattr(unified_dict, 'final_features', None) if hasattr(unified_dict, 'final_features') else unified_dict.get('final_features')
-
-            # Ensure we only store serializable structures or DataFrames
-            artifacts = {}
-            if isinstance(final_features, pd.DataFrame):
-                artifacts['final_features'] = final_features
-
-            # Clean, JSON-safe metadata only
-            metadata = {
-                'vectorized_features': vectorization_result.vectorized_features,
-                'vectorization_metadata': vectorization_result.vectorization_metadata,
-                'matrix_operations': vectorization_result.matrix_operations,
-                'vectorbt_optimizations': vectorization_result.vectorbt_optimizations,
-                'performance_metrics': vectorization_result.performance_metrics,
-                'inputs': {
-                    'symbol': symbol, 'timeframe': timeframe, 'direction': direction, 'intensity': intensity,
-                    'lookback_days': lookback_days, 'start_date': start_date, 'end_date': end_date, 'exchange': exchange
-                }
-            }
-
-            self.logger.info("✅ Enhanced vectorization completed successfully")
-            self.logger.info(f"📊 Vectorized {vectorization_result.vectorized_features} features")
-
-            return ComponentResult(success=True, artifacts=artifacts, metadata=metadata, error_message=None)
-
-        except Exception as e:
-            self.logger.error(f"❌ Enhanced vectorization step failed with exception: {e}")
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                metadata={},
-                error_message=str(e)
-            )
-
-    async def _maybe_await(self, fn, *args, **kwargs):
-        """Helper to handle both sync and async component methods."""
-        if inspect.iscoroutinefunction(fn):
-            return await fn(*args, **kwargs)
-        return await asyncio.to_thread(fn, *args, **kwargs)
-
-    async def _perform_enhanced_vectorization(self, data: pd.DataFrame, symbol: str,
-                                              timeframe: str, direction: str,
-                                              custom_overrides: Optional[Dict[str, Any]]) -> VectorizationResult:
-        """Perform enhanced vectorization using VectorizedFeatureGenerator."""
         
+        tprint(f"⚙️ Configuration: symbol={symbol}, timeframe={timeframe}, direction={direction}")
+        tprint(f"⚙️ Additional params: intensity={intensity}, lookback_days={lookback_days}")
+        tprint(f"⚙️ Date range: {start_date} to {end_date}, exchange={exchange}")
+        tprint(f"⚙️ Custom overrides: {custom_overrides is not None}")
+
         try:
-            # Step 1: Matrix feature processing
-            matrix_result = await self._maybe_await(
-                self.matrix_processor.process_features, data, symbol=symbol, timeframe=timeframe
+            tprint("🔄 Calling run_vectorization_step...")
+            result_dict = await run_vectorization_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
             )
-            
-            # Step 2: Vectorized feature generation
-            vectorized_result = await self._maybe_await(
-                self.vectorized_generator.generate_vectorized_features,
-                matrix_result.processed_data, symbol=symbol, timeframe=timeframe, direction=direction
+            tprint(f"✅ run_vectorization_step completed successfully")
+            tprint(f"📊 Result keys: {list(result_dict.keys()) if result_dict else 'None'}")
+
+            # Store artifacts in artifact manager
+            if result_dict.get('success', False):
+                tprint("💾 Storing successful vectorization results in artifact manager...")
+                vectorized_features = result_dict.get('vectorized_features', pd.DataFrame())
+                vectorization_metadata = result_dict.get('vectorization_metadata', {})
+                performance_metrics = result_dict.get('performance_metrics', {})
+                
+                tprint(f"📊 Vectorized features shape: {vectorized_features.shape if hasattr(vectorized_features, 'shape') else 'Unknown'}")
+                tprint(f"📊 Metadata keys: {list(vectorization_metadata.keys()) if vectorization_metadata else 'None'}")
+                tprint(f"📊 Performance metrics keys: {list(performance_metrics.keys()) if performance_metrics else 'None'}")
+                
+                artifact_manager.save(
+                    step_name='vectorization',
+                    artifacts={
+                        'vectorized_features': vectorized_features,
+                        'vectorization_metadata': vectorization_metadata,
+                        'vectorization_metrics': performance_metrics
+                    },
+                    metadata={
+                        'step': 'vectorization',
+                        'shape': vectorized_features.shape if hasattr(vectorized_features, 'shape') else None,
+                        'created_at': datetime.now().isoformat()
+                    }
+                )
+                artifact_manager.save(
+                    step_name='feature_generation_vectorization_step',
+                    artifacts={
+                        'vectorized_features': vectorized_features,
+                        'vectorization_metadata': vectorization_metadata,
+                        'vectorization_metrics': performance_metrics
+                    },
+                    metadata={
+                        'step': 'feature_generation_vectorization_step',
+                        'shape': vectorized_features.shape if hasattr(vectorized_features, 'shape') else None,
+                        'created_at': datetime.now().isoformat()
+                    }
+                )
+                tprint("✅ Stored vectorized features and metadata in artifact manager")
+            else:
+                tprint("❌ Vectorization step failed - not storing artifacts")
+
+            tprint("🎯 Creating VectorizationResult...")
+            result = VectorizationResult(
+                success=bool(result_dict.get('success', False)),
+                vectorized_features=result_dict.get('vectorized_features', pd.DataFrame()),
+                vectorization_metadata=result_dict.get('vectorization_metadata', {}),
+                performance_metrics=result_dict.get('performance_metrics', {}),
+                artifacts=result_dict.get('artifacts', {}),
+                error_message=result_dict.get('error_message')
             )
-            
-            # Step 3: VectorBT optimization
-            vectorbt_result = await self._maybe_await(
-                self.vectorbt_generator.optimize_vectorization,
-                vectorized_result.features, symbol=symbol, timeframe=timeframe
-            )
-            
-            # Step 4: Unified vectorization management
-            unified_result = await self._maybe_await(
-                self.vectorization_manager.manage_vectorization,
-                vectorbt_result.optimized_features, symbol=symbol, timeframe=timeframe
-            )
-            
-            # Extract final_features for consistent artifact
-            final_features = getattr(unified_result, 'final_features', None)
-            
-            # Compile comprehensive result
-            return VectorizationResult(
-                success=unified_result.success,
-                vectorized_features=0 if final_features is None else final_features.shape[1],
-                vectorization_metadata={
-                    'matrix_processing': getattr(matrix_result, 'metadata', {}),
-                    'vectorized_generation': getattr(vectorized_result, 'metadata', {}),
-                    'vectorbt_optimization': getattr(vectorbt_result, 'metadata', {}),
-                    'unified_management': getattr(unified_result, 'metadata', {}),
-                },
-                matrix_operations=getattr(matrix_result, 'operations', {}),
-                vectorbt_optimizations=getattr(vectorbt_result, 'optimizations', {}),
-                performance_metrics=getattr(unified_result, 'performance_metrics', {}),
-                artifacts={'final_features': final_features}
-            )
-            
+            tprint(f"✅ VectorizationResult created - success: {result.success}")
+            return result
         except Exception as e:
-            self.logger.error(f"❌ Enhanced vectorization failed: {e}")
+            tprint(f"💥 Exception in vectorization execution: {e}")
+            tprint(f"💥 Exception type: {type(e).__name__}")
+            self.logger.error(f"Vectorization execution failed: {e}")
             return VectorizationResult(
                 success=False,
-                vectorized_features=0,
+                vectorized_features=pd.DataFrame(),
                 vectorization_metadata={},
-                matrix_operations={},
-                vectorbt_optimizations={},
                 performance_metrics={},
                 artifacts={},
                 error_message=str(e)
             )
 
-    # Required abstract methods from ModularComponent
+    # Minimal hooks for ModularComponent
     def _initialize_resources(self) -> bool:
-        """Initialize component-specific resources."""
+        tprint("🔧 Initializing vectorization step resources...")
         try:
-            # Initialize vectorization components
-            if VECTORIZATION_COMPONENTS_AVAILABLE:
-                self.matrix_processor = MatrixFeatureProcessor()
-                self.vectorized_generator = VectorizedFeatureGenerator()
-                self.vectorbt_generator = VectorBTFeatureGenerator()
-                self.unified_manager = UnifiedVectorizationManager()
-            else:
-                self.matrix_processor = None
-                self.vectorized_generator = None
-                self.vectorbt_generator = None
-                self.unified_manager = None
-            
-            # Set initial state
-            self.set_state('initialized_at', datetime.now().isoformat())
-            self.set_state('vectorization_count', 0)
+            self.set_state('initialized', True)
+            tprint("✅ Vectorization step resources initialized successfully")
             return True
         except Exception as e:
-            self.logger.error(f"Resource initialization failed: {e}")
+            tprint(f"❌ Failed to initialize vectorization step resources: {e}")
             return False
-    
-    def _cleanup_resources(self) -> None:
-        """Cleanup component-specific resources."""
-        self.set_state('cleaned_up_at', datetime.now().isoformat())
-        self.set_state('vectorization_count', 0)
-    
-    def _process_data(self, data: Any, **kwargs) -> Any:
-        """Process data with component logic."""
-        # Increment vectorization count
-        count = self.get_state('vectorization_count', 0)
-        self.set_state('vectorization_count', count + 1)
-        
-        # Basic processing - return data as-is for now
-        # The actual vectorization is done in the execute method
-        return data
-    
-    def _get_validation_rules(self) -> Dict[str, Any]:
-        """Get validation rules for this component."""
-        return {
-            'min_size': 100,
-            'max_size': 1000000,
-            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
-            'data_types': ['pandas.DataFrame'],
-            'max_nan_ratio': 0.1,
-            'min_unique_values': 2
-        }
-    
-    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
-        """Validate data with component-specific rules."""
-        errors = []
-        warnings = []
-        metadata = {}
-        
-        if isinstance(data, pd.DataFrame):
-            # Check required columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            if missing_columns:
-                errors.append(f"Missing required columns: {missing_columns}")
-            
-            # Check data size
-            if len(data) < 100:
-                warnings.append("Data size is small (< 100 rows)")
-            
-            # Check for NaN values
-            nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
-            if nan_ratio > 0.1:
-                warnings.append(f"High NaN ratio: {nan_ratio:.2%}")
-            
-            metadata['data_shape'] = data.shape
-            metadata['nan_ratio'] = nan_ratio
-            metadata['columns'] = list(data.columns)
-        
-        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
-# Command handler for ares_launcher integration
+    def _cleanup_resources(self) -> None:
+        tprint("🧹 Cleaning up vectorization step resources...")
+        self.set_state('initialized', False)
+        tprint("✅ Vectorization step resources cleaned up")
+
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        tprint(f"🔄 Processing data in vectorization step: {type(data)}")
+        tprint(f"📊 Data shape: {data.shape if hasattr(data, 'shape') else 'No shape'}")
+        return data
+
+    def _get_validation_rules(self) -> Dict[str, Any]:
+        return {
+            'data_types': ['pandas.DataFrame'],
+            'required_attributes': ['open', 'high', 'low', 'close', 'volume'],
+            'min_size': 100
+        }
+
+    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
+        tprint("🔍 Validating vectorization step component-specific requirements...")
+        errors, warnings, metadata = [], [], {}
+        if isinstance(data, pd.DataFrame):
+            tprint(f"📊 Validating DataFrame with shape: {data.shape}")
+            missing = [c for c in ['open', 'high', 'low', 'close', 'volume'] if c not in data.columns]
+            if missing:
+                tprint(f"❌ Missing required columns: {missing}")
+                errors.append(f"Missing required columns: {missing}")
+            else:
+                tprint("✅ All required columns present")
+            metadata['shape'] = data.shape
+            tprint(f"📊 Validation metadata: {metadata}")
+        else:
+            tprint(f"❌ Data is not a DataFrame: {type(data)}")
+            errors.append(f"Data must be a pandas DataFrame, got {type(data)}")
+        
+        result = {'errors': errors, 'warnings': warnings, 'metadata': metadata}
+        tprint(f"🔍 Validation result: {len(errors)} errors, {len(warnings)} warnings")
+        return result
+
+    # --- Reporting helpers ---
+    def _generate_vectorization_report(self, X: pd.DataFrame, meta: Dict[str, Any], perf: Dict[str, Any], symbol: str, timeframe: str) -> Dict[str, Any]:
+        tprint("📝 Generating vectorization report...")
+        from datetime import datetime as _dt
+        import pandas as _pd
+        rows = int(len(X)) if isinstance(X, _pd.DataFrame) else 0
+        cols = int(len(X.columns)) if isinstance(X, _pd.DataFrame) else 0
+        mem = float(X.memory_usage(deep=True).sum() / (1024**2)) if isinstance(X, _pd.DataFrame) else 0.0
+        tprint(f"📊 Report data: {rows} rows, {cols} columns, {mem:.2f} MB")
+        
+        sparsity = 0.0
+        if isinstance(X, _pd.DataFrame) and rows and cols:
+            sparsity = float((X.isna().sum().sum()) / (rows * cols)) * 100.0
+            tprint(f"📊 Sparsity: {sparsity:.2f}%")
+        
+        # Top variance
+        top_vars = []
+        if isinstance(X, _pd.DataFrame) and not X.empty:
+            try:
+                tprint("🔍 Calculating feature variances...")
+                v = X.var(numeric_only=True).sort_values(ascending=False)
+                for name, val in v.head(40).items():
+                    top_vars.append({'feature': name, 'variance': float(val) if val == val else 0.0})
+                tprint(f"📊 Calculated variances for {len(top_vars)} features")
+            except Exception as e:
+                tprint(f"❌ Failed to calculate variances: {e}")
+        
+        report = {
+            'title': 'Vectorization Report',
+            'timestamp': _dt.now().isoformat(),
+            'configuration': {'symbol': symbol, 'timeframe': timeframe},
+            'summary': {'rows': rows, 'columns': cols, 'memory_mb': mem, 'sparsity_pct': sparsity},
+            'metadata': meta or {},
+            'performance_metrics': perf or {},
+            'top_variance_features': top_vars
+        }
+        tprint("✅ Vectorization report generated successfully")
+        return report
+
+    def _format_vectorization_markdown(self, report: Dict[str, Any]) -> str:
+        md = f"# {report['title']}\n\n"
+        md += f"**Generated:** {report['timestamp']}\n\n"
+        cfg = report.get('configuration', {})
+        md += "## 📌 Configuration\n\n"
+        md += f"- Symbol: {cfg.get('symbol','?')}\n"
+        md += f"- Timeframe: {cfg.get('timeframe','?')}\n"
+        summ = report.get('summary', {})
+        md += "\n## 📊 Summary\n\n"
+        md += f"- Rows: {summ.get('rows',0):,}\n"
+        md += f"- Columns: {summ.get('columns',0)}\n"
+        md += f"- Memory: {summ.get('memory_mb',0.0):.2f} MB\n"
+        md += f"- Sparsity: {summ.get('sparsity_pct',0.0):.2f}%\n"
+        # Performance/metadata sections
+        def _dump(title, obj):
+            nonlocal md
+            if obj:
+                md += f"\n## {title}\n\n"
+                for k, v in obj.items():
+                    md += f"- {k}: {v}\n"
+        _dump('⚙️ Metadata', report.get('metadata', {}))
+        _dump('⏱️ Performance', report.get('performance_metrics', {}))
+
+        # Top variance
+        md += "\n## 🔝 Top Features by Variance\n\n"
+        if report.get('top_variance_features'):
+            md += "| Feature | Variance |\n|---|---:|\n"
+            for r in report['top_variance_features']:
+                md += f"| {r['feature']} | {r['variance']:.6f} |\n"
+        else:
+            md += "_No variance information available._\n"
+        return md
+
+    def _store_vectorization_report(self, report: Dict[str, Any], markdown: str, symbol: str, timeframe: str) -> None:
+        tprint("💾 Storing vectorization report...")
+        from datetime import datetime as _dt
+        from pathlib import Path as _Path
+        import json as _json
+        out_dir = _Path('outcomes')
+        out_dir.mkdir(exist_ok=True)
+        ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+        md_path = out_dir / f"vectorization_report_{symbol}_{timeframe}_{ts}.md"
+        json_path = out_dir / f"vectorization_report_{symbol}_{timeframe}_{ts}.json"
+        
+        tprint(f"📁 Report paths: MD={md_path}, JSON={json_path}")
+        
+        try:
+            with open(md_path, 'w', encoding='utf-8') as f:
+                f.write(markdown)
+            tprint("✅ Markdown report saved")
+            
+            with open(json_path, 'w', encoding='utf-8') as f:
+                _json.dump(report, f, indent=2, ensure_ascii=False)
+            tprint("✅ JSON report saved")
+        except Exception as e:
+            tprint(f"❌ Failed to save vectorization report: {e}")
+
+
+# Handler for ares_launcher/sub_pipeline integration
+async def handle_feature_generation_vectorization_step(
+    symbol: str = "ETHUSDT",
+    timeframe: str = "15m",
+    direction: str = "longs",
+    intensity: str = "blank",
+    lookback_days: Optional[int] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    exchange: str = "binance",
+    custom_overrides: Optional[Dict[str, Any]] = None,
+    data: Optional[pd.DataFrame] = None,
+    **kwargs
+) -> VectorizationResult:
+    """Execute the vectorization step via consolidated pipeline runner."""
+    tprint("🚀 Starting handle_feature_generation_vectorization_step")
+    tprint(f"📥 Handler params: symbol={symbol}, timeframe={timeframe}, direction={direction}")
+    tprint(f"📥 Additional params: intensity={intensity}, lookback_days={lookback_days}")
+    tprint(f"📥 Data provided: {data is not None and not data.empty if data is not None else 'None'}")
+    
+    manager = get_pretraining_artifact_manager()
+    tprint("📦 Retrieved artifact manager in handler")
+
+    # Attempt to lazily load data if not provided
+    tprint("🔍 Attempting to load data from artifact manager...")
+    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+        tprint("🔍 Trying to load optimized period/lookback features...")
+        period_features = manager.get_dataframe('feature_generation_period_lookback_optimization_step', ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME)
+        tprint(f"📊 Period features result: {period_features is not None and not period_features.empty if period_features is not None else 'None'}")
+
+        tprint("🔍 Trying to load interaction features...")
+        interaction_features = manager.get_dataframe('feature_generation_interaction_generation_step', ArtifactKeys.INTERACTION_FEATURES)
+        tprint(f"📊 Interaction features result: {interaction_features is not None and not interaction_features.empty if interaction_features is not None else 'None'}")
+
+        frames = [df for df in (period_features, interaction_features) if isinstance(df, pd.DataFrame) and not df.empty]
+        if frames:
+            combined = pd.concat(frames, axis=1, join='outer')
+            combined = combined.loc[:, ~combined.columns.duplicated()]
+            combined = combined.dropna(axis=0, how='all')
+            data = combined
+            tprint(f"✅ Combined period + interaction features: shape={data.shape}")
+
+    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+        tprint("⚠️ Period + interaction features unavailable; trying selected features...")
+        data = manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+        tprint(f"📊 Selected features result: {data is not None and not data.empty if data is not None else 'None'}")
+    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+        tprint("⚠️ Selected features unavailable; trying generated feature set...")
+        data = manager.get_dataframe('feature_generation_feature_generation_step', ArtifactKeys.FEATURE_DATAFRAME)
+        tprint(f"📊 Feature generation result: {data is not None and not data.empty if data is not None else 'None'}")
+    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+        tprint("🔍 Attempting to load data via data validation step...")
+        try:
+            from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep  # type: ignore
+            loader = FeatureGenerationDataValidationStep()
+            loaded = await loader._load_data_for_validation(  # noqa: SLF001 (intentional internal use)
+                symbol, timeframe, exchange, start_date, end_date, lookback_days
+            )
+            data = loaded
+            tprint(f"📊 Data validation loader result: {data is not None and not data.empty if data is not None else 'None'}")
+        except Exception as e:
+            tprint(f"❌ Data validation loader failed: {e}")
+            return VectorizationResult(
+                success=False,
+                vectorized_features=pd.DataFrame(),
+                vectorization_metadata={},
+                performance_metrics={},
+                artifacts={},
+                error_message="Input 'data' must be a non-empty pandas DataFrame (auto-load failed)."
+            )
+
+    tprint(f"📊 Final data shape before vectorization: {data.shape if hasattr(data, 'shape') else 'Unknown'}")
+    tprint("🔄 Calling run_vectorization_step from handler...")
+    result_dict = await run_vectorization_step(
+        data=data,
+        symbol=symbol,
+        timeframe=timeframe,
+        direction=direction,
+        intensity=intensity,
+        lookback_days=lookback_days,
+        start_date=start_date,
+        end_date=end_date,
+        exchange=exchange,
+        custom_overrides=custom_overrides
+    )
+    tprint(f"✅ Handler run_vectorization_step completed")
+    tprint(f"📊 Handler result keys: {list(result_dict.keys()) if result_dict else 'None'}")
+
+    tprint("🎯 Creating VectorizationResult in handler...")
+    vectorization_result = VectorizationResult(
+        success=bool(result_dict.get('success', False)),
+        vectorized_features=result_dict.get('vectorized_features', pd.DataFrame()),
+        vectorization_metadata=result_dict.get('vectorization_metadata', {}),
+        performance_metrics=result_dict.get('performance_metrics', {}),
+        artifacts=result_dict.get('artifacts', {}),
+        error_message=result_dict.get('error_message')
+    )
+    tprint(f"✅ Handler VectorizationResult created - success: {vectorization_result.success}")
+
+    if vectorization_result.success:
+        tprint("💾 Saving successful vectorization results in handler...")
+        vectorization_result.artifacts.setdefault(ArtifactKeys.VECTORIZED_FEATURES, vectorization_result.vectorized_features)
+        manager.save('feature_generation_vectorization_step', vectorization_result.artifacts, metadata=vectorization_result.vectorization_metadata)
+        tprint("✅ Handler artifacts saved successfully")
+    else:
+        tprint("❌ Handler vectorization failed - not saving artifacts")
+
+    # Best-effort outcomes report
+    tprint("📝 Generating vectorization report...")
+    try:
+        step = FeatureGenerationVectorizationStep()
+        report = step._generate_vectorization_report(
+            vectorization_result.vectorized_features,
+            vectorization_result.vectorization_metadata,
+            vectorization_result.performance_metrics,
+            symbol,
+            timeframe
+        )
+        md = step._format_vectorization_markdown(report)
+        step._store_vectorization_report(report, md, symbol, timeframe)
+        tprint("✅ Vectorization report generated and stored")
+    except Exception as e:
+        tprint(f"❌ Failed to generate vectorization report: {e}")
+
+    tprint("🏁 Handler vectorization step completed")
+    return vectorization_result
+
+    # --- Reporting helpers (shared with execute via handler instance) ---
+    

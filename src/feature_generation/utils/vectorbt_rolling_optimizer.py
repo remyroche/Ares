@@ -31,16 +31,21 @@ except ImportError:
     TPRINT_AVAILABLE = False
     # Fallback functions for when tprint is not available
     def tprint(*args, **kwargs): 
-        raise ImportError("tprint not available - install required dependencies")
+        print(f"[TPRINT] {' '.join(map(str, args))}")
     def tprint_debug(*args, **kwargs): 
-        raise ImportError("tprint_debug not available - install required dependencies")
+        print(f"[DEBUG] {' '.join(map(str, args))}")
     def tprint_info(*args, **kwargs): 
-        raise ImportError("tprint_info not available - install required dependencies")
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
-    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
+        print(f"[INFO] {' '.join(map(str, args))}")
+    def tprint_warning(*args, **kwargs): 
+        print(f"[WARNING] {' '.join(map(str, args))}")
+    def tprint_error(*args, **kwargs): 
+        print(f"[ERROR] {' '.join(map(str, args))}")
+    def tprint_success(*args, **kwargs): 
+        print(f"[SUCCESS] {' '.join(map(str, args))}")
+    def tprint_performance(*args, **kwargs): 
+        print(f"[PERF] {' '.join(map(str, args))}")
+    def tprint_timer(*args, **kwargs): 
+        print(f"[TIMER] {' '.join(map(str, args))}")
 
 # VectorBT imports for optimization
 try:
@@ -188,8 +193,11 @@ class VectorBTRollingOptimizer:
             else:
                 tprint_warning("⚠️ Continuing with fallback configuration")
 
-        tprint_success(f"✅ VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}, FastFail={self.fast_fail}")
-        logger.info(f"VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}")
+        # Only log initialization once per session to reduce verbosity
+        if not hasattr(VectorBTRollingOptimizer, '_logged_initialization'):
+            tprint_success(f"✅ VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}, FastFail={self.fast_fail}")
+            logger.info(f"VectorBTRollingOptimizer initialized: VectorBT={self.use_vectorbt}, GPU={self.enable_gpu}, Memory={self.memory_efficient}")
+            VectorBTRollingOptimizer._logged_initialization = True
 
     def rolling_mean(self, data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling mean calculation with enhanced logging and validation."""
@@ -316,13 +324,51 @@ class VectorBTRollingOptimizer:
 
     def rolling_corr(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame],
                     window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling correlation calculation."""
-        return self._rolling_operation(data, 'corr', window, other=other, **kwargs)
+        """Optimized rolling correlation calculation using VectorBT."""
+        try:
+            # Use VectorBT's optimized rolling correlation if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
+                try:
+                    # Try VectorBT's optimized rolling correlation
+                    if hasattr(vbt, 'rolling_corr'):
+                        return vbt.rolling_corr(data, other, window=window, **kwargs)
+                    else:
+                        # Fallback to pandas rolling interface
+                        rolling_obj = data.rolling(window=window, **kwargs)
+                        return rolling_obj.corr(other)
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling_corr failed: {e}, using pandas fallback")
+                    return data.rolling(window=window, **kwargs).corr(other)
+            else:
+                # Fallback to pandas
+                return data.rolling(window=window, **kwargs).corr(other)
+        except Exception as e:
+            self.logger.warning(f"VectorBT correlation failed: {e}, using pandas fallback")
+            return data.rolling(window=window, **kwargs).corr(other)
 
     def rolling_cov(self, data: Union[pd.Series, pd.DataFrame], other: Union[pd.Series, pd.DataFrame],
                    window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling covariance calculation."""
-        return self._rolling_operation(data, 'cov', window, other=other, **kwargs)
+        """Optimized rolling covariance calculation using VectorBT."""
+        try:
+            # Use VectorBT's optimized rolling covariance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
+                try:
+                    # Try VectorBT's optimized rolling covariance
+                    if hasattr(vbt, 'rolling_cov'):
+                        return vbt.rolling_cov(data, other, window=window, **kwargs)
+                    else:
+                        # Fallback to pandas rolling interface
+                        rolling_obj = data.rolling(window=window, **kwargs)
+                        return rolling_obj.cov(other)
+                except Exception as e:
+                    self.logger.warning(f"VectorBT rolling_cov failed: {e}, using pandas fallback")
+                    return data.rolling(window=window, **kwargs).cov(other)
+            else:
+                # Fallback to pandas
+                return data.rolling(window=window, **kwargs).cov(other)
+        except Exception as e:
+            self.logger.warning(f"VectorBT covariance failed: {e}, using pandas fallback")
+            return data.rolling(window=window, **kwargs).cov(other)
 
     def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], func: callable,
                      window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -453,10 +499,22 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'ewm')
 
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 result = data.ewm(alpha=alpha, **kwargs).mean()
             elif span is not None:
                 result = data.ewm(span=span, **kwargs).mean()
+            elif kwargs.get('halflife') is not None:
+                result = data.ewm(halflife=kwargs['halflife'], **kwargs).mean()
+            elif kwargs.get('comass') is not None:
+                result = data.ewm(comass=kwargs['comass'], **kwargs).mean()
             else:
                 result = data.ewm(span=window, **kwargs).mean()
 
@@ -481,10 +539,22 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'ewm_std')
 
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 result = data.ewm(alpha=alpha, **kwargs).std()
             elif span is not None:
                 result = data.ewm(span=span, **kwargs).std()
+            elif kwargs.get('halflife') is not None:
+                result = data.ewm(halflife=kwargs['halflife'], **kwargs).std()
+            elif kwargs.get('comass') is not None:
+                result = data.ewm(comass=kwargs['comass'], **kwargs).std()
             else:
                 result = data.ewm(span=window, **kwargs).std()
 
@@ -509,10 +579,22 @@ class VectorBTRollingOptimizer:
         self._validate_rolling_inputs(data, window, 'ewm_var')
 
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 result = data.ewm(alpha=alpha, **kwargs).var()
             elif span is not None:
                 result = data.ewm(span=span, **kwargs).var()
+            elif kwargs.get('halflife') is not None:
+                result = data.ewm(halflife=kwargs['halflife'], **kwargs).var()
+            elif kwargs.get('comass') is not None:
+                result = data.ewm(comass=kwargs['comass'], **kwargs).var()
             else:
                 result = data.ewm(span=window, **kwargs).var()
 
@@ -592,9 +674,6 @@ class VectorBTRollingOptimizer:
         """Optimized rolling kurtosis calculation."""
         return self._rolling_operation(data, 'kurt', window, **kwargs)
 
-    def rolling_apply(self, data: Union[pd.Series, pd.DataFrame], window: int, func: Callable, **kwargs) -> Union[pd.Series, pd.DataFrame]:
-        """Optimized rolling apply calculation."""
-        return self._rolling_operation(data, 'apply', window, func=func, **kwargs)
 
     def rolling_corr(self, data1: Union[pd.Series, pd.DataFrame], data2: Union[pd.Series, pd.DataFrame],
                     window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -605,6 +684,21 @@ class VectorBTRollingOptimizer:
                    window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Optimized rolling covariance calculation."""
         return self._rolling_operation(data1, 'cov', window, data2=data2, **kwargs)
+
+    def rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+        """
+        Generic rolling operation method for compatibility with feature generators.
+        
+        Args:
+            data: Input data
+            operation: Operation type ('mean', 'std', 'var', 'min', 'max', 'sum', etc.)
+            window: Rolling window size
+            **kwargs: Additional parameters
+            
+        Returns:
+            Result of rolling operation
+        """
+        return self._rolling_operation(data, operation, window, **kwargs)
 
     def _rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
                           window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -623,47 +717,57 @@ class VectorBTRollingOptimizer:
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
 
-        tprint_debug(f"🔄 Starting rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
+        if self.enable_logging:
+            tprint_debug(f"🔄 Starting rolling operation: {operation}, window={window}, data_shape={data.shape if hasattr(data, 'shape') else 'unknown'}")
 
         # Validate inputs before processing
         self._validate_rolling_inputs(data, window, operation)
 
         # Optimize data for processing
         if self.memory_efficient:
-            tprint_debug("🧠 Optimizing data types for memory efficiency")
+            if self.enable_logging:
+                tprint_debug("🧠 Optimizing data types for memory efficiency")
             try:
                 data = self._optimize_data_types(data)
-                tprint_success("✅ Data type optimization completed")
+                if self.enable_logging:
+                    tprint_success("✅ Data type optimization completed")
             except Exception as e:
                 error_msg = f"Data type optimization failed: {e}"
-                tprint_warning(f"⚠️ {error_msg}")
+                if self.enable_logging:
+                    tprint_warning(f"⚠️ {error_msg}")
                 if self.fast_fail:
                     raise VectorBTOptimizationError(error_msg, operation=operation, original_error=e)
 
         try:
             # Check if data is large enough for chunked processing
             if len(data) > self.chunk_size and self.memory_efficient:
-                tprint_info(f"📦 Using chunked processing: data_size={len(data)}, chunk_size={self.chunk_size}")
+                if self.enable_logging:
+                    tprint_info(f"📦 Using chunked processing: data_size={len(data)}, chunk_size={self.chunk_size}")
                 result = self._chunked_rolling_operation(data, operation, window, **kwargs)
                 self.performance_stats['chunk_operations'] += 1
-                tprint_success("✅ Chunked processing completed")
+                if self.enable_logging:
+                    tprint_success("✅ Chunked processing completed")
             else:
                 # Determine optimal processing method
                 strategy = self._select_processing_strategy(data, window, operation)
-                tprint_debug(f"🎯 Selected processing strategy: {strategy}")
+                if self.enable_logging:
+                    tprint_debug(f"🎯 Selected processing strategy: {strategy}")
 
                 if strategy == 'vectorbt':
                     result = self._vectorbt_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['vectorbt_operations'] += 1
-                    tprint_success("✅ VectorBT processing completed")
+                    if self.enable_logging:
+                        tprint_success("✅ VectorBT processing completed")
                 elif strategy == 'gpu':
                     result = self._gpu_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['gpu_operations'] += 1
-                    tprint_success("✅ GPU processing completed")
+                    if self.enable_logging:
+                        tprint_success("✅ GPU processing completed")
                 else:
                     result = self._pandas_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['pandas_fallbacks'] += 1
-                    tprint_success("✅ Pandas processing completed")
+                    if self.enable_logging:
+                        tprint_success("✅ Pandas processing completed")
 
             # Update timing and validate result
             execution_time = time.time() - start_time
@@ -672,27 +776,32 @@ class VectorBTRollingOptimizer:
             # Validate result
             self._validate_rolling_result(result, operation, window)
 
-            tprint_performance(f"Rolling {operation}", execution_time)
+            if self.enable_logging:
+                tprint_performance(f"Rolling {operation}", execution_time)
             return result
 
         except Exception as e:
             error_msg = f"Rolling operation {operation} failed"
-            tprint_error(f"❌ {error_msg}: {e}")
+            if self.enable_logging:
+                tprint_error(f"❌ {error_msg}: {e}")
             self.performance_stats['errors'] += 1
 
             if self.fast_fail:
                 self.performance_stats['fast_failures'] += 1
                 raise VectorBTOptimizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=e)
             else:
-                tprint_warning("⚠️ Fast fail disabled, attempting numpy fallback")
+                if self.enable_logging:
+                    tprint_warning("⚠️ Fast fail disabled, attempting numpy fallback")
                 try:
                     result = self._numpy_rolling_operation(data, operation, window, **kwargs)
                     self.performance_stats['numpy_fallbacks'] += 1
-                    tprint_success("✅ Numpy fallback completed")
+                    if self.enable_logging:
+                        tprint_success("✅ Numpy fallback completed")
                     return result
                 except Exception as fallback_error:
                     error_msg = f"All rolling operation methods failed for {operation}"
-                    tprint_error(f"❌ {error_msg}: {fallback_error}")
+                    if self.enable_logging:
+                        tprint_error(f"❌ {error_msg}: {fallback_error}")
                     raise VectorBTOptimizationError(error_msg, operation=operation, data_shape=data.shape if hasattr(data, 'shape') else None, window=window, original_error=fallback_error)
 
     def _chunked_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
@@ -758,24 +867,42 @@ class VectorBTRollingOptimizer:
         return pd.concat(results, ignore_index=False)
 
     def _optimize_data_types(self, data: Union[pd.Series, pd.DataFrame]) -> Union[pd.Series, pd.DataFrame]:
-        """Optimize data types for memory efficiency."""
-        if self.memory_efficient:
+        """Optimize data types for memory efficiency with minimal copying."""
+        if not self.memory_efficient:
+            return data
+
+        try:
             if isinstance(data, pd.Series):
-                if data.dtype == 'float64':
-                    if (data.min() >= np.finfo(np.float32).min and
-                        data.max() <= np.finfo(np.float32).max):
-                        data = data.astype(np.float32)
-                        self.performance_stats['memory_optimizations'] += 1
-            elif isinstance(data, pd.DataFrame):
-                optimized_data = data.copy()
-                for column in optimized_data.columns:
-                    if optimized_data[column].dtype == 'float64':
-                        if (optimized_data[column].min() >= np.finfo(np.float32).min and
-                            optimized_data[column].max() <= np.finfo(np.float32).max):
-                            optimized_data[column] = optimized_data[column].astype(np.float32)
+                if data.dtype == np.float64:
+                    min_ok = data.min() >= np.finfo(np.float32).min
+                    max_ok = data.max() <= np.finfo(np.float32).max
+                    if min_ok and max_ok:
+                        converted = data.astype(np.float32, copy=False)
+                        if converted.dtype != data.dtype:
                             self.performance_stats['memory_optimizations'] += 1
-                return optimized_data
-        return data
+                        return converted
+                return data
+
+            elif isinstance(data, pd.DataFrame):
+                # Build dtype map only for columns that can be safely downcast
+                dtype_map = {}
+                for col in data.columns:
+                    col_data = data[col]
+                    if col_data.dtype == np.float64:
+                        if (col_data.min() >= np.finfo(np.float32).min and
+                            col_data.max() <= np.finfo(np.float32).max):
+                            dtype_map[col] = np.float32
+
+                if dtype_map:
+                    optimized = data.astype(dtype_map, copy=False)
+                    self.performance_stats['memory_optimizations'] += len(dtype_map)
+                    return optimized
+                return data
+
+            return data
+        except Exception:
+            # On any error, return input unchanged to be safe
+            return data
 
     def _should_use_vectorbt(self, data: Union[pd.Series, pd.DataFrame], window: int) -> bool:
         """Determine if VectorBT should be used for this operation."""
@@ -800,8 +927,19 @@ class VectorBTRollingOptimizer:
         """Perform rolling operation using VectorBT (via pandas rolling interface)."""
         try:
             # VectorBT 0.28+ uses pandas rolling interface
-            rolling_obj = data.rolling(window=window, **kwargs)
+            # Remove parameters that pandas rolling doesn't accept
+            rolling_kwargs = kwargs.copy()
+            if operation == 'quantile':
+                rolling_kwargs.pop('q', None)
+            # Remove parameters not accepted by pandas rolling
+            rolling_kwargs.pop('func', None)
+            if operation in {'corr', 'cov'}:
+                data2 = rolling_kwargs.pop('data2', kwargs.get('data2'))
+            else:
+                data2 = None
             
+            rolling_obj = data.rolling(window=window, **rolling_kwargs)
+
             if operation == 'mean':
                 return rolling_obj.mean()
             elif operation == 'std':
@@ -822,13 +960,15 @@ class VectorBTRollingOptimizer:
             elif operation == 'kurt':
                 return rolling_obj.kurt()
             elif operation == 'apply':
-                func = kwargs.get('func')
-                return rolling_obj.apply(func)
+                func = kwargs.pop('func', None)
+                if func is not None:
+                    return rolling_obj.apply(func)
+                else:
+                    # Handle case where func is not provided
+                    return rolling_obj
             elif operation == 'corr':
-                data2 = kwargs.get('data2')
                 return rolling_obj.corr(data2)
             elif operation == 'cov':
-                data2 = kwargs.get('data2')
                 return rolling_obj.cov(data2)
             else:
                 raise ValueError(f"Unsupported VectorBT operation: {operation}")
@@ -845,7 +985,12 @@ class VectorBTRollingOptimizer:
     def _pandas_rolling_operation(self, data: Union[pd.Series, pd.DataFrame], operation: str,
                                  window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Perform rolling operation using pandas."""
-        rolling_obj = data.rolling(window=window, **kwargs)
+        # Remove quantile-specific parameters from kwargs before passing to rolling
+        rolling_kwargs = kwargs.copy()
+        if operation == 'quantile':
+            rolling_kwargs.pop('q', None)
+        
+        rolling_obj = data.rolling(window=window, **rolling_kwargs)
 
         if operation == 'mean':
             return rolling_obj.mean()
@@ -870,11 +1015,15 @@ class VectorBTRollingOptimizer:
             func = kwargs.get('func')
             return rolling_obj.apply(func)
         elif operation == 'corr':
-            data2 = kwargs.get('data2')
-            return rolling_obj.corr(data2)
+            other = kwargs.get('other')
+            if other is None:
+                raise ValueError("'other' parameter is required for correlation operation")
+            return rolling_obj.corr(other)
         elif operation == 'cov':
-            data2 = kwargs.get('data2')
-            return rolling_obj.cov(data2)
+            other = kwargs.get('other')
+            if other is None:
+                raise ValueError("'other' parameter is required for covariance operation")
+            return rolling_obj.cov(other)
         else:
             raise ValueError(f"Unsupported pandas operation: {operation}")
 
@@ -1170,10 +1319,22 @@ class VectorBTRollingOptimizer:
         """Fallback rolling EWM with error handling."""
         tprint_warning("⚠️ Using fallback rolling EWM implementation")
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided in fallback: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 return data.ewm(alpha=alpha, **kwargs).mean()
             elif span is not None:
                 return data.ewm(span=span, **kwargs).mean()
+            elif kwargs.get('halflife') is not None:
+                return data.ewm(halflife=kwargs['halflife'], **kwargs).mean()
+            elif kwargs.get('comass') is not None:
+                return data.ewm(comass=kwargs['comass'], **kwargs).mean()
             else:
                 return data.ewm(span=window, **kwargs).mean()
         except Exception as e:
@@ -1186,10 +1347,22 @@ class VectorBTRollingOptimizer:
         """Fallback rolling EWM std with error handling."""
         tprint_warning("⚠️ Using fallback rolling EWM std implementation")
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided in fallback: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 return data.ewm(alpha=alpha, **kwargs).std()
             elif span is not None:
                 return data.ewm(span=span, **kwargs).std()
+            elif kwargs.get('halflife') is not None:
+                return data.ewm(halflife=kwargs['halflife'], **kwargs).std()
+            elif kwargs.get('comass') is not None:
+                return data.ewm(comass=kwargs['comass'], **kwargs).std()
             else:
                 return data.ewm(span=window, **kwargs).std()
         except Exception as e:
@@ -1202,10 +1375,22 @@ class VectorBTRollingOptimizer:
         """Fallback rolling EWM var with error handling."""
         tprint_warning("⚠️ Using fallback rolling EWM var implementation")
         try:
+            # Check for conflicting EWM parameters in kwargs
+            smoothing_params = sum([alpha is not None, span is not None,
+                                   kwargs.get('halflife') is not None,
+                                   kwargs.get('comass') is not None])
+
+            if smoothing_params > 1:
+                tprint_warning(f"⚠️ Multiple EWM smoothing parameters provided in fallback: alpha={alpha}, span={span}, halflife={kwargs.get('halflife')}, comass={kwargs.get('comass')}. Using alpha.")
+
             if alpha is not None:
                 return data.ewm(alpha=alpha, **kwargs).var()
             elif span is not None:
                 return data.ewm(span=span, **kwargs).var()
+            elif kwargs.get('halflife') is not None:
+                return data.ewm(halflife=kwargs['halflife'], **kwargs).var()
+            elif kwargs.get('comass') is not None:
+                return data.ewm(comass=kwargs['comass'], **kwargs).var()
             else:
                 return data.ewm(span=window, **kwargs).var()
         except Exception as e:
@@ -1481,9 +1666,9 @@ class VectorBTRollingOptimizer:
             current_memory = psutil.Process().memory_info().rss / (1024 * 1024)  # MB
             self._memory_usage_history.append(current_memory)
 
-            # Keep only last 50 readings
-            if len(self._memory_usage_history) > 50:
-                self._memory_usage_history = self._memory_usage_history[-50:]
+            # Keep only last 10 readings (reduced from 50 to prevent accumulation)
+            if len(self._memory_usage_history) > 10:
+                self._memory_usage_history = self._memory_usage_history[-10:]
 
             # Update peak usage
             self._memory_peak_usage = max(self._memory_peak_usage, current_memory)
@@ -2108,6 +2293,14 @@ def get_vectorbt_rolling_optimizer(enable_gpu: bool = False, enable_parallel: bo
     """Get global VectorBT rolling optimizer instance."""
     global _global_optimizer
     if _global_optimizer is None:
+        # Determine default logging behavior from environment if not explicitly provided
+        try:
+            import os
+            env_flag = os.environ.get('VBT_ENABLE_LOGGING') or os.environ.get('ARES_VBT_LOGGING')
+            if env_flag is not None:
+                enable_logging = str(env_flag).lower() in ('1', 'true', 'yes', 'on')
+        except Exception:
+            pass
         _global_optimizer = VectorBTRollingOptimizer(
             enable_gpu=enable_gpu,
             enable_parallel=enable_parallel,
@@ -2156,7 +2349,7 @@ def optimized_rolling_quantile(data: Union[pd.Series, pd.DataFrame], window: int
 def optimized_rolling_apply(data: Union[pd.Series, pd.DataFrame], window: int, func: Callable, **kwargs) -> Union[pd.Series, pd.DataFrame]:
     """Optimized rolling apply using VectorBT."""
     optimizer = get_vectorbt_rolling_optimizer()
-    return optimizer.rolling_apply(data, window, func, **kwargs)
+    return optimizer.rolling_apply(data, func, window, **kwargs)
 
 def optimized_rolling_corr(data1: Union[pd.Series, pd.DataFrame], data2: Union[pd.Series, pd.DataFrame],
                           window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -2213,3 +2406,31 @@ def optimized_rolling_covariance_matrix(data: pd.DataFrame, window: int, **kwarg
     """Optimized rolling covariance matrix using VectorBT."""
     optimizer = get_vectorbt_rolling_optimizer()
     return optimizer.rolling_covariance_matrix(data, window, **kwargs)
+
+def optimized_rolling_skew(data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+    """Optimized rolling skewness using VectorBT.
+    
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size
+        **kwargs: Additional arguments for rolling operation
+        
+    Returns:
+        Rolling skewness values
+    """
+    optimizer = get_vectorbt_rolling_optimizer()
+    return optimizer.rolling_skew(data, window, **kwargs)
+
+def optimized_rolling_kurt(data: Union[pd.Series, pd.DataFrame], window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
+    """Optimized rolling kurtosis using VectorBT.
+    
+    Args:
+        data: Input data (Series or DataFrame)
+        window: Rolling window size
+        **kwargs: Additional arguments for rolling operation
+        
+    Returns:
+        Rolling kurtosis values
+    """
+    optimizer = get_vectorbt_rolling_optimizer()
+    return optimizer.rolling_kurt(data, window, **kwargs)

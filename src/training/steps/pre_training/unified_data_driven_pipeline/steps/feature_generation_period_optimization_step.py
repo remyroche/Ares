@@ -24,8 +24,13 @@ from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_p
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
     ModularComponent
 )
+from src.training.common.component_result import ComponentResult
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.training.steps.pre_training.utils.artifact_manager import (
+    get_pretraining_artifact_manager,
+    ArtifactKeys,
+)
 
 # Import tprint utilities for enhanced logging
 try:
@@ -131,3 +136,137 @@ class FeatureGenerationPeriodOptimizationStep(ModularComponent):
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
     # Required utility methods for BasePreTrainingComponent
+
+@dataclass
+class PeriodOptimizationResult:
+    """Result from period optimization step."""
+    success: bool
+    optimized_periods: int
+    optimization_metadata: Dict[str, Any]
+    artifacts: Dict[str, Any]
+    error_message: Optional[str] = None
+
+
+# Handler function for ares_launcher integration
+async def handle_feature_generation_period_optimization_step(
+    symbol: str = "ETHUSDT",
+    timeframe: str = "15m",
+    exchange: str = "binance",
+    direction: str = "longs",
+    intensity: str = "blank",
+    lookback_days: int = None,
+    start_date: str = None,
+    end_date: str = None,
+    custom_overrides: dict = None,
+    **kwargs
+) -> ComponentResult:
+    """
+    Handler function for feature generation period optimization step.
+
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        timeframe: Timeframe (e.g., "15m")
+        exchange: Exchange name (e.g., "binance")
+        direction: Trading direction (e.g., "longs")
+        intensity: Intensity level (e.g., "blank")
+        lookback_days: Number of days to look back
+        start_date: Start date for data
+        end_date: End date for data
+        custom_overrides: Custom configuration overrides
+        **kwargs: Additional arguments
+
+    Returns:
+        ComponentResult: Result of the period optimization step
+    """
+    artifact_manager = get_pretraining_artifact_manager()
+
+    try:
+        # Create the step instance
+        step = FeatureGenerationPeriodOptimizationStep(
+            name="period_optimization_step",
+            config={
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'exchange': exchange,
+                'direction': direction,
+                'intensity': intensity,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'custom_overrides': custom_overrides or {}
+            }
+        )
+
+        # Load data for processing
+        data = await step.load_data(
+            symbol=symbol,
+            timeframe=timeframe,
+            exchange=exchange,
+            direction=direction,
+            intensity=intensity,
+            lookback_days=lookback_days,
+            start_date=start_date,
+            end_date=end_date,
+            **kwargs
+        )
+
+        # Process the data
+        result = await step.process_data_async(
+            data,
+            symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
+            intensity=intensity,
+            lookback_days=lookback_days,
+            start_date=start_date,
+            end_date=end_date,
+            custom_overrides=custom_overrides or {},
+            **kwargs
+        )
+
+        # Create result object
+        step_result = PeriodOptimizationResult(
+            success=result.get('success', False),
+            optimized_periods=result.get('optimized_periods', 30),
+            optimization_metadata=result.get('optimization_metadata', {}),
+            artifacts=result.get('artifacts', {})
+        )
+
+        # Convert to ComponentResult
+        component_result = ComponentResult(
+            success=step_result.success,
+            data=None,  # Period optimization doesn't return processed data
+            metadata={
+                'step_name': 'feature_generation_period_optimization_step',
+                'optimized_periods': step_result.optimized_periods,
+                'optimization_metadata': step_result.optimization_metadata
+            },
+            artifacts=step_result.artifacts,
+            error_message=step_result.error_message
+        )
+
+        # Save artifacts
+        await artifact_manager.save_step_result(
+            step_name='feature_generation_period_optimization_step',
+            result=component_result,
+            symbol=symbol,
+            timeframe=timeframe,
+            direction=direction
+        )
+
+        return component_result
+
+    except Exception as e:
+        error_message = f"Period optimization step failed: {str(e)}"
+        tprint_error(error_message)
+
+        # Return failed result
+        component_result = ComponentResult(
+            success=False,
+            data=None,
+            metadata={'step_name': 'feature_generation_period_optimization_step'},
+            artifacts={},
+            error_message=error_message
+        )
+
+        return component_result

@@ -187,6 +187,94 @@ class VectorBTMemoryOptimizer:
             logger.warning(f"GPU processing failed: {e}")
             return data
 
+    def optimize_series(self, series: pd.Series) -> pd.Series:
+        """
+        Optimize a pandas Series for memory usage.
+        
+        Args:
+            series: Input pandas Series
+            
+        Returns:
+            Optimized pandas Series
+        """
+        try:
+            # Check if series is empty
+            if series.empty:
+                return series
+            
+            # Get original memory usage
+            original_memory = series.memory_usage(deep=True)
+            
+            # Optimize data types
+            optimized_series = series.copy()
+            
+            # Convert to appropriate numeric type
+            if optimized_series.dtype == 'object':
+                # Try to convert to numeric
+                try:
+                    optimized_series = pd.to_numeric(optimized_series, errors='coerce')
+                except:
+                    pass
+            elif optimized_series.dtype in ['float64', 'int64']:
+                # Try to downcast to smaller types
+                if optimized_series.dtype == 'float64':
+                    # Try float32
+                    if optimized_series.min() >= np.finfo(np.float32).min and optimized_series.max() <= np.finfo(np.float32).max:
+                        optimized_series = optimized_series.astype(np.float32)
+                elif optimized_series.dtype == 'int64':
+                    # Try int32 or int16
+                    if self._can_downcast_to_int32(optimized_series):
+                        optimized_series = optimized_series.astype(np.int32)
+                    elif self._can_downcast_to_int16(optimized_series):
+                        optimized_series = optimized_series.astype(np.int16)
+            
+            # Get optimized memory usage
+            optimized_memory = optimized_series.memory_usage(deep=True)
+            memory_saved = original_memory - optimized_memory
+            
+            # Update stats
+            self.memory_stats['memory_savings'] += memory_saved
+            self.memory_stats['optimizations_applied'] += 1
+            
+            logger.debug(f"Series optimized: {original_memory} -> {optimized_memory} bytes (saved {memory_saved} bytes)")
+            
+            return optimized_series
+            
+        except Exception as e:
+            logger.warning(f"Series optimization failed: {e}")
+            return series
+
+    def _can_downcast_to_int32(self, series: pd.Series) -> bool:
+        """Check if series can be downcast to int32."""
+        try:
+            if series.dtype not in ['int64', 'float64']:
+                return False
+            
+            # Check if all values fit in int32 range
+            min_val = series.min()
+            max_val = series.max()
+            
+            return (min_val >= np.iinfo(np.int32).min and 
+                    max_val <= np.iinfo(np.int32).max and
+                    series.dtype in ['int64', 'float64'])
+        except Exception:
+            return False
+
+    def _can_downcast_to_int16(self, series: pd.Series) -> bool:
+        """Check if series can be downcast to int16."""
+        try:
+            if series.dtype not in ['int64', 'int32', 'float64']:
+                return False
+            
+            # Check if all values fit in int16 range
+            min_val = series.min()
+            max_val = series.max()
+            
+            return (min_val >= np.iinfo(np.int16).min and 
+                    max_val <= np.iinfo(np.int16).max)
+        except Exception:
+            return False
+
     def process_in_chunks(self, data: Union[pd.Series, pd.DataFrame],
                          operation: Callable, chunk_size: Optional[int] = None,
                          **kwargs) -> Union[pd.Series, pd.DataFrame]:

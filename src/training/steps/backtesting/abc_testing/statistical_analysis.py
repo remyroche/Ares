@@ -52,7 +52,7 @@ from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
 
 # VectorBT optimizations
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+from src.feature_selection.vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework
 from src.training.steps.backtesting.vectorbt_unified_manager import get_vectorbt_unified_manager, VectorBTConfig
 
 # Core decorators and validation

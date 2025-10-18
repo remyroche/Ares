@@ -70,17 +70,12 @@ from .components.ml_entry_timing_labeler_modular import (
     create_ml_entry_timing_labeler
 )
 
-from .unified_training_pipeline_modular import (
-    UnifiedTrainingPipelineModular,
-    TrainingPhase,
-    UnifiedTrainingConfig,
-    UnifiedTrainingResult,
+from .unified_training_pipeline import (
+    UnifiedTrainingPipeline,
     create_unified_training_pipeline
 )
 
-# Import migration utilities
-from .migrate_components import ModelsTrainingMigrationManager
-from .validate_migrations import MigrationValidator
+# Migration utilities removed during cleanup
 
 __version__ = "2.0.0"
 
@@ -131,13 +126,6 @@ __all__ = [
     'MLEntryTimingResult',
     'create_ml_entry_timing_labeler',
     
-    'UnifiedTrainingPipelineModular',
-    'TrainingPhase',
-    'UnifiedTrainingConfig',
-    'UnifiedTrainingResult',
-    'create_unified_training_pipeline',
-    
-    # Migration utilities
-    'ModelsTrainingMigrationManager',
-    'MigrationValidator'
+    'UnifiedTrainingPipeline',
+    'create_unified_training_pipeline'
 ]

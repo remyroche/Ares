@@ -707,10 +707,10 @@ class VectorBTSpectralWaveletBatchGenerator(VectorizedFeatureGenerator):
         self.window = window
 
         # Initialize VectorBT optimizer
-        self.vectorbt_optimizer = None
+        self.vectorbt_rolling_optimizer = None
         if VECTORBT_ROLLING_OPTIMIZER_AVAILABLE:
             try:
-                self.vectorbt_optimizer = get_vectorbt_rolling_optimizer()
+                self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
             except Exception as e:
                 tprint(f"⚠️ VectorBT optimizer initialization failed: {e}")
 

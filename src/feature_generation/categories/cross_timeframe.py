@@ -37,7 +37,7 @@ except ImportError:
 
 # Unified Vectorization Manager imports
 try:
-    from ...utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OperationConfig
+    from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, UnifiedVectorizationManager, OperationType, OperationConfig
     UNIFIED_VECTORIZATION_AVAILABLE = True
 except ImportError:
     UNIFIED_VECTORIZATION_AVAILABLE = False
@@ -50,35 +50,35 @@ except ImportError:
 # Helper functions for VectorBT rolling operations using pandas interface
 def rolling_mean(data, window, **kwargs):
     """VectorBT-compatible rolling mean using pandas interface"""
-    return data.rolling(window=window, **kwargs).mean()
+    return data.rolling(window, **kwargs).mean()
 
 def rolling_std(data, window, **kwargs):
     """VectorBT-compatible rolling std using pandas interface"""
-    return data.rolling(window=window, **kwargs).std()
+    return data.rolling(window, **kwargs).std()
 
 def rolling_var(data, window, **kwargs):
     """VectorBT-compatible rolling variance using pandas interface"""
-    return data.rolling(window=window, **kwargs).var()
+    return data.rolling(window, **kwargs).var()
 
 def rolling_min(data, window, **kwargs):
     """VectorBT-compatible rolling min using pandas interface"""
-    return data.rolling(window=window, **kwargs).min()
+    return data.rolling(window, **kwargs).min()
 
 def rolling_max(data, window, **kwargs):
     """VectorBT-compatible rolling max using pandas interface"""
-    return data.rolling(window=window, **kwargs).max()
+    return data.rolling(window, **kwargs).max()
 
 def rolling_sum(data, window, **kwargs):
     """VectorBT-compatible rolling sum using pandas interface"""
-    return data.rolling(window=window, **kwargs).sum()
+    return data.rolling(window, **kwargs).sum()
 
-def rolling_apply(data, window, func, **kwargs):
+def rolling_apply(data, func, window, **kwargs):
     """VectorBT-compatible rolling apply using pandas interface"""
-    return data.rolling(window=window, **kwargs).apply(func)
+    return data.rolling(window, **kwargs).apply(func)
 
 def rolling_corr(data1, data2, window, **kwargs):
     """VectorBT-compatible rolling correlation using pandas interface"""
-    return data1.rolling(window=window, **kwargs).corr(data2)
+    return data1.rolling(window, **kwargs).corr(data2)
 
 # VectorBT Rolling Optimizer
 try:
@@ -136,10 +136,10 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
         if UNIFIED_VECTORIZATION_AVAILABLE:
             vectorization_config = VectorizationConfig(
                 chunk_size=10000,
-                enable_gpu_acceleration=True,
-                enable_parallel=True,
-                vectorization_strategy="aggressive",
-                enable_memory_pooling=True
+                enable_threading=True,
+                enable_multiprocessing=True,
+                memory_efficiency_threshold=0.8,
+                memory_limit_gb=8.0
             )
             self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
         else:
@@ -147,7 +147,7 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
 
         # Initialize Unified Vectorization Manager from ml_common
         try:
-            from ...utils.ml_common.unified_vectorization_manager import (
+            from src.utils.ml_common.unified_vectorization_manager import (
                 get_unified_vectorization_manager, UnifiedVectorizationManager,
                 OperationType, OptimizationStrategy, OperationConfig
             )
@@ -164,6 +164,7 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
             'chunked_operations': 0,
             'gpu_operations': 0,
             'memory_optimizations': 0,
+            'pandas_fallbacks': 0,
             'total_operations': 0,
             'total_execution_time': 0.0,
             'cross_timeframe_features_generated': 0
@@ -266,19 +267,19 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimiz
                     momentum = self.rolling_optimizer.rolling_apply(
                         data['close'],
                         lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0,
-                        window=tf
+tf
                     )
                     features[f'vectorbt_momentum_{tf}'] = momentum
 
                 # Volatility features
                 if 'close' in data.columns:
                     returns = data['close'].pct_change().fillna(0)
-                    volatility = self.rolling_optimizer.rolling_std(returns, window=tf)
+                    volatility = self.rolling_optimizer.rolling_std(returns, tf)
                     features[f'vectorbt_volatility_{tf}'] = volatility
 
                 # Volume features
                 if 'volume' in data.columns:
-                    volume_ma = self.rolling_optimizer.rolling_mean(data['volume'], window=tf)
+                    volume_ma = self.rolling_optimizer.rolling_mean(data['volume'], tf)
                     features[f'vectorbt_volume_ma_{tf}'] = volume_ma
 
         except Exception as e:
@@ -375,9 +376,9 @@ class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimi
         if UNIFIED_VECTORIZATION_AVAILABLE:
             vectorization_config = VectorizationConfig(
                 chunk_size=5000,
-                enable_gpu_acceleration=True,
-                enable_parallel=True,
-                vectorization_strategy="aggressive"
+                enable_threading=True,
+                enable_multiprocessing=True,
+                adaptive_chunking=True
             )
             self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
         else:
@@ -411,7 +412,7 @@ class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimi
                             return 0.0
                         return (x.iloc[-1] - x.iloc[0]) / x.iloc[0]
 
-                    momentum = self.rolling_optimizer.rolling_apply(base_values, window=self.timeframe, func=momentum_func)
+                    momentum = self.rolling_optimizer.rolling_apply(base_values, momentum_func, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return momentum
@@ -423,7 +424,7 @@ class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimi
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
                 try:
-                    momentum = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe)
+                    momentum = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return momentum
@@ -433,7 +434,7 @@ class CrossTimeframeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimi
                         self.performance_stats['pandas_fallbacks'] += 1
 
             # Final fallback to pandas
-            momentum = base_values.rolling(window=self.timeframe).apply(lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0)
+            momentum = base_values.rolling(self.timeframe).apply(lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0)
             return momentum
 
         except Exception as e:
@@ -486,9 +487,9 @@ class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOpti
         if UNIFIED_VECTORIZATION_AVAILABLE:
             vectorization_config = VectorizationConfig(
                 chunk_size=5000,
-                enable_gpu_acceleration=True,
-                enable_parallel=True,
-                vectorization_strategy="aggressive"
+                enable_threading=True,
+                enable_multiprocessing=True,
+                adaptive_chunking=True
             )
             self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
         else:
@@ -517,7 +518,7 @@ class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOpti
             # Use VectorBT rolling optimizer if available
             if self.rolling_optimizer:
                 try:
-                    volatility = self.rolling_optimizer.rolling_std(base_values, window=self.timeframe)
+                    volatility = self.rolling_optimizer.rolling_std(base_values, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return volatility
@@ -529,7 +530,7 @@ class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOpti
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
                 try:
-                    volatility = rolling_std(base_values, window=self.timeframe)
+                    volatility = rolling_std(base_values, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return volatility
@@ -539,7 +540,7 @@ class CrossTimeframeVolatilityGenerator(VectorizedFeatureGenerator, VectorBTOpti
                         self.performance_stats['pandas_fallbacks'] += 1
 
             # Final fallback to pandas
-            volatility = base_values.rolling(window=self.timeframe).std()
+            volatility = base_values.rolling(self.timeframe).std()
             return volatility
 
         except Exception as e:
@@ -591,9 +592,9 @@ class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimiza
         if UNIFIED_VECTORIZATION_AVAILABLE:
             vectorization_config = VectorizationConfig(
                 chunk_size=5000,
-                enable_gpu_acceleration=True,
-                enable_parallel=True,
-                vectorization_strategy="aggressive"
+                enable_threading=True,
+                enable_multiprocessing=True,
+                adaptive_chunking=True
             )
             self.vectorization_manager = get_vectorization_optimizer(vectorization_config)
         else:
@@ -622,7 +623,7 @@ class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimiza
             # Use VectorBT rolling optimizer if available
             if self.rolling_optimizer:
                 try:
-                    volume_ma = self.rolling_optimizer.rolling_mean(base_values, window=self.timeframe)
+                    volume_ma = self.rolling_optimizer.rolling_mean(base_values, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return volume_ma
@@ -634,7 +635,7 @@ class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimiza
             # Fallback to VectorBT direct operations
             if VECTORBT_AVAILABLE:
                 try:
-                    volume_ma = rolling_mean(base_values, window=self.timeframe)
+                    volume_ma = rolling_mean(base_values, self.timeframe)
                     if hasattr(self, 'performance_stats'):
                         self.performance_stats['vectorbt_operations'] += 1
                     return volume_ma
@@ -644,7 +645,7 @@ class CrossTimeframeVolumeGenerator(VectorizedFeatureGenerator, VectorBTOptimiza
                         self.performance_stats['pandas_fallbacks'] += 1
 
             # Final fallback to pandas
-            volume_ma = base_values.rolling(window=self.timeframe).mean()
+            volume_ma = base_values.rolling(self.timeframe).mean()
             return volume_ma
 
         except Exception as e:
@@ -698,7 +699,7 @@ class CrossTimeframeTrendGenerator(VectorizedFeatureGenerator):
             except:
                 return 0.0
 
-        trend = rolling_apply(base_values, calculate_trend_strength, window=self.timeframe)
+        trend = rolling_apply(base_values, calculate_trend_strength, self.timeframe)
         return trend
 
 # Cross-Timeframe High-Low Generator
@@ -733,7 +734,7 @@ class CrossTimeframeHighLowGenerator(VectorizedFeatureGenerator):
             data = self.optimize_dataframe_processing(data)
 
         """Generate cross-timeframe high-low range using VectorBT."""
-        hl_range = rolling_mean(data['high'] - data['low'], window=self.timeframe)
+        hl_range = rolling_mean(data['high'] - data['low'], self.timeframe)
         return hl_range
 
 # Cross-Timeframe Ratio Generator
@@ -773,17 +774,17 @@ class CrossTimeframeRatioGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
 
         if self.feature_type == "momentum":
-            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
-            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.long_timeframe)
         elif self.feature_type == "volatility":
-            short_feature = rolling_std(base_values, window=self.short_timeframe)
-            long_feature = rolling_std(base_values, window=self.long_timeframe)
+            short_feature = rolling_std(base_values, self.short_timeframe)
+            long_feature = rolling_std(base_values, self.long_timeframe)
         elif self.feature_type == "sma":
-            short_feature = rolling_mean(base_values, window=self.short_timeframe)
-            long_feature = rolling_mean(base_values, window=self.long_timeframe)
+            short_feature = rolling_mean(base_values, self.short_timeframe)
+            long_feature = rolling_mean(base_values, self.long_timeframe)
         else:  # Default to momentum
-            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
-            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.long_timeframe)
 
         # Calculate ratio with safe division
         ratio = short_feature / (long_feature + 1e-8)  # Add small epsilon to prevent division by zero
@@ -827,17 +828,17 @@ class CrossTimeframeCorrelationGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
 
         if self.feature_type == "momentum":
-            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe1)
-            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe2)
+            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.timeframe1)
+            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.timeframe2)
         elif self.feature_type == "volatility":
-            feature1 = rolling_std(base_values, window=self.timeframe1)
-            feature2 = rolling_std(base_values, window=self.timeframe2)
+            feature1 = rolling_std(base_values, self.timeframe1)
+            feature2 = rolling_std(base_values, self.timeframe2)
         else:  # Default to momentum
-            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe1)
-            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.timeframe2)
+            feature1 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.timeframe1)
+            feature2 = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.timeframe2)
 
         # Calculate rolling correlation using VectorBT
-        correlation = rolling_corr(feature1, feature2, window=self.correlation_window)
+        correlation = rolling_corr(feature1, feature2, self.correlation_window)
         return correlation
 
 # Cross-Timeframe Divergence Generator
@@ -877,17 +878,17 @@ class CrossTimeframeDivergenceGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
 
         if self.feature_type == "momentum":
-            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
-            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.long_timeframe)
         elif self.feature_type == "volatility":
-            short_feature = rolling_std(base_values, window=self.short_timeframe)
-            long_feature = rolling_std(base_values, window=self.long_timeframe)
+            short_feature = rolling_std(base_values, self.short_timeframe)
+            long_feature = rolling_std(base_values, self.long_timeframe)
         elif self.feature_type == "sma":
-            short_feature = rolling_mean(base_values, window=self.short_timeframe)
-            long_feature = rolling_mean(base_values, window=self.long_timeframe)
+            short_feature = rolling_mean(base_values, self.short_timeframe)
+            long_feature = rolling_mean(base_values, self.long_timeframe)
         else:  # Default to momentum
-            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.short_timeframe)
-            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.long_timeframe)
+            short_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.short_timeframe)
+            long_feature = rolling_apply(base_values, lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.long_timeframe)
 
         # Calculate divergence (difference)
         divergence = short_feature - long_feature
@@ -965,18 +966,18 @@ class CrossTimeframeFractionalChangeGenerator(VectorizedFeatureGenerator):
 
         """Generate fractional change feature across timeframes using VectorBT."""
         if self.feature_type == "volatility":
-            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
-            fast_vol = rolling_std(returns, window=self.fast_tf)
-            slow_vol = rolling_std(returns, window=self.slow_tf)
+            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1)
+            fast_vol = rolling_std(returns, self.fast_tf)
+            slow_vol = rolling_std(returns, self.slow_tf)
             fractional_change = fast_vol / (slow_vol + 1e-8)
         elif self.feature_type == "momentum":
-            fast_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.fast_tf)
-            slow_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=self.slow_tf)
+            fast_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.fast_tf)
+            slow_momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, self.slow_tf)
             fractional_change = fast_momentum / (slow_momentum + 1e-8)
         elif self.feature_type == "volume":
             if "volume" in data.columns:
-                fast_volume = rolling_mean(data["volume"], window=self.fast_tf)
-                slow_volume = rolling_mean(data["volume"], window=self.slow_tf)
+                fast_volume = rolling_mean(data["volume"], self.fast_tf)
+                slow_volume = rolling_mean(data["volume"], self.slow_tf)
                 fractional_change = fast_volume / (slow_volume + 1e-8)
             else:
                 fractional_change = pd.Series(np.zeros(len(data)), index=data.index)
@@ -1015,15 +1016,15 @@ class CrossTimeframeAlignmentGenerator(VectorizedFeatureGenerator):
 
         if self.alignment_method == "lag":
             # Lag fast timeframe features by appropriate number of bars using VectorBT
-            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
-            aligned_returns = rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+            returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1)
+            aligned_returns = rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
             return aligned_returns.fillna(0)
         elif self.alignment_method == "resample":
             # Resample to target timeframe using VectorBT
             resampled = data["close"].resample(f'{self.target_tf}min').last()
             # Forward fill to original frequency
             aligned = resampled.reindex(data.index, method='ffill')
-            return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, window=2).fillna(0)
+            return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, 2).fillna(0)
         else:
             return pd.Series(np.zeros(len(data)), index=data.index)
 
@@ -1059,13 +1060,13 @@ class CrossTimeframeLearnedProjectionGenerator(VectorizedFeatureGenerator):
             tf_features = []
             for tf in self.timeframes:
                 # Calculate returns for this timeframe using VectorBT
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, tf)
 
                 # Calculate volatility for this timeframe using VectorBT
-                volatility = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf)
+                volatility = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1), tf)
 
                 # Calculate momentum for this timeframe using VectorBT
-                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf * 5)
+                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, tf * 5)
 
                 tf_features.append(pd.concat([returns, volatility, momentum], axis=1))
 
@@ -1206,21 +1207,21 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             if feature_type == "momentum":
                 # Calculate momentum with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)  # Lag by 20% of timeframe
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=timeframe)
-                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, timeframe)
+                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
 
             elif feature_type == "volatility":
                 # Calculate volatility with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
-                vol = rolling_std(returns, window=timeframe)
-                return rolling_apply(vol, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1)
+                vol = rolling_std(returns, timeframe)
+                return rolling_apply(vol, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
 
             elif feature_type == "volume":
                 if "volume" in data.columns:
                     lag_bars = max(1, timeframe // 5)
-                    vol_ma = rolling_mean(data["volume"], window=timeframe)
-                    return rolling_apply(vol_ma, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                    vol_ma = rolling_mean(data["volume"], timeframe)
+                    return rolling_apply(vol_ma, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
                 else:
                     return None
 
@@ -1228,14 +1229,14 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
                 # Calculate trend strength with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
                 trend = self._calculate_trend_strength(data["close"], timeframe)
-                return rolling_apply(trend, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                return rolling_apply(trend, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
 
             elif feature_type == "range":
                 # Calculate high-low range with lag using VectorBT
                 lag_bars = max(1, timeframe // 5)
                 if "high" in data.columns and "low" in data.columns:
-                    hl_range = rolling_mean(data["high"] - data["low"], window=timeframe)
-                    return rolling_apply(hl_range, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                    hl_range = rolling_mean(data["high"] - data["low"], timeframe)
+                    return rolling_apply(hl_range, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
                 else:
                     return None
 
@@ -1256,7 +1257,7 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             except:
                 return 0.0
 
-        return rolling_apply(series, calc_slope, window=window)
+        return rolling_apply(series, calc_slope, window)
 
     def _generate_alignment_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
         """Generate cross-timeframe alignment features."""
@@ -1282,21 +1283,21 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             if method == "lag":
                 # Lag fast timeframe features by appropriate number of bars using VectorBT
                 lag_bars = target_tf // source_tf - 1
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
-                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, window=lag_bars+1)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1)
+                return rolling_apply(returns, lambda x: x.iloc[0] if len(x) > lag_bars else 0, lag_bars+1)
 
             elif method == "resample":
                 # Resample to target timeframe using VectorBT
                 resampled = data["close"].resample(f'{target_tf}min').last()
                 # Forward fill to original frequency
                 aligned = resampled.reindex(data.index, method='ffill')
-                return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, window=2).fillna(0)
+                return rolling_apply(aligned, lambda x: (x.iloc[-1] / x.iloc[0] - 1) if x.iloc[0] != 0 else 0, 2).fillna(0)
 
             elif method == "interpolate":
                 # Interpolate between timeframes using VectorBT
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1)
                 # Simple interpolation (in practice, would use more sophisticated methods)
-                return rolling_mean(returns, window=target_tf//source_tf)
+                return rolling_mean(returns, target_tf//source_tf)
 
             else:
                 return None
@@ -1332,13 +1333,13 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             tf_features = []
             for tf in timeframes:
                 # Calculate returns for this timeframe using VectorBT
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf).fillna(0)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, tf).fillna(0)
 
                 # Calculate volatility for this timeframe using VectorBT
-                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf).fillna(0)
+                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1), tf).fillna(0)
 
                 # Calculate momentum for this timeframe using VectorBT
-                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf * 2).fillna(0)
+                momentum = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, tf * 2).fillna(0)
 
                 # Calculate trend for this timeframe
                 trend = self._calculate_trend_strength(data["close"], tf).fillna(0)
@@ -1373,8 +1374,8 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
             # Create input features
             input_features = []
             for tf in timeframes:
-                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=tf).fillna(0)
-                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1), window=tf).fillna(0)
+                returns = rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, tf).fillna(0)
+                vol = rolling_std(rolling_apply(data["close"], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, 1), tf).fillna(0)
                 input_features.extend([returns, vol])
 
             feature_matrix = pd.concat(input_features, axis=1).fillna(0)

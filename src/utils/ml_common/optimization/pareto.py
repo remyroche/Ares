@@ -365,6 +365,13 @@ class ParetoFront:
         strategy: str
     ) -> List[Solution]:
         """Compute Pareto front using the selected strategy."""
+        # Fast path: exactly 2 objectives → O(n log n) sweep
+        if len(objectives) == 2 and solutions:
+            try:
+                return self._compute_pareto_front_2d_sweep(solutions, objectives)
+            except Exception:
+                # Fallback to selected strategy if fast path fails
+                pass
         if strategy == 'vectorbt' and VECTORBT_AVAILABLE:
             self.performance_stats['vectorbt_operations'] += 1
             return self._compute_pareto_front_vectorbt(solutions, objectives)
@@ -522,6 +529,9 @@ class ParetoFront:
 
     def _compute_dominance_standard_vectorized(self, objective_matrix: np.ndarray) -> np.ndarray:
         """Compute dominance matrix using standard vectorized operations."""
+        # Reduce memory footprint using float32 for comparisons
+        if objective_matrix.dtype != np.float32:
+            objective_matrix = objective_matrix.astype(np.float32, copy=False)
         n_solutions = objective_matrix.shape[0]
 
         # Vectorized dominance computation
@@ -536,6 +546,36 @@ class ParetoFront:
         dominance_matrix = better_or_equal & strictly_better
 
         return dominance_matrix
+
+    def _compute_pareto_front_2d_sweep(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Efficient Pareto front for exactly 2 objectives using sort-and-sweep.
+
+        Converts min objectives to max by negation, then sorts by x desc and
+        sweeps best y to select non-dominated points.
+        """
+        obj_names = list(objectives.keys())
+        dirs = [objectives[obj_names[0]], objectives[obj_names[1]]]
+        pts: List[Tuple[float, float, int]] = []
+        for i, s in enumerate(solutions):
+            x = s.metrics.get(obj_names[0], 0.0)
+            y = s.metrics.get(obj_names[1], 0.0)
+            if dirs[0] == 'min':
+                x = -x
+            if dirs[1] == 'min':
+                y = -y
+            pts.append((x, y, i))
+
+        # Sort by x desc, then y desc to ensure proper sweep
+        pts.sort(key=lambda t: (t[0], t[1]), reverse=True)
+
+        pareto_idx: List[int] = []
+        best_y = -np.inf
+        for x, y, idx in pts:
+            if y > best_y:
+                pareto_idx.append(idx)
+                best_y = y
+
+        return [solutions[i] for i in pareto_idx]
 
     def _compute_pareto_front_gpu_original(
         self,

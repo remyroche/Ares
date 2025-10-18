@@ -15,14 +15,20 @@ from datetime import datetime
 
 # Import utility modules
 from src.utils.common_operations import (
-    CommonUtilities, safe_dataframe_operation, safe_convert_dtypes,
+    safe_dataframe_operation, safe_convert_dtypes,
     safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
     safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
-    get_dataframe_info, create_summary_statistics, safe_log_metric,
-    safe_log_params, safe_log_artifact, calculate_data_quality_metrics,
-    validate_dataframe, validate_dataframe_columns, optimize_dataframe_dtypes,
-    safe_fillna, safe_timestamp_conversion, guard_dataframe_nulls
+    safe_log_metric, safe_log_params,
+    validate_dataframe, validate_dataframe_columns,
+    safe_fillna, guard_dataframe_nulls
 )
+from src.utils.common_utilities import (
+    CommonUtilities, get_dataframe_info, calculate_data_quality_metrics,
+    create_summary_statistics, safe_timestamp_conversion
+)
+from src.utils.hardware.memory_optimization import optimize_dataframe_dtypes
+
+# Note: safe_log_artifact not found in codebase - removed from imports
 from src.utils.serialization_utils import UniversalSerializer
 
 try:
@@ -314,7 +320,7 @@ class AdvancedErrorHandler:
         # For critical errors, always raise
         if severity == ErrorSeverity.CRITICAL:
             tprint_error(f"❌ CRITICAL ERROR in {operation}: {str(error)}")
-            safe_log_artifact("critical_error", f"critical_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+            # safe_log_artifact("critical_error", f"critical_error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")  # Commented out - function not implemented
             raise error
 
         # For high severity errors, raise unless return_value is provided

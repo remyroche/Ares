@@ -103,6 +103,23 @@ class QualityAlertManager:
             alerts.append(Alert(level='ERROR', message = f'Financial data issues: {len(validation_result.financial_issues)} issues found', timestamp = datetime.now(), action_required = True, details={'financial_issues': validation_result.financial_issues[:5]}))
         return alerts
 
+    def trigger_alert(self, level: str, message: str, context: str = "", details: Optional[Dict[str, Any]] = None) -> None:
+        """Trigger a quality alert."""
+        try:
+            alert = Alert(
+                level=level.upper(),
+                message=message,
+                timestamp=datetime.now(),
+                action_required=level.lower() in ['critical', 'error'],
+                details=details or {}
+            )
+            self.alert_history.append(alert)
+            self.logger.warning(f"🚨 Quality Alert [{level.upper()}]: {message}")
+            if context:
+                self.logger.info(f"   Context: {context}")
+        except Exception as e:
+            self.logger.error(f"Failed to trigger alert: {e}")
+
     def send_alerts(self, alerts: List[Alert]) -> Dict[str, bool]:
         """Send alerts through configured channels."""
         results = {}

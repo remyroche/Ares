@@ -13,3 +13,17 @@ class ComponentFactory:
         if key not in cls._registry:
             raise KeyError(f"Component '{key}' not registered")
         return cls._registry[key](*args, **kwargs)
+    
+    @classmethod
+    def create_component(cls, key: str, *args, **kwargs):
+        """Alias for create method for backward compatibility."""
+        return cls.create(key, *args, **kwargs)
+    
+    @classmethod
+    def get_available_components(cls) -> list:
+        """Get list of available component keys."""
+        return list(cls._registry.keys())
+
+from .component_registry import ComponentRegistry
+
+__all__ = ['ComponentFactory', 'ComponentRegistry']

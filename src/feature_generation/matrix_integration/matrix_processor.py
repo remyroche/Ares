@@ -69,7 +69,10 @@ class MatrixFeatureProcessor:
         try:
             from ...utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
             self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
-            self.logger.info("✅ VectorBTRollingOptimizer initialized")
+            # Reduced verbosity - only log once per session
+            if not hasattr(MatrixProcessor, '_logged_rolling_init'):
+                self.logger.info("✅ VectorBTRollingOptimizer initialized")
+                MatrixProcessor._logged_rolling_init = True
         except ImportError:
             self.vectorbt_rolling_optimizer = None
             self.logger.warning("⚠️ VectorBTRollingOptimizer not available")
@@ -217,7 +220,7 @@ class MatrixFeatureProcessor:
 
         for window, window_generators in window_groups.items():
             try:
-                # Batch process rolling operations
+                # Batch process rolling operations (mean/std/min/max/sum)
                 window_results = self._batch_rolling_operations(
                     window_generators, data, window, **kwargs
                 )
@@ -277,16 +280,40 @@ class MatrixFeatureProcessor:
         # Use VectorBTRollingOptimizer for batch rolling
         if self.vectorbt_rolling_optimizer:
             try:
-                # Batch rolling mean using VectorBTRollingOptimizer
-                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(
-                    close_prices, window=window
-                )
+                # Compute common rolling stats once per window
+                rolling_mean = self.vectorbt_rolling_optimizer.rolling_mean(close_prices, window=window)
+                try:
+                    rolling_std = self.vectorbt_rolling_optimizer.rolling_std(close_prices, window=window)
+                except Exception:
+                    rolling_std = None
+                try:
+                    rolling_min = self.vectorbt_rolling_optimizer.rolling_min(close_prices, window=window)
+                except Exception:
+                    rolling_min = None
+                try:
+                    rolling_max = self.vectorbt_rolling_optimizer.rolling_max(close_prices, window=window)
+                except Exception:
+                    rolling_max = None
+                try:
+                    rolling_sum = self.vectorbt_rolling_optimizer.rolling_sum(close_prices, window=window)
+                except Exception:
+                    rolling_sum = None
 
                 # Create results for each generator
                 for generator in generators:
-                    if 'ma' in generator.config.name.lower() or 'mean' in generator.config.name.lower():
+                    name_l = generator.config.name.lower()
+                    feature_data = None
+                    if ('ma' in name_l or 'mean' in name_l) and rolling_mean is not None:
                         feature_data = rolling_mean.flatten()
-                    else:
+                    elif any(k in name_l for k in ['std', 'vol']) and rolling_std is not None:
+                        feature_data = rolling_std.flatten()
+                    elif 'min' in name_l and rolling_min is not None:
+                        feature_data = rolling_min.flatten()
+                    elif 'max' in name_l and rolling_max is not None:
+                        feature_data = rolling_max.flatten()
+                    elif 'sum' in name_l and rolling_sum is not None:
+                        feature_data = rolling_sum.flatten()
+                    if feature_data is None:
                         # Fallback to individual generation
                         result = generator.generate(data, **kwargs)
                         results.append(result)

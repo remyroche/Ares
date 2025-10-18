@@ -49,7 +49,7 @@ from src.utils.monitoring_utils import SystemMonitor
 
 # VectorBT optimizations
 from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+from src.feature_selection.vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework
 
 # Core decorators and validation
 from src.core.decorators import (

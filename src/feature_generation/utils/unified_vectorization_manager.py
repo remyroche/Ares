@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 import warnings
 
 # Enhanced logging with tprint
@@ -35,16 +36,21 @@ except ImportError:
     TPRINT_AVAILABLE = False
     # Fallback functions for when tprint is not available
     def tprint(*args, **kwargs): 
-        raise ImportError("tprint not available - install required dependencies")
+        print(f"[TPRINT] {' '.join(map(str, args))}")
     def tprint_debug(*args, **kwargs): 
-        raise ImportError("tprint_debug not available - install required dependencies")
+        print(f"[DEBUG] {' '.join(map(str, args))}")
     def tprint_info(*args, **kwargs): 
-        raise ImportError("tprint_info not available - install required dependencies")
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
-    def tprint_timer(*args, **kwargs): print("TIMER:", *args, **kwargs)
+        print(f"[INFO] {' '.join(map(str, args))}")
+    def tprint_warning(*args, **kwargs): 
+        print(f"[WARNING] {' '.join(map(str, args))}")
+    def tprint_error(*args, **kwargs): 
+        print(f"[ERROR] {' '.join(map(str, args))}")
+    def tprint_success(*args, **kwargs): 
+        print(f"[SUCCESS] {' '.join(map(str, args))}")
+    def tprint_performance(*args, **kwargs): 
+        print(f"[PERF] {' '.join(map(str, args))}")
+    def tprint_timer(*args, **kwargs): 
+        print(f"[TIMER] {' '.join(map(str, args))}")
 
 # VectorBT imports
 try:
@@ -86,7 +92,7 @@ try:
             return data.rolling(window, **kwargs).sum()
         return pd.Series(data).rolling(window, **kwargs).sum()
 
-    def rolling_apply(data, window, func, **kwargs):
+    def rolling_apply(data, func, window, **kwargs):
         if hasattr(data, 'rolling'):
             return data.rolling(window, **kwargs).apply(func)
         return pd.Series(data).rolling(window, **kwargs).apply(func)
@@ -162,21 +168,109 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
-# Import our optimization modules
-try:
-    from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-except ImportError:
-    # Fallback for direct import
-    from vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
-
-try:
-    from ..core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig
-except ImportError:
-    # Fallback for direct import
-    VectorBTBatchProcessor = None
-    BatchProcessingConfig = None
+# Import our optimization modules - using lazy imports to avoid circular imports
+VectorBTRollingOptimizer = None
+get_vectorbt_rolling_optimizer = None
+VectorBTBatchProcessor = None
+BatchProcessingConfig = None
 
 logger = logging.getLogger(__name__)
+
+def _lazy_import_optimization_modules():
+    """Lazy import optimization modules to avoid circular imports."""
+    global VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer, VectorBTBatchProcessor, BatchProcessingConfig
+
+    if VectorBTRollingOptimizer is None:
+        try:
+            from .vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+        except ImportError:
+            try:
+                from vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+            except ImportError:
+                VectorBTRollingOptimizer = None
+                get_vectorbt_rolling_optimizer = None
+
+    if VectorBTBatchProcessor is None:
+        try:
+            from src.feature_generation.core.vectorbt_batch_processor import VectorBTBatchProcessor, BatchProcessingConfig
+        except ImportError:
+            VectorBTBatchProcessor = None
+            BatchProcessingConfig = None
+
+# Operation types and configuration classes
+class OperationType(Enum):
+    """Types of operations that can be optimized."""
+    FEATURE_ENGINEERING = "feature_engineering"
+    CROSS_VALIDATION = "cross_validation"
+    BACKTESTING = "backtesting"
+    HMM_TRAINING = "hmm_training"
+    MODEL_TRAINING = "model_training"
+    FEATURE_SELECTION = "feature_selection"
+    TECHNICAL_INDICATORS = "technical_indicators"
+    PORTFOLIO_OPTIMIZATION = "portfolio_optimization"
+    MATRIX_MULTIPLICATION = "matrix_multiplication"
+    STATISTICAL_COMPUTATION = "statistical_computation"
+    # VectorBT-specific operations
+    VECTORBT_BACKTESTING = "vectorbt_backtesting"
+    VECTORBT_METRICS = "vectorbt_metrics"
+    VECTORBT_PORTFOLIO_OPTIMIZATION = "vectorbt_portfolio_optimization"
+    VECTORBT_TECHNICAL_ANALYSIS = "vectorbt_technical_analysis"
+
+class OptimizationStrategy(Enum):
+    """Available optimization strategies."""
+    VECTORIZED_CPU = "vectorized_cpu"
+    GPU_ACCELERATED = "gpu_accelerated"
+    PARALLEL_PROCESSING = "parallel_processing"
+    HYBRID_OPTIMIZATION = "hybrid_optimization"
+    MEMORY_OPTIMIZED = "memory_optimized"
+    FALLBACK = "fallback"
+    # VectorBT-specific strategies
+    VECTORBT_CPU = "vectorbt_cpu"
+    VECTORBT_GPU = "vectorbt_gpu"
+    VECTORBT_PARALLEL = "vectorbt_parallel"
+
+@dataclass
+class StrategySelectionConfig:
+    """Configuration for strategy selection thresholds."""
+    # Data size thresholds
+    gpu_data_size_threshold: int = 10000
+    parallel_data_size_threshold: int = 5000
+    vectorbt_data_size_threshold: int = 100
+    vectorbt_gpu_threshold: int = 5000
+    vectorbt_parallel_threshold: int = 1000
+
+    # Memory thresholds
+    memory_optimization_threshold_mb: float = 512.0
+    chunking_data_size_threshold: int = 1000
+
+    # CPU core thresholds
+    parallel_cpu_cores_threshold: int = 4
+    vectorbt_parallel_cpu_cores_threshold: int = 2
+
+@dataclass
+class OperationConfig:
+    """Configuration for operation optimization."""
+    operation_type: OperationType
+    data_size: int
+    data_dimensions: Tuple[int, ...]
+    memory_budget_mb: float = 1024.0
+    time_budget_seconds: float = 300.0
+    precision_requirement: str = "medium"  # "low", "medium", "high"
+    parallel_workers: Optional[int] = None
+    # Performance baselines (in seconds)
+    baseline_times: Optional[Dict[OperationType, float]] = None
+    # Strategy selection configuration
+    strategy_config: Optional[StrategySelectionConfig] = None
+
+@dataclass
+class OptimizationResult:
+    """Result of an optimized operation."""
+    result: Any
+    strategy_used: OptimizationStrategy
+    computation_time: float
+    memory_used_mb: float
+    performance_gain: float
+    metadata: Dict[str, Any]
 
 # Enhanced error handling with fast failing
 class UnifiedVectorizationError(Exception):
@@ -242,6 +336,10 @@ class VectorizationConfig:
     # Rolling operations
     rolling_optimization_threshold: int = 1000
     enable_rolling_optimization: bool = True
+    
+    # Parallel processing thresholds
+    parallel_cpu_cores_threshold: int = 4
+    gpu_data_size_threshold: int = 10000
 
     def __post_init__(self):
         if not VECTORBT_AVAILABLE:
@@ -286,16 +384,24 @@ class UnifiedVectorizationManager:
 
         # Initialize components with error handling
         tprint_info("🔧 Initializing vectorization components")
+
+        # Lazy import optimization modules to avoid circular imports
+        _lazy_import_optimization_modules()
+
         try:
-            self.rolling_optimizer = get_vectorbt_rolling_optimizer(
-                enable_gpu=self.config.enable_gpu,
-                enable_parallel=self.config.enable_parallel,
-                memory_efficient=self.config.memory_efficient,
-                chunk_size=self.config.chunk_size,
-                fast_fail=self.fast_fail,
-                enable_logging=self.enable_logging
-            )
-            tprint_success("✅ Rolling optimizer initialized")
+            if get_vectorbt_rolling_optimizer is not None:
+                self.rolling_optimizer = get_vectorbt_rolling_optimizer(
+                    enable_gpu=self.config.enable_gpu,
+                    enable_parallel=self.config.enable_parallel,
+                    memory_efficient=self.config.memory_efficient,
+                    chunk_size=self.config.chunk_size,
+                    fast_fail=self.fast_fail,
+                    enable_logging=self.enable_logging
+                )
+                tprint_success("✅ Rolling optimizer initialized")
+            else:
+                tprint_warning("⚠️ Rolling optimizer not available")
+                self.rolling_optimizer = None
         except Exception as e:
             error_msg = f"Failed to initialize rolling optimizer: {e}"
             tprint_error(f"❌ {error_msg}")
@@ -306,6 +412,9 @@ class UnifiedVectorizationManager:
                 self.rolling_optimizer = None
 
         # Initialize batch processor with error handling
+        # Lazy import optimization modules again to ensure they're available
+        _lazy_import_optimization_modules()
+
         if VectorBTBatchProcessor is not None and BatchProcessingConfig is not None:
             try:
                 batch_config = BatchProcessingConfig(
@@ -361,7 +470,8 @@ class UnifiedVectorizationManager:
 
         # Advanced cache features
         self._cache_compression_enabled = True
-        self._cache_serialization_enabled = True
+        # In-process default: avoid serialization to reduce CPU/memory overhead
+        self._cache_serialization_enabled = False
         self._cache_ttl = {}  # Time-to-live for cache entries
         self._cache_priority = {}  # Priority levels for cache entries
         self._cache_access_frequency = {}  # Access frequency tracking
@@ -387,8 +497,11 @@ class UnifiedVectorizationManager:
             'total_operations': 0
         }
 
-        tprint_success(f"✅ UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}, FastFail={self.fast_fail}")
-        logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
+        # Only log initialization once per session to reduce verbosity
+        if not hasattr(UnifiedVectorizationManager, '_logged_initialization'):
+            tprint_success(f"✅ UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}, FastFail={self.fast_fail}")
+            logger.info(f"UnifiedVectorizationManager initialized: VectorBT={self.config.enable_vectorbt}, GPU={self.config.enable_gpu}, Memory={self.config.memory_efficient}")
+            UnifiedVectorizationManager._logged_initialization = True
 
     def rolling_operation(self, data: Union[pd.Series, pd.DataFrame],
                          operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
@@ -423,6 +536,9 @@ class UnifiedVectorizationManager:
                 return cached_result
             self.performance_stats['cache_misses'] += 1
             tprint_debug("💾 Cache miss for rolling operation")
+
+        # Ensure lazy imports are loaded
+        _lazy_import_optimization_modules()
 
         # Check if rolling optimizer is available
         if self.rolling_optimizer is None:
@@ -774,6 +890,60 @@ class UnifiedVectorizationManager:
             else:
                 raise  # Re-raise other errors
 
+    def batch_operations(self, operations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Execute batch operations (legacy method for compatibility).
+        
+        Args:
+            operations: List of operation configuration dictionaries
+            
+        Returns:
+            List of operation results
+        """
+        try:
+            # This is a legacy method - operations should be processed individually
+            # or converted to use batch_process_features
+            results = []
+            for i, op in enumerate(operations):
+                try:
+                    # Process individual operation
+                    if op.get('operation') == 'rolling_mean':
+                        data = op.get('data')
+                        window = op.get('window', 20)
+                        result = self.rolling_operation(data, 'mean', window)
+                        results.append({
+                            'success': True,
+                            'feature_name': op.get('feature_name', f'operation_{i}'),
+                            'result': result
+                        })
+                    elif op.get('operation') == 'rolling_std':
+                        data = op.get('data')
+                        window = op.get('window', 20)
+                        result = self.rolling_operation(data, 'std', window)
+                        results.append({
+                            'success': True,
+                            'feature_name': op.get('feature_name', f'operation_{i}'),
+                            'result': result
+                        })
+                    else:
+                        results.append({
+                            'success': False,
+                            'feature_name': op.get('feature_name', f'operation_{i}'),
+                            'error': f"Unsupported operation: {op.get('operation')}"
+                        })
+                except Exception as e:
+                    results.append({
+                        'success': False,
+                        'feature_name': op.get('feature_name', f'operation_{i}'),
+                        'error': str(e)
+                    })
+            
+            return results
+            
+        except Exception as e:
+            tprint_error(f"Batch operations failed: {e}")
+            return []
+
     def batch_process_features(self, data: pd.DataFrame,
                              feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -977,6 +1147,18 @@ class UnifiedVectorizationManager:
             logger.warning(f"DataFrame optimization failed: {e}")
             return data
 
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame for processing (alias for optimize_dataframe for compatibility).
+
+        Args:
+            data: Input DataFrame
+
+        Returns:
+            Optimized DataFrame
+        """
+        return self.optimize_dataframe(data)
+
     def _pandas_fallback_rolling(self, data: Union[pd.Series, pd.DataFrame],
                                 operation: str, window: int, **kwargs) -> Union[pd.Series, pd.DataFrame]:
         """Fallback rolling operation using pandas."""
@@ -1091,7 +1273,8 @@ class UnifiedVectorizationManager:
             original_memory = self._estimate_result_memory(result)
 
             # Apply compression if enabled
-            if self._cache_compression_enabled and original_memory > 1024:  # Compress if > 1KB
+            # Compress only for sizable entries to avoid CPU overhead on tiny payloads (>1MB)
+            if self._cache_compression_enabled and original_memory > (1 * 1024 * 1024):
                 result = self._compress_cache_entry(result)
                 self._cache_stats['compressions'] += 1
                 compressed_memory = self._estimate_result_memory(result)
@@ -1268,9 +1451,9 @@ class UnifiedVectorizationManager:
         current_memory_usage = self._get_current_memory_usage()
         self._memory_usage_history.append(current_memory_usage)
 
-        # Keep only last 100 memory readings
-        if len(self._memory_usage_history) > 100:
-            self._memory_usage_history = self._memory_usage_history[-100:]
+        # Keep only last 20 memory readings (reduced from 100 to prevent accumulation)
+        if len(self._memory_usage_history) > 20:
+            self._memory_usage_history = self._memory_usage_history[-20:]
 
         # Update peak usage
         self._memory_peak_usage = max(self._memory_peak_usage, current_memory_usage)
@@ -1796,8 +1979,59 @@ class UnifiedVectorizationManager:
 
         return utilization
 
+    def optimize_operation(self, operation_func: Callable, config: Optional[OperationConfig] = None) -> OptimizationResult:
+        """
+        Optimize an operation using the unified vectorization manager.
+        
+        Args:
+            operation_func: Function to optimize
+            config: Operation configuration
+            
+        Returns:
+            OptimizationResult with the operation result
+        """
+        start_time = time.time()
+        
+        try:
+            # Execute the operation
+            result = operation_func()
+            
+            # Calculate performance metrics
+            execution_time = time.time() - start_time
+            memory_used = self._get_current_memory_usage()
+            
+            # Update performance stats
+            self.performance_stats['total_operations'] += 1
+            self.performance_stats['total_time'] += execution_time
+            
+            return OptimizationResult(
+                result=result,
+                strategy_used=OptimizationStrategy.VECTORIZED_CPU,
+                computation_time=execution_time,
+                memory_used_mb=memory_used,
+                performance_gain=1.0,
+                metadata={'operation_type': 'custom', 'optimized': True}
+            )
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self.performance_stats['errors'] += 1
+            
+            # Return error result
+            return OptimizationResult(
+                result=None,
+                strategy_used=OptimizationStrategy.FALLBACK,
+                computation_time=execution_time,
+                memory_used_mb=0.0,
+                performance_gain=0.0,
+                metadata={'error': str(e), 'operation_type': 'custom', 'optimized': False}
+            )
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
+        # Ensure lazy imports are loaded
+        _lazy_import_optimization_modules()
+
         stats = self.performance_stats.copy()
 
         # Add rolling optimizer stats
@@ -1907,6 +2141,10 @@ class UnifiedVectorizationManager:
     def reset_stats(self):
         """Reset all performance statistics."""
         tprint_info("🔄 Resetting UnifiedVectorizationManager performance statistics")
+
+        # Ensure lazy imports are loaded
+        _lazy_import_optimization_modules()
+
         self.performance_stats = {
             'total_operations': 0,
             'vectorbt_operations': 0,

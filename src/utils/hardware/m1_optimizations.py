@@ -385,16 +385,8 @@ class M1MemoryOptimizer:
                 # Force additional garbage collection
                 gc.collect()
 
-                # Trigger system memory cleanup
-                try:
-                    subprocess.run(
-                        ['sudo', 'purge'],
-                        capture_output=True,
-                        timeout=30
-                    )
-                    self.logger.info("🧽 System memory purge completed")
-                except Exception as e:
-                    self.logger.debug(f"System purge failed: {e}")
+                # Disable system memory purge to avoid sudo requirements
+                self.logger.debug("System memory purge disabled to avoid sudo requirements")
 
                 return True
 

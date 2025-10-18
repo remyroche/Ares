@@ -29,7 +29,7 @@ from src.core.decorators import handles_errors, traced, log_execution_time
 
 # VectorBT optimizations
 from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer
-from src.feature_selection.vectorbt.vectorbt_unified_framework import VectorBTUnifiedFramework
+from src.feature_selection.vectorbt_extensions.vectorbt_unified_framework import VectorBTUnifiedFramework
 
 # Visualization imports
 try:

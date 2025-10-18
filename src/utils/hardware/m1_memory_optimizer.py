@@ -62,6 +62,9 @@ class M1MemoryOptimizer:
         self.optimization_thread = None
         self.compatibility_mode = compatibility_mode
         self.version = __version__
+        
+        # Counter to reduce logging frequency (log every 24th check = 120 seconds = 2 minutes max)
+        self._log_counter = 0
 
         # Memory limit in GB (if specified)
         self.memory_limit_gb = memory_limit_gb
@@ -215,24 +218,34 @@ class M1MemoryOptimizer:
             memory = psutil.virtual_memory()
             self.memory_pressure = float(memory.percent) / 100.0
 
+            # Increment counter for logging frequency control
+            self._log_counter += 1
+            should_log = (self._log_counter % 24 == 0)  # Log every 24th check (120 seconds = 2 minutes max)
+
             # M1-specific memory pressure handling
             if self._m1_detected:
                 # M1 unified memory architecture requires different handling
                 if self.memory_pressure > self.thresholds['critical']:
+                    # Always log critical warnings
                     self.logger.warning(f"🚨 CRITICAL: M1 Memory pressure at {self.memory_pressure:.2f}")
                     self._handle_critical_m1_memory()
                 elif self.memory_pressure > self.thresholds['high']:
+                    # Always log high warnings
                     self.logger.warning(f"⚠️ HIGH: M1 Memory pressure at {self.memory_pressure:.2f}")
                     self._handle_high_m1_memory()
-                elif self.memory_pressure > self.thresholds['medium']:
+                elif self.memory_pressure > self.thresholds['medium'] and should_log:
+                    # Only log medium pressure every 24th check (2 minutes max)
                     self.logger.info(f"🧠 M1 Memory pressure at {self.memory_pressure:.2f}")
             else:
                 # Standard memory pressure handling for non-M1 systems
                 if self.memory_pressure > self.thresholds['critical']:
+                    # Always log critical warnings
                     self.logger.warning(f"🚨 CRITICAL: Memory pressure at {self.memory_pressure:.2f}")
                 elif self.memory_pressure > self.thresholds['high']:
+                    # Always log high warnings
                     self.logger.warning(f"⚠️ HIGH: Memory pressure at {self.memory_pressure:.2f}")
-                elif self.memory_pressure > self.thresholds['medium']:
+                elif self.memory_pressure > self.thresholds['medium'] and should_log:
+                    # Only log medium pressure every 24th check (2 minutes max)
                     self.logger.info(f"🧠 Memory pressure at {self.memory_pressure:.2f}")
         except Exception as e:
             # Ensure memory_pressure is always a valid float

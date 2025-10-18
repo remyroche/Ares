@@ -20,6 +20,8 @@ from .auto_optimized_feature_generator import AutoOptimizedFeatureGenerator
 from .auto_optimization_config import AutoOptimizationConfig, OptimizationLevel
 from .generator_factory import GeneratorFactory
 from .feature_registry import FeatureRegistry
+from ..utils.vectorbt_operation_batcher import VectorBTOperationBatcher, get_global_batcher
+from ..utils.memory_pool_optimizer import MemoryPoolOptimizer, get_global_memory_pool
 from src.utils.unified_cache import UnifiedCache
 from src.utils.tprint import tprint
 
@@ -33,7 +35,7 @@ class FeatureBankConfig:
     enable_lookback_optimization: bool = True
     enable_parallel_processing: bool = True
     max_workers: int = 4
-    chunk_size: int = 1000
+    chunk_size: int = 3000
     memory_efficient: bool = True
     cache_results: bool = True
     default_lookback: int = 20
@@ -41,6 +43,12 @@ class FeatureBankConfig:
     state_cache_dir: str = "data_cache/feature_states"
     state_cache_namespace: str = "feature_bank"
     state_cache_ttl_seconds: Optional[int] = None
+    
+    # Memory management settings
+    max_cache_size: int = 1000  # Maximum cache entries
+    max_cache_memory_mb: float = 500.0  # Maximum cache memory in MB
+    cleanup_frequency: int = 5  # Cleanup every N batches
+    aggressive_cleanup: bool = True  # Enable aggressive memory cleanup
 
     # Auto-optimization settings (enabled by default for better performance)
     enable_auto_optimization: bool = True
@@ -87,10 +95,14 @@ class FeatureBank:
         # Initialize VectorBTRollingOptimizer if enabled
         self.vectorbt_rolling_optimizer = None
         self.unified_vectorization_manager = None
+        
+        # Initialize VectorBT operation batcher and memory pool optimizer
+        self.vectorbt_batcher = get_global_batcher()
+        self.memory_pool = get_global_memory_pool()
 
         if self.config.enable_matrix_operations:
             try:
-                from ...feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
+                from src.feature_generation.utils.vectorbt_rolling_optimizer import VectorBTRollingOptimizer, get_vectorbt_rolling_optimizer
                 self.vectorbt_rolling_optimizer = get_vectorbt_rolling_optimizer()
                 self.logger.debug("✅ VectorBTRollingOptimizer enabled")
             except ImportError:
@@ -98,7 +110,7 @@ class FeatureBank:
 
             # Initialize UnifiedVectorizationManager
             try:
-                from ...utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
+                from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, get_unified_vectorization_manager
                 self.unified_vectorization_manager = get_unified_vectorization_manager()
                 self.logger.debug("✅ UnifiedVectorizationManager enabled")
             except ImportError:
@@ -107,12 +119,30 @@ class FeatureBank:
         # Initialize lookback optimizer if enabled
         self.lookback_optimizer = None
         if self.config.enable_lookback_optimization:
+            # Check if we're in Tactician mode (use complementary optimizer) or Analyst mode (use regular optimizer)
             try:
-                from ..utils.optimization import LookbackOptimizer
-                self.lookback_optimizer = LookbackOptimizer()
-                self.logger.info("✅ Lookback optimization enabled")
-            except ImportError:
-                self.logger.warning("⚠️ Lookback optimization not available")
+                # Try to detect mode from environment or config
+                import os
+                mode = os.environ.get('ARES_MODE', 'analyst').lower()
+                
+                if mode == 'tactician':
+                    # Use complementary lookback optimizer for Tactician mode
+                    from src.feature_generation.utils.optimization.complementary_lookback_optimizer import ComplementaryLookbackOptimizer
+                    self.lookback_optimizer = ComplementaryLookbackOptimizer()
+                    self.logger.info("✅ Complementary lookback optimization enabled (Tactician mode)")
+                else:
+                    # Try to use regular lookback optimizer for Analyst mode
+                    try:
+                        from src.feature_generation.utils.optimization.lookback_optimizer import LookbackOptimizer
+                        self.lookback_optimizer = LookbackOptimizer()
+                        self.logger.info("✅ Regular lookback optimization enabled (Analyst mode)")
+                    except ImportError:
+                        # Fallback to complementary optimizer if regular is not available
+                        from src.feature_generation.utils.optimization.complementary_lookback_optimizer import ComplementaryLookbackOptimizer
+                        self.lookback_optimizer = ComplementaryLookbackOptimizer()
+                        self.logger.info("✅ Complementary lookback optimization enabled (fallback from regular)")
+            except ImportError as e:
+                self.logger.warning(f"⚠️ Lookback optimization not available: {e}")
 
         # Performance tracking
         self.performance_stats = {
@@ -124,8 +154,13 @@ class FeatureBank:
             'average_generation_time': 0.0,
             'total_generation_time': 0.0,
             'normalization_applied': 0,
-            'matrix_accelerations': 0
+            'matrix_accelerations': 0,
+            'batch_count': 0,
+            'periodic_cleanups': 0
         }
+        
+        # Periodic cleanup settings
+        self.cleanup_frequency = self._get_config_value('cleanup_frequency', 5)  # Cleanup every 5 batches
 
         # Normalization configuration (use helper method for dict/Pydantic compatibility)
         self.auto_normalize = self._get_config_value('auto_normalize', True)
@@ -136,8 +171,10 @@ class FeatureBank:
             'rolling_windows': self._get_config_value('normalization_rolling_windows', [20, 50, 100])
         }
 
-        # Cache for generated features
+        # Cache for generated features with size limits
         self.feature_cache = {} if self._get_config_value('cache_results', True) else None
+        self.max_cache_size = self._get_config_value('max_cache_size', 1000)  # Limit cache entries
+        self.max_cache_memory_mb = self._get_config_value('max_cache_memory_mb', 500)  # Limit cache memory
 
         # Persistent state cache for generator-level rolling state
         self.persist_generator_state = self._get_config_value('persist_generator_state', True)
@@ -181,10 +218,13 @@ class FeatureBank:
             self.logger.debug("🔄 FeatureBank already initialized, skipping duplicate initialization")
             return
         
-        self.logger.info("✅ FeatureBank initialized")
-        self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
-                        f"GPU: {self.config.enable_gpu_acceleration}, "
+        # Reduced verbosity - only log once per session
+        if not hasattr(FeatureBank, '_logged_initialization'):
+            self.logger.info("✅ FeatureBank initialized")
+            self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
+                            f"GPU: {self.config.enable_gpu_acceleration}, "
                         f"Lookback opt: {self.config.enable_lookback_optimization}")
+            FeatureBank._logged_initialization = True
         
         # Mark as initialized to prevent duplicate initialization
         from src.utils.initialization_guard import init_guard
@@ -268,6 +308,14 @@ class FeatureBank:
 
             tprint(f"✅ Auto-registration completed. Registered {registered_count} generators")
             self.logger.info(f"✅ Auto-registered {registered_count} generators from {len(categories_to_register)} categories")
+
+            # Populate the generator factory with the registered generators
+            try:
+                self.generator_factory.populate_from_feature_bank(self)
+                tprint("✅ Generator factory populated with registered generators")
+            except Exception as e:
+                tprint(f"⚠️ Failed to populate generator factory: {e}")
+                self.logger.warning(f"Failed to populate generator factory: {e}")
 
             # Mark auto-registration as completed globally to prevent duplicates
             self._auto_registration_completed = True
@@ -363,7 +411,7 @@ class FeatureBank:
             # Create a new config with a modified name to avoid naming conflicts
             # Use the existing config as a base and override specific fields
             modified_config = FeatureConfig(
-                name=f"{original_config.name}_auto_optimized",
+                name=original_config.name,  # Keep the original meaningful name
                 category=original_config.category,
                 description=f"Auto-optimized version of {original_config.description}",
                 required_columns=original_config.required_columns,
@@ -387,11 +435,90 @@ class FeatureBank:
             modified_config.parameters['original_name'] = original_config.name
             modified_config.parameters['optimization_level'] = self.config.default_optimization_level
 
-            auto_optimized_gen = AutoOptimizedFeatureGenerator(
-                config=modified_config,
-                auto_optimization_config=self.config.auto_optimization_config
+            # Create a custom AutoOptimizedFeatureGenerator that preserves the original generator's logic
+            class CustomAutoOptimizedFeatureGenerator(AutoOptimizedFeatureGenerator):
+                def __init__(self, original_generator, config, auto_optimization_config):
+                    super().__init__(config, auto_optimization_config)
+                    self.original_generator = original_generator
+                    # Initialize logger
+                    import logging
+                    self.logger = logging.getLogger(self.__class__.__name__)
+
+                @staticmethod
+                def _ensure_series(values: Any, index: pd.Index, feature_name: str) -> pd.Series:
+                    """Convert arbitrary outputs into a numeric Series aligned to the provided index."""
+                    try:
+                        if isinstance(values, pd.Series):
+                            series = values.copy()
+                        elif isinstance(values, pd.DataFrame):
+                            series = values.iloc[:, 0].copy() if not values.empty else pd.Series(dtype=float, index=index)
+                        elif isinstance(values, dict):
+                            # Try common result keys; fall back to constructing Series from values
+                            for key in ('result', 'data', 'series'):
+                                if key in values:
+                                    return CustomAutoOptimizedFeatureGenerator._ensure_series(values[key], index, feature_name)
+                            series = pd.Series(values)
+                        elif hasattr(values, '__iter__') and not np.isscalar(values):
+                            series = pd.Series(list(values))
+                        else:
+                            series = pd.Series([values] * len(index), dtype=float)
+
+                        series = series.reindex(index, fill_value=np.nan)
+                        series = pd.to_numeric(series, errors='coerce').replace([np.inf, -np.inf], np.nan)
+                        series = series.fillna(0.0)
+                        series.name = feature_name
+                        return series
+                    except Exception as conversion_error:
+                        logging.getLogger(__name__).warning(
+                            "Failed to coerce feature output to Series (%s): %s", feature_name, conversion_error
+                        )
+                        return pd.Series(0.0, index=index, name=feature_name)
+                
+                def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+                    """Use the original generator's feature generation logic."""
+                    try:
+                        # Apply auto-optimization if enabled
+                        if self.auto_optimization_config.enable_auto_optimization:
+                            data = self._auto_optimize_data(data)
+
+                        # Use the original generator's feature generation logic
+                        if hasattr(self.original_generator, '_generate_feature'):
+                            feature_series = self.original_generator._generate_feature(data, **kwargs)
+                        else:
+                            # Fallback to the original generator's generate method
+                            result = self.original_generator.generate(data, **kwargs)
+                            feature_series = result.data
+
+                        # Ensure feature_series is a proper pandas Series
+                        if not isinstance(feature_series, pd.Series):
+                            if isinstance(feature_series, (int, float)):
+                                # Convert scalar to Series
+                                feature_series = pd.Series([feature_series] * len(data), index=data.index)
+                            else:
+                                # Try to convert other types to Series
+                                try:
+                                    feature_series = pd.Series(feature_series, index=data.index)
+                                except Exception:
+                                    # If conversion fails, create a Series of NaN
+                                    feature_series = pd.Series([np.nan] * len(data), index=data.index)
+
+                        # Apply post-processing optimization
+                        if self.auto_optimization_config.enable_auto_optimization:
+                            feature_series = self._optimize_feature_series(feature_series)
+
+                        feature_series = self._ensure_series(feature_series, data.index, self.config.name)
+                        return feature_series
+
+                    except Exception as e:
+                        self.logger.error(f"Error in custom auto-optimized feature generation: {e}")
+                        # Fallback to parent implementation
+                        fallback = super()._generate_feature(data, **kwargs)
+                        return self._ensure_series(fallback, data.index, self.config.name)
+
+            auto_optimized_gen = CustomAutoOptimizedFeatureGenerator(
+                generator, modified_config, self.config.auto_optimization_config
             )
-            self.logger.debug("Auto-optimized generator created")
+            self.logger.debug("Auto-optimized generator created with preserved logic")
 
             # Copy any additional state from original generator
             if hasattr(generator, 'get_state'):
@@ -405,7 +532,7 @@ class FeatureBank:
             else:
                 self.logger.debug("Original generator has no get_state method")
 
-            self.logger.debug(f"Generator '{generator.config.name}' converted to auto-optimized '{auto_optimized_gen.config.name}' successfully")
+            self.logger.debug(f"Generator '{generator.config.name}' converted to auto-optimized with preserved logic")
             return auto_optimized_gen
 
         except Exception as e:
@@ -852,6 +979,56 @@ class FeatureBank:
         """
         return self.registry.list_features(category)
 
+    def get_available_features(self, categories: Optional[List[str]] = None, 
+                              features: Optional[List[str]] = None) -> List[Dict]:
+        """
+        Get all available features as dictionaries with metadata.
+        
+        Args:
+            categories: Optional list of category names to filter by
+            features: Optional list of specific feature names to filter by
+            
+        Returns:
+            List of dictionaries containing feature metadata
+        """
+        feature_list = []
+        
+        # Get all registered generators
+        all_generators = []
+        if categories:
+            # Filter by categories
+            for cat_name in categories:
+                try:
+                    if isinstance(cat_name, str):
+                        cat = FeatureCategory(cat_name)
+                    else:
+                        cat = cat_name
+                    cat_generators = self.get_generators_by_category(cat)
+                    all_generators.extend(cat_generators)
+                except (ValueError, AttributeError):
+                    # Skip invalid category names
+                    continue
+        else:
+            # Get all generators from all categories
+            for category in FeatureCategory:
+                all_generators.extend(self.get_generators_by_category(category))
+        
+        # Convert generators to feature dictionaries
+        for generator in all_generators:
+            feature_dict = {
+                'name': generator.config.name,
+                'category': generator.config.category.value if generator.config.category else 'unknown',
+                'description': generator.config.description or '',
+                'required_columns': generator.config.required_columns or [],
+                'generator': generator
+            }
+            
+            # Apply feature name filter if specified
+            if features is None or generator.config.name in features:
+                feature_list.append(feature_dict)
+        
+        return feature_list
+
     def generate_features(self,
                          data: pd.DataFrame,
                          categories: Optional[List[Union[str, FeatureCategory]]] = None,
@@ -859,6 +1036,8 @@ class FeatureBank:
                          lookback_optimization: bool = False,
                          target_column: Optional[str] = None,
                          use_optimized_pipeline: bool = True,
+                         progressive_loading: bool = True,
+                         batch_size: Optional[int] = None,
                          **kwargs) -> pd.DataFrame:
         """
         Generate features by category or specific feature names.
@@ -870,6 +1049,8 @@ class FeatureBank:
             lookback_optimization: Whether to optimize lookback periods
             target_column: Target column for lookback optimization
             use_optimized_pipeline: Whether to use the optimized pipeline
+            progressive_loading: Whether to load features in batches for memory efficiency
+            batch_size: Number of features to process per batch (default: adaptive based on memory)
             **kwargs: Additional parameters
 
         Returns:
@@ -883,6 +1064,101 @@ class FeatureBank:
             tprint("⚠️ Empty data provided")
             self.logger.warning("Empty data provided")
             return pd.DataFrame()
+
+        # ================= Execution mode handling + date range reporting =================
+        # Determine execution mode (prefer kwargs; fallback to env)
+        import os
+        exec_mode = kwargs.get('execution_mode') or kwargs.get('intensity') or kwargs.get('mode') or os.environ.get('ARES_EXECUTION_MODE') or os.environ.get('EXECUTION_MODE')
+        exec_mode_str = str(getattr(exec_mode, 'value', getattr(exec_mode, 'name', exec_mode))).lower() if exec_mode else None
+
+        # Extract timestamp series (column preferred, fallback to index if datetime-like)
+        ts_series = None
+        if 'timestamp' in data.columns:
+            ts_col = data['timestamp']
+            try:
+                if np.issubdtype(ts_col.dtype, np.datetime64):
+                    ts_series = pd.to_datetime(ts_col)
+                elif np.issubdtype(ts_col.dtype, np.integer):
+                    # Heuristic: seconds vs milliseconds
+                    unit = 'ms' if ts_col.dropna().astype(np.int64).median() > 10**12 else 's'
+                    ts_series = pd.to_datetime(ts_col, unit=unit, errors='coerce')
+                else:
+                    ts_series = pd.to_datetime(ts_col, errors='coerce')
+            except Exception:
+                ts_series = None
+        
+        # Also check for other common timestamp column names
+        if ts_series is None:
+            for col_name in ['time', 'datetime', 'date', 'open_time', 'close_time']:
+                if col_name in data.columns:
+                    try:
+                        ts_col = data[col_name]
+                        # Check if it's already a datetime type
+                        if pd.api.types.is_datetime64_any_dtype(ts_col):
+                            ts_series = ts_col
+                        # Check if it's numeric (Unix timestamp)
+                        elif pd.api.types.is_numeric_dtype(ts_col):
+                            # Determine if it's seconds or milliseconds
+                            sample_val = ts_col.dropna().iloc[0] if not ts_col.empty else 0
+                            if sample_val > 1e12:  # Likely milliseconds
+                                ts_series = pd.to_datetime(ts_col, unit='ms', errors='coerce')
+                            else:  # Likely seconds
+                                ts_series = pd.to_datetime(ts_col, unit='s', errors='coerce')
+                        else:
+                            # Try as string
+                            ts_series = pd.to_datetime(ts_col, errors='coerce')
+                        
+                        if not ts_series.empty and not ts_series.isna().all() and ts_series.max() > pd.Timestamp('2020-01-01'):
+                            self.logger.info(f"📅 Using timestamp column: {col_name}")
+                            break
+                        else:
+                            ts_series = None
+                    except Exception as e:
+                        self.logger.debug(f"Failed to parse timestamp column {col_name}: {e}")
+                        continue
+        
+        if ts_series is None and isinstance(data.index, pd.DatetimeIndex):
+            ts_series = data.index.to_series()
+
+        # Light mode: restrict to last 180 days if we have timestamps
+        if exec_mode_str == 'light':
+            if ts_series is not None and not ts_series.empty:
+                end_dt = ts_series.max()
+                start_dt_full = ts_series.min()
+                cutoff_dt = end_dt - pd.Timedelta(days=180)
+                mask = ts_series >= cutoff_dt
+                if mask.any() and mask.sum() < len(ts_series):
+                    rows_before = len(data)
+                    data = data.loc[mask.values]
+                    rows_after = len(data)
+                    days_used = (end_dt.normalize() - cutoff_dt.normalize()).days + 1
+                    tprint(f"📅 LIGHT mode: restricting to last 180 days: {cutoff_dt.date()} → {end_dt.date()} ({days_used} days, {rows_after}/{rows_before} rows)")
+                    self.logger.info(f"📅 LIGHT mode: 180-day cap applied: {cutoff_dt} → {end_dt} | rows {rows_after}/{rows_before}")
+                else:
+                    # If mask doesn't reduce, still report range
+                    days_range = (end_dt.normalize() - start_dt_full.normalize()).days + 1
+                    tprint(f"📅 LIGHT mode: data already within {days_range} days: {start_dt_full.date()} → {end_dt.date()}")
+                    self.logger.info(f"📅 LIGHT mode: data range {start_dt_full} → {end_dt} (~{days_range} days)")
+            else:
+                # Fallback: if no timestamp available, restrict to last ~30% of data
+                # This is a rough approximation for light mode with 180 days
+                total_rows = len(data)
+                if total_rows > 1000:  # Only apply if we have enough data
+                    rows_to_keep = max(1000, int(total_rows * 0.3))  # Keep at least 1000 rows or 30%
+                    data = data.tail(rows_to_keep)
+                    tprint(f"📅 LIGHT mode: no timestamp found, restricting to last {rows_to_keep} rows (from {total_rows} total)")
+                    self.logger.info(f"📅 LIGHT mode: no timestamp available, using last {rows_to_keep}/{total_rows} rows")
+                else:
+                    tprint(f"📅 LIGHT mode: no timestamp found, data already small ({total_rows} rows)")
+                    self.logger.info(f"📅 LIGHT mode: no timestamp available, data already small ({total_rows} rows)")
+        else:
+            # Report full date range when timestamps available
+            if ts_series is not None and not ts_series.empty:
+                start_dt = ts_series.min()
+                end_dt = ts_series.max()
+                days_range = (end_dt.normalize() - start_dt.normalize()).days + 1
+                tprint(f"📅 Processing date range: {start_dt.date()} → {end_dt.date()} ({days_range} days)")
+                self.logger.info(f"📅 Processing date range: {start_dt} → {end_dt} (~{days_range} days)")
 
         # Use optimized pipeline if requested and available
         if use_optimized_pipeline:
@@ -936,16 +1212,54 @@ class FeatureBank:
 
         tprint(f"📊 Selected {len(generators_to_use)} generators")
         self.logger.info(f"📊 Selected {len(generators_to_use)} generators")
+        
+        # Add detailed progress monitoring
+        self.logger.info("🔄 Feature generation process started")
+        self.logger.info(f"📈 Processing {len(data)} rows of data")
+        self.logger.info(f"🧮 Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+        
+        # Log generator breakdown by category
+        category_counts = {}
+        for gen in generators_to_use:
+            if hasattr(gen, 'config') and hasattr(gen.config, 'category'):
+                cat_name = getattr(gen.config.category, 'value', str(gen.config.category))
+                category_counts[cat_name] = category_counts.get(cat_name, 0) + 1
+        
+        self.logger.info("📋 Generator breakdown by category:")
+        for cat, count in sorted(category_counts.items()):
+            self.logger.info(f"  • {cat}: {count} generators")
 
         # Optimize lookbacks if requested
         if lookback_optimization and target_column and self.lookback_optimizer:
-            generators_to_use = self._optimize_lookbacks(generators_to_use, data, target_column)
+            # Check if we're using complementary optimizer (Tactician mode)
+            optimizer_type = type(self.lookback_optimizer).__name__
+            if optimizer_type == 'ComplementaryLookbackOptimizer':
+                # Extract analyst signals and regime information from kwargs for Tactician mode
+                analyst_signals = kwargs.get('analyst_signals', None)
+                regime_series = kwargs.get('regime_series', None)
+                generators_to_use = self._optimize_lookbacks(
+                    generators_to_use, data, target_column, analyst_signals, regime_series
+                )
+            else:
+                # Use standard optimization for Analyst mode
+                generators_to_use = self._optimize_lookbacks(generators_to_use, data, target_column)
 
-        # Generate features
-        results = self._generate_features_parallel(generators_to_use, data, **kwargs)
-
-        # Combine results
-        feature_df = self._combine_results(results, data.index)
+        # Generate features with progressive loading if enabled
+        if progressive_loading and len(generators_to_use) > 10:  # Only use progressive loading for large feature sets
+            feature_df = self._generate_features_progressive(generators_to_use, data, batch_size, **kwargs)
+            results = []  # Progressive loading doesn't return individual results
+        else:
+            # Generate features normally
+            results = self._generate_features_parallel(generators_to_use, data, **kwargs)
+            # Combine results
+            feature_df = self._combine_results(results, data.index)
+            # Proactively release memory held by individual results now that we have the combined frame
+            try:
+                results.clear()
+                import gc as _gc
+                _gc.collect()
+            except Exception:
+                pass
 
         # Apply automatic normalization if enabled
         if self.auto_normalize and not feature_df.empty:
@@ -959,6 +1273,24 @@ class FeatureBank:
         self.logger.info(f"📊 Generated {len(feature_df.columns)} features")
 
         return feature_df
+
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the optimization systems.
+        
+        Returns:
+            Dictionary of optimization statistics
+        """
+        stats = {
+            'feature_bank': self.performance_stats,
+            'memory_pool': self.memory_pool.get_stats(),
+            'vectorbt_batcher': {
+                'queue_size': len(self.vectorbt_batcher.operations_queue),
+                'cache_size': len(self.vectorbt_batcher.results_cache)
+            }
+        }
+        
+        return stats
 
     def _apply_automatic_normalization(self, feature_df: pd.DataFrame,
                                      categories: Optional[List[Union[str, FeatureCategory]]] = None) -> pd.DataFrame:
@@ -994,8 +1326,11 @@ class FeatureBank:
                     'params': {'columns': features_to_normalize}
                 }]
 
-                normalized_df = self.unified_vectorization_manager.optimize_dataframe_processing(
-                    normalized_df, transformations
+                # Use the correct method name
+                normalized_df = self.unified_vectorization_manager.optimize_operation(
+                    operation_type="normalization",
+                    data=normalized_df,
+                    transformations=transformations
                 )
 
                 self.performance_stats['normalization_applied'] += 1
@@ -1008,20 +1343,26 @@ class FeatureBank:
                         if self.normalization_method == 'zscore':
                             mean_val = normalized_df[feature].mean()
                             std_val = normalized_df[feature].std()
-                            if std_val > 0:
+                            if std_val > 0:  # Check for division by zero
                                 normalized_df[feature] = (normalized_df[feature] - mean_val) / std_val
+                            else:
+                                self.logger.warning(f"⚠️ Standard deviation is zero for feature {feature}, skipping z-score normalization")
 
                         elif self.normalization_method == 'minmax':
                             min_val = normalized_df[feature].min()
                             max_val = normalized_df[feature].max()
-                            if max_val > min_val:
+                            if max_val > min_val:  # Check for division by zero
                                 normalized_df[feature] = (normalized_df[feature] - min_val) / (max_val - min_val)
+                            else:
+                                self.logger.warning(f"⚠️ Min and max values are equal for feature {feature}, skipping minmax normalization")
 
                         elif self.normalization_method == 'robust':
                             median_val = normalized_df[feature].median()
                             mad_val = (normalized_df[feature] - median_val).abs().median()
-                            if mad_val > 0:
+                            if mad_val > 0:  # Check for division by zero
                                 normalized_df[feature] = (normalized_df[feature] - median_val) / mad_val
+                            else:
+                                self.logger.warning(f"⚠️ MAD value is zero for feature {feature}, skipping robust normalization")
 
                 self.performance_stats['normalization_applied'] += 1
 
@@ -1049,8 +1390,15 @@ class FeatureBank:
             # Skip features from excluded categories if categories are specified
             if categories:
                 feature_category = self._get_feature_category(feature)
-                if feature_category and str(feature_category) in self.normalization_config['exclude_categories']:
-                    continue
+                if feature_category:
+                    # Handle both enum and string categories
+                    if hasattr(feature_category, 'value'):
+                        category_str = feature_category.value
+                    else:
+                        category_str = str(feature_category)
+                    
+                    if category_str in self.normalization_config['exclude_categories']:
+                        continue
 
             # Only normalize features that are not already normalized or bounded
             if not self._is_already_normalized(feature):
@@ -1083,6 +1431,51 @@ class FeatureBank:
         ]
 
         return any(indicator in feature_name.lower() for indicator in normalized_indicators)
+
+    def _create_feature_generator(self, config: FeatureConfig) -> Optional[FeatureGenerator]:
+        """
+        Create a feature generator from a configuration.
+        
+        Args:
+            config: Feature configuration
+            
+        Returns:
+            Feature generator instance or None if creation fails
+        """
+        try:
+            # For individual feature generation, we don't create new generators
+            # Instead, we should use the existing generators from the registry
+            # This method is not the right approach for generating individual features
+            # The system should use generate_features() with the appropriate category instead
+            
+            # Return None to indicate that individual feature generation via this path is not supported
+            self.logger.debug(f"Individual feature generation for {config.name} should use generate_features() instead")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error creating feature generator for {config.name}: {e}")
+            return None
+
+    def generate_single_feature(self, data: pd.DataFrame, config: FeatureConfig) -> Optional[pd.Series]:
+        """
+        Generate a single feature using the specified configuration.
+        
+        Args:
+            data: Input data DataFrame
+            config: Feature configuration
+            
+        Returns:
+            Generated feature as a pandas Series, or None if generation fails
+        """
+        try:
+            # Individual feature generation is not supported through this path
+            # Features should be generated through generate_features() with the appropriate category
+            # This method is kept for backward compatibility but returns None
+            self.logger.debug(f"Individual feature generation for {config.name} not supported - use generate_features() instead")
+            return None
+                
+        except Exception as e:
+            self.logger.error(f"Error generating single feature {config.name}: {e}")
+            return None
 
     def generate_features_by_category(self,
                                     data: pd.DataFrame,
@@ -1154,19 +1547,26 @@ class FeatureBank:
 
         elif categories:
             # Select by categories
+            self.logger.info(f"🔍 Processing {len(categories)} categories: {categories}")
             for category in categories:
                 if isinstance(category, str):
                     try:
-                        category = FeatureCategory(category)
+                        category_enum = FeatureCategory(category)
+                        self.logger.info(f"🔍 Converting string '{category}' to enum: {category_enum}")
                     except ValueError:
                         self.logger.warning(f"Invalid category: {category}")
                         continue
+                else:
+                    category_enum = category
+                    self.logger.info(f"🔍 Using enum category: {category_enum}")
 
                 # Skip problematic categories that are already excluded from lookback optimization
-                if self._should_exclude_category(category):
+                if self._should_exclude_category(category_enum):
+                    self.logger.info(f"🔍 Skipping excluded category: {category_enum}")
                     continue
 
-                category_generators = self.get_generators_by_category(category)
+                category_generators = self.get_generators_by_category(category_enum)
+                self.logger.info(f"🔍 Found {len(category_generators)} generators for category {category_enum}")
                 generators.extend(category_generators)
 
         else:
@@ -1222,13 +1622,21 @@ class FeatureBank:
         Returns:
             True if category should be excluded
         """
-        # Exclude removed categories
+        # Exclude removed categories (matching the exclusions from feature generation step)
         excluded_categories = {
             FeatureCategory.AUTOENCODER,
             FeatureCategory.REPRESENTATION_LEARNING,
             FeatureCategory.TIME,
             FeatureCategory.REGIME,
-            FeatureCategory.NORMALIZATION  # Not a feature category, it's a transform
+            FeatureCategory.NORMALIZATION,  # Not a feature category, it's a transform
+            # Additional exclusions as specified in feature generation step
+            FeatureCategory.ORDER_FLOW,
+            FeatureCategory.MICROSTRUCTURE,  # Exclude microstructure features
+            FeatureCategory.ADVANCED_STATISTICAL,  # Exclude advanced statistical features
+            # Exclude empty categories that have 0 generators but still consume processing time
+            FeatureCategory.CROSS_TIMEFRAME,  # 0 generators but still processed
+            FeatureCategory.LEGACY,           # 0 generators but still processed
+            FeatureCategory.CUSTOM            # 0 generators but still processed
         }
         
         if category in excluded_categories:
@@ -1239,14 +1647,18 @@ class FeatureBank:
     def _optimize_lookbacks(self,
                            generators: List[FeatureGenerator],
                            data: pd.DataFrame,
-                           target_column: str) -> List[FeatureGenerator]:
+                           target_column: str,
+                           analyst_signals: Optional[pd.Series] = None,
+                           regime_series: Optional[pd.Series] = None) -> List[FeatureGenerator]:
         """
-        Optimize lookback periods for generators that support it.
+        Optimize lookback periods for generators using appropriate optimizer based on mode.
 
         Args:
             generators: List of generators
             data: Input data
             target_column: Target column for optimization
+            analyst_signals: Optional analyst signals for complementary scoring (Tactician mode)
+            regime_series: Optional regime assignments as pd.Series for regime-invariant optimization (Tactician mode)
 
         Returns:
             List of generators with optimized lookbacks
@@ -1254,16 +1666,29 @@ class FeatureBank:
         if not self.lookback_optimizer:
             return generators
 
-        self.logger.info("🔧 Optimizing lookback periods...")
+        # Detect optimizer type
+        optimizer_type = type(self.lookback_optimizer).__name__
+        
+        if optimizer_type == 'ComplementaryLookbackOptimizer':
+            self.logger.info("🔧 Optimizing lookback periods using complementary scoring (Tactician mode)...")
+        else:
+            self.logger.info("🔧 Optimizing lookback periods using standard optimization (Analyst mode)...")
 
         optimized_generators = []
         for generator in generators:
             if generator.supports_lookback_optimization():
                 try:
-                    # Optimize lookback for this generator
-                    optimal_lookback = self.lookback_optimizer.optimize_lookback(
-                        generator, data, target_column
-                    )
+                    # Use appropriate optimization method based on optimizer type
+                    if optimizer_type == 'ComplementaryLookbackOptimizer':
+                        # Use complementary scoring for Tactician mode
+                        optimal_lookback = self.lookback_optimizer.optimize_lookback(
+                            generator, data, target_column, analyst_signals, regime_series
+                        )
+                    else:
+                        # Use standard optimization for Analyst mode
+                        optimal_lookback = self.lookback_optimizer.optimize_lookback(
+                            generator, data, target_column
+                        )
 
                     # Create a new generator with optimized lookback
                     optimized_config = generator.config
@@ -1317,8 +1742,18 @@ class FeatureBank:
             List of feature results
         """
         results = []
+        total_generators = len(generators)
+        processed_generators = 0
 
         for generator in generators:
+            processed_generators += 1
+            
+            # Progress update every 10 generators
+            if processed_generators % 10 == 0 or processed_generators == total_generators:
+                progress_pct = (processed_generators / total_generators) * 100
+                tprint(f"🔄 Processing generator {processed_generators}/{total_generators} ({progress_pct:.1f}%): {generator.config.name}")
+                self.logger.info(f"🔄 Processing generator {processed_generators}/{total_generators} ({progress_pct:.1f}%): {generator.config.name}")
+            
             try:
                 # Check cache first
                 cache_key = self._get_cache_key(generator, data, **kwargs)
@@ -1338,9 +1773,9 @@ class FeatureBank:
                 result = generator.generate(data, **kwargs)
                 results.append(result)
 
-                # Cache result
+                # Cache result with size management
                 if self.feature_cache:
-                    self.feature_cache[cache_key] = result
+                    self._add_to_cache(cache_key, result)
 
                 if self.persist_generator_state:
                     self._store_generator_state(generator, self._extract_state_from_result(generator, result))
@@ -1376,10 +1811,17 @@ class FeatureBank:
             List of feature results
         """
         from concurrent.futures import ThreadPoolExecutor, as_completed
+        # Choose workers adaptively based on CPU and workload size
+        try:
+            import multiprocessing as _mp
+            cpu_workers = max(1, (_mp.cpu_count() or 2) - 0)
+        except Exception:
+            cpu_workers = 2
+        max_workers = min(self.config.max_workers, cpu_workers, max(1, len(generators)))
 
         results = []
 
-        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all tasks
             future_to_generator = {
                 executor.submit(self._generate_single_feature, generator, data, **kwargs): generator
@@ -1438,9 +1880,9 @@ class FeatureBank:
             # Generate feature
             result = generator.generate(data, **kwargs)
 
-            # Cache result
+            # Cache result with size management
             if self.feature_cache:
-                self.feature_cache[cache_key] = result
+                self._add_to_cache(cache_key, result)
 
             if self.persist_generator_state:
                 self._store_generator_state(generator, self._extract_state_from_result(generator, result))
@@ -1484,6 +1926,222 @@ class FeatureBank:
         cache_key = self._state_cache_key(generator)
         self.state_cache.set(cache_key, copy.deepcopy(state), persist=True)
 
+    def _generate_features_progressive(self,
+                                     generators: List[FeatureGenerator],
+                                     data: pd.DataFrame,
+                                     batch_size: Optional[int] = None,
+                                     **kwargs) -> pd.DataFrame:
+        """
+        Generate features using progressive loading in batches for memory efficiency.
+
+        Args:
+            generators: List of generators to process
+            data: Input data
+            batch_size: Number of features per batch (adaptive if None)
+            **kwargs: Additional parameters
+
+        Returns:
+            Combined features DataFrame
+        """
+        total_generators = len(generators)
+        
+        # Determine adaptive batch size based on available memory
+        if batch_size is None:
+            batch_size = self._calculate_adaptive_batch_size(total_generators, data)
+        
+        tprint(f"🔄 Progressive loading: processing {total_generators} generators in batches of {batch_size}")
+        self.logger.info(f"🔄 Progressive loading: processing {total_generators} generators in batches of {batch_size}")
+        
+        all_feature_data = {}
+        processed_count = 0
+        
+        # Process generators in batches
+        for i in range(0, total_generators, batch_size):
+            batch_generators = generators[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+            total_batches = (total_generators + batch_size - 1) // batch_size
+            
+            tprint(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch_generators)} generators)")
+            self.logger.info(f"📦 Processing batch {batch_num}/{total_batches} ({len(batch_generators)} generators)")
+            
+            try:
+                # Generate features for this batch
+                batch_results = self._generate_features_parallel(batch_generators, data, **kwargs)
+                
+                # Extract feature data from batch results
+                for result in batch_results:
+                    if result.success:
+                        all_feature_data[result.name] = result.data
+                        processed_count += 1
+                
+                # Memory cleanup after each batch
+                self._cleanup_batch_memory(batch_results)
+                
+                # Increment batch counter
+                self.performance_stats['batch_count'] += 1
+                
+                # Periodic cleanup every N batches
+                if self.performance_stats['batch_count'] % self.cleanup_frequency == 0:
+                    self._perform_periodic_cleanup()
+                
+                # Progress update
+                progress_pct = (processed_count / total_generators) * 100
+                tprint(f"✅ Batch {batch_num} completed. Progress: {processed_count}/{total_generators} ({progress_pct:.1f}%)")
+                
+            except Exception as e:
+                self.logger.error(f"Error processing batch {batch_num}: {e}")
+                tprint(f"⚠️ Batch {batch_num} failed: {e}")
+                continue
+        
+        # Create final DataFrame
+        if all_feature_data:
+            feature_df = pd.DataFrame(all_feature_data, index=data.index)
+            tprint(f"✅ Progressive loading completed: {len(feature_df.columns)} features generated")
+            return feature_df
+        else:
+            tprint("⚠️ No features were successfully generated")
+            return pd.DataFrame(index=data.index)
+    
+    def _calculate_adaptive_batch_size(self, total_generators: int, data: pd.DataFrame) -> int:
+        """
+        Calculate adaptive batch size based on available memory and data size.
+        
+        Args:
+            total_generators: Total number of generators
+            data: Input data to estimate memory requirements
+            
+        Returns:
+            Optimal batch size
+        """
+        # Base batch size
+        base_batch_size = 20
+        
+        # Adjust based on data size
+        data_size_mb = data.memory_usage(deep=True).sum() / 1024 / 1024
+        if data_size_mb > 100:  # Large datasets
+            base_batch_size = min(base_batch_size, 10)
+        elif data_size_mb > 50:  # Medium datasets
+            base_batch_size = min(base_batch_size, 15)
+        
+        # Adjust based on total generators
+        if total_generators > 200:
+            base_batch_size = min(base_batch_size, 15)
+        elif total_generators > 100:
+            base_batch_size = min(base_batch_size, 20)
+        
+        # Ensure reasonable bounds
+        batch_size = max(5, min(base_batch_size, total_generators))
+        
+        self.logger.info(f"📊 Adaptive batch size: {batch_size} (data: {data_size_mb:.1f}MB, generators: {total_generators})")
+        return batch_size
+    
+    def _cleanup_batch_memory(self, batch_results: List[FeatureResult]) -> None:
+        """
+        Clean up memory after processing a batch.
+        
+        Args:
+            batch_results: Results from the batch to clean up
+        """
+        # Clear ALL intermediate results, not just large ones
+        for result in batch_results:
+            if hasattr(result, 'data'):
+                # Clear all result data, regardless of size
+                del result.data
+            
+            # Clear any other attributes that might hold references
+            if hasattr(result, 'metadata'):
+                del result.metadata
+            if hasattr(result, 'config'):
+                del result.config
+        
+        # Clear the batch results list itself
+        batch_results.clear()
+        
+        # Force garbage collection multiple times for better cleanup
+        import gc
+        for _ in range(3):
+            gc.collect()
+        
+        # Log memory cleanup
+        self.logger.debug(f"🧹 Batch memory cleanup completed: {len(batch_results)} results cleaned")
+    
+    def _perform_periodic_cleanup(self) -> None:
+        """Perform periodic memory cleanup every N batches."""
+        try:
+            # Clear feature cache if it's getting large
+            if self.feature_cache and len(self.feature_cache) > self.max_cache_size * 0.8:
+                self.clear_cache()
+                self.logger.info("🧹 Periodic cleanup: Feature cache cleared")
+            
+            # Clear VectorBT batcher queue
+            if hasattr(self, 'vectorbt_batcher') and self.vectorbt_batcher:
+                self.vectorbt_batcher.operations_queue.clear()
+                self.vectorbt_batcher.results_cache.clear()
+            
+            # Force garbage collection
+            import gc
+            collected = 0
+            for _ in range(3):
+                collected += gc.collect()
+            
+            # Clear memory usage history in components
+            if hasattr(self, 'vectorbt_rolling_optimizer') and self.vectorbt_rolling_optimizer:
+                if hasattr(self.vectorbt_rolling_optimizer, '_memory_usage_history'):
+                    self.vectorbt_rolling_optimizer._memory_usage_history = self.vectorbt_rolling_optimizer._memory_usage_history[-10:]
+            
+            self.performance_stats['periodic_cleanups'] += 1
+            self.logger.info(f"🧹 Periodic cleanup completed: {collected} objects collected, batch #{self.performance_stats['batch_count']}")
+            
+        except Exception as e:
+            self.logger.error(f"Periodic cleanup failed: {e}")
+    
+    def _batch_vectorbt_operations(self, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Batch multiple VectorBT operations for improved performance.
+        
+        Args:
+            operations: List of operation dictionaries with 'name', 'func', 'args', 'kwargs'
+            
+        Returns:
+            Dictionary of operation results
+        """
+        if not operations:
+            return {}
+        
+        # Add operations to the batcher
+        for op in operations:
+            self.vectorbt_batcher.add_operation(
+                op['name'],
+                op['func'],
+                *op.get('args', ()),
+                priority=op.get('priority', 0),
+                memory_weight=op.get('memory_weight', 1.0),
+                **op.get('kwargs', {})
+            )
+        
+        # Execute the batch
+        return self.vectorbt_batcher.execute_batch()
+    
+    def _optimize_memory_usage(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize memory usage of a DataFrame using the memory pool.
+        
+        Args:
+            data: DataFrame to optimize
+            
+        Returns:
+            Memory-optimized DataFrame
+        """
+        # Use memory pool context manager for temporary operations
+        with self.memory_pool.get_dataframe(data.shape[0], data.shape[1]) as temp_df:
+            # Copy data to optimized DataFrame
+            temp_df = data.copy()
+            
+            # Apply memory optimizations
+            temp_df = self.memory_pool._optimize_dataframe_memory(temp_df)
+            
+            return temp_df.copy()
+
     def _combine_results(self, results: List[FeatureResult], index: pd.Index) -> pd.DataFrame:
         """
         Combine feature results into a single DataFrame.
@@ -1497,11 +2155,24 @@ class FeatureBank:
         """
         feature_data = {}
         successful_features = 0
+        features_by_category = {}
 
         for result in results:
             if result.success:
                 feature_data[result.name] = result.data
                 successful_features += 1
+                
+                # Group features by category for logging
+                if hasattr(result.config, 'category'):
+                    if hasattr(result.config.category, 'value'):
+                        category = result.config.category.value
+                    else:
+                        category = str(result.config.category)
+                else:
+                    category = 'unknown'
+                if category not in features_by_category:
+                    features_by_category[category] = []
+                features_by_category[category].append(result.name)
             else:
                 self.logger.warning(f"Feature {result.name} failed: {result.error_message}")
 
@@ -1509,8 +2180,50 @@ class FeatureBank:
             self.logger.warning("No features were successfully generated")
             return pd.DataFrame(index=index)
 
+        # Log features by category with progress updates
+        total_features = len(feature_data)
+        processed_categories = 0
+        total_categories = len(features_by_category)
+        
+        for category, feature_names in features_by_category.items():
+            feature_count = len(feature_names)
+            # Only show first 3 feature names to reduce verbosity
+            feature_list = ', '.join(feature_names[:3])
+            if len(feature_names) > 3:
+                feature_list += f" (+{len(feature_names)-3} more)"
+            processed_categories += 1
+            
+            # Progress update every category (reduced verbosity)
+            progress_pct = (processed_categories / total_categories) * 100
+            tprint(f"📊 [{processed_categories}/{total_categories}] ({progress_pct:.1f}%) Generated {feature_count} {category} features: {feature_list}")
+            self.logger.info(f"📊 [{processed_categories}/{total_categories}] ({progress_pct:.1f}%) Generated {feature_count} {category} features: {feature_list}")
+            
+            # Additional progress update every 10 categories (reduced frequency)
+            if processed_categories % 10 == 0:
+                tprint(f"🔄 Progress: {processed_categories}/{total_categories} categories processed ({progress_pct:.1f}%)")
+                self.logger.info(f"🔄 Progress: {processed_categories}/{total_categories} categories processed ({progress_pct:.1f}%)")
+
         feature_df = pd.DataFrame(feature_data, index=index)
+
+        # Downcast numeric columns to float32 to reduce memory footprint
+        try:
+            num_cols = feature_df.select_dtypes(include=[np.number]).columns
+            if len(num_cols) > 0:
+                feature_df[num_cols] = feature_df[num_cols].astype(np.float32, copy=False)
+        except Exception:
+            # Keep robust if downcast fails for any reason
+            pass
+        
+        # Final summary
+        tprint(f"🎉 FEATURE GENERATION COMPLETE!")
+        tprint(f"📊 Total features generated: {successful_features}/{len(results)}")
+        tprint(f"📊 Categories processed: {total_categories}")
+        tprint(f"📊 Data shape: {feature_df.shape}")
+        tprint(f"📊 Memory usage: {feature_df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+        
         self.logger.info(f"✅ Successfully generated {successful_features}/{len(results)} features")
+        self.logger.info(f"📊 Final data shape: {feature_df.shape}")
+        self.logger.info(f"📊 Memory usage: {feature_df.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
 
         return feature_df
 
@@ -1526,8 +2239,9 @@ class FeatureBank:
         Returns:
             Cache key string
         """
-        # Simple cache key based on generator name, data shape, and parameters
-        data_hash = hash((data.shape, tuple(data.columns)))
+        # Fast, in-process cache key based on generator name, data id, and parameters
+        # Using id(data) avoids expensive per-call tuple materialization and is stable within a run
+        data_hash = hash((data.shape, id(data)))
         params_hash = hash(tuple(sorted(kwargs.items())))
         return f"{generator.config.name}_{data_hash}_{params_hash}"
 
@@ -1570,6 +2284,47 @@ class FeatureBank:
         stats = self.performance_stats.copy()
         stats['categories_used'] = list(stats['categories_used'])
         return stats
+
+    def _add_to_cache(self, cache_key: str, result: Any) -> None:
+        """Add result to cache with size management."""
+        if not self.feature_cache:
+            return
+        
+        # Check cache size limits
+        self._enforce_cache_limits()
+        
+        # Add to cache
+        self.feature_cache[cache_key] = result
+        
+        # Log cache size periodically
+        if len(self.feature_cache) % 100 == 0:
+            self.logger.debug(f"📦 Cache size: {len(self.feature_cache)} entries")
+    
+    def _enforce_cache_limits(self) -> None:
+        """Enforce cache size and memory limits."""
+        if not self.feature_cache:
+            return
+        
+        # Check entry count limit
+        if len(self.feature_cache) >= self.max_cache_size:
+            # Remove oldest entries (simple FIFO)
+            keys_to_remove = list(self.feature_cache.keys())[:len(self.feature_cache) - self.max_cache_size + 100]
+            for key in keys_to_remove:
+                del self.feature_cache[key]
+            self.logger.info(f"🧹 Cache size limit reached, removed {len(keys_to_remove)} entries")
+        
+        # Check memory limit
+        try:
+            import sys
+            cache_memory_mb = sum(sys.getsizeof(v) for v in self.feature_cache.values()) / (1024 * 1024)
+            if cache_memory_mb >= self.max_cache_memory_mb:
+                # Remove half the cache entries
+                keys_to_remove = list(self.feature_cache.keys())[:len(self.feature_cache) // 2]
+                for key in keys_to_remove:
+                    del self.feature_cache[key]
+                self.logger.info(f"🧹 Cache memory limit reached ({cache_memory_mb:.1f}MB), removed {len(keys_to_remove)} entries")
+        except Exception as e:
+            self.logger.debug(f"Cache memory check failed: {e}")
 
     def clear_cache(self) -> None:
         """Clear the feature cache."""

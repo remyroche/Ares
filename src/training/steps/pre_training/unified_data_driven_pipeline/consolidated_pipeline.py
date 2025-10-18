@@ -91,7 +91,7 @@ from .enhanced_components.common_lookback_optimizer import (
 try:
     from src.feature_generation.utils import (
         Step06UtilityContainer, UtilityConfig, get_utility_container,
-        EnhancedFeatureEngineering, FeatureGenerationOptimizer,
+        EnhancedFeatureEngineering,
         FeatureOptimizationConfig, CrossTimeframeAnalysisPipeline,
         FractionalDifferentiationPipeline, EnhancedMatrixOperations,
         validate_feature_quality, validate_features_dataframe,
@@ -219,7 +219,7 @@ from .enhanced_components.advanced_artifact_management import (
 
 # Import math validation utilities
 from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+    safe_divide, safe_log, safe_sqrt, validate_finite,
     validate_positive, validate_range, safe_correlation, safe_covariance,
     safe_mean, safe_std, safe_percentile, safe_percentage_change,
     safe_weighted_average, safe_kelly_calculation, MathValidation
@@ -234,41 +234,62 @@ from src.utils.common_operations import (
     safe_dataframe_operation, safe_fillna, safe_convert_dtypes,
     safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
     safe_filter_dataframe, safe_groupby_operation, safe_apply_function,
-    safe_timestamp_conversion, optimize_dataframe_dtypes,
+    optimize_dataframe_dtypes,
 
     # Data quality utilities
     calculate_data_quality_metrics, get_dataframe_info, create_data_quality_report,
-    validate_dataframe, validate_dataframe_columns, validate_timestamp_column,
+    validate_dataframe, validate_dataframe_columns,
 
     # Mathematical utilities
     safe_divide as safe_divide_util, safe_log as safe_log_util, safe_sqrt as safe_sqrt_util,
-    safe_power as safe_power_util, safe_mean as safe_mean_util, safe_std as safe_std_util,
+    # safe_power as safe_power_util,  # Not available in common_operations
+    safe_mean as safe_mean_util, safe_std as safe_std_util,
     safe_correlation as safe_correlation_util, safe_float, safe_int,
-    validate_finite as validate_finite_util, validate_positive as validate_positive_util,
-    validate_range as validate_range_util, safe_kelly_calculation as safe_kelly_util,
-    safe_weighted_average as safe_weighted_avg_util, safe_percentage_change as safe_pct_change_util,
+    safe_kelly_calculation as safe_kelly_util,
 
     # File I/O utilities
     safe_json_dump, safe_json_load, safe_file_exists, ensure_directory,
     safe_to_parquet, safe_read_parquet, list_parquet_files,
-    get_latest_outcome_file, load_latest_optimal_regime_clustering_outcome,
-    safe_copy, safe_deepcopy,
+    safe_copy,
 
     # Performance utilities
-    timed_operation, format_bytes, chunked_iterable, parallel_map,
-    optimize_memory_usage, parallel_processing_optimizer,
+    timed_operation, format_bytes,
 
     # M1 optimization utilities
     integrate_with_m1_optimizers, cleanup_m1_optimizers, memory_checkpoint, gpu_context,
-    optimize_memory, get_memory_usage, CommonUtilities,
+    optimize_memory, get_memory_usage,
 
     # Advanced utilities
-    safe_resample, align_dataframes, validate_dataframe_schema,
-    guard_dataframe_nulls, create_summary_statistics,
+    validate_dataframe_schema, guard_dataframe_nulls,
 
     # Logging utilities
-    get_logger, setup_basic_logging, safe_log_metric, safe_log_params, safe_log_artifact
+    get_logger, safe_log_metric, safe_log_params
 )
+
+# Import from other modules
+from src.utils.common_utilities import (
+    safe_timestamp_conversion, validate_timestamp_column, create_summary_statistics
+)
+from src.utils.math_validation import (
+    validate_finite as validate_finite_util, validate_positive as validate_positive_util,
+    validate_range as validate_range_util, safe_weighted_average as safe_weighted_avg_util,
+    safe_percentage_change as safe_pct_change_util
+)
+from src.utils.hardware.memory_optimization import optimize_dataframe_dtypes as optimize_dtypes_util
+from src.utils.matrix_operations.convenience import optimize_memory_usage
+from src.feature_generation.utils.step06_utility_container import (
+    chunked_iterable, parallel_map, setup_basic_logging
+)
+
+# Note: The following functions are not implemented or not found:
+# - get_latest_outcome_file
+# - load_latest_optimal_regime_clustering_outcome  
+# - safe_deepcopy
+# - parallel_processing_optimizer
+# - safe_resample
+# - align_dataframes
+# - safe_log_artifact
+# - CommonUtilities (moved to common_utilities)
 
 # Import math validation integration
 from .enhanced_components.math_validation_integration import (
@@ -409,7 +430,7 @@ class LabelingAdapter:
         if not TACTICIAN_ANALYST_LABELING_AVAILABLE:
             raise ImportError("Tactician/Analyst labeling is required but not available. Please install required dependencies.")
 
-        self.labeling_system = "tactician_analyst"
+        self.labeling_system = "independent_labeling"
 
         # Handle missing labeling_type attribute with default
         labeling_type = getattr(self.config, 'labeling_type', 'tactician')
@@ -438,11 +459,11 @@ class LabelingAdapter:
         Returns:
             Dictionary containing labeling results
         """
-        return self._generate_tactician_analyst_labels(market_data, targets, existing_artifacts)
+        return self._generate_independent_labels(market_data, targets, existing_artifacts)
 
-    def _generate_tactician_analyst_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None,
+    def _generate_independent_labels(self, market_data: pd.DataFrame, targets: Optional[pd.Series] = None,
                                           existing_artifacts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Generate labels using tactician/analyst labeling system."""
+        """Generate labels using independent labeling system."""
         try:
             tprint_info(f"🏷️ Generating {self.config.labeling_type} labels using volatility-aware labeler")
 
@@ -464,7 +485,7 @@ class LabelingAdapter:
                     'confidence_scores': labeling_result.confidence_scores,
                     'labeling_metadata': labeling_result.metadata,
                     'labeling_type': self.config.labeling_type,
-                    'labeling_system': 'tactician_analyst',
+                    'labeling_system': 'independent_labeling',
                     'quality_score': labeling_result.quality_score,
                     'feature_importance': labeling_result.feature_importance,
                     'artifacts': {
@@ -482,7 +503,7 @@ class LabelingAdapter:
                     'success': False,
                     'error': labeling_result.error_message,
                     'labeling_type': self.config.labeling_type,
-                    'labeling_system': 'tactician_analyst'
+                    'labeling_system': 'independent_labeling'
                 }
 
         except Exception as e:
@@ -491,7 +512,7 @@ class LabelingAdapter:
                 'success': False,
                 'error': str(e),
                 'labeling_type': self.config.labeling_type,
-                'labeling_system': 'tactician_analyst'
+                'labeling_system': 'independent_labeling'
             }
 
     def _is_artifact_compatible(self, artifacts: Dict[str, Any]) -> bool:
@@ -551,7 +572,7 @@ class LabelingAdapter:
                 'confidence_scores': labeling_result.confidence_scores,
                 'labeling_metadata': labeling_result.metadata,
                 'labeling_type': self.config.labeling_type,
-                'labeling_system': 'tactician_analyst',
+                'labeling_system': 'independent_labeling',
                 'quality_score': labeling_result.quality_score,
                 'feature_importance': labeling_result.feature_importance,
                 'from_artifacts': True,
@@ -561,7 +582,7 @@ class LabelingAdapter:
         except Exception as e:
             tprint_error(f"❌ Error processing existing artifacts: {e}")
             # Fall back to generating new labels
-            return self._generate_tactician_analyst_labels(market_data, targets, None)
+            return self._generate_independent_labels(market_data, targets, None)
 
 @dataclass
 class ConsolidatedPipelineResult:
@@ -727,14 +748,14 @@ class UnifiedDataDrivenPipeline:
             raise
 
     def _initialize_labeling_adapter(self):
-        """Initialize the labeling adapter for tactician/analyst labeling."""
+        """Initialize the labeling adapter for independent labeling."""
         tprint_debug("🔧 Initializing labeling adapter")
 
         try:
             tprint_info("📋 Creating labeling adapter with config")
             self.labeling_adapter = LabelingAdapter(self.config)
             # Handle missing labeling_system attribute
-            labeling_system = getattr(self.config, 'labeling_system', 'tactician_analyst')
+            labeling_system = getattr(self.config, 'labeling_system', 'independent_labeling')
             labeling_type = getattr(self.config, 'labeling_type', 'tactician')
             tprint_success(f"✅ Labeling adapter initialized: {labeling_system}/{labeling_type}")
 
@@ -1881,12 +1902,12 @@ class UnifiedDataDrivenPipeline:
             tprint_info("Step 2: Using labels from previous pipeline steps")
             self.detailed_reporter.start_step("labeling_integration", len(data.columns))
 
-            # Labels should come from previous steps (analyst_profit_labeler or tactician_entry_labeler)
+            # Labels should come from previous steps (independent labeling)
             processed_targets = targets
 
             # Validate that targets are provided from previous steps
             if processed_targets is None or processed_targets.empty:
-                error_msg = "No labels provided from previous pipeline steps. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step."
+                error_msg = "No labels provided from previous pipeline steps. Please ensure a labeling step runs before this step."
                 tprint_error(f"❌ {error_msg}")
                 return self._create_empty_result(start_time, error_msg)
 
@@ -3605,35 +3626,44 @@ class UnifiedDataDrivenPipeline:
             raise RuntimeError(error_msg) from e
 
     def _generate_polynomial_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series], max_degree: int = 2) -> List[Any]:
-        """Generate polynomial interactions limited to X²."""
-        interactions = []
+        """Generate lightweight polynomial interactions (squares only) with streaming top-K selection."""
+        interactions: List[Any] = []
 
         try:
-            from sklearn.preprocessing import PolynomialFeatures
-            from sklearn.feature_selection import SelectKBest, f_regression
+            # Determine how many to keep based on config
+            ig = getattr(self.config, 'interaction_generation', None)
+            max_keep = 100
+            if ig is not None and hasattr(ig, 'max_interactions'):
+                max_keep = max(20, int(min(200, ig.max_interactions)))
 
-            # Generate polynomial features up to degree 2
-            poly = PolynomialFeatures(degree=max_degree, include_bias=False, interaction_only=True)
-            poly_features = poly.fit_transform(features_df)
-            poly_feature_names = poly.get_feature_names_out(features_df.columns)
+            # Preselect columns for squaring
+            cols = self._preselect_features_for_pairwise(features_df, targets, max_cols=max_keep)
+            if not cols:
+                return []
 
-            # Convert to DataFrame
-            poly_df = pd.DataFrame(poly_features, index=features_df.index, columns=poly_feature_names)
+            # Stream squares and keep top-K by a quick utility
+            import heapq
+            heap: List[Tuple[float, str, pd.Series]] = []
+            for col in cols:
+                try:
+                    s = features_df[col]
+                    sq = (s.astype(np.float32) ** 2).astype(np.float32)
+                    util = self._quick_utility(sq, targets)
+                    key = f"poly_square_{col}"
+                    if len(heap) < max_keep:
+                        heapq.heappush(heap, (util, key, sq))
+                    else:
+                        if util > heap[0][0]:
+                            heapq.heapreplace(heap, (util, key, sq))
+                except Exception:
+                    continue
 
-            # Select top features if we have targets
-            if targets is not None and len(poly_df.columns) > 50:
-                selector = SelectKBest(f_regression, k=50)
-                selected_features = selector.fit_transform(poly_df, targets)
-                selected_columns = poly_df.columns[selector.get_support()]
-                poly_df = pd.DataFrame(selected_features, index=features_df.index, columns=selected_columns)
-
-            # Convert to interaction format
-            for col in poly_df.columns:
+            for util, key, series in sorted(heap, key=lambda x: x[0], reverse=True):
                 interactions.append({
-                    'name': f"poly_{col}",
+                    'name': key,
                     'type': 'polynomial',
-                    'features': [col],
-                    'data': poly_df[col]
+                    'features': [key.replace('poly_square_', '')],
+                    'data': series
                 })
 
             return interactions
@@ -3644,32 +3674,77 @@ class UnifiedDataDrivenPipeline:
             raise RuntimeError(error_msg) from e
 
     def _generate_log_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Generate log relationship interactions."""
-        interactions = []
+        """Generate log interactions with preselection and streaming top-K for ratios."""
+        interactions: List[Any] = []
 
         try:
-            # Generate log features for each column
-            for col in features_df.columns:
-                if features_df[col].min() > 0:  # Only for positive values
-                    log_col = np.log(features_df[col])
-                    interactions.append({
-                        'name': f"log_{col}",
-                        'type': 'log',
-                        'features': [col],
-                        'data': log_col
-                    })
+            df = features_df.select_dtypes(include=[np.number])
+            # Only consider positive-valued columns for logs
+            positive_cols = [c for c in df.columns if df[c].min(skipna=True) > 0]
 
-            # Generate log ratio features
-            for i, col1 in enumerate(features_df.columns):
-                for col2 in features_df.columns[i+1:]:
-                    if features_df[col1].min() > 0 and features_df[col2].min() > 0:
-                        log_ratio = np.log(features_df[col1] / features_df[col2])
-                        interactions.append({
-                            'name': f"log_ratio_{col1}_{col2}",
-                            'type': 'log_ratio',
-                            'features': [col1, col2],
-                            'data': log_ratio
-                        })
+            # Candidate caps
+            ig = getattr(self.config, 'interaction_generation', None)
+            base_keep = 50
+            ratio_keep = 200
+            if ig is not None and hasattr(ig, 'max_interactions'):
+                m = max(20, int(ig.max_interactions))
+                base_keep = min(60, m)
+                ratio_keep = min(5 * m, 600)
+
+            # Unary logs
+            import heapq
+            heap_unary: List[Tuple[float, str, pd.Series]] = []
+            for col in positive_cols:
+                try:
+                    s = df[col].astype(np.float32)
+                    lg = np.log(s).astype(np.float32)
+                    util = self._quick_utility(lg, targets)
+                    key = f"log_{col}"
+                    if len(heap_unary) < base_keep:
+                        heapq.heappush(heap_unary, (util, key, lg))
+                    else:
+                        if util > heap_unary[0][0]:
+                            heapq.heapreplace(heap_unary, (util, key, lg))
+                except Exception:
+                    continue
+
+            for util, key, series in sorted(heap_unary, key=lambda x: x[0], reverse=True):
+                interactions.append({
+                    'name': key,
+                    'type': 'log',
+                    'features': [key.replace('log_', '')],
+                    'data': series
+                })
+
+            # Pairwise log ratios on preselected columns
+            pre_cols = self._preselect_features_for_pairwise(df[positive_cols], targets)
+            if pre_cols:
+                heap_pair: List[Tuple[float, str, pd.Series]] = []
+                eps = 1e-12
+                for i, c1 in enumerate(pre_cols):
+                    s1 = df[c1].astype(np.float32)
+                    for c2 in pre_cols[i+1:]:
+                        try:
+                            s2 = df[c2].astype(np.float32)
+                            ratio = np.log(s1 / (s2 + eps)).astype(np.float32)
+                            util = self._quick_utility(ratio, targets)
+                            key = f"log_ratio_{c1}_{c2}"
+                            if len(heap_pair) < ratio_keep:
+                                heapq.heappush(heap_pair, (util, key, ratio))
+                            else:
+                                if util > heap_pair[0][0]:
+                                    heapq.heapreplace(heap_pair, (util, key, ratio))
+                        except Exception:
+                            continue
+
+                for util, key, series in sorted(heap_pair, key=lambda x: x[0], reverse=True):
+                    parts = key.split('_')
+                    interactions.append({
+                        'name': key,
+                        'type': 'log_ratio',
+                        'features': [parts[-2], parts[-1]],
+                        'data': series
+                    })
 
             return interactions
 
@@ -3679,32 +3754,63 @@ class UnifiedDataDrivenPipeline:
             raise RuntimeError(error_msg) from e
 
     def _generate_cross_feature_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
-        """Generate cross-feature interactions (ratios, differences, etc.)."""
-        interactions = []
+        """Generate cross-feature interactions with preselection and streaming top-K (ratios, differences)."""
+        interactions: List[Any] = []
 
         try:
-            # Generate ratio features
-            for i, col1 in enumerate(features_df.columns):
-                for col2 in features_df.columns[i+1:]:
-                    if features_df[col2].min() > 0:  # Avoid division by zero
-                        ratio = features_df[col1] / features_df[col2]
-                        interactions.append({
-                            'name': f"ratio_{col1}_{col2}",
-                            'type': 'ratio',
-                            'features': [col1, col2],
-                            'data': ratio
-                        })
+            df = features_df.select_dtypes(include=[np.number])
+            if df.shape[1] < 2:
+                return []
 
-            # Generate difference features
-            for i, col1 in enumerate(features_df.columns):
-                for col2 in features_df.columns[i+1:]:
-                    diff = features_df[col1] - features_df[col2]
-                    interactions.append({
-                        'name': f"diff_{col1}_{col2}",
-                        'type': 'difference',
-                        'features': [col1, col2],
-                        'data': diff
-                    })
+            pre_cols = self._preselect_features_for_pairwise(df, targets)
+            if not pre_cols:
+                pre_cols = list(df.columns[: min(df.shape[1], 30)])
+
+            ig = getattr(self.config, 'interaction_generation', None)
+            pool_limit = 300
+            if ig is not None and hasattr(ig, 'max_interactions'):
+                pool_limit = min(600, max(100, 3 * int(ig.max_interactions)))
+
+            import heapq
+            heap_pair: List[Tuple[float, str, str, pd.Series]] = []
+            eps = 1e-12
+            for i, c1 in enumerate(pre_cols):
+                s1 = df[c1].astype(np.float32)
+                for c2 in pre_cols[i+1:]:
+                    s2 = df[c2].astype(np.float32)
+                    # Ratio
+                    try:
+                        ratio = (s1 / (s2 + eps)).astype(np.float32)
+                        util_r = self._quick_utility(ratio, targets)
+                        key_r = f"ratio_{c1}_{c2}"
+                        if len(heap_pair) < pool_limit:
+                            heapq.heappush(heap_pair, (util_r, key_r, 'ratio', ratio))
+                        else:
+                            if util_r > heap_pair[0][0]:
+                                heapq.heapreplace(heap_pair, (util_r, key_r, 'ratio', ratio))
+                    except Exception:
+                        pass
+                    # Difference
+                    try:
+                        diff = (s1 - s2).astype(np.float32)
+                        util_d = self._quick_utility(diff, targets)
+                        key_d = f"diff_{c1}_{c2}"
+                        if len(heap_pair) < pool_limit:
+                            heapq.heappush(heap_pair, (util_d, key_d, 'difference', diff))
+                        else:
+                            if util_d > heap_pair[0][0]:
+                                heapq.heapreplace(heap_pair, (util_d, key_d, 'difference', diff))
+                    except Exception:
+                        pass
+
+            for util, key, kind, series in sorted(heap_pair, key=lambda x: x[0], reverse=True):
+                parts = key.split('_')
+                interactions.append({
+                    'name': key,
+                    'type': kind,
+                    'features': [parts[-2], parts[-1]],
+                    'data': series
+                })
 
             return interactions
 
@@ -3897,6 +4003,78 @@ class UnifiedDataDrivenPipeline:
             variance_filtered.append(interaction)
 
         return variance_filtered
+
+    # ------------------------------
+    # Performance helpers (pairwise)
+    # ------------------------------
+    def _preselect_features_for_pairwise(self, features_df: pd.DataFrame, targets: Optional[pd.Series], max_cols: Optional[int] = None) -> List[str]:
+        """Preselect a subset of columns for pairwise generation to cap O(p^2).
+
+        - Drops columns with excessive NaNs or near-zero variance
+        - If targets provided, keep top-k by absolute corr with target
+        - Otherwise keep top-k by variance
+        """
+        if features_df is None or features_df.empty:
+            return []
+
+        df = features_df.select_dtypes(include=[np.number]).copy()
+        n_cols = df.shape[1]
+        if n_cols == 0:
+            return []
+
+        # Default cap: scale with config if available
+        try:
+            ig = getattr(self.config, 'interaction_generation', None)
+            default_cap = 60
+            if ig is not None and hasattr(ig, 'batch_size'):
+                default_cap = int(max(20, min(80, ig.batch_size // 20)))
+        except Exception:
+            default_cap = 60
+        k = max_cols or min(default_cap, n_cols)
+
+        # Drop columns with too many NaNs
+        valid_mask = df.notna().sum(axis=0) >= max(10, int(0.6 * len(df)))
+        df = df.loc[:, valid_mask]
+        if df.shape[1] == 0:
+            return []
+
+        # Drop near-constant columns
+        variances = df.var(ddof=0)
+        nz_mask = variances > (1e-8)
+        df = df.loc[:, nz_mask]
+        if df.shape[1] == 0:
+            return []
+
+        # Rank by correlation with target if available
+        if targets is not None and len(targets) == len(df):
+            try:
+                corr = df.corrwith(targets).abs().fillna(0.0)
+                top_cols = corr.sort_values(ascending=False).head(k).index.tolist()
+                return top_cols
+            except Exception:
+                pass
+
+        # Fallback: rank by variance
+        top_cols = variances.loc[df.columns].sort_values(ascending=False).head(k).index.tolist()
+        return top_cols
+
+    def _quick_utility(self, series: pd.Series, targets: Optional[pd.Series]) -> float:
+        """Cheap utility score for streaming selection.
+
+        Uses abs Pearson corr to target when available; otherwise std as proxy.
+        """
+        try:
+            if targets is not None and len(series) == len(targets):
+                val = float(abs(series.corr(targets)))
+                if not np.isnan(val):
+                    return val
+        except Exception:
+            pass
+        try:
+            std = float(series.std())
+            return 0.0 if np.isnan(std) else std
+        except Exception:
+            return 0.0
 
     def _filter_correlated_interactions(self, interactions: List[Any], max_correlation: float = 0.95) -> List[Any]:
         """Filter highly correlated interactions."""

@@ -23,6 +23,7 @@ import concurrent.futures
 import threading
 import time
 import os
+from contextlib import contextmanager
 
 from src.utils.tprint import tprint
 
@@ -211,6 +212,77 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
         
         tprint("✅ M1-optimized Analyst interaction generation step initialized")
 
+    @contextmanager
+    def _resource_management_context(self, operation_name: str):
+        """Context manager for proper resource cleanup."""
+        tprint(f"🔄 [RESOURCE] Starting resource management context: {operation_name}")
+        start_time = time.time()
+        
+        try:
+            # Start memory monitoring
+            self.m1_memory_optimizer.start_monitoring()
+            yield self
+            
+        except Exception as e:
+            tprint(f"❌ [RESOURCE] Error in {operation_name}: {e}")
+            raise
+            
+        finally:
+            # Cleanup resources
+            tprint(f"🧹 [RESOURCE] Cleaning up resources for {operation_name}")
+            try:
+                self.m1_memory_optimizer.stop_monitoring()
+                force_garbage_collection()
+                
+                # Cleanup optimization manager
+                if hasattr(self, 'optimization_manager'):
+                    self.optimization_manager.cleanup_resources()
+                    
+                # Clear caches
+                if hasattr(self, '_variant_cache'):
+                    self._variant_cache.clear()
+                    
+                tprint(f"✅ [RESOURCE] Cleanup completed for {operation_name} in {time.time() - start_time:.2f}s")
+                
+            except Exception as cleanup_error:
+                tprint(f"⚠️ [RESOURCE] Cleanup warning in {operation_name}: {cleanup_error}")
+
+    def _safe_file_operation(self, file_path: str, operation: str, content: str = None) -> bool:
+        """Safely perform file operations with proper error handling."""
+        try:
+            # Sanitize file path
+            safe_path = self._sanitize_filename(file_path)
+            
+            if operation == 'write' and content is not None:
+                # Ensure directory exists
+                os.makedirs(os.path.dirname(safe_path), exist_ok=True)
+                
+                with open(safe_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                tprint(f"✅ [FILE] Successfully wrote to {safe_path}")
+                return True
+                
+            elif operation == 'read':
+                with open(safe_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+                    
+            return False
+            
+        except Exception as e:
+            tprint(f"❌ [FILE] File operation failed for {file_path}: {e}")
+            return False
+
+    def _sanitize_filename(self, filename: str) -> str:
+        """Sanitize filename to prevent path traversal attacks."""
+        import re
+        # Remove or replace dangerous characters
+        safe_filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        # Limit length to prevent filesystem issues
+        safe_filename = safe_filename[:100]
+        # Ensure it doesn't start with dots
+        safe_filename = safe_filename.lstrip('.')
+        return safe_filename
+
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with M1-specific optimizations."""
         if df is None or df.empty:
@@ -218,26 +290,49 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             
         tprint("🧠 Applying M1 memory optimizations to DataFrame...")
         
-        # Apply M1-specific memory optimization
-        optimized_df = optimize_dataframe_for_m1(df)
-        
-        # Convert float64 to float32 where precision allows
-        if self.float32_conversion:
-            numeric_cols = optimized_df.select_dtypes(include=[np.float64]).columns
-            for col in numeric_cols:
-                if optimized_df[col].min() >= np.finfo(np.float32).min and \
-                   optimized_df[col].max() <= np.finfo(np.float32).max:
-                    optimized_df[col] = optimized_df[col].astype(np.float32)
-                    
-        # Apply pandas memory optimization
-        optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
-        
-        self.performance_stats['memory_optimizations_applied'] += 1
-        tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
+        try:
+            # Apply M1-specific memory optimization
+            optimized_df = optimize_dataframe_for_m1(df)
+            
+            # Convert float64 to float32 where precision allows
+            if self.float32_conversion:
+                numeric_cols = optimized_df.select_dtypes(include=[np.float64]).columns
+                for col in numeric_cols:
+                    if optimized_df[col].min() >= np.finfo(np.float32).min and \
+                       optimized_df[col].max() <= np.finfo(np.float32).max:
+                        optimized_df[col] = optimized_df[col].astype(np.float32)
+                        
+            # Apply pandas memory optimization
+            optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
+            
+            self.performance_stats['memory_optimizations_applied'] += 1
+            tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
+            return optimized_df
+            
+        except Exception as e:
+            tprint(f"⚠️ Memory optimization failed, using original DataFrame: {e}")
+            return df
+
+    def _ensure_memory_optimization(self, df: pd.DataFrame, operation_name: str = "dataframe_processing") -> pd.DataFrame:
+        """Ensure DataFrame is memory optimized before processing."""
+        if df is None or df.empty:
+            return df
+            
+        # Check if already optimized recently
+        if hasattr(df, '_memory_optimized') and df._memory_optimized:
+            return df
+            
+        tprint(f"🧠 [MEMORY] Ensuring memory optimization for {operation_name}")
+        optimized_df = self._optimize_dataframe_memory(df)
+        optimized_df._memory_optimized = True  # Mark as optimized
         return optimized_df
 
     def _sample_data_by_mode(self, data: pd.DataFrame, mode: str) -> pd.DataFrame:
-        """Sample data based on mode (light/blank/full)."""
+        """Sample data based on mode (light/blank/full) with validation."""
+        if data is None or data.empty:
+            tprint(f"⚠️ Cannot sample empty data for mode {mode}")
+            return pd.DataFrame()
+            
         if mode == 'light':
             sample_size = self.phase_config.light_mode_sample_size
         elif mode == 'blank':
@@ -247,13 +342,85 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             
         if len(data) <= sample_size:
             tprint(f"📊 Data size ({len(data)}) <= sample size ({sample_size}), using all data")
-            return data
+            return data.copy()
             
         # Sample most recent data
-        sampled_data = data.tail(sample_size)
-        tprint(f"📊 Sampled {len(sampled_data)} rows from {len(data)} total rows for {mode} mode")
-        
-        return sampled_data
+        try:
+            sampled_data = data.tail(sample_size).copy()
+            tprint(f"📊 Sampled {len(sampled_data)} rows from {len(data)} total rows for {mode} mode")
+            return sampled_data
+        except Exception as e:
+            tprint(f"❌ Sampling failed for mode {mode}: {e}")
+            return data.copy()
+
+    def _validate_phase_output(self, phase_name: str, features: pd.DataFrame, 
+                              metadata: Dict[str, Any]) -> Tuple[bool, str]:
+        """Validate phase output quality and return validation result."""
+        if features is None:
+            return False, f"{phase_name}: Features is None"
+            
+        if features.empty:
+            return False, f"{phase_name}: Features DataFrame is empty"
+            
+        # Check for all-null columns
+        null_columns = features.columns[features.isnull().all()].tolist()
+        if null_columns:
+            return False, f"{phase_name}: Contains all-null columns: {null_columns[:5]}"
+            
+        # Check for infinite values
+        inf_columns = []
+        for col in features.columns:
+            if features[col].dtype in ['float64', 'float32']:
+                if np.isinf(features[col]).any():
+                    inf_columns.append(col)
+        if inf_columns:
+            return False, f"{phase_name}: Contains infinite values in columns: {inf_columns[:5]}"
+            
+        # Check for reasonable variance
+        low_variance_cols = []
+        for col in features.columns:
+            if features[col].dtype in ['float64', 'float32']:
+                if features[col].var() < 1e-10:
+                    low_variance_cols.append(col)
+        if len(low_variance_cols) > len(features.columns) * 0.5:
+            return False, f"{phase_name}: Too many low-variance columns ({len(low_variance_cols)})"
+            
+        return True, f"{phase_name}: Validation passed"
+
+    def _validate_data_alignment(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[bool, str, pd.DataFrame]:
+        """Validate and align features with targets, returning success status and aligned data."""
+        if features is None or features.empty:
+            return False, "Features DataFrame is None or empty", pd.DataFrame()
+            
+        if targets is None or targets.empty:
+            return False, "Targets Series is None or empty", pd.DataFrame()
+            
+        try:
+            # Align features and targets
+            aligned = features.join(targets.rename("target"), how="inner").dropna()
+            
+            if aligned.empty:
+                # Provide diagnostic information
+                features_index = features.index
+                targets_index = targets.index
+                common_index = features_index.intersection(targets_index)
+                
+                diagnostic_info = {
+                    'features_shape': features.shape,
+                    'targets_length': len(targets),
+                    'features_index_range': (features_index.min(), features_index.max()) if not features_index.empty else None,
+                    'targets_index_range': (targets_index.min(), targets_index.max()) if not targets_index.empty else None,
+                    'common_index_length': len(common_index),
+                    'features_nulls': features.isnull().sum().sum(),
+                    'targets_nulls': targets.isnull().sum()
+                }
+                
+                return False, f"No overlapping timestamps between features and targets. Diagnostic: {diagnostic_info}", pd.DataFrame()
+                
+            return True, f"Successfully aligned {len(aligned)} samples", aligned
+            
+        except Exception as e:
+            return False, f"Data alignment failed: {e}", pd.DataFrame()
 
     def _load_timeframes_from_optimization(self, artifact_manager) -> List[str]:
         """Load optimized timeframes from period_lookback_optimization step."""
@@ -316,6 +483,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
                 return pd.DataFrame(), {}
                 
             combined_variants = pd.concat(list(all_variants.values()), axis=1)
+            # Apply memory optimization
+            combined_variants = self._ensure_memory_optimization(combined_variants, "phase1_variants")
             tprint(f"📊 Phase 1: Generated {len(combined_variants.columns)} variant features")
             
             # Normalize variants
@@ -326,6 +495,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             
             # Combine normalized variants
             normalized_combined = pd.concat(list(normalized_variants.values()), axis=1)
+            # Apply memory optimization
+            normalized_combined = self._ensure_memory_optimization(normalized_combined, "phase1_normalized")
             
             # Align with targets
             aligned_data = normalized_combined.join(targets.rename('target'), how='inner').dropna()
@@ -360,6 +531,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             top_features = shap_scorer.get_top_features(shap_results, top_k, 'combined')
             
             selected_features = features_aligned[top_features]
+            # Apply memory optimization to selected features
+            selected_features = self._ensure_memory_optimization(selected_features, "phase1_selected")
             tprint(f"📊 Phase 1: Selected {len(selected_features.columns)} features (top {self.phase_config.phase1_selection_ratio*100}%)")
             
             # Store metadata
@@ -425,6 +598,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             # Select top 40 features
             top_features = shap_scorer.get_top_features(shap_results, self.phase_config.phase2_top_k, 'combined')
             selected_features = features_aligned[top_features]
+            # Apply memory optimization
+            selected_features = self._ensure_memory_optimization(selected_features, "phase2_selected")
             
             tprint(f"📊 Phase 2: Selected {len(selected_features.columns)} features")
             
@@ -530,6 +705,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             )
             
             selected_interactions = interactions_df[top_interactions]
+            # Apply memory optimization
+            selected_interactions = self._ensure_memory_optimization(selected_interactions, "phase3_interactions")
             tprint(f"📊 Phase 3: Selected {len(selected_interactions.columns)} interactions")
             
             # Store metadata
@@ -563,9 +740,15 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
         tprint("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
         
-        # Start memory monitoring
-        self.m1_memory_optimizer.start_monitoring()
-        
+        # Use resource management context for proper cleanup
+        with self._resource_management_context("interaction_generation_analyst"):
+            return await self._execute_with_validation(training_input, pipeline_state, start_time)
+
+    async def _execute_with_validation(self, 
+                                     training_input: Dict[str, Any],
+                                     pipeline_state: Dict[str, Any],
+                                     start_time: float) -> InteractionGenerationResult:
+        """Execute the main pipeline with comprehensive validation."""
         try:
             # Extract training input parameters
             data = training_input.get('data')
@@ -621,27 +804,62 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
                     error_message="Targets from feature_generation_labeling_integration_step are required."
                 )
             
-            # Sample data by mode
+            # Sample data by mode with consistent indexing
             tprint(f"✂️ [ANALYST] Sampling data for {intensity} mode")
-            sampled_features = self._sample_data_by_mode(selected_df, intensity)
-            sampled_targets = self._sample_data_by_mode(targets_series, intensity)
             
-            # Align features and targets
-            tprint("🔍 [ANALYST] Aligning features and targets timestamps")
-            aligned = sampled_features.join(sampled_targets.rename("target"), how="inner").dropna()
-            if aligned.empty:
-                tprint("❌ [ANALYST] No overlapping timestamps between features and targets")
+            # Ensure both features and targets are memory optimized
+            selected_df = self._ensure_memory_optimization(selected_df, "feature_sampling")
+            targets_series = self._ensure_memory_optimization(targets_series, "target_sampling")
+            
+            # Find common index before sampling to ensure alignment
+            common_index = selected_df.index.intersection(targets_series.index)
+            if len(common_index) == 0:
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
                     interaction_metadata={},
                     generation_metrics={},
                     artifacts={},
-                    error_message="No overlapping timestamps between features and targets."
+                    error_message="No common timestamps between features and targets before sampling."
                 )
             
-            features_df = aligned.drop(columns=['target'])
-            targets = aligned['target']
+            # Sample from common index to maintain alignment
+            if intensity == 'light':
+                sample_size = self.phase_config.light_mode_sample_size
+            elif intensity == 'blank':
+                sample_size = self.phase_config.blank_mode_sample_size
+            else:  # full
+                sample_size = self.phase_config.full_mode_sample_size
+                
+            if len(common_index) <= sample_size:
+                sample_indices = common_index
+            else:
+                # Sample most recent data from common index
+                sample_indices = common_index[-sample_size:]
+            
+            # Apply sampling to both features and targets using same indices
+            sampled_features = selected_df.loc[sample_indices].copy()
+            sampled_targets = targets_series.loc[sample_indices].copy()
+            
+            tprint(f"📊 [ANALYST] Sampled {len(sample_indices)} common samples for {intensity} mode")
+            
+            # Validate alignment
+            tprint("🔍 [ANALYST] Validating data alignment")
+            is_valid, validation_msg, aligned_data = self._validate_data_alignment(sampled_features, sampled_targets)
+            
+            if not is_valid:
+                tprint(f"❌ [ANALYST] Data alignment validation failed: {validation_msg}")
+                return InteractionGenerationResult(
+                    success=False,
+                    interaction_features=pd.DataFrame(),
+                    interaction_metadata={},
+                    generation_metrics={},
+                    artifacts={},
+                    error_message=f"Data alignment validation failed: {validation_msg}"
+                )
+            
+            features_df = aligned_data.drop(columns=['target'])
+            targets = aligned_data['target']
             
             tprint(f"✅ [ANALYST] Final aligned data: features={features_df.shape}, targets={targets.shape}")
             
@@ -653,15 +871,50 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             tprint("📊 [ANALYST] Loading OHLCV data for variant generation")
             price_data = None
             volume = None
-            try:
-                # Try to load OHLCV data from artifacts
-                ohlcv_data = artifact_manager.get_dataframe('feature_generation', 'ohlcv_data')
-                if ohlcv_data is not None and not ohlcv_data.empty:
-                    price_data = ohlcv_data[['open', 'high', 'low', 'close']]
-                    volume = ohlcv_data['volume']
-                    tprint(f"✅ [ANALYST] Loaded OHLCV data: {price_data.shape}")
-            except Exception as e:
-                tprint(f"⚠️ Could not load OHLCV data: {e}")
+            
+            # Try multiple sources for OHLCV data
+            ohlcv_sources = [
+                ('feature_generation', 'ohlcv_data'),
+                ('data_validation', 'ohlcv_data'),
+                ('preprocessing', 'ohlcv_data')
+            ]
+            
+            ohlcv_loaded = False
+            for source_step, artifact_key in ohlcv_sources:
+                try:
+                    ohlcv_data = artifact_manager.get_dataframe(source_step, artifact_key)
+                    if ohlcv_data is not None and not ohlcv_data.empty:
+                        # Validate OHLCV data structure
+                        required_cols = ['open', 'high', 'low', 'close', 'volume']
+                        missing_cols = [col for col in required_cols if col not in ohlcv_data.columns]
+                        
+                        if missing_cols:
+                            tprint(f"⚠️ [ANALYST] OHLCV data missing columns {missing_cols}, trying next source")
+                            continue
+                            
+                        # Check for valid data
+                        if ohlcv_data[required_cols].isnull().all().any():
+                            tprint(f"⚠️ [ANALYST] OHLCV data contains all-null columns, trying next source")
+                            continue
+                            
+                        price_data = ohlcv_data[['open', 'high', 'low', 'close']].copy()
+                        volume = ohlcv_data['volume'].copy()
+                        
+                        # Ensure memory optimization
+                        price_data = self._ensure_memory_optimization(price_data, "price_data")
+                        volume = self._ensure_memory_optimization(volume, "volume_data")
+                        
+                        tprint(f"✅ [ANALYST] Loaded OHLCV data from {source_step}: {price_data.shape}")
+                        ohlcv_loaded = True
+                        break
+                        
+                except Exception as e:
+                    tprint(f"⚠️ [ANALYST] Failed to load OHLCV from {source_step}: {e}")
+                    continue
+            
+            if not ohlcv_loaded:
+                tprint("⚠️ [ANALYST] Could not load OHLCV data from any source - variant generation will be limited")
+                # Continue without OHLCV data - variant generation will handle this gracefully
             
             # Execute three-phase pipeline
             tprint("🔄 [ANALYST] ========== PHASE 1: VARIANT GENERATION & SHALLOW LGBM SWEEP ==========")
@@ -670,54 +923,68 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             phase1_features, phase1_metadata = self._execute_phase1(
                 features_df, targets, price_data, volume, timeframes
             )
-            tprint(f"✅ [ANALYST] Phase 1 completed: {len(phase1_features.columns)} features selected")
             
-            if phase1_features.empty:
+            # Validate Phase 1 output
+            is_valid, validation_msg = self._validate_phase_output("Phase 1", phase1_features, phase1_metadata)
+            if not is_valid:
+                tprint(f"❌ [ANALYST] Phase 1 validation failed: {validation_msg}")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
-                    interaction_metadata={'phase1_error': phase1_metadata.get('error', 'Unknown error')},
+                    interaction_metadata={'phase1_error': validation_msg, 'phase1_metadata': phase1_metadata},
                     generation_metrics={},
                     artifacts={},
-                    error_message="Phase 1 failed"
+                    error_message=f"Phase 1 validation failed: {validation_msg}"
                 )
+            
+            tprint(f"✅ [ANALYST] Phase 1 completed: {len(phase1_features.columns)} features selected")
             
             # Phase 2: Middle refinement
             tprint("🔄 [ANALYST] ========== PHASE 2: MIDDLE REFINEMENT WITH DEEPER LGBM ==========")
             phase2_features, phase2_metadata = self._execute_phase2(phase1_features, targets)
-            tprint(f"✅ [ANALYST] Phase 2 completed: {len(phase2_features.columns)} features selected")
             
-            if phase2_features.empty:
+            # Validate Phase 2 output
+            is_valid, validation_msg = self._validate_phase_output("Phase 2", phase2_features, phase2_metadata)
+            if not is_valid:
+                tprint(f"❌ [ANALYST] Phase 2 validation failed: {validation_msg}")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
                     interaction_metadata={
                         'phase1_metadata': phase1_metadata,
-                        'phase2_error': phase2_metadata.get('error', 'Unknown error')
+                        'phase2_error': validation_msg,
+                        'phase2_metadata': phase2_metadata
                     },
                     generation_metrics={},
                     artifacts={},
-                    error_message="Phase 2 failed"
+                    error_message=f"Phase 2 validation failed: {validation_msg}"
                 )
+            
+            tprint(f"✅ [ANALYST] Phase 2 completed: {len(phase2_features.columns)} features selected")
             
             # Phase 3: Deep interaction discovery
             tprint("🔄 [ANALYST] ========== PHASE 3: DEEP INTERACTION DISCOVERY WITH FULL LGBM ==========")
             phase3_interactions, phase3_metadata = self._execute_phase3(phase2_features, targets, phase2_metadata)
-            tprint(f"✅ [ANALYST] Phase 3 completed: {len(phase3_interactions.columns)} interaction features generated")
             
-            if phase3_interactions.empty:
+            # Validate Phase 3 output
+            is_valid, validation_msg = self._validate_phase_output("Phase 3", phase3_interactions, phase3_metadata)
+            if not is_valid:
+                tprint(f"❌ [ANALYST] Phase 3 validation failed: {validation_msg}")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
                     interaction_metadata={
                         'phase1_metadata': phase1_metadata,
                         'phase2_metadata': phase2_metadata,
-                        'phase3_error': phase3_metadata.get('error', 'Unknown error')
+                        'phase3_error': validation_msg,
+                        'phase3_metadata': phase3_metadata
                     },
                     generation_metrics={},
                     artifacts={},
-                    error_message="Phase 3 failed"
+                    error_message=f"Phase 3 validation failed: {validation_msg}"
                 )
+            
+            tprint(f"✅ [ANALYST] Phase 3 completed: {len(phase3_interactions.columns)} interaction features generated")
             
             # Apply final memory optimization
             tprint("🧹 [ANALYST] Applying final memory optimization to interaction features")
@@ -801,11 +1068,17 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
                 report = self._generate_comprehensive_report(
                     final_interactions, combined_metadata, symbol, timeframe, features_df
                 )
-                self._store_comprehensive_report(report, symbol, timeframe, direction, intensity)
-                tprint("✅ [ANALYST] Comprehensive report generated and stored successfully")
+                
+                # Store report with safe file operations
+                report_stored = self._store_comprehensive_report(report, symbol, timeframe, direction, intensity)
+                if report_stored:
+                    tprint("✅ [ANALYST] Comprehensive report generated and stored successfully")
+                else:
+                    tprint("⚠️ [ANALYST] Report generation succeeded but storage failed")
+                    
             except Exception as e:
                 tprint(f"⚠️ [ANALYST] Report generation failed: {e}")
-                pass
+                # Don't fail the entire pipeline for report generation issues
             
             tprint("🎉 [ANALYST] Three-phase interaction generation completed successfully")
             return result
@@ -822,15 +1095,6 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
                 artifacts={},
                 error_message=str(e)
             )
-        finally:
-            # Cleanup and stop memory monitoring
-            tprint("🧹 Cleaning up M1 optimizations...")
-            try:
-                self.m1_memory_optimizer.stop_monitoring()
-                force_garbage_collection()
-                tprint("✅ Cleanup completed")
-            except Exception as cleanup_error:
-                tprint(f"⚠️ Cleanup warning: {cleanup_error}")
 
     # Minimal hooks for ModularComponent
     def _initialize_resources(self) -> bool:
@@ -1011,26 +1275,43 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             'final_manifest': final_manifest
         }
 
-    def _store_comprehensive_report(self, report: Dict[str, Any], symbol: str, timeframe: str, direction: str, intensity: str) -> None:
-        """Store comprehensive report as markdown and JSON."""
+    def _store_comprehensive_report(self, report: Dict[str, Any], symbol: str, timeframe: str, direction: str, intensity: str) -> bool:
+        """Store comprehensive report as markdown and JSON with safe file operations."""
         from datetime import datetime as _dt
         from pathlib import Path as _Path
         import json as _json
         
-        out_dir = _Path('outcomes')
-        out_dir.mkdir(exist_ok=True)
-        ts = _dt.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Generate markdown report
-        md = self._format_comprehensive_markdown(report)
-        md_path = out_dir / f"interaction_generation_comprehensive_report_{symbol}_{timeframe}_{direction}_{intensity}_{ts}.md"
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write(md)
-        
-        # Store JSON report
-        json_path = out_dir / f"interaction_generation_comprehensive_report_{symbol}_{timeframe}_{direction}_{intensity}_{ts}.json"
-        with open(json_path, 'w', encoding='utf-8') as f:
-            _json.dump(report, f, indent=2, ensure_ascii=False)
+        try:
+            out_dir = _Path('outcomes')
+            out_dir.mkdir(exist_ok=True)
+            ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Sanitize parameters for filename
+            safe_symbol = self._sanitize_filename(symbol)
+            safe_timeframe = self._sanitize_filename(timeframe)
+            safe_direction = self._sanitize_filename(direction)
+            safe_intensity = self._sanitize_filename(intensity)
+            
+            # Generate markdown report
+            md = self._format_comprehensive_markdown(report)
+            md_filename = f"interaction_generation_comprehensive_report_{safe_symbol}_{safe_timeframe}_{safe_direction}_{safe_intensity}_{ts}.md"
+            md_path = out_dir / md_filename
+            
+            # Store markdown with safe file operation
+            md_success = self._safe_file_operation(str(md_path), 'write', md)
+            
+            # Store JSON report
+            json_filename = f"interaction_generation_comprehensive_report_{safe_symbol}_{safe_timeframe}_{safe_direction}_{safe_intensity}_{ts}.json"
+            json_path = out_dir / json_filename
+            
+            json_content = _json.dumps(report, indent=2, ensure_ascii=False)
+            json_success = self._safe_file_operation(str(json_path), 'write', json_content)
+            
+            return md_success and json_success
+            
+        except Exception as e:
+            tprint(f"❌ [REPORT] Failed to store comprehensive report: {e}")
+            return False
 
     def _format_comprehensive_markdown(self, report: Dict[str, Any]) -> str:
         """Format comprehensive report as markdown."""

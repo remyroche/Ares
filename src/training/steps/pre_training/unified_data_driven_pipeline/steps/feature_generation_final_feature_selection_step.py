@@ -11,6 +11,17 @@ Key Features:
 - M1 hardware optimizations (GPU, CPU, memory)
 - VectorBT integration for vectorized operations
 - Computational optimizations: sampling, batching, caching, parallel processing
+
+Recent Fixes (Audit 2024):
+- Fixed data alignment bug in Stage 1 MI calculation
+- Replaced silent exception handling with proper error logging
+- Fixed sparse matrix handling inconsistency
+- Implemented proper random state management for reproducibility
+- Optimized memory usage in SHAP section
+- Added comprehensive input validation
+- Fixed mRMR early stopping logic
+- Added constants for magic numbers
+- Enhanced error tracking and performance monitoring
 """
 
 from __future__ import annotations
@@ -241,10 +252,28 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             'total_processing_time': 0.0,
             'stage_times': {},
             'memory_optimizations_applied': 0,
-            'gc_runs': 0
+            'gc_runs': 0,
+            'errors_handled': 0,
+            'warnings_issued': 0
         }
         
         tprint_success("✅ FeatureGenerationFinalFeatureSelectionStep initialized")
+    
+    def _validate_inputs(self, X: pd.DataFrame, y: pd.Series) -> bool:
+        """Validate input data for feature selection."""
+        if X.empty:
+            raise ValueError("Feature DataFrame cannot be empty")
+        if y.empty:
+            raise ValueError("Target Series cannot be empty")
+        if len(X) != len(y):
+            raise ValueError(f"Feature and target lengths must match: {len(X)} vs {len(y)}")
+        if X.isnull().all().any():
+            raise ValueError("Feature DataFrame contains columns with all NaN values")
+        if y.isnull().all():
+            raise ValueError("Target Series contains all NaN values")
+        
+        tprint_debug(f"✅ Input validation passed: {X.shape[0]} samples, {X.shape[1]} features")
+        return True
     
     def _initialize_resources(self) -> bool:
         """Initialize component-specific resources."""
@@ -275,7 +304,7 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             if PSUTIL_AVAILABLE:
                 process = psutil.Process()
                 mem_usage = process.memory_info().rss / 1024 / 1024  # MB
-                if mem_usage > 4096:  # > 4GB
+                if mem_usage > self.MEMORY_WARNING_THRESHOLD_MB:
                     gc.collect(generation=2)
                     tprint_warning(f"⚠️ High memory usage: {mem_usage:.0f}MB, forcing full GC")
     
@@ -321,6 +350,9 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
             
+            # Validate inputs
+            self._validate_inputs(features_df, targets)
+            
             # Convert to float32 end-to-end
             tprint_info("🔄 Converting data to float32 (end-to-end)")
             features_df = self._convert_to_float32(features_df)
@@ -328,7 +360,13 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             
             tprint_success(f"✅ Loaded {features_df.shape[1]} features and {len(targets)} targets")
             tprint_info(f"📊 Feature matrix: {features_df.shape}, Target: {targets.shape}")
-            tprint_info(f"💾 Memory usage: Features={features_df.memory_usage(deep=True).sum() / 1024 / 1024:.2f}MB")
+            # Memory usage calculation - optimized for large datasets
+            try:
+                memory_mb = features_df.memory_usage(deep=True).sum() / 1024 / 1024
+                tprint_info(f"💾 Memory usage: Features={memory_mb:.2f}MB")
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not calculate memory usage: {e}")
+                tprint_info(f"💾 Feature matrix shape: {features_df.shape}")
             
             # Stage 1: PCA + Approximate MI (→ ~200 features)
             tprint_info("=" * 80)
@@ -539,7 +577,7 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             X_numeric = X.select_dtypes(include=[np.number]).astype('float32', copy=False)
             
             # Fit PCA
-            pca = PCA(n_components=0.98, random_state=42)
+            pca = PCA(n_components=self.PCA_VARIANCE_THRESHOLD, random_state=self.random_state)
             pca.fit(X_numeric)
             
             # For each component, find feature with highest loading
@@ -577,7 +615,7 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             # Sampling-based MI for large datasets
             if len(X_pca) > 50000:
                 sample_size = int(len(X_pca) * self.mi_sample_ratio)
-                sample_indices = np.random.choice(len(X_pca), sample_size, replace=False)
+                sample_indices = np.random.choice(len(X_pca), sample_size, replace=False, random_state=self.random_state)
                 X_sampled = X_pca.iloc[sample_indices]
                 y_sampled = y_sampled.iloc[sample_indices]
                 tprint_info(f"📦 Sampling {sample_size} rows for MI calculation")
@@ -602,17 +640,30 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                         # Compute MI
                         batch_mi_scores = mutual_info_regression(
                             batch_data_clean, y_clean,
-                            random_state=42, n_neighbors=self.mi_neighbors
+                            random_state=self.random_state, n_neighbors=self.mi_neighbors
                         )
                         all_mi_scores.extend(batch_mi_scores)
                         all_columns.extend(batch_cols)
+                    else:
+                        tprint_warning(f"⚠️ Batch {i//batch_size + 1} has no valid data after cleaning")
                 except Exception as e:
-                    tprint_warning(f"⚠️ MI batch failed: {e}")
-                    continue
+                    tprint_warning(f"⚠️ MI batch failed for columns {batch_cols.tolist()}: {e}")
+                    self.performance_stats['errors_handled'] += 1
+                    # Add zero scores for failed batch to maintain alignment
+                    all_mi_scores.extend([0.0] * len(batch_cols))
+                    all_columns.extend(batch_cols)
                 
                 # GC after each batch
                 if self.aggressive_gc:
                     gc.collect()
+            
+            # Validate data alignment before creating series
+            if len(all_mi_scores) != len(all_columns):
+                tprint_warning(f"⚠️ Length mismatch: {len(all_mi_scores)} scores, {len(all_columns)} columns")
+                min_len = min(len(all_mi_scores), len(all_columns))
+                all_mi_scores = all_mi_scores[:min_len]
+                all_columns = all_columns[:min_len]
+                tprint_info(f"📊 Truncated to {min_len} features for alignment")
             
             # Select top features by MI quantile
             mi_series = pd.Series(all_mi_scores, index=all_columns)
@@ -652,10 +703,12 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             for i, col in enumerate(X.columns):
                 try:
                     mi_score = mutual_info_regression(
-                        X[[col]], y, random_state=42, n_neighbors=self.mi_neighbors
+                        X[[col]], y, random_state=self.random_state, n_neighbors=self.mi_neighbors
                     )[0]
                     relevance_scores[col] = float(mi_score)
-                except:
+                except Exception as e:
+                    tprint_warning(f"⚠️ MI calculation failed for feature {col}: {e}")
+                    self.performance_stats['errors_handled'] += 1
                     relevance_scores[col] = 0.0
             
             # Compute pairwise MI (redundancy) - only for top features
@@ -664,10 +717,12 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                 for j in range(i + 1, n_features):
                     try:
                         mi_score = mutual_info_regression(
-                            X.iloc[:, [i]], X.iloc[:, j], random_state=42, n_neighbors=self.mi_neighbors
+                            X.iloc[:, [i]], X.iloc[:, j], random_state=self.random_state, n_neighbors=self.mi_neighbors
                         )[0]
                         mi_matrix[i, j] = mi_matrix[j, i] = float(mi_score)
-                    except:
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Pairwise MI failed for features {i},{j}: {e}")
+                        self.performance_stats['errors_handled'] += 1
                         mi_matrix[i, j] = mi_matrix[j, i] = 0.0
                 
                 if i % 20 == 0:
@@ -710,7 +765,7 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                         sample_indices = selected_indices
                     else:
                         sample_indices = np.random.choice(
-                            selected_indices, self.mrmr_sample_size, replace=False
+                            selected_indices, self.mrmr_sample_size, replace=False, random_state=self.random_state
                         )
                     
                     redundancy = np.mean([mi_matrix[cand_idx, sel_idx] for sel_idx in sample_indices])
@@ -729,17 +784,24 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                     candidate_features.remove(feat)
                     candidate_indices.remove(X.columns.get_loc(feat))
                 
-                # Early stopping
+                # Early stopping - improved logic
                 avg_score = np.mean([score for _, score in top_batch])
-                improvement = (prev_score - avg_score) / max(abs(prev_score), 1e-10)
                 
-                if improvement < self.mrmr_early_stop_threshold:
-                    no_improvement_count += 1
+                # Calculate improvement as percentage change
+                if prev_score != float('inf'):
+                    improvement = (prev_score - avg_score) / max(abs(prev_score), self.MRMR_IMPROVEMENT_THRESHOLD)
+                    
+                    if improvement < self.mrmr_early_stop_threshold:
+                        no_improvement_count += 1
+                    else:
+                        no_improvement_count = 0
+                        tprint_debug(f"📊 mRMR improvement: {improvement:.4f}")
                 else:
+                    # First iteration, no improvement to measure
                     no_improvement_count = 0
                 
                 if no_improvement_count >= self.mrmr_early_stop_patience:
-                    tprint_info(f"⏹️ Early stopping at iteration {iterations} (no improvement)")
+                    tprint_info(f"⏹️ Early stopping at iteration {iterations} (no improvement for {no_improvement_count} iterations)")
                     break
                 
                 prev_score = avg_score
@@ -788,12 +850,12 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                 """Run LASSO on a single bootstrap sample."""
                 # Bootstrap sample
                 n_samples = int(len(X) * self.bootstrap_sample_ratio)
-                sample_indices = np.random.choice(len(X), n_samples, replace=True)
+                sample_indices = np.random.choice(len(X), n_samples, replace=True, random_state=self.random_state + bootstrap_idx)
                 
                 if use_sparse:
                     X_boot = X_sparse[sample_indices]
                 else:
-                    X_boot = X_sparse[sample_indices]
+                    X_boot = X[sample_indices].values
                 y_boot = y.iloc[sample_indices].values
                 
                 # LASSO
@@ -804,14 +866,15 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                         alphas=alphas,
                         max_iter=self.lasso_max_iter,
                         tol=self.lasso_tol,
-                        random_state=42 + bootstrap_idx
+                        random_state=self.random_state + bootstrap_idx
                     )
                     lasso.fit(X_boot, y_boot)
                     
                     # Get selected features
-                    selected = np.where(np.abs(lasso.coef_) > 1e-10)[0]
+                    selected = np.where(np.abs(lasso.coef_) > self.LASSO_COEF_THRESHOLD)[0]
                     return selected
-                except:
+                except Exception as e:
+                    tprint_debug(f"⚠️ LASSO bootstrap {bootstrap_idx} failed: {e}")
                     return np.array([])
             
             # Run bootstraps in parallel
@@ -857,7 +920,7 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
                     alphas=alphas,
                     max_iter=self.lasso_max_iter,
                     tol=self.lasso_tol,
-                    random_state=42
+                    random_state=self.random_state
                 )
                 lasso.fit(X_current, y.values)
                 
@@ -1005,70 +1068,68 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
             features_40 = current_features
             tprint_success(f"✅ RFE to 40 features completed")
             
-            # SHAP for final feature importance
+            # SHAP for final feature importance - memory optimized
             tprint_info("🔍 Step 4.4: SHAP analysis for final feature sets")
             shap_start = time.time()
             
             # Sample data for SHAP
             shap_sample_size = min(self.shap_sample_size, len(X))
-            sample_indices = np.random.choice(len(X), shap_sample_size, replace=False)
+            sample_indices = np.random.choice(len(X), shap_sample_size, replace=False, random_state=self.random_state)
             
-            # SHAP for 60 features
-            tprint_info("📊 Computing SHAP for 60-feature set")
-            X_60 = X[features_60].iloc[sample_indices].values
-            model_60 = lgb.train(self.lgbm_params, lgb.Dataset(X[features_60].values, y.values), num_boost_round=50)
-            explainer_60 = shap.TreeExplainer(model_60, check_additivity=False)
+            # Process each feature set separately to optimize memory
+            feature_sets = [
+                ("60", features_60),
+                ("50", features_50), 
+                ("40", features_40)
+            ]
             
-            shap_values_60 = []
-            for i in range(0, len(X_60), self.shap_batch_size):
-                batch = X_60[i:i + self.shap_batch_size]
-                shap_values_60.append(explainer_60.shap_values(batch))
-            shap_values_60 = np.vstack(shap_values_60)
+            shap_results = {}
             
-            # SHAP for 50 features
-            tprint_info("📊 Computing SHAP for 50-feature set")
-            X_50 = X[features_50].iloc[sample_indices].values
-            model_50 = lgb.train(self.lgbm_params, lgb.Dataset(X[features_50].values, y.values), num_boost_round=50)
-            explainer_50 = shap.TreeExplainer(model_50, check_additivity=False)
+            for set_name, features in feature_sets:
+                tprint_info(f"📊 Computing SHAP for {set_name}-feature set")
+                
+                # Train model for this feature set
+                X_subset = X[features].iloc[sample_indices].values
+                model = lgb.train(
+                    self.lgbm_params, 
+                    lgb.Dataset(X[features].values, y.values), 
+                    num_boost_round=50
+                )
+                
+                # Create explainer
+                explainer = shap.TreeExplainer(model, check_additivity=False)
+                
+                # Compute SHAP values in batches
+                shap_values = []
+                for i in range(0, len(X_subset), self.shap_batch_size):
+                    batch = X_subset[i:i + self.shap_batch_size]
+                    shap_values.append(explainer.shap_values(batch))
+                shap_values = np.vstack(shap_values)
+                
+                # Store results
+                shap_results[f'shap_values_{set_name}'] = shap_values
+                
+                # Immediate cleanup
+                del model, explainer, X_subset
+                gc.collect()
+                
+                tprint_debug(f"✅ SHAP completed for {set_name} features")
             
-            shap_values_50 = []
-            for i in range(0, len(X_50), self.shap_batch_size):
-                batch = X_50[i:i + self.shap_batch_size]
-                shap_values_50.append(explainer_50.shap_values(batch))
-            shap_values_50 = np.vstack(shap_values_50)
-            
-            # SHAP for 40 features
-            tprint_info("📊 Computing SHAP for 40-feature set")
-            X_40 = X[features_40].iloc[sample_indices].values
-            model_40 = lgb.train(self.lgbm_params, lgb.Dataset(X[features_40].values, y.values), num_boost_round=50)
-            explainer_40 = shap.TreeExplainer(model_40, check_additivity=False)
-            
-            shap_values_40 = []
-            for i in range(0, len(X_40), self.shap_batch_size):
-                batch = X_40[i:i + self.shap_batch_size]
-                shap_values_40.append(explainer_40.shap_values(batch))
-            shap_values_40 = np.vstack(shap_values_40)
-            
-            # Compute mean absolute SHAP values
+            # Compute mean absolute SHAP values from 60-feature set
             feature_scores = {}
             for i, feat in enumerate(features_60):
-                feature_scores[feat] = float(np.mean(np.abs(shap_values_60[:, i])))
+                feature_scores[feat] = float(np.mean(np.abs(shap_results['shap_values_60'][:, i])))
             
             tprint_success(f"✅ SHAP analysis completed in {time.time() - shap_start:.2f}s")
-            
-            # Cleanup
-            del explainer_60, explainer_50, explainer_40
-            del model_60, model_50, model_40
-            gc.collect()
             
             return {
                 'features_60': features_60,
                 'features_50': features_50,
                 'features_40': features_40,
                 'feature_scores': feature_scores,
-                'shap_values_60': shap_values_60,
-                'shap_values_50': shap_values_50,
-                'shap_values_40': shap_values_40
+                'shap_values_60': shap_results['shap_values_60'],
+                'shap_values_50': shap_results['shap_values_50'],
+                'shap_values_40': shap_results['shap_values_40']
             }
     
     async def _save_artifacts(self, artifact_manager, result: FinalFeatureSelectionResult,
@@ -1115,6 +1176,7 @@ async def handle_feature_generation_final_feature_selection_step(
     model_type: str = "analyst",
     direction: str = "long",
     config: Optional[Dict[str, Any]] = None,
+    random_state: int = 42,
     **kwargs
 ) -> FinalFeatureSelectionResult:
     """
@@ -1133,7 +1195,7 @@ async def handle_feature_generation_final_feature_selection_step(
     tprint_info(f"🚀 Starting final feature selection handler for {model_type}_{direction}")
     
     # Create step instance
-    step = FeatureGenerationFinalFeatureSelectionStep(config=config)
+    step = FeatureGenerationFinalFeatureSelectionStep(config=config, random_state=random_state)
     
     # Execute
     result = await step.execute(

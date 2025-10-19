@@ -23,54 +23,23 @@ except ImportError:
     TACTICIAN_ENTRY_LABELER_AVAILABLE = False
     TacticianEntryLabelerComponent = None
 
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_data_validation_step import FeatureGenerationDataValidationStep
-    FEATURE_GENERATION_DATA_VALIDATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_DATA_VALIDATION_STEP_AVAILABLE = False
-    FeatureGenerationDataValidationStep = None
+# REMOVED - unified_data_driven_pipeline deleted
+FEATURE_GENERATION_DATA_VALIDATION_STEP_AVAILABLE = False
+FeatureGenerationDataValidationStep = None
+FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE = False
+FeatureGenerationStep = None
+FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE = False
+FeatureGenerationFeatureSelectionStep = None
+FEATURE_GENERATION_FINAL_VALIDATION_STEP_AVAILABLE = False
+FeatureGenerationFinalValidationStep = None
 
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_feature_generation_step import FeatureGenerationStep
-    FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE = False
-    FeatureGenerationStep = None
-
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_feature_selection_step import FeatureGenerationFeatureSelectionStep
-    FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE = False
-    FeatureGenerationFeatureSelectionStep = None
-
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_final_validation_step import FeatureGenerationFinalValidationStep
-    FEATURE_GENERATION_FINAL_VALIDATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_FINAL_VALIDATION_STEP_AVAILABLE = False
-    FeatureGenerationFinalValidationStep = None
-
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_interaction_generation_step import FeatureGenerationInteractionGenerationStep
-    FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE = False
-    FeatureGenerationInteractionGenerationStep = None
-
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_labeling_integration_step import FeatureGenerationLabelingIntegrationStep
-    FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE = False
-    FeatureGenerationLabelingIntegrationStep = None
-
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_period_lookback_optimization_step import FeatureGenerationPeriodLookbackOptimizationStep
-    FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = False
-    FeatureGenerationPeriodLookbackOptimizationStep = None
+# REMOVED - unified_data_driven_pipeline deleted
+FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE = False
+FeatureGenerationInteractionGenerationStep = None
+FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE = False
+FeatureGenerationLabelingIntegrationStep = None
+FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = False
+FeatureGenerationPeriodLookbackOptimizationStep = None
 
 
 

@@ -1,9 +1,16 @@
-"""Unified artifact and path management for reads/writes.
+"""Enhanced unified artifact and path management for reads/writes.
 
 Provides a single place to resolve data, reports, cache, optimization, and tmp
 paths based on configuration. Ensures directories exist before use.
 
-Enhanced with memory optimization and computational efficiency features.
+Enhanced with:
+- Robust error handling with retry mechanisms
+- Compression support for storage optimization
+- Comprehensive metadata tracking and artifact lineage
+- Thread safety and concurrent access protection
+- Performance monitoring and metrics collection
+- Intelligent caching strategies with memory management
+- Step-category based artifact organization
 """
 
 from __future__ import annotations
@@ -17,12 +24,15 @@ import time
 import threading
 import asyncio
 import psutil
+import uuid
+import shutil
 from contextlib import nullcontext, asynccontextmanager, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Optional, Any, Dict, List, Union, Callable
-from collections import OrderedDict
+from typing import Optional, Any, Dict, List, Union, Callable, Set, Tuple
+from collections import OrderedDict, defaultdict, deque
 from datetime import datetime, timedelta
+from enum import Enum
 
 # Optional dependencies for optimization
 try:
@@ -40,9 +50,133 @@ try:
 except ImportError:
     LZ4_AVAILABLE = False
 
+try:
+    import gzip
+    GZIP_AVAILABLE = True
+except ImportError:
+    GZIP_AVAILABLE = False
+
 from .logger import system_logger
 from .common_operations import ensure_directory
 from .version_manager import get_version_manager
+
+
+class CompressionType(Enum):
+    """Supported compression algorithms."""
+    NONE = "none"
+    GZIP = "gzip"
+    LZ4 = "lz4"
+    AUTO = "auto"  # Automatically choose best compression
+
+
+class OperationType(Enum):
+    """Types of artifact operations."""
+    SAVE = "save"
+    LOAD = "load"
+    DELETE = "delete"
+    LIST = "list"
+
+
+class RetryStrategy(Enum):
+    """Retry strategies for failed operations."""
+    EXPONENTIAL_BACKOFF = "exponential_backoff"
+    LINEAR_BACKOFF = "linear_backoff"
+    FIXED_DELAY = "fixed_delay"
+
+
+@dataclass
+class RetryConfig:
+    """Configuration for retry mechanisms."""
+    max_retries: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 60.0
+    strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF
+    retryable_exceptions: Tuple[type, ...] = (OSError, IOError, ConnectionError)
+
+
+@dataclass
+class CompressionConfig:
+    """Configuration for artifact compression."""
+    enabled: bool = True
+    algorithm: CompressionType = CompressionType.AUTO
+    min_size_mb: float = 10.0
+    compression_level: int = 6
+    enable_for_memory: bool = True
+    enable_for_disk: bool = True
+
+
+@dataclass
+class MemoryConfig:
+    """Configuration for memory management."""
+    max_memory_mb: float = 2000.0
+    cache_memory_mb: float = 500.0
+    spill_threshold_mb: float = 150.0
+    cleanup_interval_seconds: float = 300.0
+    enable_gc_collection: bool = True
+
+
+@dataclass
+class ArtifactMetadata:
+    """Enhanced metadata for artifacts."""
+    artifact_key: str
+    step_name: str
+    artifact_type: str
+    size_bytes: int
+    compressed_size_bytes: Optional[int] = None
+    checksum: str = ""
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    modified_at: datetime = field(default_factory=datetime.utcnow)
+    compression_used: CompressionType = CompressionType.NONE
+    storage_location: str = "memory"
+    parent_artifacts: List[str] = field(default_factory=list)
+    tags: Dict[str, str] = field(default_factory=dict)
+    description: str = ""
+    version: str = "1.0"
+
+
+@dataclass
+class OperationMetrics:
+    """Metrics for artifact operations."""
+    operation_type: OperationType
+    artifact_key: str
+    step_name: str
+    duration_seconds: float
+    success: bool
+    error_message: Optional[str] = None
+    retry_count: int = 0
+    bytes_processed: int = 0
+    compression_ratio: float = 1.0
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+
+
+@dataclass
+class CacheEntry:
+    """Cache entry with metadata."""
+    artifact_key: str
+    data: Any
+    metadata: ArtifactMetadata
+    last_accessed: datetime = field(default_factory=datetime.utcnow)
+    access_count: int = 0
+    memory_size_mb: float = 0.0
+
+
+# Step category mapping for organized artifact storage
+STEP_CATEGORIES = {
+    'data_collection': ['step01', 'data_downloader', 'klines_downloading_processing'],
+    'market_analysis': ['step02', 'market_analysis', 'sr_detection', 'regime_discovery'],
+    'pre_training': ['step02_5', 'feature_generation', 'pre_training'],
+    'models_training': ['step03', 'model_training', 'analyst_models', 'tactician_models'],
+    'backtesting': ['step04', 'backtesting', 'real_parameters_optimization']
+}
+
+
+def get_step_category(step_name: str) -> str:
+    """Determine the category for a step based on its name."""
+    step_name_lower = step_name.lower()
+    for category, patterns in STEP_CATEGORIES.items():
+        if any(pattern.lower() in step_name_lower for pattern in patterns):
+            return category
+    return 'pre_training'  # Default fallback
 
 @dataclass
 class SpillStrategy:
@@ -89,6 +223,28 @@ class ArtifactManager:
 	enable_memory_profiling: bool = True
 	enable_lazy_loading: bool = True
 	enable_thread_safety: bool = True
+	
+	# Enhanced configuration options
+	compression: CompressionConfig = field(default_factory=CompressionConfig)
+	memory: MemoryConfig = field(default_factory=MemoryConfig)
+	retry: RetryConfig = field(default_factory=RetryConfig)
+	
+	# Performance and monitoring
+	enable_metrics: bool = True
+	enable_caching: bool = True
+	
+	# Cleanup and maintenance
+	enable_health_checks: bool = True
+	
+	# Enhanced file naming and path management
+	include_symbol_in_filename: bool = True
+	include_exchange_in_filename: bool = True
+	include_datetime_in_filename: bool = True
+	include_information_in_filename: bool = True
+	include_direction_in_filename: bool = True
+	include_model_in_filename: bool = True
+	use_joint_parquet_format: bool = True
+	generate_json_metadata: bool = True
 
 	def __post_init__(self) -> None:
 		self.logger = system_logger.getChild("ArtifactManager")
@@ -98,6 +254,10 @@ class ArtifactManager:
 		self._cache_dir = Path(paths.get("cache_dir", "data_cache"))
 		self._optimization_dir = Path(paths.get("optimization_dir", self._data_dir / "optimization"))
 		self._tmp_dir = Path(paths.get("tmp_dir", "tmp"))
+		
+		# Enhanced artifacts directory with step categories
+		self._artifacts_dir = Path("artifacts")
+		self._artifacts_dir.mkdir(parents=True, exist_ok=True)
 
 		# Ensure base directories exist
 		for d in (self._data_dir, self._reports_dir, self._cache_dir, self._optimization_dir, self._tmp_dir):
@@ -108,6 +268,7 @@ class ArtifactManager:
 		
 		# Initialize memory optimization components
 		self._cache = OrderedDict()  # LRU cache
+		self._cache_lru = deque()  # LRU queue for cache management
 		self._cache_size_bytes = 0
 		self._max_cache_size_bytes = self.max_cache_size_mb * 1024 * 1024
 		# Thread safety with nullcontext fallback
@@ -139,6 +300,33 @@ class ArtifactManager:
 		self._spill_dir = self._cache_dir / "spilled"
 		self._spill_dir.mkdir(parents=True, exist_ok=True)
 		
+		# Enhanced artifact storage
+		self._artifacts: Dict[str, Dict[str, Any]] = {}
+		self._metadata: Dict[str, Dict[str, Any]] = {}
+		self._artifact_registry: Dict[str, ArtifactMetadata] = {}
+		self._current_run_id: Optional[str] = None
+		self._run_dir: Optional[Path] = None
+		
+		# Performance monitoring
+		self._metrics: List[OperationMetrics] = []
+		self._operation_counts: Dict[OperationType, int] = defaultdict(int)
+		self._error_counts: Dict[str, int] = defaultdict(int)
+		
+		# Memory management
+		self._memory_usage_mb = 0.0
+		
+		# Compression utilities
+		self._compressor = self.ArtifactCompressor()
+		
+		# Enhanced file naming and path management
+		self._current_symbol: Optional[str] = None
+		self._current_exchange: Optional[str] = None
+		self._current_datetime: Optional[datetime] = None
+		self._current_information: Optional[str] = None
+		self._current_direction: str = "long"  # Default direction
+		self._current_model: str = "Analyst"  # Default model
+		self._current_step_name: Optional[str] = None
+		
 		# Initialize KlinesParquetManager for large dataframes
 		try:
 			from src.utils.data.klines_parquet import KlinesParquetManager
@@ -149,6 +337,11 @@ class ArtifactManager:
 		
 		# Thread safety
 		self._async_lock = asyncio.Lock() if self.enable_thread_safety else None
+		
+		# Start background tasks
+		self._start_background_tasks()
+		
+		self.reset_run()
 
 	def get_data_dir(self, *subdirs: str) -> Path:
 		return self._ensure(self._data_dir, *subdirs)
@@ -174,6 +367,106 @@ class ArtifactManager:
 			path = path / s
 		ensure_directory(str(path))
 		return path
+	
+	# ------------------------------------------------------------------
+	# Enhanced Context Management for Step-Category Organization
+	# ------------------------------------------------------------------
+	
+	def set_context(self, step_name: str, symbol: Optional[str] = None, exchange: Optional[str] = None, 
+	               datetime: Optional[datetime] = None, information: Optional[str] = None,
+	               direction: str = "long", model: str = "Analyst") -> None:
+		"""Set the current context for file naming and path management."""
+		self._current_step_name = step_name
+		self._current_symbol = symbol
+		self._current_exchange = exchange
+		from datetime import datetime as dt
+		self._current_datetime = datetime or dt.utcnow()
+		self._current_information = information
+		self._current_direction = direction
+		self._current_model = model
+		
+		self.logger.info(f"📁 Context set: step={step_name}, symbol={symbol}, exchange={exchange}, datetime={self._current_datetime}, information={information}, direction={direction}, model={model}")
+
+	def _generate_enhanced_filename(self, key: str, step_name: str, file_extension: str = "parquet") -> str:
+		"""Generate enhanced filename with information + symbol + exchange + datetime + direction + model."""
+		parts = []
+		
+		# Add information prefix if configured and available
+		if self.include_information_in_filename and self._current_information:
+			parts.append(self._current_information)
+		
+		# Add step name
+		parts.append(step_name)
+		
+		# Add key
+		parts.append(key)
+		
+		# Add symbol if configured and available
+		if self.include_symbol_in_filename and self._current_symbol:
+			parts.append(self._current_symbol)
+		
+		# Add exchange if configured and available
+		if self.include_exchange_in_filename and self._current_exchange:
+			parts.append(self._current_exchange)
+		
+		# Add direction if configured
+		if self.include_direction_in_filename and self._current_direction:
+			parts.append(self._current_direction)
+		
+		# Add model if configured
+		if self.include_model_in_filename and self._current_model:
+			parts.append(self._current_model)
+		
+		# Add datetime if configured
+		if self.include_datetime_in_filename and self._current_datetime:
+			datetime_str = self._current_datetime.strftime("%Y%m%d_%H%M%S")
+			parts.append(datetime_str)
+		
+		# Join parts with underscores and add extension
+		filename = "_".join(parts) + f".{file_extension}"
+		
+		self.logger.debug(f"📁 Generated filename: {filename}")
+		return filename
+
+	def _get_enhanced_path(self, step_name: str, key: str, file_extension: str = "parquet") -> Path:
+		"""Get enhanced path with proper directory structure and filename using step categories."""
+		# Determine step category
+		step_category = get_step_category(step_name)
+		
+		# Create directory structure: artifacts/step_category/symbol/exchange/direction/model/step_name/
+		path_parts = [self._artifacts_dir, step_category]
+		
+		if self._current_symbol:
+			path_parts.append(self._current_symbol)
+		
+		if self._current_exchange:
+			path_parts.append(self._current_exchange)
+		
+		if self._current_direction:
+			path_parts.append(self._current_direction)
+		
+		if self._current_model:
+			path_parts.append(self._current_model)
+		
+		path_parts.append(step_name)
+		
+		step_dir = Path(*path_parts)
+		step_dir.mkdir(parents=True, exist_ok=True)
+		
+		# Generate enhanced filename
+		filename = self._generate_enhanced_filename(key, step_name, file_extension)
+		full_path = step_dir / filename
+		
+		self.logger.info(f"📁 Full path created: {full_path}")
+		return full_path
+
+	def _log_file_operation(self, operation: str, path: Path, success: bool = True) -> None:
+		"""Log file operations with full path information."""
+		status = "✅" if success else "❌"
+		self.logger.info(f"{status} {operation}: {path}")
+		
+		# Also print to console for visibility
+		print(f"{status} {operation}: {path}")
 
 	def get_versioned_filename(self, base_name: str, extension: str = ".pkl") -> str:
 		"""Generate a versioned filename with timestamp.
@@ -197,6 +490,427 @@ class ArtifactManager:
 		"""
 		return self.version_manager.get_ares_version()
 	
+	# ------------------------------------------------------------------
+	# Enhanced Artifact Storage and Retrieval (BaseStep Compatible)
+	# ------------------------------------------------------------------
+	
+	def save(self, data: Any, artifact_name: str, 
+	         artifact_type: str = "data", 
+	         compression: str = "auto",
+	         metadata: Optional[Dict] = None) -> str:
+		"""
+		Save an artifact with automatic CSV generation for small datasets.
+		
+		This is the default save method used by BaseStep. It automatically:
+		- Saves as Parquet (always)
+		- Saves as CSV if the data has < 2000 rows (for DataFrames)
+		
+		Args:
+			data: Data to save (DataFrame, dict, model, etc.)
+			artifact_name: Name for the artifact
+			artifact_type: Type of artifact ("data", "model", "metadata", etc.)
+			compression: Compression method for Parquet ("auto", "gzip", "lz4", "none")
+			metadata: Additional metadata to store with artifact
+			
+		Returns:
+			Path where the primary artifact (Parquet) was saved
+		"""
+		try:
+			# Save as Parquet (primary format)
+			parquet_path = self._save_artifact_to_parquet(
+				data=data,
+				artifact_name=artifact_name,
+				artifact_type=artifact_type,
+				compression=compression,
+				metadata=metadata
+			)
+			
+			# Automatically save as CSV if it's a DataFrame with < 2000 rows
+			if isinstance(data, pd.DataFrame) and len(data) < 2000:
+				try:
+					csv_path = self._get_enhanced_path(self._current_step_name, artifact_name, "csv")
+					data.to_csv(csv_path, index=True)
+					self.logger.info(f"📊 Auto-saved CSV artifact (rows < 2000): {artifact_name} -> {csv_path}")
+				except Exception as e:
+					self.logger.warning(f"Failed to auto-save CSV for {artifact_name}: {e}")
+			elif isinstance(data, pd.DataFrame) and len(data) >= 2000:
+				self.logger.info(f"📊 Skipping CSV auto-save for {artifact_name} (rows >= 2000: {len(data)})")
+			
+			return parquet_path
+			
+		except Exception as e:
+			self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
+			raise
+	
+	def _save_artifact_to_parquet(self, data: Any, artifact_name: str, 
+	                             artifact_type: str = "data", 
+	                             compression: str = "auto",
+	                             metadata: Optional[Dict] = None) -> str:
+		"""
+		Save an artifact as Parquet file.
+		
+		Args:
+			data: Data to save
+			artifact_name: Name for the artifact
+			artifact_type: Type of artifact
+			compression: Compression method
+			metadata: Additional metadata
+			
+		Returns:
+			Path where artifact was saved
+		"""
+		try:
+			# Generate enhanced filename and path
+			file_extension = "parquet"
+			enhanced_path = self._get_enhanced_path(
+				self._current_step_name, artifact_name, file_extension
+			)
+			
+			# Ensure directory exists
+			enhanced_path.parent.mkdir(parents=True, exist_ok=True)
+			
+			# Save the data
+			if isinstance(data, pd.DataFrame):
+				# Save DataFrame as Parquet
+				data.to_parquet(enhanced_path, compression='snappy')
+			elif isinstance(data, dict):
+				# Convert dict to DataFrame and save as Parquet
+				df = pd.DataFrame([data])
+				df.to_parquet(enhanced_path, compression='snappy')
+			else:
+				# For other data types, save as pickle first, then convert to parquet
+				temp_pickle_path = enhanced_path.with_suffix('.pkl')
+				with open(temp_pickle_path, 'wb') as f:
+					pickle.dump(data, f)
+				# For now, just keep as pickle for non-DataFrame data
+				temp_pickle_path.rename(enhanced_path.with_suffix('.pkl'))
+				enhanced_path = enhanced_path.with_suffix('.pkl')
+			
+			# Store metadata
+			if metadata is None:
+				metadata = {}
+			
+			metadata.update({
+				'artifact_name': artifact_name,
+				'artifact_type': artifact_type,
+				'file_path': str(enhanced_path),
+				'file_size': enhanced_path.stat().st_size if enhanced_path.exists() else 0,
+				'timestamp': datetime.now().isoformat(),
+				'compression': compression
+			})
+			
+			# Persist metadata
+			self._persist_metadata_to_disk(artifact_name, metadata)
+			
+			self._log_file_operation("Saved artifact", enhanced_path, success=True)
+			return str(enhanced_path)
+			
+		except Exception as e:
+			self.logger.error(f"Failed to save Parquet artifact {artifact_name}: {e}")
+			raise
+	
+	def get_artifact(self, artifact_name: str, 
+	                artifact_type: str = "data") -> Any:
+		"""
+		Retrieve an artifact using the artifact manager.
+		
+		Args:
+			artifact_name: Name of the artifact to retrieve
+			artifact_type: Type of artifact to retrieve
+			
+		Returns:
+			Retrieved data
+		"""
+		try:
+			# First try to find in step-category structure
+			step_category = get_step_category(self._current_step_name)
+			artifact_path = self._find_artifact_in_category(
+				step_category, artifact_name, artifact_type
+			)
+			
+			if artifact_path and artifact_path.exists():
+				data = self._load_artifact_from_path(artifact_path)
+				self._log_file_operation("Retrieved artifact from category", artifact_path, success=True)
+				return data
+			
+			# Fallback to direct artifacts/ directory search
+			fallback_path = self._find_artifact_in_fallback(artifact_name, artifact_type)
+			if fallback_path and fallback_path.exists():
+				data = self._load_artifact_from_path(fallback_path)
+				self._log_file_operation("Retrieved artifact from fallback", fallback_path, success=True)
+				return data
+			
+			self.logger.warning(f"Artifact not found: {artifact_name}")
+			return None
+			
+		except Exception as e:
+			self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
+			raise
+	
+	def _find_artifact_in_category(self, step_category: str, artifact_name: str, 
+	                              artifact_type: str) -> Optional[Path]:
+		"""Find artifact in step-category structure."""
+		try:
+			category_dir = self._artifacts_dir / step_category
+			if not category_dir.exists():
+				return None
+			
+			# Search recursively for the artifact
+			for file_path in category_dir.rglob(f"*{artifact_name}*"):
+				if file_path.is_file():
+					return file_path
+			
+			return None
+		except Exception as e:
+			self.logger.warning(f"Failed to search in category {step_category}: {e}")
+			return None
+	
+	def _find_artifact_in_fallback(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+		"""Find artifact in fallback artifacts/ directory."""
+		try:
+			if not self._artifacts_dir.exists():
+				return None
+			
+			# Search recursively for the artifact
+			for file_path in self._artifacts_dir.rglob(f"*{artifact_name}*"):
+				if file_path.is_file():
+					return file_path
+			
+			return None
+		except Exception as e:
+			self.logger.warning(f"Failed to search in fallback: {e}")
+			return None
+	
+	def _load_artifact_from_path(self, path: Path) -> Any:
+		"""Load artifact from file path."""
+		try:
+			if path.suffix == '.parquet':
+				return pd.read_parquet(path)
+			elif path.suffix == '.csv':
+				return pd.read_csv(path, index_col=0)
+			elif path.suffix == '.pkl':
+				with open(path, 'rb') as f:
+					return pickle.load(f)
+			elif path.suffix == '.json':
+				with open(path, 'r') as f:
+					return json.load(f)
+			else:
+				self.logger.warning(f"Unknown file extension: {path.suffix}")
+				return None
+		except Exception as e:
+			self.logger.error(f"Failed to load artifact from {path}: {e}")
+			return None
+	
+	def _persist_metadata_to_disk(self, artifact_name: str, metadata: Dict[str, Any]) -> None:
+		"""Persist metadata to disk for long-term storage with enhanced path management."""
+		try:
+			# Create enhanced directory structure
+			artifacts_dir = self._get_enhanced_path(self._current_step_name, "metadata", "dir").parent
+			artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+			# Save metadata to disk with enhanced naming
+			metadata_file = self._get_enhanced_path(self._current_step_name, f"{artifact_name}_metadata", "json")
+			with open(metadata_file, 'w') as f:
+				json.dump(metadata, f, indent=2, default=str)
+			self._log_file_operation("Persisted metadata", metadata_file, success=True)
+				
+			self.logger.debug(f"Persisted metadata to disk for {artifact_name}")
+		except Exception as e:
+			self.logger.warning(f"Failed to persist metadata to disk: {e}")
+	
+	# ------------------------------------------------------------------
+	# Lifecycle Management
+	# ------------------------------------------------------------------
+	
+	def reset_run(self) -> None:
+		"""Clear all artifacts and prepare storage for a new pipeline run."""
+		with self._lock:
+			# Clear all storage
+			self._artifacts.clear()
+			self._metadata.clear()
+			self._artifact_registry.clear()
+
+			# Reset cache and memory tracking
+			self._cache.clear()
+			self._cache_lru.clear()
+			self._memory_usage_mb = 0.0
+
+			# Reset metrics
+			self._metrics.clear()
+			self._operation_counts.clear()
+			self._error_counts.clear()
+
+			# Create new run directory
+			self._current_run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:8]}"
+			self._run_dir = self._artifacts_dir / self._current_run_id
+
+			# Clean up old run directory if it exists
+			if self._run_dir.exists():
+				try:
+					shutil.rmtree(self._run_dir, ignore_errors=True)
+				except Exception as e:
+					self.logger.warning(f"Failed to remove old run directory: {e}")
+
+			# Create new run directory
+			self._run_dir.mkdir(parents=True, exist_ok=True)
+
+			# Clean up old runs
+			self._cleanup_old_runs()
+
+			self.logger.debug(f"Initialized enhanced artifact storage for run {self._current_run_id}")
+
+	def get_run_id(self) -> Optional[str]:
+		"""Get the current run ID."""
+		return self._current_run_id
+
+	def get_run_dir(self) -> Optional[Path]:
+		"""Get the current run directory."""
+		return self._run_dir
+
+	def _cleanup_old_runs(self) -> None:
+		"""Remove old run directories beyond the retention limit."""
+		try:
+			run_dirs = sorted(
+				[p for p in self._artifacts_dir.iterdir() if p.is_dir()],
+				key=lambda p: p.stat().st_mtime,
+				reverse=True,
+			)
+			for old_run in run_dirs[3:]:  # Keep last 3 runs
+				shutil.rmtree(old_run, ignore_errors=True)
+		except Exception as exc:
+			self.logger.debug("Failed to cleanup old artifact runs: %s", exc, exc_info=True)
+
+	def _start_background_tasks(self) -> None:
+		"""Start background maintenance tasks."""
+		if self.enable_health_checks:
+			# Start cleanup task
+			cleanup_task = threading.Thread(
+				target=self._background_cleanup,
+				daemon=True,
+				name="ArtifactManagerCleanup"
+			)
+			cleanup_task.start()
+			self.logger.debug("Background cleanup task started")
+
+	def _background_cleanup(self) -> None:
+		"""Background task for periodic cleanup and maintenance."""
+		while True:
+			try:
+				time.sleep(self.cleanup_interval_seconds)
+				self._perform_cleanup()
+			except Exception as e:
+				self.logger.error(f"Background cleanup failed: {e}")
+
+	def _perform_cleanup(self) -> None:
+		"""Perform cleanup operations."""
+		with self._lock:
+			current_time = time.time()
+
+			# Check if cleanup is needed
+			if (current_time - self._last_cleanup) < self.cleanup_interval_seconds:
+				return
+
+			# Clean up old cache entries
+			self._cleanup_cache()
+
+			# Clean up old run directories
+			self._cleanup_old_runs()
+
+			# Force garbage collection if enabled
+			if self.memory.enable_gc_collection:
+				import gc
+				gc.collect()
+
+			self._last_cleanup = current_time
+
+	def _cleanup_cache(self) -> None:
+		"""Clean up old cache entries based on LRU and memory usage."""
+		if not self.enable_caching:
+			return
+
+		max_memory_mb = self.memory.cache_memory_mb
+		current_memory_mb = self._memory_usage_mb
+
+		# Remove LRU entries if memory usage is high
+		while current_memory_mb > max_memory_mb and self._cache_lru:
+			oldest_key = self._cache_lru.popleft()
+			if oldest_key in self._cache:
+				entry = self._cache.pop(oldest_key)
+				current_memory_mb -= entry.memory_size_mb
+				self.logger.debug(f"Evicted cache entry: {oldest_key}")
+
+		# Remove entries not accessed recently (older than 1 hour)
+		cutoff_time = datetime.utcnow() - timedelta(hours=1)
+		to_remove = []
+
+		for key, entry in self._cache.items():
+			if entry.last_accessed < cutoff_time and entry.access_count < 2:
+				to_remove.append(key)
+				current_memory_mb -= entry.memory_size_mb
+
+		for key in to_remove:
+			self._cache.pop(key, None)
+
+		self._memory_usage_mb = current_memory_mb
+
+	# ------------------------------------------------------------------
+	# Helper Classes and Methods
+	# ------------------------------------------------------------------
+
+	class ArtifactCompressor:
+		"""Utility class for artifact compression."""
+
+		def __init__(self):
+			self._logger = system_logger.getChild("ArtifactManager.ArtifactCompressor")
+
+		def should_compress(self, data_size_bytes: int, config: CompressionConfig) -> bool:
+			"""Determine if data should be compressed based on configuration."""
+			if not config.enabled:
+				return False
+
+			min_size_bytes = int(config.min_size_mb * 1024 * 1024)
+			return data_size_bytes >= min_size_bytes
+
+		def choose_compression(self, data_size_bytes: int, config: CompressionConfig) -> CompressionType:
+			"""Choose the best compression algorithm for the data."""
+			if not config.enabled:
+				return CompressionType.NONE
+
+			if config.algorithm != CompressionType.AUTO:
+				return config.algorithm
+
+			# Auto-select based on data size and characteristics
+			if data_size_bytes > 100 * 1024 * 1024:  # > 100MB
+				return CompressionType.LZ4  # Fast compression for large data
+			else:
+				return CompressionType.GZIP  # Better compression ratio for smaller data
+
+		def compress_data(self, data: Any, compression_type: CompressionType) -> bytes:
+			"""Compress data using the specified algorithm."""
+			try:
+				if compression_type == CompressionType.GZIP:
+					return gzip.compress(pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL))
+				elif compression_type == CompressionType.LZ4:
+					return lz4.frame.compress(pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL))
+				else:
+					return pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+			except Exception as e:
+				self._logger.warning(f"Compression failed, falling back to no compression: {e}")
+				return pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
+
+		def decompress_data(self, compressed_data: bytes, compression_type: CompressionType) -> Any:
+			"""Decompress data using the specified algorithm."""
+			try:
+				if compression_type == CompressionType.GZIP:
+					return pickle.loads(gzip.decompress(compressed_data))
+				elif compression_type == CompressionType.LZ4:
+					return pickle.loads(lz4.frame.decompress(compressed_data))
+				else:
+					return pickle.loads(compressed_data)
+			except Exception as e:
+				self._logger.error(f"Decompression failed: {e}")
+				raise
+
 	# Memory optimization methods
 	def _optimize_dataframe(self, df: Any) -> Any:
 		"""Optimize DataFrame data types for memory efficiency."""

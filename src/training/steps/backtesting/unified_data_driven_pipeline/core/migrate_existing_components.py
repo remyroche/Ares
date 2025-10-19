@@ -137,8 +137,7 @@ class BacktestingComponentMigrationManager:
                 'priority': 'medium'
             },
             
-            # Note: NAS TAS components (walk_forward_analyzer, performance_attribution) 
-            # have been removed as they were deprecated and replaced by modular components
+            # Note: Legacy components have been removed and replaced by modular components
         }
     
     def analyze_component(self, component_name: str) -> Dict[str, Any]:

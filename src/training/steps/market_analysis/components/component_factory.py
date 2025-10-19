@@ -13,22 +13,14 @@ from typing import Dict, Type, Any, Optional, List
 from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
-# Import ModularComponent for enhanced component creation
-try:
-    from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
-        ModularComponent
-    )
-    MODULAR_COMPONENT_AVAILABLE = True
-except ImportError:
-    MODULAR_COMPONENT_AVAILABLE = False
+# Import ModularComponent for enhanced component creation - REMOVED
+MODULAR_COMPONENT_AVAILABLE = False
 from .sr_parameter_optimization import SRParameterOptimizationComponent
 from .sr_detection import SRDetectionComponent
 from .sr_clustering import SRClusteringComponent
 # from .hmm_regime_discovery import HMMRegimeDiscoveryComponent  # DEPRECATED
-from .nas_regime_discovery import NASRegimeDiscoveryComponent
-from .tas_regime_discovery import TASRegimeDiscoveryComponent
-from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
-# from .nas_tas_clustering import NASTASClusteringComponent  # DEPRECATED - using new clustering pipeline
+# NAS/TAS components removed - no longer needed for market_analysis
+# NAS/TAS clustering components removed
 # from ..hmm_clustering.components.clustering_component import OptimalRegimeClusteringComponent  # DEPRECATED
 # HMM training components moved to hmm_models_training module
 # from .hmm_models_training import HMMModelsTrainingComponent
@@ -37,84 +29,12 @@ from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
 # Removed unused NAS-TAS components - system uses regime_models_training and regime_ensemble_training instead
-from .nas_ensemble_training import NASEnsembleTrainingComponent
+# NAS ensemble training component removed
 from .regime_models_training import RegimeModelsTrainingComponent
 from .regime_ensemble_training import RegimeEnsembleTrainingComponent
 # PID-based feature generation moved to pre_training stage
 
-# Import the new clustering component from clustering directory
-try:
-    from ..clustering.main_component import NASTASClusteringComponent as NewNASTASClusteringComponent
-    NEW_CLUSTERING_AVAILABLE = True
-except ImportError:
-    NEW_CLUSTERING_AVAILABLE = False
-    NewNASTASClusteringComponent = None
-
-class NewNASTASClusteringWrapper(BaseMarketAnalysisComponent):
-    """
-    Wrapper for the new refactored clustering component to adapt it to the expected interface.
-    """
-
-    def __init__(self, config: Optional[ComponentConfig] = None):
-        super().__init__(config)
-        self.new_component = None
-
-    def get_required_artifacts(self) -> List[str]:
-        """Get list of required artifacts for this component."""
-        return ["market_data", "features"]
-
-    async def execute(self, data, pipeline_state: Dict[str, Any]) -> ComponentResult:
-        """Execute the new clustering component."""
-        try:
-            # Import and initialize the new component
-            if self.new_component is None:
-                if not NEW_CLUSTERING_AVAILABLE:
-                    raise ImportError("New clustering component not available")
-                self.new_component = NewNASTASClusteringComponent()
-
-            # The new component uses fit() method instead of execute()
-            # Execute the new component using fit method
-            clustering_result = await self.new_component.fit(data, None, pipeline_state)
-
-            # Extract the actual clustering data from the component
-            clustering_data = {}
-            if hasattr(clustering_result, 'current_results') and clustering_result.current_results:
-                clustering_data = clustering_result.current_results
-            else:
-                # Fallback: try to get data from the component's context
-                if hasattr(clustering_result, 'context') and clustering_result.context:
-                    context = clustering_result.context
-                    if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
-                        clustering_data['cluster_assignments'] = context.optimized_assignments
-                    if hasattr(context, 'optimal_k') and context.optimal_k is not None:
-                        clustering_data['n_clusters'] = context.optimal_k
-                    if hasattr(context, 'optimized_results') and context.optimized_results:
-                        clustering_data.update(context.optimized_results)
-
-            # Create artifacts in the expected format with actual clustering data
-            artifacts = {
-                'optimal_regime_clustering_result': {
-                    'clustering_result': clustering_data,  # Store actual data instead of component object
-                    'component_type': 'NASTASClusteringComponent',
-                    'execution_mode': 'new_structure',
-                    'timestamp': pd.Timestamp.now().isoformat()
-                }
-            }
-
-            # Return ComponentResult
-            return ComponentResult(
-                success=True,
-                artifacts=artifacts,
-                metadata={'component_type': 'new_nas_tas_clustering', 'execution_mode': 'clustering_directory'}
-            )
-
-        except Exception as e:
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                error_message=str(e),
-                metadata={'component_type': 'new_nas_tas_clustering'}
-            )
+# NAS/TAS clustering components removed
 
 class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
     """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
@@ -162,8 +82,8 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
 
             # Extract regime labels from pipeline state artifacts
             artifacts = pipeline_state.get('artifacts', {})
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            regime_labels = nas_tas_clustering_result.get('regime_assignments')
+            regime_clustering_result = artifacts.get('regime_clustering_result', {})
+            regime_labels = regime_clustering_result.get('regime_assignments')
 
             result = self.adapter_instance.execute_multi_horizon_labeling_step(
                 data=data,
@@ -714,13 +634,7 @@ class ComponentFactory:
         'sr_parameter_optimization': SRParameterOptimizationComponent,
         'sr_detection': SRDetectionComponent,
         'sr_clustering': SRClusteringComponent,
-        'nas_regime_discovery': NASRegimeDiscoveryComponent,
-        'tas_regime_discovery': TASRegimeDiscoveryComponent,
-        'nas_tas_regime_discovery': NASTASRegimeDiscoveryComponent,
-        'nas_tas_clustering': NewNASTASClusteringWrapper if NEW_CLUSTERING_AVAILABLE else None,  # Use new clustering pipeline if available
-        'nas_tas_models_training': RegimeModelsTrainingComponent,  # NAS-TAS models training
-        'nas_tas_ensemble_training': RegimeEnsembleTrainingComponent,  # NAS-TAS ensemble training
-        'nas_ensemble_training': NASEnsembleTrainingComponent,  # Simplified NAS ensemble training
+        # NAS/TAS components removed - no longer needed for market_analysis
         'regime_models_training': RegimeModelsTrainingComponent,  # Regime detection models training
         'regime_ensemble_training': RegimeEnsembleTrainingComponent,  # Regime detection ensemble training
         # 'hmm_models_training': HMMModelsTrainingComponent,  # Moved to hmm_models_training module

@@ -31,9 +31,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .base_component import BaseModelsTrainingComponent
-from ..unified_data_driven_pipeline.core.modular_architecture import (
-    ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
-)
+# from ..unified_data_driven_pipeline.core.modular_architecture import (
+#     ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
+# )  # REMOVED - unified pipeline deleted
 
 
 class AnalystModelType(Enum):
@@ -222,20 +222,7 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                     'max_depth': 10,
                     'min_samples_split': 2
                 }
-            elif model_type == AnalystModelType.NAS:
-                model_configs[model_type.value] = {
-                    'type': 'neural_network',
-                    'algorithm': 'nas',
-                    'search_space': 'default',
-                    'max_trials': 50
-                }
-            elif model_type == AnalystModelType.TAS:
-                model_configs[model_type.value] = {
-                    'type': 'tree_based',
-                    'algorithm': 'tas',
-                    'search_space': 'default',
-                    'max_trials': 50
-                }
+            # NAS/TAS model types removed
         
         self.set_ml_state('model_configs', model_configs)
     

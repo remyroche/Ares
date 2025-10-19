@@ -7,8 +7,6 @@ regime through performance analysis and continuous learning.
 
 Key Components:
 - DataDrivenModelSelector: Core model selection engine
-- NASModelSelector: Integration with NAS regime detection
-- TASModelSelector: Integration with TAS regime detection
 """
 
 from .data_driven_model_selector import (
@@ -18,14 +16,9 @@ from .data_driven_model_selector import (
     RegimeModelMapping
 )
 
-from .nas_integration import NASModelSelector
-from .tas_integration import TASModelSelector
-
 __all__ = [
     'DataDrivenModelSelector',
     'ModelSelectorConfig',
     'ModelPerformanceMetrics',
-    'RegimeModelMapping',
-    'NASModelSelector',
-    'TASModelSelector'
+    'RegimeModelMapping'
 ]

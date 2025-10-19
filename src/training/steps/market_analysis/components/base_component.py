@@ -13,14 +13,8 @@ from src.training.common.artifact_persistence import SaveReport
 from src.utils.logger import system_logger
 from .artifact_manager import ArtifactManager
 
-# Import ModularComponent for enhanced functionality
-try:
-    from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import (
-        ModularComponent
-    )
-    MODULAR_COMPONENT_AVAILABLE = True
-except ImportError:
-    MODULAR_COMPONENT_AVAILABLE = False
+# Import ModularComponent for enhanced functionality - REMOVED
+MODULAR_COMPONENT_AVAILABLE = False
 
 @dataclass
 class ComponentConfig:
@@ -45,7 +39,7 @@ class ComponentConfig:
     regime_search_min: int = 2
     regime_search_max: int = 20
     n_regimes: Optional[int] = 8
-    algorithm_type: Optional[str] = "nas_tas_clustering"
+    algorithm_type: Optional[str] = "regime_clustering"
     economic_weight: float = 0.3
     volatility_regime_weight: float = 0.25
     volume_regime_weight: float = 0.25

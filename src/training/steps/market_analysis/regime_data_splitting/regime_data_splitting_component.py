@@ -813,7 +813,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             possible_keys = [
                 'regime_ensemble_training_result',   # ML model from regime ensemble training
                 'optimal_regime_clustering_result',  # Primary NAS/TAS clustering result
-                'nas_tas_clustering_result',        # Alternative NAS/TAS clustering key
+                'regime_clustering_result',        # Alternative regime clustering key
                 'cluster_assignments',              # Direct cluster assignments
                 'hmm_regime_discovery_result',      # Fallback to HMM results
                 'regime_discovery_result',          # General regime discovery fallback
@@ -862,7 +862,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             outcomes_dir = Path("/Users/remyroche/Documents/Ares/outcomes")
 
             # Look for successful NAS/TAS clustering outcomes
-            pattern = "market_analysis_nas_tas_clustering_outcome_*.json"
+            pattern = "market_analysis_regime_clustering_outcome_*.json"
             outcome_files = list(outcomes_dir.glob(pattern))
 
             if not outcome_files:
@@ -907,7 +907,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 'hmm_regime_discovery_result',
                 'regime_discovery_result',
                 'optimal_regime_clustering_result',
-                'nas_tas_clustering_result',  # Also check for NAS-TAS clustering result
+                'regime_clustering_result',  # Also check for regime clustering result
                 'regime_states',
                 'regime_probabilities'
             ]
@@ -996,12 +996,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     )
 
             patterns = [
-                "nas_tas_regime_assignments_*.parquet",
+                "regime_assignments_*.parquet",
                 "*regime_assignments*.parquet",
-                "nas_tas_clustering_results_*.pkl",
+                "regime_clustering_results_*.pkl",
                 "*clustering*results*.pkl",
                 "*regime*clustering*.pkl",
-                "*nas_tas*.pkl",
+                "*regime*.pkl",
             ]
 
             seen_files = set()
@@ -1801,7 +1801,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.info(f"🔍 Clustering result type: {type(clustering_result)}")
 
                 # If it's a string representation of the component, we need to get the actual data
-                if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
+                if isinstance(clustering_result, str) and 'ClusteringComponent' in clustering_result:
                     self.logger.warning("⚠️ Clustering result is a string representation of component object")
                     self.logger.warning("⚠️ This indicates the clustering component didn't properly serialize its results")
                     self.logger.warning("⚠️ Attempting to load from saved artifacts...")
@@ -1812,7 +1812,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         artifacts_dir = Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering")
                         if artifacts_dir.exists():
                             # Look for the most recent clustering results file
-                            result_files = list(artifacts_dir.glob("nas_tas_clustering_results_*.pkl"))
+                            result_files = list(artifacts_dir.glob("regime_clustering_results_*.pkl"))
                             if result_files:
                                 # Get the most recent file
                                 latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
@@ -1968,12 +1968,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 clustering_result = regime_discovery['clustering_result']
 
                 # If it's a string representation of the component, try to load from saved artifacts
-                if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
+                if isinstance(clustering_result, str) and 'ClusteringComponent' in clustering_result:
                     try:
                         # Look for saved clustering results in the artifacts directory
                         artifacts_dir = Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering")
                         if artifacts_dir.exists():
-                            result_files = list(artifacts_dir.glob("nas_tas_clustering_results_*.pkl"))
+                            result_files = list(artifacts_dir.glob("regime_clustering_results_*.pkl"))
                             if result_files:
                                 latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
 

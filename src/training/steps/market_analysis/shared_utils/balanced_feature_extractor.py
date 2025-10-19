@@ -55,13 +55,8 @@ try:
 except ImportError:
     FEATURE_GENERATION_AVAILABLE = False
 
-try:
-    from src.training.steps.market_analysis.hybrid_nas_tas_regime.shared_utils.feature_collection import (
-        StandardizedFeatureCalculator, FeatureCollectionConfig
-    )
-    HYBRID_FEATURES_AVAILABLE = True
-except ImportError:
-    HYBRID_FEATURES_AVAILABLE = False
+# Hybrid NAS/TAS features removed - no longer needed for market_analysis
+HYBRID_FEATURES_AVAILABLE = False
 
 # Import matrix operations for hardware optimization
 try:

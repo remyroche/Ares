@@ -1,3 +1,0 @@
-"""
-NAS Search Module
-"""

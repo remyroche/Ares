@@ -21,8 +21,8 @@ import sys
 
 def load_latest_regime_file(symbol="ETHUSDT"):
     """Load the most recent regime assignments file."""
-    cache_path = Path("data_cache/nas_tas_clustering") / symbol
-    regime_files = list(cache_path.glob("nas_tas_regime_assignments_*.parquet"))
+    cache_path = Path("data_cache/sr_clustering") / symbol
+    regime_files = list(cache_path.glob("regime_assignments_*.parquet"))
     
     if not regime_files:
         print(f"❌ No regime files found for {symbol}")
@@ -341,29 +341,13 @@ def main():
         print("\n❌ Cannot continue without regime labels")
         sys.exit(1)
     
-    # Check NAS features
-    try:
-        nas_features = check_features(df, "nas")
-        if nas_features is not None:
-            check_temporal_alignment(df, nas_features, labels)
-            test_prediction_capability(nas_features, labels)
-    except Exception as e:
-        print(f"❌ NAS features check failed: {e}")
-
-    # Check TAS features
-    try:
-        tas_features = check_features(df, "tas")
-        if tas_features is not None:
-            check_temporal_alignment(df, tas_features, labels)
-            test_prediction_capability(tas_features, labels)
-    except Exception as e:
-        print(f"❌ TAS features check failed: {e}")
+    # NAS/TAS features removed - legacy components no longer used
 
     # Add specific guidance for missing features
-    if not any(col.startswith('nas_feature_') for col in df.columns) and not any(col.startswith('tas_feature_') for col in df.columns):
+    if not any(col.startswith('regime_feature_') for col in df.columns):
         print(f"\n🚨 CRITICAL: No features found in regime_assignments file!")
         print(f"   The clustering pipeline needs to be fixed to save features.")
-        print(f"   Run: python3 src/launcher/ares_launcher.py step05 nas_tas_clustering")
+        print(f"   Run: python3 src/launcher/ares_launcher.py step05 sr_clustering")
         print(f"   This will generate a new parquet file with features included.")
     
     print("\n" + "="*100)

@@ -45,7 +45,7 @@ from .step2_initial_clustering import InitialClusteringStep
 from .step8_validation import ValidationStep
 from .step9_results_consolidation import ResultsConsolidationStep
 from .step10_comprehensive_reporting import ComprehensiveReporter
-from .nas_tas_clustering_refactored import NASTASClusteringComponent, NASTASClusteringConfig
+# NAS/TAS clustering components removed
 
 __all__ = [
     # Main - Orchestration
@@ -104,6 +104,6 @@ __all__ = [
     'ValidationStep',
     'ResultsConsolidationStep',
     'ComprehensiveReporter',
-    'NASTASClusteringComponent',
-    'NASTASClusteringConfig'
+    # NAS/TAS components removed
+    # NAS/TAS config removed
 ]

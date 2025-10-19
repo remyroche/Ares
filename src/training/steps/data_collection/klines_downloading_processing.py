@@ -4,6 +4,8 @@ Enhanced Klines Data Downloading and Processing Pipeline
 This module provides a complete, production-ready pipeline for downloading, processing, and quality-checking
 historical klines data with comprehensive type hints, exchange-agnostic design, and fast-fail patterns.
 
+Refactored to inherit from BaseStep for autonomous execution.
+
 Features:
 - Full type hints and tprint logging throughout
 - Exchange-agnostic design using ExchangeInterface
@@ -14,6 +16,7 @@ Features:
 - OHLCV data validation and formatting
 - Duplicate detection and handling
 - Quality assurance and validation
+- Autonomous step execution via BaseStep
 """
 
 import pandas as pd
@@ -29,53 +32,92 @@ from enum import Enum
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
 )
-from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+# Import flags will be set during class initialization
+EXCHANGE_INTERFACE_AVAILABLE = False
+OHLCV_STANDARDIZER_AVAILABLE = False
+ENHANCED_PIPELINE_AVAILABLE = False
 
-# Import the enhanced pipeline
-from .enhanced_klines_processing_pipeline import (
-    EnhancedKlinesProcessingPipeline,
-    ResamplingConfig,
-    process_klines_data_enhanced
-)
-
-class KlinesDataProcessingPipeline:
+class KlinesDataProcessingPipeline(BaseStep):
     """
     Enhanced pipeline for downloading, processing, and quality-checking klines data.
 
+    Refactored to inherit from BaseStep for autonomous execution.
     This class provides a wrapper around the enhanced processing pipeline with
     backward compatibility and additional convenience methods.
     """
-
-    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance") -> None:
-        """Initialize the processing pipeline.
+    
+    def __init__(self, step_name: str = "data_download", data_dir: str = "historical_data", exchange: str = "binance"):
+        """Initialize the klines data processing pipeline as an autonomous step.
 
         Args:
+            step_name: Name for this autonomous step
             data_dir: Base directory for historical data
             exchange: Default exchange name
         """
+        super().__init__(step_name)
         self.data_dir = data_dir
         self.exchange = exchange.lower()
         self.logger = system_logger.getChild("KlinesDataProcessingPipeline")
 
-        # Initialize enhanced pipeline
-        self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
-
-        # Initialize legacy components for backward compatibility
-        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
-        self.data_standardizer = UnifiedOHLCVStandardizer()
+        # Try to import and initialize components dynamically
+        self._initialize_components(data_dir, exchange)
 
         # Quality checker will be initialized when first used
         self._quality_checker: Optional[KlinesDataQualityChecker] = None
 
         # Columns to remove
         self.columns_to_remove: List[str] = ['taker_buy_base', 'taker_buy_quote', 'year']
+
+    def _initialize_components(self, data_dir: str, exchange: str):
+        """Initialize components with dynamic imports to handle missing dependencies."""
+        global EXCHANGE_INTERFACE_AVAILABLE, OHLCV_STANDARDIZER_AVAILABLE, ENHANCED_PIPELINE_AVAILABLE
+        
+        # Initialize duplicate analyzer (always available)
+        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
+        
+        # Try to import and initialize exchange interface
+        try:
+            from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+            EXCHANGE_INTERFACE_AVAILABLE = True
+            self.exchange_interface_available = True
+            self.logger.info("Exchange interface available")
+        except ImportError as e:
+            EXCHANGE_INTERFACE_AVAILABLE = False
+            self.exchange_interface_available = False
+            self.logger.warning(f"Exchange interface not available: {e}")
+        
+        # Try to import and initialize OHLCV standardizer
+        try:
+            from exchanges.shared.unified_ohlcv_standardizer import UnifiedOHLCVStandardizer
+            OHLCV_STANDARDIZER_AVAILABLE = True
+            self.data_standardizer = UnifiedOHLCVStandardizer()
+            self.logger.info("OHLCV standardizer available")
+        except ImportError as e:
+            OHLCV_STANDARDIZER_AVAILABLE = False
+            self.data_standardizer = None
+            self.logger.warning(f"OHLCV standardizer not available: {e}")
+        
+        # Try to import and initialize enhanced pipeline
+        try:
+            from .enhanced_klines_processing_pipeline import (
+                EnhancedKlinesProcessingPipeline,
+                ResamplingConfig,
+                process_klines_data_enhanced
+            )
+            ENHANCED_PIPELINE_AVAILABLE = True
+            self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
+            self.logger.info("Enhanced pipeline available")
+        except ImportError as e:
+            ENHANCED_PIPELINE_AVAILABLE = False
+            self.enhanced_pipeline = None
+            self.logger.warning(f"Enhanced pipeline not available: {e}")
 
     @property
     def quality_checker(self) -> 'KlinesDataQualityChecker':
@@ -228,6 +270,127 @@ class KlinesDataProcessingPipeline:
                 "error": str(e),
                 "files_processed": 0,
                 "total_records": 0
+            }
+
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the data download step (required by BaseStep).
+        
+        Args:
+            config: Configuration containing symbol, exchange, timeframes, etc.
+            
+        Returns:
+            Execution result with artifacts and metrics
+        """
+        try:
+            self.logger.info("🚀 Starting data download step execution")
+            
+            # Extract configuration
+            symbol = config.get('symbol', 'ETHUSDT')
+            exchange = config.get('exchange', 'binance')
+            timeframes = config.get('timeframes', ['1m'])
+            execution_mode = config.get('execution_mode', 'light')
+            years = config.get('years', 3)
+            
+            if not symbol:
+                raise ValueError("Symbol is required for data download")
+            
+            self.logger.info(f"Downloading data for {symbol} from {exchange}")
+            self.logger.info(f"Timeframes: {timeframes}")
+            self.logger.info(f"Execution mode: {execution_mode}")
+            
+            # Initialize artifacts list
+            artifacts = []
+            metrics = {}
+            
+            # Download data for each timeframe
+            downloaded_data = {}
+            total_downloads = 0
+            
+            for timeframe in timeframes:
+                self.logger.info(f"📥 Downloading {timeframe} data for {symbol}")
+                
+                try:
+                    # Use the existing pipeline method
+                    result = await self.run_complete_pipeline(
+                        symbol=symbol,
+                        years=years,
+                        interval=timeframe,
+                        api_key="",  # Use empty strings for now
+                        api_secret="",
+                        max_gap_minutes=1,
+                        create_consolidated=True,
+                        resampling_intervals=None
+                    )
+                    
+                    if result.get('success', False):
+                        downloaded_data[timeframe] = result
+                        total_downloads += 1
+                        
+                        # Save as artifact
+                        artifact_path = self._save_artifact(
+                            data=result,
+                            artifact_name=f"raw_data_{timeframe}",
+                            artifact_type="data",
+                            metadata={
+                                'symbol': symbol,
+                                'exchange': exchange,
+                                'timeframe': timeframe,
+                                'execution_mode': execution_mode,
+                                'years': years
+                            }
+                        )
+                        
+                        artifacts.append({
+                            'name': f"raw_data_{timeframe}",
+                            'path': artifact_path,
+                            'type': 'parquet',
+                            'size': f"Downloaded successfully"
+                        })
+                        
+                        self.logger.info(f"✅ Downloaded {timeframe} data successfully")
+                    else:
+                        self.logger.warning(f"⚠️ Failed to download {timeframe} data")
+                        
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to download {timeframe} data: {e}")
+                    continue
+            
+            # Calculate metrics
+            metrics = {
+                'total_timeframes_requested': len(timeframes),
+                'total_timeframes_downloaded': total_downloads,
+                'success_rate': total_downloads / len(timeframes) if timeframes else 0,
+                'execution_mode': execution_mode,
+                'years': years
+            }
+            
+            # Check if any data was downloaded
+            success = total_downloads > 0
+            
+            if success:
+                self.logger.info(f"✅ Data download completed successfully: {total_downloads}/{len(timeframes)} timeframes")
+            else:
+                self.logger.error("❌ No data was downloaded")
+            
+            return {
+                'success': success,
+                'artifacts': artifacts,
+                'metrics': metrics,
+                'downloaded_data_summary': {
+                    'timeframes': list(downloaded_data.keys()),
+                    'total_downloads': total_downloads
+                }
+            }
+            
+        except Exception as e:
+            error_msg = f"Data download step failed: {str(e)}"
+            self.logger.error(error_msg)
+            return {
+                'success': False,
+                'error': error_msg,
+                'artifacts': [],
+                'metrics': {}
             }
 
     async def run_complete_pipeline(
@@ -511,7 +674,7 @@ class KlinesDataProcessingPipeline:
         symbol: str,
         interval: str,
         max_gap_minutes: int,
-        exchange_interface: Optional[ExchangeInterface],
+        exchange_interface: Optional[Any],
         api_key: str,
         api_secret: str
     ) -> Dict[str, Any]:

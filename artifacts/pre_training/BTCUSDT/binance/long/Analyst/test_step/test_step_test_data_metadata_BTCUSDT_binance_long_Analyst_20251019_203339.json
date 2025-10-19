@@ -1,0 +1,8 @@
+{
+  "artifact_name": "test_data",
+  "artifact_type": "data",
+  "file_path": "artifacts/pre_training/BTCUSDT/binance/long/Analyst/test_step/test_step_test_data_BTCUSDT_binance_long_Analyst_20251019_203339.parquet",
+  "file_size": 3006,
+  "timestamp": "2025-10-19T22:33:39.498431",
+  "compression": "auto"
+}

@@ -3780,7 +3780,7 @@ class RegimeFeatureConfig:
     total_max_features: int = 500  # Increased to accommodate all desired features
     enable_feature_selection: bool = False  # Disable to generate all features
 
-    # Composite scoring weights (exposed for NAS/TAS tuning)
+    # Composite scoring weights (exposed for regime tuning)
     persistence_weight: float = 0.5
     noise_penalty_weight: float = 0.3
     stability_weight: float = 0.2
@@ -3807,7 +3807,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     Unified regime feature generator that excludes trading features.
 
     This class provides a comprehensive interface for generating regime-focused
-    features specifically designed for NAS-TAS clustering. It integrates all
+    features specifically designed for regime clustering. It integrates all
     regime-related feature generators while filtering out trading-relevant features.
 
     Key Features:

@@ -116,7 +116,6 @@ class ModelType(Enum):
     FINANCIAL_RESNET = "FinancialResNet"
     ADVANCED_MAMBA_HYBRID = "AdvancedMambaHybrid"
     DEEPSCALER_1M = "DeepScaler1m"
-    CLVSA = "CLVSA"  # Convolutional-LSTM-Variational-Attention
     MULTISCALE_NBEATS = "MultiScaleNBEATS"  # Enhanced NBEATS with multi-timeframe
     NAS = "NAS"  # Neural Architecture Search for regime detection
     NAS_CLASSIFIER = "NASClassifier"  # NAS for classification tasks
@@ -317,24 +316,15 @@ class EnhancedModelFactory:
             if model_config.model_type in [ModelType.RANDOM_FOREST, ModelType.RANDOM_FOREST_CLASSIFIER]:
                 model = self._create_random_forest_model(model_config)
             elif model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER]:
-                if use_attention and TORCH_AVAILABLE:
-                    model = self._create_attention_lightgbm_model(model_config)
-                else:
-                    model = self._create_lightgbm_model(model_config)
+                model = self._create_lightgbm_model(model_config)
             elif model_config.model_type == ModelType.LGBM_DART_CLASSIFIER:
                 model = self._create_lgbm_dart_model(model_config)
             elif model_config.model_type in [ModelType.HIST_GRADIENT_BOOSTING, ModelType.HIST_GRADIENT_BOOSTING_CLASSIFIER]:
                 model = self._create_hist_gradient_boosting_model(model_config)
             elif model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
-                if use_attention and TORCH_AVAILABLE:
-                    model = self._create_attention_catboost_model(model_config)
-                else:
-                    model = self._create_catboost_model(model_config)
+                model = self._create_catboost_model(model_config)
             elif model_config.model_type in [ModelType.XGBOOST, ModelType.XGBOOST_CLASSIFIER]:
-                if use_attention and TORCH_AVAILABLE:
-                    model = self._create_attention_xgboost_model(model_config)
-                else:
-                    model = self._create_xgboost_model(model_config)
+                model = self._create_xgboost_model(model_config)
             elif model_config.model_type == ModelType.XGBOOST_CUSTOM:
                 model = self._create_xgboost_custom_model(model_config)
             elif model_config.model_type == ModelType.XGBOOST_META:
@@ -379,8 +369,6 @@ class EnhancedModelFactory:
                 model = self._create_advanced_mamba_hybrid_model(model_config)
             elif model_config.model_type == ModelType.DEEPSCALER_1M:
                 model = self._create_deepscaler_1m_model(model_config)
-            elif model_config.model_type == ModelType.CLVSA:
-                model = self._create_clvsa_model(model_config)
             elif model_config.model_type == ModelType.MULTISCALE_NBEATS:
                 model = self._create_multiscale_nbeats_model(model_config)
             elif model_config.model_type in [ModelType.NODE, ModelType.NODE_CLASSIFIER]:
@@ -453,7 +441,7 @@ class EnhancedModelFactory:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("PyTorch not available")
 
-        if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M, ModelType.CLVSA, ModelType.MULTISCALE_NBEATS]:
+        if model_config.model_type in [ModelType.DEEPSCALER, ModelType.DEEPSCALER_CLASSIFIER, ModelType.NBEATS, ModelType.FINANCIAL_RESNET, ModelType.ADVANCED_MAMBA_HYBRID, ModelType.DEEPSCALER_1M, ModelType.MULTISCALE_NBEATS]:
             if not self.dependencies.get('torch', False):
                 raise ValidationError("❌ PyTorch is required for this model type. Install with: pip install torch torchvision torchaudio")
 
@@ -469,10 +457,9 @@ class EnhancedModelFactory:
                 raise ValidationError("Output names count must match n_outputs")
 
     def _create_random_forest_model(self, model_config: ModelConfig) -> Any:
-        """Create Random Forest model with CLVSA wrapper by default."""
+        """Create Random Forest model."""
 
         from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-        from src.utils.ml_common.models.tree_clvsa_wrapper import create_tree_clvsa_wrapper, create_tree_clvsa_config
 
         # Default parameters with overfitting prevention
         default_params = {
@@ -495,28 +482,8 @@ class EnhancedModelFactory:
         else:
             base_model = RandomForestClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ Random Forest wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ Random Forest created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ Random Forest model created")
 
         return model
 
@@ -551,31 +518,12 @@ class EnhancedModelFactory:
         # Create DART classifier
         model = lgb.LGBMClassifier(**params)
 
-        # Apply CLVSA wrapper if requested (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration optimized for DART
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(model, clvsa_config)
-            self.logger.info("✅ LGBM DART wrapped with Tree CLVSA attention architecture")
 
         self.logger.info(f"✅ LGBM DART model created with parameters: {len(params)} configured")
         return model
 
     def _create_lightgbm_model(self, model_config: ModelConfig) -> Any:
-        """Create LightGBM model with CLVSA wrapper by default."""
+        """Create LightGBM model."""
 
         import lightgbm as lgb
 
@@ -605,33 +553,13 @@ class EnhancedModelFactory:
         else:
             base_model = lgb.LGBMClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ LightGBM wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ LightGBM created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ LightGBM model created")
 
         return model
 
     def _create_catboost_model(self, model_config: ModelConfig) -> Any:
-        """Create CatBoost model with CLVSA wrapper by default."""
+        """Create CatBoost model."""
 
         from catboost import CatBoostRegressor, CatBoostClassifier
 
@@ -658,33 +586,13 @@ class EnhancedModelFactory:
         else:
             base_model = CatBoostClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ CatBoost wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ CatBoost created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ CatBoost model created")
 
         return model
 
     def _create_xgboost_model(self, model_config: ModelConfig) -> Any:
-        """Create XGBoost model with CLVSA wrapper by default."""
+        """Create XGBoost model."""
 
         import xgboost as xgb
 
@@ -707,28 +615,8 @@ class EnhancedModelFactory:
         else:
             base_model = xgb.XGBClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ XGBoost wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ XGBoost created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ XGBoost model created")
 
         return model
 
@@ -2107,7 +1995,7 @@ class EnhancedModelFactory:
         return HuberRegressor(**params)
 
     def _create_hist_gradient_boosting_model(self, model_config: ModelConfig) -> Any:
-        """Create HistGradientBoosting model with CLVSA wrapper by default."""
+        """Create HistGradientBoosting model."""
 
         from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
 
@@ -2130,33 +2018,13 @@ class EnhancedModelFactory:
         else:
             base_model = HistGradientBoostingClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ HistGradientBoosting wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ HistGradientBoosting created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ HistGradientBoosting model created")
 
         return model
 
     def _create_extra_trees_model(self, model_config: ModelConfig) -> Any:
-        """Create ExtraTrees model with CLVSA wrapper by default."""
+        """Create ExtraTrees model."""
 
         from sklearn.ensemble import ExtraTreesRegressor, ExtraTreesClassifier
 
@@ -2179,28 +2047,8 @@ class EnhancedModelFactory:
         else:
             base_model = ExtraTreesClassifier(**params)
 
-        # Check if CLVSA wrapper should be applied (default: True for tree models)
-        use_clvsa = model_config.model_params.get('use_clvsa', True)
-
-        if use_clvsa:
-            # Create Tree CLVSA wrapper configuration
-            clvsa_config = create_tree_clvsa_config(
-                attention_dim=model_config.model_params.get('attention_dim', 64),
-                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
-                regime_aware=model_config.model_params.get('regime_aware', True),
-                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
-                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
-                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
-                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
-                memory_efficient=model_config.model_params.get('memory_efficient', True)
-            )
-
-            # Wrap with Tree CLVSA attention
-            model = create_tree_clvsa_wrapper(base_model, clvsa_config)
-            self.logger.info("✅ Extra Trees wrapped with Tree CLVSA attention architecture")
-        else:
-            model = base_model
-            self.logger.info("✅ Extra Trees created without CLVSA wrapper")
+        model = base_model
+        self.logger.info("✅ Extra Trees model created")
 
         return model
 
@@ -2476,159 +2324,9 @@ class EnhancedModelFactory:
         self.model_registry.clear()
         self.logger.info("🗑️ Cleared model registry")
 
-    def _create_attention_lightgbm_model(self, model_config: ModelConfig) -> Any:
-        """Create CLVSA-enhanced LightGBM model."""
-        try:
-            from src.utils.ml_common.models.clvsa_architecture import create_clvsa_model
 
-            # CLVSA configuration for tree models
-            clvsa_config = {
-                'input_dim': model_config.model_params.get('input_dim', 100),
-                'output_dim': model_config.n_outputs,
-                'seq_length': model_config.model_params.get('seq_length', 50),  # Shorter for tree models
-                'conv_channels': [16, 32],  # Smaller for tree model preprocessing
-                'conv_kernel_sizes': [3, 5],
-                'lstm_hidden_dim': 32,  # Smaller for tree models
-                'lstm_layers': 1,
-                'attention_heads': 4,
-                'attention_dim': 64,  # Smaller attention for tree models
-                'variational_dim': 16,  # Smaller variational for tree models
-                'dropout': 0.1,
-                'regime_aware': True,
-                'multi_scale': False,  # Tree models don't need multi-scale
-                'uncertainty_quantification': False  # Tree models handle uncertainty differently
-            }
 
-            # Create base LightGBM model
-            base_model = self._create_lightgbm_model(model_config)
 
-            # Wrap with CLVSA preprocessing
-            model_config.model_params.update(clvsa_config)
-            config_dict = {
-                'clvsa_params': clvsa_config,
-                'model_params': model_config.model_params
-            }
-
-            return create_clvsa_model(config_dict)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ CLVSA-enhanced LightGBM creation failed: {e}")
-            # Fallback to standard LightGBM
-            return self._create_lightgbm_model(model_config)
-
-    def _create_attention_catboost_model(self, model_config: ModelConfig) -> Any:
-        """Create CLVSA-enhanced CatBoost model."""
-        try:
-
-            # CLVSA configuration for tree models
-            clvsa_config = {
-                'input_dim': model_config.model_params.get('input_dim', 100),
-                'output_dim': model_config.n_outputs,
-                'seq_length': model_config.model_params.get('seq_length', 50),
-                'conv_channels': [16, 32],
-                'conv_kernel_sizes': [3, 5],
-                'lstm_hidden_dim': 32,
-                'lstm_layers': 1,
-                'attention_heads': 4,
-                'attention_dim': 64,
-                'variational_dim': 16,
-                'dropout': 0.1,
-                'regime_aware': True,
-                'multi_scale': False,
-                'uncertainty_quantification': False
-            }
-
-            # Create base CatBoost model
-            base_model = self._create_catboost_model(model_config)
-
-            # Wrap with CLVSA preprocessing
-            model_config.model_params.update(clvsa_config)
-            config_dict = {
-                'clvsa_params': clvsa_config,
-                'model_params': model_config.model_params
-            }
-
-            return create_clvsa_model(config_dict)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ CLVSA-enhanced CatBoost creation failed: {e}")
-            # Fallback to standard CatBoost
-            return self._create_catboost_model(model_config)
-
-    def _create_attention_xgboost_model(self, model_config: ModelConfig) -> Any:
-        """Create CLVSA-enhanced XGBoost model."""
-        try:
-
-            # CLVSA configuration for tree models
-            clvsa_config = {
-                'input_dim': model_config.model_params.get('input_dim', 100),
-                'output_dim': model_config.n_outputs,
-                'seq_length': model_config.model_params.get('seq_length', 50),
-                'conv_channels': [16, 32],
-                'conv_kernel_sizes': [3, 5],
-                'lstm_hidden_dim': 32,
-                'lstm_layers': 1,
-                'attention_heads': 4,
-                'attention_dim': 64,
-                'variational_dim': 16,
-                'dropout': 0.1,
-                'regime_aware': True,
-                'multi_scale': False,
-                'uncertainty_quantification': False
-            }
-
-            # Create base XGBoost model
-            base_model = self._create_xgboost_model(model_config)
-
-            # Wrap with CLVSA preprocessing
-            model_config.model_params.update(clvsa_config)
-            config_dict = {
-                'clvsa_params': clvsa_config,
-                'model_params': model_config.model_params
-            }
-
-            return create_clvsa_model(config_dict)
-
-        except Exception as e:
-            self.logger.warning(f"⚠️ CLVSA-enhanced XGBoost creation failed: {e}")
-            # Fallback to standard XGBoost
-            return self._create_xgboost_model(model_config)
-
-    def _create_clvsa_model(self, model_config: ModelConfig) -> Any:
-        """Create CLVSA (Convolutional-LSTM-Variational-Attention) model."""
-        try:
-            from src.utils.ml_common.models.clvsa_architecture import get_clvsa_model
-
-            # CLVSA configuration optimized for 15m timeframe regime detection
-            clvsa_config = {
-                'input_dim': model_config.model_params.get('input_dim', 100),
-                'output_dim': model_config.n_outputs,
-                'seq_length': model_config.model_params.get('seq_length', 200),
-                'conv_channels': model_config.model_params.get('conv_channels', [32, 64, 128]),
-                'conv_kernel_sizes': model_config.model_params.get('conv_kernel_sizes', [3, 5, 7]),
-                'lstm_hidden_dim': model_config.model_params.get('lstm_hidden_dim', 128),
-                'lstm_layers': model_config.model_params.get('lstm_layers', 2),
-                'attention_heads': model_config.model_params.get('attention_heads', 8),
-                'attention_dim': model_config.model_params.get('attention_dim', 256),
-                'variational_dim': model_config.model_params.get('variational_dim', 64),
-                'dropout': model_config.model_params.get('dropout', 0.2),
-                'regime_aware': model_config.model_params.get('regime_aware', True),
-                'multi_scale': model_config.model_params.get('multi_scale', True),
-                'uncertainty_quantification': model_config.model_params.get('uncertainty', True)
-            }
-
-            # Training configuration
-            model_config.model_params.update(clvsa_config)
-            config_dict = {
-                'clvsa_params': clvsa_config,
-                'model_params': model_config.model_params
-            }
-
-            return get_clvsa_model(config_dict)
-
-        except Exception as e:
-            self.logger.error(f"❌ CLVSA creation failed: {e}")
-            raise RuntimeError(f"❌ CLVSA model creation failed - fast fail enabled: {e}") from e
 
     def _create_multiscale_nbeats_model(self, model_config: ModelConfig) -> Any:
         """Create MultiScaleNBEATS model for multi-timeframe prediction."""

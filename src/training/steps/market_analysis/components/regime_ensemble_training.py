@@ -146,16 +146,16 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                         if regime_labels is not None:
                             tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in clustering_result object", color="blue")
 
-            # Fallback to old nas_tas_clustering_result structure
+            # Fallback to old regime_clustering_result structure
             if regime_labels is None:
-                nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-                regime_labels = nas_tas_clustering_result.get('cluster_assignments')
+                regime_clustering_result = artifacts.get('regime_clustering_result', {})
+                regime_labels = regime_clustering_result.get('cluster_assignments')
                 if regime_labels is not None:
-                    tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in nas_tas_clustering_result", color="blue")
+                    tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in regime_clustering_result", color="blue")
 
             # Get base models from previous training
-            nas_tas_models_result = artifacts.get('nas_tas_models_training_result', {})
-            base_models = nas_tas_models_result.get('models', {})
+            regime_models_result = artifacts.get('regime_models_training_result', {})
+            base_models = regime_models_result.get('models', {})
 
             # Check if regime labels are available before preparing training data
             if regime_labels is None:

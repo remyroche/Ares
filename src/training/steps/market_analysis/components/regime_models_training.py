@@ -266,13 +266,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
                 # First try to load from artifact manager (most recent session)
                 try:
-                    nas_tas_artifacts = self.load_artifacts_from_latest_session(
-                        "NASTASClusteringComponent",
-                        ["nas_tas_clustering_result", "cluster_characteristics", "clustering_metrics"]
-                    )
-                    if nas_tas_artifacts:
-                        tprint("✅ [REGIME_MODELS] Loaded artifacts from artifact manager", color="green")
-                        artifacts.update(nas_tas_artifacts)
+                    # Legacy NAS/TAS artifacts removed
                     else:
                         tprint("⚠️ [REGIME_MODELS] No artifacts found in artifact manager, checking outcome files", color="yellow")
                         artifacts = self._load_artifacts_from_outcome_files()
@@ -280,29 +274,24 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     tprint(f"⚠️ [REGIME_MODELS] Failed to load from artifact manager: {e}, trying outcome files", color="yellow")
                     artifacts = self._load_artifacts_from_outcome_files()
 
-            # Look for regime labels in nas_tas_regime_discovery_result artifact
-            nas_tas_regime_discovery_result = artifacts.get('nas_tas_regime_discovery_result', {})
-            tprint(f"🔍 [REGIME_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="blue")
+            # Look for regime labels in regime_discovery_result artifact
+            regime_discovery_result = artifacts.get('regime_discovery_result', {})
+            tprint(f"🔍 [REGIME_MODELS] Regime discovery result keys: {list(regime_discovery_result.keys())}", color="blue")
 
-            # Try to get regime labels from TAS assignments first, then NAS assignments as fallback
-            regime_labels = nas_tas_regime_discovery_result.get('tas_assignments')
+            # Try to get regime labels from regime assignments
+            regime_labels = regime_discovery_result.get('regime_assignments')
             if regime_labels is None:
-                regime_labels = nas_tas_regime_discovery_result.get('nas_assignments')
-                tprint("🔍 [REGIME_MODELS] Using NAS assignments as regime labels", color="blue")
+                regime_labels = regime_discovery_result.get('cluster_assignments')
+                tprint("🔍 [REGIME_MODELS] Using cluster assignments as regime labels", color="blue")
             else:
-                tprint("🔍 [REGIME_MODELS] Using TAS assignments as regime labels", color="blue")
+                tprint("🔍 [REGIME_MODELS] Using regime assignments as regime labels", color="blue")
 
             # If still no regime labels, try alternative artifact structures
             if regime_labels is None:
                 tprint("🔍 [REGIME_MODELS] Trying alternative artifact structures...", color="yellow")
 
                 # Try direct access to artifacts
-                if 'tas_assignments' in artifacts:
-                    regime_labels = artifacts['tas_assignments']
-                    tprint("🔍 [REGIME_MODELS] Found TAS assignments in direct artifacts", color="blue")
-                elif 'nas_assignments' in artifacts:
-                    regime_labels = artifacts['nas_assignments']
-                    tprint("🔍 [REGIME_MODELS] Found NAS assignments in direct artifacts", color="blue")
+                # Legacy TAS/NAS assignments removed
 
                 # Try other possible artifact keys
                 for key in ['regime_assignments', 'assignments', 'cluster_assignments']:
@@ -315,14 +304,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 if regime_labels is None:
                     for artifact_key, artifact_value in artifacts.items():
                         if isinstance(artifact_value, dict):
-                            if 'tas_assignments' in artifact_value:
-                                regime_labels = artifact_value['tas_assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found TAS assignments in {artifact_key}", color="blue")
+                            # Legacy TAS assignments removed
                                 break
-                            elif 'nas_assignments' in artifact_value:
-                                regime_labels = artifact_value['nas_assignments']
-                                tprint(f"🔍 [REGIME_MODELS] Found NAS assignments in {artifact_key}", color="blue")
-                                break
+                            # Legacy NAS assignments removed
                             elif 'assignments' in artifact_value:
                                 regime_labels = artifact_value['assignments']
                                 tprint(f"🔍 [REGIME_MODELS] Found assignments in {artifact_key}", color="blue")
@@ -347,7 +331,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
                             # First try direct access to clustering_result (new wrapper structure)
                             if isinstance(clustering_result, dict):
-                                # Look for cluster_assignments in the clustering_result dict (from nas_tas_clustering)
+                                # Look for cluster_assignments in the clustering_result dict (from regime clustering)
                                 if 'cluster_assignments' in clustering_result:
                                     regime_labels = clustering_result['cluster_assignments']
                                     # Handle case where assignments are stored as string representation
@@ -406,7 +390,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             if regime_labels is None and hasattr(clustering_result, 'current_results') and clustering_result.current_results:
                                 current_results = clustering_result.current_results
                                 # Try different possible keys for assignments
-                                for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
+                                for assignment_key in ['cluster_assignments', 'assignments']:
                                     if assignment_key in current_results:
                                         regime_labels = current_results[assignment_key]
                                         tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.current_results.{assignment_key}", color="blue")
@@ -428,7 +412,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     if optimal_clustering_result:
                         tprint("🔍 [REGIME_MODELS] Trying component factory wrapper structure fallback", color="blue")
                         # Check if the wrapper stored the data directly in the artifact
-                        for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
+                        for assignment_key in ['cluster_assignments', 'assignments']:
                             if assignment_key in optimal_clustering_result:
                                 regime_labels = optimal_clustering_result[assignment_key]
                                 tprint(f"🔍 [REGIME_MODELS] Found regime labels in optimal_clustering_result.{assignment_key}", color="blue")
@@ -438,7 +422,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 error_msg = "No regime labels found in any artifact structure"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 tprint(f"🔍 [REGIME_MODELS] Available artifacts: {list(artifacts.keys())}", color="yellow")
-                tprint(f"🔍 [REGIME_MODELS] NAS-TAS regime discovery result keys: {list(nas_tas_regime_discovery_result.keys())}", color="yellow")
+                tprint(f"🔍 [REGIME_MODELS] Regime discovery result keys: {list(regime_discovery_result.keys())}", color="yellow")
                 self.logger.error(f"Missing regime labels. Available artifacts: {list(artifacts.keys())}")
                 return ComponentResult(
                     success=False,
@@ -2571,7 +2555,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
         artifacts = {}
 
         try:
-            # Look for the most recent successful nas_tas_clustering outcome file
+            # Look for the most recent successful regime clustering outcome file
             import glob
             from pathlib import Path
 
@@ -2580,12 +2564,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 tprint("⚠️ [REGIME_MODELS] No outcomes directory found", color="yellow")
                 return artifacts
 
-            # Find all nas_tas_clustering outcome files and sort by timestamp (most recent first)
-            pattern = "*nas_tas_clustering_outcome_*.json"
+            # Find all regime clustering outcome files and sort by timestamp (most recent first)
+            pattern = "*regime_clustering_outcome_*.json"
             outcome_files = list(outcomes_dir.glob(pattern))
 
             if not outcome_files:
-                tprint("⚠️ [REGIME_MODELS] No nas_tas_clustering outcome files found", color="yellow")
+                tprint("⚠️ [REGIME_MODELS] No regime clustering outcome files found", color="yellow")
                 return artifacts
 
             # Sort by modification time (most recent first)
@@ -2611,8 +2595,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                             artifacts['optimal_regime_clustering_result'] = optimal_clustering
 
                         # Also check for other useful artifacts
-                        if 'nas_tas_clustering_result' in outcome_artifacts:
-                            artifacts['nas_tas_clustering_result'] = outcome_artifacts['nas_tas_clustering_result']
+                        if 'regime_clustering_result' in outcome_artifacts:
+                            artifacts['regime_clustering_result'] = outcome_artifacts['regime_clustering_result']
 
                         return artifacts
 

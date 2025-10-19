@@ -1,9 +1,9 @@
 """
-Analyst Ensemble Training Step - Enhanced for 5m Timeframe with NAS Integration
+Analyst Ensemble Training Step - Enhanced for 5m Timeframe
 
 This step handles per-regime ensemble training of Analyst models using common dependencies.
 The Analyst Ensemble operates on 5m timeframe and combines individual analyst models
-plus NAS models to create robust ensemble predictions for trade decisions.
+to create robust ensemble predictions for trade decisions.
 
 Analyst Models Structure:
 Base Models:

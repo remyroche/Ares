@@ -177,7 +177,7 @@ class ConfigValidator:
 
     def _validate_algorithm_type(self, algorithm_type: str) -> List[str]:
         """Validate algorithm type parameter."""
-        valid_algorithms = ['kmeans', 'gmm', 'hierarchical', 'dbscan', 'adaptive_clustering', 'ensemble_clustering', 'nas_tas_clustering']
+        valid_algorithms = ['kmeans', 'gmm', 'hierarchical', 'dbscan', 'adaptive_clustering', 'ensemble_clustering', 'regime_clustering']
         errors = []
         if not isinstance(algorithm_type, str) or algorithm_type not in valid_algorithms:
             errors.append(f"Algorithm type must be one of {valid_algorithms}")

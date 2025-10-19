@@ -1,3 +1,0 @@
-"""
-NAS Clustering Evaluation Module
-"""

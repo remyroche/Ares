@@ -29,12 +29,12 @@ if not torch_available:
 
 # ✅ AFTER: Fast fail (safe)
 if not torch_available:
-    logger.error("❌ CLVSA requires PyTorch. Install with: pip install torch")
+    logger.error("❌ Enhanced models require PyTorch. Install with: pip install torch")
     raise ImportError("Missing dependency")  # Immediate failure detection
 ```
 
 ### **Error Message Examples:**
-- `"❌ CLVSA architecture requires PyTorch. Install with: pip install torch torchvision torchaudio"`
+- `"❌ Enhanced models require PyTorch. Install with: pip install torch torchvision torchaudio"`
 - `"❌ Enhanced HPO requires either scikit-optimize or Optuna. Install with: pip install scikit-optimize optuna"`
 - `"❌ Enhanced HPO failed: No characteristics found for regime X. Regime analysis required for enhanced HPO."`
 - `"❌ Multi-objective optimization failed: No valid solutions found in Pareto front. Check data quality."`

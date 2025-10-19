@@ -33,34 +33,7 @@ class ExchangeConfig:
     rate_limit: int = 1200
     timeout: int = 30
 
-@dataclass
-class NASConfig:
-    """Neural Architecture Search configuration settings."""
-
-    enable_nas_enhancement: bool = True
-    nas_confidence_threshold: float = 0.7
-    nas_timeframe: str = "5m"
-    regime_timeframe: str = "15m"
-    nas_models_path: str = "models/nas/"
-    nas_architectures_path: str = "models/nas/architectures/"
-    nas_search_budget: int = 100
-    nas_population_size: int = 50
-    nas_mutation_rate: float = 0.1
-    nas_crossover_rate: float = 0.8
-
-@dataclass
-class TASConfig:
-    """Tree Architecture Search configuration settings."""
-
-    enable_tas_enhancement: bool = True
-    tas_confidence_threshold: float = 0.7
-    tas_timeframe: str = "1m"
-    tas_models_path: str = "models/tas/"
-    tas_architectures_path: str = "models/tas/architectures/"
-    tas_search_budget: int = 100
-    tas_population_size: int = 50
-    tas_mutation_rate: float = 0.1
-    tas_crossover_rate: float = 0.8
+# NAS/TAS configuration classes removed
 
 @dataclass
 class SystemConfig:
@@ -77,10 +50,7 @@ class SystemConfig:
     max_log_size: int = 100 * 1024 * 1024  # 100MB
     backup_count: int = 5
 
-    # NAS/TAS Enhancement
-    nas_tas_enabled: bool = True
-    nas_config: NASConfig = None
-    tas_config: TASConfig = None
+    # NAS/TAS Enhancement removed
 
     # Performance
     max_workers: int = 4

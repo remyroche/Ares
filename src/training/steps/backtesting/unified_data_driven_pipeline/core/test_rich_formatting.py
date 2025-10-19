@@ -121,11 +121,7 @@ def migrate_component(component_name: str) -> bool:
     abc_branch.add("Risk Manager")
     abc_branch.add("Statistical Analyzer")
     
-    # NAS TAS components
-    nas_branch = tree.add("NAS TAS Components")
-    nas_branch.add("Walk Forward Analyzer")
-    nas_branch.add("Performance Attribution")
-    nas_branch.add("Validation Orchestrator")
+    # Legacy components removed
     
     console.print(tree)
     

@@ -1866,8 +1866,14 @@ class MultiObjectiveFeatureSelector:
         # Memory optimization
         if self.m1_memory_optimizer is not None:
             tprint_info("🧠 Applying M1 memory optimization")
+            tprint_debug(f"🧠 M1MemoryOptimizer type: {type(self.m1_memory_optimizer)}")
+            tprint_debug(f"🧠 Available methods: {[m for m in dir(self.m1_memory_optimizer) if not m.startswith('_')]}")
             data = self.m1_memory_optimizer.optimize_dataframe_memory(data)
-            targets = self.m1_memory_optimizer.optimize_series_memory(targets)
+            if hasattr(self.m1_memory_optimizer, 'optimize_series_memory'):
+                targets = self.m1_memory_optimizer.optimize_series_memory(targets)
+            else:
+                tprint_warning("⚠️ optimize_series_memory method not found, skipping series optimization")
+                tprint_warning(f"⚠️ Available methods: {[m for m in dir(self.m1_memory_optimizer) if 'series' in m.lower()]}")
         
         # GPU optimization for large datasets
         if (self.m1_gpu_optimizer is not None and 

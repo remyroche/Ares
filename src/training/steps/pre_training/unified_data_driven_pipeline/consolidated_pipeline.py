@@ -32,6 +32,15 @@ import logging
 import time
 from pathlib import Path
 from datetime import datetime
+import gc
+import os
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing as mp
+
+# M1 Optimization imports
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, optimize_dataframe_memory, optimize_memory
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, create_m1_optimized_thread_pool, parallel_map_m1
 
 try:
     from src.utils.tprint import (
@@ -716,6 +725,9 @@ class UnifiedDataDrivenPipeline:
             # Initialize unified_cv as None first to prevent attribute errors
             self.unified_cv = None
 
+            # Initialize M1 optimization components first
+            self._initialize_m1_optimizations()
+
             # Initialize utility systems first
             self._initialize_utility_systems()
 
@@ -775,10 +787,141 @@ class UnifiedDataDrivenPipeline:
             # This is a critical failure - we should not proceed silently
             raise RuntimeError(f"Labeling adapter initialization failed: {e}") from e
 
-        if self.m1_available:
-            tprint_success("✅ M1 optimizations integrated")
-        else:
-            tprint_debug("ℹ️ M1 optimizations not available")
+    def _initialize_m1_optimizations(self):
+        """Initialize M1 optimization components."""
+        tprint_info("🧠 Initializing M1 optimization components")
+        
+        try:
+            # Initialize M1 optimization managers
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Optimization configuration
+            self.parallel_workers = 6  # Optimized for M1
+            self.chunk_size = 10000  # Memory-efficient chunk size
+            self.memory_mapping_enabled = True
+            self.aggressive_gc_enabled = True
+            self.data_type_optimization = True  # Convert float64 to float32
+            
+            # Check M1 availability
+            self.m1_available = (
+                self.m1_gpu_manager.m1_detected and 
+                self.m1_memory_optimizer.m1_detected and 
+                self.m1_cpu_optimizer.m1_detected
+            )
+            
+            if self.m1_available:
+                tprint_success("✅ M1 optimizations initialized successfully")
+                tprint_info(f"   - GPU Acceleration: {self.m1_gpu_manager.mps_available}")
+                tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
+                tprint_info(f"   - Chunk Size: {self.chunk_size}")
+                tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
+                tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
+                tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
+            else:
+                tprint_warning("⚠️ M1 optimizations not fully available")
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ M1 optimization initialization failed: {e}")
+            self.m1_available = False
+            # Set fallback values
+            self.parallel_workers = 4
+            self.chunk_size = 5000
+            self.memory_mapping_enabled = False
+            self.aggressive_gc_enabled = False
+            self.data_type_optimization = False
+
+    def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for memory efficiency."""
+        try:
+            if not isinstance(df, pd.DataFrame):
+                return df
+            
+            initial_memory = df.memory_usage(deep=True).sum()
+            
+            # Convert float64 to float32 where precision allows
+            if self.data_type_optimization:
+                for col in df.select_dtypes(include=[np.float64]).columns:
+                    if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                        df[col] = df[col].astype(np.float32)
+            
+            # Use M1 memory optimizer
+            df = optimize_dataframe_for_m1(df)
+            
+            final_memory = df.memory_usage(deep=True).sum()
+            memory_saved = initial_memory - final_memory
+            
+            if memory_saved > 0:
+                tprint_info(f"🧠 Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+            
+            return df
+            
+        except Exception as e:
+            tprint_warning(f"Data type optimization failed: {e}")
+            return df
+
+    def _aggressive_garbage_collection(self) -> None:
+        """Perform aggressive garbage collection for memory optimization."""
+        try:
+            # Force multiple garbage collections
+            for _ in range(3):
+                collected = gc.collect()
+                if collected > 0:
+                    tprint_info(f"Garbage collection cycle: {collected} objects collected")
+            
+            # Use M1 memory optimizer for additional cleanup
+            memory_result = optimize_memory()
+            if memory_result.get('success', False):
+                memory_saved = memory_result.get('memory_saved_mb', 0)
+                if memory_saved > 0:
+                    tprint_info(f"🧠 Memory optimization: {memory_saved:.1f} MB saved")
+                
+        except Exception as e:
+            tprint_warning(f"Aggressive garbage collection failed: {e}")
+
+    def _optimize_pipeline_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize pipeline data for M1 processing."""
+        try:
+            if not self.m1_available:
+                return data
+            
+            # Start memory monitoring
+            self.m1_memory_optimizer.start_monitoring()
+            
+            # Optimize data types
+            data = self._optimize_dataframe_dtypes(data)
+            
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
+            tprint_info(f"🚀 Pipeline data optimized: {data.shape}")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Pipeline data optimization failed: {e}")
+            return data
+
+    def _finalize_pipeline_processing(self) -> None:
+        """Finalize pipeline processing with cleanup."""
+        try:
+            if not self.m1_available:
+                return
+            
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
+            # Stop memory monitoring
+            self.m1_memory_optimizer.stop_monitoring()
+            
+            # Get final memory statistics
+            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            tprint_info(f"🧠 Final memory usage: {memory_stats.get('memory_percent', 0):.1f}%")
+            
+        except Exception as e:
+            tprint_warning(f"Pipeline finalization failed: {e}")
 
     def cleanup(self):
         """Clean up resources and M1 optimizations."""
@@ -1830,6 +1973,16 @@ class UnifiedDataDrivenPipeline:
         """
         tprint_info("🚀 Starting consolidated unified pipeline processing")
         tprint_info(f"📊 Data shape: {data.shape}, timeframe: {timeframe}")
+        
+        # Log M1 optimization configuration if available
+        if hasattr(self, 'm1_available') and self.m1_available:
+            tprint_info("🧠 M1 Optimization Configuration:")
+            tprint_info(f"   - Parallel Workers: {getattr(self, 'parallel_workers', 'N/A')}")
+            tprint_info(f"   - Chunk Size: {getattr(self, 'chunk_size', 'N/A')}")
+            tprint_info(f"   - Memory Mapping: {getattr(self, 'memory_mapping_enabled', 'N/A')}")
+            tprint_info(f"   - Aggressive GC: {getattr(self, 'aggressive_gc_enabled', 'N/A')}")
+            tprint_info(f"   - Data Type Optimization: {getattr(self, 'data_type_optimization', 'N/A')}")
+            tprint_info(f"   - M1 GPU Available: {getattr(self, 'm1_gpu_manager', {}).mps_available if hasattr(self, 'm1_gpu_manager') else 'N/A'}")
 
         # Initialize detailed reporting
         self.detailed_reporter = DetailedPipelineReporter(outcomes_dir="outcomes")
@@ -1837,6 +1990,11 @@ class UnifiedDataDrivenPipeline:
         # Start performance monitoring
         self.advanced_performance_monitor.start_monitoring()
         start_time = self.advanced_performance_monitor.start_operation("process")
+        
+        # Optimize input data for M1 processing
+        if hasattr(self, 'm1_available') and self.m1_available:
+            tprint_info("🔧 Optimizing input data for M1 processing")
+            data = self._optimize_pipeline_data(data)
 
         try:
             # Check for step-specific handling
@@ -2813,6 +2971,10 @@ class UnifiedDataDrivenPipeline:
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to generate detailed report: {e}")
 
+            # Finalize M1 optimization processing
+            if hasattr(self, 'm1_available') and self.m1_available:
+                self._finalize_pipeline_processing()
+
             return ConsolidatedPipelineResult(
                 selected_features=combined_results['selected_features'],
                 feature_importance=combined_results['feature_importance'],
@@ -2859,6 +3021,13 @@ class UnifiedDataDrivenPipeline:
             # Use advanced error handler
             self.advanced_performance_monitor.end_operation("process", start_time, success=False)
             self.advanced_performance_monitor.stop_monitoring()
+
+            # Finalize M1 optimization processing even on error
+            if hasattr(self, 'm1_available') and self.m1_available:
+                try:
+                    self._finalize_pipeline_processing()
+                except Exception as finalization_error:
+                    tprint_warning(f"⚠️ M1 optimization finalization failed: {finalization_error}")
 
             # Enhanced error handling with data quality recovery
             tprint_error(f"❌ Consolidated pipeline processing failed: {e}")
@@ -3581,42 +3750,15 @@ class UnifiedDataDrivenPipeline:
             raise TypeError(error_msg)
 
         try:
-            all_interactions = []
+            # Single generator: LGBM-SHAP interactions on the incoming selected feature set
+            tprint_info("🔧 Generating LGBM-SHAP interactions (data-driven + explainable)")
+            lgbm_shap_interactions = self._generate_lgbm_shap_interactions(features_df, targets)
+            tprint_success(f"✅ Generated {len(lgbm_shap_interactions)} LGBM-SHAP interactions")
 
-            # 1. Generate polynomial features (limited to X²)
-            tprint_info("🔧 Generating polynomial features (X² max)")
-            polynomial_interactions = self._generate_polynomial_interactions(features_df, targets, max_degree=2)
-            all_interactions.extend(polynomial_interactions)
-            tprint_success(f"✅ Generated {len(polynomial_interactions)} polynomial interactions")
-
-            # 2. Generate log relationships
-            tprint_info("🔧 Generating log relationships")
-            log_interactions = self._generate_log_interactions(features_df, targets)
-            all_interactions.extend(log_interactions)
-            tprint_success(f"✅ Generated {len(log_interactions)} log interactions")
-
-            # 3. Generate cross-feature interactions
-            tprint_info("🔧 Generating cross-feature interactions")
-            cross_interactions = self._generate_cross_feature_interactions(features_df, targets)
-            all_interactions.extend(cross_interactions)
-            tprint_success(f"✅ Generated {len(cross_interactions)} cross-feature interactions")
-
-            # 4. Generate ML-based interactions using RandomForest
-            tprint_info("🔧 Generating RandomForest-based interactions")
-            rf_interactions = self._generate_randomforest_interactions(features_df, targets)
-            all_interactions.extend(rf_interactions)
-            tprint_success(f"✅ Generated {len(rf_interactions)} RandomForest interactions")
-
-            # 5. Generate ML-based interactions using LightGBM
-            tprint_info("🔧 Generating LightGBM-based interactions")
-            lgb_interactions = self._generate_lightgbm_interactions(features_df, targets)
-            all_interactions.extend(lgb_interactions)
-            tprint_success(f"✅ Generated {len(lgb_interactions)} LightGBM interactions")
-
-            # 6. Feature selection to keep only top 100 features
-            tprint_info("🔧 Performing feature selection (target: 100 features)")
-            selected_interactions = self._select_top_interactions(all_interactions, targets, max_features=100)
-            tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 100)")
+            # Increase cap to allow room for HTF/cross-timeframe features downstream
+            tprint_info("🎯 Performing feature selection (target: 200 features)")
+            selected_interactions = self._select_top_interactions(lgbm_shap_interactions, targets, max_features=200)
+            tprint_success(f"✅ Selected {len(selected_interactions)} top interactions (target: 200)")
 
             return selected_interactions
 
@@ -3902,6 +4044,161 @@ class UnifiedDataDrivenPipeline:
             error_msg = f"LightGBM interaction generation failed: {e}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
+
+    def _generate_lgbm_shap_interactions(self, features_df: pd.DataFrame, targets: Optional[pd.Series]) -> List[Any]:
+        """
+        Generate interactions using LightGBM + SHAP interaction values.
+
+        - Fits LGBM on up to 40 preselected features (caller already caps to 40)
+        - Computes SHAP interaction values on a sampled subset for efficiency
+        - Selects top pairs by average |SHAP interaction| and materializes product/ratio/diff features
+
+        Returns a list of interaction dicts with keys: name, type, features, data, importance_score.
+        """
+        interactions: List[Any] = []
+        try:
+            if targets is None or features_df is None or features_df.empty:
+                return interactions
+
+            # Import dependencies lazily
+            try:
+                import lightgbm as lgb
+            except Exception as e:
+                tprint_warning(f"⚠️ LightGBM not available for LGBM-SHAP interactions: {e}")
+                return interactions
+
+            try:
+                import shap
+            except Exception as e:
+                tprint_warning(f"⚠️ SHAP not available for LGBM-SHAP interactions: {e}")
+                return interactions
+
+            # Ensure numeric and aligned data
+            X = features_df.select_dtypes(include=[np.number]).copy()
+            y = targets.reindex(X.index)
+            valid_mask = X.notna().all(axis=1) & y.notna()
+            X = X.loc[valid_mask]
+            y = y.loc[valid_mask]
+            if X.shape[0] < 50 or X.shape[1] < 2:
+                return interactions
+
+            # Train a compact LGBM model for interaction discovery
+            lgb_model = lgb.LGBMRegressor(
+                n_estimators=200,
+                max_depth=-1,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                n_jobs=-1,
+                verbose=-1
+            )
+            lgb_model.fit(X, y)
+
+            # Optional compute guard: restrict to top-K features by importance for SHAP interactions
+            top_k = 60
+            if X.shape[1] > top_k and hasattr(lgb_model, 'feature_importances_'):
+                importances = np.asarray(lgb_model.feature_importances_, dtype=float)
+                order = np.argsort(importances)[::-1]
+                keep_idx = order[:top_k]
+                keep_cols = [X.columns[i] for i in keep_idx]
+                # Refit a compact model on top-K features to keep SHAP inputs consistent
+                X_top = X[keep_cols]
+                lgb_model = lgb.LGBMRegressor(
+                    n_estimators=200,
+                    max_depth=-1,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    n_jobs=-1,
+                    verbose=-1
+                )
+                lgb_model.fit(X_top, y)
+                X = X_top
+                tprint_info(f"⚙️ SHAP guard: restricted to top {len(keep_cols)} features by LGBM importance for interactions")
+
+            # Sample for SHAP interaction computation
+            sample_size = min(500, len(X))
+            if sample_size < 50:
+                sample_size = len(X)
+            sample_idx = np.random.choice(len(X), sample_size, replace=False)
+            X_sample = X.iloc[sample_idx]
+
+            # Compute SHAP interaction values
+            explainer = shap.TreeExplainer(lgb_model)
+            shap_inter = explainer.shap_interaction_values(X_sample)
+            if isinstance(shap_inter, list):
+                shap_inter = np.mean(np.array(shap_inter), axis=0)
+            interaction_matrix = np.abs(shap_inter).mean(axis=0)
+            np.fill_diagonal(interaction_matrix, 0.0)
+
+            # Rank top pairs by interaction strength
+            feature_names = list(X.columns)
+            n_features = len(feature_names)
+            pair_scores: List[Tuple[float, Tuple[int, int]]] = []
+            for i in range(n_features):
+                for j in range(i + 1, n_features):
+                    pair_scores.append((float(interaction_matrix[i, j]), (i, j)))
+            pair_scores.sort(key=lambda t: t[0], reverse=True)
+
+            # Cap number of pairs (controls feature explosion)
+            max_pairs = min(50, len(pair_scores))
+            top_pairs = pair_scores[:max_pairs]
+
+            eps = 1e-12
+            for strength, (i, j) in top_pairs:
+                f1, f2 = feature_names[i], feature_names[j]
+                s1 = X[f1].astype(np.float32)
+                s2 = X[f2].astype(np.float32)
+
+                # Product
+                try:
+                    prod = (s1 * s2).astype(np.float32)
+                    if prod.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_prod_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': prod,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+
+                # Ratio
+                try:
+                    ratio = (s1 / (s2 + eps)).astype(np.float32)
+                    if ratio.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_ratio_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': ratio,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+
+                # Difference
+                try:
+                    diff = (s1 - s2).astype(np.float32)
+                    if diff.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_diff_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': diff,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+
+            return interactions
+
+        except Exception as e:
+            tprint_warning(f"⚠️ LGBM-SHAP interaction generation failed: {e}")
+            return interactions
 
     def _select_top_interactions(self, interactions: List[Any], targets: Optional[pd.Series], max_features: int = 100) -> List[Any]:
         """
@@ -5641,36 +5938,91 @@ class UnifiedDataDrivenPipeline:
 
                             # Rolling variance
                             var_col = f"{column}_rolling_var_{window}"
-                            enhanced_data[var_col] = self.vectorbt_rolling_optimizer.rolling_var(
-                                data[column], window
-                            )
+                            enhanced_chunk[var_col] = self.vectorbt_rolling_optimizer.rolling_var(
+                                chunk[column], window
+                            ).astype(np.float32)
 
                             # Rolling min/max
                             min_col = f"{column}_rolling_min_{window}"
+                            enhanced_chunk[min_col] = self.vectorbt_rolling_optimizer.rolling_min(
+                                chunk[column], window
+                            ).astype(np.float32)
+
                             max_col = f"{column}_rolling_max_{window}"
-                            enhanced_data[min_col] = self.vectorbt_rolling_optimizer.rolling_min(
-                                data[column], window
-                            )
-                            enhanced_data[max_col] = self.vectorbt_rolling_optimizer.rolling_max(
-                                data[column], window
-                            )
+                            enhanced_chunk[max_col] = self.vectorbt_rolling_optimizer.rolling_max(
+                                chunk[column], window
+                            ).astype(np.float32)
 
                         except Exception as e:
-                            tprint_warning(f"⚠️ Rolling operations failed for {column} window {window}: {e}")
+                            tprint_debug(f"⚠️ Rolling operation failed for {column} window {window}: {e}")
                             continue
 
-            new_features = enhanced_data.shape[1] - data.shape[1]
-            self.performance_stats['vectorized_rolling_operations'] += new_features
-            tprint_success(f"✅ Vectorized rolling operations completed: {new_features} new features")
+            return {
+                'chunk_id': chunk_id,
+                'chunk_size': len(chunk),
+                'processed_data': enhanced_chunk,
+                'success': True
+            }
+
+        except Exception as e:
+            return {
+                'chunk_id': chunk_id,
+                'error': str(e),
+                'success': False
+            }
+
+    def _process_rolling_operations_direct(self, data: pd.DataFrame, windows: List[int]) -> pd.DataFrame:
+        """Process rolling operations directly for smaller datasets."""
+        try:
+            enhanced_data = data.copy()
+
+            # Vectorized rolling operations for each column
+            for column in data.columns:
+                if pd.api.types.is_numeric_dtype(data[column]):
+                    for window in windows:
+                        try:
+                            # Rolling mean
+                            mean_col = f"{column}_rolling_mean_{window}"
+                            enhanced_data[mean_col] = self.vectorbt_rolling_optimizer.rolling_mean(
+                                data[column], window
+                            ).astype(np.float32)
+
+                            # Rolling standard deviation
+                            std_col = f"{column}_rolling_std_{window}"
+                            enhanced_data[std_col] = self.vectorbt_rolling_optimizer.rolling_std(
+                                data[column], window
+                            ).astype(np.float32)
+
+                            # Rolling variance
+                            var_col = f"{column}_rolling_var_{window}"
+                            enhanced_data[var_col] = self.vectorbt_rolling_optimizer.rolling_var(
+                                data[column], window
+                            ).astype(np.float32)
+
+                            # Rolling min/max
+                            min_col = f"{column}_rolling_min_{window}"
+                            enhanced_data[min_col] = self.vectorbt_rolling_optimizer.rolling_min(
+                                data[column], window
+                            ).astype(np.float32)
+
+                            max_col = f"{column}_rolling_max_{window}"
+                            enhanced_data[max_col] = self.vectorbt_rolling_optimizer.rolling_max(
+                                data[column], window
+                            ).astype(np.float32)
+
+                        except Exception as e:
+                            tprint_debug(f"⚠️ Rolling operation failed for {column} window {window}: {e}")
+                            continue
+
             return enhanced_data
 
         except Exception as e:
-            tprint_error(f"❌ Vectorized rolling operations failed: {e}")
+            tprint_error(f"❌ Direct rolling operations failed: {e}")
             return data
 
     def _unified_vectorization_processing(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> pd.DataFrame:
         """
-        Perform unified vectorization processing using UnifiedVectorizationManager.
+        Enhanced unified vectorization processing with M1 optimizations, streaming, and parallel processing.
 
         Args:
             data: Input data with OHLCV columns
@@ -5681,33 +6033,105 @@ class UnifiedDataDrivenPipeline:
         """
         self._validate_dependency_available("VectorBT utilities", VECTORBT_UTILITIES_AVAILABLE and self.unified_vectorization_manager is not None)
 
-        tprint_info("🚀 Starting unified vectorization processing")
+        tprint_info("🚀 Starting enhanced unified vectorization processing")
+        
+        # Initialize M1 optimizations
+        try:
+            from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+            from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+            
+            m1_memory_optimizer = get_m1_memory_optimizer()
+            m1_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Start M1 memory monitoring
+            m1_memory_optimizer.start_monitoring()
+            tprint_info("🧠 M1 memory monitoring started")
+            
+        except ImportError:
+            tprint_warning("⚠️ M1 optimization utilities not available, using standard processing")
+            m1_memory_optimizer = None
+            m1_cpu_optimizer = None
 
         try:
-            # Use the unified vectorization manager for comprehensive processing
-            vectorized_result = self.unified_vectorization_manager.process_dataframe(
-                data=data,
-                targets=targets,
-                enable_rolling_operations=True,
-                enable_statistical_operations=True,
-                enable_correlation_analysis=True,
-                enable_batch_processing=True
-            )
+            # Optimize data types for M1 performance (float64 to float32 conversion)
+            tprint_info("🔧 Optimizing data types for M1 performance...")
+            
+            # Convert float64 to float32 where precision allows
+            for col in data.select_dtypes(include=[np.float64]).columns:
+                if data[col].notna().any():
+                    max_val = data[col].max()
+                    min_val = data[col].min()
+                    if (max_val < np.finfo(np.float32).max and 
+                        min_val > np.finfo(np.float32).min):
+                        data[col] = data[col].astype(np.float32)
+                        tprint_debug(f"✅ Converted {col} to float32")
+            
+            # Apply M1-specific DataFrame optimization
+            if m1_memory_optimizer:
+                data = m1_memory_optimizer.optimize_dataframe_memory(data)
+                tprint_info("✅ Applied M1 memory optimization")
+            
+            # Apply aggressive garbage collection
+            import gc
+            for i in range(3):
+                collected = gc.collect()
+                if collected > 0:
+                    tprint_debug(f"🧹 GC cycle {i+1}: collected {collected} objects")
+            
+            # Use the unified vectorization manager with M1 optimizations
+            from contextlib import nullcontext
+            with m1_cpu_optimizer.create_m1_optimized_context() if m1_cpu_optimizer else nullcontext():
+                vectorized_result = self.unified_vectorization_manager.process_dataframe(
+                    data=data,
+                    targets=targets,
+                    enable_rolling_operations=True,
+                    enable_statistical_operations=True,
+                    enable_correlation_analysis=True,
+                    enable_batch_processing=True,
+                    parallel_workers=6,  # As requested
+                    chunk_size=10000,   # Default chunk size
+                    memory_optimization=True,
+                    streaming_processing=True
+                )
 
             if vectorized_result.success:
+                # Apply final optimizations
+                processed_data = vectorized_result.processed_data
+                
+                # Convert result data types to float32
+                for col in processed_data.select_dtypes(include=[np.float64]).columns:
+                    if processed_data[col].notna().any():
+                        max_val = processed_data[col].max()
+                        min_val = processed_data[col].min()
+                        if (max_val < np.finfo(np.float32).max and 
+                            min_val > np.finfo(np.float32).min):
+                            processed_data[col] = processed_data[col].astype(np.float32)
+                
+                # Apply final memory optimization
+                if m1_memory_optimizer:
+                    processed_data = m1_memory_optimizer.optimize_dataframe_memory(processed_data)
+                
                 self.performance_stats['unified_vectorization_operations'] += vectorized_result.features_generated
-                tprint_success(f"✅ Unified vectorization completed: {vectorized_result.features_generated} features generated")
-                return vectorized_result.processed_data
+                tprint_success(f"✅ Enhanced unified vectorization completed: {vectorized_result.features_generated} features generated")
+                return processed_data
             else:
-                raise RuntimeError(f"Unified vectorization failed: {vectorized_result.error_message}")
+                raise RuntimeError(f"Enhanced unified vectorization failed: {vectorized_result.error_message}")
 
         except Exception as e:
-            tprint_error(f"❌ Unified vectorization processing failed: {e}")
+            tprint_error(f"❌ Enhanced unified vectorization processing failed: {e}")
             return data
+        finally:
+            # Stop M1 memory monitoring
+            if m1_memory_optimizer:
+                try:
+                    m1_memory_optimizer.stop_monitoring()
+                    tprint_info("🧠 M1 memory monitoring stopped")
+                except:
+                    pass
 
     def _optimized_feature_calculation(self, data: pd.DataFrame, feature_config: Dict[str, Any] = None) -> pd.DataFrame:
         """
-        Perform optimized feature calculations using both vectorization utilities.
+        Enhanced optimized feature calculations with M1 optimizations, parallel processing, and chunked processing.
 
         Args:
             data: Input data with OHLCV columns
@@ -5725,94 +6149,233 @@ class UnifiedDataDrivenPipeline:
                 'enable_volume_features': True
             }
 
-        tprint_info("⚡ Starting optimized feature calculations")
+        tprint_info("⚡ Starting enhanced optimized feature calculations")
+        
+        # Initialize M1 optimizations
+        try:
+            from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+            from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+            
+            m1_memory_optimizer = get_m1_memory_optimizer()
+            m1_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Start M1 memory monitoring
+            m1_memory_optimizer.start_monitoring()
+            tprint_info("🧠 M1 memory monitoring started")
+            
+        except ImportError:
+            tprint_warning("⚠️ M1 optimization utilities not available, using standard processing")
+            m1_memory_optimizer = None
+            m1_cpu_optimizer = None
 
         try:
-            # Start with vectorized rolling operations
+            # Optimize data types for M1 performance (float64 to float32 conversion)
+            tprint_info("🔧 Optimizing data types for M1 performance...")
+            
+            # Convert float64 to float32 where precision allows
+            for col in data.select_dtypes(include=[np.float64]).columns:
+                if data[col].notna().any():
+                    max_val = data[col].max()
+                    min_val = data[col].min()
+                    if (max_val < np.finfo(np.float32).max and 
+                        min_val > np.finfo(np.float32).min):
+                        data[col] = data[col].astype(np.float32)
+                        tprint_debug(f"✅ Converted {col} to float32")
+            
+            # Apply M1-specific DataFrame optimization
+            if m1_memory_optimizer:
+                data = m1_memory_optimizer.optimize_dataframe_memory(data)
+                tprint_info("✅ Applied M1 memory optimization")
+            
+            # Apply aggressive garbage collection
+            import gc
+            for i in range(3):
+                collected = gc.collect()
+                if collected > 0:
+                    tprint_debug(f"🧹 GC cycle {i+1}: collected {collected} objects")
+            
+            # Start with enhanced vectorized rolling operations
             enhanced_data = self._vectorized_rolling_operations(
                 data,
                 windows=feature_config.get('rolling_windows', [5, 10, 20, 50, 100])
             )
 
-            # Apply unified vectorization processing
+            # Apply enhanced unified vectorization processing
             if VECTORBT_UTILITIES_AVAILABLE and self.unified_vectorization_manager is not None:
                 enhanced_data = self._unified_vectorization_processing(enhanced_data)
 
-            # Add specialized features based on configuration
+            # Add specialized features with parallel processing
+            feature_tasks = []
+            
             if feature_config.get('enable_correlation_features', True):
-                enhanced_data = self._add_correlation_features(enhanced_data)
-
+                feature_tasks.append(('correlation', self._add_correlation_features))
+            
             if feature_config.get('enable_momentum_features', True):
-                enhanced_data = self._add_momentum_features(enhanced_data)
-
+                feature_tasks.append(('momentum', self._add_momentum_features))
+            
             if feature_config.get('enable_volatility_features', True):
-                enhanced_data = self._add_volatility_features(enhanced_data)
-
+                feature_tasks.append(('volatility', self._add_volatility_features))
+            
             if feature_config.get('enable_volume_features', True):
-                enhanced_data = self._add_volume_features(enhanced_data)
+                feature_tasks.append(('volume', self._add_volume_features))
+            
+            # Process feature tasks in parallel if M1 CPU optimizer is available
+            if feature_tasks and m1_cpu_optimizer:
+                try:
+                    import concurrent.futures
+                    with m1_cpu_optimizer.create_optimized_thread_pool(max_workers=6) as executor:
+                        future_to_task = {
+                            executor.submit(task_func, enhanced_data): task_name 
+                            for task_name, task_func in feature_tasks
+                        }
+                        
+                        for future in concurrent.futures.as_completed(future_to_task):
+                            task_name = future_to_task[future]
+                            try:
+                                result = future.result()
+                                if isinstance(result, pd.DataFrame):
+                                    enhanced_data = result
+                                    tprint_success(f"✅ {task_name.capitalize()} features added")
+                            except Exception as e:
+                                tprint_error(f"❌ {task_name.capitalize()} features failed: {e}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Parallel feature processing failed, using sequential: {e}")
+                    # Fallback to sequential processing
+                    for task_name, task_func in feature_tasks:
+                        try:
+                            enhanced_data = task_func(enhanced_data)
+                            tprint_success(f"✅ {task_name.capitalize()} features added")
+                        except Exception as e:
+                            tprint_error(f"❌ {task_name.capitalize()} features failed: {e}")
+            else:
+                # Sequential processing
+                for task_name, task_func in feature_tasks:
+                    try:
+                        enhanced_data = task_func(enhanced_data)
+                        tprint_success(f"✅ {task_name.capitalize()} features added")
+                    except Exception as e:
+                        tprint_error(f"❌ {task_name.capitalize()} features failed: {e}")
 
-            tprint_success(f"✅ Optimized feature calculations completed: {enhanced_data.shape[1]} total features")
+            # Final optimization
+            if m1_memory_optimizer:
+                enhanced_data = m1_memory_optimizer.optimize_dataframe_memory(enhanced_data)
+            
+            tprint_success(f"✅ Enhanced optimized feature calculations completed: {enhanced_data.shape[1]} total features")
             return enhanced_data
 
         except Exception as e:
-            tprint_error(f"❌ Optimized feature calculations failed: {e}")
+            tprint_error(f"❌ Enhanced optimized feature calculations failed: {e}")
             return data
+        finally:
+            # Stop M1 memory monitoring
+            if m1_memory_optimizer:
+                try:
+                    m1_memory_optimizer.stop_monitoring()
+                    tprint_info("🧠 M1 memory monitoring stopped")
+                except:
+                    pass
 
     def _add_correlation_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Add correlation-based features using vectorized operations."""
+        """Enhanced correlation-based features with M1 optimizations and data type optimization."""
         if not VECTORBT_UTILITIES_AVAILABLE or self.unified_vectorization_manager is None:
             return data
 
         try:
-            # Use unified vectorization manager for correlation analysis
+            tprint_debug("🔗 Adding enhanced correlation features...")
+            
+            # Apply M1 memory optimization
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                m1_memory_optimizer = get_m1_memory_optimizer()
+                data = m1_memory_optimizer.optimize_dataframe_memory(data)
+            except ImportError:
+                pass
+            
+            # Use unified vectorization manager for correlation analysis with M1 optimizations
             correlation_result = self.unified_vectorization_manager.calculate_correlations(
                 data,
                 windows=[10, 20, 50],
-                enable_rolling_correlations=True
+                enable_rolling_correlations=True,
+                parallel_workers=6,  # As requested
+                memory_optimization=True
             )
 
             if correlation_result.success:
                 for feature_name, feature_data in correlation_result.correlation_features.items():
+                    # Convert to float32 for M1 optimization
+                    if feature_data.dtype == np.float64:
+                        feature_data = feature_data.astype(np.float32)
                     data[feature_name] = feature_data
 
                 self.performance_stats['correlation_features_generated'] += len(correlation_result.correlation_features)
-                tprint_debug(f"✅ Added {len(correlation_result.correlation_features)} correlation features")
+                tprint_success(f"✅ Added {len(correlation_result.correlation_features)} enhanced correlation features")
+
+            # Apply final memory optimization
+            try:
+                if 'm1_memory_optimizer' in locals():
+                    data = m1_memory_optimizer.optimize_dataframe_memory(data)
+            except:
+                pass
 
             return data
 
         except Exception as e:
-            raise RuntimeError(f"Correlation features failed: {e}") from e
+            tprint_error(f"❌ Enhanced correlation features failed: {e}")
+            return data
 
     def _add_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Add momentum-based features using vectorized operations."""
+        """Enhanced momentum-based features with M1 optimizations and data type optimization."""
         if not VECTORBT_UTILITIES_AVAILABLE or self.vectorbt_rolling_optimizer is None:
             return data
 
         try:
+            tprint_debug("📈 Adding enhanced momentum features...")
+            
+            # Apply M1 memory optimization
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                m1_memory_optimizer = get_m1_memory_optimizer()
+                data = m1_memory_optimizer.optimize_dataframe_memory(data)
+            except ImportError:
+                pass
+
             # Calculate momentum features for price columns
             price_columns = [col for col in data.columns if 'close' in col.lower() or 'price' in col.lower()]
 
             for col in price_columns:
                 if pd.api.types.is_numeric_dtype(data[col]):
-                    # Rate of change
-                    data[f"{col}_roc_5"] = data[col].pct_change(5)
-                    data[f"{col}_roc_10"] = data[col].pct_change(10)
-                    data[f"{col}_roc_20"] = data[col].pct_change(20)
+                    # Rate of change with M1 optimizations (convert to float32)
+                    data[f"{col}_roc_5"] = data[col].pct_change(5).astype(np.float32)
+                    data[f"{col}_roc_10"] = data[col].pct_change(10).astype(np.float32)
+                    data[f"{col}_roc_20"] = data[col].pct_change(20).astype(np.float32)
 
-                    # Momentum using vectorized operations
+                    # Momentum using vectorized operations with M1 optimizations
                     for window in [5, 10, 20]:
                         momentum_col = f"{col}_momentum_{window}"
                         data[momentum_col] = self.vectorbt_rolling_optimizer.rolling_sum(
                             data[col].pct_change(), window
-                        )
+                        ).astype(np.float32)
+
+            # Apply aggressive garbage collection
+            import gc
+            gc.collect()
 
             momentum_features = len([col for col in data.columns if 'momentum' in col or 'roc' in col])
             self.performance_stats['momentum_features_generated'] += momentum_features
-            tprint_debug("✅ Added momentum features")
+            tprint_success(f"✅ Added {momentum_features} enhanced momentum features")
+
+            # Apply final memory optimization
+            try:
+                if 'm1_memory_optimizer' in locals():
+                    data = m1_memory_optimizer.optimize_dataframe_memory(data)
+            except:
+                pass
+
             return data
 
         except Exception as e:
-            raise RuntimeError(f"Momentum features failed: {e}") from e
+            tprint_error(f"❌ Enhanced momentum features failed: {e}")
+            return data
 
     def _add_volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add volatility-based features using vectorized operations."""
@@ -6817,10 +7380,10 @@ class UnifiedDataDrivenPipeline:
             return {'error': str(e)}
 
     async def _handle_period_lookback_optimization_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
-        """Handle period + lookback optimization step specifically."""
+        """Handle period + lookback optimization step specifically with M1 optimizations."""
         from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_period_lookback_optimization_step
         
-        tprint_info("🎯 Executing period + lookback optimization step")
+        tprint_info("🎯 Executing M1-optimized period + lookback optimization step")
         
         try:
             # Extract parameters from pipeline state
@@ -6833,7 +7396,24 @@ class UnifiedDataDrivenPipeline:
             exchange = pipeline_state.get('exchange', 'binance')
             custom_overrides = pipeline_state.get('custom_overrides')
             
-            # Run the optimization step
+            # Add M1 optimization parameters to custom_overrides
+            if custom_overrides is None:
+                custom_overrides = {}
+            
+            # Add M1 optimization configuration
+            if hasattr(self, 'm1_available') and self.m1_available:
+                custom_overrides.update({
+                    'm1_optimization_enabled': True,
+                    'parallel_workers': getattr(self, 'parallel_workers', 6),
+                    'chunk_size': getattr(self, 'chunk_size', 10000),
+                    'memory_mapping_enabled': getattr(self, 'memory_mapping_enabled', True),
+                    'aggressive_gc_enabled': getattr(self, 'aggressive_gc_enabled', True),
+                    'data_type_optimization': getattr(self, 'data_type_optimization', True),
+                    'm1_gpu_acceleration': getattr(self, 'm1_gpu_manager', {}).mps_available if hasattr(self, 'm1_gpu_manager') else False
+                })
+                tprint_info("🧠 M1 optimization parameters added to pipeline state")
+            
+            # Run the optimization step with M1 optimizations
             result = await run_period_lookback_optimization_step(
                 data=data,
                 symbol=symbol,

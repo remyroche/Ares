@@ -179,14 +179,19 @@ class AresLauncher:
             "description": "Optimizes period and lookback parameters"
         },
         {
-            "name": "Interaction Generation",
-            "sub_pipeline": "feature_generation_interaction_generation_step",
-            "description": "Generates feature interactions"
+            "name": "Interaction Generation (Analyst)",
+            "sub_pipeline": "feature_generation_interaction_generation_step_analyst",
+            "description": "Analyst mode: Three-phase LGBM+SHAP interaction generation"
         },
         {
-            "name": "Vectorization",
-            "sub_pipeline": "feature_generation_vectorization_step",
-            "description": "Vectorizes features for ML models"
+            "name": "Interaction Generation (Tactician)",
+            "sub_pipeline": "feature_generation_interaction_generation_step_tactician",
+            "description": "Tactician mode: Original interaction generation with CMI filtering"
+        },
+        {
+            "name": "Final Feature Selection",
+            "sub_pipeline": "feature_generation_final_feature_selection_step",
+            "description": "Target-aware feature selection with downstream pipeline: PCA → MI → mRMR → LASSO+Stability → LGBM+RFE+SHAP"
         },
         {
             "name": "Labeling Integration (Final)",
@@ -630,7 +635,8 @@ class AresLauncher:
         custom_config: Optional[Dict[str, Any]] = None,
         pipeline_type: str = "feature_generation",
         start_from_step: int = 1,
-        stop_at_step: Optional[int] = None
+        stop_at_step: Optional[int] = None,
+        args=None
     ) -> MainPipelineResult:
         """
         Execute the training pipeline with granular control.
@@ -691,7 +697,8 @@ class AresLauncher:
                 config,
                 start_from_step,
                 stop_at_step,
-                target_sub_pipeline=sub_pipeline
+                target_sub_pipeline=sub_pipeline,
+                args=args
             )
         else:
             tprint("🚀 [EXECUTE_PIPELINE] Executing full pipeline")
@@ -1394,11 +1401,35 @@ class AresLauncher:
 
         return result
 
-    async def _execute_sub_pipeline_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+    def _route_interaction_generation_step(self, sub_pipeline: str, config: MainPipelineConfig, args=None) -> str:
+        """Route interaction generation steps based on mode and configuration."""
+        # Check if this is an interaction generation step
+        if sub_pipeline in [
+            'feature_generation_interaction_generation_step_analyst',
+            'feature_generation_interaction_generation_step_tactician'
+        ]:
+            # Determine mode based on command line argument or configuration
+            tactician_mode = False
+            if args and hasattr(args, 'tactician_mode'):
+                tactician_mode = args.tactician_mode
+            elif hasattr(config, 'tactician_mode'):
+                tactician_mode = config.tactician_mode
+            
+            if tactician_mode:
+                tprint("🎯 [ROUTING] Using Tactician mode for interaction generation")
+                return 'feature_generation_interaction_generation_step_tactician'
+            else:
+                tprint("🎯 [ROUTING] Using Analyst mode for interaction generation")
+                return 'feature_generation_interaction_generation_step_analyst'
+        
+        # Return original sub-pipeline if not an interaction generation step
+        return sub_pipeline
+
+    async def _execute_sub_pipeline_direct(self, sub_pipeline: str, config: MainPipelineConfig, args=None) -> MainPipelineResult:
         """Execute a specific sub-pipeline directly (for internal use in sequential mode)."""
         # Handle feature generation steps directly
         if sub_pipeline.startswith('feature_generation_'):
-            return await self._execute_feature_generation_step_direct(sub_pipeline, config)
+            return await self._execute_feature_generation_step_direct(sub_pipeline, config, args)
 
         # Handle unified data driven pipeline shortcuts
         if sub_pipeline.startswith('unified_data_driven_pipeline'):
@@ -1471,15 +1502,20 @@ class AresLauncher:
 
     async def _execute_sub_pipeline(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
         """Execute a specific sub-pipeline."""
-        # Handle feature generation steps - redirect to sequential mode
+        # Handle feature generation steps - redirect to sequential mode for most steps
         if sub_pipeline.startswith('feature_generation_'):
-            tprint(f"⚠️ [SUB_PIPELINE] Individual feature generation steps are deprecated.")
-            tprint(f"   Use --mode sequential instead for feature generation pipeline.")
-            tprint(f"   Example: python3 src/launcher/ares_launcher.py --mode sequential --symbol {config.symbol} --execution-mode {config.execution_mode}")
-            raise ValueError(f"Individual feature generation steps are deprecated. Use --mode sequential instead.")
+            # Allow direct execution of interaction generation steps
+            if sub_pipeline in ['feature_generation_interaction_generation_step_analyst', 'feature_generation_interaction_generation_step_tactician']:
+                tprint(f"🚀 [SUB_PIPELINE] Executing interaction generation step directly: {sub_pipeline}")
+                return await self._execute_feature_generation_step_direct(sub_pipeline, config, None)
+            else:
+                tprint(f"⚠️ [SUB_PIPELINE] Individual feature generation steps are deprecated.")
+                tprint(f"   Use --mode sequential instead for feature generation pipeline.")
+                tprint(f"   Example: python3 src/launcher/ares_launcher.py --mode sequential --symbol {config.symbol} --execution-mode {config.execution_mode}")
+                raise ValueError(f"Individual feature generation steps are deprecated. Use --mode sequential instead.")
 
         # Use the direct method for other sub-pipelines
-        return await self._execute_sub_pipeline_direct(sub_pipeline, config)
+        return await self._execute_sub_pipeline_direct(sub_pipeline, config, None)
 
         # Find the stage containing this sub-pipeline
         target_stage = None
@@ -1548,7 +1584,8 @@ class AresLauncher:
         config: MainPipelineConfig,
         start_from_step: int = 1,
         stop_at_step: Optional[int] = None,
-        target_sub_pipeline: Optional[str] = None
+        target_sub_pipeline: Optional[str] = None,
+        args=None
     ) -> MainPipelineResult:
         """Execute multiple sub-pipelines sequentially with parameter consistency."""
         tprint(f"🚀 [SEQUENTIAL] Starting sequential pipeline execution: {pipeline_type}")
@@ -1617,8 +1654,11 @@ class AresLauncher:
             tprint(f"{'='*80}")
 
             try:
+                # Apply routing logic for interaction generation steps
+                actual_sub_pipeline = self._route_interaction_generation_step(step['sub_pipeline'], config, args)
+                
                 # Execute the sub-pipeline step directly (bypassing the redirect)
-                step_result = await self._execute_sub_pipeline_direct(step['sub_pipeline'], config)
+                step_result = await self._execute_sub_pipeline_direct(actual_sub_pipeline, config, args)
                 step_duration = (datetime.now() - step_start_time).total_seconds()
                 total_execution_time += step_duration
 
@@ -1714,7 +1754,7 @@ class AresLauncher:
 
         return result
 
-    async def _execute_feature_generation_step_direct(self, sub_pipeline: str, config: MainPipelineConfig) -> MainPipelineResult:
+    async def _execute_feature_generation_step_direct(self, sub_pipeline: str, config: MainPipelineConfig, args=None) -> MainPipelineResult:
         """Execute a specific feature generation step directly (for internal use in sequential mode)."""
         try:
             tprint(f"🚀 [FEATURE_GENERATION] Executing feature generation step: {sub_pipeline}")
@@ -1734,8 +1774,10 @@ class AresLauncher:
                 step_class_name = 'FeatureGenerationPeriodLookbackOptimizationStep'
             elif step_class_name == 'FeatureGenerationInteractionGenerationStep':
                 step_class_name = 'FeatureGenerationInteractionGenerationStep'
-            elif step_class_name == 'FeatureGenerationVectorizationStep':
-                step_class_name = 'FeatureGenerationVectorizationStep'
+            elif step_class_name == 'FeatureGenerationInteractionGenerationStepAnalyst':
+                step_class_name = 'FeatureGenerationInteractionGenerationStepAnalyst'
+            elif step_class_name == 'FeatureGenerationInteractionGenerationStepTactician':
+                step_class_name = 'FeatureGenerationInteractionGenerationStepTactician'
             elif step_class_name == 'FeatureGenerationFinalValidationStep':
                 step_class_name = 'FeatureGenerationFinalValidationStep'
             elif step_class_name == 'FeatureGenerationDataValidationStep':
@@ -1743,10 +1785,14 @@ class AresLauncher:
             elif step_class_name == 'FeatureGenerationLabelingIntegrationStep':
                 step_class_name = 'FeatureGenerationLabelingIntegrationStep'
             
+            tprint(f"🔍 [DEBUG] Looking for class: {step_class_name}")
             step_class = getattr(step_module, step_class_name)
+            tprint(f"🔍 [DEBUG] Class found: {step_class}")
 
             # Create step instance
+            tprint(f"🔍 [DEBUG] Creating instance of {step_class}")
             step = step_class()
+            tprint(f"🔍 [DEBUG] Instance created: {step}")
 
             # Load market data for the step
             from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
@@ -1780,18 +1826,25 @@ class AresLauncher:
                     custom_overrides={}
                 )
             else:
-                result = await step.execute(
-                    data=market_data,
-                    symbol=config.symbol,
-                    timeframe=config.timeframe,
-                    direction=config.direction,
-                    intensity=config.execution_mode.value,  # Use the proper execution mode (full/light/blank)
-                    lookback_days=getattr(config, 'lookback_days', None),
-                    start_date=config.start_date,
-                    end_date=config.end_date,
-                    exchange=config.exchange,
-                    custom_overrides={}
-                )
+                # Prepare execution parameters
+                execution_params = {
+                    'data': market_data,
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'direction': config.direction,
+                    'intensity': config.execution_mode.value,  # Use the proper execution mode (full/light/blank)
+                    'lookback_days': getattr(config, 'lookback_days', None),
+                    'start_date': config.start_date,
+                    'end_date': config.end_date,
+                    'exchange': config.exchange,
+                    'custom_overrides': {}
+                }
+                
+                # Add force_fresh parameter for optimization steps
+                if sub_pipeline == "feature_generation_period_lookback_optimization_step":
+                    execution_params['force_fresh'] = getattr(args, 'force_fresh', False) if args else False
+                
+                result = await step.execute(**execution_params)
 
             # Create MainPipelineResult
             pipeline_result = MainPipelineResult(
@@ -2350,6 +2403,13 @@ Examples:
     )
 
     parser.add_argument(
+        '--model-type',
+        choices=['analyst', 'tactician'],
+        default='analyst',
+        help='Model type for final feature selection: analyst or tactician (default: analyst)'
+    )
+
+    parser.add_argument(
         '--stage',
         choices=['data_collection', 'market_analysis', 'pre_training', 'model_training', 'backtesting'],
         help='Specific stage to execute (for stage mode)'
@@ -2489,7 +2549,18 @@ Examples:
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, unified_data_driven_pipeline, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, train_analyst_base_models, train_analyst_ensemble, train_tactician_base_models, train_tactician_ensemble, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, --unified-pipeline-analyst, --unified-pipeline-tactician, --tactician-ensemble, --train-analyst-base, --train-analyst-ensemble, --train-tactician-base, --train-tactician-ensemble. For feature generation steps, use --mode sequential instead.'
+        choices=[
+            'analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
+            'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training',
+            'nas_tas_regime_discovery', 'nas_tas_clustering', 'multi_horizon_profit_labeler',
+            'analyst_profit_labeler', 'tactician_entry_labeler', 'unified_data_driven_pipeline',
+            'feature_lookback_optimization', 'interactive_feature_generation', 'final_feature_selection',
+            'basic_backtesting_pre', 'basic_backtesting_post', 'walk_forward_validation',
+            'train_analyst_base_models', 'train_analyst_ensemble', 'train_tactician_base_models',
+            'train_tactician_ensemble', 'feature_generation_interaction_generation_step_analyst',
+            'feature_generation_interaction_generation_step_tactician'
+        ],
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). For interaction generation: use feature_generation_interaction_generation_step_analyst or feature_generation_interaction_generation_step_tactician'
     )
 
     parser.add_argument(
@@ -2508,7 +2579,25 @@ Examples:
 
     parser.add_argument(
         '--start-from-step-name',
-        help='Start sequential execution from this step name. Alternative to --start-from-step. Available: feature_generation_data_validation_step, feature_generation_labeling_integration_step, feature_generation_feature_generation_step, feature_generation_feature_selection_step, feature_generation_period_lookback_optimization_step, feature_generation_interaction_generation_step, feature_generation_vectorization_step, feature_generation_final_validation_step'
+        choices=[
+            'feature_generation_data_validation_step', 'feature_generation_labeling_integration_step',
+            'feature_generation_feature_generation_step', 'feature_generation_feature_selection_step',
+            'feature_generation_period_lookback_optimization_step', 'feature_generation_interaction_generation_step_analyst',
+            'feature_generation_interaction_generation_step_tactician', 'feature_generation_final_validation_step'
+        ],
+        help='Start sequential execution from this step name. Alternative to --start-from-step.'
+    )
+    
+    parser.add_argument(
+        '--tactician-mode',
+        action='store_true',
+        help='Use Tactician mode for interaction generation (default: Analyst mode)'
+    )
+    
+    parser.add_argument(
+        '--force-fresh',
+        action='store_true',
+        help='Force fresh computation, bypassing cache for optimization steps'
     )
 
     parser.add_argument(
@@ -2671,8 +2760,8 @@ async def main():
             'feature_generation_feature_generation_step': 3,
             'feature_generation_feature_selection_step': 4,
             'feature_generation_period_lookback_optimization_step': 5,
-            'feature_generation_interaction_generation_step': 6,
-            'feature_generation_vectorization_step': 7,
+            'feature_generation_interaction_generation_step_analyst': 6,
+            'feature_generation_interaction_generation_step_tactician': 6,
             'feature_generation_final_validation_step': 8
         }
 
@@ -2692,6 +2781,7 @@ async def main():
             exchange=args.exchange,
             timeframe=args.timeframe,
             data_dir=args.data_dir,
+            args=args,
             direction=args.direction if hasattr(args, 'direction') else 'longs',
             stage=stage,
             sub_pipeline=selected_sub_pipeline,

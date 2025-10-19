@@ -106,6 +106,10 @@ class FeatureScore:
     information_content: float
     uniqueness_score: float
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def __hash__(self):
+        """Make FeatureScore hashable for use in sets and as dictionary keys."""
+        return hash(self.feature_name)
 
 @dataclass
 class FeatureSelectionResult:

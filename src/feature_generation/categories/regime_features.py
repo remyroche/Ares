@@ -51,7 +51,7 @@ except ImportError:
 try:
     import vectorbt as vbt
     from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
+        # rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,  # VectorBT doesn't have these
         rolling_sum, rolling_apply, rolling_corr, rolling_cov,
         rolling_skew, rolling_kurt, rolling_quantile
     )

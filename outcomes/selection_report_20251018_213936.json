@@ -1,0 +1,27 @@
+{
+  "selection_metrics": {
+    "total_features_analyzed": 354,
+    "features_selected": 1,
+    "selection_ratio": 0.002824858757062147,
+    "average_ic": 0.9999999999999998,
+    "average_stability": 1.0,
+    "average_oof_ic": 1.0,
+    "execution_time": 1523.7489030361176
+  },
+  "selected_features": [
+    {
+      "name": "candlestick_harami_cross_pattern",
+      "ic_score": 0.9999999999999998,
+      "stability_score": 1.0,
+      "composite_score": 0.9277186031497926,
+      "oof_ic": 1.0,
+      "oof_sharpe": 8.771407154892584
+    }
+  ],
+  "config": {
+    "max_features": 60,
+    "min_ic_threshold": 0.005,
+    "min_stability_threshold": 0.4,
+    "max_correlation_threshold": 0.85
+  }
+}

@@ -84,6 +84,8 @@ class EconomicEvaluationConfig:
     min_economic_score: float = 0.4
     economic_weight: float = 0.6
     statistical_weight: float = 0.4
+    # Limit the number of economically-validated features (final target)
+    target_count: int = 40
 
 @dataclass
 class PeriodBacktestResult:
@@ -344,48 +346,57 @@ class EconomicPeriodEvaluator:
     def _select_economically_significant_features(self, data: pd.DataFrame, 
                                                 evaluation_result: 'EconomicPeriodEvaluationResult',
                                                 targets: pd.Series) -> pd.DataFrame:
-        """Select features based on economic significance scores."""
+        """Select features based on economic significance scores.
+
+        Current proxy: absolute correlation to target as an economic relevance score.
+        Picks top-N by score, where N = config.target_count.
+        """
         try:
             tprint_debug("🔍 Starting economically significant feature selection")
             
             if not evaluation_result.economic_scores:
-                tprint_warning("⚠️ No economic scores available, returning all features")
-                return data
+                tprint_warning("⚠️ No period economic scores available; proceeding with feature-level proxy scores")
+            else:
+                tprint_debug(f"📊 Economic scores available (period-level): {len(evaluation_result.economic_scores)}")
             
-            tprint_debug(f"📊 Economic scores available: {len(evaluation_result.economic_scores)}")
+            # Compute per-feature economic proxy score (abs correlation)
+            feature_scores: Dict[str, float] = {}
+            skip_cols = {'open', 'high', 'low', 'close', 'volume'}
             
-            # Get features with highest economic significance
-            significant_features = []
-            correlation_threshold = 0.1
-            tprint_debug(f"📊 Using correlation threshold: {correlation_threshold}")
+            tprint_info("📊 Computing feature-level economic proxy scores (|corr|)")
             
             for feature in data.columns:
-                if feature in ['open', 'high', 'low', 'close', 'volume']:
+                if feature in skip_cols:
                     tprint_debug(f"⏭️ Skipping OHLCV column: {feature}")
                     continue  # Skip OHLCV columns
                     
                 # Calculate feature-target correlation as proxy for economic significance
                 try:
                     correlation = safe_correlation(data[feature], targets)
-                    tprint_debug(f"📊 Feature {feature}: correlation = {correlation:.4f}")
-                    
-                    if abs(correlation) > correlation_threshold:  # Threshold for significance
-                        significant_features.append(feature)
-                        tprint_debug(f"✅ Feature {feature} selected (correlation: {correlation:.4f})")
-                    else:
-                        tprint_debug(f"❌ Feature {feature} rejected (correlation: {correlation:.4f})")
+                    score = abs(correlation)
+                    feature_scores[feature] = float(score)
+                    tprint_debug(f"📊 Feature {feature}: economic proxy score = {score:.6f}")
                 except Exception as e:
-                    tprint_debug(f"⚠️ Error calculating correlation for {feature}: {e}")
+                    tprint_debug(f"⚠️ Error calculating economic score for {feature}: {e}")
                     continue
-            
-            tprint_info(f"📊 Selected {len(significant_features)} economically significant features out of {len(data.columns)}")
-            
-            if significant_features:
-                tprint_success(f"✅ Returning {len(significant_features)} significant features")
-                return data[significant_features]
-            else:
-                tprint_warning("⚠️ No significant features found, returning all features")
+
+            if not feature_scores:
+                tprint_warning("⚠️ No feature economic scores computed; returning all features")
                 return data
+
+            # Rank and select top-N by economic proxy score
+            target_n = max(1, int(self.config.target_count))
+            sorted_feats = sorted(feature_scores.items(), key=lambda kv: kv[1], reverse=True)
+            top_feats = [name for name, score in sorted_feats[:target_n]]
+            tprint_info(f"📊 Top-{target_n} economically significant features selected")
+            tprint_debug(f"📊 Top-5 preview: {[(n, round(s,6)) for n,s in sorted_feats[:5]]}")
+
+            selected = [f for f in top_feats if f in data.columns]
+            if not selected:
+                tprint_warning("⚠️ No overlap after ranking; returning original data")
+                return data
+            tprint_success(f"✅ Returning {len(selected)} economically significant features")
+            return data[selected]
                 
         except Exception as e:
             tprint_warning(f"⚠️ Error selecting economically significant features: {e}")

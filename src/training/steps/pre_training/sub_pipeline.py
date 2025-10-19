@@ -159,20 +159,28 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Combined period and lookback optimization for features in unified pipeline.',
         order=7,
     ),
-    'feature_generation_interaction_generation_step': StepSpec(
-        name='feature_generation_interaction_generation_step',
-        component_key='feature_generation_interaction_generation_step',
-        executor_method='_execute_feature_generation_interaction_generation_step',
+    'feature_generation_interaction_generation_step_analyst': StepSpec(
+        name='feature_generation_interaction_generation_step_analyst',
+        component_key='feature_generation_interaction_generation_step_analyst',
+        executor_method='_execute_feature_generation_interaction_generation_step_analyst',
         display_name='7. Interaction Generation Step',
-        description='Feature interaction generation for unified pipeline.',
+        description='Analyst mode: Three-phase LGBM+SHAP interaction generation pipeline.',
         order=8,
     ),
-    'feature_generation_vectorization_step': StepSpec(
-        name='feature_generation_vectorization_step',
-        component_key='feature_generation_vectorization_step',
-        executor_method='_execute_feature_generation_vectorization_step',
-        display_name='8. Vectorization Step',
-        description='Feature vectorization optimization for unified pipeline.',
+    'feature_generation_interaction_generation_step_tactician': StepSpec(
+        name='feature_generation_interaction_generation_step_tactician',
+        component_key='feature_generation_interaction_generation_step_tactician',
+        executor_method='_execute_feature_generation_interaction_generation_step_tactician',
+        display_name='7. Interaction Generation Step (Tactician)',
+        description='Tactician mode: Original interaction generation with CMI complementarity filtering.',
+        order=8,
+    ),
+    'feature_generation_final_feature_selection_step': StepSpec(
+        name='feature_generation_final_feature_selection_step',
+        component_key='feature_generation_final_feature_selection_step',
+        executor_method='_execute_feature_generation_final_feature_selection_step',
+        display_name='8. Final Feature Selection Step',
+        description='Target-aware feature selection with downstream pipeline: PCA → MI → mRMR → LASSO+Stability → LGBM+RFE+SHAP',
         order=9,
     ),
     'feature_generation_final_validation_step': StepSpec(
@@ -193,8 +201,9 @@ STEP_PROGRESS_ICONS: Dict[str, str] = {
     'feature_generation_feature_generation_step': '⚙️',
     'feature_generation_feature_selection_step': '🎯',
     'feature_generation_period_lookback_optimization_step': '📊',
-    'feature_generation_interaction_generation_step': '🔧',
-    'feature_generation_vectorization_step': '🚀',
+    'feature_generation_interaction_generation_step_analyst': '🔧',
+    'feature_generation_interaction_generation_step_tactician': '🔧',
+    'feature_generation_final_feature_selection_step': '🎯',
     'feature_generation_final_validation_step': '✅',
 }
 
@@ -501,14 +510,12 @@ class PipelineState(dict):
         - ``lookback_optimization_result``: Lookback optimization results.
         - ``combined_optimization_result``: Combined optimization results.
         - ``validated_schemas``: Schema metadata for optimization outputs.
-    * ``feature_generation_interaction_generation_step``
-        - ``interaction_generation_result``: Interaction generation results.
+    * ``feature_generation_interaction_generation_step_analyst``
+        - ``interaction_generation_result``: Analyst mode interaction generation results.
+    * ``feature_generation_interaction_generation_step_tactician``
+        - ``interaction_generation_result``: Tactician mode interaction generation results.
         - ``interaction_features``: Generated interaction features.
         - ``validated_schemas``: Schema metadata for interaction outputs.
-    * ``feature_generation_vectorization_step``
-        - ``vectorization_result``: Vectorization results.
-        - ``vectorized_features``: Vectorized feature dataset.
-        - ``validated_schemas``: Schema metadata for vectorization outputs.
     * ``feature_generation_final_validation_step``
         - ``final_validation_result``: Final validation results.
         - ``validation_report``: Final validation report.
@@ -561,14 +568,18 @@ class PipelineState(dict):
             'combined_optimization_result',
             'validated_schemas',
         }),
-        'feature_generation_interaction_generation_step': frozenset({
+        'feature_generation_interaction_generation_step_analyst': frozenset({
+            'interaction_generation_result',
+        }),
+        'feature_generation_interaction_generation_step_tactician': frozenset({
             'interaction_generation_result',
             'interaction_features',
             'validated_schemas',
         }),
-        'feature_generation_vectorization_step': frozenset({
-            'vectorization_result',
-            'vectorized_features',
+        'feature_generation_final_feature_selection_step': frozenset({
+            'optimized_feature_dataframe',
+            'interaction_features',
+            'targets',
             'validated_schemas',
         }),
         'feature_generation_final_validation_step': frozenset({
@@ -4324,26 +4335,26 @@ class PreTrainingSubPipeline:
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
 
-    async def _execute_feature_generation_interaction_generation_step(
+    async def _execute_feature_generation_interaction_generation_step_analyst(
         self,
         config: SubPipelineConfig,
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
-        """Execute feature generation interaction generation step."""
+        """Execute analyst mode feature generation interaction generation step."""
         result = SubPipelineResult(
-            sub_pipeline_name='feature_generation_interaction_generation_step',
+            sub_pipeline_name='feature_generation_interaction_generation_step_analyst',
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        result.error_code = self._default_step_error_code('feature_generation_interaction_generation_step')
+        result.error_code = self._default_step_error_code('feature_generation_interaction_generation_step_analyst')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_interaction_generation_step import (
-                handle_feature_generation_interaction_generation_step
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_interaction_generation_step_analyst import (
+                handle_feature_generation_interaction_generation_step_analyst
             )
 
 #             # Execute step
-            step_result = await handle_feature_generation_interaction_generation_step(
+            step_result = await handle_feature_generation_interaction_generation_step_analyst(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4369,32 +4380,32 @@ class PreTrainingSubPipeline:
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
-            result.error_code = f"{self._default_step_error_code('feature_generation_interaction_generation_step')}_UNEXPECTED"
+            result.error_code = f"{self._default_step_error_code('feature_generation_interaction_generation_step_analyst')}_UNEXPECTED"
 
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
 
-    async def _execute_feature_generation_vectorization_step(
+    async def _execute_feature_generation_interaction_generation_step_tactician(
         self,
         config: SubPipelineConfig,
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
-        """Execute feature generation vectorization step."""
+        """Execute tactician mode feature generation interaction generation step."""
         result = SubPipelineResult(
-            sub_pipeline_name='feature_generation_vectorization_step',
+            sub_pipeline_name='feature_generation_interaction_generation_step_tactician',
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        result.error_code = self._default_step_error_code('feature_generation_vectorization_step')
+        result.error_code = self._default_step_error_code('feature_generation_interaction_generation_step_tactician')
 
         try:
-            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_vectorization_step import (
-                handle_feature_generation_vectorization_step
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_interaction_generation_step_tactician import (
+                handle_feature_generation_interaction_generation_step_tactician
             )
 
 #             # Execute step
-            step_result = await handle_feature_generation_vectorization_step(
+            step_result = await handle_feature_generation_interaction_generation_step_tactician(
                 symbol=config.symbol,
                 timeframe=config.timeframe,
                 direction=config.direction,
@@ -4410,8 +4421,8 @@ class PreTrainingSubPipeline:
                 result.status = SubPipelineStatus.COMPLETED
                 result.artifacts = step_result.artifacts or {}
                 result.metadata = {
-                    'vectorized_feature_count': len(step_result.vectorized_features.columns),
-                    'performance_metrics': step_result.performance_metrics
+                    'interaction_feature_count': len(step_result.interaction_features.columns),
+                    'generation_metrics': step_result.generation_metrics
                 }
             else:
                 result.status = SubPipelineStatus.FAILED
@@ -4420,11 +4431,12 @@ class PreTrainingSubPipeline:
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
-            result.error_code = f"{self._default_step_error_code('feature_generation_vectorization_step')}_UNEXPECTED"
+            result.error_code = f"{self._default_step_error_code('feature_generation_interaction_generation_step_tactician')}_UNEXPECTED"
 
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
         return result
+
 
     async def _execute_feature_generation_labeling_integration_step(
         self,
@@ -4474,6 +4486,74 @@ class PreTrainingSubPipeline:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.error_code = f"{self._default_step_error_code('feature_generation_labeling_integration_step')}_UNEXPECTED"
+
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+
+    async def _execute_feature_generation_final_feature_selection_step(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute final feature selection step."""
+        result = SubPipelineResult(
+            sub_pipeline_name='feature_generation_final_feature_selection_step',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('feature_generation_final_feature_selection_step')
+
+        try:
+            from src.training.steps.pre_training.unified_data_driven_pipeline.steps.feature_generation_final_feature_selection_step import (
+                handle_feature_generation_final_feature_selection_step
+            )
+
+            # Execute step
+            step_result = await handle_feature_generation_final_feature_selection_step(
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+                model_type=getattr(config, 'model_type', 'analyst'),
+                direction=getattr(config, 'direction', 'long'),
+                lookback_days=getattr(config, 'lookback_days', None),
+                start_date=config.start_date,
+                end_date=config.end_date,
+                exchange=getattr(config, 'exchange', 'binance'),
+                custom_overrides=config.custom_params
+            )
+
+            if step_result.success:
+                result.status = SubPipelineStatus.COMPLETED
+                result.artifacts = {
+                    'selected_features_60': step_result.selected_features_60,
+                    'selected_features_50': step_result.selected_features_50,
+                    'selected_features_40': step_result.selected_features_40,
+                    'selected_feature_dataframe_60': step_result.selected_feature_dataframe_60,
+                    'selected_feature_dataframe_50': step_result.selected_feature_dataframe_50,
+                    'selected_feature_dataframe_40': step_result.selected_feature_dataframe_40,
+                    'feature_scores': step_result.feature_scores,
+                    'shap_values_60': step_result.shap_values_60,
+                    'shap_values_50': step_result.shap_values_50,
+                    'shap_values_40': step_result.shap_values_40,
+                    'selection_metadata': step_result.selection_metadata
+                }
+                if result.artifacts:
+                    self._store_artifacts_in_chain('feature_generation_final_feature_selection_step', result.artifacts)
+                result.metadata = {
+                    'features_60_count': len(step_result.selected_features_60),
+                    'features_50_count': len(step_result.selected_features_50),
+                    'features_40_count': len(step_result.selected_features_40),
+                    'execution_time': step_result.execution_time,
+                    'selection_metadata': step_result.selection_metadata
+                }
+            else:
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = step_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.error_code = f"{self._default_step_error_code('feature_generation_final_feature_selection_step')}_UNEXPECTED"
 
         result.end_time = datetime.now()
         result.duration_seconds = (result.end_time - result.start_time).total_seconds()
@@ -5140,8 +5220,9 @@ class PreTrainingSubPipeline:
             'feature_generation_feature_generation_step',
             'feature_generation_feature_selection_step',
             'feature_generation_period_lookback_optimization_step',
-            'feature_generation_interaction_generation_step',
-            'feature_generation_vectorization_step',
+            'feature_generation_interaction_generation_step_analyst',
+            'feature_generation_interaction_generation_step_tactician',
+            'feature_generation_final_feature_selection_step',
             'feature_generation_final_validation_step'
         ]
 

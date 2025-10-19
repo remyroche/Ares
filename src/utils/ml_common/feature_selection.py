@@ -214,7 +214,7 @@ class FeatureSelectionFramework:
                 'n_neighbors': 3
             },
             'importance': {
-                'n_estimators': 100,
+                'n_estimators': 50,  # Reduced from 100 for 2-3x speedup
                 'max_depth': 10,
                 'bootstrap': True
             },

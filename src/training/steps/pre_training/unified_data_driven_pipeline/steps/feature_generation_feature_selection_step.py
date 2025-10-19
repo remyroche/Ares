@@ -77,8 +77,8 @@ def _cols(obj: Any) -> List[str]:
         return list(obj.tolist())
     if isinstance(obj, list):
         # Handle list of FeatureScore objects
-        if obj and hasattr(obj[0], 'name'):
-            return [item.name for item in obj if hasattr(item, 'name')]
+        if obj and hasattr(obj[0], 'feature_name'):
+            return [item.feature_name for item in obj if hasattr(item, 'feature_name')]
         # Handle list of strings
         return list(obj)
     return list(obj)
@@ -150,14 +150,29 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
                 enable_stability_analysis=True,
                 enable_vectorbt=True,
                 enable_parallel_processing=True,
-                final_selection_count=40,
+                # Stage targets: S1=100, S2=60, S3=40
+                final_selection_count=60,  # Advanced selector Stage 2 target
+                # Use only LightGBM + TreeSHAP (Optimized) for feature importance
+                final_selection_methods=['lgbm'],  # Disable Random Forest, use LGBM+TreeSHAP only
+                max_screening_features=100,  # Stage 1 target
+                # Use quantile gating to keep top 75% per filter
+                screening_use_quantile=True,
+                screening_keep_quantile=0.66,  # Keep top 66% of features
                 diversity_threshold=0.3,
                 stability_window=20,
                 # Performance optimizations
                 n_bootstrap=25,  # Reduced from 100 for 3-5x speedup
                 min_ic_threshold=0.005,  # Relaxed from 0.01 to prevent feature rejection
                 min_stability_threshold=0.4,  # Relaxed from 0.6 to prevent feature rejection
-                max_parallel_workers=6  # Maximum parallel workers for stability selection
+                max_parallel_workers=6,  # Maximum parallel workers for stability selection
+                # Throughput/memory knobs (M1-friendly defaults)
+                feature_batch_size=24,
+                enable_feature_streaming=True,
+                enable_chunked_processing=True,
+                data_chunk_size=25000,
+                aggressive_gc=True,
+                gc_frequency_operations=5,
+                # Iterative screening knobs (requested) - removed invalid parameters
             )
             tprint_success("✅ [DEBUG] FeatureSelectionConfig created successfully")
             tprint_debug(f"🔧 [DEBUG] Config - final_selection_count: {self.feature_selection_config.final_selection_count}, diversity_threshold: {self.feature_selection_config.diversity_threshold}")
@@ -168,9 +183,18 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             tprint_debug(f"🔧 [DEBUG] - max_parallel_workers: {self.feature_selection_config.max_parallel_workers}")
             tprint_debug(f"🔧 [DEBUG] - enable_parallel_processing: {self.feature_selection_config.enable_parallel_processing}")
             
-            tprint_info("🔧 [DEBUG] Initializing BattleTestedFeatureSelector")
-            self.battle_tested_selector = BattleTestedFeatureSelector(self.feature_selection_config)
-            tprint_success("✅ [DEBUG] BattleTestedFeatureSelector initialized")
+            tprint_info("🔧 [DEBUG] Initializing AdvancedFeatureSelector")
+            from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.advanced_feature_selection import AdvancedFeatureSelector
+            self.battle_tested_selector = AdvancedFeatureSelector(self.feature_selection_config)
+            # Extra runtime proof for auditing which selector is used
+            try:
+                self.logger.info(
+                    f"🔎 Using selector instance: {self.battle_tested_selector.__class__.__module__}."
+                    f"{self.battle_tested_selector.__class__.__name__}"
+                )
+            except Exception:
+                pass
+            tprint_success("✅ [DEBUG] AdvancedFeatureSelector initialized")
             
             # Initialize multi-objective selector with default objectives
             tprint_info("🔧 [DEBUG] Creating default objectives for multi-objective selector")
@@ -563,6 +587,23 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             # Apply custom overrides if provided
             tprint_info("🔍 [DEBUG] Applying custom overrides")
             self._apply_overrides(custom_overrides)
+            
+            # Apply M1 Mac memory optimizations if no custom overrides provided
+            if not custom_overrides:
+                tprint_info("🔧 [M1_OPTIMIZATION] Applying M1 Mac memory optimizations")
+                m1_optimizations = {
+                    'data_chunk_size': 25000,        # Smaller chunks for M1
+                    'feature_batch_size': 32,        # Smaller feature batches
+                    'aggressive_gc': True,           # Keep aggressive GC
+                    'gc_frequency_operations': 5,    # More frequent GC
+                    'enable_chunked_processing': True,
+                    'enable_memory_mapped_files': True,
+                    'enable_data_type_optimization': True,
+                    'enable_feature_streaming': True
+                }
+                self._apply_overrides(m1_optimizations)
+                tprint_success("✅ [M1_OPTIMIZATION] M1 Mac optimizations applied")
+            
             tprint_success("✅ [DEBUG] Custom overrides applied")
                 
             # Step 1: Battle-tested multi-stage feature selection
@@ -586,10 +627,29 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             tprint_debug(f"🔍 [STAGE1] Selector config - enable_vectorbt: {self.feature_selection_config.enable_vectorbt}")
             tprint_debug(f"🔍 [STAGE1] Selector config - enable_parallel_processing: {self.feature_selection_config.enable_parallel_processing}")
             tprint_info("🔍 [STAGE1] Executing battle-tested feature selection in separate thread")
+            try:
+                # Log the concrete class and module used at runtime
+                self.logger.info(
+                    f"🎛️ Stage 1 selector: {self.battle_tested_selector.__class__.__module__}."
+                    f"{self.battle_tested_selector.__class__.__name__}"
+                )
+            except Exception:
+                pass
             
-            advanced_result = await asyncio.to_thread(
-                self.battle_tested_selector.select_features, data, targets
-            )
+            tprint_info("🔍 [STAGE1] About to call battle_tested_selector.select_features")
+            tprint_debug(f"🔍 [STAGE1] battle_tested_selector type: {type(self.battle_tested_selector)}")
+            tprint_debug(f"🔍 [STAGE1] battle_tested_selector: {self.battle_tested_selector}")
+            
+            try:
+                advanced_result = await asyncio.to_thread(
+                    self.battle_tested_selector.select_features, data, targets
+                )
+                tprint_success("✅ [STAGE1] Battle-tested selection completed successfully")
+            except Exception as e:
+                tprint_error(f"❌ [STAGE1] Battle-tested selection failed: {e}")
+                tprint_debug(f"❌ [STAGE1] Exception type: {type(e).__name__}")
+                tprint_debug(f"❌ [STAGE1] Exception details: {str(e)}")
+                raise e
             
             tprint_info("🔍 [STAGE1] Battle-tested selection completed")
             tprint_debug(f"🔍 [STAGE1] Result success: {advanced_result.success}")
@@ -680,6 +740,8 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             cols2_available = [c for c in cols2 if c in df1.columns]
             tprint_debug(f"🔍 [STAGE2] Available features after optimization: {cols2_available}")
             tprint_debug(f"🔍 [STAGE2] Available features count: {len(cols2_available)}")
+
+            # No fallback trimming here; rely on MultiObjective selector configuration
             
             if len(cols2_available) != len(cols2):
                 missing_features = [c for c in cols2 if c not in df1.columns]
@@ -729,6 +791,8 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             cols3_available = [c for c in cols3 if c in df2.columns]
             tprint_debug(f"🔍 [STAGE3] Available features after validation: {cols3_available}")
             tprint_debug(f"🔍 [STAGE3] Available features count: {len(cols3_available)}")
+
+            # No fallback trimming here; rely on economic validation outputs
             
             if len(cols3_available) != len(cols3):
                 missing_features = [c for c in cols3 if c not in df2.columns]
@@ -803,6 +867,7 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             tprint_info(f"   • Final selected features: {len(selected_features_df.columns)}")
             tprint_info(f"   • Feature reduction: {len(data.columns) - len(selected_features_df.columns)} features removed")
             tprint_info(f"   • Reduction percentage: {((len(data.columns) - len(selected_features_df.columns)) / len(data.columns) * 100):.1f}%")
+            tprint_info("   • Targets per stage: S1=100, S2=60, S3=40")
             
             result = FeatureSelectionResult(
                 success=True,
@@ -1029,9 +1094,17 @@ class FeatureGenerationFeatureSelectionStep(ModularComponent):
             # Initialize battle-tested feature selection components
             tprint_debug(f"🔧 [DEBUG] BATTLE_TESTED_COMPONENTS_AVAILABLE: {BATTLE_TESTED_COMPONENTS_AVAILABLE}")
             if BATTLE_TESTED_COMPONENTS_AVAILABLE:
-                tprint_info("🔧 [DEBUG] Initializing battle-tested components")
-                self.battle_tested_selector = BattleTestedFeatureSelector()
-                tprint_success("✅ [DEBUG] BattleTestedFeatureSelector initialized")
+                tprint_info("🔧 [DEBUG] Initializing advanced components")
+                from src.training.steps.pre_training.unified_data_driven_pipeline.enhanced_components.advanced_feature_selection import AdvancedFeatureSelector
+                self.battle_tested_selector = AdvancedFeatureSelector()
+                try:
+                    self.logger.info(
+                        f"🔎 Using selector instance: {self.battle_tested_selector.__class__.__module__}."
+                        f"{self.battle_tested_selector.__class__.__name__}"
+                    )
+                except Exception:
+                    pass
+                tprint_success("✅ [DEBUG] AdvancedFeatureSelector initialized")
                 
                 # Initialize multi-objective selector with default objectives
                 tprint_info("🔧 [DEBUG] Creating default objectives")

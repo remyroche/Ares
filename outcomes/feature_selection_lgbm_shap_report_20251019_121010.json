@@ -1,0 +1,323 @@
+{
+  "title": "LGBM/SHAP Feature Selection Report",
+  "timestamp": "2025-10-19T12:10:10.945095",
+  "oof": {
+    "oof_enabled": true,
+    "n_splits": 5,
+    "total_val_rows": 968640
+  },
+  "summary": {
+    "n_features_considered": 60,
+    "top_k_for_shap": 60,
+    "final_selection_count": 60
+  },
+  "top_features": [
+    {
+      "feature": "fibonacci_0.236_20_price_returns",
+      "combined_score": 0.7999999999904177,
+      "shap_importance": 626.1529962051286,
+      "lgb_gain": 803298433531.3656
+    },
+    {
+      "feature": "vectorbt_yang_zhang_volatility_30",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "returns_skewness_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_acceleration_consistency_10_10_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "t3_14_0.7_returns_vwap",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "momentum_30_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "resistance_level_5_10_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_sma_5",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "support_level_1_5_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "resistance_level_2_5_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_accumulation_distribution",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "resistance_level_1_5_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_atr_20",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "candlestick_harami_pattern",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_std_50",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_entropy_20_volume_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_momentum_20",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_entropy_5_volume_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "advanced_cumulative_returns_10",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "analyst_volume_trend",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_atr_14",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_std_10",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "fibonacci_0.236_10_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "support_level_1_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_volatility_comprehensive_20",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_parkinson_volatility_20",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "resistance_level_4_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "tema_21_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "pivot_point_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "support_level_4_5_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_acceleration_regime_5_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "sharpe_ratio_20_0.0_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "cmo_14_returns_vwap",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_entropy_ma_10_10_volume_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "candlestick_three_black_crows_pattern",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "ctf_5m_momentum_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "resistance_level_3_5_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_ratio_50",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_garman_klass_volatility_50",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "williams_r_14_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_acceleration_consistency_10_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "macd_entropy_20_12_26",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_price_correlation_20",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "support_level_3_10_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_rogers_satchell_volatility_30",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "volume_percentile_100",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_bbands_10_2.5",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "vectorbt_acceleration_trend_strength_10_20_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "ctf_30m_volume_volume_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    },
+    {
+      "feature": "price_entropy_ma_10_10_price_returns",
+      "combined_score": 0.0,
+      "shap_importance": 0.0,
+      "lgb_gain": 0.0
+    }
+  ],
+  "interaction_summary": {
+    "total_interactions": 0,
+    "strong_interactions": 0,
+    "avg_interaction_strength": 0.0,
+    "max_interaction_strength": 0.0
+  },
+  "top_interactions": []
+}

@@ -96,7 +96,7 @@ class FeatureSelectionConfig:
     embargo_days: int = 7
     gap_days: int = 1
 
-    # Multi-objective weights
+    # Multi-objective weights (normalized to sum to 1.0)
     ic_weight: float = 0.4
     stability_weight: float = 0.3
     diversity_weight: float = 0.2
@@ -122,14 +122,82 @@ class FeatureSelectionConfig:
     # Additional parameters for compatibility
     enable_multi_stage_selection: bool = True
     enable_lightweight_screening: bool = True
+    
+    # Category weights for multi-objective scoring
+    category_weights: Optional[Dict[str, float]] = None
     enable_diversity_selection: bool = True
     enable_stability_analysis: bool = True
     enable_vectorbt: bool = True
     enable_parallel_processing: bool = True
     max_parallel_workers: int = 6  # Maximum number of parallel workers for stability selection
-    final_selection_count: int = 40
+    
+    # M1 Mac memory optimization settings
+    enable_m1_memory_optimization: bool = True
+    max_memory_usage_mb: int = 2048  # Limit to 2GB for M1 Mac
+    chunk_size: int = 500  # Process features in smaller chunks
+    enable_garbage_collection: bool = True
+    gc_frequency: int = 50  # Run GC every 50 features
+    memory_pressure_threshold: float = 0.8  # Trigger optimization at 80% memory usage
+    
+    # Advanced memory optimizations
+    enable_chunked_processing: bool = True
+    data_chunk_size: int = 50000  # Process 50K rows at a time
+    enable_memory_mapped_files: bool = True
+    enable_data_type_optimization: bool = True
+    enable_feature_streaming: bool = True
+    feature_batch_size: int = 50  # Process 50 features at a time
+    aggressive_gc: bool = True
+    gc_frequency_operations: int = 10  # GC every 10 operations
+    
+    # Lightweight screening configuration (quantile-based only)
+    enable_lightweight_screening: bool = True
+    # Note: Thresholds removed - using quantile-based selection instead
+    
+    # Multi-stage selection configuration
+    enable_multi_stage_selection: bool = True
+    screening_methods: Optional[List[str]] = None
+    final_selection_methods: Optional[List[str]] = None
+    # screening_threshold: float = 0.1  # Removed - using quantile-based selection
+    max_screening_features: int = 100  # Keep original screening limit
+    final_selection_count: int = 40    # Final selection target
     diversity_threshold: float = 0.3
     stability_window: int = 20
+    
+    # Quantile gating for screening
+    screening_use_quantile: bool = True
+    screening_keep_quantile: float = 0.66  # Keep top 66% of features per screening method
+    
+    # Performance optimization settings
+    enable_feature_caching: bool = True
+    enable_sparse_operations: bool = True
+    feature_chunk_size: int = 15  # Process 10-20 features at a time
+    enhanced_gc_enabled: bool = True
+    
+    # Advanced optimization methods
+    use_spearman_correlation: bool = True  # Use Spearman instead of Pearson
+    use_approximate_variance: bool = True  # Use sampling for large datasets
+    use_ksg_mi_estimator: bool = True  # Use K-S-G estimator for MI
+    mi_sample_ratio: float = 0.25  # Use 25% of data for MI calculation
+    incremental_mi_batches: int = 5  # Number of batches for incremental MI removal
+    
+    def __post_init__(self):
+        """Set default values for None attributes."""
+        if self.screening_methods is None:
+            self.screening_methods = ['correlation', 'stability', 'mutual_info']  # Removed variance filter
+        if self.final_selection_methods is None:
+            self.final_selection_methods = ['importance', 'mrmr']
+        if self.category_weights is None:
+            self.category_weights = {
+                'momentum': 1.0,
+                'volatility': 1.0,
+                'trend': 1.0,
+                'oscillator': 1.0,
+                'volume': 1.0,
+                'returns': 1.0,
+                'support_resistance': 1.0,
+                'microstructure': 1.0,
+                'entropy': 1.0
+            }
 
 @dataclass
 class FeatureScore:
@@ -144,6 +212,10 @@ class FeatureScore:
     oof_ic: float
     oof_sharpe: float
     metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def __hash__(self):
+        """Make FeatureScore hashable for use in sets and as dictionary keys."""
+        return hash(self.name)
 
 
 @dataclass

@@ -4,4 +4,6 @@
   "configuration": {
     "symbol": "ETHUSDT",
     "timeframe": "15m",
-    "direction": 
+    "direction": "longs"
+  }
+}

@@ -35,22 +35,28 @@ from .feature_generation_lookback_optimization_step import (
     handle_feature_generation_lookback_optimization_step
 )
 
-from .feature_generation_interaction_generation_step import (
-    FeatureGenerationInteractionGenerationStep,
+from .feature_generation_interaction_generation_step_analyst import (
+    FeatureGenerationInteractionGenerationStepAnalyst,
     InteractionGenerationResult,
-    handle_feature_generation_interaction_generation_step
+    handle_feature_generation_interaction_generation_step_analyst
 )
 
-from .feature_generation_vectorization_step import (
-    FeatureGenerationVectorizationStep,
-    VectorizationResult,
-    handle_feature_generation_vectorization_step
+from .feature_generation_interaction_generation_step_tactician import (
+    FeatureGenerationInteractionGenerationStepTactician,
+    handle_feature_generation_interaction_generation_step_tactician
 )
+
 
 from .feature_generation_labeling_integration_step import (
     FeatureGenerationLabelingIntegrationStep,
     LabelingIntegrationResult,
     handle_feature_generation_labeling_integration_step
+)
+
+from .feature_generation_final_feature_selection_step import (
+    FeatureGenerationFinalFeatureSelectionStep,
+    FinalFeatureSelectionResult,
+    handle_feature_generation_final_feature_selection_step
 )
 
 from .feature_generation_final_validation_step import (
@@ -67,9 +73,10 @@ __all__ = [
     "FeatureGenerationFeatureSelectionStep",
     "FeatureGenerationPeriodOptimizationStep",
     "FeatureGenerationLookbackOptimizationStep",
-    "FeatureGenerationInteractionGenerationStep",
-    "FeatureGenerationVectorizationStep",
+    "FeatureGenerationInteractionGenerationStepAnalyst",
+    "FeatureGenerationInteractionGenerationStepTactician",
     "FeatureGenerationLabelingIntegrationStep",
+    "FeatureGenerationFinalFeatureSelectionStep",
     "FeatureGenerationFinalValidationStep",
 
     # Result classes
@@ -79,8 +86,8 @@ __all__ = [
     "PeriodOptimizationResult",
     "LookbackOptimizationResult",
     "InteractionGenerationResult",
-    "VectorizationResult",
     "LabelingIntegrationResult",
+    "FinalFeatureSelectionResult",
     "FinalValidationResult",
 
     # Command handlers
@@ -89,9 +96,10 @@ __all__ = [
     "handle_feature_generation_feature_selection_step",
     "handle_feature_generation_period_optimization_step",
     "handle_feature_generation_lookback_optimization_step",
-    "handle_feature_generation_interaction_generation_step",
-    "handle_feature_generation_vectorization_step",
+    "handle_feature_generation_interaction_generation_step_analyst",
+    "handle_feature_generation_interaction_generation_step_tactician",
     "handle_feature_generation_labeling_integration_step",
+    "handle_feature_generation_final_feature_selection_step",
     "handle_feature_generation_final_validation_step"
 ]
 
@@ -102,8 +110,9 @@ STEP_EXECUTION_ORDER = [
     "feature_generation_feature_generation_step",
     "feature_generation_feature_selection_step",
     "feature_generation_period_lookback_optimization_step",  # Merged period + lookback optimization
-    "feature_generation_interaction_generation_step",
-    "feature_generation_vectorization_step",
+    "feature_generation_interaction_generation_step_analyst",
+    "feature_generation_interaction_generation_step_tactician",
+    "feature_generation_final_feature_selection_step",
     "feature_generation_final_validation_step"
 ]
 
@@ -114,7 +123,8 @@ STEP_DESCRIPTIONS = {
     "feature_generation_feature_generation_step": "Feature Bank generation (16 categories: momentum, volatility, trend, volume, support/resistance, returns, oscillator, candlestick, entropy, order_flow, acceleration, cross_timeframe, interaction, microstructure, advanced_statistical, spectral_wavelet)",
     "feature_generation_feature_selection_step": "Intelligent feature selection (4-45 features, -10% early pruning)",
     "feature_generation_period_lookback_optimization_step": "Concurrent period + lookback optimization (min 2 periods per feature, no recency bias)",
-    "feature_generation_interaction_generation_step": "Feature interaction generation (X² max, log relationships, ML generators, max 100 features)",
-    "feature_generation_vectorization_step": "Feature vectorization optimization",
+    "feature_generation_interaction_generation_step_analyst": "Analyst mode: Three-phase LGBM+SHAP interaction generation (variant generation, refinement, deep discovery)",
+    "feature_generation_interaction_generation_step_tactician": "Tactician mode: Original interaction generation with CMI complementarity filtering",
+    "feature_generation_final_feature_selection_step": "Target-aware feature selection with downstream pipeline: PCA → MI → mRMR → LASSO+Stability → LGBM+RFE+SHAP",
     "feature_generation_final_validation_step": "Final validation and quality check"
 }

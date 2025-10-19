@@ -182,6 +182,15 @@ class ArtifactKeys:
     CORRELATION_ANALYSIS = "correlation_analysis"
     OPTIMIZED_FEATURE_DATAFRAME = "optimized_feature_dataframe"
 
+    # Per-feature MI/mRMR artifacts (added for enhanced period/lookback step)
+    MI_BEST_LOOKBACKS_PER_FEATURE = "mi_best_lookbacks_per_feature"
+    MRMR_TOP_LOOKBACKS_PER_FEATURE = "mrmr_top_lookbacks_per_feature"
+    MI_SCORES_BY_FEATURE = "mi_scores_by_feature"
+    OOS_SHARPE_BY_FEATURE_WINDOW = "oos_sharpe_by_feature_window"
+    SELECTED_FEATURES_METADATA = "selected_features_metadata"
+    FAMILY_DIAGNOSTICS = "family_diagnostics"
+    OPTIMIZATION_CONFIG = "optimization_config"
+
     # Interaction generation step artifacts
     INTERACTION_FEATURES = "interaction_features"
     INTERACTION_METADATA = "interaction_metadata"
@@ -195,6 +204,19 @@ class ArtifactKeys:
     VECTORIZATION_PERFORMANCE = "vectorization_performance"
     VECTORIZATION_METRICS = "vectorization_metrics"
     VECTORIZATION_OPTIMIZATION = "vectorization_optimization"
+
+    # Final feature selection step artifacts
+    SELECTED_FEATURES_60 = "selected_features_60"
+    SELECTED_FEATURES_50 = "selected_features_50"
+    SELECTED_FEATURES_40 = "selected_features_40"
+    SELECTED_FEATURE_DATAFRAME_60 = "selected_feature_dataframe_60"
+    SELECTED_FEATURE_DATAFRAME_50 = "selected_feature_dataframe_50"
+    SELECTED_FEATURE_DATAFRAME_40 = "selected_feature_dataframe_40"
+    FEATURE_SCORES = "feature_scores"
+    SHAP_VALUES_60 = "shap_values_60"
+    SHAP_VALUES_50 = "shap_values_50"
+    SHAP_VALUES_40 = "shap_values_40"
+    SELECTION_METADATA = "selection_metadata"
 
     # Final validation step artifacts
     FINAL_DATASET = "final_dataset"
@@ -253,6 +275,14 @@ _PERIOD_LOOKBACK_KEYS = frozenset({
     ArtifactKeys.OPTIMIZATION_CONSTRAINTS,
     ArtifactKeys.CORRELATION_ANALYSIS,
     ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME,
+    # Added per-feature MI/mRMR artifacts
+    ArtifactKeys.MI_BEST_LOOKBACKS_PER_FEATURE,
+    ArtifactKeys.MRMR_TOP_LOOKBACKS_PER_FEATURE,
+    ArtifactKeys.MI_SCORES_BY_FEATURE,
+    ArtifactKeys.OOS_SHARPE_BY_FEATURE_WINDOW,
+    ArtifactKeys.SELECTED_FEATURES_METADATA,
+    ArtifactKeys.FAMILY_DIAGNOSTICS,
+    ArtifactKeys.OPTIMIZATION_CONFIG,
 })
 
 _INTERACTION_KEYS = frozenset({
@@ -263,13 +293,20 @@ _INTERACTION_KEYS = frozenset({
     ArtifactKeys.INTERACTION_QUALITY_SCORES,
 })
 
-_VECTORIZATION_KEYS = frozenset({
-    ArtifactKeys.VECTORIZED_FEATURES,
-    ArtifactKeys.VECTORIZATION_METADATA,
-    ArtifactKeys.VECTORIZATION_PERFORMANCE,
-    ArtifactKeys.VECTORIZATION_METRICS,
-    ArtifactKeys.VECTORIZATION_OPTIMIZATION,
+_FINAL_FEATURE_SELECTION_KEYS = frozenset({
+    ArtifactKeys.SELECTED_FEATURES_60,
+    ArtifactKeys.SELECTED_FEATURES_50,
+    ArtifactKeys.SELECTED_FEATURES_40,
+    ArtifactKeys.SELECTED_FEATURE_DATAFRAME_60,
+    ArtifactKeys.SELECTED_FEATURE_DATAFRAME_50,
+    ArtifactKeys.SELECTED_FEATURE_DATAFRAME_40,
+    ArtifactKeys.FEATURE_SCORES,
+    ArtifactKeys.SHAP_VALUES_60,
+    ArtifactKeys.SHAP_VALUES_50,
+    ArtifactKeys.SHAP_VALUES_40,
+    ArtifactKeys.SELECTION_METADATA,
 })
+
 
 _FINAL_VALIDATION_KEYS = frozenset({
     ArtifactKeys.FINAL_DATASET,
@@ -286,7 +323,7 @@ STEP_NAME_ALIASES: Dict[str, str] = {
     'feature_selection': 'feature_generation_feature_selection_step',
     'period_lookback_optimization': 'feature_generation_period_lookback_optimization_step',
     'interaction_generation': 'feature_generation_interaction_generation_step',
-    'vectorization': 'feature_generation_vectorization_step',
+    'final_feature_selection': 'feature_generation_final_feature_selection_step',
     'final_validation': 'feature_generation_final_validation_step',
 }
 
@@ -297,7 +334,7 @@ _STEP_KEY_MAP: Dict[str, frozenset[str]] = {
     'feature_generation_feature_selection_step': _FEATURE_SELECTION_KEYS,
     'feature_generation_period_lookback_optimization_step': _PERIOD_LOOKBACK_KEYS,
     'feature_generation_interaction_generation_step': _INTERACTION_KEYS,
-    'feature_generation_vectorization_step': _VECTORIZATION_KEYS,
+    'feature_generation_final_feature_selection_step': _FINAL_FEATURE_SELECTION_KEYS,
     'feature_generation_final_validation_step': _FINAL_VALIDATION_KEYS,
 }
 

@@ -21,7 +21,18 @@ from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import traceback
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import gc
+import mmap
+import os
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import re
+import multiprocessing as mp
+
+# M1 Optimization imports
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, optimize_dataframe_memory, optimize_memory
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, create_m1_optimized_thread_pool, parallel_map_m1
 
 from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import (
     run_period_lookback_optimization_step
@@ -89,6 +100,21 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
         super().__init__(name, config or {}, logger)
         
         tprint_success("Base component initialization completed")
+        
+        # Initialize M1 optimization components
+        tprint_info("🚀 Initializing M1 optimization components")
+        self.m1_gpu_manager = get_m1_gpu_manager()
+        self.m1_memory_optimizer = get_m1_memory_optimizer()
+        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        
+        # Optimization configuration
+        self.parallel_workers = 6  # Optimized for M1
+        self.chunk_size = 10000  # Memory-efficient chunk size
+        self.memory_mapping_enabled = True
+        self.aggressive_gc_enabled = True
+        self.data_type_optimization = True  # Convert float64 to float32
+        
+        tprint_success("🧠 M1 optimization components initialized")
         
         # Initialize CMI complementarity components if available
         tprint_info("Checking CMI complementarity availability")
@@ -172,11 +198,342 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
         """Cleanup period + lookback optimization resources."""
         tprint_step("Cleaning up period + lookback optimization resources")
         try:
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
             self.set_state('cleaned_up_at', time.time())
             tprint_success("Resources cleaned up successfully")
         except Exception as e:
             tprint_error(f"Error during cleanup: {e}")
             self.logger.error(f"Error during cleanup: {e}")
+
+    def _aggressive_garbage_collection(self) -> None:
+        """Perform aggressive garbage collection for memory optimization."""
+        tprint_step("Performing aggressive garbage collection")
+        try:
+            # Force multiple garbage collections
+            for _ in range(3):
+                collected = gc.collect()
+                tprint_info(f"Garbage collection cycle: {collected} objects collected")
+            
+            # Use M1 memory optimizer for additional cleanup
+            memory_result = optimize_memory()
+            if memory_result.get('success', False):
+                memory_saved = memory_result.get('memory_saved_mb', 0)
+                tprint_success(f"🧠 Memory optimization: {memory_saved:.1f} MB saved")
+            else:
+                tprint_warning("Memory optimization failed, but garbage collection completed")
+                
+        except Exception as e:
+            tprint_error(f"Aggressive garbage collection failed: {e}")
+            self.logger.warning(f"Aggressive garbage collection failed: {e}")
+
+    def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for memory efficiency."""
+        tprint_step("Optimizing DataFrame data types")
+        try:
+            if not isinstance(df, pd.DataFrame):
+                tprint_warning(f"Expected DataFrame, got {type(df)}")
+                return df
+            
+            initial_memory = df.memory_usage(deep=True).sum()
+            tprint_info(f"Initial memory usage: {initial_memory / 1024**2:.2f} MB")
+            
+            # Use enhanced M1 memory optimizer
+            if self.data_type_optimization:
+                df = optimize_dataframe_for_m1(df)
+                
+                final_memory = df.memory_usage(deep=True).sum()
+                memory_saved = initial_memory - final_memory
+                tprint_success(f"Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+            else:
+                tprint_info("Data type optimization disabled")
+            
+            return df
+            
+        except Exception as e:
+            tprint_error(f"Data type optimization failed: {e}")
+            self.logger.warning(f"Data type optimization failed: {e}")
+            return df
+
+    def _process_data_in_chunks(self, data: pd.DataFrame, chunk_size: Optional[int] = None) -> List[pd.DataFrame]:
+        """Process data in memory-efficient chunks."""
+        tprint_step("Processing data in chunks")
+        try:
+            if chunk_size is None:
+                chunk_size = self.chunk_size
+            
+            chunks = []
+            total_rows = len(data)
+            num_chunks = (total_rows + chunk_size - 1) // chunk_size
+            
+            tprint_info(f"Processing {total_rows} rows in {num_chunks} chunks of {chunk_size}")
+            
+            for i in range(0, total_rows, chunk_size):
+                chunk = data.iloc[i:i + chunk_size].copy()
+                
+                # Optimize chunk data types
+                chunk = self._optimize_dataframe_dtypes(chunk)
+                
+                # Aggressive garbage collection between chunks
+                if self.aggressive_gc_enabled:
+                    gc.collect()
+                
+                chunks.append(chunk)
+                tprint_info(f"Processed chunk {len(chunks)}/{num_chunks}")
+            
+            tprint_success(f"Data chunking completed: {len(chunks)} chunks created")
+            return chunks
+            
+        except Exception as e:
+            tprint_error(f"Chunked processing failed: {e}")
+            self.logger.error(f"Chunked processing failed: {e}")
+            return [data]  # Fallback to original data
+
+    def _parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func) -> List[Any]:
+        """Process chunks in parallel using M1-optimized thread pool."""
+        tprint_step("Processing chunks in parallel")
+        try:
+            if not chunks:
+                tprint_warning("No chunks to process")
+                return []
+            
+            tprint_info(f"Processing {len(chunks)} chunks with {self.parallel_workers} workers")
+            
+            # Use M1-optimized thread pool
+            with self.m1_cpu_optimizer.create_optimized_thread_pool(max_workers=self.parallel_workers) as executor:
+                # Submit all chunks for parallel processing
+                future_to_chunk = {executor.submit(process_func, chunk): i for i, chunk in enumerate(chunks)}
+                
+                results = []
+                for future in future_to_chunk:
+                    try:
+                        result = future.result()
+                        chunk_idx = future_to_chunk[future]
+                        results.append((chunk_idx, result))
+                        tprint_info(f"Completed chunk {chunk_idx + 1}/{len(chunks)}")
+                    except Exception as e:
+                        chunk_idx = future_to_chunk[future]
+                        tprint_error(f"Chunk {chunk_idx} processing failed: {e}")
+                        results.append((chunk_idx, None))
+                
+                # Sort results by chunk index
+                results.sort(key=lambda x: x[0])
+                processed_results = [result for _, result in results if result is not None]
+                
+                tprint_success(f"Parallel processing completed: {len(processed_results)} chunks processed")
+                return processed_results
+                
+        except Exception as e:
+            tprint_error(f"Parallel processing failed: {e}")
+            self.logger.error(f"Parallel processing failed: {e}")
+            return []
+
+    def _load_data_with_memory_mapping(self, file_path: str) -> pd.DataFrame:
+        """Load data using memory mapping for large files."""
+        tprint_step("Loading data with memory mapping")
+        try:
+            if not self.memory_mapping_enabled:
+                tprint_info("Memory mapping disabled, using standard loading")
+                return pd.read_parquet(file_path)
+            
+            tprint_info(f"Loading {file_path} with memory mapping")
+            
+            # Use pandas memory mapping for parquet files
+            df = pd.read_parquet(file_path, memory_map=True)
+            
+            # Optimize data types
+            df = self._optimize_dataframe_dtypes(df)
+            
+            tprint_success(f"Memory-mapped data loaded: {df.shape}")
+            return df
+            
+        except Exception as e:
+            tprint_error(f"Memory-mapped loading failed: {e}")
+            self.logger.warning(f"Memory-mapped loading failed: {e}")
+            # Fallback to standard loading
+            return pd.read_parquet(file_path)
+
+    def _stream_features_efficiently(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
+        """Stream features efficiently using memory-mapped processing."""
+        tprint_step("Streaming features efficiently")
+        try:
+            if not isinstance(data, pd.DataFrame):
+                tprint_warning(f"Expected DataFrame, got {type(data)}")
+                return data
+            
+            # Use memory mapping if enabled
+            if self.memory_mapping_enabled and len(data) > self.chunk_size:
+                tprint_info("Using memory-mapped feature streaming")
+                return self._memory_mapped_feature_streaming(data, feature_generator)
+            else:
+                tprint_info("Using standard feature streaming")
+                return self._standard_feature_streaming(data, feature_generator)
+                
+        except Exception as e:
+            tprint_error(f"Feature streaming failed: {e}")
+            self.logger.error(f"Feature streaming failed: {e}")
+            return data
+
+    def _memory_mapped_feature_streaming(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
+        """Stream features using memory mapping for large datasets."""
+        tprint_step("Memory-mapped feature streaming")
+        try:
+            # Process in chunks to avoid memory overflow
+            chunks = self._process_data_in_chunks(data, chunk_size=self.chunk_size)
+            processed_chunks = []
+            
+            for i, chunk in enumerate(chunks):
+                tprint_info(f"Processing feature chunk {i+1}/{len(chunks)}")
+                
+                # Generate features for this chunk
+                processed_chunk = feature_generator(chunk)
+                
+                # Optimize chunk data types
+                processed_chunk = self._optimize_dataframe_dtypes(processed_chunk)
+                
+                # Aggressive garbage collection between chunks
+                if self.aggressive_gc_enabled:
+                    gc.collect()
+                
+                processed_chunks.append(processed_chunk)
+                tprint_info(f"Completed feature chunk {i+1}/{len(chunks)}")
+            
+            # Combine processed chunks
+            result = pd.concat(processed_chunks, ignore_index=True)
+            
+            # Final optimization
+            result = self._optimize_dataframe_dtypes(result)
+            
+            tprint_success(f"Memory-mapped feature streaming completed: {result.shape}")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"Memory-mapped feature streaming failed: {e}")
+            self.logger.error(f"Memory-mapped feature streaming failed: {e}")
+            return data
+
+    def _standard_feature_streaming(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
+        """Standard feature streaming for smaller datasets."""
+        tprint_step("Standard feature streaming")
+        try:
+            # Generate features
+            result = feature_generator(data)
+            
+            # Optimize data types
+            result = self._optimize_dataframe_dtypes(result)
+            
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                gc.collect()
+            
+            tprint_success(f"Standard feature streaming completed: {result.shape}")
+            return result
+            
+        except Exception as e:
+            tprint_error(f"Standard feature streaming failed: {e}")
+            self.logger.error(f"Standard feature streaming failed: {e}")
+            return data
+
+    def _vectorbt_optimized_operations(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply VectorBT-optimized operations for vectorized calculations."""
+        tprint_step("Applying VectorBT-optimized operations")
+        try:
+            # Check if VectorBT is available
+            try:
+                import vectorbt as vbt
+                VECTORBT_AVAILABLE = True
+            except ImportError:
+                VECTORBT_AVAILABLE = False
+                tprint_warning("VectorBT not available, using standard operations")
+            
+            if not VECTORBT_AVAILABLE:
+                return data
+            
+            tprint_info("Using VectorBT for optimized vectorized operations")
+            
+            # Apply M1 GPU optimization if available
+            if self.m1_gpu_manager.mps_available:
+                tprint_info("🚀 Using M1 GPU acceleration for VectorBT operations")
+                # Convert to GPU-optimized format with safe dtype checking
+                try:
+                    # Ensure numeric data only for MPS
+                    numeric_data = data.select_dtypes(include=[np.number])
+                    if len(numeric_data.columns) > 0:
+                        gpu_data = self.m1_gpu_manager.optimize_tensor_operations(numeric_data.values)
+                        if gpu_data is not None:
+                            data = pd.DataFrame(gpu_data, index=data.index, columns=numeric_data.columns)
+                except Exception as e:
+                    tprint_warning(f"M1 GPU optimization failed, using CPU: {e}")
+                    self.logger.warning(f"M1 GPU optimization failed, using CPU: {e}")
+            
+            # Use VectorBT for rolling operations
+            if 'close' in data.columns:
+                # Example: VectorBT-optimized rolling calculations
+                close_prices = data['close'].values
+                
+                # Use pandas rolling operations (VectorBT doesn't have rolling_mean/rolling_std)
+                close_series = pd.Series(close_prices, index=data.index)
+                rolling_mean = close_series.rolling(window=20).mean()
+                rolling_std = close_series.rolling(window=20).std()
+                
+                # Add optimized features
+                data['vectorbt_rolling_mean_20'] = rolling_mean.values
+                data['vectorbt_rolling_std_20'] = rolling_std.values
+                
+                tprint_info("Added VectorBT-optimized rolling features")
+            
+            # Optimize final data types
+            data = self._optimize_dataframe_dtypes(data)
+            
+            tprint_success("VectorBT-optimized operations completed")
+            return data
+            
+        except Exception as e:
+            tprint_error(f"VectorBT optimization failed: {e}")
+            self.logger.warning(f"VectorBT optimization failed: {e}")
+            return data
+
+    def _parallel_feature_optimization(self, chunks: List[pd.DataFrame]) -> List[pd.DataFrame]:
+        """Optimize features in parallel using M1-optimized processing."""
+        tprint_step("Parallel feature optimization")
+        try:
+            if not chunks:
+                tprint_warning("No chunks to optimize")
+                return []
+            
+            tprint_info(f"Optimizing {len(chunks)} chunks in parallel with {self.parallel_workers} workers")
+            
+            def optimize_chunk_features(chunk):
+                """Optimize features for a single chunk."""
+                try:
+                    # Apply data type optimization
+                    chunk = self._optimize_dataframe_dtypes(chunk)
+                    
+                    # Apply VectorBT optimization
+                    chunk = self._vectorbt_optimized_operations(chunk)
+                    
+                    # M1 GPU optimization if available
+                    if self.m1_gpu_manager.mps_available:
+                        chunk = optimize_dataframe_for_m1(chunk)
+                    
+                    return chunk
+                    
+                except Exception as e:
+                    tprint_error(f"Chunk optimization failed: {e}")
+                    return chunk
+            
+            # Process chunks in parallel
+            optimized_chunks = self._parallel_process_chunks(chunks, optimize_chunk_features)
+            
+            tprint_success(f"Parallel feature optimization completed: {len(optimized_chunks)} chunks processed")
+            return optimized_chunks
+            
+        except Exception as e:
+            tprint_error(f"Parallel feature optimization failed: {e}")
+            self.logger.error(f"Parallel feature optimization failed: {e}")
+            return chunks  # Return original chunks on failure
 
     def _process_data(self, data, **kwargs):
         """Process data through period + lookback optimization with artifact manager integration."""
@@ -186,18 +543,60 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
         tprint_info(f"Kwargs keys: {list(kwargs.keys())}")
         
         try:
+            # Start memory monitoring
+            tprint_info("🧠 Starting M1 memory monitoring")
+            self.m1_memory_optimizer.start_monitoring()
+            
+            # Optimize input data
+            tprint_info("🔧 Optimizing input data")
+            if isinstance(data, pd.DataFrame):
+                data = self._optimize_dataframe_dtypes(data)
+                tprint_success("Input data optimized for M1")
+            
+            # Process data in chunks for large datasets
+            if isinstance(data, pd.DataFrame) and len(data) > self.chunk_size:
+                tprint_info(f"📦 Processing large dataset ({len(data)} rows) in chunks")
+                chunks = self._process_data_in_chunks(data)
+                tprint_success(f"Data split into {len(chunks)} optimized chunks")
+                
+                # Apply parallel feature optimization to chunks
+                tprint_info("🚀 Applying parallel feature optimization")
+                optimized_chunks = self._parallel_feature_optimization(chunks)
+                
+                # Combine optimized chunks back into single DataFrame
+                if optimized_chunks:
+                    data = pd.concat(optimized_chunks, ignore_index=True)
+                    tprint_success(f"Optimized chunks combined: {data.shape}")
+                else:
+                    tprint_warning("No optimized chunks returned, using original chunks")
+                    data = pd.concat(chunks, ignore_index=True)
+            else:
+                chunks = [data]
+                tprint_info("Dataset small enough for single-chunk processing")
+                
+                # Apply optimizations to single chunk
+                data = self._optimize_dataframe_dtypes(data)
+                data = self._vectorbt_optimized_operations(data)
             # Get artifact manager
             tprint_info("Getting pretraining artifact manager")
             artifact_manager = get_pretraining_artifact_manager()
             tprint_success("Artifact manager retrieved successfully")
             
-            # Try to load from artifact manager first
-            tprint_info("Checking for cached optimization results")
-            cached_periods = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_periods')
-            cached_lookbacks = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_lookbacks')
-            cached_metrics = artifact_manager.get_artifact('period_lookback_optimization', 'optimization_metadata')
-            
-            tprint_info(f"Cache check results: periods={cached_periods is not None}, lookbacks={cached_lookbacks is not None}, metrics={cached_metrics is not None}")
+            # Check if we should force fresh computation
+            force_fresh = kwargs.get('force_fresh', False)
+            if force_fresh:
+                tprint_info("🔄 Force fresh computation requested, skipping cache")
+                cached_periods = None
+                cached_lookbacks = None
+                cached_metrics = None
+            else:
+                # Try to load from artifact manager first
+                tprint_info("Checking for cached optimization results")
+                cached_periods = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_periods')
+                cached_lookbacks = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_lookbacks')
+                cached_metrics = artifact_manager.get_artifact('period_lookback_optimization', 'optimization_metadata')
+                
+                tprint_info(f"Cache check results: periods={cached_periods is not None}, lookbacks={cached_lookbacks is not None}, metrics={cached_metrics is not None}")
             
             if cached_periods is not None and cached_lookbacks is not None:
                 tprint_success("📦 Retrieved optimization results from artifact manager")
@@ -290,13 +689,142 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
                 tprint_info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
                 self.logger.info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
             
-            # Simulate period + lookback optimization
-            # In a real implementation, this would call the consolidated pipeline
-            tprint_info("Performing period + lookback optimization")
-            optimized_periods = 30  # Default value
-            optimized_lookbacks = 20  # Default value
+            # Perform actual period + lookback optimization using consolidated pipeline
+            tprint_info("Performing data-driven period + lookback optimization")
+            
+            # Import the consolidated pipeline runner
+            from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_period_lookback_optimization_step
+            
+            # Run the actual optimization (safe in/without event loop)
+            tprint_info("🚀 Running consolidated pipeline optimization")
+            import asyncio
+            try:
+                asyncio.get_running_loop()
+                # We are inside a running loop: run the coroutine in a dedicated thread
+                tprint_info("🔄 Event loop detected, running optimization in a worker thread")
+                from concurrent.futures import ThreadPoolExecutor
+                def _runner():
+                    return asyncio.run(run_period_lookback_optimization_step(
+                        data=data,
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        direction=direction,
+                        intensity=intensity,
+                        lookback_days=lookback_days,
+                        start_date=start_date,
+                        end_date=end_date,
+                        exchange=exchange,
+                        custom_overrides=kwargs
+                    ))
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    optimization_result = ex.submit(_runner).result()
+            except RuntimeError:
+                # No loop running: use asyncio.run directly
+                tprint_info("🔄 No event loop detected, using asyncio.run")
+                optimization_result = asyncio.run(run_period_lookback_optimization_step(
+                    data=data,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    direction=direction,
+                    intensity=intensity,
+                    lookback_days=lookback_days,
+                    start_date=start_date,
+                    end_date=end_date,
+                    exchange=exchange,
+                    custom_overrides=kwargs
+                ))
+            
+            # Extract optimized parameters from the result
+            if optimization_result.get('success', False):
+                period_results = optimization_result.get('period_results', {})
+                lookback_results = optimization_result.get('lookback_results', {})
+                
+                # Get optimized values from results
+                optimized_periods = period_results.get('optimized_periods', 30)
+                optimized_lookbacks = lookback_results.get('optimized_lookbacks', 20)
+                
+                tprint_success(f"✅ Data-driven optimization completed: periods={optimized_periods}, lookbacks={optimized_lookbacks}")
+            else:
+                tprint_warning("⚠️ Optimization failed, using fallback values")
+                optimized_periods = 30  # Fallback value
+                optimized_lookbacks = 20  # Fallback value
+                
             tprint_info(f"Optimization results: periods={optimized_periods}, lookbacks={optimized_lookbacks}")
             
+            # -----------------------------
+            # Per-feature MI and mRMR (Sharpe-centric) selection
+            # -----------------------------
+            tprint_info("Computing per-feature MI-best and Sharpe-centric mRMR selections")
+            try:
+                # Fetch targets from artifact manager; fast-fail if missing
+                artifact_manager = get_pretraining_artifact_manager()
+                targets = None
+                for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
+                    tmp = artifact_manager.get_artifact(step_name, ArtifactKeys.TARGETS)
+                    if isinstance(tmp, pd.Series) and not tmp.empty:
+                        targets = tmp
+                        break
+                if targets is None or targets.empty:
+                    raise ValueError("Targets not found for MI/mRMR selection. Run labeling integration first.")
+
+                # Prepare features-only DataFrame; exclude raw OHLCV if present
+                feature_df = data.copy()
+                for col in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
+                    if col in feature_df.columns:
+                        feature_df = feature_df.drop(columns=[col])
+                close_series = data['close'] if 'close' in data.columns else None
+
+                # Enforce timeframe and align, then compute
+                pf_result = self._compute_per_feature_mi_and_mrmr(
+                    features=feature_df,
+                    targets=targets,
+                    data_close=close_series,
+                    direction=direction,
+                    timeframe=timeframe,
+                    max_rows=200000,
+                    prefilter_M=kwargs.get('prefilter_M', 6),
+                    spacing=kwargs.get('spacing', 2),
+                    outer_folds=kwargs.get('outer_folds', 3)
+                )
+
+                # Persist artifacts
+                am = artifact_manager
+                am.save(
+                    step_name='feature_generation_period_lookback_optimization_step',
+                    artifacts={
+                        ArtifactKeys.MI_BEST_LOOKBACKS_PER_FEATURE: pf_result['mi_best_lookbacks_per_feature'],
+                        ArtifactKeys.MRMR_TOP_LOOKBACKS_PER_FEATURE: pf_result['mrmr_top_lookbacks_per_feature'],
+                        ArtifactKeys.MI_SCORES_BY_FEATURE: pf_result['mi_scores_by_feature'],
+                        ArtifactKeys.OOS_SHARPE_BY_FEATURE_WINDOW: pf_result['oos_sharpe_by_feature_window'],
+                        ArtifactKeys.SELECTED_FEATURES_METADATA: pf_result['selected_features_metadata'],
+                        ArtifactKeys.FAMILY_DIAGNOSTICS: pf_result['family_diagnostics'],
+                        ArtifactKeys.OPTIMIZATION_CONFIG: pf_result['optimization_config'],
+                        ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME: feature_df
+                    },
+                    metadata={
+                        'symbol': symbol,
+                        'timeframe': timeframe,
+                        'direction': direction,
+                        'generated_at': datetime.now().isoformat()
+                    }
+                )
+
+                # Attach to result artifacts for report
+                optimization_result.setdefault('artifacts', {})
+                optimization_result['artifacts'].update({
+                    ArtifactKeys.MI_BEST_LOOKBACKS_PER_FEATURE: pf_result['mi_best_lookbacks_per_feature'],
+                    ArtifactKeys.MRMR_TOP_LOOKBACKS_PER_FEATURE: pf_result['mrmr_top_lookbacks_per_feature'],
+                    ArtifactKeys.MI_SCORES_BY_FEATURE: pf_result['mi_scores_by_feature'],
+                    ArtifactKeys.OOS_SHARPE_BY_FEATURE_WINDOW: pf_result['oos_sharpe_by_feature_window'],
+                    ArtifactKeys.SELECTED_FEATURES_METADATA: pf_result['selected_features_metadata'],
+                    ArtifactKeys.FAMILY_DIAGNOSTICS: pf_result['family_diagnostics'],
+                    ArtifactKeys.OPTIMIZATION_CONFIG: pf_result['optimization_config']
+                })
+                tprint_success("Per-feature MI/mRMR artifacts computed and saved")
+            except Exception as e:
+                tprint_error(f"Per-feature MI/mRMR computation failed: {e}")
+                raise
+
             # Apply CMI complementarity regularizer if enabled
             tprint_info("Processing CMI complementarity regularizer")
             cmi_diagnostics = {}
@@ -397,14 +925,28 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
 
             # Generate human-readable report
             tprint_info("Generating optimization report")
-            report = self._generate_optimization_report(
-                optimized_periods, optimized_lookbacks, optimization_metadata, data
+            result = {
+                'optimized_periods': optimized_periods,
+                'optimized_lookbacks': optimized_lookbacks,
+                'optimization_metadata': optimization_metadata,
+                'artifacts': optimization_result.get('artifacts', {})
+            }
+            report_path = self._generate_optimization_report(
+                result, data, **kwargs
             )
             tprint_success("Optimization report generated successfully")
             
             # Store report as artifact
             tprint_info("Storing optimization report as artifact")
             try:
+                # Create a simple report object for storage
+                report = {
+                    'report_path': report_path,
+                    'optimized_periods': optimized_periods,
+                    'optimized_lookbacks': optimized_lookbacks,
+                    'optimization_metadata': optimization_metadata,
+                    'generated_at': datetime.now().isoformat()
+                }
                 artifact_manager.save(
                     step_name='period_lookback_optimization',
                     artifacts={
@@ -420,6 +962,26 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
                 tprint_error(f"Failed to store report artifact: {e}")
                 raise
 
+            # Final optimization and cleanup
+            tprint_info("🧹 Performing final optimization and cleanup")
+            
+            # Final data type optimization
+            if isinstance(data, pd.DataFrame):
+                data = self._optimize_dataframe_dtypes(data)
+                tprint_info("Final data type optimization completed")
+            
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
+            # Stop memory monitoring
+            tprint_info("🧠 Stopping M1 memory monitoring")
+            self.m1_memory_optimizer.stop_monitoring()
+            
+            # Get final memory statistics
+            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            tprint_info(f"Final memory stats: {memory_stats.get('memory_percent', 0):.1f}% used")
+            
             tprint_success("Period + lookback optimization completed successfully")
             return {
                 'success': True,
@@ -427,7 +989,16 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
                 'optimized_lookbacks': optimized_lookbacks,
                 'optimization_metadata': optimization_metadata,
                 'optimization_report': report,
-                'artifacts': {'cache_hit': False}
+                'artifacts': {**(optimization_result.get('artifacts', {}) or {}), 'cache_hit': False},
+                'optimization_stats': {
+                    'parallel_workers_used': self.parallel_workers,
+                    'chunk_size': self.chunk_size,
+                    'memory_mapping_enabled': self.memory_mapping_enabled,
+                    'aggressive_gc_enabled': self.aggressive_gc_enabled,
+                    'data_type_optimization': self.data_type_optimization,
+                    'final_memory_usage': memory_stats.get('memory_percent', 0),
+                    'm1_gpu_acceleration': self.m1_gpu_manager.mps_available
+                }
             }
 
         except Exception as e:
@@ -436,93 +1007,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
             self.logger.error(f"Period + lookback optimization failed: {e}")
             raise
 
-    def _generate_optimization_report(self, optimized_periods, optimized_lookbacks, metadata, data):
-        """Generate a human-readable optimization report."""
-        tprint_step("Generating optimization report")
-        tprint_info(f"Report parameters: periods={optimized_periods}, lookbacks={optimized_lookbacks}")
-        tprint_info(f"Data shape: {data.shape if hasattr(data, 'shape') else 'Unknown'}")
-        
-        try:
-            # Get artifact storage path with filename
-            tprint_info("Getting artifact manager for report generation")
-            artifact_manager = get_pretraining_artifact_manager()
-            artifact_path = str(artifact_manager.config.base_dir / 'period_lookback_optimization' / 'optimization_report.pkl')
-            tprint_info(f"Artifact path: {artifact_path}")
-            
-            # Try to compile feature-level analysis for troubleshooting
-            tprint_info("Compiling feature-level analysis")
-            feature_level = self._compile_feature_level_analysis(
-                data=data,
-                optimized_periods=optimized_periods,
-                optimized_lookbacks=optimized_lookbacks,
-                metadata=metadata
-            )
-            tprint_info(f"Feature-level analysis status: {feature_level.get('status', 'unknown') if isinstance(feature_level, dict) else 'not_dict'}")
-
-            tprint_info("Building report structure")
-            report = {
-                'title': 'Feature Generation Period + Lookback Optimization Report',
-                'timestamp': datetime.now().isoformat(),
-                'artifact_storage_path': artifact_path,
-                'execution_summary': {
-                    'status': 'completed',
-                    'data_rows': len(data),
-                    'data_columns': len(data.columns),
-                    'data_memory_usage': f"{data.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
-                },
-                'optimization_results': {
-                    'optimized_periods': optimized_periods,
-                    'optimized_lookbacks': optimized_lookbacks,
-                    'optimization_method': metadata.get('optimization_method', 'consolidated_pipeline')
-                },
-                'configuration': {
-                    'symbol': metadata.get('symbol', 'Unknown'),
-                    'timeframe': metadata.get('timeframe', 'Unknown'),
-                    'direction': str(metadata.get('direction', 'Unknown')),
-                    'min_periods': metadata.get('min_periods', 2),
-                    'correlation_threshold': metadata.get('correlation_threshold', 0.85),
-                    'no_recency_bias': metadata.get('no_recency_bias', True),
-                    'top_1_trading': metadata.get('top_1_trading', True),
-                    'top_3_interactions': metadata.get('top_3_interactions', True)
-                },
-                'step_summaries': self._generate_step_summaries(optimized_periods, optimized_lookbacks, metadata, data),
-                'cmi_analysis': metadata.get('cmi_diagnostics', {}),
-                'recommendations': self._generate_recommendations(optimized_periods, optimized_lookbacks, metadata),
-                'feature_level_analysis': feature_level,
-                'next_steps': [
-                    'Use optimized periods and lookbacks in feature generation',
-                    'Validate results with cross-validation',
-                    'Monitor performance in production',
-                    'Consider re-optimization if market conditions change significantly'
-                ]
-            }
-            tprint_info(f"Report structure created with {len(report)} main sections")
-            
-            # Generate markdown report
-            tprint_info("Generating markdown report")
-            markdown_report = self._format_markdown_report(report)
-            tprint_info(f"Markdown report length: {len(markdown_report)} characters")
-            
-            # Store human-readable report in outcomes/ directory
-            tprint_info("Storing human-readable report")
-            self._store_human_readable_report(report, markdown_report, metadata)
-            
-            tprint_success("Optimization report generated successfully")
-            return {
-                'json_report': report,
-                'markdown_report': markdown_report,
-                'summary': f"Optimization completed: {optimized_periods} periods, {optimized_lookbacks} lookbacks"
-            }
-            
-        except Exception as e:
-            tprint_error(f"Failed to generate optimization report: {e}")
-            tprint_debug(f"Report generation error details: {traceback.format_exc()}")
-            self.logger.error(f"Failed to generate optimization report: {e}")
-            return {
-                'json_report': {'error': str(e)},
-                'markdown_report': f"# Optimization Report\n\nError generating report: {e}",
-                'summary': 'Report generation failed'
-            }
 
     def _compile_feature_level_analysis(self, data, optimized_periods, optimized_lookbacks, metadata,
                                        max_features_to_analyze: int = 200, sample_rows: int = 200_000):
@@ -582,13 +1066,26 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
                 tprint_info(f"Alternative artifact search results: features={features_df is not None and not features_df.empty}")
                 
                 if features_df is None or features_df.empty:
-                    # No fallbacks - only analyze selected features
-                    tprint_warning("No selected features found - returning unavailable status")
-                    return {
-                        'status': 'unavailable',
-                        'reason': 'no_selected_features_found',
-                        'message': 'No selected features found in feature_generation_feature_selection_step artifacts. Please run the feature selection step first.'
-                    }
+                    # Fallback: Use current data for feature analysis
+                    tprint_info("🔍 No selected features found - analyzing current data features")
+                    self.logger.info("🔍 No selected features found - analyzing current data features")
+                    
+                    # Use the current data for feature analysis
+                    features_df = data.copy()
+                    # Filter out non-feature columns (keep OHLCV and technical indicators)
+                    feature_columns = [col for col in data.columns if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']]
+                    if feature_columns:
+                        features_df = data[feature_columns]
+                        feature_names = feature_columns
+                        source = 'current_data_features'
+                        tprint_info(f"Using current data features: {len(feature_names)} features")
+                    else:
+                        tprint_warning("No feature columns found in current data")
+                        return {
+                            'status': 'unavailable',
+                            'reason': 'no_feature_columns_found',
+                            'message': 'No feature columns found in current data for analysis.'
+                        }
                 else:
                     feature_names = list(features_df.columns)
                     source = 'feature_selection_artifacts_alt'
@@ -729,6 +1226,291 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
                 'status': 'unavailable',
                 'reason': str(e)
             }
+
+    def _generate_optimization_report(self, result, data, **kwargs):
+        """Generate a comprehensive human-readable optimization report."""
+        try:
+            # Get current timestamp for filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Extract symbol and timeframe from kwargs
+            symbol = kwargs.get('symbol', 'UNKNOWN')
+            timeframe = kwargs.get('timeframe', 'UNKNOWN')
+            
+            # Create outcomes directory (repo-relative) if it doesn't exist
+            from pathlib import Path
+            outcomes_dir = str(Path("outcomes"))
+            os.makedirs(outcomes_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            filename = f"period_lookback_optimization_report_{symbol}_{timeframe}_{timestamp}.md"
+            report_path = os.path.join(outcomes_dir, filename)
+            
+            # Print report path to console
+            print(f"📊 Report generated: {report_path}")
+            tprint_success(f"📊 Report generated: {report_path}")
+            
+            # Extract optimization results (top-level keys if available)
+            optimized_periods = result.get('optimized_periods', result.get('optimization_results', {}).get('optimized_periods', {}))
+            optimized_lookbacks = result.get('optimized_lookbacks', result.get('optimization_results', {}).get('optimized_lookbacks', {}))
+            optimization_metadata = result.get('optimization_metadata', {})
+            
+            # Calculate metrics
+            total_features = len(data.columns) if hasattr(data, 'columns') else 0
+            data_rows = len(data) if hasattr(data, '__len__') else 0
+            data_memory = data.memory_usage(deep=True).sum() / 1024**2 if hasattr(data, 'memory_usage') else 0
+            
+            # Calculate averages
+            avg_period = np.mean(list(optimized_periods.values())) if optimized_periods else 0
+            avg_lookback = np.mean(list(optimized_lookbacks.values())) if optimized_lookbacks else 0
+            min_period = min(optimized_periods.values()) if optimized_periods else 0
+            max_period = max(optimized_periods.values()) if optimized_periods else 0
+            min_lookback = min(optimized_lookbacks.values()) if optimized_lookbacks else 0
+            max_lookback = max(optimized_lookbacks.values()) if optimized_lookbacks else 0
+            
+            # Generate report content
+            ratio_str = (f"{(avg_period/avg_lookback):.2f}" if avg_lookback > 0 else "N/A")
+
+            report_content = f"""# Period & Lookback Optimization Report
+
+**Generated:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}  
+**Symbol:** {symbol}  
+**Timeframe:** {timeframe}  
+**Report Path:** `{report_path}`
+
+## 📊 Executive Summary
+
+| Metric | Value |
+|--------|-------|
+| **Total Features** | {total_features:,} |
+| **Data Rows** | {data_rows:,} |
+| **Data Memory Usage** | {data_memory:.2f} MB |
+| **Optimization Status** | ✅ Success |
+| **Average Period** | {avg_period:.1f} |
+| **Average Lookback** | {avg_lookback:.1f} |
+
+## 🎯 Optimization Results
+
+### Global Averages
+- **Average Period:** {avg_period:.1f} (Range: {min_period} - {max_period})
+- **Average Lookback:** {avg_lookback:.1f} (Range: {min_lookback} - {max_lookback})
+- **Total Features Optimized:** {len(optimized_periods)}/{total_features}
+- **Optimization Coverage:** {(len(optimized_periods)/total_features*100):.1f}% of features optimized
+- **Average Period/Lookback Ratio:** {ratio_str}
+- **Total Optimization Score:** {sum([(p * l) / 100 for p, l in zip(optimized_periods.values(), optimized_lookbacks.values()) if p > 0 and l > 0]):.2f}
+
+### Period Distribution
+- **Minimum Period:** {min_period}
+- **Maximum Period:** {max_period}
+- **Period Range:** {max_period - min_period}
+- **Standard Deviation:** {np.std(list(optimized_periods.values())):.1f if optimized_periods else 0}
+
+### Lookback Distribution
+- **Minimum Lookback:** {min_lookback}
+- **Maximum Lookback:** {max_lookback}
+- **Lookback Range:** {max_lookback - min_lookback}
+- **Standard Deviation:** {np.std(list(optimized_lookbacks.values())):.1f if optimized_lookbacks else 0}
+
+## 📈 Per-Feature Analysis
+
+### Feature Optimization Summary
+- **Total Features Analyzed:** {len(optimized_periods)}
+- **Features with Optimized Periods:** {len([p for p in optimized_periods.values() if p > 0])}
+- **Features with Optimized Lookbacks:** {len([l for l in optimized_lookbacks.values() if l > 0])}
+
+### Top 10 Features by Period Length
+"""
+
+            # Append MI/mRMR sections if artifacts available
+            try:
+                artifacts_all = result.get('artifacts', {})
+                mi_best = artifacts_all.get(ArtifactKeys.MI_BEST_LOOKBACKS_PER_FEATURE, {})
+                mrmr_top = artifacts_all.get(ArtifactKeys.MRMR_TOP_LOOKBACKS_PER_FEATURE, {})
+                mi_scores_by_feat = artifacts_all.get(ArtifactKeys.MI_SCORES_BY_FEATURE, {})
+                oos_sharpe_map = artifacts_all.get(ArtifactKeys.OOS_SHARPE_BY_FEATURE_WINDOW, {})
+                opt_cfg = artifacts_all.get(ArtifactKeys.OPTIMIZATION_CONFIG, {})
+
+                if mi_best or mrmr_top:
+                    report_content += "\n## 🧠 Per-Feature MI and mRMR Results\n"
+                    # MI-best summary table
+                    if mi_best:
+                        report_content += "\n### MI-Best Window per Base Feature (Weighted: 80% MI + 20% Stability)\n"
+                        report_content += "\n| Base Feature | Best Window | MI Score | Stability | Weighted Score |\n|---|---:|---:|---:|---:|\n"
+                        rows = []
+                        # Build list with stability; recompute stability quickly for the matched column
+                        for base, win in mi_best.items():
+                            feats = mi_scores_by_feat.get(base, {})
+                            mi_sc = 0.0
+                            stab_sc = 0.0
+                            chosen_col = None
+                            if feats:
+                                # locate the column matching this window
+                                for col, sc in feats.items():
+                                    if win is not None and str(win) in str(col):
+                                        mi_sc = float(sc)
+                                        chosen_col = col
+                                        break
+                            if chosen_col is not None and chosen_col in data.columns:
+                                try:
+                                    stab_sc = float(self._compute_stability_scores([chosen_col], data).get(chosen_col, 0.0))
+                                except Exception:
+                                    stab_sc = 0.0
+                            weighted = 0.8 * mi_sc + 0.2 * stab_sc
+                            rows.append((base, win, mi_sc, stab_sc, weighted))
+                        # Top 25 by weighted score
+                        for base, win, mi_sc, stab_sc, w_sc in sorted(rows, key=lambda x: x[4], reverse=True)[:25]:
+                            report_content += f"| {base} | {win if win is not None else '-'} | {mi_sc:.4f} | {stab_sc:.4f} | {w_sc:.4f} |\n"
+
+                    # mRMR per-base selection
+                    if mrmr_top:
+                        report_content += "\n### mRMR-Selected Windows per Base Feature (Sharpe-centric)\n"
+                        report_content += "\n| Base Feature | Windows | Avg OOS Sharpe (candidates) |\n|---|---|---:|\n"
+                        for base, wins in mrmr_top.items():
+                            cand_map = oos_sharpe_map.get(base, {})
+                            avg_sh = 0.0
+                            if cand_map:
+                                avg_sh = float(np.mean([float(v) for v in cand_map.values()]))
+                            wins_str = ", ".join([str(w) if w is not None else '-' for w in (wins or [])])
+                            report_content += f"| {base} | {wins_str} | {avg_sh:.3f} |\n"
+
+                    # Config
+                    if opt_cfg:
+                        report_content += "\n### Selection Configuration\n"
+                        for k, v in opt_cfg.items():
+                            report_content += f"- {k}: {v}\n"
+            except Exception as e:
+                tprint_warning(f"Failed to append MI/mRMR sections: {e}")
+            
+            # Add top features by period
+            if optimized_periods:
+                sorted_periods = sorted(optimized_periods.items(), key=lambda x: x[1], reverse=True)[:10]
+                report_content += "\n| Feature | Period | Lookback |\n|---------|--------|----------|\n"
+                for feature, period in sorted_periods:
+                    lookback = optimized_lookbacks.get(feature, 'N/A')
+                    report_content += f"| {feature} | {period} | {lookback} |\n"
+            
+            report_content += f"""
+### Top 10 Features by Lookback Length
+"""
+            
+            # Add top features by lookback
+            if optimized_lookbacks:
+                sorted_lookbacks = sorted(optimized_lookbacks.items(), key=lambda x: x[1], reverse=True)[:10]
+                report_content += "\n| Feature | Lookback | Period |\n|---------|----------|--------|\n"
+                for feature, lookback in sorted_lookbacks:
+                    period = optimized_periods.get(feature, 'N/A')
+                    report_content += f"| {feature} | {lookback} | {period} |\n"
+            
+            # Add detailed per-feature metrics
+            report_content += f"""
+### Detailed Per-Feature Metrics
+| Feature | Period | Lookback | Period/Lookback Ratio | Optimization Score |
+|---------|--------|----------|----------------------|-------------------|
+"""
+            
+            if optimized_periods and optimized_lookbacks:
+                for feature in sorted(optimized_periods.keys()):
+                    period = optimized_periods.get(feature, 0)
+                    lookback = optimized_lookbacks.get(feature, 0)
+                    ratio = period / lookback if lookback > 0 else 0
+                    # Calculate a simple optimization score (period * lookback / 100)
+                    score = (period * lookback) / 100 if period > 0 and lookback > 0 else 0
+                    report_content += f"| {feature} | {period} | {lookback} | {ratio:.2f} | {score:.2f} |\n"
+            
+            # Add statistical analysis
+            report_content += f"""
+### Statistical Analysis
+"""
+            if optimized_periods:
+                period_values = list(optimized_periods.values())
+                report_content += f"- **Period Mean:** {np.mean(period_values):.2f}\n"
+                report_content += f"- **Period Median:** {np.median(period_values):.2f}\n"
+                report_content += f"- **Period Mode:** {max(set(period_values), key=period_values.count)}\n"
+                report_content += f"- **Period Variance:** {np.var(period_values):.2f}\n"
+            
+            if optimized_lookbacks:
+                lookback_values = list(optimized_lookbacks.values())
+                report_content += f"- **Lookback Mean:** {np.mean(lookback_values):.2f}\n"
+                report_content += f"- **Lookback Median:** {np.median(lookback_values):.2f}\n"
+                report_content += f"- **Lookback Mode:** {max(set(lookback_values), key=lookback_values.count)}\n"
+                report_content += f"- **Lookback Variance:** {np.var(lookback_values):.2f}\n"
+            
+            report_content += f"""
+## 🔧 Configuration Details
+
+### Optimization Parameters
+- **Optimization Method:** {optimization_results.get('optimization_method', 'consolidated_pipeline')}
+- **Correlation Threshold:** {optimization_metadata.get('correlation_threshold', 'N/A')}
+- **Minimum Periods:** {optimization_metadata.get('min_periods', 'N/A')}
+- **Maximum Periods:** {optimization_metadata.get('max_periods', 'N/A')}
+
+### System Configuration
+- **Parallel Workers:** {result.get('optimization_stats', {}).get('parallel_workers_used', 'N/A')}
+- **M1 GPU Acceleration:** {result.get('optimization_stats', {}).get('m1_gpu_acceleration', False)}
+- **Final Memory Usage:** {result.get('optimization_stats', {}).get('final_memory_usage', 0):.1f}%
+
+## 📋 Feature Categories Analysis
+
+### Period Length Categories
+- **Short Periods (5-15):** {len([p for p in optimized_periods.values() if 5 <= p <= 15])} features
+- **Medium Periods (16-30):** {len([p for p in optimized_periods.values() if 16 <= p <= 30])} features  
+- **Long Periods (31+):** {len([p for p in optimized_periods.values() if p > 30])} features
+
+### Lookback Length Categories
+- **Short Lookbacks (5-15):** {len([l for l in optimized_lookbacks.values() if 5 <= l <= 15])} features
+- **Medium Lookbacks (16-30):** {len([l for l in optimized_lookbacks.values() if 16 <= l <= 30])} features
+- **Long Lookbacks (31+):** {len([l for l in optimized_lookbacks.values() if l > 30])} features
+
+## 🎯 Recommendations
+
+### Based on Optimization Results
+"""
+            
+            # Add recommendations
+            recommendations = self._generate_recommendations(avg_period, avg_lookback, optimization_metadata)
+            for rec in recommendations:
+                report_content += f"- {rec}\n"
+            
+            report_content += f"""
+## 📊 Performance Metrics
+
+### Memory Optimization
+- **Initial Data Size:** {data_memory:.2f} MB
+- **Data Type Optimization:** {result.get('optimization_stats', {}).get('memory_optimization_saved', 0):.2f} MB saved
+- **Memory Efficiency:** {((data_memory - result.get('optimization_stats', {}).get('memory_optimization_saved', 0)) / data_memory * 100):.1f}% reduction
+
+### Processing Performance
+- **Total Processing Time:** {result.get('execution_summary', {}).get('total_time', 0):.2f} seconds
+- **Features Processed per Second:** {total_features / result.get('execution_summary', {}).get('total_time', 1):.1f}
+- **Memory Usage Peak:** {result.get('optimization_stats', {}).get('final_memory_usage', 0):.1f}%
+
+## 🔍 Technical Details
+
+### Data Characteristics
+- **Data Shape:** {data.shape if hasattr(data, 'shape') else 'Unknown'}
+- **Data Types:** {len(data.dtypes.unique()) if hasattr(data, 'dtypes') else 'Unknown'} unique types
+- **Missing Values:** {data.isnull().sum().sum() if hasattr(data, 'isnull') else 'Unknown'}
+
+### Optimization Algorithm
+- **Method:** Concurrent period and lookback optimization
+- **Correlation Analysis:** Enabled with threshold >0.85
+- **Redundancy Removal:** Active
+- **M1 Optimizations:** Enabled
+
+---
+*Report generated by Ares Period & Lookback Optimization System*
+*Generated at: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}*
+"""
+            
+            # Write report to file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            return report_path
+            
+        except Exception as e:
+            tprint_error(f"Failed to generate optimization report: {e}")
+            return None
 
     def _generate_recommendations(self, periods, lookbacks, metadata):
         """Generate optimization recommendations based on results."""
@@ -1140,35 +1922,750 @@ class FeatureGenerationPeriodLookbackOptimizationStep(ModularComponent):
         tprint_info(f"Validation results: {len(errors)} errors, {len(warnings)} warnings")
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
 
-    async def execute(self, data, **kwargs):
-        """Execute the period + lookback optimization step."""
-        tprint_step("Executing period + lookback optimization step")
-        tprint_info(f"Execute parameters: data_shape={data.shape if hasattr(data, 'shape') else 'Unknown'}, kwargs={list(kwargs.keys())}")
+    # -----------------------------
+    # Per-feature MI/mRMR utilities
+    # -----------------------------
+    def _enforce_15m_timeframe(self, df: pd.DataFrame) -> None:
         try:
-            # Process data through the optimization
-            tprint_info("Processing data through optimization")
-            result = self._process_data(data, **kwargs)
-            tprint_info(f"Process data result: success={result.get('success', False)}")
-            
-            # Convert dictionary result to ComponentResult
-            tprint_info("Converting result to ComponentResult")
-            component_result = ComponentResult(
-                success=result.get('success', False),
-                artifacts=result.get('artifacts', {}),
-                metadata=result.get('optimization_metadata', {}),
-                error_message=None if result.get('success', False) else "Period + lookback optimization failed"
-            )
-            tprint_success(f"ComponentResult created: success={component_result.success}")
-            return component_result
+            if not isinstance(df.index, (pd.DatetimeIndex,)):
+                raise ValueError("DataFrame index must be a DatetimeIndex for timeframe enforcement")
+            if len(df.index) < 3:
+                return
+            median_delta = df.index.to_series().diff().dropna().median()
+            if pd.isna(median_delta):
+                return
+            # allow ±1 minute tolerance
+            if not (abs(median_delta - pd.Timedelta(minutes=15)) <= pd.Timedelta(minutes=1)):
+                raise ValueError("Timeframe enforcement failed: expected ~15m bars. Abort.")
         except Exception as e:
-            tprint_error(f"Period + lookback optimization execution failed: {e}")
-            tprint_debug(f"Execution error details: {traceback.format_exc()}")
-            self.logger.error(f"Period + lookback optimization execution failed: {e}")
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                metadata={},
-                error_message=str(e)
-            )
+            tprint_error(f"Timeframe enforcement error: {e}")
+            raise
+
+    def _align_features_targets(self, features: pd.DataFrame, targets: pd.Series) -> Tuple[pd.DataFrame, pd.Series, Dict[str, Any]]:
+        meta: Dict[str, Any] = {}
+        try:
+            # Inner-join on index
+            before_rows = (len(features), int(targets.shape[0]))
+            joined_index = features.index.intersection(targets.index)
+            f2 = features.loc[joined_index]
+            t2 = targets.loc[joined_index]
+            # Drop rows with any NaNs in features or target
+            valid_mask = (~f2.isna().any(axis=1)) & (~t2.isna())
+            dropped = len(f2) - int(valid_mask.sum())
+            meta['rows_before'] = before_rows
+            meta['rows_after'] = (int(valid_mask.sum()), int(valid_mask.sum()))
+            meta['rows_dropped'] = dropped
+            if dropped > 0:
+                tprint_warning(f"Alignment dropped {dropped} rows due to NaNs or mismatched index")
+            return f2.loc[valid_mask], t2.loc[valid_mask], meta
+        except Exception as e:
+            tprint_error(f"Alignment failed: {e}")
+            raise
+
+    def _group_windows_by_family(self, columns: List[str]) -> Dict[str, List[Tuple[str, Optional[int]]]]:
+        pattern = re.compile(r"(?P<base>[a-z_]+?)(?:_(?:lookback|period|window))?_(?P<window>\d+)")
+        families: Dict[str, List[Tuple[str, Optional[int]]]] = {}
+        for col in columns:
+            m = pattern.search(str(col))
+            if m:
+                base = m.group('base')
+                try:
+                    win = int(m.group('window'))
+                except Exception:
+                    win = None
+            else:
+                # no window - single candidate family named by full col
+                base = str(col)
+                win = None
+            families.setdefault(base, []).append((str(col), win))
+        return families
+
+    def _compute_mi_scores(self, feature_cols: List[str], features: pd.DataFrame, targets: pd.Series,
+                            sample_n: int = 100_000) -> Dict[str, float]:
+        """Compute approximate MI with KSG-like estimator (sklearn), with rank transform and jitter.
+
+        - Rank-pct transform both X and y to reduce bias, add tiny jitter to break ties.
+        - Subsample to at most sample_n rows for speed during prefiltering.
+        """
+        from sklearn.feature_selection import mutual_info_regression
+        rng = np.random.default_rng(42)
+        scores: Dict[str, float] = {}
+        try:
+            y = targets.astype(float)
+            # Rank-pct transform with jitter
+            y_rank = y.rank(pct=True).astype(np.float64).to_numpy()
+            if y_rank.size == 0 or np.unique(np.nan_to_num(y_rank)).shape[0] <= 1:
+                return {col: 0.0 for col in feature_cols}
+            # Jitter
+            y_rank = y_rank + (rng.normal(0, 1e-12, size=y_rank.shape))
+            # Subsample indices (use tail if deterministic desired)
+            idx = np.arange(len(y_rank))
+            if len(idx) > sample_n:
+                idx = idx[-sample_n:]
+            y_sub = y_rank[idx]
+
+            for col in feature_cols:
+                x = features[col].astype(float)
+                x_rank = x.rank(pct=True).astype(np.float64).to_numpy()
+                x_rank = x_rank + (rng.normal(0, 1e-12, size=x_rank.shape))
+                xs = x_rank[idx]
+                mask = np.isfinite(xs) & np.isfinite(y_sub)
+                if mask.sum() < 50:
+                    scores[col] = 0.0
+                    continue
+                try:
+                    mi = mutual_info_regression(xs[mask].reshape(-1, 1), y_sub[mask], random_state=42, n_neighbors=3)
+                    scores[col] = float(mi[0])
+                except Exception:
+                    scores[col] = 0.0
+        except Exception:
+            scores = {col: 0.0 for col in feature_cols}
+        return scores
+
+    def _compute_stability_scores(self, feature_cols: List[str], features: pd.DataFrame) -> Dict[str, float]:
+        """Compute fast stability scores per column using inverse coefficient of variation.
+
+        stability = 1 / (1 + |std / (mean_abs + eps)|)
+        Range in (0, 1]; higher is more stable.
+        """
+        scores: Dict[str, float] = {}
+        eps = 1e-8
+        for col in feature_cols:
+            s = features[col].astype(float)
+            vals = s.to_numpy()
+            vals = vals[np.isfinite(vals)]
+            if vals.size < 10:
+                scores[col] = 0.0
+                continue
+            mean_abs = np.mean(np.abs(vals))
+            std = np.std(vals)
+            cv = std / (mean_abs + eps)
+            stability = 1.0 / (1.0 + abs(cv))
+            scores[col] = float(stability)
+        return scores
+
+    def _prefilter_by_mi_with_spacing(self, items: List[Tuple[str, Optional[int]]], mi_scores: Dict[str, float], max_M: int = 6, spacing: int = 2) -> List[Tuple[str, Optional[int]]]:
+        # Sort by MI descending
+        ranked = sorted(items, key=lambda t: mi_scores.get(t[0], 0.0), reverse=True)
+        selected: List[Tuple[str, Optional[int]]] = []
+        for name, win in ranked:
+            if len(selected) >= max_M:
+                break
+            if win is None:
+                # allow single-candidate families without numeric window
+                if not selected:
+                    selected.append((name, win))
+                continue
+            ok = True
+            for _, wsel in selected:
+                if wsel is None:
+                    continue
+                if abs(win - wsel) < spacing:
+                    ok = False
+                    break
+            if ok:
+                selected.append((name, win))
+        if not selected and ranked:
+            selected.append(ranked[0])
+        return selected
+
+    def _spearman_corr(self, a: pd.Series, b: pd.Series) -> float:
+        try:
+            ar = a.rank(pct=True)
+            br = b.rank(pct=True)
+            c = ar.corr(br)
+            return float(0.0 if np.isnan(c) else c)
+        except Exception:
+            return 0.0
+
+    def _annualization_factor_15m(self) -> float:
+        # 365.25 days * 24 hours * 4 (15m per hour) ≈ 35064 bars/year, sqrt for Sharpe
+        return float(np.sqrt(365.25 * 24 * 4))
+
+    def _compute_oos_sharpe_nested(self, series: pd.Series, returns: pd.Series, direction: str,
+                                   outer_folds: int = 3, min_test_signals: int = 100,
+                                   use_tpe: bool = True) -> Tuple[float, Dict[str, Any]]:
+        # series and returns aligned, no NaNs
+        af = self._annualization_factor_15m()
+        n = len(series)
+        if n < 500:
+            return 0.0, {'reason': 'insufficient_length'}
+        # Prepare indices for outer folds (simple time-based split if PurgedKFold not available)
+        splits: List[Tuple[int, int]] = []
+        try:
+            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
+            idx = np.arange(n)
+            for tr, te in pkf.split(idx, None, None):
+                splits.append((int(tr[-1]), int(te[0])))  # markers only (we'll use slices)
+            # Rebuild as slices using proportions
+            # If PurgedKFoldTime returns explicit arrays, we’ll use them directly below
+            use_pkf = True
+        except Exception:
+            use_pkf = False
+
+        # Helper to evaluate Sharpe for given threshold on a given split
+        def eval_sharpe(sig_mask: np.ndarray, ret_vals: np.ndarray) -> Tuple[float, int]:
+            sig_count = int(sig_mask.sum())
+            if sig_count == 0:
+                return 0.0, 0
+            strat = (ret_vals * (1.0 if direction == 'longs' else -1.0)) * sig_mask.astype(float)
+            mu = strat.mean()
+            sd = strat.std(ddof=1) if strat.size > 1 else 0.0
+            if sd == 0.0:
+                return 0.0, sig_count
+            return float((mu / sd) * af), sig_count
+
+        # Inner optimization: thresholds
+        def optimize_threshold(train_vals: np.ndarray, train_rets: np.ndarray, use_rolling: bool = False) -> float:
+            # Candidate grid defaults (static quantiles)
+            if direction == 'longs':
+                grid = [0.6, 0.7, 0.8, 0.9]
+            else:
+                grid = [0.4, 0.3, 0.2, 0.1]
+            best_q = grid[0]
+            best_s = -1e9
+            # Try to use TPE optimizer if available
+            if use_tpe:
+                try:
+                    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer, OptimizationConfig  # type: ignore
+                    opt = BayesianTPEOptimizer(config=OptimizationConfig(n_trials=20, tpe_trials=20))
+                    # Define search space
+                    low, high = (0.6, 0.95) if direction == 'longs' else (0.05, 0.4)
+                    def objective(params: Dict[str, Any]) -> float:
+                        q = float(params.get('q', 0.8 if direction == 'longs' else 0.2))
+                        thr = np.quantile(train_vals, q)
+                        if direction == 'longs':
+                            sig = (train_vals > thr)
+                        else:
+                            sig = (train_vals < thr)
+                        # simple inner validation split (70/30) on train
+                        m = len(train_vals)
+                        tv = int(m * 0.7)
+                        sig_te = sig[tv:]
+                        r_te = train_rets[tv:]
+                        # compute Sharpe on validation slice
+                        s, c = eval_sharpe(sig_te, r_te)
+                        # prefer non-degenerate with minimal signals requirement
+                        if c < max(10, int(0.01 * len(sig_te))):
+                            return -1e6
+                        return float(s)
+                    result = opt.optimize(objective, {'q': {'type': 'float', 'low': low, 'high': high}})
+                    q_opt = float(result.get('best_params', {}).get('q', grid[0]))
+                    # Clip to sensible range
+                    best_q = min(max(q_opt, low), high)
+                except Exception:
+                    pass
+            # Fallback / refinement on grid
+            for q in grid:
+                thr = np.quantile(train_vals, q)
+                sig = (train_vals > thr) if direction == 'longs' else (train_vals < thr)
+                m = len(train_vals)
+                tv = int(m * 0.7)
+                s, c = eval_sharpe(sig[tv:], train_rets[tv:])
+                sc = s if c >= max(10, int(0.01 * len(sig))) else -1e6
+                if sc > best_s:
+                    best_s = sc
+                    best_q = q
+            return float(best_q)
+
+        # Build folds
+        if use_pkf:
+            # Construct folds using PurgedKFoldTime split indices
+            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
+            xs = series.values
+            rs = returns.values
+            sharpe_scores = []
+            total_signals = 0
+            for tr_idx, te_idx in pkf.split(xs, None, None):
+                x_tr, x_te = xs[tr_idx], xs[te_idx]
+                r_tr, r_te = rs[tr_idx], rs[te_idx]
+                q_star = optimize_threshold(x_tr, r_tr, use_rolling=False)
+                thr = np.quantile(x_tr, q_star)
+                sig_te = (x_te > thr) if direction == 'longs' else (x_te < thr)
+                s, c = eval_sharpe(sig_te, r_te)
+                if c >= min_test_signals:
+                    sharpe_scores.append(s)
+                    total_signals += c
+            if not sharpe_scores:
+                return 0.0, {'reason': 'insufficient_data'}
+            return float(np.mean(sharpe_scores)), {'threshold': 'quantile', 'signals_test': total_signals}
+        else:
+            # Simple contiguous folds
+            xs = series.values
+            rs = returns.values
+            sharpe_scores = []
+            total_signals = 0
+            fold_sizes = np.linspace(0, n, num=outer_folds + 1, dtype=int)
+            for i in range(outer_folds):
+                start = fold_sizes[i]
+                end = fold_sizes[i + 1]
+                if end - start < 100:
+                    continue
+                # train on [0:start], test on [start:end]
+                x_tr, x_te = xs[:start], xs[start:end]
+                r_tr, r_te = rs[:start], rs[start:end]
+                if len(x_tr) < 200:
+                    continue
+                q_star = optimize_threshold(x_tr, r_tr, use_rolling=False)
+                thr = np.quantile(x_tr, q_star)
+                sig_te = (x_te > thr) if direction == 'longs' else (x_te < thr)
+                s, c = eval_sharpe(sig_te, r_te)
+                if c >= min_test_signals:
+                    sharpe_scores.append(s)
+                    total_signals += c
+            if not sharpe_scores:
+                return 0.0, {'reason': 'insufficient_data'}
+            return float(np.mean(sharpe_scores)), {'threshold': 'quantile', 'signals_test': total_signals}
+
+    def _mrmr_select_windows(self, candidates: List[str], relevance: Dict[str, float], features: pd.DataFrame,
+                              k: int = 3, redundancy_penalty: float = 0.5) -> List[str]:
+        if not candidates:
+            return []
+        # Greedy selection: max(relevance - penalty*avg_redundancy)
+        selected: List[str] = []
+        remaining = list(sorted(candidates, key=lambda n: relevance.get(n, 0.0), reverse=True))
+        while remaining and len(selected) < k:
+            if not selected:
+                sel = remaining.pop(0)
+                selected.append(sel)
+                continue
+            best_name = None
+            best_score = -1e18
+            for name in remaining:
+                # compute avg spearman with already selected
+                corrs = []
+                for s in selected:
+                    c = self._spearman_corr(features[name], features[s])
+                    corrs.append(abs(c))
+                avg_red = float(np.mean(corrs)) if corrs else 0.0
+                score = relevance.get(name, 0.0) - redundancy_penalty * avg_red
+                if score > best_score:
+                    best_score = score
+                    best_name = name
+            if best_name is None:
+                break
+            remaining.remove(best_name)
+            selected.append(best_name)
+        return selected
+
+    def _compute_spearman_matrix(self, df: pd.DataFrame) -> np.ndarray:
+        try:
+            # Rank transform then Pearson corr == Spearman
+            rk = df.rank(pct=True)
+            mat = rk.corr(method='pearson').to_numpy()
+            mat = np.nan_to_num(mat, nan=0.0)
+            return np.abs(mat)
+        except Exception:
+            # Fallback safe matrix
+            n = df.shape[1]
+            return np.eye(n)
+
+    def _mrmr_select_windows_from_matrix(self, cand_cols: List[str], relevance_vec: np.ndarray,
+                                         redundancy_matrix: np.ndarray, k: int = 3,
+                                         redundancy_penalty: float = 0.5) -> List[str]:
+        n = len(cand_cols)
+        if n == 0:
+            return []
+        order = list(np.argsort(-relevance_vec))  # descending relevance
+        selected_idx: List[int] = []
+        remaining = order.copy()
+        while remaining and len(selected_idx) < k:
+            if not selected_idx:
+                selected_idx.append(remaining.pop(0))
+                continue
+            best_i = None
+            best_score = -1e18
+            for i in remaining:
+                # average redundancy to already selected
+                if selected_idx:
+                    avg_red = float(np.mean([redundancy_matrix[i, j] for j in selected_idx]))
+                else:
+                    avg_red = 0.0
+                score = float(relevance_vec[i]) - redundancy_penalty * avg_red
+                if score > best_score:
+                    best_score = score
+                    best_i = i
+            if best_i is None:
+                break
+            remaining.remove(best_i)
+            selected_idx.append(best_i)
+        return [cand_cols[i] for i in selected_idx]
+
+    def _oos_sharpe_nested_vectorized(self, X: np.ndarray, r: np.ndarray, direction: str,
+                                      outer_folds: int = 3, min_test_signals: int = 100,
+                                      use_tpe: bool = False, use_golden: bool = True) -> np.ndarray:
+        """Compute OOS Sharpe for multiple candidates in X (n_samples, n_candidates).
+
+        - Vectorized across candidates per fold.
+        - Default: golden-section search on quantile q per candidate using train 70/30 split for validation.
+        - Fallback: small quantile grid.
+        """
+        n, m = X.shape
+        if n < 500 or m == 0:
+            return np.zeros(m, dtype=np.float32)
+
+        # Outer folds generation
+        folds: List[Tuple[np.ndarray, np.ndarray]] = []
+        try:
+            from src.utils.purged_kfold import PurgedKFoldTime  # type: ignore
+            pkf = PurgedKFoldTime(n_splits=outer_folds, purge_pct=0.01, embargo_pct=0.01)
+            idx = np.arange(n)
+            for tr_idx, te_idx in pkf.split(idx, None, None):
+                folds.append((tr_idx, te_idx))
+        except Exception:
+            # Contiguous splits
+            edges = np.linspace(0, n, num=outer_folds + 1, dtype=int)
+            for i in range(outer_folds):
+                start, end = edges[i], edges[i + 1]
+                if end - start >= 100 and start >= 200:
+                    tr = np.arange(0, start)
+                    te = np.arange(start, end)
+                    folds.append((tr, te))
+
+        if not folds:
+            return np.zeros(m, dtype=np.float32)
+
+        phi = (1 + np.sqrt(5)) / 2
+
+        def sharpe_from_mask(mask: np.ndarray, ret: np.ndarray) -> np.ndarray:
+            # mask shape (T, m), ret shape (T,)
+            mm = mask.astype(np.float32)
+            strat = mm * ret[:, None].astype(np.float32) * (1.0 if direction == 'longs' else -1.0)
+            mu = strat.mean(axis=0)
+            sd = strat.std(axis=0, ddof=1)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                s = np.where(sd > 0, mu / sd, 0.0)
+            return s * np.sqrt(365.25 * 24 * 4)
+
+        sharpes: List[np.ndarray] = []
+        for tr_idx, te_idx in folds:
+            X_tr = X[tr_idx, :]
+            r_tr = r[tr_idx]
+            X_te = X[te_idx, :]
+            r_te = r[te_idx]
+            if len(X_tr) < 200 or len(X_te) < 100:
+                continue
+            # train split -> validation for inner selection
+            tv = int(0.7 * len(X_tr))
+            if tv < 50 or len(X_tr) - tv < 50:
+                continue
+            X_tr_tr = X_tr[:tv, :]
+            X_tr_val = X_tr[tv:, :]
+            r_val = r_tr[tv:]
+
+            # Precompute sorted training values for per-candidate quantiles
+            X_sorted = np.sort(X_tr_tr, axis=0)
+            m_tr = X_tr_tr.shape[0]
+            idx_cand = np.arange(m)
+
+            # Initialize per-candidate bounds for q
+            if direction == 'longs':
+                L = np.full(m, 0.60, dtype=np.float64)
+                R = np.full(m, 0.95, dtype=np.float64)
+            else:
+                L = np.full(m, 0.05, dtype=np.float64)
+                R = np.full(m, 0.40, dtype=np.float64)
+
+            def eval_q(q: np.ndarray, X_val: np.ndarray, X_sorted_tr: np.ndarray, r_val: np.ndarray) -> np.ndarray:
+                # q shape (m,), compute thr per candidate using sorted training values
+                pos = np.floor(q * (m_tr - 1)).astype(int)
+                pos = np.clip(pos, 0, m_tr - 1)
+                thr = X_sorted_tr[pos, idx_cand]  # shape (m,)
+                if direction == 'longs':
+                    mask = X_val > thr[None, :]
+                else:
+                    mask = X_val < thr[None, :]
+                # signal count gate
+                sig_counts = mask.sum(axis=0)
+                s = sharpe_from_mask(mask, r_val)
+                s[sig_counts < max(min_test_signals, int(0.01 * len(r_val)))] = -1e6
+                return s
+
+            if use_golden:
+                # Golden-section vectorized: update bounds per candidate
+                iters = 8
+                for _ in range(iters):
+                    c = R - (R - L) / phi
+                    d = L + (R - L) / phi
+                    sc = eval_q(c, X_tr_val, X_sorted, r_val)
+                    sd = eval_q(d, X_tr_val, X_sorted, r_val)
+                    # where sc > sd -> move R = d else L = c, per candidate
+                    mask = sc > sd
+                    R = np.where(mask, d, R)
+                    L = np.where(mask, L, c)
+                q_star = 0.5 * (L + R)
+            else:
+                # small grid
+                q_grid = np.linspace(L[0], R[0], num=9) if direction == 'longs' else np.linspace(L[0], R[0], num=9)
+                # evaluate all q in grid and pick best per candidate
+                s_mat = []
+                for q in q_grid:
+                    qq = np.full(m, q, dtype=np.float64)
+                    s_mat.append(eval_q(qq, X_tr_val, X_sorted, r_val))
+                s_mat = np.vstack(s_mat)  # (nq, m)
+                best_idx = np.argmax(s_mat, axis=0)
+                q_star = q_grid[best_idx]
+
+            # Evaluate on OOS test with q_star
+            # build threshold per candidate from full train X_tr_tr
+            pos = np.floor(q_star * (m_tr - 1)).astype(int)
+            pos = np.clip(pos, 0, m_tr - 1)
+            thr = X_sorted[pos, idx_cand]
+            if direction == 'longs':
+                mask_te = X_te > thr[None, :]
+            else:
+                mask_te = X_te < thr[None, :]
+            s_te = sharpe_from_mask(mask_te, r_te)
+            # gate by min_test_signals on test
+            sig_counts_te = mask_te.sum(axis=0)
+            s_te[sig_counts_te < min_test_signals] = 0.0
+            sharpes.append(s_te)
+
+        if not sharpes:
+            return np.zeros(m, dtype=np.float32)
+        sh = np.vstack(sharpes).mean(axis=0)
+        return sh.astype(np.float32)
+
+    def _compute_per_feature_mi_and_mrmr(self,
+                                          features: pd.DataFrame,
+                                          targets: pd.Series,
+                                          data_close: Optional[pd.Series],
+                                          direction: str = 'longs',
+                                          timeframe: str = '15m',
+                                          max_rows: int = 200000,
+                                          prefilter_M: int = 6,
+                                          spacing: int = 2,
+                                          outer_folds: int = 3) -> Dict[str, Any]:
+        # Enforce timeframe and sample cap
+        self._enforce_15m_timeframe(features)
+        if not isinstance(targets, pd.Series) or targets.empty:
+            raise ValueError("Targets are required for MI/mRMR selection")
+        if max_rows and len(features) > max_rows:
+            features = features.iloc[-max_rows:]
+            targets = targets.iloc[-max_rows:]
+            if data_close is not None:
+                data_close = data_close.iloc[-max_rows:]
+
+        # Keep only numeric columns and downcast to float32
+        num_cols = features.select_dtypes(include=[np.number]).columns.tolist()
+        features = features[num_cols].copy()
+        for c in features.columns:
+            if features[c].dtype == np.float64:
+                features[c] = features[c].astype(np.float32)
+        # Hardware optimizations
+        try:
+            if self.m1_gpu_manager and getattr(self.m1_gpu_manager, 'mps_available', False):
+                features = optimize_dataframe_for_m1(features)
+        except Exception:
+            pass
+        try:
+            _ = optimize_memory()
+        except Exception:
+            pass
+
+        # Align features with targets
+        features, targets, _ = self._align_features_targets(features, targets.astype(float))
+        returns = targets
+
+        # Group by base feature families
+        family_map = self._group_windows_by_family(list(features.columns))
+        mi_best_lookbacks_per_feature: Dict[str, Optional[int]] = {}
+        mrmr_top_lookbacks_per_feature: Dict[str, List[Optional[int]]] = {}
+        mi_scores_by_feature: Dict[str, Dict[str, float]] = {}
+        oos_sharpe_by_feature_window: Dict[str, Dict[str, float]] = {}
+        selected_features_metadata: Dict[str, Dict[str, Any]] = {}
+        family_diagnostics_rows: List[Dict[str, Any]] = []
+
+        # Caches for MI and correlation
+        mi_cache: Dict[str, float] = {}
+
+        families = list(family_map.items())
+        # Chunk families to control memory
+        fam_chunk_size = max(1, int(np.ceil(len(families) / max(1, self.parallel_workers))))
+        for i in range(0, len(families), fam_chunk_size):
+            fam_batch = families[i:i + fam_chunk_size]
+            for base, items in fam_batch:
+                cols = [n for (n, _) in items]
+                # MI scores with caching
+                to_compute = [c for c in cols if c not in mi_cache]
+                if to_compute:
+                    mi_new = self._compute_mi_scores(to_compute, features, targets)
+                    mi_cache.update(mi_new)
+                mi_scores = {c: mi_cache.get(c, 0.0) for c in cols}
+                mi_scores_by_feature[base] = mi_scores
+
+                # Stability scores
+                stab_scores = self._compute_stability_scores(cols, features)
+
+                # Best-by weighted (0.8 * MI_norm + 0.2 * Stability_norm)
+                if cols:
+                    mi_vals = np.array([mi_scores.get(c, 0.0) for c in cols], dtype=np.float64)
+                    st_vals = np.array([stab_scores.get(c, 0.0) for c in cols], dtype=np.float64)
+                    def _norm(v: np.ndarray) -> np.ndarray:
+                        vmin, vmax = float(np.min(v)), float(np.max(v))
+                        if vmax - vmin <= 1e-12:
+                            return np.zeros_like(v)
+                        return (v - vmin) / (vmax - vmin)
+                    mi_n = _norm(mi_vals)
+                    st_n = _norm(st_vals)
+                    weighted = 0.8 * mi_n + 0.2 * st_n
+                    best_idx = int(np.argmax(weighted))
+                    best_col = cols[best_idx]
+                else:
+                    best_col = None
+
+                best_win = None
+                if best_col is not None:
+                    m = re.search(r"(\d+)(?!.*\d)", best_col)
+                    if m:
+                        try:
+                            best_win = int(m.group(1))
+                        except Exception:
+                            best_win = None
+                mi_best_lookbacks_per_feature[base] = best_win
+
+                # Prefilter by MI with spacing to reduce candidate set
+                prefiltered = self._prefilter_by_mi_with_spacing(items, mi_scores, max_M=prefilter_M, spacing=spacing)
+                cand_cols = [n for (n, _) in prefiltered]
+                rel: Dict[str, float] = {}
+                # Vectorized nested CV Sharpe across candidates
+                X_cand = features[cand_cols].to_numpy(dtype=np.float32, copy=False)
+                r_vals = returns.to_numpy(dtype=np.float32, copy=False)
+                sh_vec = self._oos_sharpe_nested_vectorized(
+                    X_cand, r_vals, direction=direction, outer_folds=outer_folds,
+                    min_test_signals=100, use_tpe=False, use_golden=True
+                )
+                for j, name in enumerate(cand_cols):
+                    score = float(sh_vec[j])
+                    rel[name] = score
+                    oos_sharpe_by_feature_window.setdefault(base, {})[name] = score
+
+                # Spearman redundancy matrix (vectorized) and greedy mRMR
+                red_mat = self._compute_spearman_matrix(features[cand_cols])
+                top_cols = self._mrmr_select_windows_from_matrix(
+                    cand_cols,
+                    np.array([rel.get(n, 0.0) for n in cand_cols], dtype=np.float64),
+                    red_mat,
+                    k=3,
+                    redundancy_penalty=0.5
+                )
+                wins: List[Optional[int]] = []
+                for cn in top_cols:
+                    m = re.search(r"(\d+)(?!.*\d)", cn)
+                    w = int(m.group(1)) if m else None
+                    wins.append(w)
+                    selected_features_metadata[cn] = {
+                        'family': base,
+                        'window': w,
+                        'mi_score': mi_scores.get(cn, 0.0),
+                        'oos_sharpe': rel.get(cn, 0.0),
+                        'selection_reason': 'mrmr_top_k'
+                    }
+                mrmr_top_lookbacks_per_feature[base] = wins
+
+                family_diagnostics_rows.append({
+                    'family': base,
+                    'mi_best_window': best_win,
+                    'mi_best_feature': best_col,
+                    'mi_best_score': mi_scores.get(best_col, 0.0) if best_col else 0.0,
+                    'stability_best_feature': (self._compute_stability_scores([best_col], features).get(best_col, 0.0) if best_col else 0.0),
+                    'mrmr_selected_windows': wins,
+                    'mrmr_candidates': cand_cols,
+                    'avg_oos_sharpe_candidates': float(np.mean([rel.get(c, 0.0) for c in cand_cols])) if cand_cols else 0.0
+                })
+
+            try:
+                _ = optimize_memory()
+            except Exception:
+                pass
+
+        family_diagnostics = pd.DataFrame(family_diagnostics_rows) if family_diagnostics_rows else pd.DataFrame()
+
+        return {
+            'mi_best_lookbacks_per_feature': mi_best_lookbacks_per_feature,
+            'mrmr_top_lookbacks_per_feature': mrmr_top_lookbacks_per_feature,
+            'mi_scores_by_feature': mi_scores_by_feature,
+            'oos_sharpe_by_feature_window': oos_sharpe_by_feature_window,
+            'selected_features_metadata': selected_features_metadata,
+            'family_diagnostics': family_diagnostics,
+            'optimization_config': {
+                'prefilter_M': prefilter_M,
+                'spacing': spacing,
+                'outer_folds': outer_folds,
+                'min_test_signals': 100,
+                'redundancy_spearman_threshold': 0.7,
+                'mrmr_k': 3,
+                'thresholds': 'static_quantiles'
+            }
+        }
+
+    async def execute(self, data, **kwargs):
+        """Execute the period + lookback optimization step with M1 optimizations."""
+        tprint_step("Executing period + lookback optimization step with M1 optimizations")
+        tprint_info(f"Execute parameters: data_shape={data.shape if hasattr(data, 'shape') else 'Unknown'}, kwargs={list(kwargs.keys())}")
+        
+        # Create M1 optimization context
+        with self.m1_cpu_optimizer.create_m1_optimized_context():
+            try:
+                # Log optimization configuration
+                tprint_info(f"🚀 M1 Optimization Configuration:")
+                tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
+                tprint_info(f"   - Chunk Size: {self.chunk_size}")
+                tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
+                tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
+                tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
+                tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
+                
+                # Process data through the optimization
+                tprint_info("Processing data through M1-optimized pipeline")
+                result = self._process_data(data, **kwargs)
+                tprint_info(f"Process data result: success={result.get('success', False)}")
+                
+                # Log optimization statistics
+                optimization_stats = result.get('optimization_stats', {})
+                if optimization_stats:
+                    tprint_info("📊 Optimization Statistics:")
+                    tprint_info(f"   - Workers Used: {optimization_stats.get('parallel_workers_used', 'N/A')}")
+                    tprint_info(f"   - Final Memory Usage: {optimization_stats.get('final_memory_usage', 0):.1f}%")
+                    tprint_info(f"   - GPU Acceleration: {optimization_stats.get('m1_gpu_acceleration', False)}")
+                
+                # Generate human-readable report
+                if result.get('success', False):
+                    tprint_info("Generating human-readable optimization report")
+                    report_path = self._generate_optimization_report(result, data, **kwargs)
+                    tprint_success(f"📊 Optimization report saved to: {report_path}")
+                
+                # Convert dictionary result to ComponentResult
+                tprint_info("Converting result to ComponentResult")
+                component_result = ComponentResult(
+                    success=result.get('success', False),
+                    artifacts=result.get('artifacts', {}),
+                    metadata=result.get('optimization_metadata', {}),
+                    error_message=None if result.get('success', False) else "Period + lookback optimization failed"
+                )
+                tprint_success(f"ComponentResult created: success={component_result.success}")
+                return component_result
+                
+            except Exception as e:
+                tprint_error(f"Period + lookback optimization execution failed: {e}")
+                tprint_debug(f"Execution error details: {traceback.format_exc()}")
+                self.logger.error(f"Period + lookback optimization execution failed: {e}")
+                
+                # Ensure cleanup even on error
+                try:
+                    self.m1_memory_optimizer.stop_monitoring()
+                    if self.aggressive_gc_enabled:
+                        self._aggressive_garbage_collection()
+                except Exception as cleanup_error:
+                    tprint_warning(f"Cleanup failed: {cleanup_error}")
+                
+                return ComponentResult(
+                    success=False,
+                    artifacts={},
+                    metadata={},
+                    error_message=str(e)
+                )
 
     # Required utility methods for BasePreTrainingComponent

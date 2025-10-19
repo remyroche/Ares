@@ -72,12 +72,6 @@ except ImportError:
     FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = False
     FeatureGenerationPeriodLookbackOptimizationStep = None
 
-try:
-    from ..unified_data_driven_pipeline.steps.feature_generation_vectorization_step import FeatureGenerationVectorizationStep
-    FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE = True
-except ImportError:
-    FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE = False
-    FeatureGenerationVectorizationStep = None
 
 
 class ComponentRegistry:
@@ -125,9 +119,6 @@ class ComponentRegistry:
         if FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE and FeatureGenerationPeriodLookbackOptimizationStep is not None:
             ComponentFactory.register_component('feature_generation_period_lookback_optimization', FeatureGenerationPeriodLookbackOptimizationStep)
         
-        # Register feature generation vectorization step
-        if FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE and FeatureGenerationVectorizationStep is not None:
-            ComponentFactory.register_component('feature_generation_vectorization_step', FeatureGenerationVectorizationStep)
     
     @staticmethod
     def get_registration_status() -> Dict[str, bool]:
@@ -142,7 +133,6 @@ class ComponentRegistry:
             'feature_generation_interaction_generation_step': FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE,
             'feature_generation_labeling_integration_step': FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE,
             'feature_generation_period_lookback_optimization': FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE,
-            'feature_generation_vectorization_step': FEATURE_GENERATION_VECTORIZATION_STEP_AVAILABLE,
         }
 
 

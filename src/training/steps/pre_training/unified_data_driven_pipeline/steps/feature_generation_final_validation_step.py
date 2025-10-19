@@ -288,7 +288,7 @@ class FeatureGenerationFinalValidationStep(ModularComponent):
         if data is None or (hasattr(data, 'empty') and data.empty):
             # Auto-load from vectorization outputs
             tprint_info("🔍 Auto-loading vectorized features for final validation")
-            data = artifact_manager.get_dataframe('feature_generation_vectorization_step', 'vectorized_features')
+            data = artifact_manager.get_dataframe('vectorization', 'vectorized_features')
             if data is None or (hasattr(data, 'empty') and data.empty):
                 data = artifact_manager.get_dataframe('vectorization', 'vectorized_features')
 

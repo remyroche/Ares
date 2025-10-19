@@ -206,6 +206,24 @@ class M1GPUManager:
 
         return info
 
+    def _safe_to_mps(self, data):
+        """Safely convert data to MPS tensor with dtype checking."""
+        if isinstance(data, np.ndarray):
+            # Check for unsupported dtypes
+            if data.dtype == np.object_ or data.dtype.kind == 'O':
+                self.logger.warning("Object dtype arrays not supported by MPS, using CPU")
+                return None
+            if data.dtype.kind in ['U', 'S']:  # Unicode/string arrays
+                self.logger.warning("String/Unicode arrays not supported by MPS, using CPU")
+                return None
+            if data.dtype.kind == 'c':  # Complex arrays
+                self.logger.warning("Complex arrays not supported by MPS, using CPU")
+                return None
+            return torch.from_numpy(data).to('mps')
+        elif isinstance(data, torch.Tensor):
+            return data.to('mps')
+        return None
+
     def optimize_tensor_operations(self, data, force_cpu: bool = False):
         """Optimize tensor operations for M1 GPU with enhanced backwards compatibility."""
         if not NUMPY_AVAILABLE:
@@ -220,8 +238,10 @@ class M1GPUManager:
             return data
 
         try:
-            # Convert to torch tensor and move to MPS
-            tensor = torch.from_numpy(data).to('mps')
+            # Use safe MPS conversion
+            tensor = self._safe_to_mps(data)
+            if tensor is None:
+                return data
 
             # Perform any optimizations here
             # For now, just return the data (placeholder for actual optimizations)
@@ -275,9 +295,11 @@ class M1GPUManager:
             return np.linalg.norm(array, axis=axis, keepdims=keepdims)
 
         try:
-
-            # Convert to torch tensor and move to MPS
-            tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
+            # Convert to torch tensor and move to MPS safely
+            array_data = np.array(array, dtype=np.float32)
+            tensor = self._safe_to_mps(array_data)
+            if tensor is None:
+                return np.linalg.norm(array, axis=axis, keepdims=keepdims)
 
             # Calculate norm
             norm_tensor = torch.linalg.norm(tensor, dim=axis, keepdim=keepdims)
@@ -302,9 +324,11 @@ class M1GPUManager:
             return np.abs(array)
 
         try:
-
-            # Convert to torch tensor and move to MPS
-            tensor = torch.from_numpy(np.array(array, dtype=np.float32)).to('mps')
+            # Convert to torch tensor and move to MPS safely
+            array_data = np.array(array, dtype=np.float32)
+            tensor = self._safe_to_mps(array_data)
+            if tensor is None:
+                return np.abs(array)
 
             # Calculate absolute values
             abs_tensor = torch.abs(tensor)
@@ -329,10 +353,15 @@ class M1GPUManager:
             return np.divide(array1, array2)
 
         try:
-
-            # Convert to torch tensors and move to MPS
-            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
-            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            # Convert to torch tensors and move to MPS safely
+            array1_data = np.array(array1, dtype=np.float32)
+            array2_data = np.array(array2, dtype=np.float32)
+            
+            tensor1 = self._safe_to_mps(array1_data)
+            tensor2 = self._safe_to_mps(array2_data)
+            
+            if tensor1 is None or tensor2 is None:
+                return np.divide(array1, array2)
 
             # Perform division
             result_tensor = torch.div(tensor1, tensor2)
@@ -357,10 +386,15 @@ class M1GPUManager:
             return np.subtract(array1, array2)
 
         try:
-
-            # Convert to torch tensors and move to MPS
-            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
-            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            # Convert to torch tensors and move to MPS safely
+            array1_data = np.array(array1, dtype=np.float32)
+            array2_data = np.array(array2, dtype=np.float32)
+            
+            tensor1 = self._safe_to_mps(array1_data)
+            tensor2 = self._safe_to_mps(array2_data)
+            
+            if tensor1 is None or tensor2 is None:
+                return np.subtract(array1, array2)
 
             # Perform subtraction
             result_tensor = torch.sub(tensor1, tensor2)
@@ -385,10 +419,15 @@ class M1GPUManager:
             return np.matmul(array1, array2)
 
         try:
-
-            # Convert to torch tensors and move to MPS
-            tensor1 = torch.from_numpy(np.array(array1, dtype=np.float32)).to('mps')
-            tensor2 = torch.from_numpy(np.array(array2, dtype=np.float32)).to('mps')
+            # Convert to torch tensors and move to MPS safely
+            array1_data = np.array(array1, dtype=np.float32)
+            array2_data = np.array(array2, dtype=np.float32)
+            
+            tensor1 = self._safe_to_mps(array1_data)
+            tensor2 = self._safe_to_mps(array2_data)
+            
+            if tensor1 is None or tensor2 is None:
+                return np.matmul(array1, array2)
 
             # Perform matrix multiplication
             result_tensor = torch.matmul(tensor1, tensor2)
@@ -473,14 +512,35 @@ def optimize_dataframe_for_m1(df):
             logger.info("DataFrame is empty, returning as-is")
             return df
 
+        # Get initial memory usage
+        initial_memory = df.memory_usage(deep=True).sum()
+        
         # Convert numeric columns to float32 for better M1 performance
         numeric_cols = df.select_dtypes(include=[np.number]).columns
+        optimized_count = 0
 
         for col in numeric_cols:
             if df[col].dtype == np.float64:
-                df[col] = df[col].astype(np.float32)
+                # Check if values fit in float32 range
+                if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                    df[col] = df[col].astype(np.float32)
+                    optimized_count += 1
+            elif df[col].dtype == np.int64:
+                # Check if values fit in int32 range
+                if df[col].min() >= np.iinfo(np.int32).min and df[col].max() <= np.iinfo(np.int32).max:
+                    df[col] = df[col].astype(np.int32)
+                    optimized_count += 1
+            elif df[col].dtype == np.int32:
+                # Check if values fit in int16 range
+                if df[col].min() >= np.iinfo(np.int16).min and df[col].max() <= np.iinfo(np.int16).max:
+                    df[col] = df[col].astype(np.int16)
+                    optimized_count += 1
 
-        logger.info(f"Optimized {len(numeric_cols)} numeric columns for M1")
+        # Calculate memory saved
+        final_memory = df.memory_usage(deep=True).sum()
+        memory_saved = initial_memory - final_memory
+        
+        logger.info(f"Optimized {optimized_count} numeric columns for M1, saved {memory_saved / 1024**2:.2f} MB")
 
     except Exception as e:
         logger.warning(f"⚠️ DataFrame optimization failed: {e}")
@@ -552,14 +612,20 @@ async def m1_backtesting_simulate(
             try:
                 numeric_data = gpu_data.select_dtypes(include=[np.number])
                 if not len(numeric_data) == 0:
-                    tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
+                    array_data = numeric_data.values.astype(np.float32)
+                    tensor_data = m1_gpu_manager._safe_to_mps(array_data)
+                    if tensor_data is None:
+                        return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
                 else:
                     tensor_data = torch.tensor([]).to('mps')
             except AttributeError as e:
                 logger.warning(f"⚠️ DataFrame optimization failed: {e}")
                 return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
         elif isinstance(gpu_data, np.ndarray):
-            tensor_data = torch.from_numpy(gpu_data.astype(np.float32)).to('mps')
+            array_data = gpu_data.astype(np.float32)
+            tensor_data = m1_gpu_manager._safe_to_mps(array_data)
+            if tensor_data is None:
+                return await _cpu_backtesting_fallback(gpu_data, strategy_params, config, strategy_func)
         else:
             tensor_data = torch.tensor(gpu_data).to('mps')
 
@@ -705,14 +771,20 @@ async def m1_monte_carlo_simulate(
             try:
                 numeric_data = data.select_dtypes(include=[np.number])
                 if not len(numeric_data) == 0:
-                    tensor_data = torch.from_numpy(numeric_data.values.astype(np.float32)).to('mps')
+                    array_data = numeric_data.values.astype(np.float32)
+                    tensor_data = m1_gpu_manager._safe_to_mps(array_data)
+                    if tensor_data is None:
+                        return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
                 else:
                     tensor_data = torch.tensor([]).to('mps')
             except AttributeError as e:
                 logger.warning(f"⚠️ DataFrame optimization failed: {e}")
                 return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
         elif isinstance(data, np.ndarray):
-            tensor_data = torch.from_numpy(data.astype(np.float32)).to('mps')
+            array_data = data.astype(np.float32)
+            tensor_data = m1_gpu_manager._safe_to_mps(array_data)
+            if tensor_data is None:
+                return await _cpu_monte_carlo_fallback(data, strategy_params, config, n_simulations)
         else:
             tensor_data = torch.tensor(data).to('mps')
 
@@ -865,7 +937,17 @@ class M1GPUOptimizer:
                 if isinstance(data, torch.Tensor):
                     return data.to('mps')
                 elif isinstance(data, np.ndarray):
-                    return torch.from_numpy(data).to('mps')
+                    # Check for unsupported dtypes
+                    if data.dtype == np.object_ or data.dtype.kind == 'O':
+                        self.logger.warning("Object dtype arrays not supported by MPS, using CPU")
+                        return data
+                    if data.dtype.kind in ['U', 'S']:  # Unicode/string arrays
+                        self.logger.warning("String/Unicode arrays not supported by MPS, using CPU")
+                        return data
+                    if data.dtype.kind == 'c':  # Complex arrays
+                        self.logger.warning("Complex arrays not supported by MPS, using CPU")
+                        return data
+                    return self._safe_to_mps(data) or data
             return data
         except Exception as e:
             self.logger.warning(f"GPU optimization failed: {e}")

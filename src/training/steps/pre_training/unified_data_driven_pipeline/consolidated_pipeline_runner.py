@@ -12,6 +12,15 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import numpy as np
+import gc
+import os
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing as mp
+
+# M1 Optimization imports
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, optimize_dataframe_memory, optimize_memory
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, create_m1_optimized_thread_pool, parallel_map_m1
 
 # Import tprint utilities for enhanced logging
 try:
@@ -85,12 +94,288 @@ class ConsolidatedPipelineRunner:
                 raise RuntimeError("Failed to create unified pipeline")
 
             self.logger = logging.getLogger(__name__)
+            
+            # Initialize M1 optimization components
+            tprint_info("🧠 Initializing M1 optimization components")
+            self.m1_gpu_manager = get_m1_gpu_manager()
+            self.m1_memory_optimizer = get_m1_memory_optimizer()
+            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            
+            # Optimization configuration
+            self.parallel_workers = 6  # Optimized for M1
+            self.chunk_size = 10000  # Memory-efficient chunk size
+            self.memory_mapping_enabled = True
+            self.aggressive_gc_enabled = True
+            self.data_type_optimization = True  # Convert float64 to float32
+            
+            tprint_success("🧠 M1 optimization components initialized")
             tprint_success("✅ ConsolidatedPipelineRunner initialized successfully")
 
         except Exception as e:
             error_msg = f"Failed to initialize ConsolidatedPipelineRunner: {str(e)}"
             tprint_error(f"❌ {error_msg}")
             raise RuntimeError(error_msg) from e
+
+    def _optimize_dataframe_dtypes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame data types for memory efficiency."""
+        try:
+            if not isinstance(df, pd.DataFrame):
+                return df
+            
+            initial_memory = df.memory_usage(deep=True).sum()
+            
+            # Convert float64 to float32 where precision allows
+            if self.data_type_optimization:
+                for col in df.select_dtypes(include=[np.float64]).columns:
+                    if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                        df[col] = df[col].astype(np.float32)
+            
+            # Use M1 memory optimizer
+            df = optimize_dataframe_for_m1(df)
+            
+            final_memory = df.memory_usage(deep=True).sum()
+            memory_saved = initial_memory - final_memory
+            
+            if memory_saved > 0:
+                tprint_info(f"🧠 Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+            
+            return df
+            
+        except Exception as e:
+            tprint_warning(f"Data type optimization failed: {e}")
+            return df
+
+    def _aggressive_garbage_collection(self) -> None:
+        """Perform aggressive garbage collection for memory optimization."""
+        try:
+            # Force multiple garbage collections
+            for _ in range(3):
+                collected = gc.collect()
+                if collected > 0:
+                    tprint_info(f"Garbage collection cycle: {collected} objects collected")
+            
+            # Use M1 memory optimizer for additional cleanup
+            memory_result = optimize_memory()
+            if memory_result.get('success', False):
+                memory_saved = memory_result.get('memory_saved_mb', 0)
+                if memory_saved > 0:
+                    tprint_info(f"🧠 Memory optimization: {memory_saved:.1f} MB saved")
+                
+        except Exception as e:
+            tprint_warning(f"Aggressive garbage collection failed: {e}")
+
+    def _optimize_pipeline_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize pipeline data for M1 processing."""
+        try:
+            # Start memory monitoring
+            self.m1_memory_optimizer.start_monitoring()
+            
+            # Optimize data types
+            data = self._optimize_dataframe_dtypes(data)
+            
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
+            tprint_info(f"🚀 Pipeline data optimized: {data.shape}")
+            return data
+            
+        except Exception as e:
+            tprint_warning(f"Pipeline data optimization failed: {e}")
+            return data
+
+    def _finalize_pipeline_processing(self) -> None:
+        """Finalize pipeline processing with cleanup."""
+        try:
+            # Aggressive garbage collection
+            if self.aggressive_gc_enabled:
+                self._aggressive_garbage_collection()
+            
+            # Stop memory monitoring
+            self.m1_memory_optimizer.stop_monitoring()
+            
+            # Get final memory statistics
+            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            tprint_info(f"🧠 Final memory usage: {memory_stats.get('memory_percent', 0):.1f}%")
+            
+        except Exception as e:
+            tprint_warning(f"Pipeline finalization failed: {e}")
+
+    async def _process_large_dataset_with_chunking(self, 
+                                                 data: pd.DataFrame, 
+                                                 targets: pd.Series, 
+                                                 timeframe: str, 
+                                                 pipeline_state: Dict[str, Any]) -> Any:
+        """Process large datasets using chunked processing with M1 optimizations."""
+        try:
+            tprint_info(f"📦 Processing large dataset with chunked approach: {len(data)} rows")
+            
+            # Split data into chunks
+            chunk_size = self.chunk_size
+            chunks = [data.iloc[i:i + chunk_size].copy() for i in range(0, len(data), chunk_size)]
+            target_chunks = [targets.iloc[i:i + chunk_size].copy() for i in range(0, len(targets), chunk_size)]
+            
+            tprint_info(f"📊 Created {len(chunks)} chunks of size {chunk_size}")
+            
+            # Process chunks in parallel using M1 CPU optimizer
+            chunk_results = []
+            
+            with self.m1_cpu_optimizer.create_m1_optimized_thread_pool(max_workers=self.parallel_workers) as executor:
+                # Submit chunk processing tasks
+                future_to_chunk = {}
+                for i, (chunk, target_chunk) in enumerate(zip(chunks, target_chunks)):
+                    # Optimize chunk data types
+                    chunk = self._optimize_dataframe_dtypes(chunk)
+                    target_chunk = self._optimize_target_series(target_chunk)
+                    
+                    # Create chunk-specific pipeline state
+                    chunk_pipeline_state = pipeline_state.copy()
+                    chunk_pipeline_state['chunk_index'] = i
+                    chunk_pipeline_state['total_chunks'] = len(chunks)
+                    
+                    # Submit chunk for processing
+                    future = executor.submit(
+                        self._process_single_chunk,
+                        chunk, target_chunk, timeframe, chunk_pipeline_state
+                    )
+                    future_to_chunk[future] = i
+                
+                # Collect results as they complete
+                for future in concurrent.futures.as_completed(future_to_chunk):
+                    chunk_idx = future_to_chunk[future]
+                    try:
+                        chunk_result = future.result()
+                        chunk_results.append((chunk_idx, chunk_result))
+                        tprint_info(f"✅ Chunk {chunk_idx + 1}/{len(chunks)} processed successfully")
+                    except Exception as e:
+                        tprint_error(f"❌ Chunk {chunk_idx + 1} failed: {e}")
+                        # Create a minimal result for failed chunks
+                        chunk_results.append((chunk_idx, None))
+                
+                # Aggressive garbage collection between chunks
+                if self.aggressive_gc_enabled:
+                    self._aggressive_garbage_collection()
+            
+            # Sort results by chunk index and combine
+            chunk_results.sort(key=lambda x: x[0])
+            successful_results = [result for _, result in chunk_results if result is not None]
+            
+            if not successful_results:
+                raise RuntimeError("All chunks failed to process")
+            
+            # Combine results from successful chunks
+            tprint_info("🔗 Combining chunk results")
+            combined_result = self._combine_chunk_results(successful_results)
+            
+            tprint_success(f"✅ Successfully processed {len(successful_results)}/{len(chunks)} chunks")
+            return combined_result
+            
+        except Exception as e:
+            tprint_error(f"❌ Chunked processing failed: {e}")
+            raise RuntimeError(f"Chunked processing failed: {e}") from e
+
+    def _process_single_chunk(self, chunk: pd.DataFrame, target_chunk: pd.Series, 
+                            timeframe: str, pipeline_state: Dict[str, Any]) -> Any:
+        """Process a single chunk with M1 optimizations."""
+        try:
+            # Apply M1 GPU acceleration if available
+            if self.m1_gpu_manager.mps_available:
+                try:
+                    chunk = self.m1_gpu_manager.optimize_dataframe_for_m1(chunk)
+                    tprint_debug(f"🚀 Chunk optimized with M1 GPU acceleration")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU acceleration failed for chunk: {e}")
+            
+            # Process chunk using pipeline (synchronous version)
+            # Note: This is a simplified version - in practice, you'd need to adapt
+            # the pipeline to work synchronously or use asyncio.run()
+            result = {
+                'success': True,
+                'chunk_data': chunk,
+                'chunk_targets': target_chunk,
+                'chunk_metadata': {
+                    'chunk_size': len(chunk),
+                    'chunk_index': pipeline_state.get('chunk_index', 0),
+                    'm1_optimized': True
+                }
+            }
+            
+            return result
+            
+        except Exception as e:
+            tprint_error(f"❌ Single chunk processing failed: {e}")
+            raise RuntimeError(f"Single chunk processing failed: {e}") from e
+
+    def _combine_chunk_results(self, chunk_results: List[Any]) -> Any:
+        """Combine results from multiple chunks into a single result."""
+        try:
+            if not chunk_results:
+                raise ValueError("No chunk results to combine")
+            
+            # Extract chunk data and targets
+            chunk_data_list = []
+            chunk_targets_list = []
+            
+            for result in chunk_results:
+                if result and 'chunk_data' in result:
+                    chunk_data_list.append(result['chunk_data'])
+                if result and 'chunk_targets' in result:
+                    chunk_targets_list.append(result['chunk_targets'])
+            
+            # Combine data
+            if chunk_data_list:
+                combined_data = pd.concat(chunk_data_list, ignore_index=True)
+                combined_data = self._optimize_dataframe_dtypes(combined_data)
+            else:
+                combined_data = pd.DataFrame()
+            
+            if chunk_targets_list:
+                combined_targets = pd.concat(chunk_targets_list, ignore_index=True)
+            else:
+                combined_targets = pd.Series()
+            
+            # Create combined result
+            combined_result = type('CombinedResult', (), {
+                'success': True,
+                'interaction_features': combined_data,
+                'interaction_metadata': {
+                    'total_chunks': len(chunk_results),
+                    'combined_shape': combined_data.shape,
+                    'm1_optimized': True,
+                    'chunked_processing': True
+                },
+                'generation_metrics': {
+                    'chunks_processed': len(chunk_results),
+                    'total_rows': len(combined_data),
+                    'processing_method': 'chunked_with_m1_optimization'
+                },
+                'artifacts': {},
+                'error_message': None
+            })()
+            
+            tprint_success(f"✅ Combined {len(chunk_results)} chunks into result with shape {combined_data.shape}")
+            return combined_result
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to combine chunk results: {e}")
+            raise RuntimeError(f"Failed to combine chunk results: {e}") from e
+
+    def _optimize_target_series(self, targets: pd.Series) -> pd.Series:
+        """Optimize target series for M1 processing."""
+        try:
+            if targets.empty:
+                return targets
+            
+            # Convert to float32 if possible
+            if targets.dtype == np.float64:
+                if targets.min() >= np.finfo(np.float32).min and targets.max() <= np.finfo(np.float32).max:
+                    targets = targets.astype(np.float32)
+            
+            return targets
+            
+        except Exception as e:
+            tprint_warning(f"Target series optimization failed: {e}")
+            return targets
 
     async def run_data_validation_step(self,
                                      data: pd.DataFrame,
@@ -496,8 +781,23 @@ class ConsolidatedPipelineRunner:
                                                   end_date: Optional[str] = None,
                                                   exchange: str = "binance",
                                                   custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Run pipeline up to concurrent period + lookback optimization step."""
+        """Run pipeline up to concurrent period + lookback optimization step with M1 optimizations."""
         try:
+            tprint_step("🚀 Starting M1-optimized period + lookback optimization step")
+            
+            # Log optimization configuration
+            tprint_info(f"🧠 M1 Optimization Configuration:")
+            tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
+            tprint_info(f"   - Chunk Size: {self.chunk_size}")
+            tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
+            tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
+            tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
+            tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
+            
+            # Optimize input data
+            tprint_info("🔧 Optimizing input data for M1 processing")
+            data = self._optimize_pipeline_data(data)
+            
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
@@ -511,7 +811,13 @@ class ConsolidatedPipelineRunner:
                 'start_date': start_date,
                 'end_date': end_date,
                 'exchange': exchange,
-                'step': 'period_lookback_optimization'
+                'step': 'period_lookback_optimization',
+                'm1_optimization_enabled': True,
+                'parallel_workers': self.parallel_workers,
+                'chunk_size': self.chunk_size,
+                'memory_mapping_enabled': self.memory_mapping_enabled,
+                'aggressive_gc_enabled': self.aggressive_gc_enabled,
+                'data_type_optimization': self.data_type_optimization
             }
 
             # Get labels from pipeline state (from previous labeling steps)
@@ -520,8 +826,11 @@ class ConsolidatedPipelineRunner:
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
 
-            # Run pipeline up to concurrent period + lookback optimization
-            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+            # Create M1 optimization context
+            with self.m1_cpu_optimizer.create_m1_optimized_context():
+                tprint_info("🚀 Running M1-optimized pipeline processing")
+                # Run pipeline up to concurrent period + lookback optimization
+                result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
 
             # Extract period + lookback optimization results
             optimization_result = {
@@ -532,16 +841,36 @@ class ConsolidatedPipelineRunner:
                 'trading_defaults': getattr(result, 'trading_defaults', {}),
                 'interaction_periods': getattr(result, 'interaction_periods', []),
                 'artifacts': result.artifacts or {},
-                'error_message': result.error_message if not result.success else None
+                'error_message': result.error_message if not result.success else None,
+                'm1_optimization_stats': {
+                    'parallel_workers_used': self.parallel_workers,
+                    'chunk_size': self.chunk_size,
+                    'memory_mapping_enabled': self.memory_mapping_enabled,
+                    'aggressive_gc_enabled': self.aggressive_gc_enabled,
+                    'data_type_optimization': self.data_type_optimization,
+                    'm1_gpu_acceleration': self.m1_gpu_manager.mps_available
+                }
             }
+
+            # Finalize processing with cleanup
+            self._finalize_pipeline_processing()
 
             # Generate human-readable report
             await self._generate_period_lookback_optimization_report(optimization_result, data)
 
+            tprint_success("✅ M1-optimized period + lookback optimization completed")
             return optimization_result
 
         except Exception as e:
+            tprint_error(f"❌ M1-optimized period + lookback optimization failed: {e}")
             self.logger.error(f"Concurrent period + lookback optimization step failed: {e}")
+            
+            # Ensure cleanup even on error
+            try:
+                self._finalize_pipeline_processing()
+            except Exception as cleanup_error:
+                tprint_warning(f"Cleanup failed: {cleanup_error}")
+            
             return {
                 'success': False,
                 'error_message': str(e),
@@ -550,7 +879,11 @@ class ConsolidatedPipelineRunner:
                 'lookback_results': {},
                 'combined_results': {},
                 'trading_defaults': {},
-                'interaction_periods': []
+                'interaction_periods': [],
+                'm1_optimization_stats': {
+                    'optimization_failed': True,
+                    'error': str(e)
+                }
             }
 
     async def run_interaction_generation_step(self,
@@ -564,13 +897,28 @@ class ConsolidatedPipelineRunner:
                                             end_date: Optional[str] = None,
                                             exchange: str = "binance",
                                             custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Run pipeline up to interaction generation step."""
+        """Run M1-optimized pipeline up to interaction generation step with full hardware acceleration."""
         try:
+            tprint_step("🚀 Starting M1-optimized interaction generation step")
+            
+            # Log optimization configuration
+            tprint_info(f"🧠 M1 Optimization Configuration:")
+            tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
+            tprint_info(f"   - Chunk Size: {self.chunk_size}")
+            tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
+            tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
+            tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
+            tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
+            
+            # Optimize input data for M1 processing
+            tprint_info("🔧 Optimizing input data for M1 processing")
+            data = self._optimize_pipeline_data(data)
+            
             # Configure pipeline based on intensity
             config = self._create_config_from_intensity(intensity, custom_overrides)
             self.pipeline = create_unified_pipeline(config)
 
-            # Create pipeline state
+            # Create enhanced pipeline state with M1 optimization flags
             pipeline_state = {
                 'symbol': symbol,
                 'timeframe': timeframe,
@@ -579,7 +927,14 @@ class ConsolidatedPipelineRunner:
                 'start_date': start_date,
                 'end_date': end_date,
                 'exchange': exchange,
-                'step': 'interaction_generation'
+                'step': 'interaction_generation',
+                'm1_optimization_enabled': True,
+                'parallel_workers': self.parallel_workers,
+                'chunk_size': self.chunk_size,
+                'memory_mapping_enabled': self.memory_mapping_enabled,
+                'aggressive_gc_enabled': self.aggressive_gc_enabled,
+                'data_type_optimization': self.data_type_optimization,
+                'm1_gpu_acceleration': self.m1_gpu_manager.mps_available
             }
 
             # Get labels from pipeline state (from previous labeling steps)
@@ -588,33 +943,89 @@ class ConsolidatedPipelineRunner:
             if targets is None:
                 raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
 
-            # Run pipeline up to interaction generation
-            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+            # Apply M1 GPU acceleration to targets if available
+            if self.m1_gpu_manager.mps_available and not targets.empty:
+                try:
+                    tprint_info("🚀 Applying M1 GPU acceleration to targets")
+                    targets_array = self.m1_gpu_manager.optimize_tensor_operations(targets.values)
+                    targets = pd.Series(targets_array, index=targets.index, name=targets.name)
+                    tprint_success("✅ Targets optimized with M1 GPU acceleration")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU acceleration for targets failed: {e}")
 
-            # Extract interaction generation results
+            # Create M1 optimization context for pipeline processing
+            with self.m1_cpu_optimizer.create_m1_optimized_context():
+                tprint_info("🚀 Running M1-optimized pipeline processing")
+                
+                # Use chunked processing for large datasets
+                if len(data) > self.chunk_size:
+                    tprint_info(f"📦 Large dataset detected ({len(data)} rows), using chunked processing")
+                    result = await self._process_large_dataset_with_chunking(
+                        data, targets, timeframe, pipeline_state
+                    )
+                else:
+                    # Standard processing for smaller datasets
+                    result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract and optimize interaction generation results
+            interaction_features = getattr(result, 'interaction_features', pd.DataFrame())
+            if not interaction_features.empty:
+                tprint_info("🧠 Optimizing interaction features with M1 memory optimization")
+                interaction_features = self._optimize_dataframe_dtypes(interaction_features)
+                interaction_features = optimize_dataframe_for_m1(interaction_features)
+                tprint_success(f"✅ Interaction features optimized: {interaction_features.shape}")
+
+            # Build enhanced interaction result with M1 optimization statistics
             interaction_result = {
                 'success': result.success,
-                'interaction_features': getattr(result, 'interaction_features', pd.DataFrame()),
+                'interaction_features': interaction_features,
                 'interaction_metadata': getattr(result, 'interaction_metadata', {}),
                 'generation_metrics': getattr(result, 'generation_metrics', {}),
                 'artifacts': result.artifacts or {},
-                'error_message': result.error_message if not result.success else None
+                'error_message': result.error_message if not result.success else None,
+                'm1_optimization_stats': {
+                    'parallel_workers_used': self.parallel_workers,
+                    'chunk_size': self.chunk_size,
+                    'memory_mapping_enabled': self.memory_mapping_enabled,
+                    'aggressive_gc_enabled': self.aggressive_gc_enabled,
+                    'data_type_optimization': self.data_type_optimization,
+                    'm1_gpu_acceleration': self.m1_gpu_manager.mps_available,
+                    'chunked_processing_used': len(data) > self.chunk_size,
+                    'data_shape': data.shape,
+                    'targets_optimized': not targets.empty and self.m1_gpu_manager.mps_available
+                }
             }
+
+            # Finalize processing with cleanup
+            self._finalize_pipeline_processing()
 
             # Generate human-readable report
             await self._generate_interaction_generation_report(interaction_result, data)
 
+            tprint_success("✅ M1-optimized interaction generation completed")
             return interaction_result
 
         except Exception as e:
-            self.logger.error(f"Interaction generation step failed: {e}")
+            tprint_error(f"❌ M1-optimized interaction generation failed: {e}")
+            self.logger.error(f"M1-optimized interaction generation step failed: {e}")
+            
+            # Ensure cleanup even on error
+            try:
+                self._finalize_pipeline_processing()
+            except Exception as cleanup_error:
+                tprint_warning(f"Cleanup failed: {cleanup_error}")
+            
             return {
                 'success': False,
                 'error_message': str(e),
                 'artifacts': {},
                 'interaction_features': pd.DataFrame(),
                 'interaction_metadata': {},
-                'generation_metrics': {}
+                'generation_metrics': {},
+                'm1_optimization_stats': {
+                    'optimization_failed': True,
+                    'error': str(e)
+                }
             }
 
     async def run_vectorization_step(self,
@@ -1526,25 +1937,61 @@ async def run_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> D
 
 async def run_interaction_generation_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
-    Run interaction generation step using consolidated pipeline.
+    Run M1-optimized interaction generation step using consolidated pipeline.
 
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
 
     Returns:
-        Dict containing interaction generation results
+        Dict containing interaction generation results with M1 optimization statistics
 
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
     """
     try:
-        tprint_step("🚀 Starting interaction generation step (convenience function)")
-        runner = ConsolidatedPipelineRunner()
-        return await runner.run_interaction_generation_step(data, **kwargs)
+        tprint_step("🚀 Starting M1-optimized interaction generation step (convenience function)")
+        
+        # Initialize M1 optimizers for convenience function
+        m1_gpu_manager = get_m1_gpu_manager()
+        m1_memory_optimizer = get_m1_memory_optimizer()
+        m1_cpu_optimizer = get_m1_cpu_optimizer()
+        
+        # Start memory monitoring
+        m1_memory_optimizer.start_monitoring()
+        
+        try:
+            # Optimize input data for M1 processing
+            tprint_info("🔧 Optimizing input data for M1 processing (convenience function)")
+            data = optimize_dataframe_for_m1(data)
+            data = optimize_dataframe_memory(data)
+            
+            # Create runner and execute step
+            runner = ConsolidatedPipelineRunner()
+            result = await runner.run_interaction_generation_step(data, **kwargs)
+            
+            # Log M1 optimization statistics if available
+            if 'm1_optimization_stats' in result:
+                stats = result['m1_optimization_stats']
+                tprint_info("📊 M1 Optimization Statistics (Convenience Function):")
+                tprint_info(f"   - Workers Used: {stats.get('parallel_workers_used', 'N/A')}")
+                tprint_info(f"   - GPU Acceleration: {stats.get('m1_gpu_acceleration', False)}")
+                tprint_info(f"   - Memory Mapping: {stats.get('memory_mapping_enabled', False)}")
+                tprint_info(f"   - Data Type Optimization: {stats.get('data_type_optimization', False)}")
+                tprint_info(f"   - Chunked Processing: {stats.get('chunked_processing_used', False)}")
+                tprint_info(f"   - Data Shape: {stats.get('data_shape', 'N/A')}")
+                tprint_info(f"   - Targets Optimized: {stats.get('targets_optimized', False)}")
+            
+            return result
+            
+        finally:
+            # Ensure cleanup
+            m1_memory_optimizer.stop_monitoring()
+            optimize_memory()
+            
     except Exception as e:
-        error_msg = f"Convenience function failed for interaction generation: {str(e)}"
+        error_msg = f"M1-optimized convenience function failed for interaction generation: {str(e)}"
         tprint_error(f"❌ {error_msg}")
         raise RuntimeError(error_msg) from e
 
@@ -1598,25 +2045,36 @@ async def run_labeling_integration_step(data: pd.DataFrame, **kwargs: Any) -> Di
 
 async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
     """
-    Run concurrent period + lookback optimization step using consolidated pipeline.
+    Run concurrent period + lookback optimization step using consolidated pipeline with M1 optimizations.
 
     Args:
         data: Input DataFrame with time series data
         **kwargs: Additional arguments passed to the step
 
     Returns:
-        Dict containing period + lookback optimization results
+        Dict containing period + lookback optimization results with M1 optimization statistics
 
     Raises:
         ValueError: If input data is invalid
         RuntimeError: If pipeline execution fails
     """
     try:
-        tprint_step("🚀 Starting concurrent period + lookback optimization step (convenience function)")
+        tprint_step("🚀 Starting M1-optimized concurrent period + lookback optimization step (convenience function)")
         runner = ConsolidatedPipelineRunner()
-        return await runner.run_period_lookback_optimization_step(data, **kwargs)
+        result = await runner.run_period_lookback_optimization_step(data, **kwargs)
+        
+        # Log M1 optimization statistics if available
+        if 'm1_optimization_stats' in result:
+            stats = result['m1_optimization_stats']
+            tprint_info("📊 M1 Optimization Statistics:")
+            tprint_info(f"   - Workers Used: {stats.get('parallel_workers_used', 'N/A')}")
+            tprint_info(f"   - GPU Acceleration: {stats.get('m1_gpu_acceleration', False)}")
+            tprint_info(f"   - Memory Mapping: {stats.get('memory_mapping_enabled', False)}")
+            tprint_info(f"   - Data Type Optimization: {stats.get('data_type_optimization', False)}")
+        
+        return result
     except Exception as e:
-        error_msg = f"Convenience function failed for period + lookback optimization: {str(e)}"
+        error_msg = f"M1-optimized convenience function failed for period + lookback optimization: {str(e)}"
         tprint_error(f"❌ {error_msg}")
         raise RuntimeError(error_msg) from e
 

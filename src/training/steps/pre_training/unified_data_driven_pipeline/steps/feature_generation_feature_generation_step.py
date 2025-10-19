@@ -15,6 +15,10 @@ import numpy as np
 import copy
 import asyncio
 import time
+import gc
+import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +33,24 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
 )
+
+# M1 Hardware Optimization imports
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager, optimize_dataframe_for_m1, create_m1_optimized_array
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer, optimize_dataframe_memory, optimize_memory
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer, create_m1_optimized_thread_pool, parallel_map_m1
+    from src.utils.ml_common.unified_vectorization_manager import UnifiedVectorizationManager, OperationType
+    M1_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    M1_OPTIMIZATION_AVAILABLE = False
+    M1GPUManager = None
+    M1MemoryOptimizer = None
+    M1CPUOptimizer = None
+    UnifiedVectorizationManager = None
+    OperationType = None
+    def optimize_dataframe_for_m1(df): return df
+    def optimize_dataframe_memory(df): return df
+    def optimize_memory(): return {'success': False}
 
 # Import tprint utilities
 try:
@@ -170,6 +192,44 @@ class FeatureGenerationStep(ModularComponent):
             
         else:
             self.feature_bank = None
+        
+        # Initialize M1 optimization components
+        if M1_OPTIMIZATION_AVAILABLE:
+            tprint_info("🧠 Initializing M1 optimization components for feature generation")
+            self.m1_gpu_manager = M1GPUManager()
+            self.m1_memory_optimizer = M1MemoryOptimizer(memory_limit_gb=8)
+            self.m1_cpu_optimizer = M1CPUOptimizer()
+            self.unified_vectorization_manager = UnifiedVectorizationManager()
+            
+            # M1 optimization configuration
+            self.parallel_workers = 6  # Optimized for M1
+            self.chunk_size = 10000  # Memory-efficient chunk size
+            self.memory_mapped_threshold = 50000  # Use memory mapping for large datasets
+            self.aggressive_gc_threshold = 0.8  # Trigger aggressive GC at 80% memory usage
+            self.float32_conversion = True  # Convert float64 to float32 where possible
+            
+            # Performance tracking
+            self.performance_stats = {
+                'total_processing_time': 0.0,
+                'memory_optimizations_applied': 0,
+                'chunks_processed': 0,
+                'gpu_accelerations_used': 0,
+                'vectorbt_optimizations_used': 0
+            }
+            
+            tprint_success("🧠 M1 optimization components initialized")
+        else:
+            tprint_warning("⚠️ M1 optimization components not available")
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.unified_vectorization_manager = None
+            self.parallel_workers = 1
+            self.chunk_size = 10000
+            self.memory_mapped_threshold = 50000
+            self.aggressive_gc_threshold = 0.8
+            self.float32_conversion = True
+            self.performance_stats = {}
 
     async def execute(self,
                      data: pd.DataFrame,
@@ -184,9 +244,14 @@ class FeatureGenerationStep(ModularComponent):
                      exchange: Optional[str] = None,
                      custom_overrides: Optional[Dict[str, Any]] = None,
                      pipeline_state: Optional[Dict[str, Any]] = None) -> FeatureGenerationResult:
-        """Execute enhanced feature generation step using AutoOptimizedFeatureGenerator with artifact manager integration."""
+        """Execute M1-optimized enhanced feature generation step using AutoOptimizedFeatureGenerator with artifact manager integration."""
 
-        self.logger.info("Starting enhanced feature generation step with auto-optimization")
+        start_time = time.time()
+        self.logger.info("Starting M1-optimized enhanced feature generation step with auto-optimization")
+        
+        # Start M1 memory monitoring
+        if self.m1_memory_optimizer:
+            self.m1_memory_optimizer.start_monitoring()
 
         # Check if CMI complementarity is enabled (Tactician mode only)
         enable_cmi_complementarity = (
@@ -241,6 +306,18 @@ class FeatureGenerationStep(ModularComponent):
                 # Fast fail if enhanced components are not available
                 raise RuntimeError("Enhanced feature generation components are not available")
 
+            # Apply M1 optimization to input data
+            if self.m1_memory_optimizer:
+                tprint_info("🧠 Applying M1 memory optimization to input data")
+                data = self._optimize_dataframe_memory(data)
+                
+            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
+                tprint_info("🚀 Applying M1 GPU acceleration to input data")
+                data = optimize_dataframe_for_m1(data)
+                
+            # Monitor memory usage
+            self._monitor_memory_usage()
+
             # Perform comprehensive feature generation
             generation_result = await self._perform_enhanced_feature_generation(
                 data, symbol, timeframe, direction, custom_overrides, base_cfg,
@@ -248,10 +325,32 @@ class FeatureGenerationStep(ModularComponent):
             )
 
             if generation_result.success:
-                self.logger.info(f"Enhanced feature generation completed successfully")
+                # Update performance statistics
+                end_time = time.time()
+                self.performance_stats['total_processing_time'] = end_time - start_time
+                
+                # Add M1 optimization statistics to generation result
+                if hasattr(generation_result, 'optimization_stats'):
+                    generation_result.optimization_stats.update({
+                        'm1_optimizations': {
+                            'total_processing_time': self.performance_stats['total_processing_time'],
+                            'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
+                            'chunks_processed': self.performance_stats['chunks_processed'],
+                            'gpu_accelerations_used': self.performance_stats['gpu_accelerations_used'],
+                            'vectorbt_optimizations_used': self.performance_stats['vectorbt_optimizations_used'],
+                            'parallel_workers': self.parallel_workers,
+                            'chunk_size': self.chunk_size,
+                            'm1_gpu_available': self.m1_gpu_manager.mps_available if self.m1_gpu_manager else False,
+                            'm1_memory_optimizer_used': self.m1_memory_optimizer is not None,
+                            'm1_cpu_optimizer_used': self.m1_cpu_optimizer is not None
+                        }
+                    })
+                
+                self.logger.info(f"M1-optimized enhanced feature generation completed successfully")
                 self.logger.info(f"Generated {len(generation_result.generated_features.columns)} features")
                 self.logger.info(f"Categories: {', '.join(generation_result.feature_categories)}")
-                self.logger.info(f"Optimization stats: {generation_result.optimization_stats}")
+                self.logger.info(f"Total processing time: {self.performance_stats['total_processing_time']:.2f} seconds")
+                self.logger.info(f"M1 optimization stats: {generation_result.optimization_stats.get('m1_optimizations', {})}")
                 
                 # Extract actual data from FeatureResult objects before saving to artifact manager
                 # This prevents serialization issues with FeatureResult objects
@@ -348,6 +447,174 @@ class FeatureGenerationStep(ModularComponent):
                 metadata={},
                 optimization_stats={}
             )
+        
+        finally:
+            # Cleanup M1 memory monitoring
+            if self.m1_memory_optimizer:
+                try:
+                    self.m1_memory_optimizer.stop_monitoring()
+                    optimize_memory()
+                    tprint_info("🧠 M1 memory monitoring stopped and cleanup completed")
+                except Exception as cleanup_error:
+                    tprint_warning(f"⚠️ M1 cleanup failed: {cleanup_error}")
+
+    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply M1-specific memory optimizations to a DataFrame."""
+        try:
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return df
+            
+            initial_memory = df.memory_usage(deep=True).sum()
+            
+            # Apply M1 GPU optimization
+            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
+                df = optimize_dataframe_for_m1(df)
+            
+            # Convert float64 to float32 where precision allows
+            if self.float32_conversion:
+                for col in df.select_dtypes(include=[np.float64]).columns:
+                    if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
+                        df[col] = df[col].astype(np.float32)
+            
+            # Apply M1 memory optimizer
+            if self.m1_memory_optimizer:
+                df = optimize_dataframe_memory(df)
+            
+            final_memory = df.memory_usage(deep=True).sum()
+            memory_saved = initial_memory - final_memory
+            
+            if memory_saved > 0:
+                tprint_info(f"🧠 Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+                self.performance_stats['memory_optimizations_applied'] += 1
+            
+            return df
+            
+        except Exception as e:
+            tprint_warning(f"Data type optimization failed: {e}")
+            return df
+
+    def _monitor_memory_usage(self) -> None:
+        """Check current memory usage and trigger optimizations if needed."""
+        try:
+            if not self.m1_memory_optimizer:
+                return
+                
+            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            memory_percent = memory_stats.get('memory_percent', 0)
+            
+            if memory_percent > self.aggressive_gc_threshold:
+                tprint_info(f"🧠 High memory usage detected ({memory_percent:.1f}%), triggering aggressive GC")
+                
+                # Force aggressive garbage collection
+                for _ in range(3):
+                    collected = gc.collect()
+                    if collected > 0:
+                        tprint_info(f"Garbage collection cycle: {collected} objects collected")
+                
+                # Clear M1-specific caches
+                if self.m1_memory_optimizer:
+                    memory_result = optimize_memory()
+                    if memory_result.get('success', False):
+                        memory_saved = memory_result.get('memory_saved_mb', 0)
+                        if memory_saved > 0:
+                            tprint_info(f"🧠 Memory optimization: {memory_saved:.1f} MB saved")
+                            
+        except Exception as e:
+            tprint_warning(f"Memory monitoring failed: {e}")
+
+    def _should_use_memory_mapping(self, data_size: int) -> bool:
+        """Determine if memory mapping should be used based on data size."""
+        return data_size > self.memory_mapped_threshold
+
+    def _chunk_data_for_processing(self, data: pd.DataFrame) -> List[pd.DataFrame]:
+        """Split DataFrame into smaller chunks for processing."""
+        if len(data) <= self.chunk_size:
+            return [data]
+        
+        chunks = []
+        for i in range(0, len(data), self.chunk_size):
+            chunk = data.iloc[i:i + self.chunk_size].copy()
+            chunks.append(chunk)
+        
+        return chunks
+
+    def _process_chunk_with_optimization(self, chunk: pd.DataFrame, chunk_idx: int, **kwargs) -> pd.DataFrame:
+        """Process a single data chunk with M1 optimizations."""
+        try:
+            # Apply memory optimization
+            chunk = self._optimize_dataframe_memory(chunk)
+            
+            # Apply M1 GPU acceleration if available
+            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
+                try:
+                    chunk = optimize_dataframe_for_m1(chunk)
+                    self.performance_stats['gpu_accelerations_used'] += 1
+                    tprint_debug(f"🚀 Chunk {chunk_idx} optimized with M1 GPU acceleration")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU acceleration failed for chunk {chunk_idx}: {e}")
+            
+            # Force garbage collection after processing chunk
+            gc.collect()
+            
+            return chunk
+            
+        except Exception as e:
+            tprint_error(f"❌ Chunk processing failed for chunk {chunk_idx}: {e}")
+            return chunk
+
+    def _combine_chunk_results(self, chunk_results: List[pd.DataFrame]) -> pd.DataFrame:
+        """Efficiently combine results from multiple chunks."""
+        try:
+            if not chunk_results:
+                return pd.DataFrame()
+            
+            if len(chunk_results) == 1:
+                return chunk_results[0]
+            
+            # Combine chunks efficiently
+            combined_df = pd.concat(chunk_results, ignore_index=True)
+            
+            # Apply final memory optimization
+            combined_df = self._optimize_dataframe_memory(combined_df)
+            
+            return combined_df
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to combine chunk results: {e}")
+            return pd.DataFrame()
+
+    def _apply_vectorbt_optimization(self, data: pd.DataFrame, operation_type: str, **kwargs) -> pd.DataFrame:
+        """Apply VectorBT optimization using unified vectorization manager."""
+        try:
+            if not self.unified_vectorization_manager:
+                return data
+            
+            # Map generic operation types to VectorBT-specific operations
+            operation_mapping = {
+                'rolling': OperationType.ROLLING,
+                'correlation': OperationType.CORRELATION,
+                'regression': OperationType.REGRESSION,
+                'feature_generation': OperationType.FEATURE_GENERATION
+            }
+            
+            vectorbt_operation = operation_mapping.get(operation_type, OperationType.FEATURE_GENERATION)
+            
+            # Use unified vectorization manager with VectorBT preference
+            optimized_data = self.unified_vectorization_manager.optimize_operation(
+                data=data,
+                operation_type=vectorbt_operation,
+                prefer_vectorbt=True,
+                **kwargs
+            )
+            
+            self.performance_stats['vectorbt_optimizations_used'] += 1
+            tprint_info(f"🚀 Applied VectorBT optimization for {operation_type}")
+            
+            return optimized_data
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT optimization failed: {e}")
+            return data
 
     async def _perform_enhanced_feature_generation(self, data: pd.DataFrame, symbol: str,
                                                    timeframe: str, direction: str,
@@ -400,7 +667,7 @@ class FeatureGenerationStep(ModularComponent):
                 categories=feature_categories,
                 use_optimized_pipeline=True,
                 lookback_optimization=True,
-                execution_mode=intensity or custom_overrides.get('execution_mode') if custom_overrides else self.config.get('execution_mode')  # Pass execution mode for light mode restriction
+                execution_mode=custom_overrides.get('execution_mode') if custom_overrides else self.config.get('execution_mode')  # Pass execution mode for light mode restriction
             )
             generation_duration = time.time() - generation_start_time
             

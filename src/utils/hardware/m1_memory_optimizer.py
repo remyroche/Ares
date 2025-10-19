@@ -488,6 +488,44 @@ class M1MemoryOptimizer:
 
         return df
 
+    def optimize_series_memory(self, series):
+        """Optimize pandas Series memory usage for M1."""
+        if not PANDAS_AVAILABLE:
+            self.logger.warning("Pandas not available, returning Series as-is")
+            return series
+
+        if series is None:
+            return series
+
+        # Check if it's a pandas Series
+        if not hasattr(series, 'dtype'):
+            self.logger.debug("Non-Series object passed to optimize_series_memory, returning as-is")
+            return series
+
+        try:
+            initial_memory = series.memory_usage(deep=True)
+
+            # Downcast numeric types
+            if series.dtype == 'int64':
+                series = pd.to_numeric(series, downcast='integer')
+            elif series.dtype == 'float64':
+                series = pd.to_numeric(series, downcast='float')
+            elif series.dtype == 'object':
+                # Convert object to category if beneficial
+                if series.nunique() / len(series) < 0.5:  # Less than 50% unique values
+                    series = series.astype('category')
+
+            final_memory = series.memory_usage(deep=True)
+            saved_memory = initial_memory - final_memory
+
+            if saved_memory > 0:
+                self.logger.debug(f"🧠 Series memory optimized: {saved_memory / 1024:.1f} KB saved")
+
+        except Exception as e:
+            self.logger.warning(f"Series memory optimization failed: {e}")
+
+        return series
+
     def optimize_dataframe(self, df):
         """Alias for optimize_dataframe_memory for backward compatibility."""
         return self.optimize_dataframe_memory(df)
@@ -779,6 +817,13 @@ def optimize_dataframe_memory(df):
 def optimize_dataframe(df):
     """Optimize DataFrame memory usage (alias for optimize_dataframe_memory)."""
     return optimize_dataframe_memory(df)
+
+def optimize_series_memory(series):
+    """Optimize pandas Series memory usage."""
+    global _m1_memory_optimizer_instance
+    if _m1_memory_optimizer_instance is None:
+        _m1_memory_optimizer_instance = get_m1_memory_optimizer()
+    return _m1_memory_optimizer_instance.optimize_series_memory(series)
 
 def optimize_memory() -> Dict[str, Any]:
     """Optimize memory usage and return statistics.

@@ -66,6 +66,10 @@ class FeatureScore:
     def __post_init__(self) -> None:
         """Validate feature score after initialization."""
         self._validate_score()
+    
+    def __hash__(self):
+        """Make FeatureScore hashable for use in sets and as dictionary keys."""
+        return hash(self.feature_name)
 
     def _validate_score(self) -> None:
         """

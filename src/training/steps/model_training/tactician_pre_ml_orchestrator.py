@@ -395,7 +395,6 @@ class TacticianPreMLOrchestrator:
         'feature_selection': 'feature_generation_feature_selection_step',
         'period_lookback_optimization': 'feature_generation_period_lookback_optimization_step',
         'interaction_generation': 'feature_generation_interaction_generation_step',
-        'vectorization': 'feature_generation_vectorization_step',
         'final_validation': 'feature_generation_final_validation_step',
     }
 
@@ -420,9 +419,6 @@ class TacticianPreMLOrchestrator:
         ),
         'interaction_generation': (
             "Ensure the 'feature_generation_interaction_generation_step' component is available in the PRE_TRAINING pipeline."
-        ),
-        'vectorization': (
-            "Ensure the 'feature_generation_vectorization_step' component is available in the PRE_TRAINING pipeline."
         ),
         'final_validation': (
             "Ensure the 'feature_generation_final_validation_step' component is available in the PRE_TRAINING pipeline."
@@ -1130,8 +1126,6 @@ class TacticianPreMLOrchestrator:
             if self.config.enable_interactive_generation:
                 config.enabled_steps.append('feature_generation_interaction_generation_step')
             
-            # Add vectorization step
-            config.enabled_steps.append('feature_generation_vectorization_step')
             
             # Add final validation step
             config.enabled_steps.append('feature_generation_final_validation_step')

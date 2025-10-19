@@ -16,18 +16,49 @@ import warnings
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.generic import (
-        rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max,
-        rolling_sum, rolling_apply, rolling_corr, rolling_cov,
-        scale, rank, zscore, winsorize, clip, quantile
-    )
+    # VectorBT doesn't have rolling functions in generic module
+    # We'll use pandas rolling operations instead
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
+
+# Define rolling functions using pandas (VectorBT doesn't have these)
+def rolling_mean(data, window, **kwargs):
+    """Rolling mean using pandas"""
+    return data.rolling(window=window, **kwargs).mean()
+
+def rolling_std(data, window, **kwargs):
+    """Rolling std using pandas"""
+    return data.rolling(window=window, **kwargs).std()
+
+def rolling_var(data, window, **kwargs):
+    """Rolling variance using pandas"""
+    return data.rolling(window=window, **kwargs).var()
+
+def rolling_min(data, window, **kwargs):
+    """Rolling min using pandas"""
+    return data.rolling(window=window, **kwargs).min()
+
+def rolling_max(data, window, **kwargs):
+    """Rolling max using pandas"""
+    return data.rolling(window=window, **kwargs).max()
+
+def rolling_sum(data, window, **kwargs):
+    """Rolling sum using pandas"""
+    return data.rolling(window=window, **kwargs).sum()
+
+def rolling_apply(data, window, func, **kwargs):
+    """Rolling apply using pandas"""
+    return data.rolling(window=window, **kwargs).apply(func)
+
+def rolling_corr(data, data2, window, **kwargs):
+    """Rolling correlation using pandas"""
+    return data.rolling(window=window, **kwargs).corr(data2)
+
+def rolling_cov(data, data2, window, **kwargs):
+    """Rolling covariance using pandas"""
+    return data.rolling(window=window, **kwargs).cov(data2)
 
 # Import UnifiedVectorizationManager
 try:

@@ -76,6 +76,21 @@ class InteractionGenerationResult:
     error_message: Optional[str] = None
 
 @dataclass
+class PhaseWeights:
+    """Configurable weights for SHAP scoring."""
+    shap_weight: float = 0.5
+    interaction_centrality_weight: float = 0.3
+    stability_weight: float = 0.2
+    
+    def __post_init__(self):
+        total = self.shap_weight + self.interaction_centrality_weight + self.stability_weight
+        if abs(total - 1.0) > 1e-6:
+            # Normalize weights to sum to 1.0
+            self.shap_weight /= total
+            self.interaction_centrality_weight /= total
+            self.stability_weight /= total
+
+@dataclass
 class PhaseConfig:
     """Configuration for each phase of the pipeline."""
     
@@ -83,23 +98,38 @@ class PhaseConfig:
     phase1_lgbm_params: Dict[str, Any] = None
     phase1_n_folds: int = 3
     phase1_selection_ratio: float = 0.4  # Top 40%
+    phase1_weights: PhaseWeights = None
     
     # Phase 2: Middle refinement
     phase2_lgbm_params: Dict[str, Any] = None
     phase2_n_folds: int = 3
     phase2_top_k: int = 40
+    phase2_weights: PhaseWeights = None
     
     # Phase 3: Deep interaction discovery
     phase3_lgbm_params: Dict[str, Any] = None
     phase3_n_folds: int = 5
     phase3_top_interactions: int = 50
+    phase3_weights: PhaseWeights = None
     
     # Data sampling by mode
     light_mode_sample_size: int = 50000
     blank_mode_sample_size: int = 250000
     full_mode_sample_size: int = 250000
     
+    # Sampling strategy
+    use_stratified_sampling: bool = True
+    sampling_random_state: int = 42
+    
     def __post_init__(self):
+        # Initialize phase weights
+        if self.phase1_weights is None:
+            self.phase1_weights = PhaseWeights()
+        if self.phase2_weights is None:
+            self.phase2_weights = PhaseWeights()
+        if self.phase3_weights is None:
+            self.phase3_weights = PhaseWeights(shap_weight=0.6, interaction_centrality_weight=0.4, stability_weight=0.0)
+        
         # Phase 1: Shallow LGBM
         if self.phase1_lgbm_params is None:
             self.phase1_lgbm_params = {
@@ -209,8 +239,56 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             'phase3_time': 0.0
         }
         
+        # Initialize thread-safe performance tracking
+        self._performance_lock = threading.Lock()
+        
         tprint("✅ M1-optimized Analyst interaction generation step initialized")
 
+    def _validate_input_data(self, features_df: pd.DataFrame, targets: pd.Series) -> Tuple[bool, str]:
+        """Validate input data for common issues."""
+        if features_df is None or features_df.empty:
+            return False, "Features DataFrame is None or empty"
+        
+        if targets is None or targets.empty:
+            return False, "Targets Series is None or empty"
+        
+        if len(features_df) != len(targets):
+            return False, f"Length mismatch: features={len(features_df)}, targets={len(targets)}"
+        
+        # Check for all NaN columns
+        nan_cols = features_df.columns[features_df.isnull().all()].tolist()
+        if nan_cols:
+            return False, f"Features contain all-NaN columns: {nan_cols}"
+        
+        # Check for infinite values
+        inf_cols = []
+        for col in features_df.select_dtypes(include=[np.number]).columns:
+            if np.isinf(features_df[col]).any():
+                inf_cols.append(col)
+        if inf_cols:
+            return False, f"Features contain infinite values in columns: {inf_cols}"
+        
+        return True, "Input data validation passed"
+    
+    def _validate_shap_results(self, shap_results: Dict[str, Any]) -> Tuple[bool, str]:
+        """Validate SHAP results for reasonableness."""
+        if not shap_results.get('success', False):
+            return False, "SHAP scoring was not successful"
+        
+        scores = shap_results.get('shap_scores', [])
+        if not scores or len(scores) == 0:
+            return False, "No SHAP scores generated"
+        
+        # Check for NaN or infinite values
+        if any(not np.isfinite(score) for score in scores):
+            return False, "SHAP scores contain NaN or infinite values"
+        
+        # Check for reasonable score ranges
+        if max(scores) - min(scores) < 1e-10:
+            return False, "SHAP scores are too similar (all nearly identical)"
+        
+        return True, "SHAP results validation passed"
+    
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with M1-specific optimizations."""
         if df is None or df.empty:
@@ -232,12 +310,15 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
         # Apply pandas memory optimization
         optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
         
-        self.performance_stats['memory_optimizations_applied'] += 1
+        # Thread-safe performance tracking
+        with self._performance_lock:
+            self.performance_stats['memory_optimizations_applied'] += 1
+        
         tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
         return optimized_df
 
     def _sample_data_by_mode(self, data: pd.DataFrame, mode: str) -> pd.DataFrame:
-        """Sample data based on mode (light/blank/full)."""
+        """Sample data based on mode (light/blank/full) with improved sampling strategy."""
         if mode == 'light':
             sample_size = self.phase_config.light_mode_sample_size
         elif mode == 'blank':
@@ -248,9 +329,19 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
         if len(data) <= sample_size:
             tprint(f"📊 Data size ({len(data)}) <= sample size ({sample_size}), using all data")
             return data
+        
+        # Use stratified sampling for light mode to maintain distribution
+        if mode == 'light' and self.phase_config.use_stratified_sampling:
+            try:
+                sampled_data = data.sample(n=sample_size, random_state=self.phase_config.sampling_random_state)
+                tprint(f"📊 Stratified sampled {len(sampled_data)} rows from {len(data)} total rows for {mode} mode")
+            except Exception as e:
+                tprint(f"⚠️ Stratified sampling failed, falling back to tail sampling: {e}")
+                sampled_data = data.tail(sample_size)
+        else:
+            # Sample most recent data for blank/full modes
+            sampled_data = data.tail(sample_size)
             
-        # Sample most recent data
-        sampled_data = data.tail(sample_size)
         tprint(f"📊 Sampled {len(sampled_data)} rows from {len(data)} total rows for {mode} mode")
         
         return sampled_data

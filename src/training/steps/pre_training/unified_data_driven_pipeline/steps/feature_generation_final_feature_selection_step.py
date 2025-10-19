@@ -138,11 +138,16 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
     
     def __init__(self, name: str = "final_feature_selection_step",
                  config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
+                 logger: Optional[logging.Logger] = None,
+                 random_state: int = 42):
         """Initialize the final feature selection step."""
         tprint_info("🎯 Initializing FeatureGenerationFinalFeatureSelectionStep")
         
         super().__init__(name, config or {}, logger)
+        
+        # Set random state for reproducibility
+        self.random_state = random_state
+        np.random.seed(random_state)
         
         # Initialize M1 hardware optimizers
         if M1_OPTIMIZATIONS_AVAILABLE:
@@ -182,6 +187,13 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
         self.mi_max_rows = 100000
         self.mi_sample_ratio = 0.25
         self.mi_quantile = 0.80
+        
+        # Constants for magic numbers
+        self.PCA_VARIANCE_THRESHOLD = 0.98
+        self.LASSO_COEF_THRESHOLD = 1e-10
+        self.MRMR_IMPROVEMENT_THRESHOLD = 1e-10
+        self.DEFAULT_RANDOM_STATE = 42
+        self.MEMORY_WARNING_THRESHOLD_MB = 4096
         
         # mRMR configuration
         self.mrmr_batch_size = 10

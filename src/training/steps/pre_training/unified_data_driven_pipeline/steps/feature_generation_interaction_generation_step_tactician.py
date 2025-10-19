@@ -280,6 +280,317 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
         tprint(f"✅ Feature streaming completed: {final_result.shape}")
         return final_result
     
+    async def _generate_interactions_for_chunk(self, chunk_data: pd.DataFrame, chunk_targets: pd.Series,
+                                               symbol: str, timeframe: str, direction: str,
+                                               intensity: str, lookback_days: Optional[int],
+                                               start_date: Optional[str], end_date: Optional[str],
+                                               exchange: str, custom_overrides: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Generate interactions for a single chunk using the actual interaction generation logic."""
+        try:
+            tprint(f"🔄 Generating interactions for chunk with shape {chunk_data.shape}")
+            
+            # Validate input data
+            if chunk_data is None or chunk_data.empty:
+                tprint("⚠️ Empty chunk data, skipping interaction generation")
+                return None
+                
+            if chunk_targets is None or chunk_targets.empty:
+                tprint("⚠️ Empty chunk targets, skipping interaction generation")
+                return None
+            
+            # Align chunk data with targets
+            aligned_data = chunk_data.reindex(chunk_targets.index).dropna()
+            if aligned_data.empty:
+                tprint("⚠️ No aligned data after reindexing, skipping interaction generation")
+                return None
+            
+            # Apply M1 memory optimization to chunk
+            optimized_chunk = self._optimize_dataframe_memory(aligned_data)
+            
+            # Generate interactions using the actual logic from consolidated pipeline
+            interactions = await self._generate_chunk_interactions(optimized_chunk, chunk_targets)
+            
+            if not interactions:
+                tprint("⚠️ No interactions generated for chunk")
+                return None
+            
+            # Convert interactions to DataFrame format
+            interaction_features = self._convert_interactions_to_dataframe(interactions, optimized_chunk.index)
+            
+            if interaction_features.empty:
+                tprint("⚠️ No valid interaction features created for chunk")
+                return None
+            
+            # Apply final memory optimization
+            interaction_features = self._optimize_dataframe_memory(interaction_features)
+            
+            # Create chunk metadata
+            chunk_metadata = {
+                'chunk_size': len(optimized_chunk),
+                'interactions_generated': len(interactions),
+                'features_created': len(interaction_features.columns),
+                'm1_optimized': True,
+                'chunk_processing_time': time.time()
+            }
+            
+            # Create generation metrics
+            generation_metrics = {
+                'interactions_count': len(interactions),
+                'features_count': len(interaction_features.columns),
+                'data_shape': optimized_chunk.shape,
+                'targets_shape': chunk_targets.shape,
+                'memory_optimized': True
+            }
+            
+            tprint(f"✅ Chunk interaction generation completed: {len(interactions)} interactions, {len(interaction_features.columns)} features")
+            
+            return {
+                'success': True,
+                'interaction_features': interaction_features,
+                'interaction_metadata': chunk_metadata,
+                'generation_metrics': generation_metrics,
+                'artifacts': {},
+                'error_message': None
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Chunk interaction generation failed: {e}")
+            self.logger.error(f"Chunk interaction generation failed: {e}")
+            return None
+    
+    async def _generate_chunk_interactions(self, chunk_data: pd.DataFrame, chunk_targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate interactions for a chunk using LGBM-SHAP and polynomial methods."""
+        interactions = []
+        
+        try:
+            # Generate LGBM-SHAP interactions (main method from consolidated pipeline)
+            lgbm_interactions = self._generate_lgbm_shap_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(lgbm_interactions)
+            
+            # Generate polynomial interactions (squares)
+            poly_interactions = self._generate_polynomial_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(poly_interactions)
+            
+            # Generate log interactions
+            log_interactions = self._generate_log_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(log_interactions)
+            
+            tprint(f"✅ Generated {len(interactions)} total interactions for chunk")
+            return interactions
+            
+        except Exception as e:
+            tprint(f"❌ Chunk interaction generation failed: {e}")
+            return []
+    
+    def _generate_lgbm_shap_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate LGBM-SHAP interactions for a chunk (simplified version)."""
+        interactions = []
+        
+        try:
+            # Import dependencies lazily
+            try:
+                import lightgbm as lgb
+                import shap
+            except ImportError as e:
+                tprint(f"⚠️ LGBM/SHAP not available for chunk: {e}")
+                return interactions
+            
+            # Ensure numeric and aligned data
+            X = features_df.select_dtypes(include=[np.number]).copy()
+            y = targets.reindex(X.index)
+            valid_mask = X.notna().all(axis=1) & y.notna()
+            X = X.loc[valid_mask]
+            y = y.loc[valid_mask]
+            
+            if X.shape[0] < 20 or X.shape[1] < 2:
+                tprint("⚠️ Insufficient data for LGBM-SHAP interactions in chunk")
+                return interactions
+            
+            # Train a compact LGBM model
+            lgb_model = lgb.LGBMRegressor(
+                n_estimators=50,  # Reduced for chunk processing
+                max_depth=3,      # Reduced for chunk processing
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                n_jobs=1,  # Single thread for chunk
+                verbose=-1
+            )
+            lgb_model.fit(X, y)
+            
+            # Limit features for SHAP computation (chunk optimization)
+            top_k = min(20, X.shape[1])
+            if X.shape[1] > top_k and hasattr(lgb_model, 'feature_importances_'):
+                importances = np.asarray(lgb_model.feature_importances_, dtype=float)
+                order = np.argsort(importances)[::-1]
+                keep_idx = order[:top_k]
+                keep_cols = [X.columns[i] for i in keep_idx]
+                X = X[keep_cols]
+            
+            # Sample for SHAP computation (smaller sample for chunks)
+            sample_size = min(100, len(X))
+            if sample_size < 20:
+                sample_size = len(X)
+            sample_idx = np.random.choice(len(X), sample_size, replace=False)
+            X_sample = X.iloc[sample_idx]
+            
+            # Compute SHAP interaction values
+            explainer = shap.TreeExplainer(lgb_model)
+            shap_inter = explainer.shap_interaction_values(X_sample)
+            if isinstance(shap_inter, list):
+                shap_inter = np.mean(np.array(shap_inter), axis=0)
+            interaction_matrix = np.abs(shap_inter).mean(axis=0)
+            np.fill_diagonal(interaction_matrix, 0.0)
+            
+            # Get top pairs
+            feature_names = list(X.columns)
+            n_features = len(feature_names)
+            pair_scores = []
+            for i in range(n_features):
+                for j in range(i + 1, n_features):
+                    pair_scores.append((float(interaction_matrix[i, j]), (i, j)))
+            pair_scores.sort(key=lambda t: t[0], reverse=True)
+            
+            # Limit pairs for chunk processing
+            max_pairs = min(10, len(pair_scores))
+            top_pairs = pair_scores[:max_pairs]
+            
+            eps = 1e-12
+            for strength, (i, j) in top_pairs:
+                f1, f2 = feature_names[i], feature_names[j]
+                s1 = X[f1].astype(np.float32)
+                s2 = X[f2].astype(np.float32)
+                
+                # Product interaction
+                try:
+                    prod = (s1 * s2).astype(np.float32)
+                    if prod.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_prod_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': prod,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+                
+                # Ratio interaction
+                try:
+                    ratio = (s1 / (s2 + eps)).astype(np.float32)
+                    if ratio.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_ratio_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': ratio,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ LGBM-SHAP interactions failed for chunk: {e}")
+            return []
+    
+    def _generate_polynomial_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate polynomial interactions for a chunk (squares only)."""
+        interactions = []
+        
+        try:
+            # Select numeric columns
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                return interactions
+            
+            # Limit columns for chunk processing
+            max_cols = min(10, len(numeric_cols))
+            selected_cols = numeric_cols[:max_cols]
+            
+            for col in selected_cols:
+                try:
+                    s = features_df[col]
+                    sq = (s.astype(np.float32) ** 2).astype(np.float32)
+                    if sq.notna().any():
+                        interactions.append({
+                            'name': f"poly_square_{col}",
+                            'type': 'polynomial',
+                            'features': [col],
+                            'data': sq,
+                            'importance_score': 0.5  # Default score for polynomial
+                        })
+                except Exception:
+                    continue
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ Polynomial interactions failed for chunk: {e}")
+            return []
+    
+    def _generate_log_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate log interactions for a chunk."""
+        interactions = []
+        
+        try:
+            df = features_df.select_dtypes(include=[np.number])
+            # Only consider positive-valued columns for logs
+            positive_cols = [c for c in df.columns if df[c].min(skipna=True) > 0]
+            
+            # Limit columns for chunk processing
+            max_cols = min(5, len(positive_cols))
+            selected_cols = positive_cols[:max_cols]
+            
+            for col in selected_cols:
+                try:
+                    s = df[col]
+                    log_s = np.log(s + 1e-12).astype(np.float32)
+                    if log_s.notna().any():
+                        interactions.append({
+                            'name': f"log_{col}",
+                            'type': 'log',
+                            'features': [col],
+                            'data': log_s,
+                            'importance_score': 0.3  # Default score for log
+                        })
+                except Exception:
+                    continue
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ Log interactions failed for chunk: {e}")
+            return []
+    
+    def _convert_interactions_to_dataframe(self, interactions: List[Dict[str, Any]], index: pd.Index) -> pd.DataFrame:
+        """Convert interactions list to DataFrame format."""
+        try:
+            if not interactions:
+                return pd.DataFrame(index=index)
+            
+            # Create DataFrame from interactions
+            interaction_data = {}
+            for interaction in interactions:
+                name = interaction.get('name', f'interaction_{len(interaction_data)}')
+                data = interaction.get('data')
+                if data is not None and hasattr(data, 'index'):
+                    # Align data with the provided index
+                    aligned_data = data.reindex(index)
+                    interaction_data[name] = aligned_data
+            
+            if not interaction_data:
+                return pd.DataFrame(index=index)
+            
+            result_df = pd.DataFrame(interaction_data, index=index)
+            return result_df
+            
+        except Exception as e:
+            tprint(f"❌ Failed to convert interactions to DataFrame: {e}")
+            return pd.DataFrame(index=index)
+    
     async def _process_large_dataset_with_chunking(self, data: pd.DataFrame, targets: pd.Series,
                                                    symbol: str, timeframe: str, direction: str,
                                                    intensity: str, lookback_days: Optional[int],
@@ -365,16 +676,311 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
                                                intensity: str, lookback_days: Optional[int],
                                                start_date: Optional[str], end_date: Optional[str],
                                                exchange: str, custom_overrides: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Generate interactions for a single chunk without recursive pipeline calls."""
+        """Generate interactions for a single chunk using the actual interaction generation logic."""
         try:
-            # This is a simplified version that would need to be implemented
-            # based on the actual interaction generation logic from the consolidated pipeline
-            # For now, return None to indicate this needs proper implementation
-            tprint("⚠️ Chunk interaction generation not fully implemented - needs proper logic")
-            return None
+            tprint(f"🔄 Generating interactions for chunk with shape {chunk_data.shape}")
+            
+            # Validate input data
+            if chunk_data is None or chunk_data.empty:
+                tprint("⚠️ Empty chunk data, skipping interaction generation")
+                return None
+                
+            if chunk_targets is None or chunk_targets.empty:
+                tprint("⚠️ Empty chunk targets, skipping interaction generation")
+                return None
+            
+            # Align chunk data with targets
+            aligned_data = chunk_data.reindex(chunk_targets.index).dropna()
+            if aligned_data.empty:
+                tprint("⚠️ No aligned data after reindexing, skipping interaction generation")
+                return None
+            
+            # Apply M1 memory optimization to chunk
+            optimized_chunk = self._optimize_dataframe_memory(aligned_data)
+            
+            # Generate interactions using the actual logic from consolidated pipeline
+            interactions = await self._generate_chunk_interactions(optimized_chunk, chunk_targets)
+            
+            if not interactions:
+                tprint("⚠️ No interactions generated for chunk")
+                return None
+            
+            # Convert interactions to DataFrame format
+            interaction_features = self._convert_interactions_to_dataframe(interactions, optimized_chunk.index)
+            
+            if interaction_features.empty:
+                tprint("⚠️ No valid interaction features created for chunk")
+                return None
+            
+            # Apply final memory optimization
+            interaction_features = self._optimize_dataframe_memory(interaction_features)
+            
+            # Create chunk metadata
+            chunk_metadata = {
+                'chunk_size': len(optimized_chunk),
+                'interactions_generated': len(interactions),
+                'features_created': len(interaction_features.columns),
+                'm1_optimized': True,
+                'chunk_processing_time': time.time()
+            }
+            
+            # Create generation metrics
+            generation_metrics = {
+                'interactions_count': len(interactions),
+                'features_count': len(interaction_features.columns),
+                'data_shape': optimized_chunk.shape,
+                'targets_shape': chunk_targets.shape,
+                'memory_optimized': True
+            }
+            
+            tprint(f"✅ Chunk interaction generation completed: {len(interactions)} interactions, {len(interaction_features.columns)} features")
+            
+            return {
+                'success': True,
+                'interaction_features': interaction_features,
+                'interaction_metadata': chunk_metadata,
+                'generation_metrics': generation_metrics,
+                'artifacts': {},
+                'error_message': None
+            }
+            
         except Exception as e:
             tprint(f"❌ Chunk interaction generation failed: {e}")
+            self.logger.error(f"Chunk interaction generation failed: {e}")
             return None
+    
+    async def _generate_chunk_interactions(self, chunk_data: pd.DataFrame, chunk_targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate interactions for a chunk using LGBM-SHAP and polynomial methods."""
+        interactions = []
+        
+        try:
+            # Generate LGBM-SHAP interactions (main method from consolidated pipeline)
+            lgbm_interactions = self._generate_lgbm_shap_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(lgbm_interactions)
+            
+            # Generate polynomial interactions (squares)
+            poly_interactions = self._generate_polynomial_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(poly_interactions)
+            
+            # Generate log interactions
+            log_interactions = self._generate_log_interactions_chunk(chunk_data, chunk_targets)
+            interactions.extend(log_interactions)
+            
+            tprint(f"✅ Generated {len(interactions)} total interactions for chunk")
+            return interactions
+            
+        except Exception as e:
+            tprint(f"❌ Chunk interaction generation failed: {e}")
+            return []
+    
+    def _generate_lgbm_shap_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate LGBM-SHAP interactions for a chunk (simplified version)."""
+        interactions = []
+        
+        try:
+            # Import dependencies lazily
+            try:
+                import lightgbm as lgb
+                import shap
+            except ImportError as e:
+                tprint(f"⚠️ LGBM/SHAP not available for chunk: {e}")
+                return interactions
+            
+            # Ensure numeric and aligned data
+            X = features_df.select_dtypes(include=[np.number]).copy()
+            y = targets.reindex(X.index)
+            valid_mask = X.notna().all(axis=1) & y.notna()
+            X = X.loc[valid_mask]
+            y = y.loc[valid_mask]
+            
+            if X.shape[0] < 20 or X.shape[1] < 2:
+                tprint("⚠️ Insufficient data for LGBM-SHAP interactions in chunk")
+                return interactions
+            
+            # Train a compact LGBM model
+            lgb_model = lgb.LGBMRegressor(
+                n_estimators=50,  # Reduced for chunk processing
+                max_depth=3,      # Reduced for chunk processing
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                n_jobs=1,  # Single thread for chunk
+                verbose=-1
+            )
+            lgb_model.fit(X, y)
+            
+            # Limit features for SHAP computation (chunk optimization)
+            top_k = min(20, X.shape[1])
+            if X.shape[1] > top_k and hasattr(lgb_model, 'feature_importances_'):
+                importances = np.asarray(lgb_model.feature_importances_, dtype=float)
+                order = np.argsort(importances)[::-1]
+                keep_idx = order[:top_k]
+                keep_cols = [X.columns[i] for i in keep_idx]
+                X = X[keep_cols]
+            
+            # Sample for SHAP computation (smaller sample for chunks)
+            sample_size = min(100, len(X))
+            if sample_size < 20:
+                sample_size = len(X)
+            sample_idx = np.random.choice(len(X), sample_size, replace=False)
+            X_sample = X.iloc[sample_idx]
+            
+            # Compute SHAP interaction values
+            explainer = shap.TreeExplainer(lgb_model)
+            shap_inter = explainer.shap_interaction_values(X_sample)
+            if isinstance(shap_inter, list):
+                shap_inter = np.mean(np.array(shap_inter), axis=0)
+            interaction_matrix = np.abs(shap_inter).mean(axis=0)
+            np.fill_diagonal(interaction_matrix, 0.0)
+            
+            # Get top pairs
+            feature_names = list(X.columns)
+            n_features = len(feature_names)
+            pair_scores = []
+            for i in range(n_features):
+                for j in range(i + 1, n_features):
+                    pair_scores.append((float(interaction_matrix[i, j]), (i, j)))
+            pair_scores.sort(key=lambda t: t[0], reverse=True)
+            
+            # Limit pairs for chunk processing
+            max_pairs = min(10, len(pair_scores))
+            top_pairs = pair_scores[:max_pairs]
+            
+            eps = 1e-12
+            for strength, (i, j) in top_pairs:
+                f1, f2 = feature_names[i], feature_names[j]
+                s1 = X[f1].astype(np.float32)
+                s2 = X[f2].astype(np.float32)
+                
+                # Product interaction
+                try:
+                    prod = (s1 * s2).astype(np.float32)
+                    if prod.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_prod_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': prod,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+                
+                # Ratio interaction
+                try:
+                    ratio = (s1 / (s2 + eps)).astype(np.float32)
+                    if ratio.notna().any():
+                        interactions.append({
+                            'name': f"lgbm_shap_ratio_{f1}_{f2}",
+                            'type': 'lgbm_shap',
+                            'features': [f1, f2],
+                            'data': ratio,
+                            'importance_score': strength
+                        })
+                except Exception:
+                    pass
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ LGBM-SHAP interactions failed for chunk: {e}")
+            return []
+    
+    def _generate_polynomial_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate polynomial interactions for a chunk (squares only)."""
+        interactions = []
+        
+        try:
+            # Select numeric columns
+            numeric_cols = features_df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) == 0:
+                return interactions
+            
+            # Limit columns for chunk processing
+            max_cols = min(10, len(numeric_cols))
+            selected_cols = numeric_cols[:max_cols]
+            
+            for col in selected_cols:
+                try:
+                    s = features_df[col]
+                    sq = (s.astype(np.float32) ** 2).astype(np.float32)
+                    if sq.notna().any():
+                        interactions.append({
+                            'name': f"poly_square_{col}",
+                            'type': 'polynomial',
+                            'features': [col],
+                            'data': sq,
+                            'importance_score': 0.5  # Default score for polynomial
+                        })
+                except Exception:
+                    continue
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ Polynomial interactions failed for chunk: {e}")
+            return []
+    
+    def _generate_log_interactions_chunk(self, features_df: pd.DataFrame, targets: pd.Series) -> List[Dict[str, Any]]:
+        """Generate log interactions for a chunk."""
+        interactions = []
+        
+        try:
+            df = features_df.select_dtypes(include=[np.number])
+            # Only consider positive-valued columns for logs
+            positive_cols = [c for c in df.columns if df[c].min(skipna=True) > 0]
+            
+            # Limit columns for chunk processing
+            max_cols = min(5, len(positive_cols))
+            selected_cols = positive_cols[:max_cols]
+            
+            for col in selected_cols:
+                try:
+                    s = df[col]
+                    log_s = np.log(s + 1e-12).astype(np.float32)
+                    if log_s.notna().any():
+                        interactions.append({
+                            'name': f"log_{col}",
+                            'type': 'log',
+                            'features': [col],
+                            'data': log_s,
+                            'importance_score': 0.3  # Default score for log
+                        })
+                except Exception:
+                    continue
+            
+            return interactions
+            
+        except Exception as e:
+            tprint(f"⚠️ Log interactions failed for chunk: {e}")
+            return []
+    
+    def _convert_interactions_to_dataframe(self, interactions: List[Dict[str, Any]], index: pd.Index) -> pd.DataFrame:
+        """Convert interactions list to DataFrame format."""
+        try:
+            if not interactions:
+                return pd.DataFrame(index=index)
+            
+            # Create DataFrame from interactions
+            interaction_data = {}
+            for interaction in interactions:
+                name = interaction.get('name', f'interaction_{len(interaction_data)}')
+                data = interaction.get('data')
+                if data is not None and hasattr(data, 'index'):
+                    # Align data with the provided index
+                    aligned_data = data.reindex(index)
+                    interaction_data[name] = aligned_data
+            
+            if not interaction_data:
+                return pd.DataFrame(index=index)
+            
+            result_df = pd.DataFrame(interaction_data, index=index)
+            return result_df
+            
+        except Exception as e:
+            tprint(f"❌ Failed to convert interactions to DataFrame: {e}")
+            return pd.DataFrame(index=index)
 
     def _apply_vectorbt_optimization(self, data: pd.DataFrame, 
                                    operation_type: str,

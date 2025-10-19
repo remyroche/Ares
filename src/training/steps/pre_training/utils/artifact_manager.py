@@ -395,6 +395,16 @@ class ArtifactConfig:
     # Cleanup and maintenance
     cleanup_interval_seconds: float = 300.0
     enable_health_checks: bool = True
+    
+    # Enhanced file naming and path management
+    include_symbol_in_filename: bool = True
+    include_exchange_in_filename: bool = True
+    include_datetime_in_filename: bool = True
+    include_information_in_filename: bool = True
+    include_direction_in_filename: bool = True
+    include_model_in_filename: bool = True
+    use_joint_parquet_format: bool = True  # Use joint Parquet files with OHLCV + labels + features
+    generate_json_metadata: bool = True  # Generate JSON files for feature lists with metrics
 
 
 @dataclass
@@ -453,6 +463,14 @@ class PreTrainingArtifactManager:
         # Compression utilities
         self._compressor = self.ArtifactCompressor()
 
+        # Enhanced file naming and path management
+        self._current_symbol: Optional[str] = None
+        self._current_exchange: Optional[str] = None
+        self._current_datetime: Optional[datetime] = None
+        self._current_information: Optional[str] = None
+        self._current_direction: str = "long"  # Default direction
+        self._current_model: str = "Analyst"  # Default model
+
         # Logger
         self._logger = logging.getLogger(__name__).getChild("PreTrainingArtifactManager")
 
@@ -463,6 +481,103 @@ class PreTrainingArtifactManager:
         self._start_background_tasks()
 
         self.reset_run()
+
+    # ------------------------------------------------------------------
+    # Enhanced File Naming and Path Management
+    # ------------------------------------------------------------------
+    
+    def set_context(self, symbol: Optional[str] = None, exchange: Optional[str] = None, 
+                   datetime: Optional[datetime] = None, information: Optional[str] = None,
+                   direction: str = "long", model: str = "Analyst") -> None:
+        """Set the current context for file naming and path management."""
+        self._current_symbol = symbol
+        self._current_exchange = exchange
+        self._current_datetime = datetime or datetime.utcnow()
+        self._current_information = information
+        self._current_direction = direction
+        self._current_model = model
+        
+        self._logger.info(f"📁 Context set: symbol={symbol}, exchange={exchange}, datetime={self._current_datetime}, information={information}, direction={direction}, model={model}")
+
+    def _generate_enhanced_filename(self, key: str, step_name: str, file_extension: str = "parquet") -> str:
+        """Generate enhanced filename with information + symbol + exchange + datetime + direction + model."""
+        parts = []
+        
+        # Add information prefix if configured and available
+        if self.config.include_information_in_filename and self._current_information:
+            parts.append(self._current_information)
+        
+        # Add step name
+        parts.append(step_name)
+        
+        # Add key
+        parts.append(key)
+        
+        # Add symbol if configured and available
+        if self.config.include_symbol_in_filename and self._current_symbol:
+            parts.append(self._current_symbol)
+        
+        # Add exchange if configured and available
+        if self.config.include_exchange_in_filename and self._current_exchange:
+            parts.append(self._current_exchange)
+        
+        # Add direction if configured
+        if self.config.include_direction_in_filename and self._current_direction:
+            parts.append(self._current_direction)
+        
+        # Add model if configured
+        if self.config.include_model_in_filename and self._current_model:
+            parts.append(self._current_model)
+        
+        # Add datetime if configured
+        if self.config.include_datetime_in_filename and self._current_datetime:
+            datetime_str = self._current_datetime.strftime("%Y%m%d_%H%M%S")
+            parts.append(datetime_str)
+        
+        # Join parts with underscores and add extension
+        filename = "_".join(parts) + f".{file_extension}"
+        
+        self._logger.debug(f"📁 Generated filename: {filename}")
+        return filename
+
+    def _get_enhanced_path(self, step_name: str, key: str, file_extension: str = "parquet") -> Path:
+        """Get enhanced path with proper directory structure and filename."""
+        canonical_step = canonical_step_name(step_name)
+        
+        # Create directory structure: base_dir/symbol/exchange/direction/model/step_name/
+        path_parts = [self.config.base_dir]
+        
+        if self._current_symbol:
+            path_parts.append(self._current_symbol)
+        
+        if self._current_exchange:
+            path_parts.append(self._current_exchange)
+        
+        if self._current_direction:
+            path_parts.append(self._current_direction)
+        
+        if self._current_model:
+            path_parts.append(self._current_model)
+        
+        path_parts.append(canonical_step)
+        
+        step_dir = Path(*path_parts)
+        step_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate enhanced filename
+        filename = self._generate_enhanced_filename(key, canonical_step, file_extension)
+        full_path = step_dir / filename
+        
+        self._logger.info(f"📁 Full path created: {full_path}")
+        return full_path
+
+    def _log_file_operation(self, operation: str, path: Path, success: bool = True) -> None:
+        """Log file operations with full path information."""
+        status = "✅" if success else "❌"
+        self._logger.info(f"{status} {operation}: {path}")
+        
+        # Also print to console for visibility
+        print(f"{status} {operation}: {path}")
 
     # ------------------------------------------------------------------
     # Helper Classes and Methods
@@ -907,6 +1022,23 @@ class PreTrainingArtifactManager:
 
             if stored:
                 self._logger.debug(f"Saved {len(stored)} artifacts for step {canonical_step}: {', '.join(stored.keys())}")
+                
+                # Generate feature metadata JSON if this is a feature-related step
+                if any(key in stored for key in ['feature_names', 'selected_features', 'generated_features']):
+                    feature_names = stored.get('feature_names', [])
+                    if not feature_names and 'selected_features' in stored:
+                        # Try to extract feature names from selected features
+                        selected_df = stored.get('selected_features')
+                        if isinstance(selected_df, pd.DataFrame):
+                            feature_names = list(selected_df.columns)
+                    
+                    if feature_names:
+                        self._generate_feature_metadata_json(
+                            canonical_step, 
+                            feature_names, 
+                            metadata or {},
+                            stored.get('feature_categories')
+                        )
 
         # Execute with enhanced error handling and metrics
         self._safe_operation(
@@ -917,39 +1049,91 @@ class PreTrainingArtifactManager:
         )
 
     def _persist_artifacts_to_disk(self, step_name: str, artifacts: Dict[str, StoredArtifact]) -> None:
-        """Persist artifacts to disk for long-term storage."""
+        """Persist artifacts to disk for long-term storage with enhanced path management."""
         try:
             step_name = canonical_step_name(step_name)
-            # Create artifacts directory if it doesn't exist
-            artifacts_dir = self.config.base_dir / step_name
+            
+            # Create enhanced directory structure
+            artifacts_dir = self._get_enhanced_path(step_name, "artifacts", "dir").parent
             artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save each artifact to disk
+            # Save each artifact to disk with enhanced naming
             for key, artifact in artifacts.items():
-                artifact_file = artifacts_dir / f"{key}.pkl"
+                artifact_file = self._get_enhanced_path(step_name, key, "pkl")
                 with open(artifact_file, 'wb') as f:
                     pickle.dump(artifact, f)
+                self._log_file_operation("Persisted artifact", artifact_file, success=True)
                     
             self._logger.debug(f"Persisted {len(artifacts)} artifacts to disk for step {step_name}")
         except Exception as e:
             self._logger.warning(f"Failed to persist artifacts to disk: {e}")
 
     def _persist_metadata_to_disk(self, step_name: str, metadata: Dict[str, Any]) -> None:
-        """Persist metadata to disk for long-term storage."""
+        """Persist metadata to disk for long-term storage with enhanced path management."""
         try:
             step_name = canonical_step_name(step_name)
-            # Create artifacts directory if it doesn't exist
-            artifacts_dir = self.config.base_dir / step_name
+            
+            # Create enhanced directory structure
+            artifacts_dir = self._get_enhanced_path(step_name, "metadata", "dir").parent
             artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save metadata to disk
-            metadata_file = artifacts_dir / "metadata.json"
+            # Save metadata to disk with enhanced naming
+            metadata_file = self._get_enhanced_path(step_name, "metadata", "json")
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2, default=str)
+            self._log_file_operation("Persisted metadata", metadata_file, success=True)
                 
             self._logger.debug(f"Persisted metadata to disk for step {step_name}")
         except Exception as e:
             self._logger.warning(f"Failed to persist metadata to disk: {e}")
+
+    def _generate_feature_metadata_json(self, step_name: str, features: List[str], 
+                                       metrics: Dict[str, Any], 
+                                       feature_categories: Optional[Dict[str, List[str]]] = None) -> None:
+        """Generate JSON metadata file for feature lists with metrics."""
+        if not self.config.generate_json_metadata:
+            return
+            
+        try:
+            step_name = canonical_step_name(step_name)
+            
+            # Create enhanced directory structure
+            artifacts_dir = self._get_enhanced_path(step_name, "features", "dir").parent
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Prepare feature metadata
+            feature_metadata = {
+                "step_name": step_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "symbol": self._current_symbol,
+                "exchange": self._current_exchange,
+                "information": self._current_information,
+                "direction": self._current_direction,
+                "model": self._current_model,
+                "total_features": len(features),
+                "features": features,
+                "metrics": metrics,
+                "feature_categories": feature_categories or {},
+                "generation_info": {
+                    "context_set": {
+                        "symbol": self._current_symbol,
+                        "exchange": self._current_exchange,
+                        "datetime": self._current_datetime.isoformat() if self._current_datetime else None,
+                        "information": self._current_information,
+                        "direction": self._current_direction,
+                        "model": self._current_model
+                    }
+                }
+            }
+            
+            # Save feature metadata JSON
+            feature_metadata_file = self._get_enhanced_path(step_name, "feature_metadata", "json")
+            with open(feature_metadata_file, 'w') as f:
+                json.dump(feature_metadata, f, indent=2, default=str)
+            self._log_file_operation("Generated feature metadata", feature_metadata_file, success=True)
+            
+        except Exception as e:
+            self._logger.warning(f"Failed to generate feature metadata JSON: {e}")
 
     def _load_artifacts_from_disk(self, step_name: str) -> Dict[str, StoredArtifact]:
         """Load artifacts from disk."""
@@ -1100,8 +1284,8 @@ class PreTrainingArtifactManager:
 
         step_name = canonical_step_name(step_name)
 
-        step_dir = self._run_dir / step_name
-        step_dir.mkdir(parents=True, exist_ok=True)
+        # Use enhanced path generation
+        path = self._get_enhanced_path(step_name, key, "parquet")
 
         # Check if we should compress for disk storage
         if self.config.enable_compression and self.config.compression.enable_for_disk:
@@ -1111,19 +1295,15 @@ class PreTrainingArtifactManager:
                 if compression_type != CompressionType.NONE:
                     try:
                         # Use parquet for DataFrames, but with compression considerations
-                        filename = f"{key}_{uuid.uuid4().hex[:8]}.parquet"
-                        path = step_dir / filename
                         df.to_parquet(path, compression='snappy')  # Use parquet's built-in compression
-                        self._logger.debug(f"Spilled compressed artifact {step_name}/{key} to disk at {path}")
+                        self._log_file_operation("Spilled compressed artifact", path, success=True)
                         return path
                     except Exception as e:
                         self._logger.warning(f"Disk compression failed for {key}, storing uncompressed: {e}")
 
         # Standard parquet storage
-        filename = f"{key}_{uuid.uuid4().hex[:8]}.parquet"
-        path = step_dir / filename
         df.to_parquet(path)
-        self._logger.debug("Spilled artifact %s/%s to disk at %s", step_name, key, path)
+        self._log_file_operation("Spilled artifact", path, success=True)
         return path
 
     # ------------------------------------------------------------------
@@ -1151,6 +1331,7 @@ class PreTrainingArtifactManager:
                 entry = self._artifacts.get(candidate_canonical, {}).get(key)
                 if entry is not None:
                     resolved_step = candidate_canonical
+                    self._log_file_operation("Retrieved artifact from memory", Path(f"memory:{candidate_canonical}:{key}"), success=True)
                     break
 
                 # Try to load from disk if not found in memory
@@ -1159,9 +1340,13 @@ class PreTrainingArtifactManager:
                     self._artifacts.setdefault(candidate_canonical, {})[key] = disk_artifacts[key]
                     entry = disk_artifacts[key]
                     resolved_step = candidate_canonical
+                    # Log the disk path
+                    disk_path = self._get_enhanced_path(candidate_canonical, key, "pkl")
+                    self._log_file_operation("Retrieved artifact from disk", disk_path, success=True)
                     break
 
             if entry is None or resolved_step is None:
+                self._log_file_operation("Artifact not found", Path(f"not_found:{canonical_step}:{key}"), success=False)
                 return None
 
             # Check cache first
@@ -1170,6 +1355,7 @@ class PreTrainingArtifactManager:
                 cache_entry = self._cache[artifact_key]
                 cache_entry.last_accessed = datetime.utcnow()
                 cache_entry.access_count += 1
+                self._log_file_operation("Retrieved artifact from cache", Path(f"cache:{artifact_key}"), success=True)
                 return cache_entry.data
 
             # Materialize from storage
@@ -1707,6 +1893,104 @@ class PreTrainingArtifactManager:
             if metadata.compression_used != CompressionType.NONE:
                 count += 1
         return count
+
+    def create_joint_parquet_file(self, step_name: str, ohlcv_data: pd.DataFrame, 
+                                labels_data: Optional[pd.DataFrame] = None,
+                                features_data: Optional[pd.DataFrame] = None,
+                                key: str = "joint_dataset") -> Path:
+        """Create a joint Parquet file with OHLCV + labels + features per row."""
+        if not self.config.use_joint_parquet_format:
+            raise ValueError("Joint Parquet format is disabled in configuration")
+        
+        try:
+            step_name = canonical_step_name(step_name)
+            
+            # Start with OHLCV data
+            joint_df = ohlcv_data.copy()
+            
+            # Add labels if provided
+            if labels_data is not None and not labels_data.empty:
+                # Ensure alignment by index
+                if not joint_df.index.equals(labels_data.index):
+                    self._logger.warning("⚠️ Index mismatch between OHLCV and labels data, aligning...")
+                    labels_data = labels_data.reindex(joint_df.index)
+                joint_df = pd.concat([joint_df, labels_data], axis=1)
+                self._logger.info(f"📊 Added {len(labels_data.columns)} label columns")
+            
+            # Add features if provided
+            if features_data is not None and not features_data.empty:
+                # Ensure alignment by index
+                if not joint_df.index.equals(features_data.index):
+                    self._logger.warning("⚠️ Index mismatch between joint data and features, aligning...")
+                    features_data = features_data.reindex(joint_df.index)
+                joint_df = pd.concat([joint_df, features_data], axis=1)
+                self._logger.info(f"📊 Added {len(features_data.columns)} feature columns")
+            
+            # Verify alignment
+            self._verify_data_alignment(joint_df, step_name)
+            
+            # Save joint dataset
+            joint_path = self._get_enhanced_path(step_name, key, "parquet")
+            joint_df.to_parquet(joint_path, compression='snappy')
+            self._log_file_operation("Created joint Parquet file", joint_path, success=True)
+            
+            # Generate metadata for joint file
+            joint_metadata = {
+                "step_name": step_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "symbol": self._current_symbol,
+                "exchange": self._current_exchange,
+                "information": self._current_information,
+                "direction": self._current_direction,
+                "model": self._current_model,
+                "total_rows": len(joint_df),
+                "total_columns": len(joint_df.columns),
+                "ohlcv_columns": list(ohlcv_data.columns),
+                "label_columns": list(labels_data.columns) if labels_data is not None else [],
+                "feature_columns": list(features_data.columns) if features_data is not None else [],
+                "data_types": joint_df.dtypes.to_dict(),
+                "memory_usage_mb": joint_df.memory_usage(deep=True).sum() / (1024 * 1024)
+            }
+            
+            # Save joint metadata
+            metadata_path = self._get_enhanced_path(step_name, f"{key}_metadata", "json")
+            with open(metadata_path, 'w') as f:
+                json.dump(joint_metadata, f, indent=2, default=str)
+            self._log_file_operation("Created joint metadata", metadata_path, success=True)
+            
+            return joint_path
+            
+        except Exception as e:
+            self._logger.error(f"Failed to create joint Parquet file: {e}")
+            raise
+
+    def _verify_data_alignment(self, df: pd.DataFrame, step_name: str) -> None:
+        """Verify data alignment, timestamp + rows across all steps."""
+        try:
+            # Check for duplicate indices
+            if df.index.duplicated().any():
+                self._logger.warning("⚠️ Duplicate indices found in data")
+            
+            # Check for missing values in critical columns
+            critical_cols = ['open', 'high', 'low', 'close'] if all(col in df.columns for col in ['open', 'high', 'low', 'close']) else []
+            if critical_cols:
+                missing_counts = df[critical_cols].isnull().sum()
+                if missing_counts.any():
+                    self._logger.warning(f"⚠️ Missing values in critical columns: {missing_counts.to_dict()}")
+            
+            # Check timestamp consistency if index is datetime
+            if isinstance(df.index, pd.DatetimeIndex):
+                time_diffs = df.index.to_series().diff().dropna()
+                if not time_diffs.empty:
+                    min_diff = time_diffs.min()
+                    max_diff = time_diffs.max()
+                    self._logger.info(f"📊 Time differences - min: {min_diff}, max: {max_diff}")
+            
+            # Log alignment summary
+            self._logger.info(f"📊 Data alignment verified for {step_name}: {len(df)} rows, {len(df.columns)} columns")
+            
+        except Exception as e:
+            self._logger.warning(f"Data alignment verification failed: {e}")
 
 
 _artifact_manager: Optional[PreTrainingArtifactManager] = None

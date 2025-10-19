@@ -33,6 +33,11 @@ from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
 )
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation
+)
 
 # M1 Hardware Optimization imports
 try:
@@ -248,6 +253,16 @@ class FeatureGenerationStep(ModularComponent):
 
         start_time = time.time()
         self.logger.info("Starting M1-optimized enhanced feature generation step with auto-optimization")
+        
+        # Set up enhanced artifact manager with context
+        context = get_step_context_from_config(self.config)
+        context.update({
+            'symbol': symbol,
+            'exchange': exchange or 'binance',
+            'direction': 'long',  # Default for feature generation
+            'model': 'Analyst'    # Default for feature generation
+        })
+        am = setup_enhanced_artifact_manager(**context)
         
         # Start M1 memory monitoring
         if self.m1_memory_optimizer:

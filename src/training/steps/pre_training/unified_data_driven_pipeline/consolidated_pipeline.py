@@ -277,7 +277,7 @@ from src.utils.common_operations import (
 
 # Import from other modules
 from src.utils.common_utilities import (
-    safe_timestamp_conversion, validate_timestamp_column, create_summary_statistics
+    safe_timestamp_conversion, validate_timestamp_column, create_summary_statistics, CommonUtilities
 )
 from src.utils.math_validation import (
     validate_finite as validate_finite_util, validate_positive as validate_positive_util,
@@ -2002,12 +2002,23 @@ class UnifiedDataDrivenPipeline:
                 step = pipeline_state.get('step')
                 tprint_info(f"🎯 Executing step-specific processing: {step}")
                 
-                if step == 'period_lookback_optimization':
+                # Handle new step order
+                if step == 'data_validation':
+                    return await self._handle_data_validation_step(data, targets, timeframe, pipeline_state)
+                elif step == 'labeling_integration':
+                    return await self._handle_labeling_integration_step(data, targets, timeframe, pipeline_state)
+                elif step == 'feature_generation':
+                    return await self._handle_feature_generation_step(data, targets, timeframe, pipeline_state)
+                elif step == 'period_lookback_optimization':
                     return await self._handle_period_lookback_optimization_step(data, targets, timeframe, pipeline_state)
-                elif step == 'period_optimization':
-                    return await self._handle_period_optimization_step(data, targets, timeframe, pipeline_state)
-                elif step == 'lookback_optimization':
-                    return await self._handle_lookback_optimization_step(data, targets, timeframe, pipeline_state)
+                elif step == 'feature_selection':
+                    return await self._handle_feature_selection_step(data, targets, timeframe, pipeline_state)
+                elif step == 'interaction_generation':
+                    return await self._handle_interaction_generation_step(data, targets, timeframe, pipeline_state)
+                elif step == 'final_feature_selection':
+                    return await self._handle_final_feature_selection_step(data, targets, timeframe, pipeline_state)
+                elif step == 'final_validation':
+                    return await self._handle_final_validation_step(data, targets, timeframe, pipeline_state)
                 else:
                     tprint_warning(f"⚠️ Unknown step: {step}, proceeding with full pipeline")
 
@@ -7548,6 +7559,384 @@ class UnifiedDataDrivenPipeline:
             
         except Exception as e:
             tprint_error(f"❌ Lookback optimization step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_data_validation_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle data validation step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_data_validation_step
+        
+        tprint_info("🎯 Executing data validation step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the validation step
+            result = await run_data_validation_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('validation_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Data validation step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_labeling_integration_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle labeling integration step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_labeling_integration_step
+        
+        tprint_info("🎯 Executing labeling integration step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the labeling integration step
+            result = await run_labeling_integration_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('labeling_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Labeling integration step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_feature_generation_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle feature generation step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_feature_generation_step
+        
+        tprint_info("🎯 Executing feature generation step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the feature generation step
+            result = await run_feature_generation_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('feature_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature generation step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_feature_selection_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle feature selection step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_feature_selection_step
+        
+        tprint_info("🎯 Executing feature selection step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the feature selection step
+            result = await run_feature_selection_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('selection_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature selection step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_interaction_generation_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle interaction generation step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_interaction_generation_step
+        
+        tprint_info("🎯 Executing interaction generation step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the interaction generation step
+            result = await run_interaction_generation_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('interaction_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Interaction generation step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_final_feature_selection_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle final feature selection step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_final_feature_selection_step
+        
+        tprint_info("🎯 Executing final feature selection step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the final feature selection step
+            result = await run_final_feature_selection_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('final_selection_metadata', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Final feature selection step failed: {e}")
+            return ConsolidatedPipelineResult(
+                success=False,
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts={},
+                metadata={},
+                error_message=str(e)
+            )
+
+    async def _handle_final_validation_step(self, data: pd.DataFrame, targets: pd.Series, timeframe: str, pipeline_state: Dict[str, Any]) -> ConsolidatedPipelineResult:
+        """Handle final validation step specifically."""
+        from src.training.steps.pre_training.unified_data_driven_pipeline.consolidated_pipeline_runner import run_final_validation_step
+        
+        tprint_info("🎯 Executing final validation step")
+        
+        try:
+            # Extract parameters from pipeline state
+            symbol = pipeline_state.get('symbol', 'ETHUSDT')
+            direction = pipeline_state.get('direction', 'longs')
+            intensity = pipeline_state.get('intensity', 'blank')
+            lookback_days = pipeline_state.get('lookback_days')
+            start_date = pipeline_state.get('start_date')
+            end_date = pipeline_state.get('end_date')
+            exchange = pipeline_state.get('exchange', 'binance')
+            custom_overrides = pipeline_state.get('custom_overrides')
+            
+            # Run the final validation step
+            result = await run_final_validation_step(
+                data=data,
+                symbol=symbol,
+                timeframe=timeframe,
+                direction=direction,
+                intensity=intensity,
+                lookback_days=lookback_days,
+                start_date=start_date,
+                end_date=end_date,
+                exchange=exchange,
+                custom_overrides=custom_overrides
+            )
+            
+            # Create a minimal result
+            return ConsolidatedPipelineResult(
+                success=result.get('success', False),
+                selected_features=[],
+                processing_time=0.0,
+                memory_usage_mb=0.0,
+                artifacts=result.get('artifacts', {}),
+                metadata=result.get('validation_summary', {}),
+                error_message=result.get('error_message')
+            )
+            
+        except Exception as e:
+            tprint_error(f"❌ Final validation step failed: {e}")
             return ConsolidatedPipelineResult(
                 success=False,
                 selected_features=[],

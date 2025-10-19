@@ -12,6 +12,11 @@ import numpy as np
 
 from src.training.steps.models_training.unified_data_driven_pipeline.core.modular_architecture import ModularComponent
 from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation
+)
 
 try:  # Logging helpers
     from src.utils.tprint import (
@@ -174,6 +179,16 @@ class FeatureGenerationLabelingIntegrationStep(ModularComponent):
         **kwargs: Any
     ) -> LabelingIntegrationResult:
         """Async execute entry to integrate with ares_launcher sequential mode."""
+        # Set up enhanced artifact manager with context
+        context = get_step_context_from_config(self.config)
+        context.update({
+            'symbol': training_input.get('symbol', 'ETHUSDT') if training_input else kwargs.get('symbol', 'ETHUSDT'),
+            'exchange': training_input.get('exchange', 'binance') if training_input else kwargs.get('exchange', 'binance'),
+            'direction': 'long',  # Default for labeling integration
+            'model': 'Analyst'    # Default for labeling integration
+        })
+        am = setup_enhanced_artifact_manager(**context)
+        
         # Accept data from training_input or direct arg
         if data is None and isinstance(training_input, dict):
             data = training_input.get('data')

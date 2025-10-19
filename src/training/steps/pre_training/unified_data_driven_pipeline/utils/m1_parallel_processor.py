@@ -17,6 +17,7 @@ from dataclasses import dataclass
 import logging
 import queue
 from enum import Enum
+import pandas as pd
 
 from src.utils.tprint import tprint
 

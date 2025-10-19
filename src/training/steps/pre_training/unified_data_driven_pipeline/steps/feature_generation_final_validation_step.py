@@ -26,6 +26,11 @@ from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
     ArtifactKeys,
 )
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation
+)
 
 # Import advanced validation components
 try:
@@ -239,10 +244,20 @@ class FeatureGenerationFinalValidationStep(ModularComponent):
         tprint_info(f"⚡ Intensity: {intensity}")
         tprint_info(f"🔧 Custom overrides: {custom_overrides is not None}")
         
+        # Set up enhanced artifact manager with context
+        context = get_step_context_from_config(self.config)
+        context.update({
+            'symbol': symbol,
+            'exchange': 'binance',  # Default exchange
+            'direction': 'long',  # Default for final validation
+            'model': 'Analyst'    # Default for final validation
+        })
+        am = setup_enhanced_artifact_manager(**context)
+        
         # Get artifact manager
         tprint_debug("🔍 Getting artifact manager")
-        artifact_manager = get_pretraining_artifact_manager()
-        tprint_success("✅ Artifact manager retrieved")
+        artifact_manager = am
+        tprint_success("✅ Enhanced artifact manager retrieved")
         
         # Try to load from artifact manager first (pretraining store)
         tprint_debug("🔍 Checking for cached results")

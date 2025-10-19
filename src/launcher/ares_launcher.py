@@ -169,14 +169,14 @@ class AresLauncher:
             "description": "Generates features from raw data"
         },
         {
-            "name": "Feature Selection",
-            "sub_pipeline": "feature_generation_feature_selection_step",
-            "description": "Selects optimal features"
-        },
-        {
             "name": "Period + Lookback Optimization",
             "sub_pipeline": "feature_generation_period_lookback_optimization_step",
             "description": "Optimizes period and lookback parameters"
+        },
+        {
+            "name": "Feature Selection",
+            "sub_pipeline": "feature_generation_feature_selection_step",
+            "description": "Selects optimal features"
         },
         {
             "name": "Interaction Generation (Analyst)",
@@ -192,11 +192,6 @@ class AresLauncher:
             "name": "Final Feature Selection",
             "sub_pipeline": "feature_generation_final_feature_selection_step",
             "description": "Target-aware feature selection with downstream pipeline: PCA → MI → mRMR → LASSO+Stability → LGBM+RFE+SHAP"
-        },
-        {
-            "name": "Labeling Integration (Final)",
-            "sub_pipeline": "feature_generation_labeling_integration_step",
-            "description": "Final labeling integration step"
         },
         {
             "name": "Final Validation",
@@ -1184,9 +1179,22 @@ class AresLauncher:
         # Find which stage contains the sub-pipeline
         tprint("🔧 [SUB_PIPELINE_CONFIG] Finding target stage for sub-pipeline...")
         target_stage = None
+        
+        # Create mapping between short names and full step names
+        sub_pipeline_mapping = {
+            'feature_lookback_optimization': 'feature_generation_period_lookback_optimization_step',
+            'interactive_feature_generation': 'feature_generation_interaction_generation_step_analyst',
+            'final_feature_selection': 'feature_generation_final_feature_selection_step'
+        }
+        
+        # Get the full step name if it's a short name
+        full_sub_pipeline = sub_pipeline_mapping.get(sub_pipeline, sub_pipeline)
+        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Looking for sub-pipeline: '{sub_pipeline}' -> '{full_sub_pipeline}'")
+        
         for stage in PipelineStage:
             available_sub_pipelines = self.pipeline.get_available_sub_pipelines(stage)
-            if sub_pipeline in available_sub_pipelines:
+            tprint(f"🔧 [SUB_PIPELINE_CONFIG] Stage {stage.value} has sub-pipelines: {available_sub_pipelines}")
+            if full_sub_pipeline in available_sub_pipelines:
                 target_stage = stage
                 tprint(f"🔧 [SUB_PIPELINE_CONFIG] Found sub-pipeline in stage: {stage.value}")
                 break

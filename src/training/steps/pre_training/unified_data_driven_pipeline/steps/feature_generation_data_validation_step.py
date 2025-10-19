@@ -27,6 +27,11 @@ from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
     ArtifactKeys,
 )
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation
+)
 
 # Import advanced quality validation components
 try:
@@ -111,6 +116,16 @@ class FeatureGenerationDataValidationStep(ModularComponent):
         """Execute enhanced data validation step using comprehensive quality assessment."""
 
         self.logger.info("🔍 Starting enhanced data validation step with comprehensive quality assessment")
+
+        # Set up enhanced artifact manager with context
+        context = get_step_context_from_config(self.config)
+        context.update({
+            'symbol': training_input.get('symbol', 'ETHUSDT') if training_input else kwargs.get('symbol', 'ETHUSDT'),
+            'exchange': training_input.get('exchange', 'binance') if training_input else kwargs.get('exchange', 'binance'),
+            'direction': 'long',  # Default for data validation
+            'model': 'Analyst'    # Default for data validation
+        })
+        am = setup_enhanced_artifact_manager(**context)
 
         # Extract parameters from training_input or kwargs
         if training_input is None:

@@ -32,13 +32,19 @@ from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
     ArtifactKeys,
 )
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation,
+    get_tactician_context
+)
 
 # M1 Hardware Optimization Imports
 from src.utils.hardware.m1_gpu_utils import (
     get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
 )
 from src.utils.hardware.m1_memory_optimizer import (
-    get_m1_memory_optimizer, optimize_dataframe_memory, force_garbage_collection
+    get_m1_memory_optimizer, optimize_dataframe_memory
 )
 from src.utils.hardware.m1_cpu_optimizer import (
     get_m1_cpu_optimizer, create_m1_optimized_thread_pool, parallel_map_m1
@@ -203,7 +209,7 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
                 tprint(f"⚠️ GPU optimization failed for chunk {chunk_idx + 1}: {e}")
         
         # Force garbage collection after each chunk
-        force_garbage_collection()
+        self.m1_memory_optimizer.force_garbage_collection()
         
         self.performance_stats['chunks_processed'] += 1
         return optimized_chunk
@@ -317,7 +323,7 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
             
             if memory_percent > self.aggressive_gc_threshold * 100:
                 tprint(f"🧠 High memory usage detected: {memory_percent:.1f}%, applying aggressive cleanup...")
-                force_garbage_collection()
+                self.m1_memory_optimizer.force_garbage_collection()
                 
                 # Clear M1-specific caches
                 self.m1_memory_optimizer._clear_m1_caches()
@@ -333,165 +339,171 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
         tprint("🚀 [TACTICIAN] Starting M1-optimized Tactician interaction generation via consolidated pipeline")
         self.logger.info("🔧 Starting M1-optimized Tactician interaction generation via consolidated pipeline")
         
+        # Set up enhanced artifact manager with Tactician context
+        symbol = training_input.get('symbol', 'ETHUSDT')
+        exchange = training_input.get('exchange', 'binance')
+        direction = training_input.get('direction', 'long')
+        context = get_tactician_context(symbol, exchange, direction)
+        am = setup_enhanced_artifact_manager(**context)
+        
         # Start memory monitoring
         self.m1_memory_optimizer.start_monitoring()
         
-        try:
-            # CMI complementarity is always enabled in Tactician mode
-            enable_cmi_complementarity = (
-                CMI_COMPLEMENTARITY_AVAILABLE and 
-                self.cmi_scorer is not None
-            )
-            
-            tprint(f"🎯 [TACTICIAN] CMI complementarity check: CMI_AVAILABLE={CMI_COMPLEMENTARITY_AVAILABLE}, cmi_scorer={self.cmi_scorer is not None}")
-            
-            if enable_cmi_complementarity:
-                tprint("🎯 [TACTICIAN] CMI complementarity enabled for Tactician mode interaction generation")
-                self.logger.info("🎯 CMI complementarity enabled for Tactician mode interaction generation")
-            else:
-                tprint("⚠️ [TACTICIAN] CMI complementarity not available, using standard interaction generation")
-                self.logger.warning("⚠️ CMI complementarity not available, using standard interaction generation")
-
-            # Get artifact manager
-            tprint("📦 [TACTICIAN] Getting artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
-            
-            # Monitor memory usage before processing
-            self._monitor_memory_usage()
+        # CMI complementarity is always enabled in Tactician mode
+        enable_cmi_complementarity = (
+            CMI_COMPLEMENTARITY_AVAILABLE and 
+            self.cmi_scorer is not None
+        )
         
-            # Try to load from artifact manager first
-            tprint("🔍 [TACTICIAN] Checking for cached interaction features")
-            cached_interactions = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_FEATURES)
-            cached_metadata = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_METADATA)
-            cached_metrics = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS)
-            
-            tprint(f"📦 [TACTICIAN] Cache check: interactions={cached_interactions is not None}, metadata={cached_metadata is not None}, metrics={cached_metrics is not None}")
-            
-            if cached_interactions is not None:
-                tprint("📦 [TACTICIAN] Retrieved interaction features from artifact manager")
-                self.logger.info("📦 Retrieved interaction features from artifact manager")
-                
-                # Optimize cached data with M1 memory optimization
-                optimized_cached_interactions = self._optimize_dataframe_memory(cached_interactions)
-                
-                result_cached = InteractionGenerationResult(
-                    success=True,
-                    interaction_features=optimized_cached_interactions,
-                    interaction_metadata=cached_metadata or {},
-                    generation_metrics=cached_metrics or {},
-                    artifacts={'cache_hit': True},
-                    error_message=None
-                )
-                # Best-effort report from cache
-                tprint("📊 Generating report from cached data")
-                try:
-                    symbol = training_input.get('symbol', 'ETHUSDT')
-                    timeframe = training_input.get('timeframe', '15m')
-                    data_for_metrics = training_input.get('data')
-                    tprint(f"📊 Report params: symbol={symbol}, timeframe={timeframe}, data_available={data_for_metrics is not None}")
-                    report = self._generate_interaction_report(
-                        result_cached.interaction_features,
-                        result_cached.interaction_metadata,
-                        symbol,
-                        timeframe,
-                        data_for_metrics
-                    )
-                    md = self._format_interaction_markdown(report)
-                    self._store_interaction_report(report, md, symbol, timeframe)
-                    tprint("📊 Report generated and stored successfully")
-                except Exception as e:
-                    tprint(f"⚠️ Report generation failed: {e}")
-                    pass
-                tprint("✅ Returning cached result")
-                return result_cached
+        tprint(f"🎯 [TACTICIAN] CMI complementarity check: CMI_AVAILABLE={CMI_COMPLEMENTARITY_AVAILABLE}, cmi_scorer={self.cmi_scorer is not None}")
+        
+        if enable_cmi_complementarity:
+            tprint("🎯 [TACTICIAN] CMI complementarity enabled for Tactician mode interaction generation")
+            self.logger.info("🎯 CMI complementarity enabled for Tactician mode interaction generation")
+        else:
+            tprint("⚠️ [TACTICIAN] CMI complementarity not available, using standard interaction generation")
+            self.logger.warning("⚠️ CMI complementarity not available, using standard interaction generation")
 
-            tprint("🔍 Extracting training input parameters")
-            data = training_input.get('data')
-            symbol = training_input.get('symbol', 'ETHUSDT')
-            timeframe = training_input.get('timeframe', '15m')
-            direction = training_input.get('direction', 'longs')
-            intensity = training_input.get('intensity', 'blank')
-            lookback_days = training_input.get('lookback_days')
-            start_date = training_input.get('start_date')
-            end_date = training_input.get('end_date')
-            exchange = training_input.get('exchange', 'binance')
-            custom_overrides = training_input.get('custom_overrides')
+        # Get artifact manager
+        tprint("📦 [TACTICIAN] Getting artifact manager")
+        artifact_manager = get_pretraining_artifact_manager()
+        
+        # Monitor memory usage before processing
+        self._monitor_memory_usage()
+    
+        # Try to load from artifact manager first
+        tprint("🔍 [TACTICIAN] Checking for cached interaction features")
+        cached_interactions = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_FEATURES)
+        cached_metadata = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_METADATA)
+        cached_metrics = artifact_manager.retrieve_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS)
+        
+        tprint(f"📦 [TACTICIAN] Cache check: interactions={cached_interactions is not None}, metadata={cached_metadata is not None}, metrics={cached_metrics is not None}")
+        
+        if cached_interactions is not None:
+            tprint("📦 [TACTICIAN] Retrieved interaction features from artifact manager")
+            self.logger.info("📦 Retrieved interaction features from artifact manager")
             
-            tprint(f"📊 Input params: symbol={symbol}, timeframe={timeframe}, direction={direction}, intensity={intensity}")
-            tprint(f"📊 Data params: data_shape={data.shape if hasattr(data, 'shape') else 'None'}, lookback_days={lookback_days}, start_date={start_date}, end_date={end_date}")
-            tprint(f"📊 Exchange: {exchange}, custom_overrides={custom_overrides is not None}")
-
-            # Enforce using only selected features from feature selection step
+            # Optimize cached data with M1 memory optimization
+            optimized_cached_interactions = self._optimize_dataframe_memory(cached_interactions)
+            
+            result_cached = InteractionGenerationResult(
+                success=True,
+                interaction_features=optimized_cached_interactions,
+                interaction_metadata=cached_metadata or {},
+                generation_metrics=cached_metrics or {},
+                artifacts={'cache_hit': True},
+                error_message=None
+            )
+            # Best-effort report from cache
+            tprint("📊 Generating report from cached data")
             try:
-                tprint("🔍 Loading selected features from artifact manager")
-                selected_df = artifact_manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
-                if (selected_df is None or selected_df.empty):
-                    # Backward-compatibility: alternative step naming
-                    selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
-                if selected_df is None or selected_df.empty:
-                    tprint("❌ No selected features available; interaction generation requires prior feature selection")
-                    return InteractionGenerationResult(
-                        success=False,
-                        interaction_features=pd.DataFrame(),
-                        interaction_metadata={},
-                        generation_metrics={},
-                        artifacts={},
-                        error_message="Selected features not found. Run feature_selection before interaction_generation."
-                    )
-                tprint(f"✅ Using selected features for interaction generation: shape={selected_df.shape}")
-                
-                # Apply M1 memory optimization to selected features
-                data = self._optimize_dataframe_memory(selected_df)
-                tprint(f"🧠 Selected features optimized for M1: {data.shape}")
-                
-                # Check if memory mapping should be used
-                if self._should_use_memory_mapping(len(data)):
-                    tprint(f"🗺️ Large dataset detected ({len(data)} rows), using memory mapping optimizations")
-
-                # Load labeling targets and align with selected features
-                targets_series: Optional[pd.Series] = None
-                for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
-                    series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
-                    if isinstance(series, pd.Series) and not series.empty:
-                        targets_series = series.astype(float)
-                        tprint(f"✅ Loaded labeling targets from {step_name}: count={len(targets_series)}")
-                        break
-
-                if targets_series is None or targets_series.empty:
-                    tprint("❌ Labeling targets not found for interaction generation")
-                    return InteractionGenerationResult(
-                        success=False,
-                        interaction_features=pd.DataFrame(),
-                        interaction_metadata={},
-                        generation_metrics={},
-                        artifacts={},
-                        error_message="Targets from feature_generation_labeling_integration_step are required before interaction generation."
-                    )
-
-                aligned = data.join(targets_series.rename("target"), how="inner").dropna(axis=0, how="any")
-                if aligned.empty:
-                    tprint("❌ No overlapping timestamps between selected features and labeling targets")
-                    return InteractionGenerationResult(
-                        success=False,
-                        interaction_features=pd.DataFrame(),
-                        interaction_metadata={},
-                        generation_metrics={},
-                        artifacts={},
-                        error_message="No overlapping timestamps between selected features and labeling targets."
-                    )
-
-                targets = aligned.pop("target")
-                data = aligned
-                tprint(f"✅ Aligned features/targets for interaction generation: features={data.shape}, targets={targets.shape}")
+                symbol = training_input.get('symbol', 'ETHUSDT')
+                timeframe = training_input.get('timeframe', '15m')
+                data_for_metrics = training_input.get('data')
+                tprint(f"📊 Report params: symbol={symbol}, timeframe={timeframe}, data_available={data_for_metrics is not None}")
+                report = self._generate_interaction_report(
+                    result_cached.interaction_features,
+                    result_cached.interaction_metadata,
+                    symbol,
+                    timeframe,
+                    data_for_metrics
+                )
+                md = self._format_interaction_markdown(report)
+                self._store_interaction_report(report, md, symbol, timeframe)
+                tprint("📊 Report generated and stored successfully")
             except Exception as e:
+                tprint(f"⚠️ Report generation failed: {e}")
+                pass
+            tprint("✅ Returning cached result")
+            return result_cached
+
+        tprint("🔍 Extracting training input parameters")
+        data = training_input.get('data')
+        symbol = training_input.get('symbol', 'ETHUSDT')
+        timeframe = training_input.get('timeframe', '15m')
+        direction = training_input.get('direction', 'longs')
+        intensity = training_input.get('intensity', 'blank')
+        lookback_days = training_input.get('lookback_days')
+        start_date = training_input.get('start_date')
+        end_date = training_input.get('end_date')
+        exchange = training_input.get('exchange', 'binance')
+        custom_overrides = training_input.get('custom_overrides')
+        
+        tprint(f"📊 Input params: symbol={symbol}, timeframe={timeframe}, direction={direction}, intensity={intensity}")
+        tprint(f"📊 Data params: data_shape={data.shape if hasattr(data, 'shape') else 'None'}, lookback_days={lookback_days}, start_date={start_date}, end_date={end_date}")
+        tprint(f"📊 Exchange: {exchange}, custom_overrides={custom_overrides is not None}")
+
+        # Enforce using only selected features from feature selection step
+        try:
+            tprint("🔍 Loading selected features from artifact manager")
+            selected_df = artifact_manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
+            if (selected_df is None or selected_df.empty):
+                # Backward-compatibility: alternative step naming
+                selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            if selected_df is None or selected_df.empty:
+                tprint("❌ No selected features available; interaction generation requires prior feature selection")
                 return InteractionGenerationResult(
                     success=False,
                     interaction_features=pd.DataFrame(),
                     interaction_metadata={},
                     generation_metrics={},
                     artifacts={},
-                    error_message=f"Failed to load selected features: {e}"
+                    error_message="Selected features not found. Run feature_selection before interaction_generation."
                 )
+            tprint(f"✅ Using selected features for interaction generation: shape={selected_df.shape}")
+            
+            # Apply M1 memory optimization to selected features
+            data = self._optimize_dataframe_memory(selected_df)
+            tprint(f"🧠 Selected features optimized for M1: {data.shape}")
+            
+            # Check if memory mapping should be used
+            if self._should_use_memory_mapping(len(data)):
+                tprint(f"🗺️ Large dataset detected ({len(data)} rows), using memory mapping optimizations")
+
+            # Load labeling targets and align with selected features
+            targets_series: Optional[pd.Series] = None
+            for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
+                series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
+                if isinstance(series, pd.Series) and not series.empty:
+                    targets_series = series.astype(float)
+                    tprint(f"✅ Loaded labeling targets from {step_name}: count={len(targets_series)}")
+                    break
+
+            if targets_series is None or targets_series.empty:
+                tprint("❌ Labeling targets not found for interaction generation")
+                return InteractionGenerationResult(
+                    success=False,
+                    interaction_features=pd.DataFrame(),
+                    interaction_metadata={},
+                    generation_metrics={},
+                    artifacts={},
+                    error_message="Targets from feature_generation_labeling_integration_step are required before interaction generation."
+                )
+
+            aligned = data.join(targets_series.rename("target"), how="inner").dropna(axis=0, how="any")
+            if aligned.empty:
+                tprint("❌ No overlapping timestamps between selected features and labeling targets")
+                return InteractionGenerationResult(
+                    success=False,
+                    interaction_features=pd.DataFrame(),
+                    interaction_metadata={},
+                    generation_metrics={},
+                    artifacts={},
+                    error_message="No overlapping timestamps between selected features and labeling targets."
+                )
+
+            targets = aligned.pop("target")
+            data = aligned
+            tprint(f"✅ Aligned features/targets for interaction generation: features={data.shape}, targets={targets.shape}")
+        except Exception as e:
+            return InteractionGenerationResult(
+                success=False,
+                interaction_features=pd.DataFrame(),
+                interaction_metadata={},
+                generation_metrics={},
+                artifacts={},
+                error_message=f"Failed to load selected features: {e}"
+            )
 
         # Load optimized periods/lookbacks if available and pass in overrides
         try:
@@ -734,8 +746,9 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
         except Exception as e:
             tprint(f"⚠️ Report generation failed: {e}")
             pass
-        tprint("✅ Returning result object")
-        return result_obj
+        
+            tprint("✅ Returning result object")
+            return result_obj
             
         except Exception as e:
             tprint(f"❌ Interaction generation failed: {e}")
@@ -758,7 +771,7 @@ class FeatureGenerationInteractionGenerationStepTactician(ModularComponent):
             tprint("🧹 Cleaning up M1 optimizations...")
             try:
                 self.m1_memory_optimizer.stop_monitoring()
-                force_garbage_collection()
+                self.m1_memory_optimizer.force_garbage_collection()
                 tprint("✅ Cleanup completed")
             except Exception as cleanup_error:
                 tprint(f"⚠️ Cleanup warning: {cleanup_error}")
@@ -1017,7 +1030,7 @@ async def handle_feature_generation_interaction_generation_step_tactician(
         tprint("🧹 Cleaning up M1 optimizations in handler...")
         try:
             m1_memory_optimizer.stop_monitoring()
-            force_garbage_collection()
+            self.m1_memory_optimizer.force_garbage_collection()
             tprint("✅ Handler cleanup completed")
         except Exception as cleanup_error:
             tprint(f"⚠️ Handler cleanup warning: {cleanup_error}")

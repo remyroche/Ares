@@ -1638,6 +1638,41 @@ class ModelTrainingSubPipeline:
 
         raise RuntimeError(f"Sub-pipeline '{sub_pipeline_name}' did not return a result")
 
+    async def execute_multiple_sub_pipelines(
+        self,
+        sub_pipeline_names: List[str],
+        config: Optional[SubPipelineConfig] = None,
+        sequential: bool = False
+    ) -> List[SubPipelineResult]:
+        """
+        Execute multiple sub-pipelines.
+
+        Args:
+            sub_pipeline_names: List of sub-pipeline names to execute
+            config: Optional configuration override
+            sequential: Whether to execute sequentially or in parallel
+
+        Returns:
+            List of SubPipelineResult objects
+        """
+        import asyncio
+
+        self.logger.info(f"🚀 Starting {len(sub_pipeline_names)} model training sub-pipelines (sequential: {sequential})")
+
+        if sequential:
+            results = []
+            for name in sub_pipeline_names:
+                result = await self.execute_sub_pipeline(name, config or SubPipelineConfig())
+                results.append(result)
+                if result.status == SubPipelineStatus.FAILED:
+                    self.logger.warning(f"⚠️ Stopping sequential execution due to failure in {name}")
+                    break
+            return results
+        else:
+            # Execute in parallel
+            tasks = [self.execute_sub_pipeline(name, config or SubPipelineConfig()) for name in sub_pipeline_names]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary."""
         return {

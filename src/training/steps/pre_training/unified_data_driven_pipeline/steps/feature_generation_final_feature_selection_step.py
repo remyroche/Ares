@@ -89,6 +89,11 @@ except ImportError:
 # Import modular architecture
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import ModularComponent
 from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation
+)
 
 logger = logging.getLogger(__name__)
 
@@ -298,9 +303,19 @@ class FeatureGenerationFinalFeatureSelectionStep(ModularComponent):
         start_time = time.time()
         tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
         
+        # Set up enhanced artifact manager with context
+        context = get_step_context_from_config(self.config)
+        context.update({
+            'symbol': symbol,
+            'exchange': 'binance',  # Default exchange
+            'direction': direction,
+            'model': model_type.title()  # Convert to proper case
+        })
+        am = setup_enhanced_artifact_manager(**context)
+        
         try:
             # Get artifact manager
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = am
             
             # Load artifacts from previous steps
             tprint_info("📦 Loading artifacts from previous steps")

@@ -33,6 +33,12 @@ from src.training.steps.pre_training.utils.artifact_manager import (
     get_pretraining_artifact_manager,
     ArtifactKeys,
 )
+from src.training.steps.pre_training.utils.enhanced_artifact_integration import (
+    setup_enhanced_artifact_manager,
+    get_step_context_from_config,
+    log_artifact_operation,
+    get_analyst_context
+)
 
 # Import utility classes
 from src.training.steps.pre_training.unified_data_driven_pipeline.utils.variant_generator import (
@@ -55,7 +61,7 @@ from src.utils.hardware.m1_gpu_utils import (
     get_m1_gpu_manager, optimize_dataframe_for_m1, create_m1_optimized_array
 )
 from src.utils.hardware.m1_memory_optimizer import (
-    get_m1_memory_optimizer, optimize_dataframe_memory, force_garbage_collection
+    get_m1_memory_optimizer, optimize_dataframe_memory
 )
 from src.utils.hardware.m1_cpu_optimizer import (
     get_m1_cpu_optimizer, create_m1_optimized_thread_pool, parallel_map_m1
@@ -563,6 +569,12 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
         tprint("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
         
+        # Set up enhanced artifact manager with Analyst context
+        symbol = training_input.get('symbol', 'ETHUSDT')
+        exchange = training_input.get('exchange', 'binance')
+        context = get_analyst_context(symbol, exchange)
+        am = setup_enhanced_artifact_manager(**context)
+        
         # Start memory monitoring
         self.m1_memory_optimizer.start_monitoring()
         
@@ -827,7 +839,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(ModularComponent):
             tprint("🧹 Cleaning up M1 optimizations...")
             try:
                 self.m1_memory_optimizer.stop_monitoring()
-                force_garbage_collection()
+                self.m1_memory_optimizer.force_garbage_collection()
                 tprint("✅ Cleanup completed")
             except Exception as cleanup_error:
                 tprint(f"⚠️ Cleanup warning: {cleanup_error}")

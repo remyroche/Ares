@@ -14,7 +14,7 @@ import pandas as pd
 import numpy as np
 import gc
 import os
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import multiprocessing as mp
 
 # M1 Optimization imports
@@ -241,7 +241,7 @@ class ConsolidatedPipelineRunner:
                     future_to_chunk[future] = i
                 
                 # Collect results as they complete
-                for future in concurrent.futures.as_completed(future_to_chunk):
+                for future in as_completed(future_to_chunk):
                     chunk_idx = future_to_chunk[future]
                     try:
                         chunk_result = future.result()
@@ -1161,6 +1161,70 @@ class ConsolidatedPipelineRunner:
                 'quality_metrics': {}
             }
 
+    async def run_final_feature_selection_step(self,
+                                             data: pd.DataFrame,
+                                             symbol: str = "ETHUSDT",
+                                             timeframe: str = "15m",
+                                             direction: str = "longs",
+                                             intensity: str = "blank",
+                                             lookback_days: Optional[int] = None,
+                                             start_date: Optional[str] = None,
+                                             end_date: Optional[str] = None,
+                                             exchange: str = "binance",
+                                             custom_overrides: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Run pipeline up to final feature selection step."""
+        try:
+            # Configure pipeline based on intensity
+            config = self._create_config_from_intensity(intensity, custom_overrides)
+            self.pipeline = create_unified_pipeline(config)
+
+            # Create pipeline state
+            pipeline_state = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'lookback_days': lookback_days,
+                'start_date': start_date,
+                'end_date': end_date,
+                'exchange': exchange,
+                'step': 'final_feature_selection'
+            }
+
+            # Get labels from pipeline state (from previous labeling steps)
+            targets = self._get_labels_from_pipeline_state(custom_overrides)
+
+            if targets is None:
+                raise ValueError("No labels found in pipeline state. Please ensure analyst_profit_labeler or tactician_entry_labeler runs before this step.")
+
+            # Run pipeline up to final feature selection
+            result = await self.pipeline.process(data, targets=targets, timeframe=timeframe, pipeline_state=pipeline_state)
+
+            # Extract final feature selection results
+            final_selection_result = {
+                'success': result.success,
+                'final_selected_features': getattr(result, 'final_selected_features', pd.DataFrame()),
+                'final_selection_metadata': getattr(result, 'final_selection_metadata', {}),
+                'selection_metrics': getattr(result, 'selection_metrics', {}),
+                'artifacts': result.artifacts or {},
+                'error_message': result.error_message if not result.success else None
+            }
+
+            # Generate human-readable report
+            await self._generate_final_feature_selection_report(final_selection_result, data)
+
+            return final_selection_result
+
+        except Exception as e:
+            self.logger.error(f"Final feature selection step failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'artifacts': {},
+                'final_selected_features': pd.DataFrame(),
+                'final_selection_metadata': {},
+                'selection_metrics': {}
+            }
+
     async def run_final_validation_step(self,
                                       data: pd.DataFrame,
                                       symbol: str = "ETHUSDT",
@@ -1762,6 +1826,48 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
         self.logger.info(f"📊 Human-readable report saved: {report_path}")
 
+    async def _generate_final_feature_selection_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
+        """Generate human-readable report for final feature selection step."""
+        # Create outcomes directory
+        outcomes_dir = Path("outcomes")
+        outcomes_dir.mkdir(exist_ok=True)
+
+        # Generate timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        report_filename = f"final_feature_selection_report_{timestamp}.md"
+        report_path = outcomes_dir / report_filename
+
+        # Generate report content
+        report_content = f"""# Final Feature Selection Report
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Executive Summary
+- **Status**: {'✅ SUCCESS' if result['success'] else '❌ FAILED'}
+- **Data Shape**: {data.shape[0]} rows x {data.shape[1]} columns
+- **Final Selected Features**: {len(result.get('final_selected_features', pd.DataFrame()).columns)}
+
+## Final Selection Results
+- **Success**: {result['success']}
+- **Error Message**: {result.get('error_message', 'None')}
+- **Artifacts Generated**: {len(result.get('artifacts', {}))}
+
+## Next Steps
+1. Review final selected features
+2. Proceed to final validation step
+
+---
+*Report generated by Consolidated Pipeline Runner*
+"""
+
+        # Write report
+        with open(report_path, 'w') as f:
+            f.write(report_content)
+
+        # Add report to artifacts
+        result['artifacts']['human_readable_report'] = str(report_path)
+
+        self.logger.info(f"📊 Human-readable report saved: {report_path}")
+
     async def _generate_period_lookback_optimization_report(self, result: Dict[str, Any], data: pd.DataFrame) -> None:
         """Generate human-readable report for period + lookback optimization step."""
         # Create outcomes directory
@@ -2075,6 +2181,30 @@ async def run_period_lookback_optimization_step(data: pd.DataFrame, **kwargs: An
         return result
     except Exception as e:
         error_msg = f"M1-optimized convenience function failed for period + lookback optimization: {str(e)}"
+        tprint_error(f"❌ {error_msg}")
+        raise RuntimeError(error_msg) from e
+
+async def run_final_feature_selection_step(data: pd.DataFrame, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Run final feature selection step using consolidated pipeline.
+
+    Args:
+        data: Input DataFrame with time series data
+        **kwargs: Additional arguments passed to the step
+
+    Returns:
+        Dict containing final feature selection results
+
+    Raises:
+        ValueError: If input data is invalid
+        RuntimeError: If pipeline execution fails
+    """
+    try:
+        tprint_step("🚀 Starting final feature selection step (convenience function)")
+        runner = ConsolidatedPipelineRunner()
+        return await runner.run_final_feature_selection_step(data, **kwargs)
+    except Exception as e:
+        error_msg = f"Convenience function failed for final feature selection: {str(e)}"
         tprint_error(f"❌ {error_msg}")
         raise RuntimeError(error_msg) from e
 

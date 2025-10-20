@@ -39,6 +39,16 @@ from .base_trainer import (
 )
 from .model_trainer import ModelTrainer
 
+# Import SHAP explainability utilities
+try:
+    from src.utils.ml_common.explainability import (
+        SHAPLIMEExplainer, ExplanationConfig, create_explainer, explain_stacking_ensemble
+    )
+    SHAP_AVAILABLE = True
+except ImportError as e:
+    SHAP_AVAILABLE = False
+    tprint(f"⚠️ [ENSEMBLE_TRAINER] SHAP explainability utilities not available: {e}", color="yellow")
+
 
 class EnsembleStrategy:
     """Ensemble strategy types."""
@@ -114,6 +124,51 @@ class EnsembleTrainer(BaseTrainer):
                 individual_results, meta_result, processed_data, processed_targets
             )
             
+            # Generate SHAP explanations for complete ensemble
+            ensemble_shap_explanations = None
+            if SHAP_AVAILABLE:
+                try:
+                    tprint("🔍 [ENSEMBLE_TRAINER] Generating SHAP explanations for complete ensemble", color="cyan")
+                    
+                    # Prepare base models for ensemble explanation
+                    base_models = {}
+                    for model_name, result in individual_results.items():
+                        if result.success and result.model is not None:
+                            base_models[model_name] = result.model
+                    
+                    if base_models and self._meta_learner is not None:
+                        # Create feature names
+                        feature_names = list(processed_data.columns)
+                        output_names = ["prediction"] if self.config.role == TrainingRole.TACTICIAN else ["class_0", "class_1"]
+                        
+                        # Use the stacking ensemble explanation function
+                        ensemble_explanations = explain_stacking_ensemble(
+                            base_models=base_models,
+                            meta_model=self._meta_learner,
+                            X=processed_data.values,
+                            output_names=output_names,
+                            feature_names=feature_names
+                        )
+                        
+                        ensemble_shap_explanations = {
+                            'base_model_explanations': {name: {
+                                'shap_values': result.shap_values,
+                                'base_values': result.shap_base_values,
+                                'feature_names': result.shap_feature_names,
+                                'explanation_time': result.explanation_time
+                            } for name, result in ensemble_explanations.items() if name != 'meta_model'},
+                            'meta_model_explanations': ensemble_explanations.get('meta_model', {}),
+                            'total_explanation_time': sum(result.explanation_time for result in ensemble_explanations.values())
+                        }
+                        
+                        tprint(f"✅ [ENSEMBLE_TRAINER] Complete ensemble SHAP explanations generated in {ensemble_shap_explanations['total_explanation_time']:.3f}s", color="green")
+                    else:
+                        tprint("⚠️ [ENSEMBLE_TRAINER] Cannot generate ensemble SHAP explanations - missing base models or meta-learner", color="yellow")
+                        
+                except Exception as e:
+                    tprint(f"⚠️ [ENSEMBLE_TRAINER] Complete ensemble SHAP explanation failed: {e}", color="yellow")
+                    ensemble_shap_explanations = None
+            
             training_time = time.time() - start_time
             
             # Update state
@@ -126,6 +181,7 @@ class EnsembleTrainer(BaseTrainer):
                 model=self._meta_learner,
                 metrics=ensemble_metrics,
                 training_time=training_time,
+                shap_explanations=ensemble_shap_explanations,
                 metadata={
                     'ensemble_strategy': self.ensemble_strategy,
                     'individual_models': len(individual_results),
@@ -346,10 +402,48 @@ class EnsembleTrainer(BaseTrainer):
             # Store meta-learner
             self._meta_learner = meta_model
             
+            # Generate SHAP explanations for meta-learner
+            shap_explanations = None
+            if SHAP_AVAILABLE:
+                try:
+                    tprint("🔍 [ENSEMBLE_TRAINER] Generating SHAP explanations for meta-learner", color="cyan")
+                    shap_config = ExplanationConfig(
+                        enable_shap=True,
+                        enable_lime=False,
+                        shap_sample_size=min(100, len(oof_predictions)),
+                        shap_max_features=min(50, oof_predictions.shape[1])
+                    )
+                    explainer = create_explainer(shap_config)
+                    
+                    # Create feature names for meta-learner (base model predictions)
+                    meta_feature_names = [f"base_model_{i}_pred" for i in range(oof_predictions.shape[1])]
+                    output_names = ["prediction"] if self.config.role == TrainingRole.TACTICIAN else ["class_0", "class_1"]
+                    
+                    shap_result = explainer.explain_model(
+                        model=meta_model,
+                        X=oof_predictions,
+                        model_name="Meta-learner",
+                        output_names=output_names,
+                        feature_names=meta_feature_names
+                    )
+                    
+                    shap_explanations = {
+                        'shap_values': shap_result.shap_values,
+                        'base_values': shap_result.shap_base_values,
+                        'feature_names': shap_result.shap_feature_names,
+                        'explanation_time': shap_result.explanation_time
+                    }
+                    
+                    tprint(f"✅ [ENSEMBLE_TRAINER] Meta-learner SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [ENSEMBLE_TRAINER] Meta-learner SHAP explanation failed: {e}", color="yellow")
+                    shap_explanations = None
+            
             return TrainingResult(
                 success=True,
                 model=meta_model,
-                metrics=metrics
+                metrics=metrics,
+                shap_explanations=shap_explanations
             )
             
         except Exception as e:

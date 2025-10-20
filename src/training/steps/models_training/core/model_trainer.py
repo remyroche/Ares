@@ -38,6 +38,16 @@ from .base_trainer import (
     PredictionResult, TrainingRole, ModelType
 )
 
+# Import SHAP explainability utilities
+try:
+    from src.utils.ml_common.explainability import (
+        SHAPLIMEExplainer, ExplanationConfig, create_explainer, explain_model
+    )
+    SHAP_AVAILABLE = True
+except ImportError as e:
+    SHAP_AVAILABLE = False
+    tprint(f"⚠️ [MODEL_TRAINER] SHAP explainability utilities not available: {e}", color="yellow")
+
 
 class ModelTrainer(BaseTrainer):
     """
@@ -329,11 +339,50 @@ class ModelTrainer(BaseTrainer):
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.feature_importance()))
             
+            # Generate SHAP explanations
+            shap_explanations = None
+            if SHAP_AVAILABLE:
+                try:
+                    tprint("🔍 [MODEL_TRAINER] Generating SHAP explanations for LightGBM", color="cyan")
+                    shap_config = ExplanationConfig(
+                        enable_shap=True,
+                        enable_lime=False,
+                        shap_sample_size=min(100, len(data)),
+                        shap_max_features=min(50, data.shape[1])
+                    )
+                    explainer = create_explainer(shap_config)
+                    
+                    # Prepare data for SHAP
+                    X_array = data.values
+                    feature_names = list(data.columns)
+                    output_names = ["prediction"] if self.config.role == TrainingRole.TACTICIAN else ["class_0", "class_1"]
+                    
+                    shap_result = explainer.explain_model(
+                        model=model,
+                        X=X_array,
+                        model_name="LightGBM",
+                        output_names=output_names,
+                        feature_names=feature_names
+                    )
+                    
+                    shap_explanations = {
+                        'shap_values': shap_result.shap_values,
+                        'base_values': shap_result.shap_base_values,
+                        'feature_names': shap_result.shap_feature_names,
+                        'explanation_time': shap_result.explanation_time
+                    }
+                    
+                    tprint(f"✅ [MODEL_TRAINER] LightGBM SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [MODEL_TRAINER] LightGBM SHAP explanation failed: {e}", color="yellow")
+                    shap_explanations = None
+            
             return TrainingResult(
                 success=True,
                 model=model,
                 metrics=metrics,
-                feature_importance=feature_importance
+                feature_importance=feature_importance,
+                shap_explanations=shap_explanations
             )
             
         except Exception as e:
@@ -395,11 +444,50 @@ class ModelTrainer(BaseTrainer):
             # Get feature importance
             feature_importance = dict(zip(data.columns, model.get_feature_importance()))
             
+            # Generate SHAP explanations
+            shap_explanations = None
+            if SHAP_AVAILABLE:
+                try:
+                    tprint("🔍 [MODEL_TRAINER] Generating SHAP explanations for CatBoost", color="cyan")
+                    shap_config = ExplanationConfig(
+                        enable_shap=True,
+                        enable_lime=False,
+                        shap_sample_size=min(100, len(data)),
+                        shap_max_features=min(50, data.shape[1])
+                    )
+                    explainer = create_explainer(shap_config)
+                    
+                    # Prepare data for SHAP
+                    X_array = data.values
+                    feature_names = list(data.columns)
+                    output_names = ["prediction"] if self.config.role == TrainingRole.TACTICIAN else ["class_0", "class_1"]
+                    
+                    shap_result = explainer.explain_model(
+                        model=model,
+                        X=X_array,
+                        model_name="CatBoost",
+                        output_names=output_names,
+                        feature_names=feature_names
+                    )
+                    
+                    shap_explanations = {
+                        'shap_values': shap_result.shap_values,
+                        'base_values': shap_result.shap_base_values,
+                        'feature_names': shap_result.shap_feature_names,
+                        'explanation_time': shap_result.explanation_time
+                    }
+                    
+                    tprint(f"✅ [MODEL_TRAINER] CatBoost SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [MODEL_TRAINER] CatBoost SHAP explanation failed: {e}", color="yellow")
+                    shap_explanations = None
+            
             return TrainingResult(
                 success=True,
                 model=model,
                 metrics=metrics,
-                feature_importance=feature_importance
+                feature_importance=feature_importance,
+                shap_explanations=shap_explanations
             )
             
         except Exception as e:
@@ -493,10 +581,66 @@ class ModelTrainer(BaseTrainer):
                     'rmse': np.sqrt(mean_squared_error(targets, predictions))
                 }
             
+            # Generate SHAP explanations
+            shap_explanations = None
+            if SHAP_AVAILABLE:
+                try:
+                    tprint("🔍 [MODEL_TRAINER] Generating SHAP explanations for Neural Network", color="cyan")
+                    shap_config = ExplanationConfig(
+                        enable_shap=True,
+                        enable_lime=False,
+                        shap_sample_size=min(100, len(data)),
+                        shap_max_features=min(50, data.shape[1])
+                    )
+                    explainer = create_explainer(shap_config)
+                    
+                    # Prepare data for SHAP
+                    X_array = data.values
+                    feature_names = list(data.columns)
+                    output_names = ["prediction"] if self.config.role == TrainingRole.TACTICIAN else ["class_0", "class_1"]
+                    
+                    # Create a wrapper for the PyTorch model to work with SHAP
+                    class PyTorchWrapper:
+                        def __init__(self, model, role):
+                            self.model = model
+                            self.role = role
+                            
+                        def predict(self, X):
+                            self.model.eval()
+                            with torch.no_grad():
+                                X_tensor = torch.FloatTensor(X)
+                                if self.role == TrainingRole.ANALYST:
+                                    return self.model(X_tensor).squeeze().numpy()
+                                else:
+                                    return self.model(X_tensor).squeeze().numpy()
+                    
+                    wrapped_model = PyTorchWrapper(model, self.config.role)
+                    
+                    shap_result = explainer.explain_model(
+                        model=wrapped_model,
+                        X=X_array,
+                        model_name="Neural Network",
+                        output_names=output_names,
+                        feature_names=feature_names
+                    )
+                    
+                    shap_explanations = {
+                        'shap_values': shap_result.shap_values,
+                        'base_values': shap_result.shap_base_values,
+                        'feature_names': shap_result.shap_feature_names,
+                        'explanation_time': shap_result.explanation_time
+                    }
+                    
+                    tprint(f"✅ [MODEL_TRAINER] Neural Network SHAP explanations generated in {shap_result.explanation_time:.3f}s", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [MODEL_TRAINER] Neural Network SHAP explanation failed: {e}", color="yellow")
+                    shap_explanations = None
+            
             return TrainingResult(
                 success=True,
                 model=model,
-                metrics=metrics
+                metrics=metrics,
+                shap_explanations=shap_explanations
             )
             
         except Exception as e:

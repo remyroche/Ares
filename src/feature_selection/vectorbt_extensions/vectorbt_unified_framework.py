@@ -31,6 +31,17 @@ from .vectorbt_regularization import VectorBTRegularizationSelector
 from .vectorbt_rfe_selector import VectorBTRFESelector
 from .vectorbt_config import VectorBTFeatureSelectionConfig
 
+# Import hardware optimization tools
+from src.utils.hardware import (
+    get_integrated_hardware_manager,
+    memory_efficient,
+    performance_tracked,
+    smart_cache,
+    auto_optimize,
+    WorkloadType,
+    OptimizationLevel
+)
+
 # Import utilities
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 from src.utils.math_validation import validate_numeric_array, validate_finite
@@ -84,6 +95,9 @@ class VectorBTUnifiedFramework:
         # Check VectorBT availability
         if not VECTORBT_AVAILABLE:
             raise ImportError("VectorBT is required but not available. Please install vectorbt.")
+
+        # Initialize hardware optimization
+        self.hardware_manager = get_integrated_hardware_manager()
 
         # Initialize selectors
         self._initialize_selectors()
@@ -299,6 +313,8 @@ class VectorBTUnifiedFramework:
                 'data_type': 'numeric'
             }
 
+    @memory_efficient(memory_threshold_mb=500.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def select_features(self, X: np.ndarray, y: np.ndarray,
                        method: Union[str, FeatureSelectionMethod] = 'auto',
                        k: int = None, feature_names: Optional[List[str]] = None,
@@ -323,9 +339,28 @@ class VectorBTUnifiedFramework:
             # Validate inputs
             X, y, feature_names = self._validate_inputs(X, y, feature_names)
 
+            # Determine workload type and optimize hardware
+            data_size_mb = X.nbytes / (1024 * 1024)
+            if data_size_mb > 1000 or method in ['comprehensive', 'stability_selection']:
+                workload_type = WorkloadType.ML_TRAINING
+                optimization_level = OptimizationLevel.AGGRESSIVE
+            elif method in ['correlation', 'mutual_information']:
+                workload_type = WorkloadType.DATA_PROCESSING
+                optimization_level = OptimizationLevel.BALANCED
+            else:
+                workload_type = WorkloadType.GENERAL
+                optimization_level = OptimizationLevel.MINIMAL
+            
+            # Optimize hardware for workload
+            self.hardware_manager.optimize_for_workload(workload_type, optimization_level)
+            
+            # Pre-optimize data with hardware manager
+            X_optimized = self.hardware_manager.process_data_with_optimization(X, workload_type)
+            y_optimized = self.hardware_manager.process_data_with_optimization(y, workload_type)
+
             # Determine method
             if method == 'auto':
-                method = self._select_method_automatically(X, y, k or 50)
+                method = self._select_method_automatically(X_optimized, y_optimized, k or 50)
             elif isinstance(method, str):
                 try:
                     method = FeatureSelectionMethod(method)
@@ -334,12 +369,12 @@ class VectorBTUnifiedFramework:
 
             # Set default k if not provided
             if k is None:
-                k = min(50, X.shape[1] // 2)
+                k = min(50, X_optimized.shape[1] // 2)
 
-            tprint(f"🚀 Starting VectorBT {method.value} selection with {X.shape[1]} features, target: {k}")
+            tprint(f"🚀 Starting VectorBT {method.value} selection with {X_optimized.shape[1]} features, target: {k}")
 
-            # Execute method
-            result = self._execute_method(method, X, y, k, feature_names, **kwargs)
+            # Execute method with optimized data
+            result = self._execute_method(method, X_optimized, y_optimized, k, feature_names, **kwargs)
 
             # Update performance stats
             execution_time = time.time() - start_time

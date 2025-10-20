@@ -48,7 +48,6 @@ from .vectorbt_extensions import (
     VectorBTMRMRSelector,
     VectorBTRegularizationSelector,
     VectorBTRFESelector,
-    VectorBTMemoryOptimizer,
     VectorBTRollingOperations,
     VectorBTFeatureSelectionConfig,
 )
@@ -116,12 +115,7 @@ from .parallel import (
     create_parallel_selector,
 )
 
-from .optimizations import (
-    VectorizedFeatureSelector,
-    OptimizedCorrelationFilter,
-    OptimizedVarianceFilter,
-    create_vectorized_selector,
-)
+# Vectorized operations are now handled by the integrated hardware manager
 
 from .sparse import (
     SparseFeatureSelector as SparseMatrixSelector,
@@ -129,11 +123,7 @@ from .sparse import (
     create_sparse_selector,
 )
 
-from .chunked import (
-    ChunkedFeatureProcessor as ChunkedProcessor,
-    AdaptiveChunkProcessor,
-    create_chunked_processor,
-)
+# Chunked processing is now handled by the integrated hardware manager
 
 # Advanced selection methods
 from .advanced import (
@@ -196,7 +186,6 @@ __all__ = [
     'VectorBTMRMRSelector',
     'VectorBTRegularizationSelector',
     'VectorBTRFESelector',
-    'VectorBTMemoryOptimizer',
     'VectorBTRollingOperations',
     'VectorBTFeatureSelectionConfig',
 
@@ -249,18 +238,9 @@ __all__ = [
     'ParallelSelectionManager',
     'create_parallel_selector',
 
-    'VectorizedFeatureSelector',
-    'OptimizedCorrelationFilter',
-    'OptimizedVarianceFilter',
-    'create_vectorized_selector',
-
     'SparseMatrixSelector',
     'SparseMatrixProcessor',
     'create_sparse_selector',
-
-    'ChunkedProcessor',
-    'AdaptiveChunkProcessor',
-    'create_chunked_processor',
 
     # Advanced selection methods
     'AdvancedFeatureSelector',

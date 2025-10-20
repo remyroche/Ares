@@ -5,16 +5,6 @@ This module provides optimized implementations of feature selection operations
 including vectorized operations and algorithm-specific optimizations.
 """
 
-from .vectorized_operations import (
-    VectorizedFeatureSelector,
-    OptimizedCorrelationFilter,
-    OptimizedVarianceFilter,
-    create_vectorized_selector
-)
+# Vectorized operations are now handled by the integrated hardware manager
 
-__all__ = [
-    'VectorizedFeatureSelector',
-    'OptimizedCorrelationFilter',
-    'OptimizedVarianceFilter',
-    'create_vectorized_selector'
-]
+__all__ = []

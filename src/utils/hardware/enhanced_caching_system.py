@@ -29,6 +29,10 @@ from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_performance, tprint_timer, LogLevel
 )
+from .advanced_memory_manager import (
+    get_advanced_memory_manager, MemoryConfig as AdvancedMemoryConfig,
+    memory_efficient_processing, chunked_processing, track_memory_usage
+)
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +355,18 @@ class EnhancedCacheSystem:
         self.data_type_optimizer = DataTypeOptimizer(self.config)
         self.compression_manager = CompressionManager(self.config)
         
+        # Advanced memory management
+        memory_config = AdvancedMemoryConfig(
+            enable_aggressive_gc=True,
+            gc_threshold_mb=self.config.max_memory_mb * 0.8,
+            enable_memory_pressure_detection=True,
+            enable_chunking=True,
+            default_chunk_size_mb=self.config.max_memory_mb * 0.1,
+            enable_memory_pools=True,
+            pool_size_mb=self.config.max_memory_mb * 0.2
+        )
+        self.memory_manager = get_advanced_memory_manager(memory_config)
+        
         # Statistics
         self.statistics = CacheStatistics()
         self._access_history = deque(maxlen=1000)  # For LFU strategy
@@ -394,13 +410,17 @@ class EnhancedCacheSystem:
     def _check_memory_pressure(self):
         """Check memory pressure and trigger cleanup if needed."""
         try:
+            # Use advanced memory manager for pressure detection
+            memory_stats = self.memory_manager.get_memory_stats()
             current_memory = self._get_current_memory_usage()
             memory_ratio = current_memory / (self.config.max_memory_mb * 1024 * 1024)
             
-            if memory_ratio > self.config.aggressive_cleanup_threshold:
-                tprint_warning(f"High memory usage: {memory_ratio:.1%}, triggering cleanup")
+            # Check both cache memory and system memory pressure
+            if (memory_ratio > self.config.aggressive_cleanup_threshold or 
+                memory_stats.pressure_level.value in ['high', 'critical']):
+                tprint_warning(f"High memory usage: {memory_ratio:.1%}, system pressure: {memory_stats.pressure_level.value}")
                 self._aggressive_cleanup()
-            elif memory_ratio > 0.8:
+            elif memory_ratio > 0.8 or memory_stats.pressure_level.value == 'medium':
                 self._evict_items(0.1)  # Evict 10% of items
                 
         except Exception as e:
@@ -608,8 +628,8 @@ class EnhancedCacheSystem:
         # Evict 50% of items
         self._evict_items(0.5)
         
-        # Force garbage collection
-        gc.collect()
+        # Use advanced memory manager for comprehensive cleanup
+        self.memory_manager.cleanup_all()
         
         # Clear access history
         self._access_history.clear()

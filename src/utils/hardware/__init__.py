@@ -12,6 +12,21 @@ from .enhanced_caching_system import (
     get_global_cache, optimize_dataframe_default, optimize_numpy_array_default
 )
 
+# Import advanced memory management
+from .advanced_memory_manager import (
+    AdvancedMemoryManager, MemoryConfig, MemoryPressureLevel, ChunkingStrategy,
+    get_advanced_memory_manager, memory_efficient_processing, chunked_processing,
+    track_memory_usage, force_garbage_collection, cleanup_all_memory
+)
+
+# Import memory-optimized decorators
+from .memory_optimized_decorators import (
+    memory_optimized, gc_optimized, chunked_processing_auto,
+    comprehensive_memory_optimization, MemoryOptimizationLevel,
+    optimize_large_dataframes, optimize_large_arrays, optimize_memory_intensive,
+    optimize_streaming_processing, get_memory_optimization_stats
+)
+
 from .optimization_decorators import (
     smart_cache, auto_optimize, memory_efficient, performance_tracked,
     cache_dataframe_result, cache_numpy_result, optimize_heavy_computation,
@@ -108,6 +123,42 @@ def track_perf():
     """Track function performance."""
     return performance_tracked()
 
+# Advanced memory management functions
+def optimize_with_gc(df):
+    """Optimize DataFrame with garbage collection."""
+    from .memory_optimized_decorators import optimize_dataframe_with_gc
+    return optimize_dataframe_with_gc(df)
+
+def optimize_array_with_gc(arr):
+    """Optimize NumPy array with garbage collection."""
+    from .memory_optimized_decorators import optimize_array_with_gc
+    return optimize_array_with_gc(arr)
+
+def memory_optimized_function(level='aggressive'):
+    """Apply memory optimization to function."""
+    return memory_optimized(optimization_level=MemoryOptimizationLevel[level.upper()])
+
+def chunked_function(chunk_size_mb=50.0):
+    """Apply chunked processing to function."""
+    return chunked_processing_auto(chunk_size_mb=chunk_size_mb)
+
+def gc_optimized_function():
+    """Apply garbage collection optimization to function."""
+    return gc_optimized()
+
+def comprehensive_optimization():
+    """Apply comprehensive memory optimization to function."""
+    return comprehensive_memory_optimization()
+
+def force_cleanup():
+    """Force garbage collection and memory cleanup."""
+    force_garbage_collection()
+    cleanup_all_memory()
+
+def get_memory_stats():
+    """Get comprehensive memory statistics."""
+    return get_memory_optimization_stats()
+
 # Global initialization
 def initialize_optimization_system():
     """Initialize the optimization system with default settings."""
@@ -146,6 +197,17 @@ __all__ = [
     'EnhancedCacheSystem', 'CacheConfig', 'DataTypeOptimization', 'CacheStrategy',
     'get_global_cache', 'optimize_dataframe_default', 'optimize_numpy_array_default',
     
+    # Advanced memory management
+    'AdvancedMemoryManager', 'MemoryConfig', 'MemoryPressureLevel', 'ChunkingStrategy',
+    'get_advanced_memory_manager', 'memory_efficient_processing', 'chunked_processing',
+    'track_memory_usage', 'force_garbage_collection', 'cleanup_all_memory',
+    
+    # Memory-optimized decorators
+    'memory_optimized', 'gc_optimized', 'chunked_processing_auto',
+    'comprehensive_memory_optimization', 'MemoryOptimizationLevel',
+    'optimize_large_dataframes', 'optimize_large_arrays', 'optimize_memory_intensive',
+    'optimize_streaming_processing', 'get_memory_optimization_stats',
+    
     # Decorators
     'smart_cache', 'auto_optimize', 'memory_efficient', 'performance_tracked',
     'cache_dataframe_result', 'cache_numpy_result', 'optimize_heavy_computation',
@@ -163,6 +225,9 @@ __all__ = [
     # Convenience functions
     'optimize_dataframe', 'optimize_array', 'cache_result', 'optimize_function',
     'make_efficient', 'track_perf', 'get_optimization_status', 'clear_all_caches',
+    'optimize_with_gc', 'optimize_array_with_gc', 'memory_optimized_function',
+    'chunked_function', 'gc_optimized_function', 'comprehensive_optimization',
+    'force_cleanup', 'get_memory_stats',
     
     # Utilities
     'apply_optimization_patches', 'remove_optimization_patches',

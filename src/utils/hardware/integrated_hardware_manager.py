@@ -21,6 +21,14 @@ from .optimization_decorators import (
     smart_cache, auto_optimize, memory_efficient, performance_tracked,
     OptimizationConfig, OptimizationLevel as DecoratorOptimizationLevel
 )
+from .memory_optimized_decorators import (
+    memory_optimized, gc_optimized, chunked_processing_auto,
+    comprehensive_memory_optimization, MemoryOptimizationLevel,
+    optimize_large_dataframes, optimize_large_arrays, optimize_memory_intensive
+)
+from .advanced_memory_manager import (
+    get_advanced_memory_manager, MemoryConfig as AdvancedMemoryConfig
+)
 from .m1_memory_optimizer import M1MemoryOptimizer
 from .m1_cpu_optimizer import M1CPUOptimizer
 from .enhanced_gpu_manager import EnhancedM1GPUManager
@@ -93,6 +101,19 @@ class IntegratedHardwareManager:
         self.hardware_manager = UnifiedHardwareManager(self.config.hardware_config)
         self.cache_system = EnhancedCacheSystem(self.config.cache_config)
         
+        # Initialize advanced memory manager
+        memory_config = AdvancedMemoryConfig(
+            enable_aggressive_gc=True,
+            gc_threshold_mb=self.config.cache_memory_limit_mb * 0.8,
+            enable_memory_pressure_detection=True,
+            enable_chunking=True,
+            default_chunk_size_mb=self.config.cache_memory_limit_mb * 0.1,
+            enable_memory_pools=True,
+            pool_size_mb=self.config.cache_memory_limit_mb * 0.2,
+            enable_weak_references=True
+        )
+        self.advanced_memory_manager = get_advanced_memory_manager(memory_config)
+        
         # Initialize individual optimizers
         self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
         self.cpu_optimizer = M1CPUOptimizer()
@@ -142,7 +163,13 @@ class IntegratedHardwareManager:
         
         return result
     
-    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @comprehensive_memory_optimization(
+        optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+        enable_caching=True,
+        enable_chunking=True,
+        enable_gc=True,
+        enable_pools=True
+    )
     def process_data_with_optimization(self, data: Any, 
                                      workload_type: WorkloadType = WorkloadType.GENERAL) -> Any:
         """Process data with automatic optimization and caching."""
@@ -222,14 +249,19 @@ class IntegratedHardwareManager:
         # Get memory optimizer stats
         memory_stats = self.memory_optimizer.get_memory_stats()
         
+        # Get advanced memory manager stats
+        advanced_memory_stats = self.advanced_memory_manager.get_detailed_memory_info()
+        
         return {
             'hardware_memory': hardware_stats.get('memory_stats', {}),
             'cache_memory': cache_stats,
             'memory_optimizer': memory_stats,
+            'advanced_memory': advanced_memory_stats,
             'performance_metrics': self.performance_metrics,
             'total_memory_usage_mb': (
                 cache_stats.get('total_memory_used_mb', 0) +
-                memory_stats.get('used_memory', 0) / (1024 * 1024)
+                memory_stats.get('used_memory', 0) / (1024 * 1024) +
+                advanced_memory_stats.get('memory_stats', {}).get('used_mb', 0)
             )
         }
     
@@ -249,6 +281,9 @@ class IntegratedHardwareManager:
         """Clear all caches and reset optimization state."""
         self.cache_system.clear()
         self.hardware_manager.reset_hardware_state()
+        
+        # Clear advanced memory manager
+        self.advanced_memory_manager.cleanup_all()
         
         # Reset performance metrics
         self.performance_metrics = {

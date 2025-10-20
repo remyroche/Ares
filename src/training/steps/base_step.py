@@ -180,7 +180,7 @@ class BaseStep(ABC):
         optimized_df = self.hardware_manager.optimize_dataframe(df)
         return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support and memory optimization.
@@ -212,7 +212,7 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.

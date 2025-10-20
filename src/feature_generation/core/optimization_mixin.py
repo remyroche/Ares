@@ -20,6 +20,14 @@ from functools import wraps
 import time
 import gc
 
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    optimize_dataframe_default, optimize_numpy_array_default,
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    get_memory_optimization_stats, force_cleanup,
+    MemoryOptimizationLevel, WorkloadType, get_integrated_hardware_manager
+)
+
 class OptimizationMixin:
     """Mixin class that provides optimization capabilities for feature generators."""
 
@@ -45,6 +53,8 @@ class OptimizationMixin:
         # Setup logger
         self.logger = logging.getLogger(self.__class__.__name__)
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Optimize DataFrame for efficient processing.
@@ -61,33 +71,53 @@ class OptimizationMixin:
             return data
 
         try:
-            # Check memory usage
-            memory_usage_mb = data.memory_usage(deep=True).sum() / (1024**2)
-
-            if memory_usage_mb > self.memory_threshold_mb:
-                self.logger.debug(f"Optimizing DataFrame: {memory_usage_mb:.2f}MB > {self.memory_threshold_mb}MB")
-
-                # Optimize dtypes
-                optimized_data = self._optimize_dtypes(data)
-
-                # Compress data if enabled
-                if self.enable_data_compression:
-                    optimized_data = self._compress_data(optimized_data)
-
-                # Update stats
-                self.optimization_stats['memory_optimizations'] += 1
-                memory_saved = memory_usage_mb - (optimized_data.memory_usage(deep=True).sum() / (1024**2))
-                self.optimization_stats['memory_saved_mb'] += memory_saved
-
-                self.logger.debug(f"Memory optimization saved {memory_saved:.2f}MB")
-
-                return optimized_data
-            else:
-                return data
+            # Use enhanced hardware optimization system
+            optimized_data = optimize_dataframe_default(data)
+            
+            # Calculate memory savings
+            original_memory = data.memory_usage(deep=True).sum() / (1024 * 1024)
+            optimized_memory = optimized_data.memory_usage(deep=True).sum() / (1024 * 1024)
+            memory_saved = original_memory - optimized_memory
+            
+            # Update statistics
+            self.optimization_stats['memory_optimizations'] += 1
+            self.optimization_stats['memory_saved_mb'] += memory_saved
+            
+            if memory_saved > 0:
+                self.logger.debug(f"Enhanced memory optimization: {memory_saved:.2f} MB saved")
+            
+            return optimized_data
 
         except Exception as e:
-            self.logger.warning(f"DataFrame optimization failed: {e}")
-            return data
+            self.logger.warning(f"Enhanced DataFrame optimization failed: {e}, using fallback")
+            # Fallback to basic optimization
+            try:
+                # Check memory usage
+                memory_usage_mb = data.memory_usage(deep=True).sum() / (1024**2)
+
+                if memory_usage_mb > self.memory_threshold_mb:
+                    self.logger.debug(f"Optimizing DataFrame: {memory_usage_mb:.2f}MB > {self.memory_threshold_mb}MB")
+
+                    # Optimize dtypes
+                    optimized_data = self._optimize_dtypes(data)
+
+                    # Compress data if enabled
+                    if self.enable_data_compression:
+                        optimized_data = self._compress_data(optimized_data)
+
+                    # Update stats
+                    self.optimization_stats['memory_optimizations'] += 1
+                    memory_saved = memory_usage_mb - (optimized_data.memory_usage(deep=True).sum() / (1024**2))
+                    self.optimization_stats['memory_saved_mb'] += memory_saved
+
+                    self.logger.debug(f"Memory optimization saved {memory_saved:.2f}MB")
+
+                    return optimized_data
+                else:
+                    return data
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback optimization also failed: {fallback_error}")
+                return data
         finally:
             self.optimization_stats['total_optimization_time'] += time.time() - start_time
 
@@ -215,10 +245,26 @@ class OptimizationMixin:
             self.logger.warning(f"Chunked processing failed: {e}")
             return func(data, **kwargs)
 
+    @gc_optimized
     def optimize_memory_usage(self) -> None:
-        """Optimize memory usage by forcing garbage collection."""
+        """Optimize memory usage using enhanced hardware optimizations."""
         if self.enable_memory_optimization:
-            gc.collect()
+            try:
+                # Use enhanced memory optimization
+                force_cleanup()
+                
+                # Get memory statistics
+                memory_stats = get_memory_optimization_stats()
+                memory_saved = memory_stats.get('memory_saved_mb', 0.0)
+                
+                if memory_saved > 0:
+                    self.logger.debug(f"Enhanced memory optimization: {memory_saved:.2f} MB saved")
+                    self.optimization_stats['memory_saved_mb'] += memory_saved
+                    
+            except Exception as e:
+                self.logger.warning(f"Enhanced memory optimization failed: {e}, using fallback")
+                # Fallback to basic garbage collection
+                gc.collect()
 
     def get_optimization_stats(self) -> Dict[str, Any]:
         """Get optimization statistics."""

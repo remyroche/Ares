@@ -25,6 +25,14 @@ from ..utils.memory_pool_optimizer import MemoryPoolOptimizer, get_global_memory
 from src.utils.unified_cache import UnifiedCache
 from src.utils.tprint import tprint
 
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    optimize_dataframe_default, optimize_numpy_array_default,
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    get_memory_optimization_stats, force_cleanup,
+    MemoryOptimizationLevel, WorkloadType, get_integrated_hardware_manager
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -2122,9 +2130,11 @@ class FeatureBank:
         # Execute the batch
         return self.vectorbt_batcher.execute_batch()
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def _optimize_memory_usage(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Optimize memory usage of a DataFrame using the memory pool.
+        Optimize memory usage of a DataFrame using enhanced hardware optimizations.
         
         Args:
             data: DataFrame to optimize
@@ -2132,15 +2142,24 @@ class FeatureBank:
         Returns:
             Memory-optimized DataFrame
         """
-        # Use memory pool context manager for temporary operations
-        with self.memory_pool.get_dataframe(data.shape[0], data.shape[1]) as temp_df:
-            # Copy data to optimized DataFrame
-            temp_df = data.copy()
-            
-            # Apply memory optimizations
-            temp_df = self.memory_pool._optimize_dataframe_memory(temp_df)
-            
-            return temp_df.copy()
+        try:
+            # Use enhanced hardware optimization system
+            return optimize_dataframe_default(data)
+        except Exception as e:
+            self.logger.warning(f"Enhanced memory optimization failed: {e}, using fallback")
+            # Fallback to memory pool optimization
+            try:
+                with self.memory_pool.get_dataframe(data.shape[0], data.shape[1]) as temp_df:
+                    # Copy data to optimized DataFrame
+                    temp_df = data.copy()
+                    
+                    # Apply memory optimizations
+                    temp_df = self.memory_pool._optimize_dataframe_memory(temp_df)
+                    
+                    return temp_df.copy()
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback memory optimization also failed: {fallback_error}")
+                return data
 
     def _combine_results(self, results: List[FeatureResult], index: pd.Index) -> pd.DataFrame:
         """

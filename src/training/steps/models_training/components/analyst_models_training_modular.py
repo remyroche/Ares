@@ -174,16 +174,7 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
         model_configs = {}
         
         for model_type in self.analyst_config.model_types:
-            if model_type == AnalystModelType.TCN:
-                model_configs[model_type.value] = {
-                    'type': 'neural_network',
-                    'architecture': 'tcn',
-                    'layers': 3,
-                    'filters': 64,
-                    'kernel_size': 3,
-                    'dilation_rate': 2
-                }
-            elif model_type == AnalystModelType.LIGHTGBM:
+            if model_type == AnalystModelType.LIGHTGBM:
                 model_configs[model_type.value] = {
                     'type': 'tree_based',
                     'algorithm': 'lightgbm',
@@ -192,30 +183,36 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                     'learning_rate': 0.1,
                     'num_leaves': 31
                 }
-            elif model_type == AnalystModelType.RIDGE:
-                model_configs[model_type.value] = {
-                    'type': 'linear',
-                    'algorithm': 'ridge',
-                    'alpha': 1.0,
-                    'solver': 'auto'
-                }
-            elif model_type == AnalystModelType.ELASTIC_NET:
-                model_configs[model_type.value] = {
-                    'type': 'linear',
-                    'algorithm': 'elastic_net',
-                    'alpha': 1.0,
-                    'l1_ratio': 0.5,
-                    'max_iter': 1000
-                }
-            elif model_type == AnalystModelType.RANDOM_FOREST:
+            elif model_type == AnalystModelType.LIGHTGBM_PATCHTST:
                 model_configs[model_type.value] = {
                     'type': 'tree_based',
-                    'algorithm': 'random_forest',
+                    'algorithm': 'lightgbm',
                     'n_estimators': 100,
-                    'max_depth': 10,
-                    'min_samples_split': 2
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'num_leaves': 31,
+                    'patchtst_features': True
                 }
-            # NAS/TAS model types removed
+            elif model_type == AnalystModelType.CATBOOST:
+                model_configs[model_type.value] = {
+                    'type': 'tree_based',
+                    'algorithm': 'catboost',
+                    'iterations': 100,
+                    'learning_rate': 0.1,
+                    'depth': 6,
+                    'l2_leaf_reg': 3
+                }
+            elif model_type == AnalystModelType.STACKER_LGBM_CALIBRATED:
+                model_configs[model_type.value] = {
+                    'type': 'tree_based',
+                    'algorithm': 'lightgbm',
+                    'n_estimators': 100,
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'num_leaves': 31,
+                    'calibrated': True,
+                    'meta_learner': True
+                }
         
         self.set_ml_state('model_configs', model_configs)
     

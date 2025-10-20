@@ -18,27 +18,12 @@ NEW FEATURES:
 - Migration utilities for existing components
 """
 
-# Import ModularComponent architecture
-from .unified_data_driven_pipeline.core import (
+# Import ModularComponent architecture from base_component
+from .components.base_component import (
     ModularComponent,
-    ExampleModularComponent,
-    ValidationLevel,
-    ValidationResult,
     ErrorInfo,
-    PerformanceMetric,
-    MetricType,
-    MetricLevel,
     ErrorSeverity,
-    ErrorCategory,
-    create_modular_component,
-    ModelsTrainingMigrationUtils,
-    ComponentAnalysis,
-    MigrationResult,
-    analyze_component,
-    validate_migration_compatibility,
-    create_component_wrapper,
-    migrate_component,
-    generate_migration_report
+    ErrorCategory
 )
 
 # Import base components
@@ -82,26 +67,9 @@ __version__ = "2.0.0"
 __all__ = [
     # Core ModularComponent architecture
     'ModularComponent',
-    'ExampleModularComponent',
-    'ValidationLevel',
-    'ValidationResult',
     'ErrorInfo',
-    'PerformanceMetric',
-    'MetricType',
-    'MetricLevel',
     'ErrorSeverity',
     'ErrorCategory',
-    'create_modular_component',
-    
-    # Migration utilities
-    'ModelsTrainingMigrationUtils',
-    'ComponentAnalysis',
-    'MigrationResult',
-    'analyze_component',
-    'validate_migration_compatibility',
-    'create_component_wrapper',
-    'migrate_component',
-    'generate_migration_report',
     
     # Base components
     'BaseModelsTrainingComponent',

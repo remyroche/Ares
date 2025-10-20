@@ -18,9 +18,75 @@ import time
 from typing import Any, Dict, List, Optional, Union
 from abc import abstractmethod
 
-from ..unified_data_driven_pipeline.core.modular_architecture import (
-    ModularComponent, ErrorInfo, ErrorSeverity, ErrorCategory
-)
+# from ..unified_data_driven_pipeline.core.modular_architecture import (
+#     ModularComponent, ErrorInfo, ErrorSeverity, ErrorCategory
+# )  # REMOVED - unified pipeline deleted
+
+# Define minimal base classes for compatibility
+class ModularComponent:
+    """Minimal base class for modular components."""
+    def __init__(self, name: str, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
+        self.name = name
+        self.config = config or {}
+        self.logger = logger or logging.getLogger(name)
+        self._initialized = False
+        self._performance_stats = {}
+    
+    def initialize(self) -> bool:
+        """Initialize the component."""
+        self._initialized = True
+        return True
+    
+    def cleanup(self) -> None:
+        """Cleanup the component."""
+        self._initialized = False
+    
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get configuration value."""
+        return self.config.get(key, default)
+    
+    def set_ml_state(self, key: str, value: Any) -> None:
+        """Set ML state."""
+        if not hasattr(self, '_ml_state'):
+            self._ml_state = {}
+        self._ml_state[key] = value
+    
+    def get_ml_state(self, key: str, default: Any = None) -> Any:
+        """Get ML state."""
+        if not hasattr(self, '_ml_state'):
+            return default
+        return self._ml_state.get(key, default)
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics."""
+        return self._performance_stats.copy()
+    
+    def process(self, data: Any, **kwargs) -> Any:
+        """Process data."""
+        return self._process_data(data, **kwargs)
+    
+    def _process_data(self, data: Any, **kwargs) -> Any:
+        """Process data - to be implemented by subclasses."""
+        raise NotImplementedError
+
+class ErrorInfo:
+    """Error information class."""
+    def __init__(self, message: str, severity: str = "ERROR", category: str = "GENERAL"):
+        self.message = message
+        self.severity = severity
+        self.category = category
+
+class ErrorSeverity:
+    """Error severity levels."""
+    ERROR = "ERROR"
+    WARNING = "WARNING"
+    INFO = "INFO"
+
+class ErrorCategory:
+    """Error categories."""
+    GENERAL = "GENERAL"
+    VALIDATION = "VALIDATION"
+    PROCESSING = "PROCESSING"
 
 
 class BaseModelsTrainingComponent(ModularComponent):

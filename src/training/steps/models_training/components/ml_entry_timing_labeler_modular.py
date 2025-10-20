@@ -30,9 +30,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .base_component import BaseModelsTrainingComponent
-from ..unified_data_driven_pipeline.core.modular_architecture import (
-    ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
-)
+# from ..unified_data_driven_pipeline.core.modular_architecture import (
+#     ErrorInfo, ErrorSeverity, ErrorCategory, ValidationResult
+# )  # REMOVED - unified pipeline deleted
 
 
 class LabelingMethod(Enum):

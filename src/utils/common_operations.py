@@ -11,18 +11,33 @@ import os
 from contextlib import contextmanager
 
 # Enhanced hardware optimization imports
-from src.utils.hardware import (
-    optimize_dataframe_default, optimize_numpy_array_default,
-    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
-    get_memory_optimization_stats, force_cleanup,
-    MemoryOptimizationLevel, WorkloadType
-)
+try:
+    from src.utils.hardware.optimization_decorators import (
+        memory_efficient, auto_optimize, OptimizationConfig, OptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy decorators
+    def memory_efficient(config=None):
+        def decorator(func):
+            return func
+        return decorator
+    def auto_optimize(config=None):
+        def decorator(func):
+            return func
+        return decorator
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
+@auto_optimize(OptimizationConfig(
+    enable_caching=True,
+    enable_dtype_optimization=True,
+    optimization_level=OptimizationLevel.BALANCED
+))
 def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
-    """Run a dataframe op with a tiny safety net."""
+    """Run a dataframe op with enhanced hardware optimization and safety net."""
     if not callable(operation_func):
         raise TypeError("operation_func must be callable")
     df = operation_func(*args, **kwargs)
@@ -57,32 +72,41 @@ def get_memory_usage() -> Dict[str, float]:
         'optimized': False
     }
 
-@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-@performance_tracked
+@memory_efficient(OptimizationConfig(
+    enable_dtype_optimization=True,
+    optimization_level=OptimizationLevel.AGGRESSIVE,
+    enable_compression=True
+))
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
-    """Optimize DataFrame memory usage using enhanced hardware optimizations."""
+    """Optimize DataFrame memory usage using enhanced hardware optimization tools."""
+    # Use enhanced optimization system
     try:
-        # Use enhanced optimization system
+        from src.utils.hardware.enhanced_caching_system import optimize_dataframe_default
         return optimize_dataframe_default(df)
-    except Exception as e:
-        logger.warning(f"Enhanced DataFrame optimization failed: {e}, using fallback")
-        # Fallback to basic optimization
-        df_opt = df.copy()
-        
-        # Downcast integers
-        for col in df_opt.select_dtypes(include=['int']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
-        
-        # Downcast floats
-        for col in df_opt.select_dtypes(include=['float']).columns:
-            df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
-        
-        # Convert object columns to category if beneficial
-        for col in df_opt.select_dtypes(include=['object']).columns:
-            if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
-                df_opt[col] = df_opt[col].astype('category')
-        
-        return df_opt
+    except ImportError:
+        # Fallback to enhanced hardware optimization
+        try:
+            from src.utils.hardware.m1_unified_memory_manager import get_unified_memory_manager
+            memory_manager = get_unified_memory_manager()
+            return memory_manager.optimize_dataframe(df, enable_compression=True)
+        except ImportError:
+            # Final fallback to original implementation
+            df_opt = df.copy()
+            
+            # Downcast integers
+            for col in df_opt.select_dtypes(include=['int']).columns:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='integer')
+            
+            # Downcast floats
+            for col in df_opt.select_dtypes(include=['float']).columns:
+                df_opt[col] = pd.to_numeric(df_opt[col], downcast='float')
+            
+            # Convert object columns to category if beneficial
+            for col in df_opt.select_dtypes(include=['object']).columns:
+                if df_opt[col].nunique() / len(df_opt) < 0.5:  # If less than 50% unique values
+                    df_opt[col] = df_opt[col].astype('category')
+            
+            return df_opt
 
 @auto_optimize(optimize_inputs=True, optimize_outputs=True)
 @performance_tracked

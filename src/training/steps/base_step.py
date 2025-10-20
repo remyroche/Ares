@@ -86,6 +86,25 @@ from src.utils.hardware import (
     get_integrated_hardware_manager, WorkloadCategory
 )
 
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
+    from src.utils.hardware.optimization_decorators import (
+        auto_optimize, memory_efficient, OptimizationConfig, OptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy decorators
+    def auto_optimize(config=None):
+        def decorator(func):
+            return func
+        return decorator
+    def memory_efficient(config=None):
+        def decorator(func):
+            return func
+        return decorator
+
 
 class BaseStep(ABC):
     """
@@ -111,8 +130,16 @@ class BaseStep(ABC):
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
         
-        # Initialize hardware manager for optimization
-        self.hardware_manager = get_integrated_hardware_manager()
+        # Initialize enhanced hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.logger.info("Enhanced hardware optimization initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize hardware optimization: {e}")
+                self.hardware_manager = None
+        else:
+            self.hardware_manager = None
         
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
@@ -140,7 +167,11 @@ class BaseStep(ABC):
         
         self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization")
     
-    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
@@ -159,7 +190,11 @@ class BaseStep(ABC):
         )
         return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
-    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED
+    ))
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support and memory optimization.
@@ -178,7 +213,10 @@ class BaseStep(ABC):
             )
         return data
     
-    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @memory_efficient(OptimizationConfig(
+        enable_compression=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE
+    ))
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
@@ -193,7 +231,10 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
-    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        optimization_level=OptimizationLevel.BALANCED
+    ))
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.

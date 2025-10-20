@@ -183,7 +183,7 @@ def create_balanced_config() -> UnifiedConfig:
     """Create a balanced configuration for good performance and stability."""
     optimization = OptimizationConfig(
         use_vectorbt=True,
-        enable_gpu=False,
+        enable_gpu=True,
         enable_parallel=True,
         memory_efficient=True,
         enable_caching=True,
@@ -196,7 +196,7 @@ def create_balanced_config() -> UnifiedConfig:
     vectorbt = VectorBTConfig(
         enable_vectorbt=True,
         enable_parallel_processing=True,
-        enable_gpu=False,
+        enable_gpu=True,
         enable_auto_optimization=True,
         optimization_level='balanced',
         enable_caching=True,
@@ -210,7 +210,7 @@ def create_conservative_config() -> UnifiedConfig:
     """Create a conservative configuration for maximum stability."""
     optimization = OptimizationConfig(
         use_vectorbt=True,
-        enable_gpu=False,
+        enable_gpu=True,
         enable_parallel=False,
         memory_efficient=False,
         enable_caching=False,
@@ -223,7 +223,7 @@ def create_conservative_config() -> UnifiedConfig:
     vectorbt = VectorBTConfig(
         enable_vectorbt=True,
         enable_parallel_processing=False,
-        enable_gpu=False,
+        enable_gpu=True,
         enable_auto_optimization=False,
         optimization_level='conservative',
         enable_caching=False,

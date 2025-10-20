@@ -380,3 +380,110 @@ class ValidationMixin:
             recommendations.append("Validation errors detected - check error logs")
 
         return recommendations
+
+    def validate_and_sanitize(self, data: Union[pd.Series, pd.DataFrame], 
+                            data_name: str = "data") -> Tuple[Union[pd.Series, pd.DataFrame], bool, List[str]]:
+        """
+        Validate and sanitize input data.
+        
+        This method combines validation and sanitization in a single call,
+        returning the sanitized data along with validation results.
+        
+        Args:
+            data: Input data to validate and sanitize
+            data_name: Name of the data for error messages
+            
+        Returns:
+            Tuple of (sanitized_data, is_valid, warnings)
+        """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔍 [ValidationMixin] Validating and sanitizing {data_name}", color="cyan")
+        
+        # First validate the data
+        is_valid, warnings = self.validate_data(data, data_name)
+        
+        # Sanitize the data
+        sanitized_data = self._sanitize_data(data, data_name)
+        
+        if TPRINT_AVAILABLE:
+            if is_valid:
+                tprint(f"✅ [ValidationMixin] {data_name} validation and sanitization completed", color="green")
+            else:
+                tprint(f"⚠️  [ValidationMixin] {data_name} validation completed with warnings", color="yellow")
+        
+        return sanitized_data, is_valid, warnings
+
+    def _sanitize_data(self, data: Union[pd.Series, pd.DataFrame], 
+                      data_name: str = "data") -> Union[pd.Series, pd.DataFrame]:
+        """
+        Sanitize input data by handling common issues.
+        
+        Args:
+            data: Input data to sanitize
+            data_name: Name of the data for logging
+            
+        Returns:
+            Sanitized data
+        """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [ValidationMixin] Sanitizing {data_name}", color="blue")
+        
+        try:
+            # Make a copy to avoid modifying original data
+            sanitized = data.copy()
+            
+            # Handle NaN values
+            if hasattr(sanitized, 'isna'):
+                na_count = sanitized.isna().sum()
+                if hasattr(na_count, 'sum'):
+                    na_count = na_count.sum()
+                
+                if na_count > 0:
+                    if TPRINT_AVAILABLE:
+                        tprint(f"⚠️  [ValidationMixin] Found {na_count} NaN values in {data_name}, filling with forward fill", color="yellow")
+                    
+                    # Use forward fill for time series data, otherwise fill with 0
+                    if isinstance(sanitized, pd.Series):
+                        sanitized = sanitized.fillna(method='ffill').fillna(0)
+                    else:
+                        sanitized = sanitized.fillna(method='ffill', axis=0).fillna(0)
+            
+            # Handle infinite values
+            if hasattr(sanitized, 'replace'):
+                inf_count = np.isinf(sanitized).sum()
+                if hasattr(inf_count, 'sum'):
+                    inf_count = inf_count.sum()
+                
+                if inf_count > 0:
+                    if TPRINT_AVAILABLE:
+                        tprint(f"⚠️  [ValidationMixin] Found {inf_count} infinite values in {data_name}, replacing with NaN", color="yellow")
+                    
+                    sanitized = sanitized.replace([np.inf, -np.inf], np.nan)
+                    sanitized = sanitized.fillna(0)
+            
+            # Ensure numeric data types for numeric columns
+            if isinstance(sanitized, pd.DataFrame):
+                for col in sanitized.columns:
+                    if pd.api.types.is_numeric_dtype(sanitized[col]):
+                        # Convert to numeric, coercing errors to NaN
+                        sanitized[col] = pd.to_numeric(sanitized[col], errors='coerce')
+                        # Fill any resulting NaN values
+                        sanitized[col] = sanitized[col].fillna(0)
+            elif isinstance(sanitized, pd.Series):
+                if pd.api.types.is_numeric_dtype(sanitized):
+                    sanitized = pd.to_numeric(sanitized, errors='coerce').fillna(0)
+            
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [ValidationMixin] {data_name} sanitization completed", color="green")
+            
+            return sanitized
+            
+        except Exception as e:
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [ValidationMixin] Failed to sanitize {data_name}: {e}", color="red")
+            logger.warning(f"Data sanitization failed for {data_name}: {e}")
+            return data  # Return original data if sanitization fails

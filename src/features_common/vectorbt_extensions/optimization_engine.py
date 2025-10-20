@@ -108,7 +108,7 @@ class VectorBTOptimizationEngine:
             # Apply hardware optimization if available
             if self.hardware_available and self._should_use_hardware_optimization(data, operation):
                 optimized_data = self._apply_hardware_optimization(data, workload_type)
-                result = self._execute_optimized_operation(operation, optimized_data, **kwargs)
+                result = self._execute_optimized_operation(operation, optimized_data, workload_type, **kwargs)
                 self.optimization_stats['hardware_optimizations'] += 1
             else:
                 # Use standard optimization
@@ -157,7 +157,7 @@ class VectorBTOptimizationEngine:
             return data
 
     def _execute_optimized_operation(self, operation: str, data: Union[pd.DataFrame, pd.Series], 
-                                   **kwargs) -> Any:
+                                   workload_type: str = 'data_processing', **kwargs) -> Any:
         """Execute operation with hardware optimization."""
         try:
             # Use integrated hardware manager based on workload type

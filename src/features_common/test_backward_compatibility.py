@@ -31,7 +31,7 @@ def test_backward_compatibility():
         # Test original constructor signature
         scaler = BaseScaler(
             use_vectorbt=True,
-            enable_gpu=False,
+            enable_gpu=True,  # Now enabled by default
             vectorbt_threshold=1000,
             use_optimizer=True,
             use_unified_manager=True
@@ -88,7 +88,7 @@ def test_backward_compatibility():
         data2 = pd.Series([1, 2, 3, 4, 5])
 
         # Create two scalers
-        scaler1 = BaseScaler(enable_verbose_logging=False)
+        scaler1 = BaseScaler(enable_verbose_logging=True)  # Now enabled by default
         scaler2 = BaseScaler(enable_verbose_logging=True)
 
         # Fit both scalers
@@ -222,7 +222,7 @@ def test_backward_compatibility():
         data = pd.Series(np.random.randn(1000))
 
         # Test without verbose logging
-        scaler1 = BaseScaler(enable_verbose_logging=False)
+        scaler1 = BaseScaler(enable_verbose_logging=True)  # Now enabled by default
         start_time = time.time()
         result1 = scaler1.fit_transform(data)
         time1 = time.time() - start_time

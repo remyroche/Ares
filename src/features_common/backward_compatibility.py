@@ -25,32 +25,34 @@ class BackwardCompatibleBaseScaler(EnhancedBaseScaler):
     while providing optional enhanced logging and error handling.
     """
 
-    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False,
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = True,
                  vectorbt_threshold: int = 100, use_optimizer: bool = True,
-                 use_unified_manager: bool = True, enable_verbose_logging: bool = False,
-                 **kwargs):
+                 use_unified_manager: bool = True, enable_verbose_logging: bool = True,
+                 enable_hardware_optimization: bool = True, **kwargs):
         """
-        Initialize the backward-compatible scaler.
+        Initialize the backward-compatible scaler with enhanced features enabled by default.
 
         Args:
-            use_vectorbt: Whether to use VectorBT optimizations
-            enable_gpu: Whether to enable GPU acceleration
-            vectorbt_threshold: Minimum data size for VectorBT optimization
-            use_optimizer: Whether to use VectorBTRollingOptimizer
-            use_unified_manager: Whether to use UnifiedVectorizationManager
-            enable_verbose_logging: Whether to enable verbose logging
+            use_vectorbt: Whether to use VectorBT optimizations (default: True)
+            enable_gpu: Whether to enable GPU acceleration (default: True)
+            vectorbt_threshold: Minimum data size for VectorBT optimization (default: 100)
+            use_optimizer: Whether to use VectorBTRollingOptimizer (default: True)
+            use_unified_manager: Whether to use UnifiedVectorizationManager (default: True)
+            enable_verbose_logging: Whether to enable verbose logging (default: True)
+            enable_hardware_optimization: Whether to enable hardware optimization (default: True)
             **kwargs: Additional configuration parameters
         """
         # Store verbose logging preference
         self.enable_verbose_logging = enable_verbose_logging
 
-        # Initialize the enhanced base class
+        # Initialize the enhanced base class with hardware optimization enabled by default
         super().__init__(
             use_vectorbt=use_vectorbt,
             enable_gpu=enable_gpu,
             vectorbt_threshold=vectorbt_threshold,
             use_optimizer=use_optimizer,
             use_unified_manager=use_unified_manager,
+            enable_hardware_optimization=enable_hardware_optimization,
             **kwargs
         )
 
@@ -144,13 +146,16 @@ def enable_enhanced_logging(enable: bool = True):
     """
     enable_verbose_logging(enable)
 
-def create_enhanced_scaler(method: str = 'zscore', enable_verbose_logging: bool = False, **kwargs):
+def create_enhanced_scaler(method: str = 'zscore', enable_verbose_logging: bool = True, 
+                          enable_hardware_optimization: bool = True, enable_gpu: bool = True, **kwargs):
     """
-    Create an enhanced scaler with optional verbose logging.
+    Create an enhanced scaler with all optimizations enabled by default.
 
     Args:
         method: Scaling method ('zscore', 'minmax', 'robust', 'quantile')
-        enable_verbose_logging: Whether to enable verbose logging
+        enable_verbose_logging: Whether to enable verbose logging (default: True)
+        enable_hardware_optimization: Whether to enable hardware optimization (default: True)
+        enable_gpu: Whether to enable GPU acceleration (default: True)
         **kwargs: Additional arguments for the scaler
 
     Returns:
@@ -158,10 +163,15 @@ def create_enhanced_scaler(method: str = 'zscore', enable_verbose_logging: bool 
     """
     from .factories import create_optimized_scaler
 
-    # Create the enhanced scaler
-    scaler = create_optimized_scaler(method=method, **kwargs)
+    # Create the enhanced scaler with all optimizations enabled by default
+    scaler = create_optimized_scaler(
+        method=method, 
+        enable_hardware_optimization=enable_hardware_optimization,
+        enable_gpu=enable_gpu,
+        **kwargs
+    )
 
-    # Enable verbose logging if requested
+    # Enable verbose logging by default
     if enable_verbose_logging:
         scaler.enable_verbose_logging = True
         scaler._setup_verbose_logging()

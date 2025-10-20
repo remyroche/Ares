@@ -83,7 +83,7 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
     - set_state: Restore state from persistence
     """
 
-    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = False, vectorbt_threshold: int = 100,
+    def __init__(self, use_vectorbt: bool = True, enable_gpu: bool = True, vectorbt_threshold: int = 100,
                  use_optimizer: bool = True, use_unified_manager: bool = True, 
                  enable_hardware_optimization: bool = True, **kwargs):
         """
@@ -533,6 +533,22 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
             tprint(message, color="red")
         else:
             logger.error(message)
+
+    def _validate_fitted(self) -> None:
+        """
+        Validate that scaler has been fitted before transforming.
+
+        Raises:
+            ValueError: If scaler has not been fitted
+        """
+        if not self.fitted:
+            error_msg = (
+                f"{self.__class__.__name__} must be fitted before calling transform(). "
+                "Call fit_transform() first."
+            )
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ {error_msg}", color="red", bold=True)
+            raise ValueError(error_msg)
 
     def _validate_numeric_input(self, data: pd.Series, name: str = "input") -> None:
         """

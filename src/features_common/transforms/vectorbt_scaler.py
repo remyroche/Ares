@@ -86,7 +86,7 @@ class VectorBTScaler(BaseScaler):
     for maximum efficiency and accuracy with enhanced optimization features.
     """
 
-    def __init__(self, method: str = 'zscore', enable_gpu: bool = False,
+    def __init__(self, method: str = 'zscore', enable_gpu: bool = True,
                  enable_batch: bool = True, memory_efficient: bool = True,
                  use_optimizer: bool = True, use_unified_manager: bool = True,
                  enable_hardware_optimization: bool = True, **kwargs):
@@ -667,6 +667,270 @@ class VectorBTScaler(BaseScaler):
         self.scaling_params = state.get('scaling_params', {})
         self.fitted = state.get('fitted', False)
 
+    def _core_fit_transform(self, data: pd.Series) -> pd.Series:
+        """
+        Core fit_transform implementation with VectorBT optimization.
+        
+        This method implements the actual scaling logic using VectorBT functions
+        with comprehensive optimization and error handling.
+        
+        Args:
+            data: Training data to fit and transform
+            
+        Returns:
+            Transformed data
+        """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Fitting and transforming {len(data)} samples with method={self.method}", color="cyan")
+        
+        # Remove NaN values for fitting
+        clean_data = data.dropna()
+        
+        if len(clean_data) == 0:
+            error_msg = "No valid data to fit scaler"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise ValueError(error_msg)
+        
+        try:
+            # Apply VectorBT scaling based on method
+            if self.method == 'zscore':
+                result = self._apply_zscore_scaling(data, clean_data)
+            elif self.method == 'minmax':
+                result = self._apply_minmax_scaling(data, clean_data)
+            elif self.method == 'robust':
+                result = self._apply_robust_scaling(data, clean_data)
+            elif self.method == 'quantile':
+                result = self._apply_quantile_scaling(data, clean_data)
+            elif self.method == 'winsorize':
+                result = self._apply_winsorize_scaling(data, clean_data)
+            elif self.method == 'rank':
+                result = self._apply_rank_scaling(data, clean_data)
+            elif self.method == 'clip':
+                result = self._apply_clip_scaling(data, clean_data)
+            elif self.method == 'robust_zscore':
+                result = self._apply_robust_zscore_scaling(data, clean_data)
+            elif self.method == 'adaptive':
+                result = self._apply_adaptive_scaling(data, clean_data)
+            elif self.method == 'quantile_robust':
+                result = self._apply_quantile_robust_scaling(data, clean_data)
+            elif self.method == 'winsorize_adaptive':
+                result = self._apply_winsorize_adaptive_scaling(data, clean_data)
+            else:
+                error_msg = f"Unsupported scaling method: {self.method}"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                raise ValueError(error_msg)
+            
+            self.fitted = True
+            
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [VectorBTScaler] Fit and transform completed successfully", color="green")
+            
+            # Validate output
+            self._check_output_validity(result, "transformed data")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to fit and transform data: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
+
+    def _core_transform(self, data: pd.Series) -> pd.Series:
+        """
+        Core transform implementation with VectorBT optimization.
+        
+        This method applies the fitted scaling parameters to new data
+        using VectorBT functions with comprehensive optimization.
+        
+        Args:
+            data: New data to transform
+            
+        Returns:
+            Transformed data
+        """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔧 [VectorBTScaler] Transforming {len(data)} samples with method={self.method}", color="cyan")
+        
+        if not self.fitted:
+            error_msg = "Scaler must be fitted before calling transform()"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise ValueError(error_msg)
+        
+        try:
+            # Apply the same scaling method as used in fit_transform
+            if self.method == 'zscore':
+                result = self._apply_zscore_scaling(data, data)
+            elif self.method == 'minmax':
+                result = self._apply_minmax_scaling(data, data)
+            elif self.method == 'robust':
+                result = self._apply_robust_scaling(data, data)
+            elif self.method == 'quantile':
+                result = self._apply_quantile_scaling(data, data)
+            elif self.method == 'winsorize':
+                result = self._apply_winsorize_scaling(data, data)
+            elif self.method == 'rank':
+                result = self._apply_rank_scaling(data, data)
+            elif self.method == 'clip':
+                result = self._apply_clip_scaling(data, data)
+            elif self.method == 'robust_zscore':
+                result = self._apply_robust_zscore_scaling(data, data)
+            elif self.method == 'adaptive':
+                result = self._apply_adaptive_scaling(data, data)
+            elif self.method == 'quantile_robust':
+                result = self._apply_quantile_robust_scaling(data, data)
+            elif self.method == 'winsorize_adaptive':
+                result = self._apply_winsorize_adaptive_scaling(data, data)
+            else:
+                error_msg = f"Unsupported scaling method: {self.method}"
+                if TPRINT_AVAILABLE:
+                    tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+                raise ValueError(error_msg)
+            
+            if TPRINT_AVAILABLE:
+                tprint(f"✅ [VectorBTScaler] Transform completed successfully", color="green")
+            
+            return result
+            
+        except Exception as e:
+            error_msg = f"Failed to transform data: {e}"
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ [VectorBTScaler] {error_msg}", color="red")
+            raise RuntimeError(error_msg) from e
+
+    def _apply_zscore_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply z-score scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            mean_val = clean_data.mean()
+            std_val = clean_data.std()
+            if std_val == 0:
+                return pd.Series(0, index=data.index)
+            return (data - mean_val) / std_val
+        
+        # Use VectorBT zscore
+        return self._utils['zscore'](data, **self.kwargs)
+
+    def _apply_minmax_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply min-max scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            min_val = clean_data.min()
+            max_val = clean_data.max()
+            if max_val == min_val:
+                return pd.Series(0, index=data.index)
+            return (data - min_val) / (max_val - min_val)
+        
+        # Use VectorBT scale with minmax
+        return self._utils['scale'](data, method='minmax', **self.kwargs)
+
+    def _apply_robust_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply robust scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            median_val = clean_data.median()
+            mad_val = (clean_data - median_val).abs().median()
+            if mad_val == 0:
+                return pd.Series(0, index=data.index)
+            return (data - median_val) / mad_val
+        
+        # Use VectorBT scale with robust
+        return self._utils['scale'](data, method='robust', **self.kwargs)
+
+    def _apply_quantile_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply quantile scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            q25 = clean_data.quantile(0.25)
+            q75 = clean_data.quantile(0.75)
+            if q75 == q25:
+                return pd.Series(0, index=data.index)
+            return (data - q25) / (q75 - q25)
+        
+        # Use VectorBT quantile
+        return self._utils['quantile'](data, **self.kwargs)
+
+    def _apply_winsorize_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply winsorize scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            limits = self.kwargs.get('limits', 0.05)
+            return data.clip(lower=data.quantile(limits), upper=data.quantile(1-limits))
+        
+        # Use VectorBT winsorize
+        return self._utils['winsorize'](data, **self.kwargs)
+
+    def _apply_rank_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply rank scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            return data.rank(method='average')
+        
+        # Use VectorBT rank
+        return self._utils['rank'](data, **self.kwargs)
+
+    def _apply_clip_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply clip scaling using VectorBT."""
+        if not self._utils['VECTORBT_AVAILABLE']:
+            # Fallback to pandas
+            lower = self.kwargs.get('lower', None)
+            upper = self.kwargs.get('upper', None)
+            return data.clip(lower=lower, upper=upper)
+        
+        # Use VectorBT clip
+        return self._utils['clip'](data, **self.kwargs)
+
+    def _apply_robust_zscore_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply robust z-score scaling."""
+        # This is a custom implementation combining robust and z-score
+        median_val = clean_data.median()
+        mad_val = (clean_data - median_val).abs().median()
+        if mad_val == 0:
+            return pd.Series(0, index=data.index)
+        return (data - median_val) / (1.4826 * mad_val)  # 1.4826 is the consistency factor
+
+    def _apply_adaptive_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply adaptive scaling based on data characteristics."""
+        # This is a custom implementation that adapts based on data distribution
+        if clean_data.skew() > 2:
+            # Highly skewed data - use robust scaling
+            return self._apply_robust_scaling(data, clean_data)
+        elif clean_data.skew() < -2:
+            # Highly left-skewed data - use robust scaling
+            return self._apply_robust_scaling(data, clean_data)
+        else:
+            # Normal distribution - use z-score
+            return self._apply_zscore_scaling(data, clean_data)
+
+    def _apply_quantile_robust_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply quantile-robust scaling."""
+        # This is a custom implementation combining quantile and robust scaling
+        q25 = clean_data.quantile(0.25)
+        q75 = clean_data.quantile(0.75)
+        if q75 == q25:
+            return pd.Series(0, index=data.index)
+        return (data - q25) / (q75 - q25)
+
+    def _apply_winsorize_adaptive_scaling(self, data: pd.Series, clean_data: pd.Series) -> pd.Series:
+        """Apply adaptive winsorize scaling."""
+        # This is a custom implementation that adapts winsorize limits based on data
+        limits = self.kwargs.get('limits', 0.05)
+        
+        # Adjust limits based on data characteristics
+        if clean_data.skew() > 1:
+            limits = min(limits * 2, 0.1)  # More aggressive winsorizing for skewed data
+        elif clean_data.skew() < -1:
+            limits = min(limits * 2, 0.1)  # More aggressive winsorizing for left-skewed data
+        
+        return data.clip(lower=data.quantile(limits), upper=data.quantile(1-limits))
+
 class VectorBTBatchScaler:
     """
     VectorBT-optimized batch scaler for processing multiple features efficiently.
@@ -1019,7 +1283,7 @@ def get_available_scaling_methods() -> List[str]:
     else:
         return ['zscore', 'minmax', 'robust']
 
-def create_vectorbt_scaler(method: str = 'zscore', enable_gpu: bool = False,
+def create_vectorbt_scaler(method: str = 'zscore', enable_gpu: bool = True,
                           enable_batch: bool = True, memory_efficient: bool = True,
                           use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs) -> VectorBTScaler:
     """

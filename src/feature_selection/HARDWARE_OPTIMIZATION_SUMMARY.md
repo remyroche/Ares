@@ -8,10 +8,9 @@ This document summarizes the hardware optimization integration implemented acros
 ### 1. Hardware Optimization Decorators
 Applied to all major feature selection functions:
 
-- **`@memory_efficient`**: Automatic memory optimization with configurable thresholds
-- **`@performance_tracked`**: Performance monitoring and logging
-- **`@smart_cache`**: Intelligent caching with TTL and data type optimization
-- **`@auto_optimize`**: Automatic data type optimization
+- **`@memory_efficient`**: Automatic memory optimization with configurable thresholds and data type optimization
+- **`@performance_tracked`**: Performance monitoring and logging with context-aware tracking
+- **`@smart_cache`**: Intelligent caching with TTL and context-aware cache management
 
 ### 2. Integrated Hardware Manager
 Replaced custom optimizations with `get_integrated_hardware_manager()`:

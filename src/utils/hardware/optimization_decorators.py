@@ -65,7 +65,8 @@ def smart_cache(
     ttl: Optional[float] = None,
     key_func: Optional[Callable] = None,
     cache_config: Optional[CacheConfig] = None,
-    optimization_config: Optional[OptimizationConfig] = None
+    optimization_config: Optional[OptimizationConfig] = None,
+    auto_detect_context: bool = True
 ):
     """
     Smart caching decorator with automatic data type optimization.
@@ -81,6 +82,28 @@ def smart_cache(
         def wrapper(*args, **kwargs):
             # Get optimization config
             config = optimization_config or OptimizationConfig()
+            
+            # Auto-detect context if enabled
+            if auto_detect_context:
+                # Detect if this function should be cached based on function name and data size
+                func_name = func.__name__.lower()
+                should_cache = any(keyword in func_name for keyword in [
+                    'select', 'compute', 'calculate', 'process', 'correlation', 
+                    'mutual', 'variance', 'stability', 'ensemble'
+                ])
+                
+                # Auto-adjust TTL based on function type
+                if ttl is None:
+                    if any(keyword in func_name for keyword in ['correlation', 'mutual', 'variance']):
+                        ttl = 3600  # 1 hour for statistical calculations
+                    elif any(keyword in func_name for keyword in ['select', 'ensemble']):
+                        ttl = 1800  # 30 minutes for selection methods
+                    else:
+                        ttl = 600   # 10 minutes for general functions
+                
+                # Enable caching if function should be cached
+                if should_cache:
+                    config.enable_caching = True
             
             # Generate cache key
             if key_func:
@@ -134,67 +157,69 @@ def smart_cache(
         return wrapper
     return decorator
 
-def auto_optimize(
-    optimization_level: OptimizationLevel = OptimizationLevel.AGGRESSIVE,
+# @auto_optimize functionality is now merged into @memory_efficient
+
+def memory_efficient(
+    memory_threshold_mb: float = None,  # Auto-detect if None
+    enable_compression: bool = True,
+    auto_cleanup: bool = True,
+    optimization_level: OptimizationLevel = None,  # Auto-detect if None
     optimize_inputs: bool = True,
-    optimize_outputs: bool = True
+    optimize_outputs: bool = True,
+    auto_detect_context: bool = True
 ):
     """
-    Automatic data type optimization decorator.
+    Memory-efficient decorator with automatic cleanup, optimization, and data type optimization.
     
     Args:
-        optimization_level: Level of optimization to apply
+        memory_threshold_mb: Memory threshold for triggering optimizations
+        enable_compression: Whether to enable compression for large data
+        auto_cleanup: Whether to automatically clean up memory
+        optimization_level: Level of data type optimization to apply
         optimize_inputs: Whether to optimize function inputs
         optimize_outputs: Whether to optimize function outputs
     """
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            # Create optimization config
-            config = OptimizationConfig(
-                enable_caching=False,  # This decorator is for optimization only
-                enable_dtype_optimization=True,
-                optimization_level=optimization_level,
-                optimize_inputs=optimize_inputs,
-                optimize_outputs=optimize_outputs
-            )
-            
-            # Optimize inputs
-            if optimize_inputs:
-                optimized_args, optimized_kwargs = _optimize_inputs(args, kwargs, config)
-            else:
-                optimized_args, optimized_kwargs = args, kwargs
-            
-            # Execute function
-            result = func(*optimized_args, **optimized_kwargs)
-            
-            # Optimize outputs
-            if optimize_outputs:
-                result = _optimize_output(result, config)
-            
-            return result
-        
-        return wrapper
-    return decorator
-
-def memory_efficient(
-    memory_threshold_mb: float = 100.0,
-    enable_compression: bool = True,
-    auto_cleanup: bool = True
-):
-    """
-    Memory-efficient decorator with automatic cleanup and optimization.
-    
-    Args:
-        memory_threshold_mb: Memory threshold for triggering optimizations
-        enable_compression: Whether to enable compression for large data
-        auto_cleanup: Whether to automatically clean up memory
-    """
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
             # Get cache for memory monitoring
             cache = get_global_cache()
+            
+            # Auto-detect context if enabled
+            if auto_detect_context:
+                # Detect data size from first argument
+                data_size_mb = 0
+                if args and hasattr(args[0], 'nbytes'):
+                    data_size_mb = args[0].nbytes / (1024 * 1024)
+                elif args and hasattr(args[0], 'shape'):
+                    # Estimate size for numpy arrays
+                    data_size_mb = np.prod(args[0].shape) * 8 / (1024 * 1024)  # Assume float64
+                
+                # Auto-adjust memory threshold based on data size
+                if memory_threshold_mb is None:
+                    if data_size_mb > 1000:  # Large dataset
+                        memory_threshold_mb = 2000.0
+                        optimization_level = optimization_level or OptimizationLevel.AGGRESSIVE
+                    elif data_size_mb > 100:  # Medium dataset
+                        memory_threshold_mb = 500.0
+                        optimization_level = optimization_level or OptimizationLevel.BALANCED
+                    else:  # Small dataset
+                        memory_threshold_mb = 100.0
+                        optimization_level = optimization_level or OptimizationLevel.MINIMAL
+                
+                # Auto-adjust optimization level based on function name
+                if optimization_level is None:
+                    func_name = func.__name__.lower()
+                    if any(keyword in func_name for keyword in ['ensemble', 'comprehensive', 'stability']):
+                        optimization_level = OptimizationLevel.AGGRESSIVE
+                    elif any(keyword in func_name for keyword in ['correlation', 'mutual', 'variance']):
+                        optimization_level = OptimizationLevel.BALANCED
+                    else:
+                        optimization_level = OptimizationLevel.MINIMAL
+            
+            # Use defaults if not auto-detected
+            memory_threshold_mb = memory_threshold_mb or 100.0
+            optimization_level = optimization_level or OptimizationLevel.BALANCED
             
             # Check memory usage before execution
             initial_memory = cache._get_current_memory_usage()
@@ -204,9 +229,34 @@ def memory_efficient(
                 tprint_warning(f"High memory usage detected: {initial_memory_mb:.1f}MB, cleaning up...")
                 cache._aggressive_cleanup()
             
+            # Optimize inputs if enabled
+            if optimize_inputs:
+                # Create optimization config
+                config = OptimizationConfig(
+                    enable_caching=False,  # This decorator handles memory, not caching
+                    enable_dtype_optimization=True,
+                    optimization_level=optimization_level,
+                    optimize_inputs=optimize_inputs,
+                    optimize_outputs=optimize_outputs
+                )
+                optimized_args, optimized_kwargs = _optimize_inputs(args, kwargs, config)
+            else:
+                optimized_args, optimized_kwargs = args, kwargs
+            
             # Execute function with memory monitoring
             try:
-                result = func(*args, **kwargs)
+                result = func(*optimized_args, **optimized_kwargs)
+                
+                # Optimize outputs if enabled
+                if optimize_outputs:
+                    config = OptimizationConfig(
+                        enable_caching=False,
+                        enable_dtype_optimization=True,
+                        optimization_level=optimization_level,
+                        optimize_inputs=optimize_inputs,
+                        optimize_outputs=optimize_outputs
+                    )
+                    result = _optimize_output(result, config)
                 
                 # Check memory usage after execution
                 final_memory = cache._get_current_memory_usage()
@@ -230,9 +280,10 @@ def memory_efficient(
     return decorator
 
 def performance_tracked(
-    log_performance: bool = True,
+    log_performance: bool = None,  # Auto-detect if None
     track_memory: bool = True,
-    track_cache_hits: bool = True
+    track_cache_hits: bool = True,
+    auto_detect_context: bool = True
 ):
     """
     Performance tracking decorator.
@@ -245,6 +296,18 @@ def performance_tracked(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            # Auto-detect context if enabled
+            if auto_detect_context and log_performance is None:
+                # Detect if this is a performance-critical function
+                func_name = func.__name__.lower()
+                if any(keyword in func_name for keyword in ['select', 'process', 'compute', 'calculate']):
+                    log_performance = True
+                else:
+                    log_performance = False
+            
+            # Use default if not auto-detected
+            log_performance = log_performance if log_performance is not None else True
+            
             # Performance tracking
             start_time = time.perf_counter()
             initial_memory = 0

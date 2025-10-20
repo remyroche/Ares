@@ -18,7 +18,6 @@ from src.utils.hardware import (
     memory_efficient,
     performance_tracked,
     smart_cache,
-    auto_optimize,
     WorkloadType,
     OptimizationLevel
 )

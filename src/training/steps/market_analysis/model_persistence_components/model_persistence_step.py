@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from .training.base_step import BaseStep
+from src.training.steps.base_step import BaseStep
 from .model_serializer import ModelSerializer
 from .version_manager import VersionManager
 from .metadata_tracker import MetadataTracker
@@ -25,17 +25,16 @@ class ModelPersistenceStep(BaseStep):
     """Step 21: Model Persistence with comprehensive saving and versioning."""
     @log_important_calls
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, step_name: str = "model_persistence") -> None:
         """Initialize the Model Persistence step.
 
         Args:
-            config: Configuration dictionary
+            step_name: Name of the step
         """
         # 🖨️ THOROUGH PRINTING: Model Persistence Step Initialization
         tprint("🔧 INITIALIZING MODEL PERSISTENCE STEP")
-        tprint(f"   📋 Configuration: {config}")
 
-        super().__init__(config, '21', 'model_persistence')
+        super().__init__(step_name)
         tprint("   ✅ Base step initialized")
     @log_step_functions
 
@@ -69,20 +68,20 @@ class ModelPersistenceStep(BaseStep):
         tprint("   📋 Initializing persistence configuration...")
 
         config = {
-            'base_dir': self.config.get('model_storage_dir', 'models'),
-            'enable_versioning': self.config.get('enable_versioning', True),
-            'compression': self.config.get('model_compression', True),
-            'save_formats': self.config.get('save_formats', ['pickle', 'joblib', 'onnx']),
-            'track_lineage': self.config.get('track_model_lineage', True),
-            'save_training_data_stats': self.config.get('save_training_data_stats', True),
-            'save_feature_importance': self.config.get('save_feature_importance', True),
-            'use_model_registry': self.config.get('use_model_registry', True),
-            'registry_backend': self.config.get('registry_backend', 'local'),
-            'enable_mlflow': self.config.get('enable_mlflow', False),
-            'mlflow_tracking_uri': self.config.get('mlflow_tracking_uri', None),
-            'create_backups': self.config.get('create_backups', True),
-            'backup_location': self.config.get('backup_location', 'model_backups'),
-            'max_backups': self.config.get('max_backups', 5)
+            'base_dir': 'models',
+            'enable_versioning': True,
+            'compression': True,
+            'save_formats': ['pickle', 'joblib', 'onnx'],
+            'track_lineage': True,
+            'save_training_data_stats': True,
+            'save_feature_importance': True,
+            'use_model_registry': True,
+            'registry_backend': 'local',
+            'enable_mlflow': False,
+            'mlflow_tracking_uri': None,
+            'create_backups': True,
+            'backup_location': 'model_backups',
+            'max_backups': 5
         }
 
         tprint(f"   📁 Base directory: {config['base_dir']}")
@@ -117,44 +116,122 @@ class ModelPersistenceStep(BaseStep):
             errors.append("Missing 'exchange' in training input")
         return (len(errors) == 0, errors)
 
-    @handles_errors(exceptions=(Exception,), default_return={'success': False}, context='model persistence logic')
-    async def execute_logic(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the model persistence logic.
 
         Args:
-            training_input: Training input parameters
-            pipeline_state: Current pipeline state
+            config: Configuration dictionary
 
         Returns:
-            Updated pipeline state with persistence results
+            Dictionary with persistence results
         """
         self.logger.info('💾 Starting model persistence...')
-        symbol = training_input['symbol']
-        exchange = training_input['exchange']
+        
+        # Set context for artifact management
+        self._set_context(
+            symbol=config.get('symbol', 'ETHUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            direction=config.get('direction', 'both'),
+            model=config.get('model', 'default')
+        )
+        
+        # Update persistence config from provided config
+        self.persistence_config.update({
+            'base_dir': config.get('model_storage_dir', self.persistence_config['base_dir']),
+            'enable_versioning': config.get('enable_versioning', self.persistence_config['enable_versioning']),
+            'compression': config.get('model_compression', self.persistence_config['compression']),
+            'save_formats': config.get('save_formats', self.persistence_config['save_formats']),
+            'track_lineage': config.get('track_model_lineage', self.persistence_config['track_lineage']),
+            'save_training_data_stats': config.get('save_training_data_stats', self.persistence_config['save_training_data_stats']),
+            'save_feature_importance': config.get('save_feature_importance', self.persistence_config['save_feature_importance']),
+            'use_model_registry': config.get('use_model_registry', self.persistence_config['use_model_registry']),
+            'registry_backend': config.get('registry_backend', self.persistence_config['registry_backend']),
+            'enable_mlflow': config.get('enable_mlflow', self.persistence_config['enable_mlflow']),
+            'mlflow_tracking_uri': config.get('mlflow_tracking_uri', self.persistence_config['mlflow_tracking_uri']),
+            'create_backups': config.get('create_backups', self.persistence_config['create_backups']),
+            'backup_location': config.get('backup_location', self.persistence_config['backup_location']),
+            'max_backups': config.get('max_backups', self.persistence_config['max_backups'])
+        })
+        
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
         timestamp = datetime.now()
         version_info = await self.version_manager.create_version(symbol, exchange, timestamp)
         self.logger.info(f"Created version: {version_info['version']}")
-        models_to_save = self._collect_models(pipeline_state)
+        
+        # Load models from artifacts
+        models_to_save = self._collect_models_from_artifacts()
+        
         for category, models in models_to_save.items():
             self.logger.info(f'Saving {category}...')
-            saved_paths = await self._save_model_category(category, models, version_info, pipeline_state)
+            saved_paths = await self._save_model_category(category, models, version_info, config)
             self.saved_artifacts[category] = saved_paths
-        metadata = await self.metadata_tracker.create_metadata(training_input, pipeline_state, self.saved_artifacts, version_info)
+            
+        metadata = await self.metadata_tracker.create_metadata(config, {}, self.saved_artifacts, version_info)
         metadata_path = await self._save_metadata(metadata, version_info)
         self.saved_artifacts['metadata'] = metadata_path
+        
         if self.persistence_config['use_model_registry']:
             registry_entries = await self.model_registry.register_models(self.saved_artifacts, metadata, version_info)
             self.logger.info(f'Registered {len(registry_entries)} models in registry')
-        training_summary = await self._create_training_summary(pipeline_state, self.saved_artifacts, metadata)
+            
+        training_summary = await self._create_training_summary({}, self.saved_artifacts, metadata)
         report_path = await self._save_training_report(training_summary, version_info)
         self.saved_artifacts['training_report'] = report_path
-        result = pipeline_state.copy()
-        result['model_persistence_results'] = {'version': version_info, 'saved_artifacts': self.saved_artifacts, 'metadata': metadata, 'summary': self._create_persistence_summary()}
-        return result
+        
+        # Save artifacts using artifact manager
+        self._save_artifact('model_persistence_results', {
+            'version': version_info,
+            'saved_artifacts': self.saved_artifacts,
+            'metadata': metadata,
+            'summary': self._create_persistence_summary()
+        })
+        
+        return {
+            'success': True,
+            'version': version_info,
+            'saved_artifacts': self.saved_artifacts,
+            'metadata': metadata,
+            'summary': self._create_persistence_summary()
+        }
     @log_all_calls
 
+    def _collect_models_from_artifacts(self) -> Dict[str, Any]:
+        """Collect all models from artifacts.
+
+        Returns:
+            Dictionary of models by category
+        """
+        models = {}
+        
+        # Try to load models from various possible artifact names
+        model_artifacts = [
+            'tactician_specialist_models', 'analyst_ensembles', 
+            'enhanced_analyst_models', 'calibrated_models',
+            'models', 'trained_models', 'ml_models'
+        ]
+        
+        for artifact_name in model_artifacts:
+            try:
+                model_data = self._get_artifact(artifact_name)
+                if model_data is not None:
+                    if 'tactician' in artifact_name:
+                        models['tactician_specialists'] = model_data
+                    elif 'ensemble' in artifact_name:
+                        models['analyst_ensembles'] = model_data
+                    elif 'enhanced' in artifact_name:
+                        models['enhanced_analysts'] = model_data
+                    elif 'calibrated' in artifact_name:
+                        models['calibrated_models'] = model_data
+                    else:
+                        models['general_models'] = model_data
+            except Exception as e:
+                self.logger.debug(f"Could not load {artifact_name}: {e}")
+                
+        return models
+
     def _collect_models(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Collect all models from pipeline state.
+        """Collect all models from pipeline state (legacy method).
 
         Args:
             pipeline_state: Pipeline state
@@ -173,14 +250,14 @@ class ModelPersistenceStep(BaseStep):
             models['calibrated_models'] = pipeline_state['calibrated_models']
         return models
 
-    async def _save_model_category(self, category: str, models: Any, version_info: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, str]:
+    async def _save_model_category(self, category: str, models: Any, version_info: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, str]:
         """Save a category of models.
 
         Args:
             category: Model category name
             models: Models to save
             version_info: Version information
-            pipeline_state: Pipeline state for additional context
+            config: Configuration for additional context
 
         Returns:
             Dictionary of saved file paths
@@ -190,7 +267,7 @@ class ModelPersistenceStep(BaseStep):
         for model_name, model in flattened_models.items():
             try:
                 model_id = f'{category}_{model_name}'
-                model_metadata = await self._extract_model_metadata(model, model_name, category, pipeline_state)
+                model_metadata = await self._extract_model_metadata(model, model_name, category, config)
                 for format_name in self.persistence_config['save_formats']:
                     try:
                         path = await self.model_serializer.save_model(model, model_id, format_name, version_info, model_metadata)
@@ -230,14 +307,14 @@ class ModelPersistenceStep(BaseStep):
             flattened[prefix or 'model'] = models
         return flattened
 
-    async def _extract_model_metadata(self, model: Any, model_name: str, category: str, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def _extract_model_metadata(self, model: Any, model_name: str, category: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """Extract metadata for a model.
 
         Args:
             model: Model object
             model_name: Model name
             category: Model category
-            pipeline_state: Pipeline state
+            config: Configuration
 
         Returns:
             Model metadata dictionary
@@ -246,10 +323,10 @@ class ModelPersistenceStep(BaseStep):
         if hasattr(model, 'get_params'):
             metadata['parameters'] = model.get_params()
         if category == 'tactician_specialists':
-            eval_results = pipeline_state.get('specialist_evaluation_results', {})
+            eval_results = config.get('specialist_evaluation_results', {})
             metadata['performance_metrics'] = self._extract_performance_metrics(model_name, eval_results)
         if self.persistence_config['save_training_data_stats']:
-            metadata['training_data_stats'] = self._extract_training_stats(pipeline_state)
+            metadata['training_data_stats'] = self._extract_training_stats(config)
         return metadata
     @log_all_calls
 
@@ -266,17 +343,28 @@ class ModelPersistenceStep(BaseStep):
         return metrics
     @log_all_calls
 
-    def _extract_training_stats(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_training_stats(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Extract training data statistics."""
         stats = {'total_samples': 0, 'feature_count': 0, 'regime_count': 0, 'date_range': {}}
-        if 'tactician_labeled_data' in pipeline_state:
-            data = pipeline_state['tactician_labeled_data']
-            stats['total_samples'] = len(data)
-            stats['feature_count'] = len(data.columns)
-            if hasattr(data.index, 'min') and hasattr(data.index, 'max'):
-                stats['date_range'] = {'start': str(data.index.min()), 'end': str(data.index.max())}
-        if 'regime_data' in pipeline_state:
-            stats['regime_count'] = len(pipeline_state['regime_data'])
+        
+        # Try to load training data from artifacts
+        try:
+            training_data = self._get_artifact('tactician_labeled_data') or self._get_artifact('training_data')
+            if training_data is not None:
+                stats['total_samples'] = len(training_data)
+                stats['feature_count'] = len(training_data.columns)
+                if hasattr(training_data.index, 'min') and hasattr(training_data.index, 'max'):
+                    stats['date_range'] = {'start': str(training_data.index.min()), 'end': str(training_data.index.max())}
+        except Exception as e:
+            self.logger.debug(f"Could not load training data stats: {e}")
+            
+        try:
+            regime_data = self._get_artifact('regime_data')
+            if regime_data is not None:
+                stats['regime_count'] = len(regime_data)
+        except Exception as e:
+            self.logger.debug(f"Could not load regime data stats: {e}")
+            
         return stats
 
     async def _save_feature_importance(self, model: Any, model_id: str, version_info: Dict[str, Any]) -> Optional[str]:
@@ -434,3 +522,16 @@ class ModelPersistenceStep(BaseStep):
     def get_dependencies(self) -> List[str]:
         """Get list of step dependencies."""
         return []
+
+
+# Register the step
+def register_model_persistence_step():
+    """Register the model persistence step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("model_persistence", ModelPersistenceStep)
+    print("✅ Model persistence step registered")
+
+
+# Auto-register when module is imported
+register_model_persistence_step()

@@ -95,79 +95,7 @@ class BaseTrainingConfig:
     augmentation_method: str = "smote"  # smote, adasyn
     augmentation_ratio: float = 1.0
 
-    # Regime configuration
-    min_samples_per_regime: int = 500  # 🔧 Reduced from 1000 to 500 for better regime coverage
-    enable_regime_merging: bool = True
-    regime_merge_threshold: int = 300  # 🔧 Reduced from 500 to 300 to align with new min_samples
 
-@dataclass
-class PerRegimeTrainingConfig(BaseTrainingConfig):
-    """Configuration for per-regime training steps."""
-
-    # Model types to train
-    model_types: List[str] = field(default_factory=lambda: [
-        "TCN", "CatBoostRegressor", "LGBMRegressor", "RandomForestRegressor",
-        "ExtraTreesRegressor", "BayesianRuleLists"
-    ])
-
-    # Model-specific HPO search spaces
-    hpo_search_spaces: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        'TCN': {
-            'hidden_size': {'type': 'int', 'low': 32, 'high': 128},
-            'num_layers': {'type': 'int', 'low': 1, 'high': 4},
-            'dropout': {'type': 'float', 'low': 0.1, 'high': 0.5},
-            'learning_rate': {'type': 'float', 'low': 0.001, 'high': 0.1, 'log': True}
-        },
-        'CatBoostRegressor': {
-            'n_estimators': {'type': 'int', 'low': 500, 'high': 1200},
-            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.06, 'log': True},
-            'depth': {'type': 'int', 'low': 4, 'high': 6},
-            'l2_leaf_reg': {'type': 'float', 'low': 6.0, 'high': 12.0},
-            'subsample': {'type': 'float', 'low': 0.5, 'high': 0.9},
-            'colsample_bylevel': {'type': 'float', 'low': 0.5, 'high': 0.9},
-            'bootstrap_type': {'type': 'categorical', 'choices': ['Bayesian', 'Bernoulli']}
-        },
-        'LGBMRegressor': {
-            'n_estimators': {'type': 'int', 'low': 200, 'high': 600},
-            'learning_rate': {'type': 'float', 'low': 0.03, 'high': 0.05, 'log': True},
-            'max_depth': {'type': 'int', 'low': 3, 'high': 5},
-            'num_leaves': {'type': 'int', 'low': 15, 'high': 31},
-            'min_data_in_leaf': {'type': 'int', 'low': 50, 'high': 150},
-            'feature_fraction': {'type': 'float', 'low': 0.6, 'high': 0.9},
-            'lambda_l1': {'type': 'float', 'low': 0.0, 'high': 0.1},
-            'lambda_l2': {'type': 'float', 'low': 0.0, 'high': 0.1}
-        },
-        'RandomForestRegressor': {
-            'n_estimators': {'type': 'int', 'low': 100, 'high': 1000},
-            'max_depth': {'type': 'int', 'low': 5, 'high': 20},
-            'min_samples_split': {'type': 'int', 'low': 2, 'high': 20},
-            'min_samples_leaf': {'type': 'int', 'low': 1, 'high': 10},
-            'max_features': {'type': 'categorical', 'choices': ['sqrt', 'log2']}
-        },
-        'ExtraTreesRegressor': {
-            'n_estimators': {'type': 'int', 'low': 300, 'high': 800},
-            'max_depth': {'type': 'categorical', 'choices': [None, 10, 15]},
-            'min_samples_split': {'type': 'int', 'low': 5, 'high': 20},
-            'min_samples_leaf': {'type': 'int', 'low': 2, 'high': 10},
-            'max_features': {'type': 'categorical', 'choices': ['sqrt', 0.3, 0.5]},
-            'bootstrap': {'type': 'categorical', 'choices': [False]},
-            'criterion': {'type': 'categorical', 'choices': ['gini', 'entropy']}
-        },
-        'BayesianRuleLists': {
-            'listlengthprior': {'type': 'int', 'low': 2, 'high': 5},
-            'maxcardinality': {'type': 'int', 'low': 2, 'high': 3},
-            'minsupport': {'type': 'float', 'low': 0.02, 'high': 0.05},
-            'alpha': {'type': 'float', 'low': 0.5, 'high': 2.0},
-            'beta': {'type': 'float', 'low': 0.5, 'high': 2.0},
-            'list_length_lambda': {'type': 'int', 'low': 3, 'high': 5},
-            'rule_length_penalty': {'type': 'float', 'low': 0.8, 'high': 1.2},
-            'n_chains': {'type': 'int', 'low': 2, 'high': 3},
-            'n_iter': {'type': 'int', 'low': 6000, 'high': 14000},
-            'burn_in': {'type': 'int', 'low': 1000, 'high': 2000},
-            'thin': {'type': 'int', 'low': 1, 'high': 5},
-            'max_candidates': {'type': 'int', 'low': 1000, 'high': 4000}
-        }
-    })
 
 @dataclass
 class EnsembleTrainingConfig(BaseTrainingConfig):

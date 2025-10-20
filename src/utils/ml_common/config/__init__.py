@@ -4,7 +4,6 @@ Configuration module for ML common utilities.
 
 from .base_training_config import (
     BaseTrainingConfig,
-    PerRegimeTrainingConfig,
     EnsembleTrainingConfig,
     TacticianTrainingConfig,
     HMMTrainingConfig
@@ -23,7 +22,6 @@ except Exception:
 
 __all__ = [
     'BaseTrainingConfig',
-    'PerRegimeTrainingConfig',
     'EnsembleTrainingConfig',
     'TacticianTrainingConfig',
     'HMMTrainingConfig',

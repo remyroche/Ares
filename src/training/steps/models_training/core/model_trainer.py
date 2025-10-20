@@ -75,7 +75,6 @@ class ModelTrainer(BaseTrainer):
             # Analyst-specific optimizations
             self.config.custom_params.update({
                 'enable_feature_interaction': True,
-                'enable_regime_features': True,
                 'confidence_threshold': 0.4,
                 'timeframe_optimization': True
             })
@@ -216,14 +215,6 @@ class ModelTrainer(BaseTrainer):
     def _engineer_analyst_features(self, data: pd.DataFrame, targets: pd.Series) -> pd.DataFrame:
         """Engineer features specific to Analyst role."""
         try:
-            # Add regime-based features
-            if 'regime_probability' in data.columns:
-                data['regime_strength'] = data['regime_probability'].abs()
-                data['regime_confidence'] = np.where(
-                    data['regime_probability'] > 0.5, 
-                    data['regime_probability'], 
-                    1 - data['regime_probability']
-                )
             
             # Add market condition features
             if 'volume' in data.columns and 'close' in data.columns:

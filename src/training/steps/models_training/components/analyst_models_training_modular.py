@@ -50,7 +50,6 @@ class AnalystModelsTrainingConfig:
     model_types: List[AnalystModelType]
     training_params: Dict[str, Any]
     validation_params: Dict[str, Any]
-    regime_aware: bool = True
     timeframe: str = "15m"
     auto_save: bool = True
 
@@ -64,7 +63,6 @@ class AnalystModelsTrainingResult:
     training_time: float
     errors: List[str]
     warnings: List[str]
-    regime_performance: Optional[Dict[str, Any]] = None
 
 
 class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
@@ -94,7 +92,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             'model': {
                 'type': 'multi_model',
                 'model_types': ['lightgbm', 'lightgbm_patchtst', 'catboost', 'stacker_lgbm_calibrated'],
-                'regime_aware': True
             },
             'training': {
                 'epochs': 100,
@@ -107,7 +104,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                 'split': 0.2,
                 'metrics': ['accuracy', 'precision', 'recall', 'f1_score']
             },
-            'regime_aware': True,
             'timeframe': '15m',
             'auto_save': True
         }
@@ -122,7 +118,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             model_types=[AnalystModelType(model) for model in self.model_config.get('model_types', [])],
             training_params=self.training_config,
             validation_params=self.validation_config,
-            regime_aware=self.get_config('regime_aware', True),
             timeframe=self.get_config('timeframe', '15m'),
             auto_save=self.get_config('auto_save', True)
         )
@@ -130,7 +125,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
         # Training state
         self._trained_models = {}
         self._training_results = {}
-        self._regime_performance = {}
         
         self.logger.info(f"Initialized AnalystModelsTrainingModular: {name}")
     
@@ -162,7 +156,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             # Clear trained models
             self._trained_models.clear()
             self._training_results.clear()
-            self._regime_performance.clear()
             
             # Clear analyst state
             self.set_ml_state('analyst_initialized', False)
@@ -261,7 +254,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                 training_time=self.get_ml_state('total_training_time', 0),
                 errors=[],
                 warnings=training_result['warnings'] + evaluation_result['warnings'],
-                regime_performance=evaluation_result.get('regime_performance')
             )
             
             # Save results
@@ -269,7 +261,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                 'models': training_result['models'],
                 'metrics': evaluation_result['metrics'],
                 'training_time': result.training_time,
-                'regime_performance': evaluation_result.get('regime_performance')
             }
             
             self.logger.info(f"Analyst models training completed successfully in {result.training_time:.2f}s")
@@ -304,10 +295,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             if len(X_train) < 100:
                 self.logger.warning("Training data is small, consider more data")
             
-            # Check for regime data if regime-aware
-            if self.analyst_config.regime_aware:
-                if 'regime_data' not in data:
-                    self.logger.warning("Regime-aware training enabled but no regime data provided")
             
             return True
             
@@ -523,14 +510,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                 metrics[f'{model_name}_accuracy'] = 0.8 + np.random.normal(0, 0.05)
                 metrics[f'{model_name}_trained'] = model.get('trained', False)
             
-            # Regime performance if available
-            regime_performance = None
-            if self.analyst_config.regime_aware and 'regime_data' in data:
-                regime_performance = {
-                    'regime_1': {'accuracy': 0.87, 'precision': 0.84, 'recall': 0.89},
-                    'regime_2': {'accuracy': 0.83, 'precision': 0.81, 'recall': 0.86},
-                    'regime_3': {'accuracy': 0.85, 'precision': 0.83, 'recall': 0.88}
-                }
             
             # Update performance stats
             self._performance_stats['validation_accuracy'] = metrics['overall_accuracy']
@@ -538,7 +517,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             
             return {
                 'metrics': metrics,
-                'regime_performance': regime_performance,
                 'warnings': []
             }
             
@@ -546,7 +524,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
             self.logger.error(f"Model evaluation failed: {e}")
             return {
                 'metrics': {},
-                'regime_performance': None,
                 'warnings': [str(e)]
             }
     
@@ -604,9 +581,6 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
                     if len(X_train) < 100:
                         warnings.append("Training data is small, consider more data")
             
-            # Check for regime data if regime-aware
-            if self.analyst_config.regime_aware and 'regime_data' not in data:
-                warnings.append("Regime-aware training enabled but no regime data provided")
         
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
     
@@ -618,12 +592,10 @@ class AnalystModelsTrainingModular(BaseModelsTrainingComponent):
         summary.update({
             'analyst_config': {
                 'model_types': [mt.value for mt in self.analyst_config.model_types],
-                'regime_aware': self.analyst_config.regime_aware,
                 'timeframe': self.analyst_config.timeframe
             },
             'trained_models': list(self._trained_models.keys()),
             'training_results': self._training_results,
-            'regime_performance': self._regime_performance
         })
         
         return summary

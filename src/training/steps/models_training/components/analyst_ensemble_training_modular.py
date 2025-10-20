@@ -54,7 +54,6 @@ class AnalystEnsembleTrainingConfig:
     ensemble_method: EnsembleMethod
     ensemble_params: Dict[str, Any]
     hmm_config: Dict[str, Any]
-    regime_aware: bool = True
     timeframe: str = "15m"
     auto_save: bool = True
 
@@ -69,7 +68,6 @@ class AnalystEnsembleTrainingResult:
     training_time: float
     errors: List[str]
     warnings: List[str]
-    regime_performance: Optional[Dict[str, Any]] = None
 
 
 class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
@@ -117,7 +115,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 'n_components': 3,
                 'covariance_type': 'full'
             },
-            'regime_aware': True,
             'timeframe': '15m',
             'auto_save': True
         }
@@ -133,7 +130,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             ensemble_method=EnsembleMethod(self.model_config.get('ensemble_method', 'voting')),
             ensemble_params=self.model_config.get('ensemble_params', {}),
             hmm_config=self.get_config('hmm_config', {}),
-            regime_aware=self.get_config('regime_aware', True),
             timeframe=self.get_config('timeframe', '15m'),
             auto_save=self.get_config('auto_save', True)
         )
@@ -143,7 +139,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
         self._base_model_outputs = {}
         self._hmm_model = None
         self._training_results = {}
-        self._regime_performance = {}
         
         self.logger.info(f"Initialized AnalystEnsembleTrainingModular: {name}")
     
@@ -178,7 +173,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self._base_model_outputs.clear()
             self._hmm_model = None
             self._training_results.clear()
-            self._regime_performance.clear()
             
             # Clear ensemble state
             self.set_ml_state('ensemble_initialized', False)
@@ -251,7 +245,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 training_time=self.get_ml_state('total_training_time', 0),
                 errors=[],
                 warnings=hmm_result['warnings'] + ensemble_result['warnings'] + evaluation_result['warnings'],
-                regime_performance=evaluation_result.get('regime_performance')
             )
             
             # Save results
@@ -261,7 +254,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 'hmm_model': hmm_result['hmm_model'],
                 'metrics': evaluation_result['metrics'],
                 'training_time': result.training_time,
-                'regime_performance': evaluation_result.get('regime_performance')
             }
             
             self.logger.info(f"Analyst ensemble training completed successfully in {result.training_time:.2f}s")
@@ -302,10 +294,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 self.logger.error("base_model_outputs cannot be empty")
                 return False
             
-            # Check for regime data if regime-aware
-            if self.ensemble_config.regime_aware:
-                if 'regime_data' not in data:
-                    self.logger.warning("Regime-aware training enabled but no regime data provided")
             
             return True
             
@@ -469,14 +457,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                 'ensemble_method': self.ensemble_config.ensemble_method.value
             }
             
-            # Regime performance if available
-            regime_performance = None
-            if self.ensemble_config.regime_aware and 'regime_data' in data:
-                regime_performance = {
-                    'regime_1': {'accuracy': 0.89, 'precision': 0.86, 'recall': 0.91},
-                    'regime_2': {'accuracy': 0.87, 'precision': 0.84, 'recall': 0.89},
-                    'regime_3': {'accuracy': 0.88, 'precision': 0.85, 'recall': 0.90}
-                }
             
             # Update performance stats
             self._performance_stats['validation_accuracy'] = metrics['ensemble_accuracy']
@@ -484,7 +464,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             
             return {
                 'metrics': metrics,
-                'regime_performance': regime_performance,
                 'warnings': []
             }
             
@@ -492,7 +471,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             self.logger.error(f"Ensemble evaluation failed: {e}")
             return {
                 'metrics': {},
-                'regime_performance': None,
                 'warnings': [str(e)]
             }
     
@@ -561,9 +539,6 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
                     metadata['base_model_count'] = len(base_model_outputs)
                     metadata['base_models'] = list(base_model_outputs.keys())
             
-            # Check for regime data if regime-aware
-            if self.ensemble_config.regime_aware and 'regime_data' not in data:
-                warnings.append("Regime-aware training enabled but no regime data provided")
         
         return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
     
@@ -576,13 +551,11 @@ class AnalystEnsembleTrainingModular(BaseModelsTrainingComponent):
             'ensemble_config': {
                 'base_models': self.ensemble_config.base_models,
                 'ensemble_method': self.ensemble_config.ensemble_method.value,
-                'regime_aware': self.ensemble_config.regime_aware,
                 'timeframe': self.ensemble_config.timeframe
             },
             'ensemble_model': self._ensemble_model is not None,
             'hmm_model': self._hmm_model is not None,
             'training_results': self._training_results,
-            'regime_performance': self._regime_performance
         })
         
         return summary

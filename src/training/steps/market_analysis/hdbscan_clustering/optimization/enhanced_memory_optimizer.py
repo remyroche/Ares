@@ -29,6 +29,11 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import validate_finite
 from src.utils.common_utilities import safe_dataframe_operation
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,20 +59,34 @@ class EnhancedMemoryOptimizer:
     Enhanced memory optimizer with comprehensive data processing optimizations.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[MemoryOptimizationConfig] = None):
         """Initialize the enhanced memory optimizer."""
+        start_time = time.perf_counter()
+        initial_memory = get_memory_usage()
+        
         self.config = config or MemoryOptimizationConfig()
         
         # Memory tracking
         self.memory_history = []
-        self.peak_memory_usage = 0.0
+        self.peak_memory_usage = initial_memory
         self.optimization_stats = {
             'memory_optimizations': 0,
             'data_validations': 0,
             'safe_operations': 0,
             'memory_savings_mb': 0.0,
-            'processing_time': 0.0
+            'processing_time': 0.0,
+            'initialization_time': 0.0,
+            'initial_memory_mb': initial_memory
         }
+        
+        # Track initialization performance
+        init_time = time.perf_counter() - start_time
+        self.optimization_stats['initialization_time'] = init_time
+        
+        tprint_success("✅ EnhancedMemoryOptimizer initialized")
+        tprint_debug(f"Initial memory: {initial_memory:.2f}MB, Init time: {init_time:.3f}s")
+        tprint_debug(f"Config: max_memory_gb={self.config.max_memory_gb}, chunk_size={self.config.chunk_size}")
         
         logger.info("✅ EnhancedMemoryOptimizer initialized")
     

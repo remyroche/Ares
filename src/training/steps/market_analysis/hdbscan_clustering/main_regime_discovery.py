@@ -16,10 +16,17 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field
+import time
+import gc
+import psutil
 
 # Import existing utilities
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
-from src.utils.common_operations import safe_dataframe_operation
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+from src.utils.common_operations import safe_dataframe_operation, optimize_dataframe_memory, get_memory_usage
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
 from src.utils.matrix_operations import get_unified_matrix_operations
@@ -78,41 +85,69 @@ class HDBSCANRegimeDiscovery:
     8. Temporal stabilization
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: RegimeDiscoveryConfig, use_optimized: bool = True):
         """Initialize the regime discovery system."""
+        start_time = time.perf_counter()
+        initial_memory = get_memory_usage()
+        
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.use_optimized = use_optimized
         
+        # Performance tracking
+        self.performance_stats = {
+            'initialization_time': 0.0,
+            'memory_usage_mb': 0.0,
+            'total_discoveries': 0,
+            'total_processing_time': 0.0
+        }
+        
+        tprint_info(f"Initializing HDBSCAN regime discovery (optimized={use_optimized})")
+        
         if self.use_optimized:
+            tprint_debug("Using optimized implementation")
             # Use optimized implementation by default
-            self.optimized_discovery = create_optimized_hdbscan_regime_discovery(
-                min_cluster_size=getattr(config, 'min_cluster_size', 10),
-                min_samples=getattr(config, 'min_samples', 5),
-                cluster_selection_epsilon=getattr(config, 'cluster_selection_epsilon', 0.0),
-                cluster_selection_method=getattr(config, 'cluster_selection_method', 'eom'),
-                metric=getattr(config, 'metric', 'euclidean'),
-                enable_hyperparameter_optimization=True,
-                enable_memory_optimization=True,
-                enable_vectorized_processing=True,
-                enable_features_common=True,
-                enable_feature_selection=True,
-                max_features=getattr(config, 'max_features', 50),
-                max_memory_gb=getattr(config, 'max_memory_gb', 8.0)
-            )
-            tprint("🚀 Optimized HDBSCAN regime discovery initialized", "SUCCESS")
+            with tprint_timer("Optimized discovery creation"):
+                self.optimized_discovery = create_optimized_hdbscan_regime_discovery(
+                    min_cluster_size=getattr(config, 'min_cluster_size', 10),
+                    min_samples=getattr(config, 'min_samples', 5),
+                    cluster_selection_epsilon=getattr(config, 'cluster_selection_epsilon', 0.0),
+                    cluster_selection_method=getattr(config, 'cluster_selection_method', 'eom'),
+                    metric=getattr(config, 'metric', 'euclidean'),
+                    enable_hyperparameter_optimization=True,
+                    enable_memory_optimization=True,
+                    enable_vectorized_processing=True,
+                    enable_features_common=True,
+                    enable_feature_selection=True,
+                    max_features=getattr(config, 'max_features', 50),
+                    max_memory_gb=getattr(config, 'max_memory_gb', 8.0)
+                )
+            tprint_success("🚀 Optimized HDBSCAN regime discovery initialized")
         else:
+            tprint_debug("Using legacy implementation")
             # Initialize hardware optimization
-            self._initialize_hardware_optimization()
+            with tprint_timer("Hardware optimization initialization"):
+                self._initialize_hardware_optimization()
             
             # Initialize components
-            self._initialize_components()
+            with tprint_timer("Components initialization"):
+                self._initialize_components()
             
             # State tracking
             self.last_result = None
             self.discovery_history = []
             
-            tprint("🚀 Legacy HDBSCAN regime discovery initialized", "SUCCESS")
+            tprint_success("🚀 Legacy HDBSCAN regime discovery initialized")
+        
+        # Track initialization performance
+        init_time = time.perf_counter() - start_time
+        final_memory = get_memory_usage()
+        self.performance_stats['initialization_time'] = init_time
+        self.performance_stats['memory_usage_mb'] = final_memory
+        
+        tprint_performance("HDBSCAN regime discovery initialization", init_time)
+        tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
         
         self.logger.info("HDBSCANRegimeDiscovery initialized successfully")
     
@@ -218,19 +253,42 @@ class HDBSCANRegimeDiscovery:
                 error_message=None
             )
     
+    @tprint_logged(LogLevel.INFO, include_result=True)
     def _initialize_hardware_optimization(self):
         """Initialize hardware optimization utilities."""
         try:
-            # Initialize unified matrix operations
-            self.matrix_ops = get_unified_matrix_operations()
+            tprint_info("Initializing hardware optimization utilities")
             
-            if self.matrix_ops:
-                tprint("✅ Matrix operations available for regime discovery", "SUCCESS")
-            else:
-                tprint("⚠️ Matrix operations not available, using standard operations", "WARNING")
+            # Initialize unified matrix operations
+            with tprint_timer("Matrix operations initialization"):
+                self.matrix_ops = get_unified_matrix_operations()
+                
+                if self.matrix_ops:
+                    tprint_success("✅ Matrix operations available for regime discovery")
+                    tprint_debug(f"Matrix operations type: {type(self.matrix_ops).__name__}")
+                else:
+                    tprint_warning("⚠️ Matrix operations not available, using standard operations")
+            
+            # Initialize additional hardware optimizations
+            try:
+                import psutil
+                cpu_count = psutil.cpu_count(logical=False)
+                logical_cpu_count = psutil.cpu_count(logical=True)
+                memory_gb = psutil.virtual_memory().total / (1024**3)
+                
+                tprint_debug(f"Hardware specs: {cpu_count} physical CPUs, {logical_cpu_count} logical CPUs, {memory_gb:.1f}GB RAM")
+                
+                # Set optimal thread counts based on hardware
+                if hasattr(self.config, 'numba_threads'):
+                    optimal_threads = min(logical_cpu_count, 8)  # Cap at 8 for stability
+                    self.config.numba_threads = optimal_threads
+                    tprint_debug(f"Set optimal Numba threads: {optimal_threads}")
+                    
+            except ImportError:
+                tprint_warning("psutil not available, using default hardware settings")
                 
         except Exception as e:
-            tprint(f"❌ Hardware optimization initialization failed: {e}", "ERROR")
+            tprint_error(f"❌ Hardware optimization initialization failed: {e}")
             self.matrix_ops = None
     
     def _initialize_components(self):
@@ -260,6 +318,7 @@ class HDBSCANRegimeDiscovery:
             tprint(f"❌ Component initialization failed: {e}", "ERROR")
             raise
     
+    @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
     async def discover_regimes(self, data: pd.DataFrame, 
                               fit: bool = True, 
                               is_live: bool = False,
@@ -277,12 +336,21 @@ class HDBSCANRegimeDiscovery:
             RegimeResult with labels, profiles, and metadata
         """
         start_time = datetime.now()
+        perf_start = time.perf_counter()
+        initial_memory = get_memory_usage()
         
         try:
-            tprint(f"🔍 Starting regime discovery: fit={fit}, live={is_live}", "INFO")
+            tprint_info(f"🔍 Starting regime discovery: fit={fit}, live={is_live}")
+            tprint_debug(f"Data shape: {data.shape}, Memory usage: {initial_memory:.2f}MB")
+            
+            # Memory optimization
+            data = optimize_dataframe_memory(data)
+            optimized_memory = get_memory_usage()
+            tprint_debug(f"Memory after optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
             
             # Use optimized implementation if enabled
             if self.use_optimized:
+                tprint_debug("Using optimized implementation")
                 return await self._discover_regimes_optimized(data, fit, is_live, returns)
             
             # Validate input

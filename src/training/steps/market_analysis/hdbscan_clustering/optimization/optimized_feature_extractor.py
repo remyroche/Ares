@@ -11,6 +11,8 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
+import gc
+import psutil
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
 
@@ -28,6 +30,14 @@ from src.feature_generation.categories.volatility import VolatilityFeatureExtrac
 from src.feature_generation.categories.volume import VolumeFeatureExtractor
 from src.feature_generation.categories.entropy import EntropyFeatureExtractor
 from src.feature_generation.categories.spectral_features import SpectralFeatureExtractor
+
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -70,23 +80,34 @@ class OptimizedFeatureExtractor:
     - Intelligent feature selection and pruning
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[FeatureExtractionConfig] = None):
         """Initialize the optimized feature extractor."""
+        start_time = time.perf_counter()
+        initial_memory = get_memory_usage()
+        
         self.config = config or FeatureExtractionConfig()
         
+        tprint_info("Initializing OptimizedFeatureExtractor")
+        tprint_debug(f"Config: max_features_per_family={self.config.max_features_per_family}, max_workers={self.config.max_workers}")
+        
         # Initialize UnifiedVectorizationManager
-        vectorization_config = VectorizationConfig(
-            enable_vectorbt=self.config.enable_vectorbt,
-            enable_gpu=self.config.enable_gpu,
-            memory_efficient=self.config.memory_efficient,
-            max_memory_gb=self.config.max_memory_gb,
-            chunk_size=self.config.chunk_size,
-            enable_parallel=True
-        )
-        self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+        with tprint_timer("Vectorization manager initialization"):
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=self.config.enable_vectorbt,
+                enable_gpu=self.config.enable_gpu,
+                memory_efficient=self.config.memory_efficient,
+                max_memory_gb=self.config.max_memory_gb,
+                chunk_size=self.config.chunk_size,
+                enable_parallel=True
+            )
+            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            tprint_debug(f"Vectorization manager initialized: vectorbt={self.config.enable_vectorbt}, gpu={self.config.enable_gpu}")
         
         # Initialize feature extractors
-        self._initialize_feature_extractors()
+        with tprint_timer("Feature extractors initialization"):
+            self._initialize_feature_extractors()
+            tprint_debug("Feature extractors initialized successfully")
         
         # Performance tracking
         self.performance_stats = {
@@ -95,8 +116,20 @@ class OptimizedFeatureExtractor:
             'memory_usage_mb': 0.0,
             'parallel_efficiency': 0.0,
             'vectorbt_usage_rate': 0.0,
-            'feature_family_stats': {}
+            'feature_family_stats': {},
+            'initialization_time': 0.0,
+            'initial_memory_mb': initial_memory
         }
+        
+        # Track initialization performance
+        init_time = time.perf_counter() - start_time
+        final_memory = get_memory_usage()
+        self.performance_stats['initialization_time'] = init_time
+        self.performance_stats['memory_usage_mb'] = final_memory
+        
+        tprint_success("✅ OptimizedFeatureExtractor initialized")
+        tprint_performance("Feature extractor initialization", init_time)
+        tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
         
         logger.info("✅ OptimizedFeatureExtractor initialized")
     

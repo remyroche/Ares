@@ -11,6 +11,8 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Union
 from dataclasses import dataclass
 import time
+import gc
+import psutil
 from sklearn.cluster import HDBSCAN
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
 from sklearn.preprocessing import StandardScaler
@@ -22,6 +24,14 @@ from src.utils.ml_common.unified_vectorization_manager import (
     VectorizationConfig,
     get_unified_vectorization_manager
 )
+
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +74,29 @@ class OptimizedHDBSCANClusterer:
     parameter optimization.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[HDBSCANConfig] = None):
         """Initialize the optimized HDBSCAN clusterer."""
+        start_time = time.perf_counter()
+        initial_memory = get_memory_usage()
+        
         self.config = config or HDBSCANConfig()
         
+        tprint_info("Initializing OptimizedHDBSCANClusterer")
+        tprint_debug(f"Config: min_cluster_size={self.config.min_cluster_size}, metric={self.config.metric}")
+        
         # Initialize UnifiedVectorizationManager
-        vectorization_config = VectorizationConfig(
-            enable_vectorbt=self.config.enable_vectorbt,
-            enable_gpu=self.config.enable_gpu,
-            memory_efficient=self.config.memory_efficient,
-            max_memory_gb=self.config.max_memory_gb,
-            chunk_size=self.config.chunk_size,
-            enable_parallel=True
-        )
-        self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+        with tprint_timer("Vectorization manager initialization"):
+            vectorization_config = VectorizationConfig(
+                enable_vectorbt=self.config.enable_vectorbt,
+                enable_gpu=self.config.enable_gpu,
+                memory_efficient=self.config.memory_efficient,
+                max_memory_gb=self.config.max_memory_gb,
+                chunk_size=self.config.chunk_size,
+                enable_parallel=True
+            )
+            self.vectorization_manager = get_unified_vectorization_manager(vectorization_config)
+            tprint_debug(f"Vectorization manager initialized: vectorbt={self.config.enable_vectorbt}, gpu={self.config.enable_gpu}")
         
         # Initialize parameter search space
         if self.config.parameter_search_space is None:
@@ -86,6 +105,7 @@ class OptimizedHDBSCANClusterer:
                 'min_samples': [3, 5, 7, 10, 15],
                 'cluster_selection_epsilon': [0.0, 0.1, 0.2, 0.3, 0.5]
             }
+            tprint_debug(f"Using default parameter search space: {self.config.parameter_search_space}")
         
         # Performance tracking
         self.performance_stats = {
@@ -97,14 +117,82 @@ class OptimizedHDBSCANClusterer:
             'davies_bouldin_score': 0.0,
             'memory_usage_mb': 0.0,
             'vectorbt_usage_rate': 0.0,
-            'optimization_time': 0.0
+            'optimization_time': 0.0,
+            'initialization_time': 0.0,
+            'initial_memory_mb': initial_memory
         }
         
         # Store best parameters
         self.best_params = None
         self.best_score = -np.inf
         
+        # Initialize HDBSCAN clusterer
+        self.clusterer = None
+        self._initialize_clusterer()
+        
+        # Performance optimization flags
+        self._enable_performance_optimizations()
+        
+        # Track initialization performance
+        init_time = time.perf_counter() - start_time
+        final_memory = get_memory_usage()
+        self.performance_stats['initialization_time'] = init_time
+        self.performance_stats['memory_usage_mb'] = final_memory
+        
+        tprint_success("✅ OptimizedHDBSCANClusterer initialized")
+        tprint_performance("HDBSCAN clusterer initialization", init_time)
+        tprint_debug(f"Memory usage: {initial_memory:.2f}MB -> {final_memory:.2f}MB (delta: {final_memory - initial_memory:+.2f}MB)")
+        
         logger.info("✅ OptimizedHDBSCANClusterer initialized")
+    
+    def _initialize_clusterer(self):
+        """Initialize the HDBSCAN clusterer with optimized settings."""
+        try:
+            tprint_debug("Initializing HDBSCAN clusterer")
+            
+            # Create HDBSCAN clusterer with optimized parameters
+            self.clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=self.config.min_cluster_size,
+                min_samples=self.config.min_samples,
+                cluster_selection_epsilon=self.config.cluster_selection_epsilon,
+                cluster_selection_method=self.config.cluster_selection_method,
+                metric=self.config.metric,
+                memory_efficient=self.config.memory_efficient
+            )
+            
+            tprint_debug(f"HDBSCAN clusterer initialized with metric={self.config.metric}")
+            
+        except Exception as e:
+            tprint_error(f"Failed to initialize HDBSCAN clusterer: {e}")
+            self.clusterer = None
+    
+    def _enable_performance_optimizations(self):
+        """Enable additional performance optimizations."""
+        try:
+            # Set optimal BLAS threading
+            import os
+            os.environ['OMP_NUM_THREADS'] = str(min(psutil.cpu_count(), 4))
+            os.environ['MKL_NUM_THREADS'] = str(min(psutil.cpu_count(), 4))
+            
+            # Enable memory mapping for large datasets
+            if hasattr(self.config, 'enable_memory_mapping'):
+                self.config.enable_memory_mapping = True
+                tprint_debug("Memory mapping enabled for large datasets")
+            
+            # Set optimal chunk size based on available memory
+            available_memory_gb = psutil.virtual_memory().available / (1024**3)
+            if available_memory_gb < 4:
+                self.config.chunk_size = 500
+            elif available_memory_gb < 8:
+                self.config.chunk_size = 1000
+            else:
+                self.config.chunk_size = 2000
+            
+            tprint_debug(f"Optimized chunk size: {self.config.chunk_size} (available memory: {available_memory_gb:.1f}GB)")
+            
+        except Exception as e:
+            tprint_warning(f"Performance optimization setup failed: {e}")
+            # Continue with default settings
     
     def cluster_data(self, features_df: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """

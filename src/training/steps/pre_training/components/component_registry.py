@@ -7,6 +7,41 @@ This module automatically registers all pre-training components with the Compone
 from typing import Dict, Type, Any, Optional
 from .component_factory import BaseComponent, ComponentConfig
 
+# Import feature generation step classes
+try:
+    from src.training.steps.pre_training.unified_data_driven_pipeline.steps import (
+        FeatureGenerationDataValidationStep,
+        FeatureGenerationFeatureGenerationStep,
+        FeatureGenerationFeatureSelectionStep,
+        FeatureGenerationFinalValidationStep,
+        FeatureGenerationInteractionGenerationStep,
+        FeatureGenerationLabelingIntegrationStep,
+        PeriodLookbackOptimizationStep,
+    )
+    FEATURE_GENERATION_DATA_VALIDATION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_FINAL_VALIDATION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE = True
+    FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = True
+except ImportError as e:
+    print(f"Warning: Could not import feature generation step classes: {e}")
+    FeatureGenerationDataValidationStep = None
+    FeatureGenerationFeatureGenerationStep = None
+    FeatureGenerationFeatureSelectionStep = None
+    FeatureGenerationFinalValidationStep = None
+    FeatureGenerationInteractionGenerationStep = None
+    FeatureGenerationLabelingIntegrationStep = None
+    PeriodLookbackOptimizationStep = None
+    FEATURE_GENERATION_DATA_VALIDATION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_FINAL_VALIDATION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_INTERACTION_GENERATION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_LABELING_INTEGRATION_STEP_AVAILABLE = False
+    FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE = False
+
 # Import all the step components
 try:
     from src.training.steps.pre_training.analyst_profit_labeler import AnalystProfitLabelerComponent
@@ -65,8 +100,8 @@ class ComponentRegistry:
             ComponentFactory.register_component('feature_generation_data_validation_step', FeatureGenerationDataValidationStep)
         
         # Register feature generation feature generation step
-        if FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE and FeatureGenerationStep is not None:
-            ComponentFactory.register_component('feature_generation_feature_generation_step', FeatureGenerationStep)
+        if FEATURE_GENERATION_FEATURE_GENERATION_STEP_AVAILABLE and FeatureGenerationFeatureGenerationStep is not None:
+            ComponentFactory.register_component('feature_generation_feature_generation_step', FeatureGenerationFeatureGenerationStep)
         
         # Register feature generation feature selection step
         if FEATURE_GENERATION_FEATURE_SELECTION_STEP_AVAILABLE and FeatureGenerationFeatureSelectionStep is not None:
@@ -85,8 +120,8 @@ class ComponentRegistry:
             ComponentFactory.register_component('feature_generation_labeling_integration_step', FeatureGenerationLabelingIntegrationStep)
         
         # Register feature generation period lookback optimization step
-        if FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE and FeatureGenerationPeriodLookbackOptimizationStep is not None:
-            ComponentFactory.register_component('feature_generation_period_lookback_optimization', FeatureGenerationPeriodLookbackOptimizationStep)
+        if FEATURE_GENERATION_PERIOD_LOOKBACK_OPTIMIZATION_STEP_AVAILABLE and PeriodLookbackOptimizationStep is not None:
+            ComponentFactory.register_component('feature_generation_period_lookback_optimization', PeriodLookbackOptimizationStep)
         
     
     @staticmethod

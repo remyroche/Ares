@@ -614,15 +614,15 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                 self.cache[key] = value
                 return value
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_dataframe(self, step_name, key):
                 return self.cache.get(key)
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_series(self, step_name, key):
                 return self.cache.get(key)
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_artifact(self, step_name, key):
                 return self.cache.get(key)
             
@@ -1209,15 +1209,15 @@ def handle_feature_generation_interaction_generation_step_tactician(
                     )
                 )
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_dataframe(self, step_name, key):
                 return self.cache.get(key)
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_series(self, step_name, key):
                 return self.cache.get(key)
             
-            @smart_cache(ttl=1800, max_size=100)
+            @smart_cache(ttl=1800)
             def get_artifact(self, step_name, key):
                 return self.cache.get(key)
             

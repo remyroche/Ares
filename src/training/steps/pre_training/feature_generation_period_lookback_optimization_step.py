@@ -618,7 +618,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         optimization_level=OptimizationLevel.AGGRESSIVE,
         enable_compression=True
     ))
-    @smart_cache(ttl=3600, max_size=10)
+    @smart_cache(ttl=3600)
     def _process_data(self, data, **kwargs):
         """Process data through period + lookback optimization with artifact manager integration."""
         tprint_step("Starting period + lookback optimization data processing")

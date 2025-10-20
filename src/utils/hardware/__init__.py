@@ -40,7 +40,7 @@ from .optimization_decorators import (
     smart_cache, memory_efficient, performance_tracked,
     cache_dataframe_result, cache_numpy_result, optimize_heavy_computation,
     memory_aware, optimize_all_dataframes, optimize_all_arrays,
-    get_optimization_stats, clear_optimization_cache
+    get_optimization_stats, clear_optimization_cache, auto_optimize
 )
 
 from .integrated_hardware_manager import (
@@ -143,8 +143,7 @@ from .backward_compatibility import (
     get_hardware_optimization_manager, get_hardware_optimization_status,
     clear_optimization_caches, initialize_optimization_system,
     gpu_accelerated, optimize_cpu_execution, unified_memory_optimized,
-    adaptive_optimization, smart_cache, performance_tracked,
-    comprehensive_memory_optimization
+    adaptive_optimization, smart_cache
 )
 
 # Import examples
@@ -232,7 +231,7 @@ def gc_optimized_function():
 
 def comprehensive_optimization():
     """Apply comprehensive memory optimization to function."""
-    return comprehensive_memory_optimization()
+    return comprehensive_memory_optimization(optimization_level=MemoryOptimizationLevel.MAXIMUM)
 
 def force_cleanup():
     """Force garbage collection and memory cleanup."""

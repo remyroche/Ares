@@ -284,9 +284,46 @@ Examples:
     return parser
 
 
+def load_step_modules():
+    """Lazily load step modules to avoid circular imports."""
+    loaded_modules = []
+    failed_modules = []
+    
+    # List of modules to load in order of dependency
+    modules_to_load = [
+        ("data_collection", "src.training.steps.data_collection"),
+        ("pre_training", "src.training.steps.pre_training"),
+        ("market_analysis", "src.training.steps.market_analysis"),
+        ("model_training", "src.training.steps.model_training"),
+        ("backtesting", "src.training.steps.backtesting"),
+    ]
+    
+    for module_name, module_path in modules_to_load:
+        try:
+            __import__(module_path)
+            loaded_modules.append(module_name)
+            print(f"✅ Loaded {module_name}")
+        except ImportError as e:
+            failed_modules.append((module_name, str(e)))
+            print(f"⚠️ Failed to load {module_name}: {e}")
+        except Exception as e:
+            failed_modules.append((module_name, str(e)))
+            print(f"❌ Error loading {module_name}: {e}")
+    
+    if loaded_modules:
+        print(f"✅ Successfully loaded {len(loaded_modules)} step modules: {', '.join(loaded_modules)}")
+        return True
+    else:
+        print("❌ No step modules could be loaded")
+        return False
+
 def main():
     """Main entry point."""
     logger.info("🎯 Starting Simplified Ares Launcher...")
+    
+    # Load step modules lazily
+    if not load_step_modules():
+        return 1
     
     # Create CLI parser
     parser = create_cli_parser()

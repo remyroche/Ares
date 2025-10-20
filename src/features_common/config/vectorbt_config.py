@@ -33,7 +33,7 @@ class VectorBTConfig:
     chunk_size: int = 10000
 
     # GPU settings
-    enable_gpu: bool = False
+    enable_gpu: bool = True
     gpu_memory_fraction: float = 0.8
     enable_gpu_fallback: bool = True
 

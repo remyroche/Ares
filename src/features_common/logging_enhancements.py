@@ -25,7 +25,7 @@ class LoggingEnhancements:
     Backward-compatible logging enhancements that can be optionally enabled.
     """
 
-    def __init__(self, enable_verbose_logging: bool = False):
+    def __init__(self, enable_verbose_logging: bool = True):
         """
         Initialize logging enhancements.
 

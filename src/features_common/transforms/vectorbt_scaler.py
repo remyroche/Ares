@@ -86,7 +86,7 @@ class VectorBTScaler(BaseScaler):
     for maximum efficiency and accuracy with enhanced optimization features.
     """
 
-    def __init__(self, method: str = 'zscore', enable_gpu: bool = False,
+    def __init__(self, method: str = 'zscore', enable_gpu: bool = True,
                  enable_batch: bool = True, memory_efficient: bool = True,
                  use_optimizer: bool = True, use_unified_manager: bool = True,
                  enable_hardware_optimization: bool = True, **kwargs):
@@ -1283,7 +1283,7 @@ def get_available_scaling_methods() -> List[str]:
     else:
         return ['zscore', 'minmax', 'robust']
 
-def create_vectorbt_scaler(method: str = 'zscore', enable_gpu: bool = False,
+def create_vectorbt_scaler(method: str = 'zscore', enable_gpu: bool = True,
                           enable_batch: bool = True, memory_efficient: bool = True,
                           use_optimizer: bool = True, use_unified_manager: bool = True, **kwargs) -> VectorBTScaler:
     """

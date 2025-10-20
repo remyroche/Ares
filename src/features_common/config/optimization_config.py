@@ -24,7 +24,7 @@ class OptimizationConfig:
     # VectorBT optimization settings
     use_vectorbt: bool = True
     vectorbt_threshold: int = 100  # Lower threshold to use VectorBT more often
-    enable_gpu: bool = False
+    enable_gpu: bool = True
     enable_parallel: bool = True
     memory_efficient: bool = True
     prefer_vectorbt: bool = True  # Prefer VectorBT over pandas when available

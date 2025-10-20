@@ -10,7 +10,7 @@ data quality validation before proceeding to HMM regime discovery with M1 hardwa
 from src.core.decorators import handles_errors
 from src.utils.comprehensive_function_logger import log_step_functions, log_important_calls, log_all_calls, log_internal_call, log_step_progress, log_data_operation
 from pathlib import Path
-from src.training.base_step import BaseStep
+from src.training.steps.base_step import BaseStep
 from src.utils.common_operations import validate_dataframe_schema, validate_data_quality
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.pipeline_standards import PipelineStandards

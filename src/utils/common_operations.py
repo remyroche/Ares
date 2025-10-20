@@ -10,13 +10,25 @@ import psutil
 import os
 from contextlib import contextmanager
 
+# Define OptimizationLevel first to avoid circular imports
+class OptimizationLevel:
+    """Optimization levels for decorators."""
+    NONE = "NONE"
+    BASIC = "BASIC"
+    BALANCED = "BALANCED"
+    AGGRESSIVE = "AGGRESSIVE"
+    CONSERVATIVE = "CONSERVATIVE"
+    MAXIMUM = "MAXIMUM"
+
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware.optimization_decorators import (
-        smart_cache, auto_optimize, memory_efficient, performance_tracked
+        smart_cache, auto_optimize, memory_efficient, performance_tracked,
+        OptimizationConfig
     )
     from src.utils.hardware.memory_optimized_decorators import (
-        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel,
+        get_memory_optimization_stats
     )
     from src.utils.hardware.integrated_hardware_manager import (
         get_integrated_hardware_manager, WorkloadType
@@ -24,10 +36,44 @@ try:
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
-    # Create dummy decorators
+    # Create dummy decorators and classes
+    class OptimizationConfig:
+        def __init__(self, enable_caching=True, enable_dtype_optimization=True, 
+                     optimization_level=None, enable_compression=False, **kwargs):
+            self.enable_caching = enable_caching
+            self.enable_dtype_optimization = enable_dtype_optimization
+            self.optimization_level = optimization_level
+            self.enable_compression = enable_compression
+    
+    class OptimizationLevel:
+        BALANCED = "BALANCED"
+        AGGRESSIVE = "AGGRESSIVE"
+        CONSERVATIVE = "CONSERVATIVE"
+        NONE = "NONE"
+        BASIC = "BASIC"
+        MAXIMUM = "MAXIMUM"
+    
     def memory_efficient(config=None):
         def decorator(func):
             return func
+        return decorator
+    
+    def performance_tracked(func=None, **kwargs):
+        def decorator(f):
+            return f
+        if func is None:
+            return decorator
+        return decorator(func)
+    
+    def get_memory_optimization_stats():
+        return {}
+    
+    def auto_optimize(func=None, **kwargs):
+        def decorator(f):
+            return f
+        if func is None:
+            return decorator
+        return decorator(func)
         return decorator
     def auto_optimize(config=None):
         def decorator(func):
@@ -114,7 +160,6 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
             
             return df_opt
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
 @performance_tracked
 def safe_divide(a: Union[pd.Series, np.ndarray, float], 
                 b: Union[pd.Series, np.ndarray, float], 
@@ -152,7 +197,6 @@ def safe_divide(a: Union[pd.Series, np.ndarray, float],
         else:
             return np.divide(a, b, out=np.full_like(a, fill_value), where=b!=0)
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
 @performance_tracked
 def safe_mean(x: Union[pd.Series, np.ndarray]) -> float:
     """Fast nan-safe mean for arrays/Series with enhanced optimization."""
@@ -168,7 +212,6 @@ def safe_mean(x: Union[pd.Series, np.ndarray]) -> float:
             return float(x.mean())
         return float(np.mean(x))
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
 @performance_tracked
 def safe_std(x: Union[pd.Series, np.ndarray], ddof: int = 0) -> float:
     """Fast nan-safe std for arrays/Series with enhanced optimization."""
@@ -184,7 +227,6 @@ def safe_std(x: Union[pd.Series, np.ndarray], ddof: int = 0) -> float:
             return float(x.std(ddof=ddof))
         return float(np.std(x, ddof=ddof))
 
-@auto_optimize(optimize_inputs=True, optimize_outputs=True)
 @performance_tracked
 def safe_log(x: Union[pd.Series, np.ndarray], 
              base: float = np.e, 

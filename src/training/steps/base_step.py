@@ -198,6 +198,7 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
+
     @smart_cache(ttl=1800, max_size=50)
     def _load_model(self, name: str) -> Any:
         """
@@ -652,7 +653,7 @@ class BaseStep(ABC):
             self.logger.warning(f"Hardware optimization failed, using fallback: {e}")
             return optimize_dataframe(df)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _get_hardware_stats(self) -> Dict[str, Any]:
         """
         Get comprehensive hardware statistics.

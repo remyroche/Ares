@@ -65,12 +65,18 @@ try:
     from .hardware import (
         get_integrated_hardware_manager, memory_optimized, 
         performance_tracked, force_cleanup, get_memory_stats,
-        optimize_dataframe, optimize_array, cache_result
+        optimize_dataframe, optimize_array, cache_result,
+        MemoryOptimizationLevel
     )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
-    # Create dummy functions for compatibility
+    # Create dummy functions and classes for compatibility
+    class MemoryOptimizationLevel:
+        AGGRESSIVE = "AGGRESSIVE"
+        BALANCED = "BALANCED"
+        CONSERVATIVE = "CONSERVATIVE"
+    
     def get_integrated_hardware_manager(): return None
     def memory_optimized(*args, **kwargs): return lambda f: f
     def performance_tracked(*args, **kwargs): return lambda f: f
@@ -1674,7 +1680,7 @@ class ArtifactManager:
 	
 	# Enhanced store method with profiling and spilling
 	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	@performance_tracked
 	def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
 		"""Store artifact with enhanced profiling and spill strategies."""
 		try:
@@ -1702,7 +1708,7 @@ class ArtifactManager:
 	
 	# Enhanced retrieve method with lazy loading
 	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	@performance_tracked
 	def retrieve_enhanced(self, key: str) -> Optional[Any]:
 		"""Retrieve artifact with lazy loading and spill support."""
 		try:

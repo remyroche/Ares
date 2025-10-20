@@ -32,9 +32,10 @@ from .efficient_regime_feature_selector import (
 
 # Import optimization utilities
 from src.utils.common_operations import (
-    memory_monitor, optimize_dataframe_memory, safe_divide, safe_mean, safe_std,
-    validate_finite, force_garbage_collection, get_memory_usage
+    memory_monitor, safe_divide, safe_mean, safe_std,
+    validate_finite, force_garbage_collection
 )
+from src.utils.hardware import optimize_dataframe_default, get_memory_usage
 from src.utils.math_validation import validate_positive, validate_range
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error, tprint_performance
 
@@ -240,7 +241,7 @@ class OptimizedRegimeFeatureProcessor:
         
         # Memory optimization
         if self.config.memory_efficient:
-            features_df = optimize_dataframe_memory(features_df)
+            features_df = optimize_dataframe_default(features_df)
         
         # Final validation
         features_df = self._validate_final_features(features_df)

@@ -634,6 +634,121 @@ class OptimizationMixin:
         """Execute operation with memory usage tracking."""
         return operation_func(data, *args, **kwargs)
 
+    def auto_optimize_operation(self, operation_func: Callable, data: Union[pd.Series, pd.DataFrame],
+                               *args, **kwargs) -> Any:
+        """
+        Automatically optimize an operation based on data characteristics and hardware availability.
+        
+        This method intelligently selects the best optimization strategy for the given operation
+        and data, using hardware utilities when available and beneficial.
+        
+        Args:
+            operation_func: The operation function to optimize
+            data: Input data for the operation
+            *args: Additional positional arguments
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            Result of the optimized operation
+        """
+        self._optimization_stats['total_operations'] += 1
+        
+        try:
+            # Determine if hardware optimization should be used
+            if (self.hardware_available and 
+                self._hardware_optimization_enabled and 
+                self._should_use_hardware_optimization(data)):
+                
+                # Use hardware-optimized execution
+                result = self._execute_hardware_optimized_operation(operation_func, data, *args, **kwargs)
+                self._optimization_stats['optimized_operations'] += 1
+                self._optimization_stats['hardware_operations'] += 1
+                
+            elif self._memory_optimization_enabled and self._is_large_dataset(data):
+                # Use memory-optimized execution
+                result = self.memory_efficient_operation(operation_func, data, *args, **kwargs)
+                self._optimization_stats['optimized_operations'] += 1
+                self._optimization_stats['memory_optimizations'] += 1
+                
+            else:
+                # Use standard execution
+                result = operation_func(data, *args, **kwargs)
+                self._optimization_stats['fallback_operations'] += 1
+            
+            # Record performance metrics
+            self._record_performance_metrics(operation_func.__name__, data, result)
+            
+            return result
+            
+        except Exception as e:
+            logger.warning(f"Auto-optimization failed for {operation_func.__name__}: {e}")
+            # Fallback to standard execution
+            self._optimization_stats['fallback_operations'] += 1
+            return operation_func(data, *args, **kwargs)
+
+    def _should_use_hardware_optimization(self, data: Union[pd.Series, pd.DataFrame]) -> bool:
+        """Determine if hardware optimization should be used for the given data."""
+        if not self.hardware_available or not self._hardware_optimization_enabled:
+            return False
+        
+        data_size = len(data) if hasattr(data, '__len__') else 0
+        
+        # Use hardware optimization for large datasets or when memory pressure is high
+        return (data_size >= 1000 or 
+                (hasattr(self, 'memory_manager') and 
+                 self.memory_manager.get_memory_stats().memory_percent > 80))
+
+    def _is_large_dataset(self, data: Union[pd.Series, pd.DataFrame]) -> bool:
+        """Check if the dataset is large enough to benefit from memory optimization."""
+        data_size = len(data) if hasattr(data, '__len__') else 0
+        return data_size >= 500
+
+    def _execute_hardware_optimized_operation(self, operation_func: Callable, data: Union[pd.Series, pd.DataFrame],
+                                            *args, **kwargs) -> Any:
+        """Execute operation with hardware optimization."""
+        try:
+            # Apply hardware optimization to data
+            if hasattr(self, 'memory_manager'):
+                optimized_data = self.memory_manager.process_data_with_optimization(
+                    data, 'data_processing'
+                )
+            else:
+                optimized_data = data
+            
+            # Execute the operation on optimized data
+            return operation_func(optimized_data, *args, **kwargs)
+            
+        except Exception as e:
+            logger.warning(f"Hardware optimization failed: {e}")
+            return operation_func(data, *args, **kwargs)
+
+    def _record_performance_metrics(self, operation_name: str, input_data: Union[pd.Series, pd.DataFrame], 
+                                  result: Any) -> None:
+        """Record performance metrics for the operation."""
+        try:
+            import time
+            current_time = time.time()
+            
+            input_size = len(input_data) if hasattr(input_data, '__len__') else 0
+            result_size = len(result) if hasattr(result, '__len__') else 0
+            
+            metrics = {
+                'operation': operation_name,
+                'input_size': input_size,
+                'result_size': result_size,
+                'timestamp': current_time,
+                'hardware_optimized': self._optimization_stats['hardware_operations'] > 0
+            }
+            
+            self._performance_history.append(metrics)
+            
+            # Keep only recent performance history
+            if len(self._performance_history) > 1000:
+                self._performance_history = self._performance_history[-500:]
+                
+        except Exception as e:
+            logger.debug(f"Failed to record performance metrics: {e}")
+
     def get_hardware_stats(self) -> Dict[str, Any]:
         """Get hardware optimization statistics."""
         stats = self._optimization_stats.copy()

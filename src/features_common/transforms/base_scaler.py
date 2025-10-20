@@ -534,6 +534,22 @@ class BaseScaler(ABC, OptimizationMixin, PerformanceMixin, VectorBTMixin, Valida
         else:
             logger.error(message)
 
+    def _validate_fitted(self) -> None:
+        """
+        Validate that scaler has been fitted before transforming.
+
+        Raises:
+            ValueError: If scaler has not been fitted
+        """
+        if not self.fitted:
+            error_msg = (
+                f"{self.__class__.__name__} must be fitted before calling transform(). "
+                "Call fit_transform() first."
+            )
+            if TPRINT_AVAILABLE:
+                tprint(f"❌ {error_msg}", color="red", bold=True)
+            raise ValueError(error_msg)
+
     def _validate_numeric_input(self, data: pd.Series, name: str = "input") -> None:
         """
         Validate that input data is numeric.

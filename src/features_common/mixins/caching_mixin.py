@@ -385,3 +385,133 @@ class CachingMixin:
             new_ttl = max(self._cache_config['ttl'] // 2, 60)  # Min 1 minute
             self._cache_config['ttl'] = new_ttl
             logger.info(f"Decreased cache TTL to {new_ttl} seconds")
+
+    def cached_operation(self, operation_func: Callable, *args, **kwargs) -> Any:
+        """
+        Execute an operation with caching.
+        
+        This method provides a simple interface for caching expensive operations.
+        It automatically generates cache keys and handles cache hits/misses.
+        
+        Args:
+            operation_func: The function to execute and cache
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result of the operation (from cache or execution)
+        """
+        from ..utils import TPRINT_AVAILABLE, tprint
+        
+        if not self._cache_config['enable_memory_cache']:
+            # Caching disabled, execute directly
+            return operation_func(*args, **kwargs)
+        
+        # Generate cache key
+        cache_key = self.cache_key(operation_func.__name__, *args, **kwargs)
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"🔍 [CachingMixin] Checking cache for {operation_func.__name__}", color="blue")
+        
+        # Check memory cache first
+        if cache_key in self._memory_cache:
+            cache_entry = self._memory_cache[cache_key]
+            
+            # Check if cache entry is still valid
+            if time.time() - cache_entry['timestamp'] < self._cache_config['ttl']:
+                self._cache_stats['cache_hits'] += 1
+                self._cache_stats['memory_hits'] += 1
+                
+                if TPRINT_AVAILABLE:
+                    tprint(f"✅ [CachingMixin] Cache HIT for {operation_func.__name__}", color="green")
+                
+                return cache_entry['result']
+            else:
+                # Cache entry expired, remove it
+                del self._memory_cache[cache_key]
+                self._cache_stats['cache_evictions'] += 1
+        
+        # Check disk cache if enabled
+        if self._cache_config['enable_disk_cache'] and self._disk_cache_dir:
+            disk_cache_path = os.path.join(self._disk_cache_dir, f"{cache_key}.pkl")
+            
+            if os.path.exists(disk_cache_path):
+                try:
+                    # Check file age
+                    file_age = time.time() - os.path.getmtime(disk_cache_path)
+                    if file_age < self._cache_config['ttl']:
+                        # Load from disk cache
+                        with open(disk_cache_path, 'rb') as f:
+                            result = pickle.load(f)
+                        
+                        # Store in memory cache for faster access
+                        self._store_in_memory_cache(cache_key, result)
+                        
+                        self._cache_stats['cache_hits'] += 1
+                        self._cache_stats['disk_hits'] += 1
+                        
+                        if TPRINT_AVAILABLE:
+                            tprint(f"✅ [CachingMixin] Disk cache HIT for {operation_func.__name__}", color="green")
+                        
+                        return result
+                    else:
+                        # File expired, remove it
+                        os.remove(disk_cache_path)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to load from disk cache: {e}")
+        
+        # Cache miss - execute operation
+        self._cache_stats['cache_misses'] += 1
+        
+        if TPRINT_AVAILABLE:
+            tprint(f"❌ [CachingMixin] Cache MISS for {operation_func.__name__}, executing", color="yellow")
+        
+        # Execute the operation
+        result = operation_func(*args, **kwargs)
+        
+        # Store result in cache
+        self._store_in_memory_cache(cache_key, result)
+        
+        # Store in disk cache if enabled
+        if self._cache_config['enable_disk_cache'] and self._disk_cache_dir:
+            self._store_in_disk_cache(cache_key, result)
+        
+        return result
+
+    def _store_in_memory_cache(self, cache_key: str, result: Any) -> None:
+        """Store result in memory cache."""
+        try:
+            # Check cache size limit
+            if len(self._memory_cache) >= self._cache_config['max_memory_size']:
+                # Remove oldest entry (simple LRU)
+                oldest_key = min(self._memory_cache.keys(), 
+                               key=lambda k: self._memory_cache[k]['timestamp'])
+                del self._memory_cache[oldest_key]
+                self._cache_stats['cache_evictions'] += 1
+            
+            # Store new entry
+            self._memory_cache[cache_key] = {
+                'result': result,
+                'timestamp': time.time()
+            }
+            
+            self._cache_stats['cache_size'] = len(self._memory_cache)
+            
+        except Exception as e:
+            logger.warning(f"Failed to store in memory cache: {e}")
+
+    def _store_in_disk_cache(self, cache_key: str, result: Any) -> None:
+        """Store result in disk cache."""
+        try:
+            disk_cache_path = os.path.join(self._disk_cache_dir, f"{cache_key}.pkl")
+            
+            with open(disk_cache_path, 'wb') as f:
+                pickle.dump(result, f)
+            
+            # Update disk cache size
+            file_size = os.path.getsize(disk_cache_path)
+            self._cache_stats['disk_cache_size'] += file_size
+            
+        except Exception as e:
+            logger.warning(f"Failed to store in disk cache: {e}")

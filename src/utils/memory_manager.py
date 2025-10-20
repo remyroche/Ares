@@ -20,6 +20,12 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
     NUMPY_AVAILABLE = False
+    # Create dummy modules to avoid NameError
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
+    np = DummyModule()
 
 try:
     import psutil
@@ -219,7 +225,7 @@ class MemoryManager:
             self.logger.error(f"Failed to load spilled artifact {artifact_id}: {e}")
             return None
     
-    def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+    def optimize_dataframe(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
         """Optimize DataFrame data types for memory efficiency.
         
         Args:

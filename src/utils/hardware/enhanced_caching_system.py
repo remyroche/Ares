@@ -19,11 +19,36 @@ from enum import Enum
 from collections import OrderedDict, deque
 from functools import wraps, lru_cache
 import weakref
-import psutil
-import numpy as np
-import pandas as pd
 from pathlib import Path
 import json
+
+# Optional dependencies
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    np = DummyModule()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
 
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_success, tprint_warning, tprint_error,

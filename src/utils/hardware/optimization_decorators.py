@@ -14,8 +14,26 @@ from typing import Any, Dict, List, Optional, Callable, Union, Tuple
 from dataclasses import dataclass
 from enum import Enum
 
-import numpy as np
-import pandas as pd
+# Optional dependencies
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    np = DummyModule()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    class DummyModule:
+        def __getattr__(self, name):
+            return None
+    pd = DummyModule()
 
 from .enhanced_caching_system import (
     get_global_cache, CacheConfig, DataTypeOptimization, 

@@ -9,6 +9,7 @@ from src.training.steps.base_step import step_registry
 # Import existing components
 from .components.sr_clustering import SRClusteringComponent
 from .components.sr_detection import SRDetectionComponent
+from .components.regime_clustering import RegimeClusteringComponent
 
 # Import HDBSCAN regime discovery step
 from .hdbscan_clustering import HDBSCANRegimeDiscoveryStep
@@ -24,7 +25,8 @@ from .components.sr_parameter_optimization import SRParameterOptimizationStep
 # Register existing components
 step_registry.register("sr_clustering", SRClusteringComponent)
 step_registry.register("sr_detection", SRDetectionComponent)
-step_registry.register("hdbscan_regime_discovery", HDBSCANRegimeDiscoveryStep)
+step_registry.register("regime_clustering", RegimeClusteringComponent)
+step_registry.register("hdbscan_clustering", HDBSCANRegimeDiscoveryStep)
 
 # Register migrated steps
 step_registry.register("sr_detection_step", SRDetectionStep)

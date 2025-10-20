@@ -1,8 +1,8 @@
 """
-NAS-TAS Clustering Component.
+Regime Clustering Component.
 
-This component uses shared utilities to eliminate redundancy between NAS and TAS components.
-It demonstrates how to use the shared_utils package for common functionality.
+This component performs regime clustering analysis using various clustering algorithms
+and provides comprehensive regime discovery and analysis capabilities.
 """
 
 import copy
@@ -77,7 +77,8 @@ from ..shared_utils.calibration_registry import (
     update_quality_calibration,
 )
 
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...base_step import BaseStep
+from .base_component import ComponentConfig, ComponentResult
 from ..regime_analysis.label_fusion import RegimeOptimizationService
 
 
@@ -386,7 +387,7 @@ class ClusteringContext:
 
 
 @dataclass
-class NASTASClusteringConfig(BaseConfig):
+class RegimeClusteringConfig(BaseConfig):
     """Configuration for NAS-TAS clustering component using shared utilities."""
     exchange: str = "binance"
 
@@ -505,7 +506,7 @@ class NASTASClusteringConfig(BaseConfig):
             self.min_temporal_stability = thresholds.get('min_temporal_stability', 0.6)
 
 
-class NASTASClusteringComponent(BaseMarketAnalysisComponent):
+class RegimeClusteringComponent(BaseStep):
     """
     NAS-TAS Clustering Component.
     
@@ -517,13 +518,38 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     - Uses shared regime characteristics generation
     """
     
-    def __init__(self, config: Optional[NASTASClusteringConfig] = None):
-        """Initialize the NAS-TAS clustering component with enhanced capabilities."""
-        with LoggingContext('NAS-TAS-Clustering', 'Initialization', verbose=True):
-            super().__init__(config)
-
+    def __init__(self, step_name: str = "regime_clustering", config: Optional[Dict[str, Any]] = None):
+        """Initialize the regime clustering component with enhanced capabilities."""
+        super().__init__(step_name, config)
+        
+        # Convert config dict to RegimeClusteringConfig
+        if config:
+            self.clustering_config = RegimeClusteringConfig(**config)
+        else:
+            self.clustering_config = RegimeClusteringConfig()
+        
+        with LoggingContext('Regime-Clustering', 'Initialization', verbose=True):
             # Use shared logging utilities
-            self.logger = get_logger('NASTASClustering')
+            self.logger = get_logger('RegimeClustering')
+    
+    def _load_market_data_from_artifacts(self) -> Optional[pd.DataFrame]:
+        """Load market data from artifacts."""
+        try:
+            # Try to load market data from various possible artifact names
+            possible_names = ['market_data', 'processed_data', 'klines_data', 'price_data']
+            
+            for name in possible_names:
+                data = self._load_dataframe(name)
+                if data is not None and not data.empty:
+                    tprint(f"Loaded market data from artifact: {name}", "INFO")
+                    return data
+            
+            tprint("No market data found in artifacts", "WARNING")
+            return None
+            
+        except Exception as e:
+            tprint(f"Error loading market data: {e}", "ERROR")
+            return None
             
             # Initialize shared utilities
             self.config_validator = ConfigValidator(verbose=True)
@@ -1293,13 +1319,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             f"Final regime count: {n_regimes} (data-driven, no hardcoded heuristics)",
             "SUCCESS"
         )
-        self.config.n_regimes = n_regimes
+        self.clustering_config.n_regimes = n_regimes
         return n_regimes
 
     def _validate_configuration(self) -> None:
         """Validate configuration using shared utilities."""
         tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
-        validation_errors = self.config_validator.validate_config(self.config)
+        validation_errors = self.config_validator.validate_config(self.clustering_config)
         if validation_errors:
             tprint(f"Configuration validation failed: {validation_errors}", "ERROR")
             raise ValueError(f"Configuration validation failed: {validation_errors}")
@@ -2572,37 +2598,34 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         tprint("Consolidated artifacts created", "SUCCESS")
         return artifacts
 
-    @log_execution('NAS-TAS-Clustering', 'NAS-TAS Clustering', verbose=True)
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    @log_execution('Regime-Clustering', 'Regime Clustering', verbose=True)
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Execute NAS-TAS clustering using shared utilities.
+        Execute regime clustering analysis.
         
         Args:
-            data: Market data for clustering
-            pipeline_state: Current pipeline state
+            config: Configuration dictionary containing parameters for clustering
             
         Returns:
-            ComponentResult with clustering results
+            Dictionary with clustering results and artifacts
         """
         try:
-            # Store pipeline state as instance attribute for use in other methods
-            self.pipeline_state = pipeline_state
-            self._restore_learned_weights_from_state(pipeline_state)
+            # Update clustering config with provided config
+            if config:
+                for key, value in config.items():
+                    if hasattr(self.clustering_config, key):
+                        setattr(self.clustering_config, key, value)
             
-            # Step 1: Extract regime count from previous step artifacts BEFORE validation
-            n_regimes = self._extract_regime_counts(pipeline_state)
-            self.config.n_regimes = n_regimes
-            tprint(f"Using extracted regime count: {n_regimes}", "INFO")
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol', 'ETHUSDT'),
+                exchange=config.get('exchange', 'binance'),
+                information=config.get('information', 'regime_clustering'),
+                direction=config.get('direction', 'both'),
+                model=config.get('model', 'RegimeClustering')
+            )
             
-            # Determine optimal algorithm_type based on data characteristics and regime discovery results
-            if not hasattr(self.config, 'algorithm_type') or self.config.algorithm_type is None:
-                algorithm_type = self._determine_optimal_algorithm_type(pipeline_state, data)
-                self.config.algorithm_type = algorithm_type
-                tprint(f"Determined optimal algorithm_type: {algorithm_type}", "INFO")
-            
-            # Input validation (after n_regimes and algorithm_type are set)
-            self._validate_execution_inputs(data, pipeline_state)
-            tprint("🚀 Starting NAS-TAS clustering execution with M1 hardware optimization", "INFO")
+            tprint("🚀 Starting regime clustering execution", "INFO")
             
             # Initialize performance monitoring
             tprint("📊 Initializing performance monitoring...", "INFO")
@@ -2613,11 +2636,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Step 3: Initialize execution metadata
             self._initialize_execution_metadata()
-            self._load_calibration_history(pipeline_state)
 
             # Step 4: Load and validate market data
             tprint("Step 4: Loading and validating market data", "INFO")
-            market_data = await self._load_market_data(data)
+            market_data = self._load_market_data_from_artifacts()
             if market_data is None or market_data.empty:
                 tprint("No market data available for clustering", "ERROR")
                 raise ValueError("No market data available for clustering")
@@ -2693,19 +2715,28 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
 
-            return ComponentResult(
-                success=True,
-                artifacts=artifacts,
-                metadata={
-                    'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
-                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+            # Save artifacts using BaseStep methods
+            for artifact_name, artifact_data in artifacts.items():
+                if isinstance(artifact_data, pd.DataFrame):
+                    self._save_dataframe(artifact_data, artifact_name)
+                elif isinstance(artifact_data, dict):
+                    self._save_metadata(artifact_data, artifact_name)
+                else:
+                    self._save_model(artifact_data, artifact_name)
+            
+            return {
+                'success': True,
+                'artifacts': list(artifacts.keys()),
+                'metadata': {
+                    'symbol': getattr(self.clustering_config, 'symbol', 'ETHUSDT'),
+                    'timeframe': getattr(self.clustering_config, 'timeframe', '15m'),
                     'data_points_processed': len(market_data),
                     'n_clusters': clustering_result['n_clusters'],
-                    'algorithm_type': 'nas_tas_clustering',
+                    'algorithm_type': 'regime_clustering',
                     'execution_successful': True,
                     'uses_shared_utilities': True
                 }
-            )
+            }
             
         except Exception as e:
             import traceback
@@ -2725,24 +2756,22 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             }
             tprint_structured(error_info)
 
-            return ComponentResult(
-                success=False,
-                artifacts={
-                    "error_details": {
-                        "type": type(e).__name__,
-                        "message": str(e),
-                        "traceback": error_traceback,
-                        "timestamp": datetime.now().isoformat()
-                    }
+            return {
+                'success': False,
+                'error': {
+                    "type": type(e).__name__,
+                    "message": str(e),
+                    "traceback": error_traceback,
+                    "timestamp": datetime.now().isoformat()
                 },
-                error_message=f"NAS-TAS clustering failed: {str(e)}",
-                metadata={
-                    'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
-                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                'error_message': f"Regime clustering failed: {str(e)}",
+                'metadata': {
+                    'symbol': getattr(self.clustering_config, 'symbol', 'ETHUSDT'),
+                    'timeframe': getattr(self.clustering_config, 'timeframe', '15m'),
                     'execution_successful': False,
                     'error_type': type(e).__name__
                 }
-            )
+            }
     
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and validate market data for clustering."""
@@ -2780,8 +2809,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Creating base configuration...", "INFO")
             base_config = create_default_config(
                 config_type="hybrid",
-                symbol=getattr(self.config, 'symbol', 'ETHUSDT'),
-                timeframe=getattr(self.config, 'timeframe', '15m'),
+                symbol=getattr(self.clustering_config, 'symbol', 'ETHUSDT'),
+                timeframe=getattr(self.clustering_config, 'timeframe', '15m'),
                 n_regimes=getattr(self.config, 'n_regimes', 8)
             )
             tprint("Base configuration created", "SUCCESS")

@@ -85,7 +85,7 @@ from src.utils.hardware.memory_optimized_decorators import (
     memory_efficient, OptimizationConfig
 )
 from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, performance_tracked
+    smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig
 )
 
 
@@ -149,7 +149,11 @@ class BaseStep(ABC):
         
         self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization")
     
-    @memory_optimized(optimization_level=MemoryOptimizationLevel.BALANCED)
+    @memory_efficient(
+        memory_threshold_mb=100.0,
+        enable_compression=True,
+        optimization_level=OptimizationLevel.BALANCED
+    )
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
@@ -198,7 +202,6 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
-
     @smart_cache(ttl=1800, max_size=50)
     def _load_model(self, name: str) -> Any:
         """

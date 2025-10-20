@@ -9,8 +9,6 @@ management for maximum performance on Apple Silicon systems.
 from __future__ import annotations
 
 import logging
-import json
-import warnings
 import pandas as pd
 import numpy as np
 import copy
@@ -18,16 +16,13 @@ import asyncio
 import time
 import gc
 import os
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
 
 from src.training.steps.base_step import BaseStep
-from src.utils.common_operations import safe_dataframe_operation
-from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
+from src.training.common.component_result import ComponentResult
 
 # Enhanced M1 hardware optimization imports
 from src.utils.hardware import (
@@ -1505,7 +1500,6 @@ async def handle_feature_generation_step(
     try:
         # Create the step instance
         step = FeatureGenerationStep(
-            name="feature_generation_step",
             config={
                 'symbol': symbol,
                 'timeframe': timeframe,
@@ -1533,11 +1527,7 @@ async def handle_feature_generation_step(
         }
 
         # Execute the step
-        result = await step.execute(
-            training_input=training_input,
-            pipeline_state={},
-            **kwargs
-        )
+        result = await step.execute(training_input)
 
         return result
 

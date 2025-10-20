@@ -26,14 +26,24 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.utils.common_operations import (
-    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int,
-    get_memory_usage, optimize_dataframe_memory, memory_checkpoint
+    safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, IntegratedHardwareConfig,
+    process_market_data, process_ml_training_data, process_backtesting_data
+)
+from src.utils.hardware.unified_hardware_manager import (
+    get_unified_hardware_manager, WorkloadType, OptimizationLevel
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    memory_optimized, gc_optimized, comprehensive_memory_optimization,
+    MemoryOptimizationLevel
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -169,10 +179,9 @@ class BaseTrainer(ABC):
             'checkpoints': []
         }
         
-        # Initialize hardware optimizers
-        self._memory_optimizer = None
-        self._cpu_optimizer = None
-        self._gpu_manager = None
+        # Initialize enhanced hardware managers
+        self._integrated_hardware_manager = None
+        self._unified_hardware_manager = None
         self._parquet_manager = None
         
         tprint_info(f"🔧 Initializing {self.__class__.__name__} for {config.role.value}")
@@ -279,27 +288,32 @@ class BaseTrainer(ABC):
             return False
     
     async def _initialize_hardware_optimizers(self):
-        """Initialize hardware optimizers."""
+        """Initialize enhanced hardware managers."""
         try:
-            tprint_debug("🔧 Initializing hardware optimizers...")
+            tprint_debug("🔧 Initializing enhanced hardware managers...")
             
-            # Initialize memory optimizer
-            self._memory_optimizer = optimize_memory()
+            # Initialize integrated hardware manager with ML training configuration
+            integrated_config = IntegratedHardwareConfig(
+                enable_automatic_optimization=True,
+                enable_caching=True,
+                enable_memory_monitoring=True,
+                enable_performance_tracking=True,
+                memory_limit_gb=8.0,
+                cache_memory_limit_mb=1024.0
+            )
+            self._integrated_hardware_manager = get_integrated_hardware_manager(integrated_config)
             
-            # Initialize CPU optimizer
-            self._cpu_optimizer = get_m1_cpu_optimizer()
-            
-            # Initialize GPU manager
-            self._gpu_manager = get_m1_gpu_manager()
+            # Initialize unified hardware manager for workload optimization
+            self._unified_hardware_manager = get_unified_hardware_manager()
             
             # Initialize parquet manager
             self._parquet_manager = KlinesParquetManager()
             
-            tprint_success("✅ Hardware optimizers initialized")
+            tprint_success("✅ Enhanced hardware managers initialized")
             
         except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimizer initialization failed: {e}")
-            self.logger.warning(f"Hardware optimizer initialization failed: {e}")
+            tprint_warning(f"⚠️ Hardware manager initialization failed: {e}")
+            self.logger.warning(f"Hardware manager initialization failed: {e}")
     
     def _validate_config(self) -> bool:
         """Validate training configuration."""
@@ -369,7 +383,13 @@ class BaseTrainer(ABC):
         default_return=None,
         context="data preprocessing"
     )
-    @memory_checkpoint
+    @comprehensive_memory_optimization(
+        optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+        enable_caching=True,
+        enable_chunking=True,
+        enable_gc=True,
+        enable_pools=True
+    )
     def _preprocess_data(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Preprocess data for training using our utilities.
@@ -385,9 +405,7 @@ class BaseTrainer(ABC):
             tprint_info("🔧 Preprocessing data...")
             self.logger.info("Preprocessing data...")
             
-            # Get initial memory usage
-            initial_memory = get_memory_usage()
-            tprint_debug(f"📊 Initial memory usage: {initial_memory['rss']:.2f} MB")
+            # Memory usage is now tracked by enhanced hardware managers
             
             # Calculate data quality metrics
             quality_metrics = calculate_data_quality_metrics(data)
@@ -404,10 +422,12 @@ class BaseTrainer(ABC):
                 data = data.replace([np.inf, -np.inf], np.nan)
                 data = data.fillna(data.median())
             
-            # Optimize memory usage
-            if self._memory_optimizer:
-                data = optimize_dataframe_memory(data)
-                tprint_debug("🧠 Memory optimization applied")
+            # Optimize memory usage using integrated hardware manager
+            if self._integrated_hardware_manager:
+                data = self._integrated_hardware_manager.process_data_with_optimization(
+                    data, WorkloadType.ML_TRAINING
+                )
+                tprint_debug("🧠 Enhanced memory optimization applied")
             
             # Feature selection if enabled
             if self.config.max_features < len(data.columns):
@@ -431,12 +451,7 @@ class BaseTrainer(ABC):
             if targets is not None:
                 validate_finite(targets, "targets")
             
-            # Get final memory usage
-            final_memory = get_memory_usage()
-            memory_delta = final_memory['rss'] - initial_memory['rss']
-            
             tprint_success(f"✅ Data preprocessed: {data.shape[0]} samples, {data.shape[1]} features")
-            tprint_performance(f"📊 Memory delta: {memory_delta:.2f} MB")
             
             return data, targets
             

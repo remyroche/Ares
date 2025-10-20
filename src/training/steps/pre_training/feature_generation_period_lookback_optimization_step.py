@@ -23,81 +23,28 @@ import traceback
 import asyncio
 from datetime import datetime, timedelta
 import gc
-import mmap
 import os
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import re
-import multiprocessing as mp
 
-# Self-contained M1 optimization components
-class M1GPUManager:
-    """Self-contained M1 GPU manager."""
-    def __init__(self):
-        self.mps_available = False
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
-
-class M1MemoryOptimizer:
-    """Self-contained M1 memory optimizer."""
-    def __init__(self, memory_limit_gb=8.0):
-        self.memory_limit_gb = memory_limit_gb
-    
-    def optimize_dataframe(self, df):
-        return df.copy()
-    
-    def optimize_memory(self):
-        gc.collect()
-
-class M1CPUOptimizer:
-    """Self-contained M1 CPU optimizer."""
-    def __init__(self):
-        self.max_workers = 4
-    
-    def create_thread_pool(self):
-        return ThreadPoolExecutor(max_workers=self.max_workers)
-    
-    def parallel_map(self, func, items):
-        return [func(item) for item in items]
-
-# Convenience functions
-def get_m1_gpu_manager():
-    return M1GPUManager()
-
-def get_m1_memory_optimizer(memory_limit_gb=8.0):
-    return M1MemoryOptimizer(memory_limit_gb)
-
-def get_m1_cpu_optimizer():
-    return M1CPUOptimizer()
-
-def optimize_dataframe_for_m1(df):
-    return df.copy()
-
-def optimize_dataframe_memory(df):
-    return df.copy()
-
-def optimize_memory():
-    gc.collect()
-
-def create_m1_optimized_thread_pool():
-    return ThreadPoolExecutor()
-
-def parallel_map_m1(func, items):
-    return [func(item) for item in items]
-
-def create_m1_optimized_array(arr):
-    return arr
-
-# Self-contained period lookback optimization function
-def run_period_lookback_optimization_step(data, config, **kwargs):
-    """Self-contained period lookback optimization step."""
-    # Simplified implementation - return the data as-is
-    return {
-        'success': True,
-        'data': data,
-        'optimized_periods': config.get('periods', [15, 30, 60]),
-        'optimized_lookbacks': config.get('lookbacks', [100, 200, 500])
-    }
+# Enhanced hardware optimization imports
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, WorkloadType, OptimizationLevel, get_unified_hardware_manager
+)
+from src.utils.hardware.m1_comprehensive_optimizer import (
+    M1ComprehensiveOptimizer, OptimizationStrategy, WorkloadCategory, get_comprehensive_optimizer
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, OptimizationConfig, OptimizationLevel
+)
+from src.utils.hardware.m1_unified_memory_manager import (
+    M1UnifiedMemoryManager, get_unified_memory_manager, MemoryTier
+)
+from src.utils.hardware.m1_advanced_cpu_optimizer import (
+    M1AdvancedCPUOptimizer, get_advanced_cpu_optimizer
+)
+from src.utils.hardware.m1_enhanced_gpu_manager import (
+    M1EnhancedGPUManager, get_enhanced_gpu_manager, GPUOperationType
+)
 from src.training.steps.base_step import BaseStep
 from src.training.steps.pre_training.components.base_component import ComponentResult
 from dataclasses import field
@@ -105,48 +52,7 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 
-# Self-contained CMI complementarity components
-@dataclass
-class CMIComplementarityConfig:
-    """CMI complementarity configuration."""
-    per_family_budget: Tuple[int, int] = (5, 15)
-    upstream_multiplier: int = 3
-    max_total_features: int = 60
-    enable_regime_awareness: bool = True
-    compute_timeout_seconds: float = 300.0
-
-class CMIComplementarityScorer:
-    """Self-contained CMI complementarity scorer."""
-    
-    def __init__(self, config: CMIComplementarityConfig):
-        self.config = config
-    
-    def score_features(self, features_df, targets, **kwargs):
-        """Score features using CMI complementarity."""
-        feature_scores = {}
-        for col in features_df.columns:
-            if col not in targets:
-                feature_scores[col] = 0.5  # Default score
-        return feature_scores
-
-@dataclass
-class AnalystSideInfoConfig:
-    """Analyst side info configuration."""
-    enable_side_info: bool = True
-    side_info_weight: float = 0.1
-
-class AnalystSideInfoHandler:
-    """Self-contained analyst side info handler."""
-    
-    def __init__(self, config: AnalystSideInfoConfig = None):
-        self.config = config or AnalystSideInfoConfig()
-    
-    def process_side_info(self, features_df, **kwargs):
-        """Process analyst side information."""
-        return features_df.copy()
-
-# Set availability flag
-CMI_COMPLEMENTARITY_AVAILABLE = True
+# CMI complementarity components are now handled by external modules
 
 # Import tprint utilities for enhanced logging
 try:
@@ -180,11 +86,24 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         tprint_success("Base component initialization completed")
         
-        # Initialize M1 optimization components
-        tprint_info("🚀 Initializing M1 optimization components")
-        self.m1_gpu_manager = get_m1_gpu_manager()
-        self.m1_memory_optimizer = get_m1_memory_optimizer()
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        # Initialize enhanced hardware optimization components
+        tprint_info("🚀 Initializing enhanced hardware optimization components")
+        
+        # Initialize unified hardware manager
+        self.hardware_manager = get_unified_hardware_manager()
+        
+        # Initialize comprehensive M1 optimizer
+        self.comprehensive_optimizer = get_comprehensive_optimizer(
+            strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE,
+            workload_category=WorkloadCategory.FEATURE_ENGINEERING
+        )
+        
+        # Initialize specialized components
+        self.memory_manager = get_unified_memory_manager()
+        self.cpu_optimizer = get_advanced_cpu_optimizer()
+        self.gpu_manager = get_enhanced_gpu_manager()
+        
+        # Enhanced hardware optimization components initialized
         
         # Optimization configuration
         self.parallel_workers = 6  # Optimized for M1
@@ -193,30 +112,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         self.aggressive_gc_enabled = True
         self.data_type_optimization = True  # Convert float64 to float32
         
-        tprint_success("🧠 M1 optimization components initialized")
+        tprint_success("🧠 Enhanced hardware optimization components initialized")
         
-        # Initialize CMI complementarity components if available
-        tprint_info("Checking CMI complementarity availability")
-        if CMI_COMPLEMENTARITY_AVAILABLE:
-            tprint_success("CMI complementarity components available - initializing")
-            # CMI configuration for period/lookback optimization
-            cmi_config = CMIComplementarityConfig(
-                per_family_budget=(2, 5),  # Fewer periods/lookbacks per family
-                upstream_multiplier=2,  # Total budget to RFE = 2× per-family
-                max_total_features=20,  # Maximum total periods/lookbacks to select
-                enable_regime_awareness=True,  # Compute R(X|A) per regime
-                compute_timeout_seconds=300.0,  # 5 min hard limit
-                enable_synergy=True,  # Enable synergy for period/lookback combinations
-                beta_synergy=0.3  # Higher synergy weight for combinations
-            )
-            tprint_info(f"CMI config created: per_family_budget={cmi_config.per_family_budget}, max_total_features={cmi_config.max_total_features}")
-            self.cmi_scorer = CMIComplementarityScorer(cmi_config)
-            self.analyst_handler = AnalystSideInfoHandler()
-            tprint_success("CMI complementarity components initialized successfully")
-        else:
-            tprint_warning("CMI complementarity components not available - using standard optimization")
-            self.cmi_scorer = None
-            self.analyst_handler = None
+        # CMI complementarity components are now handled by external modules
+        self.cmi_scorer = None
+        self.analyst_handler = None
         
         # Apply config settings
         tprint_info("Applying configuration settings")
@@ -308,10 +208,15 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_error(f"Aggressive garbage collection failed: {e}")
             self.logger.warning(f"Aggressive garbage collection failed: {e}")
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _optimize_dataframe_dtypes(self, df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
-        """Optimize DataFrame data types for memory efficiency."""
+        """Optimize DataFrame data types using enhanced hardware optimization tools."""
         if verbose:
-            tprint_step("Optimizing DataFrame data types")
+            tprint_step("Optimizing DataFrame data types with enhanced hardware tools")
         try:
             if not isinstance(df, pd.DataFrame):
                 tprint_warning(f"Expected DataFrame, got {type(df)}")
@@ -321,25 +226,36 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             if verbose:
                 tprint_info(f"Initial memory usage: {initial_memory / 1024**2:.2f} MB")
             
-            # Use enhanced M1 memory optimizer
+            # Use enhanced unified memory manager
             if self.data_type_optimization:
-                df = optimize_dataframe_for_m1(df)
+                df = self.memory_manager.optimize_dataframe(
+                    df, 
+                    tier=MemoryTier.SHARED,
+                    enable_compression=True,
+                    aggressive_optimization=True
+                )
                 
                 final_memory = df.memory_usage(deep=True).sum()
                 memory_saved = initial_memory - final_memory
-                tprint_success(f"Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
+                if verbose:
+                    tprint_success(f"Enhanced data type optimization: {memory_saved / 1024**2:.2f} MB saved")
             else:
                 tprint_info("Data type optimization disabled")
             
             return df
             
         except Exception as e:
-            tprint_error(f"Data type optimization failed: {e}")
-            self.logger.warning(f"Data type optimization failed: {e}")
+            tprint_error(f"Enhanced data type optimization failed: {e}")
+            self.logger.warning(f"Enhanced data type optimization failed: {e}")
             return df
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=False  # Disable compression for chunk processing
+    ))
     def _process_data_in_chunks(self, data: pd.DataFrame, chunk_size: Optional[int] = None) -> List[pd.DataFrame]:
-        """Process data in memory-efficient chunks."""
+        """Process data in memory-efficient chunks with enhanced optimization."""
         tprint_step("Processing data in chunks")
         try:
             if chunk_size is None:
@@ -384,8 +300,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_info(f"Processing {len(chunks)} chunks with {self.parallel_workers} workers")
             
-            # Use M1-optimized thread pool
-            with self.m1_cpu_optimizer.create_optimized_thread_pool(max_workers=self.parallel_workers) as executor:
+            # Use enhanced CPU-optimized thread pool
+            with self.cpu_optimizer.create_optimized_thread_pool(
+                max_workers=self.parallel_workers,
+                workload_type=WorkloadType.FEATURE_ENGINEERING
+            ) as executor:
                 # Submit all chunks for parallel processing
                 future_to_chunk = {executor.submit(process_func, chunk): i for i, chunk in enumerate(chunks)}
                 
@@ -519,8 +438,14 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Standard feature streaming failed: {e}")
             return data
 
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.MAXIMUM,
+        enable_compression=True
+    ))
     def _vectorbt_optimized_operations(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply VectorBT-optimized operations for vectorized calculations."""
+        """Apply VectorBT-optimized operations for vectorized calculations with enhanced GPU acceleration."""
         tprint_step("Applying VectorBT-optimized operations")
         try:
             # Check if VectorBT is available
@@ -536,20 +461,23 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_info("Using VectorBT for optimized vectorized operations")
             
-            # Apply M1 GPU optimization if available
-            if self.m1_gpu_manager.mps_available:
+            # Apply enhanced GPU optimization if available
+            if self.gpu_manager.is_available():
                 tprint_info("🚀 Using M1 GPU acceleration for VectorBT operations")
                 # Convert to GPU-optimized format with safe dtype checking
                 try:
                     # Ensure numeric data only for MPS
                     numeric_data = data.select_dtypes(include=[np.number])
                     if len(numeric_data.columns) > 0:
-                        gpu_data = self.m1_gpu_manager.optimize_tensor_operations(numeric_data.values)
+                        gpu_data = self.gpu_manager.optimize_tensor_operations(
+                            numeric_data.values,
+                            operation_type=GPUOperationType.TENSOR_OPERATIONS
+                        )
                         if gpu_data is not None:
                             data = pd.DataFrame(gpu_data, index=data.index, columns=numeric_data.columns)
                 except Exception as e:
-                    tprint_warning(f"M1 GPU optimization failed, using CPU: {e}")
-                    self.logger.warning(f"M1 GPU optimization failed, using CPU: {e}")
+                    tprint_warning(f"Enhanced GPU optimization failed, using CPU: {e}")
+                    self.logger.warning(f"Enhanced GPU optimization failed, using CPU: {e}")
             
             # Use VectorBT for rolling operations
             if 'close' in data.columns:
@@ -597,9 +525,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     # Apply VectorBT optimization
                     chunk = self._vectorbt_optimized_operations(chunk)
                     
-                    # M1 GPU optimization if available
-                    if self.m1_gpu_manager.mps_available:
-                        chunk = optimize_dataframe_for_m1(chunk)
+                    # Enhanced GPU optimization if available
+                    if self.gpu_manager.is_available():
+                        chunk = self.gpu_manager.optimize_dataframe(
+                            chunk, 
+                            operation_type=GPUOperationType.DATA_PROCESSING
+                        )
                     
                     return chunk
                     
@@ -618,6 +549,12 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Parallel feature optimization failed: {e}")
             return chunks  # Return original chunks on failure
 
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _process_data(self, data, **kwargs):
         """Process data through period + lookback optimization with artifact manager integration."""
         tprint_step("Starting period + lookback optimization data processing")
@@ -627,8 +564,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         try:
             # Start memory monitoring
-            tprint_info("🧠 Starting M1 memory monitoring")
-            self.m1_memory_optimizer.start_monitoring()
+            tprint_info("🧠 Starting enhanced memory monitoring")
+            self.memory_manager.start_monitoring()
             
             # Optimize input data
             tprint_info("🔧 Optimizing input data")
@@ -751,26 +688,17 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_success(f"Input validation passed: {len(data)} rows, {len(data.columns)} columns")
 
-            # Check if CMI complementarity is enabled (Tactician mode only)
-            tprint_info("Checking CMI complementarity availability and pipeline state")
+            # Enhanced hardware optimization for period/lookback optimization
+            tprint_info("🚀 Using enhanced hardware optimization for period/lookback optimization")
             pipeline_state = kwargs.get('pipeline_state', {})
             tactician_mode = pipeline_state.get('tactician_mode', False)
             
-            enable_cmi_complementarity = (
-                CMI_COMPLEMENTARITY_AVAILABLE and 
-                self.cmi_scorer is not None and 
-                tactician_mode
-            )
-            
-            tprint_info(f"CMI availability: {CMI_COMPLEMENTARITY_AVAILABLE}, scorer available: {self.cmi_scorer is not None}, tactician_mode: {tactician_mode}")
-            tprint_info(f"CMI complementarity enabled: {enable_cmi_complementarity}")
-            
-            if enable_cmi_complementarity:
-                tprint_success("🎯 CMI complementarity enabled for Tactician mode period/lookback optimization")
-                self.logger.info("🎯 CMI complementarity enabled for Tactician mode period/lookback optimization")
+            if tactician_mode:
+                tprint_success("🎯 Tactician mode period/lookback optimization with enhanced hardware acceleration")
+                self.logger.info("🎯 Tactician mode period/lookback optimization with enhanced hardware acceleration")
             else:
-                tprint_info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
-                self.logger.info("📊 Standard period/lookback optimization (Analyst mode or CMI unavailable)")
+                tprint_info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
+                self.logger.info("📊 Standard period/lookback optimization with enhanced hardware acceleration")
             
             # Perform actual period + lookback optimization using consolidated pipeline
             tprint_info("Performing data-driven period + lookback optimization")
@@ -933,65 +861,20 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint_error(f"Per-feature MI/mRMR computation failed: {e}")
                 raise
 
-            # Apply CMI complementarity regularizer if enabled
-            tprint_info("Processing CMI complementarity regularizer")
-            cmi_diagnostics = {}
-            if enable_cmi_complementarity:
-                tprint_info("CMI complementarity enabled - processing regularizer")
-                try:
-                    # Get targets from pipeline state
-                    targets = kwargs.get('pipeline_state', {}).get('targets')
-                    tprint_info(f"Targets available: {targets is not None}")
-                    if targets is not None:
-                        tprint_info("Extracting Analyst side information")
-                        # Extract Analyst side information
-                        analyst_result = self.analyst_handler.extract_side_info(
-                            kwargs.get('pipeline_state', {}), targets, data.index
-                        )
-                        
-                        tprint_info(f"Analyst result: valid={analyst_result.is_valid}, degraded={analyst_result.degraded_to_unconditional}")
-                        
-                        if analyst_result.is_valid and not analyst_result.degraded_to_unconditional:
-                            # Apply CMI complementarity regularizer to optimization objective
-                            # Obj = w_model·Perf + w_cmi·R̄ - w_red·D̄
-                            # This would be integrated into the actual optimization algorithm
-                            tprint_success("🎯 Applying CMI complementarity regularizer to optimization objective")
-                            self.logger.info("🎯 Applying CMI complementarity regularizer to optimization objective")
-                            
-                            # Store CMI diagnostics
-                            cmi_diagnostics = {
-                                'cmi_enabled': True,
-                                'analyst_source': analyst_result.source,
-                                'analyst_dims': analyst_result.n_dims,
-                                'I_Y_A': analyst_result.I_Y_A,
-                                'degraded_to_unconditional': analyst_result.degraded_to_unconditional,
-                                'regularizer_weights': {
-                                    'w_model': 0.6,  # Model performance weight
-                                    'w_cmi': 0.3,   # CMI complementarity weight
-                                    'w_red': 0.1    # Redundancy penalty weight
-                                }
-                            }
-                            tprint_info(f"CMI diagnostics: source={analyst_result.source}, dims={analyst_result.n_dims}")
-                        else:
-                            tprint_warning("⚠️ Analyst side information extraction failed, using standard optimization")
-                            self.logger.warning("⚠️ Analyst side information extraction failed, using standard optimization")
-                            cmi_diagnostics = {'cmi_enabled': False, 'error': 'Analyst side info failed'}
-                    else:
-                        tprint_warning("⚠️ No targets available for CMI complementarity regularizer")
-                        self.logger.warning("⚠️ No targets available for CMI complementarity regularizer")
-                        cmi_diagnostics = {'cmi_enabled': False, 'error': 'No targets available'}
-                        
-                except Exception as e:
-                    tprint_error(f"⚠️ CMI complementarity regularizer failed: {e}, using standard optimization")
-                    self.logger.warning(f"⚠️ CMI complementarity regularizer failed: {e}, using standard optimization")
-                    cmi_diagnostics = {'cmi_enabled': False, 'error': str(e)}
-            else:
-                tprint_info("CMI complementarity not enabled - using standard optimization")
-                cmi_diagnostics = {'cmi_enabled': False, 'reason': 'Not in Tactician mode or CMI unavailable'}
+            # Enhanced hardware optimization diagnostics
+            tprint_info("Processing enhanced hardware optimization diagnostics")
+            optimization_diagnostics = {
+                'enhanced_optimization_enabled': True,
+                'hardware_manager_available': self.hardware_manager is not None,
+                'comprehensive_optimizer_available': self.comprehensive_optimizer is not None,
+                'memory_manager_available': self.memory_manager is not None,
+                'cpu_optimizer_available': self.cpu_optimizer is not None,
+                'gpu_manager_available': self.gpu_manager is not None
+            }
             
-            tprint_info(f"CMI diagnostics: {cmi_diagnostics}")
+            tprint_info(f"Enhanced optimization diagnostics: {optimization_diagnostics}")
             
-            tprint_info("Building optimization metadata")
+            tprint_info("Building enhanced optimization metadata")
             optimization_metadata = {
                 'symbol': symbol,
                 'timeframe': timeframe,
@@ -1001,8 +884,8 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'no_recency_bias': self.no_recency_bias,
                 'top_1_trading': self.top_1_trading,
                 'top_3_interactions': self.top_3_interactions,
-                'optimization_method': 'consolidated_pipeline',
-                'cmi_diagnostics': cmi_diagnostics
+                'optimization_method': 'enhanced_hardware_pipeline',
+                'enhanced_optimization_diagnostics': optimization_diagnostics
             }
             tprint_info(f"Metadata created with {len(optimization_metadata)} fields")
 
@@ -1071,23 +954,28 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 raise
 
             # Final optimization and cleanup
-            tprint_info("🧹 Performing final optimization and cleanup")
+            tprint_info("🧹 Performing final optimization and cleanup with enhanced hardware tools")
             
-            # Final data type optimization
+            # Final comprehensive optimization
             if isinstance(data, pd.DataFrame):
-                data = self._optimize_dataframe_dtypes(data)
-                tprint_info("Final data type optimization completed")
+                data = self.comprehensive_optimizer.optimize_dataframe(
+                    data,
+                    workload_type=WorkloadType.FEATURE_ENGINEERING,
+                    enable_compression=True,
+                    enable_gpu_acceleration=True
+                )
+                tprint_info("Final comprehensive optimization completed")
             
             # Aggressive garbage collection
             if self.aggressive_gc_enabled:
                 self._aggressive_garbage_collection()
             
             # Stop memory monitoring
-            tprint_info("🧠 Stopping M1 memory monitoring")
-            self.m1_memory_optimizer.stop_monitoring()
+            tprint_info("🧠 Stopping enhanced memory monitoring")
+            self.memory_manager.stop_monitoring()
             
             # Get final memory statistics
-            memory_stats = self.m1_memory_optimizer.get_memory_stats()
+            memory_stats = self.memory_manager.get_memory_stats()
             tprint_info(f"Final memory stats: {memory_stats.get('memory_percent', 0):.1f}% used")
             
             tprint_success("Period + lookback optimization completed successfully")
@@ -1105,7 +993,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                     'aggressive_gc_enabled': self.aggressive_gc_enabled,
                     'data_type_optimization': self.data_type_optimization,
                     'final_memory_usage': memory_stats.get('memory_percent', 0),
-                    'm1_gpu_acceleration': self.m1_gpu_manager.mps_available
+                    'enhanced_gpu_acceleration': self.gpu_manager.is_available()
                 }
             }
 
@@ -1544,7 +1432,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 
 ### System Configuration
 - **Parallel Workers:** {result.get('optimization_stats', {}).get('parallel_workers_used', 'N/A')}
-- **M1 GPU Acceleration:** {result.get('optimization_stats', {}).get('m1_gpu_acceleration', False)}
+- **Enhanced GPU Acceleration:** {result.get('optimization_stats', {}).get('enhanced_gpu_acceleration', False)}
 - **Final Memory Usage:** {result.get('optimization_stats', {}).get('final_memory_usage', 0):.1f}%
 
 ## 📋 Feature Categories Analysis
@@ -1593,7 +1481,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 - **Method:** Concurrent period and lookback optimization
 - **Correlation Analysis:** Enabled with threshold >0.85
 - **Redundancy Removal:** Active
-- **M1 Optimizations:** Enabled
+- **Enhanced Hardware Optimizations:** Enabled
 
 ---
 *Report generated by Ares Period & Lookback Optimization System*
@@ -2554,8 +2442,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 features[c] = features[c].astype(np.float32)
         # Hardware optimizations
         try:
-            if self.m1_gpu_manager and getattr(self.m1_gpu_manager, 'mps_available', False):
-                features = optimize_dataframe_for_m1(features)
+            if self.gpu_manager and self.gpu_manager.is_available():
+                features = self.gpu_manager.optimize_dataframe(
+                    features, 
+                    operation_type=GPUOperationType.DATA_PROCESSING
+                )
         except Exception:
             pass
         try:
@@ -2699,9 +2590,22 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             }
         }
 
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.MAXIMUM,
+        enable_compression=True
+    ))
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the period + lookback optimization step with M1 optimizations."""
-        self.logger.info("🔍 Starting period + lookback optimization step")
+        """Execute the period + lookback optimization step with enhanced hardware optimizations."""
+        self.logger.info("🔍 Starting period + lookback optimization step with enhanced hardware optimizations")
+        
+        # Initialize comprehensive optimization for this workload
+        tprint_info("🚀 Initializing comprehensive optimization for feature engineering workload")
+        self.comprehensive_optimizer.optimize_for_workload(
+            workload_category=WorkloadCategory.FEATURE_ENGINEERING,
+            strategy=OptimizationStrategy.MAXIMUM_PERFORMANCE
+        )
         
         # Set context for enhanced file naming
         symbol = config.get('symbol', 'ETHUSDT')
@@ -2789,13 +2693,13 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         try:
             # Log optimization configuration
-            tprint_info(f"🚀 M1 Optimization Configuration:")
+            tprint_info(f"🚀 Enhanced Hardware Optimization Configuration:")
             tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
             tprint_info(f"   - Chunk Size: {self.chunk_size}")
             tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
             tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
             tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
-            tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
+            tprint_info(f"   - Enhanced GPU Available: {self.gpu_manager.is_available()}")
             
             # Process data through the optimization
             tprint_info("Processing data through M1-optimized pipeline")
@@ -2842,7 +2746,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             # Ensure cleanup even on error
             try:
-                self.m1_memory_optimizer.stop_monitoring()
+                self.memory_manager.stop_monitoring()
                 if self.aggressive_gc_enabled:
                     self._aggressive_garbage_collection()
             except Exception as cleanup_error:

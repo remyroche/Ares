@@ -47,25 +47,7 @@ from .optimized_hdbscan_pipeline import (
     create_optimized_hdbscan_pipeline
 )
 
-# Enhanced optimization components
-from .enhanced_memory_optimizer import (
-    EnhancedMemoryOptimizer,
-    MemoryOptimizationConfig,
-    create_enhanced_memory_optimizer
-)
-
-from .enhanced_hyperparameter_optimizer import (
-    EnhancedHyperparameterOptimizer,
-    HDBSCANHyperparameterConfig,
-    create_enhanced_hyperparameter_optimizer
-)
-
-from .enhanced_vectorized_processor import (
-    EnhancedVectorizedProcessor,
-    VectorizedProcessingConfig,
-    create_enhanced_vectorized_processor
-)
-
+# Enhanced HDBSCAN integration (kept for compatibility)
 from .enhanced_hdbscan_integration import (
     EnhancedHDBSCANIntegration,
     EnhancedHDBSCANConfig,
@@ -103,24 +85,13 @@ from .optimized_hdbscan_regime_discovery import (
     create_optimized_hdbscan_regime_discovery
 )
 
-# Feature inventory and usage guide
-from .feature_inventory import (
-    HDBSCANFeatureInventory,
-    get_hdbscan_feature_inventory
-)
-
+# Feature usage guide
 from .feature_usage_guide import (
     HDBSCANFeatureUsageGuide,
     get_hdbscan_feature_usage_guide
 )
 
-# Features common integration
-from .features_common_integration import (
-    FeaturesCommonHDBSCANIntegration,
-    FeaturesCommonIntegrationConfig,
-    create_features_common_hdbscan_integration
-)
-
+# Features common benefits analysis (kept for reference)
 from .features_common_benefits_analysis import (
     FeaturesCommonBenefitsAnalysis,
     get_features_common_benefits_analysis
@@ -157,26 +128,12 @@ __all__ = [
     'OptimizedHDBSCANPipelineConfig',
     'create_optimized_hdbscan_pipeline',
     
-    # Enhanced optimization components
-    'EnhancedMemoryOptimizer',
-    'MemoryOptimizationConfig',
-    'create_enhanced_memory_optimizer',
-    'EnhancedHyperparameterOptimizer',
-    'HDBSCANHyperparameterConfig',
-    'create_enhanced_hyperparameter_optimizer',
-    'EnhancedVectorizedProcessor',
-    'VectorizedProcessingConfig',
-    'create_enhanced_vectorized_processor',
+    # Enhanced HDBSCAN integration
     'EnhancedHDBSCANIntegration',
     'EnhancedHDBSCANConfig',
     'create_enhanced_hdbscan_integration',
-    'HDBSCANFeatureInventory',
-    'get_hdbscan_feature_inventory',
     'HDBSCANFeatureUsageGuide',
     'get_hdbscan_feature_usage_guide',
-    'FeaturesCommonHDBSCANIntegration',
-    'FeaturesCommonIntegrationConfig',
-    'create_features_common_hdbscan_integration',
     'FeaturesCommonBenefitsAnalysis',
     'get_features_common_benefits_analysis',
     

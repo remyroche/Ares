@@ -28,6 +28,15 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType, process_ml_training_data
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+)
 
 
 @dataclass
@@ -175,6 +184,14 @@ class TacticianBaseTraining(BaseStep):
         ),
         context="tactician base training"
     )
+    @comprehensive_memory_optimization(
+        optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+        enable_caching=True,
+        enable_chunking=True,
+        enable_gc=True,
+        enable_pools=True
+    )
+    @performance_tracked(log_performance=True, track_memory=True)
     @traced
     async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -203,11 +220,17 @@ class TacticianBaseTraining(BaseStep):
                     'training_time': 0.0
                 }
             
-            # Convert to pandas if needed
+            # Convert to pandas if needed and optimize with enhanced hardware tools
             if not isinstance(X_train, pd.DataFrame):
                 X_train = pd.DataFrame(X_train)
             if not isinstance(y_train, pd.Series):
                 y_train = pd.Series(y_train)
+            
+            # Process data with enhanced hardware optimization
+            hardware_manager = get_integrated_hardware_manager()
+            X_train = hardware_manager.process_data_with_optimization(
+                X_train, WorkloadType.ML_TRAINING
+            )
             
             # Train models
             training_result = await self._trainer.train(X_train, y_train)

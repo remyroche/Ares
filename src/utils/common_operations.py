@@ -1486,42 +1486,7 @@ def get_logger(name: str) -> logging.Logger:
     """Get logger instance."""
     return logging.getLogger(name)
 
-def cleanup_m1_optimizers() -> bool:
-    """Cleanup M1 optimizers.
-    
-    Returns:
-        bool: True if cleanup was successful, False otherwise
-    """
-    try:
-        # Placeholder for M1 optimizer cleanup
-        # TODO: Implement actual M1 optimizer cleanup logic
-        return True  # Return True to indicate successful cleanup (even if no-op)
-    except Exception:
-        return False
-
-def get_m1_gpu_manager():
-    """Get M1 GPU manager."""
-    try:
-        from src.utils.hardware.m1_gpu_utils import M1GPUManager
-        return M1GPUManager()
-    except Exception:
-        return None
-
-def get_m1_memory_optimizer():
-    """Get M1 memory optimizer."""
-    try:
-        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-        return M1MemoryOptimizer()
-    except Exception:
-        return None
-
-def get_m1_cpu_optimizer():
-    """Get M1 CPU optimizer."""
-    try:
-        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-        return M1CPUOptimizer()
-    except Exception:
-        return None
+# Legacy M1 hardware functions removed - use enhanced hardware utilities from src.utils.hardware instead
 
 def validate_finite(x: Union[pd.Series, np.ndarray]) -> bool:
     """Validate that values are finite."""
@@ -1555,10 +1520,17 @@ def timed_operation(operation_name: str = "Operation"):
     return _timed_operation()
 
 def optimize_memory():
-    """Optimize memory usage."""
+    """Optimize memory usage using enhanced hardware system."""
     try:
+        # Use enhanced hardware system for comprehensive memory optimization
+        from src.utils.hardware import force_cleanup, get_memory_stats
+        force_cleanup()
+        stats = get_memory_stats()
+        logger.info(f"🧹 Enhanced memory optimization completed: {stats}")
+    except ImportError:
+        # Fallback to basic optimization
         force_garbage_collection()
-        logger.info("🧹 Memory optimization completed")
+        logger.info("🧹 Basic memory optimization completed")
     except Exception as e:
         logger.warning(f"Memory optimization failed: {e}")
 

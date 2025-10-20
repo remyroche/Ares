@@ -25,6 +25,16 @@ from src.utils.logger import system_logger
 
 from .bayesian_tpe_optimizer import OptimizationConfig
 
+# Enhanced hardware optimization imports
+try:
+    from ...hardware import (
+        get_integrated_hardware_manager, m1_optimized, memory_optimized,
+        auto_optimize, smart_cache, performance_tracked, WorkloadCategory
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 logger = system_logger.getChild('AutoTuner')
 
 @dataclass
@@ -781,6 +791,8 @@ class AutoTuner:
         return config
 
 # Convenience function
+@performance_tracked(log_performance=True, track_memory=True)
+@m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
 def auto_tune_and_optimize(
     X: np.ndarray,
     y: np.ndarray,

@@ -485,19 +485,15 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self.cpu_optimizer = hardware['cpu']
                 self.gpu_manager = hardware['gpu']
                 self.neural_engine_manager = hardware['neural_engine']
-                self.hardware_optimization_enabled = available > 0
-                
                 # Initialize optimization system
                 initialize_optimization_system()
                 tprint_info("🚀 Hardware optimization system initialized")
                 
             else:
                 tprint_warning("⚠️ Comprehensive hardware tools not available, using fallback")
-                self.hardware_optimization_enabled = False
                 
         except Exception as e:
             tprint_warning(f"⚠️ Hardware initialization failed: {e}")
-            self.hardware_optimization_enabled = False
             # Set fallback values
             for key in ['memory', 'cpu', 'gpu', 'neural_engine']:
                 hardware[key] = None
@@ -2266,7 +2262,7 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_info("🧹 Cleaning up ensemble training resources...")
 
             # Clean up hardware optimizers if available
-            if hasattr(self, 'hardware_optimization_enabled') and self.hardware_optimization_enabled:
+            if COMPREHENSIVE_HARDWARE_AVAILABLE:
                 try:
                     if COMPREHENSIVE_HARDWARE_AVAILABLE:
                         # Use comprehensive hardware cleanup
@@ -2422,7 +2418,6 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
     Returns:
         Updated base models dictionary with NAS replacing DeepScaler1m
     """
-    # NOTE: NAS integration has been removed from this pipeline
     # Using standard base models for Tactician ensemble
     tprint_info("📋 Using standard base models for Tactician ensemble...")
 

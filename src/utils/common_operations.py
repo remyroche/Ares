@@ -1487,39 +1487,41 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 def cleanup_m1_optimizers() -> bool:
-    """Cleanup M1 optimizers.
+    """Cleanup M1 optimizers - DEPRECATED: Use comprehensive hardware tools instead.
     
     Returns:
         bool: True if cleanup was successful, False otherwise
     """
     try:
-        # Placeholder for M1 optimizer cleanup
-        # TODO: Implement actual M1 optimizer cleanup logic
-        return True  # Return True to indicate successful cleanup (even if no-op)
+        # Redirect to comprehensive hardware cleanup
+        from src.utils.hardware import clear_all_caches, force_cleanup
+        clear_all_caches()
+        force_cleanup()
+        return True
     except Exception:
         return False
 
 def get_m1_gpu_manager():
-    """Get M1 GPU manager."""
+    """Get M1 GPU manager - DEPRECATED: Use comprehensive hardware tools instead."""
     try:
-        from src.utils.hardware.m1_gpu_utils import M1GPUManager
-        return M1GPUManager()
+        from src.utils.hardware import get_enhanced_gpu_manager
+        return get_enhanced_gpu_manager()
     except Exception:
         return None
 
 def get_m1_memory_optimizer():
-    """Get M1 memory optimizer."""
+    """Get M1 memory optimizer - DEPRECATED: Use comprehensive hardware tools instead."""
     try:
-        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-        return M1MemoryOptimizer()
+        from src.utils.hardware import get_advanced_memory_manager
+        return get_advanced_memory_manager()
     except Exception:
         return None
 
 def get_m1_cpu_optimizer():
-    """Get M1 CPU optimizer."""
+    """Get M1 CPU optimizer - DEPRECATED: Use comprehensive hardware tools instead."""
     try:
-        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-        return M1CPUOptimizer()
+        from src.utils.hardware import get_advanced_cpu_optimizer
+        return get_advanced_cpu_optimizer()
     except Exception:
         return None
 
@@ -1612,12 +1614,16 @@ def safe_append(list_obj: List[Any], item: Any) -> bool:
         return False
 
 def integrate_with_m1_optimizers() -> Dict[str, Any]:
-    """Integrate with M1 optimizers."""
-    return {
-        'gpu_manager': get_m1_gpu_manager(),
-        'memory_optimizer': get_m1_memory_optimizer(),
-        'cpu_optimizer': get_m1_cpu_optimizer()
-    }
+    """Integrate with M1 optimizers - DEPRECATED: Use comprehensive hardware tools instead."""
+    try:
+        from src.utils.hardware import get_integrated_hardware_manager
+        return get_integrated_hardware_manager()
+    except Exception:
+        return {
+            'gpu_manager': get_m1_gpu_manager(),
+            'memory_optimizer': get_m1_memory_optimizer(),
+            'cpu_optimizer': get_m1_cpu_optimizer()
+        }
 
 # Missing functions for backward compatibility
 def safe_merge_dataframes(left: pd.DataFrame, right: pd.DataFrame, **kwargs) -> pd.DataFrame:

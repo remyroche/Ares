@@ -42,12 +42,19 @@ from .factories import (
     UnifiedFactory, create_optimized_component
 )
 
-from .vectorbt import (
+from .vectorbt_extensions import (
     UnifiedVectorBTManager, get_unified_vectorbt_manager,
     VectorBTOptimizationEngine, get_optimization_engine,
     GPUAccelerator, get_gpu_accelerator,
     VectorBTPerformanceMonitor, get_performance_monitor
 )
+
+# Hardware optimization availability check
+try:
+    from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
 
 # Note: Normalization feature generators removed from direct imports to avoid circular dependencies
 # They will be imported lazily when needed
@@ -119,6 +126,9 @@ __all__ = [
     'VectorBTPerformanceMonitor',
     'get_performance_monitor',
 
+    # Hardware Optimization (if available)
+    'HARDWARE_OPTIMIZATION_AVAILABLE',
+
     # Error handling and logging
     'FeaturesCommonError',
     'ValidationError',
@@ -151,6 +161,9 @@ if VECTORBT_OPTIMIZER_AVAILABLE:
         'UnifiedVectorizationManager',
         'get_unified_vectorization_manager',
     ])
+
+# Hardware optimization is now integrated into existing components
+# No additional exports needed as all components now have hardware optimization built-in
 
 if TPRINT_AVAILABLE:
     tprint(f"🚀 [features_common] Enhanced module initialized with {len(__all__)} exports", color="cyan")

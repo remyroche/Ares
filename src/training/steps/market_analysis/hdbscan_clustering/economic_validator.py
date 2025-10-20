@@ -35,6 +35,7 @@ class RegimeProfile:
     works_best_for: List[str]
     risk_caveats: List[str]
     radar_plot_data: Dict[str, float]
+    stability_metrics: Dict[str, float]  # New stability metrics
 
 @dataclass
 class EconomicValidationResult:
@@ -43,6 +44,7 @@ class EconomicValidationResult:
     validation_metrics: Dict[str, float]
     regime_quality_score: float
     trading_recommendations: Dict[str, Any]
+    stability_analysis: Dict[str, Any]  # New stability analysis
 
 class EconomicValidator:
     """
@@ -144,13 +146,19 @@ class EconomicValidator:
                 trading_recommendations = self._generate_trading_recommendations(profiles)
                 tprint_debug(f"Trading recommendations: {trading_recommendations}")
             
+            # Calculate stability analysis
+            with tprint_timer("Stability analysis"):
+                stability_analysis = self._calculate_stability_analysis(profiles, cluster_labels)
+                tprint_debug(f"Stability analysis: {stability_analysis}")
+            
             tprint_success(f"✅ Economic validation completed. Quality score: {regime_quality_score:.3f}")
             
             return EconomicValidationResult(
                 profiles=profiles,
                 validation_metrics=validation_metrics,
                 regime_quality_score=regime_quality_score,
-                trading_recommendations=trading_recommendations
+                trading_recommendations=trading_recommendations,
+                stability_analysis=stability_analysis
             )
             
         except Exception as e:
@@ -242,6 +250,13 @@ class EconomicValidator:
                 radar_plot_data = self._create_radar_plot_data(key_stats, regime_data)
                 tprint_debug(f"Radar plot data for regime {regime_id}: {radar_plot_data}")
             
+            # Calculate stability metrics
+            with tprint_timer(f"Stability metrics for regime {regime_id}"):
+                stability_metrics = self._calculate_regime_stability_metrics(
+                    regime_returns, regime_data, cluster_labels, regime_id
+                )
+                tprint_debug(f"Stability metrics for regime {regime_id}: {stability_metrics}")
+            
             # Generate regime name
             regime_name = self._generate_regime_name(key_stats, regime_id)
             tprint_debug(f"Generated name for regime {regime_id}: {regime_name}")
@@ -257,7 +272,8 @@ class EconomicValidator:
                 transitions=transitions,
                 works_best_for=works_best_for,
                 risk_caveats=risk_caveats,
-                radar_plot_data=radar_plot_data
+                radar_plot_data=radar_plot_data,
+                stability_metrics=stability_metrics
             )
             
         except Exception as e:
@@ -718,6 +734,243 @@ class EconomicValidator:
             logger.error(f"❌ Trading recommendations generation failed: {e}")
             return {'best_regimes': [], 'avoid_regimes': [], 'overall_strategy': 'Conservative', 'risk_level': 'Medium'}
     
+    def _calculate_regime_stability_metrics(self, 
+                                          returns: np.ndarray, 
+                                          regime_data: pd.DataFrame,
+                                          cluster_labels: np.ndarray,
+                                          regime_id: int) -> Dict[str, float]:
+        """Calculate comprehensive stability metrics for a regime."""
+        try:
+            tprint_debug(f"Calculating stability metrics for regime {regime_id}")
+            
+            stability_metrics = {}
+            
+            # 1. Regime persistence (how long regime typically lasts)
+            regime_mask = cluster_labels == regime_id
+            regime_durations = self._calculate_regime_durations(cluster_labels, regime_id)
+            if regime_durations:
+                stability_metrics['avg_duration'] = np.mean(regime_durations)
+                stability_metrics['duration_std'] = np.std(regime_durations)
+                stability_metrics['duration_consistency'] = 1.0 / (1.0 + np.std(regime_durations))
+            else:
+                stability_metrics['avg_duration'] = 0.0
+                stability_metrics['duration_std'] = 0.0
+                stability_metrics['duration_consistency'] = 0.0
+            
+            # 2. Return stability (consistency of returns)
+            if len(returns) > 1:
+                stability_metrics['return_stability'] = 1.0 / (1.0 + np.std(returns))
+                stability_metrics['return_consistency'] = 1.0 - (np.std(returns) / (np.abs(np.mean(returns)) + 1e-10))
+            else:
+                stability_metrics['return_stability'] = 0.0
+                stability_metrics['return_consistency'] = 0.0
+            
+            # 3. Volatility stability
+            if len(returns) > 5:
+                rolling_vol = pd.Series(returns).rolling(window=min(5, len(returns))).std().dropna()
+                if len(rolling_vol) > 0:
+                    stability_metrics['volatility_stability'] = 1.0 / (1.0 + np.std(rolling_vol))
+                    stability_metrics['volatility_consistency'] = 1.0 - (np.std(rolling_vol) / (np.mean(rolling_vol) + 1e-10))
+                else:
+                    stability_metrics['volatility_stability'] = 0.0
+                    stability_metrics['volatility_consistency'] = 0.0
+            else:
+                stability_metrics['volatility_stability'] = 0.0
+                stability_metrics['volatility_consistency'] = 0.0
+            
+            # 4. Regime transition stability
+            transition_stability = self._calculate_transition_stability(cluster_labels, regime_id)
+            stability_metrics['transition_stability'] = transition_stability
+            
+            # 5. Regime isolation (how distinct from other regimes)
+            isolation_score = self._calculate_regime_isolation(returns, cluster_labels, regime_id)
+            stability_metrics['isolation_score'] = isolation_score
+            
+            # 6. Regime predictability (autocorrelation)
+            if len(returns) > 3:
+                autocorr = self._calculate_autocorrelation(returns)
+                stability_metrics['predictability'] = abs(autocorr)
+            else:
+                stability_metrics['predictability'] = 0.0
+            
+            # 7. Regime robustness (resistance to noise)
+            robustness = self._calculate_regime_robustness(returns, regime_data)
+            stability_metrics['robustness'] = robustness
+            
+            # 8. Overall stability score (weighted combination)
+            overall_stability = self._calculate_overall_stability_score(stability_metrics)
+            stability_metrics['overall_stability'] = overall_stability
+            
+            tprint_debug(f"Stability metrics calculated: {len(stability_metrics)} metrics")
+            return stability_metrics
+            
+        except Exception as e:
+            tprint_error(f"❌ Stability metrics calculation failed: {e}")
+            return {
+                'avg_duration': 0.0,
+                'duration_std': 0.0,
+                'duration_consistency': 0.0,
+                'return_stability': 0.0,
+                'return_consistency': 0.0,
+                'volatility_stability': 0.0,
+                'volatility_consistency': 0.0,
+                'transition_stability': 0.0,
+                'isolation_score': 0.0,
+                'predictability': 0.0,
+                'robustness': 0.0,
+                'overall_stability': 0.0
+            }
+    
+    def _calculate_regime_durations(self, cluster_labels: np.ndarray, regime_id: int) -> List[int]:
+        """Calculate durations of regime periods."""
+        try:
+            durations = []
+            i = 0
+            
+            while i < len(cluster_labels):
+                if cluster_labels[i] == regime_id:
+                    # Find end of current regime period
+                    j = i + 1
+                    while j < len(cluster_labels) and cluster_labels[j] == regime_id:
+                        j += 1
+                    
+                    duration = j - i
+                    durations.append(duration)
+                    i = j
+                else:
+                    i += 1
+            
+            return durations
+            
+        except Exception as e:
+            logger.debug(f"Regime duration calculation failed: {e}")
+            return []
+    
+    def _calculate_transition_stability(self, cluster_labels: np.ndarray, regime_id: int) -> float:
+        """Calculate transition stability for a specific regime."""
+        try:
+            regime_mask = cluster_labels == regime_id
+            if np.sum(regime_mask) < 2:
+                return 0.0
+            
+            # Count transitions into and out of this regime
+            regime_changes = np.diff(np.concatenate([[False], regime_mask, [False]]).astype(int))
+            transitions_in = np.sum(regime_changes == 1)
+            transitions_out = np.sum(regime_changes == -1)
+            
+            # Stability is inverse of transition frequency
+            total_periods = np.sum(regime_mask)
+            transition_frequency = (transitions_in + transitions_out) / total_periods
+            stability = 1.0 - min(transition_frequency, 1.0)
+            
+            return max(0.0, stability)
+            
+        except Exception as e:
+            logger.debug(f"Transition stability calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_regime_isolation(self, returns: np.ndarray, cluster_labels: np.ndarray, regime_id: int) -> float:
+        """Calculate how isolated/distinct a regime is from others."""
+        try:
+            regime_mask = cluster_labels == regime_id
+            regime_returns = returns[regime_mask]
+            
+            if len(regime_returns) < 2:
+                return 0.0
+            
+            # Get returns from other regimes
+            other_mask = (cluster_labels != regime_id) & (cluster_labels != -1)
+            other_returns = returns[other_mask]
+            
+            if len(other_returns) < 2:
+                return 0.0
+            
+            # Calculate statistical distance (using mean and std)
+            regime_mean = np.mean(regime_returns)
+            regime_std = np.std(regime_returns)
+            other_mean = np.mean(other_returns)
+            other_std = np.std(other_returns)
+            
+            # Distance in standard deviations
+            mean_distance = abs(regime_mean - other_mean) / (other_std + 1e-10)
+            std_distance = abs(regime_std - other_std) / (other_std + 1e-10)
+            
+            # Isolation score (higher = more isolated)
+            isolation = (mean_distance + std_distance) / 2
+            return min(isolation, 1.0)
+            
+        except Exception as e:
+            logger.debug(f"Regime isolation calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_autocorrelation(self, returns: np.ndarray) -> float:
+        """Calculate first-order autocorrelation of returns."""
+        try:
+            if len(returns) < 3:
+                return 0.0
+            
+            # Calculate autocorrelation
+            correlation = np.corrcoef(returns[:-1], returns[1:])[0, 1]
+            return correlation if not np.isnan(correlation) else 0.0
+            
+        except Exception as e:
+            logger.debug(f"Autocorrelation calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_regime_robustness(self, returns: np.ndarray, regime_data: pd.DataFrame) -> float:
+        """Calculate regime robustness (resistance to noise)."""
+        try:
+            if len(returns) < 5:
+                return 0.0
+            
+            # Calculate robustness as inverse of sensitivity to outliers
+            q25, q75 = np.percentile(returns, [25, 75])
+            iqr = q75 - q25
+            
+            # Robustness is higher when IQR is smaller relative to range
+            data_range = np.max(returns) - np.min(returns)
+            if data_range > 0:
+                robustness = 1.0 - (iqr / data_range)
+            else:
+                robustness = 1.0
+            
+            return max(0.0, min(robustness, 1.0))
+            
+        except Exception as e:
+            logger.debug(f"Robustness calculation failed: {e}")
+            return 0.0
+    
+    def _calculate_overall_stability_score(self, stability_metrics: Dict[str, float]) -> float:
+        """Calculate overall stability score from individual metrics."""
+        try:
+            # Weighted combination of stability metrics
+            weights = {
+                'duration_consistency': 0.2,
+                'return_stability': 0.2,
+                'volatility_stability': 0.15,
+                'transition_stability': 0.15,
+                'isolation_score': 0.15,
+                'predictability': 0.1,
+                'robustness': 0.05
+            }
+            
+            weighted_score = 0.0
+            total_weight = 0.0
+            
+            for metric, weight in weights.items():
+                if metric in stability_metrics:
+                    weighted_score += stability_metrics[metric] * weight
+                    total_weight += weight
+            
+            if total_weight > 0:
+                return weighted_score / total_weight
+            else:
+                return 0.0
+                
+        except Exception as e:
+            logger.debug(f"Overall stability score calculation failed: {e}")
+            return 0.0
+
     def _create_empty_profile(self, regime_id: int) -> RegimeProfile:
         """Create empty profile for error cases."""
         return RegimeProfile(
@@ -729,7 +982,8 @@ class EconomicValidator:
             transitions={'from_other': 0, 'to_other': 0, 'self_transitions': 0},
             works_best_for=[],
             risk_caveats=[],
-            radar_plot_data={}
+            radar_plot_data={},
+            stability_metrics={}
         )
     
     def _create_empty_result(self) -> EconomicValidationResult:

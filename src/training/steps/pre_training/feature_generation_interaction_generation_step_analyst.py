@@ -250,12 +250,23 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         return sampled_data
 
     def _load_timeframes_from_optimization(self, artifact_manager) -> List[str]:
-        """Load optimized timeframes from period_lookback_optimization step."""
+        """Load optimized timeframes from period_lookback_optimization step (top2-3 for interactions)."""
         try:
+            # Try to load top periods first (top2-3 for interactions)
+            top_periods = artifact_manager.get_artifact('feature_generation_period_lookback_optimization_step', 'top_periods')
+            if top_periods and isinstance(top_periods, list) and len(top_periods) >= 2:
+                # Use top 2-3 periods for interactions
+                interaction_periods = top_periods[:3] if len(top_periods) >= 3 else top_periods
+                tprint(f"📊 Loaded top periods for interactions (top2-3): {interaction_periods}")
+                return interaction_periods
+            
+            # Fallback to optimized periods
             opt_periods = artifact_manager.get_artifact('period_lookback_optimization', 'optimized_periods')
             if opt_periods and isinstance(opt_periods, list):
-                tprint(f"📊 Loaded optimized timeframes: {opt_periods}")
-                return opt_periods
+                # Use top 2-3 periods for interactions
+                interaction_periods = opt_periods[:3] if len(opt_periods) >= 3 else opt_periods
+                tprint(f"📊 Loaded optimized periods for interactions (top2-3): {interaction_periods}")
+                return interaction_periods
         except Exception as e:
             tprint(f"⚠️ Failed to load optimized timeframes: {e}")
             

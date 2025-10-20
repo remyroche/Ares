@@ -26,6 +26,23 @@ from .pipeline_orchestrator import (
     PipelinePhase, PipelineStatus
 )
 
+# New role-specific trainers
+from .analyst_base_trainer import (
+    AnalystBaseTrainer, AnalystTrainingConfig, AnalystModelType
+)
+
+from .tactician_base_trainer import (
+    TacticianBaseTrainer, TacticianTrainingConfig, TacticianModelType
+)
+
+from .analyst_ensemble_trainer import (
+    AnalystEnsembleTrainer, AnalystEnsembleTrainingConfig, EnsembleMethod
+)
+
+from .tactician_ensemble_trainer import (
+    TacticianEnsembleTrainer, TacticianEnsembleTrainingConfig, TacticianEnsembleMethod
+)
+
 __all__ = [
     # Base classes
     'BaseTrainer',
@@ -40,6 +57,22 @@ __all__ = [
     'ModelTrainer',
     'EnsembleTrainer',
     'EnsembleStrategy',
+    
+    # Role-specific base trainers
+    'AnalystBaseTrainer',
+    'AnalystTrainingConfig',
+    'AnalystModelType',
+    'TacticianBaseTrainer',
+    'TacticianTrainingConfig',
+    'TacticianModelType',
+    
+    # Role-specific ensemble trainers
+    'AnalystEnsembleTrainer',
+    'AnalystEnsembleTrainingConfig',
+    'EnsembleMethod',
+    'TacticianEnsembleTrainer',
+    'TacticianEnsembleTrainingConfig',
+    'TacticianEnsembleMethod',
     
     # Orchestrator
     'TrainingPipelineOrchestrator',

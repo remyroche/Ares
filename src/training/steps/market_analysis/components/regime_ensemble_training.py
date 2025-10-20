@@ -1,7 +1,10 @@
 """
-Regime Detection Ensemble Training Component
+Regime Detection Ensemble Training Step
 
-This component implements the meta-learner for regime detection:
+BaseStep-based implementation for training regime detection ensemble models.
+Migrated from the component pattern to use the new BaseStep architecture.
+
+This step implements the meta-learner for regime detection:
 - stacker_lgbm_calibrated: LightGBM model used as the meta-learner with probability calibration
 """
 
@@ -14,9 +17,9 @@ import warnings
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
+from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
@@ -44,17 +47,21 @@ except ImportError as e:
     FEATURE_GENERATION_AVAILABLE = False
     tprint(f"⚠️ [REGIME_ENSEMBLE] Feature generation system not available: {e}", color="yellow")
 
-class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
+class RegimeEnsembleTrainingStep(BaseStep):
     """
-    Regime Detection Ensemble Training Component.
+    Regime Detection Ensemble Training Step using BaseStep pattern.
 
-    This component trains the meta-learner for regime detection:
+    This step trains the meta-learner for regime detection:
     - stacker_lgbm_calibrated: LightGBM model with probability calibration
     """
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the Regime Ensemble Training Component."""
-        tprint("🚀 [REGIME_ENSEMBLE] Initializing Regime Ensemble Training Component", color="cyan", bold=True)
+    def __init__(self, step_name: str = "regime_ensemble_training"):
+        """Initialize the Regime Ensemble Training Step."""
+        super().__init__(step_name)
+        self.logger = system_logger.getChild('RegimeEnsembleTraining')
+        self.training_start_time = None
+        self.training_end_time = None
+        tprint("🚀 [REGIME_ENSEMBLE] Initializing Regime Ensemble Training Step", "INFO")
         super().__init__(config)
 
         self.logger = system_logger.getChild('RegimeEnsembleTrainingComponent')
@@ -86,97 +93,75 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         tprint(f"✅ [REGIME_ENSEMBLE] Required artifacts: {required_artifacts}", color="green")
         return required_artifacts
 
-    async def execute(self, data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute regime ensemble training.
 
         Args:
-            data: Market data DataFrame
-            pipeline_state: Pipeline state containing features, targets, and regime labels
+            config: Configuration dictionary with parameters:
+                - symbol: Trading symbol (e.g., 'ETHUSDT')
+                - exchange: Exchange name (e.g., 'binance')
+                - timeframe: Timeframe (e.g., '15m')
+                - data_dir: Data directory path
+                - start_date: Start date (optional)
+                - end_date: End date (optional)
+                - train_data: Training data (optional)
+                - regime_labels: Regime labels (optional)
+                - base_models: Base models to use (optional)
+                - ensemble_params: Ensemble parameters (optional)
 
         Returns:
-            ComponentResult with training results
+            Dictionary with ensemble training results and model artifacts
         """
-        tprint("🚀 [REGIME_ENSEMBLE] Starting regime ensemble training execution", color="cyan", bold=True)
         start_time = datetime.now()
+        tprint(f"🔍 Starting regime ensemble training for {config.get('symbol', 'UNKNOWN')}", "INFO")
+        
+        # Set context for artifact management
+        self._set_context(
+            symbol=config.get('symbol', 'ETHUSDT'),
+            exchange=config.get('exchange', 'binance'),
+            direction=config.get('direction', 'both'),
+            model=config.get('model', 'default')
+        )
 
         try:
-            # Extract required data from pipeline state
-            tprint("📊 [REGIME_ENSEMBLE] Extracting data from pipeline state", color="yellow")
+            # Load training data
+            data = self._load_training_data(config)
+            if data is None:
+                raise ValueError("No training data found")
+            
+            tprint(f"✅ Loaded training data: {data.shape[0]} rows, {data.shape[1]} columns", "SUCCESS")
 
-            # Extract regime labels from pipeline state artifacts
-            artifacts = pipeline_state.get('artifacts', {})
-
-            # Try multiple possible artifact keys for clustering results
-            regime_labels = None
-
-            # First try the new optimal_regime_clustering_result structure
-            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
-            if optimal_clustering_result:
-                clustering_result = optimal_clustering_result.get('clustering_result')
-                if clustering_result:
-                    tprint(f"🔍 [REGIME_ENSEMBLE] clustering_result type: {type(clustering_result)}", color="blue")
-
-                    if isinstance(clustering_result, dict):
-                        # Handle dict case (normal structure)
-                        regime_labels = clustering_result.get('cluster_assignments')
-                        # Handle case where assignments are stored as string representation
-                        if isinstance(regime_labels, str):
-                            try:
-                                # Parse numpy array string representation (e.g., "[2 2 2 ... 4 6 6]")
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from string representation", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-                        if regime_labels is not None:
-                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
-                    elif hasattr(clustering_result, 'cluster_assignments'):
-                        # Handle object case (fallback)
-                        regime_labels = clustering_result.cluster_assignments
-                        if isinstance(regime_labels, str):
-                            try:
-                                clean_str = regime_labels.strip('[]')
-                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from clustering_result object", color="blue")
-                            except Exception as e:
-                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
-                                regime_labels = None
-                        if regime_labels is not None:
-                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in clustering_result object", color="blue")
-
-            # Fallback to old regime_clustering_result structure
+            # Load regime labels
+            regime_labels = self._load_regime_labels(config)
             if regime_labels is None:
-                regime_clustering_result = artifacts.get('regime_clustering_result', {})
-                regime_labels = regime_clustering_result.get('cluster_assignments')
-                if regime_labels is not None:
-                    tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in regime_clustering_result", color="blue")
+                raise ValueError("No regime labels found")
+            
+            tprint(f"✅ Loaded regime labels: {len(regime_labels)} labels", "SUCCESS")
 
-            # Get base models from previous training
-            regime_models_result = artifacts.get('regime_models_training_result', {})
-            base_models = regime_models_result.get('models', {})
-
-            # Check if regime labels are available before preparing training data
-            if regime_labels is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found in artifacts, will create synthetic regime labels", color="yellow")
-                # Create synthetic regime labels based on data patterns
-                regime_labels = self._create_synthetic_regime_labels(data)
+            # Load base models
+            base_models = self._load_base_models(config)
+            if not base_models:
+                raise ValueError("No base models found")
+            
+            tprint(f"✅ Loaded {len(base_models)} base models", "SUCCESS")
 
             # Prepare training data from the input data DataFrame with advanced regime features
-            tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame with advanced regime features", color="yellow")
-            X, y, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
+            tprint("🔧 Preparing training data with advanced regime features", "INFO")
+            X, y, feature_names = self._prepare_training_data(data, regime_labels, config)
 
             # Validate required data
-            tprint("🔍 [REGIME_ENSEMBLE] Validating required data", color="yellow")
+            tprint("🔍 Validating required data", "INFO")
             if X is None or y is None or feature_names is None:
-                tprint("❌ [REGIME_ENSEMBLE] Failed to prepare training data", color="red")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message="Failed to prepare training data from input DataFrame",
-                    metadata={'component_type': 'regime_ensemble_training'}
-                )
+                tprint("❌ Failed to prepare training data", "ERROR")
+                return {
+                    'success': False,
+                    'error': "Failed to prepare training data from input DataFrame",
+                    'ensemble_model': None,
+                    'evaluation_results': {},
+                    'metrics': {},
+                    'processing_time': (datetime.now() - start_time).total_seconds()
+                }
 
             if not base_models:
                 tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
@@ -1553,3 +1538,161 @@ except ImportError:
 
         except Exception as e:
             return f"Error generating text report: {e}"
+
+    def _load_training_data(self, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+        """Load training data from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            train_data = self._load_dataframe('train_data')
+            if train_data is not None:
+                return train_data
+            
+            # Try alternative artifact names
+            train_data = self._load_dataframe('training_data') or self._load_dataframe('market_data')
+            if train_data is not None:
+                return train_data
+            
+            # Try to load from config
+            if 'train_data' in config:
+                return pd.DataFrame(config['train_data'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load training data: {e}", "WARNING")
+            return None
+
+    def _load_regime_labels(self, config: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Load regime labels from artifacts or config."""
+        try:
+            # Try to load from artifacts first
+            regime_data = self._get_artifact('regime_labels')
+            if regime_data is not None:
+                if isinstance(regime_data, dict) and 'labels' in regime_data:
+                    return np.array(regime_data['labels'])
+                elif isinstance(regime_data, (list, np.ndarray)):
+                    return np.array(regime_data)
+            
+            # Try alternative artifact names
+            regime_data = self._get_artifact('regime_assignments') or self._get_artifact('cluster_assignments')
+            if regime_data is not None:
+                return np.array(regime_data)
+            
+            # Try to load from config
+            if 'regime_labels' in config:
+                return np.array(config['regime_labels'])
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load regime labels: {e}", "WARNING")
+            return None
+
+    def _load_base_models(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Load base models from artifacts or config."""
+        try:
+            base_models = {}
+            
+            # Try to load from artifacts
+            model_artifacts = ['catboost_model', 'extratrees_model', 'rulelist_model', 'lightgbm_model']
+            for artifact_name in model_artifacts:
+                try:
+                    model = self._load_model(artifact_name)
+                    if model is not None:
+                        model_name = artifact_name.replace('_model', '')
+                        base_models[model_name] = model
+                except Exception as e:
+                    tprint(f"⚠️ Could not load {artifact_name}: {e}", "WARNING")
+            
+            # Try to load from config
+            if 'base_models' in config:
+                for name, model in config['base_models'].items():
+                    base_models[name] = model
+            
+            return base_models
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to load base models: {e}", "WARNING")
+            return {}
+
+    def _calculate_ensemble_metrics(self, ensemble: Any, evaluation_results: Dict[str, Any], start_time: datetime, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate ensemble training metrics."""
+        try:
+            processing_time = (datetime.now() - start_time).total_seconds()
+            
+            metrics = {
+                'processing_time_seconds': processing_time,
+                'accuracy': evaluation_results.get('accuracy', 0.0),
+                'cv_mean': evaluation_results.get('cv_mean', 0.0),
+                'cv_std': evaluation_results.get('cv_std', 0.0),
+                'n_test_samples': evaluation_results.get('n_test_samples', 0),
+                'model_type': 'stacking_ensemble',
+                'calibrated': config.get('ensemble_params', {}).get('calibrate', True),
+                'success': True
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to calculate metrics: {e}", "WARNING")
+            return {'success': False, 'error': str(e)}
+
+    def _create_outcome_report(self, ensemble: Any, evaluation_results: Dict[str, Any], metrics: Dict[str, Any], config: Dict[str, Any]) -> str:
+        """Create outcome report markdown."""
+        try:
+            report = f"""# Regime Ensemble Training Outcome Report
+
+## Execution Summary
+- **Symbol**: {config.get('symbol', 'UNKNOWN')}
+- **Exchange**: {config.get('exchange', 'UNKNOWN')}
+- **Timeframe**: {config.get('timeframe', 'UNKNOWN')}
+- **Processing Time**: {metrics.get('processing_time_seconds', 0):.2f} seconds
+- **Success**: {'✅ Yes' if metrics.get('success', False) else '❌ No'}
+
+## Ensemble Training Results
+- **Model Type**: {metrics.get('model_type', 'stacking_ensemble')}
+- **Calibrated**: {'✅ Yes' if metrics.get('calibrated', False) else '❌ No'}
+- **Accuracy**: {metrics.get('accuracy', 0):.3f}
+- **CV Mean**: {metrics.get('cv_mean', 0):.3f} ± {metrics.get('cv_std', 0):.3f}
+- **Test Samples**: {metrics.get('n_test_samples', 0):,}
+
+## Base Models Used
+"""
+            
+            base_models = config.get('base_models', {})
+            for model_name in base_models.keys():
+                report += f"- **{model_name}**: ✅ Available\n"
+            
+            report += f"""
+## Performance Metrics
+- **Accuracy**: {evaluation_results.get('accuracy', 0):.3f}
+- **Cross-Validation Mean**: {evaluation_results.get('cv_mean', 0):.3f}
+- **Cross-Validation Std**: {evaluation_results.get('cv_std', 0):.3f}
+
+## Generated Artifacts
+- Ensemble model (pickle file)
+- Evaluation results
+- Ensemble metadata
+
+---
+*Generated by Regime Ensemble Training Step at {datetime.now().isoformat()}*
+"""
+            
+            return report
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
+            return f"# Regime Ensemble Training Outcome Report\n\nError creating report: {str(e)}"
+
+
+# Register the step
+def register_regime_ensemble_training_step():
+    """Register the regime ensemble training step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("regime_ensemble_training", RegimeEnsembleTrainingStep)
+    tprint("✅ Regime ensemble training step registered", "SUCCESS")
+
+
+# Auto-register when module is imported
+register_regime_ensemble_training_step()

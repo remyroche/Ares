@@ -200,31 +200,31 @@ def get_step_category(step_name: str) -> str:
 
 @dataclass
 class SpillStrategy:
-	"""Configuration for artifact spill strategies."""
-	enable_spilling: bool = True
-	spill_threshold_mb: float = 100.0
-	compression_type: str = "lz4"  # lz4, gzip, zstd, snappy
-	enable_column_pruning: bool = True
-	prune_threshold: float = 0.1  # Remove columns with >90% nulls
-	enable_parquet_optimization: bool = True
-	parquet_compression: str = "snappy"
-	enable_lazy_loading: bool = True
-	lazy_cache_size_mb: int = 256
-	lazy_ttl_hours: int = 24
-	enable_version_checks: bool = True
+    """Configuration for artifact spill strategies."""
+    enable_spilling: bool = True
+    spill_threshold_mb: float = 100.0
+    compression_type: str = "lz4"  # lz4, gzip, zstd, snappy
+    enable_column_pruning: bool = True
+    prune_threshold: float = 0.1  # Remove columns with >90% nulls
+    enable_parquet_optimization: bool = True
+    parquet_compression: str = "snappy"
+    enable_lazy_loading: bool = True
+    lazy_cache_size_mb: int = 256
+    lazy_ttl_hours: int = 24
+    enable_version_checks: bool = True
 
 @dataclass
 class MemoryProfile:
-	"""Memory usage profile for artifacts."""
-	artifact_id: str
-	memory_usage_mb: float
-	spilled: bool = False
-	compression_ratio: float = 1.0
-	column_count: int = 0
-	row_count: int = 0
-	access_count: int = 0
-	last_accessed: datetime = field(default_factory=datetime.now)
-	created_at: datetime = field(default_factory=datetime.now)
+    """Memory usage profile for artifacts."""
+    artifact_id: str
+    memory_usage_mb: float
+    spilled: bool = False
+    compression_ratio: float = 1.0
+    column_count: int = 0
+    row_count: int = 0
+    access_count: int = 0
+    last_accessed: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=datetime.now)
 
 @dataclass
 class ArtifactManager:

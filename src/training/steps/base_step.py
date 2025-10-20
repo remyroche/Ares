@@ -77,7 +77,8 @@ from src.utils.artifact_manager import ArtifactManager
 # Enhanced hardware optimization imports
 from src.utils.hardware import (
     get_integrated_hardware_manager, IntegratedHardwareConfig,
-    m1_optimized, memory_optimized, optimize_dataframe, force_cleanup
+    m1_optimized, memory_optimized, optimize_dataframe, force_cleanup,
+    WorkloadCategory, get_memory_stats
 )
 from src.utils.hardware.memory_optimized_decorators import (
     MemoryOptimizationLevel, comprehensive_memory_optimization

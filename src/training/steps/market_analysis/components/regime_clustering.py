@@ -32,6 +32,112 @@ from src.utils.tprint import (
 from src.utils.serialization_utils import save_pickle, load_pickle
 from src.utils.data.klines_parquet import get_klines_manager
 
+# Import shared utilities from market analysis
+from ..shared_utils import (
+    # Features
+    prepare_market_features,
+    FeatureConfig,
+    FeaturePreparationResult,
+    
+    # Configuration
+    validate_regime_count,
+    normalize_weights,
+    validate_algorithm_type,
+    create_default_config,
+    ConfigValidator,
+    BaseConfig,
+    
+    # Logging
+    get_logger,
+    log_execution,
+    log_performance,
+    LoggingContext,
+    
+    # Metrics
+    calculate_consensus_metrics,
+    calculate_disagreement_metrics,
+    calculate_economic_scores,
+    calculate_trading_scores,
+    calculate_stability_scores,
+    MetricsCalculator,
+    
+    # Characteristics
+    create_regime_characteristics,
+    generate_cluster_characteristics,
+    CharacteristicsGenerator,
+)
+
+# Import calibration registry utilities
+try:
+    from ..shared_utils.calibration_registry import (
+        get_current_calibration,
+        get_quality_thresholds as get_calibrated_thresholds,
+        update_quality_calibration,
+    )
+    CALIBRATION_REGISTRY_AVAILABLE = True
+except ImportError:
+    CALIBRATION_REGISTRY_AVAILABLE = False
+    tprint("⚠️ Calibration registry not available", "WARNING")
+
+# Import matrix operations and hardware utilities
+try:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations,
+        get_vectorized_processing_core,
+        get_batch_matrix_processor,
+        safe_matrix_multiply,
+        safe_correlation_matrix,
+        gpu_matrix_multiply,
+        correlation_matrix_gpu,
+        optimize_dataframe,
+        vectorized_rolling_features,
+        matrix_correlation_analysis,
+        batch_matrix_multiply,
+        batch_feature_transformation,
+        batch_correlation_analysis,
+        get_hardware_performance_report,
+        optimize_matrix_operation_with_hardware,
+        cleanup_hardware_resources,
+        get_processing_performance_stats
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    MATRIX_OPERATIONS_AVAILABLE = False
+    tprint(f"Matrix operations not available: {e}", "WARNING")
+
+try:
+    from src.utils.hardware import (
+        get_unified_hardware_manager,
+        get_advanced_cpu_optimizer,
+        get_enhanced_gpu_manager,
+        get_advanced_memory_optimizer,
+        get_adaptive_optimization_engine,
+        optimize_for_workload,
+        optimize_for_workload_adaptive,
+        optimize_dataframe_advanced,
+        record_performance_adaptive
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+    tprint("✅ Hardware optimization utilities imported successfully", "SUCCESS")
+except ImportError as e:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    tprint(f"Hardware optimization not available: {e}", "WARNING")
+
+# Import M1-specific hardware utilities
+try:
+    from src.utils.hardware.unified_hardware_manager import (
+        get_unified_hardware_manager,
+        WorkloadType,
+        OptimizationLevel,
+        HardwareConfig
+    )
+    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+    tprint("⚠️ Mac M1 hardware optimizations not available", "WARNING")
+
 logger = logging.getLogger(__name__)
 
 
@@ -259,6 +365,11 @@ class RegimeClusteringComponent(BaseStep):
             # Calculate regime statistics
             regime_stats = self._calculate_regime_statistics(regime_labels, regime_probabilities, economic_profiles)
             
+            # Generate regime characteristics using shared utilities
+            regime_characteristics = self._generate_regime_characteristics(
+                regime_features, regime_labels, economic_profiles
+            )
+            
             # Store component state
             self.regime_data = market_data
             self.regime_features = regime_features
@@ -276,6 +387,7 @@ class RegimeClusteringComponent(BaseStep):
                 'regime_datasets': regime_datasets,
                 'regime_stats': regime_stats,
                 'economic_profiles': economic_profiles,
+                'regime_characteristics': regime_characteristics,
                 'n_regimes': regime_stats['n_regimes'],
                 'n_samples': regime_stats['n_samples']
             }
@@ -293,10 +405,76 @@ class RegimeClusteringComponent(BaseStep):
         regime_labels: np.ndarray, 
         config: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Generate regime-specific features."""
+        """Generate regime-specific features using shared utilities."""
         try:
             tprint("🔧 Generating regime-specific features...", "INFO")
             
+            # Use shared feature preparation utilities
+            feature_config = FeatureConfig(
+                enable_technical_indicators=True,
+                enable_volatility_features=True,
+                enable_volume_features=True,
+                enable_regime_features=True,
+                window_sizes=[5, 10, 20, 50],
+                technical_indicators=['rsi', 'bollinger_bands', 'atr', 'macd']
+            )
+            
+            # Prepare market features using shared utilities
+            feature_result = prepare_market_features(market_data, feature_config)
+            
+            if not feature_result.success:
+                tprint(f"⚠️ Shared feature preparation failed: {feature_result.error_message}", "WARNING")
+                # Fallback to basic feature generation
+                return self._generate_basic_regime_features(market_data, regime_labels, config)
+            
+            # Add regime-specific features
+            regime_features = self._add_regime_specific_features(
+                feature_result.features_df, regime_labels, config
+            )
+            
+            # Apply feature filters using shared utilities
+            if MATRIX_OPERATIONS_AVAILABLE:
+                try:
+                    # Use shared feature filtering utilities
+                    from ..shared_utils.feature_filters import (
+                        winsorize_frame, filter_low_variance, prune_correlated_features
+                    )
+                    
+                    # Apply winsorization
+                    regime_features = winsorize_frame(regime_features, quantiles=(0.01, 0.99))
+                    
+                    # Filter low variance features
+                    regime_features = filter_low_variance(regime_features, threshold=0.01)
+                    
+                    # Prune correlated features
+                    regime_features = prune_correlated_features(regime_features, threshold=0.95)
+                    
+                except Exception as e:
+                    tprint(f"⚠️ Feature filtering failed: {e}", "WARNING")
+            
+            tprint(f"✅ Generated {len(regime_features.columns)} regime-specific features", "SUCCESS")
+            
+            return {
+                'features_df': regime_features,
+                'feature_names': list(regime_features.columns),
+                'n_features': len(regime_features.columns),
+                'feature_config': feature_config,
+                'feature_result': feature_result
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Feature generation failed: {e}", "ERROR")
+            # Fallback to basic feature generation
+            return self._generate_basic_regime_features(market_data, regime_labels, config)
+    
+    def _generate_basic_regime_features(
+        self, 
+        market_data: pd.DataFrame, 
+        regime_labels: np.ndarray, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Fallback basic feature generation."""
+        try:
             features = {}
             
             # Basic market features
@@ -326,8 +504,6 @@ class RegimeClusteringComponent(BaseStep):
             # Create features DataFrame
             features_df = pd.DataFrame(features, index=market_data.index)
             
-            tprint(f"✅ Generated {len(features)} regime-specific features", "SUCCESS")
-            
             return {
                 'features_df': features_df,
                 'feature_names': list(features.keys()),
@@ -335,12 +511,46 @@ class RegimeClusteringComponent(BaseStep):
             }
             
         except Exception as e:
-            tprint(f"❌ Feature generation failed: {e}", "ERROR")
+            tprint(f"❌ Basic feature generation failed: {e}", "ERROR")
             return {
                 'features_df': pd.DataFrame(),
                 'feature_names': [],
                 'n_features': 0
             }
+    
+    def _add_regime_specific_features(
+        self, 
+        features_df: pd.DataFrame, 
+        regime_labels: np.ndarray, 
+        config: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """Add regime-specific features to the base features."""
+        try:
+            # Add regime labels
+            features_df['regime_label'] = regime_labels
+            
+            # Add regime persistence
+            features_df['regime_persistence'] = self._calculate_regime_persistence(regime_labels)
+            
+            # Add regime transitions
+            features_df['regime_transitions'] = self._calculate_regime_transitions(regime_labels)
+            
+            # Add regime characteristics using shared utilities
+            if 'create_regime_characteristics' in globals():
+                try:
+                    regime_characteristics = create_regime_characteristics(
+                        features_df, regime_labels
+                    )
+                    for char_name, char_values in regime_characteristics.items():
+                        features_df[f'regime_{char_name}'] = char_values
+                except Exception as e:
+                    tprint(f"⚠️ Failed to add regime characteristics: {e}", "WARNING")
+            
+            return features_df
+            
+        except Exception as e:
+            tprint(f"❌ Failed to add regime-specific features: {e}", "ERROR")
+            return features_df
     
     def _create_regime_datasets(
         self, 
@@ -489,6 +699,7 @@ class RegimeClusteringComponent(BaseStep):
                 'regime_datasets': regime_result['regime_datasets'],
                 'regime_stats': regime_result['regime_stats'],
                 'economic_profiles': regime_result['economic_profiles'],
+                'regime_characteristics': regime_result.get('regime_characteristics', {}),
                 
                 # Configuration
                 'config': config,
@@ -630,6 +841,46 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
             return f"# Regime Clustering Outcome Report\n\nError creating report: {str(e)}"
+    
+    def _generate_regime_characteristics(
+        self, 
+        regime_features: Dict[str, Any], 
+        regime_labels: np.ndarray, 
+        economic_profiles: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Generate regime characteristics using shared utilities."""
+        try:
+            if 'create_regime_characteristics' not in globals():
+                return {}
+            
+            tprint("🔧 Generating regime characteristics...", "INFO")
+            
+            # Use shared characteristics generation
+            characteristics = create_regime_characteristics(
+                regime_features['features_df'], regime_labels
+            )
+            
+            # Add economic profile characteristics
+            if economic_profiles:
+                for profile in economic_profiles:
+                    regime_id = profile.get('regime_id', 'unknown')
+                    if f'regime_{regime_id}' in characteristics:
+                        characteristics[f'regime_{regime_id}'].update({
+                            'economic_profile': profile,
+                            'key_stats': profile.get('key_stats', {}),
+                            'confidence_intervals': profile.get('confidence_intervals', {}),
+                            'avg_duration': profile.get('avg_duration', 0),
+                            'works_best_for': profile.get('works_best_for', []),
+                            'risk_caveats': profile.get('risk_caveats', [])
+                        })
+            
+            tprint(f"✅ Generated characteristics for {len(characteristics)} regimes", "SUCCESS")
+            
+            return characteristics
+            
+        except Exception as e:
+            tprint(f"⚠️ Failed to generate regime characteristics: {e}", "WARNING")
+            return {}
 
 
 # Register the step

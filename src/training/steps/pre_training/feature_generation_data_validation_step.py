@@ -18,8 +18,6 @@ from pathlib import Path
 from dataclasses import dataclass
 
 from src.training.steps.base_step import BaseStep
-from src.utils.common_operations import safe_dataframe_operation
-from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
 # Import advanced quality validation components
 try:
@@ -40,24 +38,6 @@ except ImportError:
     DataQualityFramework = None
     AdvancedQualityMetrics = None
     QualityAlertSystem = None
-
-# Import tprint utilities for enhanced logging
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug,
-        tprint_performance, tprint_progress
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print("TPRINT:", *args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
-    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
 
 @dataclass
 class DataValidationResult:

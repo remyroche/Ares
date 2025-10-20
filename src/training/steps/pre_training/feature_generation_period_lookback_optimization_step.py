@@ -578,7 +578,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 data = self._vectorbt_optimized_operations(data)
             # Get artifact manager
             tprint_info("Getting pretraining artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = self.artifact_manager
             tprint_success("Artifact manager retrieved successfully")
             
             # Check if we should force fresh computation
@@ -781,7 +781,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_info("Computing per-feature MI-best and Sharpe-centric mRMR selections")
             try:
                 # Fetch targets from artifact manager; fast-fail if missing
-                artifact_manager = get_pretraining_artifact_manager()
+                artifact_manager = self.artifact_manager
                 targets = None
                 for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
                     tmp = artifact_manager.get_artifact(step_name, ArtifactKeys.TARGETS)
@@ -1060,7 +1060,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 return -1
 
             tprint_info("Getting artifact manager for feature analysis")
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = self.artifact_manager
             
             # Only look for features from feature_generation_feature_generation_step
             tprint_info("🔍 Looking for features from feature_generation_feature_generation_step...")

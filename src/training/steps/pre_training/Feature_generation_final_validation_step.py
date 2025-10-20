@@ -227,41 +227,24 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         tprint_info(f"⚡ Intensity: {intensity}")
         tprint_info(f"🔧 Custom overrides: {custom_overrides is not None}")
         
-        # Set up enhanced artifact manager with context
-        context = get_step_context_from_config(self.config)
-        context.update({
-            'symbol': symbol,
-            'exchange': 'binance',  # Default exchange
-            'direction': 'long',  # Default for final validation
-            'model': 'Analyst'    # Default for final validation
-        })
-        am = setup_enhanced_artifact_manager(**context)
+        # Set context for enhanced file naming
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'Analyst')
+        
+        self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
         
         # Get artifact manager
         tprint_debug("🔍 Getting artifact manager")
-        artifact_manager = am
+        artifact_manager = self.artifact_manager
         tprint_success("✅ Enhanced artifact manager retrieved")
         
-        # Try to load from artifact manager first (pretraining store)
+        # Try to load from artifact manager first
         tprint_debug("🔍 Checking for cached results")
-        cached_dataset = artifact_manager.get_artifact('final_validation', 'final_dataset')
-        cached_metrics = artifact_manager.get_artifact('final_validation', 'final_validation_metrics')
-        cached_quality_scores = artifact_manager.get_artifact('final_validation', 'final_quality_scores')
-        # Backwards-compatible step name
-        if cached_dataset is None:
-            cached_dataset = artifact_manager.get_artifact('feature_generation_final_validation_step', 'final_dataset')
-            cached_metrics = cached_metrics or artifact_manager.get_artifact('feature_generation_final_validation_step', 'final_validation_metrics')
-            cached_quality_scores = cached_quality_scores or artifact_manager.get_artifact('feature_generation_final_validation_step', 'final_quality_scores')
-        # Final fallback: enhanced artifact manager cache
-        if cached_dataset is None:
-            try:
-                from src.utils.artifact_manager import ArtifactManager as _EnhancedAM
-                _enh = _EnhancedAM(config={})
-                cached_dataset = _enh.retrieve_enhanced(ArtifactKeys.FINAL_DATASET)
-                cached_metrics = cached_metrics or _enh.retrieve_enhanced(ArtifactKeys.FINAL_VALIDATION_METRICS)
-                cached_quality_scores = cached_quality_scores or _enh.retrieve_enhanced(ArtifactKeys.FINAL_QUALITY_SCORES)
-            except Exception:
-                pass
+        cached_dataset = self._load_dataframe('final_dataset')
+        cached_metrics = self._load_metadata('final_validation_metrics')
+        cached_quality_scores = self._load_metadata('final_quality_scores')
         
         tprint_info(f"📦 Cached dataset available: {cached_dataset is not None}")
         tprint_info(f"📦 Cached metrics available: {cached_metrics is not None}")
@@ -286,14 +269,12 @@ class FeatureGenerationFinalValidationStep(BaseStep):
         if data is None or (hasattr(data, 'empty') and data.empty):
             # Auto-load from vectorization outputs
             tprint_info("🔍 Auto-loading vectorized features for final validation")
-            data = artifact_manager.get_dataframe('vectorization', 'vectorized_features')
-            if data is None or (hasattr(data, 'empty') and data.empty):
-                data = artifact_manager.get_dataframe('vectorization', 'vectorized_features')
+            data = self._load_dataframe('vectorized_features')
 
         if data is None or (hasattr(data, 'empty') and data.empty):
             tprint_info("🔍 Vectorized features unavailable; combining period + interaction features")
-            period_features = artifact_manager.get_dataframe('feature_generation_period_lookback_optimization_step', ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME)
-            interaction_features = artifact_manager.get_dataframe('feature_generation_interaction_generation_step', ArtifactKeys.INTERACTION_FEATURES)
+            period_features = self._load_dataframe('optimized_feature_dataframe')
+            interaction_features = self._load_dataframe('interaction_features')
             frames = [df for df in (period_features, interaction_features) if isinstance(df, pd.DataFrame) and not df.empty]
             if frames:
                 combined = pd.concat(frames, axis=1, join='outer')
@@ -304,9 +285,9 @@ class FeatureGenerationFinalValidationStep(BaseStep):
 
         if data is None or (hasattr(data, 'empty') and data.empty):
             tprint_info("⚠️ Falling back to selected/generation artifacts for validation")
-            data = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            data = self._load_dataframe('selected_features')
             if data is None or (hasattr(data, 'empty') and data.empty):
-                data = artifact_manager.get_dataframe('feature_generation_feature_generation_step', ArtifactKeys.FEATURE_DATAFRAME)
+                data = self._load_dataframe('feature_dataframe')
         if data is None or (hasattr(data, 'empty') and data.empty):
             tprint_error("❌ Input data is None or empty - validation failed")
             return FinalValidationResult(
@@ -338,37 +319,13 @@ class FeatureGenerationFinalValidationStep(BaseStep):
             result.final_dataset = data
         result.artifacts.setdefault(ArtifactKeys.FINAL_DATASET, result.final_dataset)
 
-        # Store artifacts in artifact manager
+        # Store artifacts using BaseStep methods
         if result.success:
             tprint_debug("💾 Storing successful validation artifacts")
-            artifact_manager.save(
-                step_name='final_validation',
-                artifacts={
-                    'final_dataset': result.final_dataset,
-                    'final_validation_metrics': result.validation_metadata,
-                    'final_quality_scores': result.comprehensive_metrics,
-                    'final_validation_warnings': result.quality_alerts
-                },
-                metadata={
-                    'step': 'final_validation',
-                    'shape': result.final_dataset.shape if hasattr(result.final_dataset, 'shape') else None,
-                    'created_at': datetime.now().isoformat()
-                }
-            )
-            artifact_manager.save(
-                step_name='feature_generation_final_validation_step',
-                artifacts={
-                    'final_dataset': result.final_dataset,
-                    'final_validation_metrics': result.validation_metadata,
-                    'final_quality_scores': result.comprehensive_metrics,
-                    'final_validation_warnings': result.quality_alerts
-                },
-                metadata={
-                    'step': 'feature_generation_final_validation_step',
-                    'shape': result.final_dataset.shape if hasattr(result.final_dataset, 'shape') else None,
-                    'created_at': datetime.now().isoformat()
-                }
-            )
+            self._save_dataframe(result.final_dataset, 'final_dataset')
+            self._save_metadata(result.validation_metadata, 'final_validation_metrics')
+            self._save_metadata(result.comprehensive_metrics, 'final_quality_scores')
+            self._save_metadata(result.quality_alerts, 'final_validation_warnings')
             tprint_success("✅ Final validation artifacts stored")
         else:
             tprint_warning("⚠️ Validation failed - not storing artifacts")
@@ -932,7 +889,7 @@ async def handle_feature_generation_final_validation_step(
     tprint_info(f"   - Additional kwargs: {len(kwargs)} items")
     
     tprint_debug("🔍 Getting artifact manager")
-    artifact_manager = get_pretraining_artifact_manager()
+    artifact_manager = step.artifact_manager
     tprint_success("✅ Artifact manager retrieved")
 
     try:

@@ -304,7 +304,7 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
         try:
             # Get artifact manager
             tprint_info("🔍 [DEBUG] Getting artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
+            artifact_manager = self.artifact_manager
             tprint_success("✅ [DEBUG] Artifact manager retrieved successfully")
             
                         
@@ -315,13 +315,10 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             # Try to load features from artifact manager first
             features_found_in_artifacts = False
             try:
-                for step_name in ("feature_generation_feature_generation_step", "feature_generation"):
-                    candidate = artifact_manager.get_dataframe(step_name, ArtifactKeys.FEATURE_DATAFRAME)
-                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
-                        features_df = candidate
-                        features_found_in_artifacts = True
-                        tprint_success(f"✅ [DEBUG] Loaded generated features from {step_name}: shape={features_df.shape}")
-                        break
+                features_df = self._load_dataframe('generated_features')
+                if isinstance(features_df, pd.DataFrame) and not features_df.empty:
+                    features_found_in_artifacts = True
+                    tprint_success(f"✅ [DEBUG] Loaded generated features: shape={features_df.shape}")
             except Exception as e:
                 tprint_warning(f"⚠️ [DEBUG] Artifact manager failed for features: {e}")
 
@@ -432,9 +429,9 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             
             # Try to load cached results from feature selection step
             tprint_info("🔍 [DEBUG] Checking for cached feature selection results")
-            cached_selected_features = artifact_manager.get_artifact("feature_selection", "selected_features")
-            cached_selection_metrics = artifact_manager.get_artifact("feature_selection", "selection_metrics")
-            cached_importance_rankings = artifact_manager.get_artifact("feature_selection", "feature_importance_rankings")
+            cached_selected_features = self._load_dataframe("selected_features")
+            cached_selection_metrics = self._load_metadata("selection_metrics")
+            cached_importance_rankings = self._load_metadata("feature_importance_rankings")
             
             tprint_debug(f"🔍 [DEBUG] Cached results - features: {cached_selected_features is not None}, metrics: {cached_selection_metrics is not None}, rankings: {cached_importance_rankings is not None}")
             
@@ -496,32 +493,21 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Economic validation keys: {list(selection_result.economic_validation.keys()) if selection_result.economic_validation else 'None'}")
                 tprint_debug(f"🔍 [DEBUG] Multi-objective results keys: {list(selection_result.multi_objective_results.keys()) if selection_result.multi_objective_results else 'None'}")
                 
-                # Store artifacts in artifact manager using standard save method
-                tprint_info("🔍 [DEBUG] Storing artifacts in artifact manager")
+                # Store artifacts using BaseStep methods
+                tprint_info("🔍 [DEBUG] Storing artifacts using BaseStep methods")
                 tprint_debug(f"🔍 [DEBUG] Selected features shape: {selection_result.selected_features.shape}")
                 tprint_debug(f"🔍 [DEBUG] Selection metrics keys: {list(selection_result.selection_metrics.keys()) if selection_result.selection_metrics else 'None'}")
                 tprint_debug(f"🔍 [DEBUG] Feature importance keys: {list(selection_result.feature_importance.keys()) if selection_result.feature_importance else 'None'}")
                 
-                artifact_manager.save(
-                    step_name='feature_selection',
-                    artifacts={
-                        'selected_features': selection_result.selected_features,
-                        'selection_metrics': selection_result.selection_metrics,
-                        'feature_importance_rankings': selection_result.feature_importance,
-                        'economic_validation': selection_result.economic_validation,
-                        'multi_objective_results': selection_result.multi_objective_results,
-                        'vectorbt_optimizations': selection_result.vectorbt_optimizations,
-                        'quality_metrics': selection_result.quality_metrics,
-                        'diversity_metrics': selection_result.diversity_metrics,
-                        'stability_metrics': selection_result.stability_metrics
-                    },
-                    metadata={
-                        'step': 'feature_selection',
-                        'shape': selection_result.selected_features.shape,
-                        'columns': list(selection_result.selected_features.columns),
-                        'created_at': datetime.now().isoformat()
-                    }
-                )
+                self._save_dataframe(selection_result.selected_features, 'selected_features')
+                self._save_metadata(selection_result.selection_metrics, 'selection_metrics')
+                self._save_metadata(selection_result.feature_importance, 'feature_importance_rankings')
+                self._save_metadata(selection_result.economic_validation, 'economic_validation')
+                self._save_metadata(selection_result.multi_objective_results, 'multi_objective_results')
+                self._save_metadata(selection_result.vectorbt_optimizations, 'vectorbt_optimizations')
+                self._save_metadata(selection_result.quality_metrics, 'quality_metrics')
+                self._save_metadata(selection_result.diversity_metrics, 'diversity_metrics')
+                self._save_metadata(selection_result.stability_metrics, 'stability_metrics')
                 tprint_success("✅ [DEBUG] Artifacts stored successfully")
             else:
                 self.logger.error(f"❌ Feature selection failed: {selection_result.error_message}")

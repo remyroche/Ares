@@ -10,8 +10,8 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import numpy as np
 
-from src.training.steps.models_training.unified_data_driven_pipeline.core.modular_architecture import ModularComponent
-from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager
+from src.training.steps.base_step import BaseStep
+from src.utils.artifact_manager import ArtifactManager
 
 
 try:  # Logging helpers
@@ -37,49 +37,39 @@ class LabelingIntegrationResult:
 
 
 class FeatureGenerationLabelingIntegrationStep(BaseStep):
-    def __init__(self, name: str = "labeling_integration_step",
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[Any] = None) -> None:
-        super().__init__(name, config, logger)
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__("feature_generation_labeling_integration_step", config)
 
-    def _initialize_resources(self) -> bool:
-        try:
-            self.set_state('initialized_at', time.time())
-            return True
-        except Exception as e:
-            self.logger.error(f"Failed to initialize labeling integration: {e}")
-            return False
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the labeling integration step."""
+        self.logger.info("🔍 Starting labeling integration step")
 
-    def _cleanup_resources(self) -> None:
-        try:
-            self.set_state('cleaned_up_at', time.time())
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
+        # Set context for enhanced file naming
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'Analyst')
+        
+        self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
 
-    def _process_data(self, data: pd.DataFrame, **kwargs) -> Dict[str, Any]:
-        """Compute targets using the enhanced analyst labeler and save artifacts."""
+        # Load data for labeling
+        data = config.get('data')
         if data is None or not isinstance(data, pd.DataFrame) or data.empty:
             raise ValueError("Input data must be a non‑empty DataFrame")
 
-        am = get_pretraining_artifact_manager()
-
-        # Cache hit path
-        cached_labeled = am.get_artifact('feature_generation_labeling_integration_step', 'labeled_dataframe')
-        cached_targets = am.get_artifact('feature_generation_labeling_integration_step', 'targets')
+        # Try to load cached results
+        cached_labeled = self._load_dataframe('labeled_dataframe')
+        cached_targets = self._load_dataframe('targets')
         if isinstance(cached_labeled, pd.DataFrame) and isinstance(cached_targets, pd.Series):
-            tprint_success("📦 Using cached labeling artifacts")
+            self.logger.info("📦 Using cached labeling artifacts")
             return {
                 'success': True,
-                'integrated_labels': int(len(cached_targets)),
-                'integration_metadata': {
+                'artifacts': ['labeled_dataframe', 'targets'],
+                'metrics': {
+                    'integrated_labels': int(len(cached_targets)),
                     'positive_rate': float((cached_targets > 0).mean()),
                     'target_std': float(cached_targets.std()),
                     'cache_hit': True
-                },
-                'artifacts': {
-                    'labeled_dataframe': cached_labeled,
-                    'targets': cached_targets,
-                    'raw_dataframe': data
                 }
             }
 
@@ -125,108 +115,27 @@ class FeatureGenerationLabelingIntegrationStep(BaseStep):
             labeled = data.copy()
             labeled['target'] = targets
 
-        # Persist artifacts
+        # Save artifacts using BaseStep methods
         try:
-            tprint_info(f"🔍 [DEBUG] About to save artifacts: labeled={type(labeled)}, targets={type(targets)}")
-            am.save(
-                step_name='feature_generation_labeling_integration_step',
-                artifacts={
-                    'labeled_dataframe': labeled,
-                    'targets': targets,
-                    'raw_dataframe': data
-                },
-                metadata={
-                    'step': 'feature_generation_labeling_integration_step',
-                    'shape': labeled.shape,
-                    'created_at': datetime.now().isoformat()
-                }
-            )
-            tprint_success("✅ Saved labeling artifacts")
-            
-            # Verify artifacts were saved
-            saved_labeled = am.get_artifact('feature_generation_labeling_integration_step', 'labeled_dataframe')
-            saved_targets = am.get_artifact('feature_generation_labeling_integration_step', 'targets')
-            tprint_info(f"🔍 [DEBUG] Verification - saved_labeled: {type(saved_labeled)}, saved_targets: {type(saved_targets)}")
+            self._save_dataframe(labeled, 'labeled_dataframe')
+            self._save_dataframe(targets, 'targets')
+            self._save_dataframe(data, 'raw_dataframe')
+            self.logger.info("✅ Saved labeling artifacts")
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to save labeling artifacts: {e}")
-            import traceback
-            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            self.logger.warning(f"⚠️ Failed to save labeling artifacts: {e}")
 
         return {
             'success': True,
-            'integrated_labels': int(len(targets)),
-            'integration_metadata': {
+            'artifacts': ['labeled_dataframe', 'targets', 'raw_dataframe'],
+            'metrics': {
+                'integrated_labels': int(len(targets)),
                 'positive_rate': float((targets > 0).mean()),
                 'target_std': float(targets.std()),
                 'cache_hit': False
-            },
-            'artifacts': {
-                'labeled_dataframe': labeled,
-                'targets': targets,
-                'raw_dataframe': data
             }
         }
 
-    async def execute(
-        self,
-        training_input: Optional[Dict[str, Any]] = None,
-        pipeline_state: Optional[Dict[str, Any]] = None,
-        data: Optional[pd.DataFrame] = None,
-        **kwargs: Any
-    ) -> LabelingIntegrationResult:
-        """Async execute entry to integrate with ares_launcher sequential mode."""
-        # Set up enhanced artifact manager with context
-        context = get_step_context_from_config(self.config)
-        context.update({
-            'symbol': training_input.get('symbol', 'ETHUSDT') if training_input else kwargs.get('symbol', 'ETHUSDT'),
-            'exchange': training_input.get('exchange', 'binance') if training_input else kwargs.get('exchange', 'binance'),
-            'direction': 'long',  # Default for labeling integration
-            'model': 'Analyst'    # Default for labeling integration
-        })
-        am = setup_enhanced_artifact_manager(**context)
-        
-        # Accept data from training_input or direct arg
-        if data is None and isinstance(training_input, dict):
-            data = training_input.get('data')
-        if not isinstance(data, pd.DataFrame) or data.empty:
-            raise ValueError("Labeling integration requires a non-empty DataFrame as 'data'.")
 
-        result_dict = self._process_data(data, **(training_input or {}))
-        artifacts = result_dict.get('artifacts', {})
-        labeled_df = artifacts.get('labeled_dataframe', pd.DataFrame())
-        targets = artifacts.get('targets', pd.Series(dtype=float))
-        return LabelingIntegrationResult(
-            success=bool(result_dict.get('success', False)),
-            labeled_data=labeled_df,
-            targets=targets,
-            error_message=result_dict.get('error_message')
-        )
-
-    def _get_validation_rules(self) -> Dict[str, Any]:
-        return {
-            'data_types': ['pandas.DataFrame'],
-            'required_attributes': ['open', 'high', 'low', 'close'],
-            'min_rows': 100
-        }
-
-    def _validate_component_specific(self, data: Any) -> Dict[str, Any]:
-        errors, warnings, metadata = [], [], {}
-        if isinstance(data, pd.DataFrame):
-            if len(data) < 100:
-                errors.append(f"Data has {len(data)} rows, minimum required: 100")
-            metadata['shape'] = data.shape
-            metadata['columns'] = list(data.columns)
-        return {'errors': errors, 'warnings': warnings, 'metadata': metadata}
-
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the labeling integration step."""
-        result = self._process_data(data, **kwargs)
-        return LabelingIntegrationResult(
-            success=result.get('success', False),
-            labeled_data=result.get('artifacts', {}).get('labeled_dataframe', pd.DataFrame()),
-            targets=result.get('artifacts', {}).get('targets', pd.Series()),
-            error_message=None
-        )
 
 
 # Handler for ares_launcher/sub_pipeline integration
@@ -242,33 +151,24 @@ async def handle_feature_generation_labeling_integration_step(
     custom_overrides: Optional[Dict[str, Any]] = None,
     data: Optional[pd.DataFrame] = None,
     **kwargs: Any
-) -> LabelingIntegrationResult:
+) -> Dict[str, Any]:
     """Execute labeling integration and persist artifacts (launcher compatibility)."""
     step = FeatureGenerationLabelingIntegrationStep()
 
-    # Attempt lazy load if data not provided
-    if data is None or not isinstance(data, pd.DataFrame) or data.empty:
-        try:
-            from .feature_generation_data_validation_step import FeatureGenerationDataValidationStep  # type: ignore
-            loader = FeatureGenerationDataValidationStep()
-            loaded = await loader._load_data_for_validation(  # noqa: SLF001
-                symbol, timeframe, exchange, start_date, end_date, lookback_days
-            )
-            data = loaded
-        except Exception as e:
-            tprint_error(f"❌ Failed to auto-load data for labeling integration: {e}")
-            raise
+    # Prepare config
+    config = {
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'direction': direction,
+        'intensity': intensity,
+        'lookback_days': lookback_days,
+        'start_date': start_date,
+        'end_date': end_date,
+        'exchange': exchange,
+        'custom_overrides': custom_overrides or {},
+        'data': data
+    }
 
-    result_dict = step._process_data(data, symbol=symbol, timeframe=timeframe, direction=direction,
-                                     intensity=intensity, lookback_days=lookback_days, start_date=start_date,
-                                     end_date=end_date, exchange=exchange, custom_overrides=custom_overrides or {})
-
-    artifacts = result_dict.get('artifacts', {})
-    labeled_df = artifacts.get('labeled_dataframe', pd.DataFrame())
-    targets = artifacts.get('targets', pd.Series(dtype=float))
-    return LabelingIntegrationResult(
-        success=bool(result_dict.get('success', False)),
-        labeled_data=labeled_df,
-        targets=targets,
-        error_message=result_dict.get('error_message')
-    )
+    # Execute the step
+    result = await step.execute(config)
+    return result

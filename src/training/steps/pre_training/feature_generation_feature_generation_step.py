@@ -265,13 +265,13 @@ class FeatureGenerationStep(BaseStep):
             self.logger.info("📊 Standard feature generation (Analyst mode or CMI unavailable)")
 
         try:
-            # Get artifact manager
-            artifact_manager = get_pretraining_artifact_manager()
+        # Get artifact manager
+        artifact_manager = self.artifact_manager
             
             # Try to load cached features from artifact manager
-            cached_features = artifact_manager.get_artifact('feature_generation', 'generated_features')
-            cached_feature_names = artifact_manager.get_artifact('feature_generation', 'feature_names')
-            cached_categories = artifact_manager.get_artifact('feature_generation', 'feature_categories')
+            cached_features = self._load_dataframe('generated_features')
+            cached_feature_names = self._load_metadata('feature_names')
+            cached_categories = self._load_metadata('feature_categories')
 
             # DEBUG: Check data quality at the start of execute
             self.logger.debug("Execute - data shape: %s", data.shape)
@@ -372,52 +372,13 @@ class FeatureGenerationStep(BaseStep):
                 # Ensure all columns are numeric
                 clean_features_df = clean_features_df.select_dtypes(include=[np.number])
                 
-                # Save artifacts to artifact manager (write both legacy and standardized keys)
-                # Standardized keys align with ArtifactKeys for downstream compatibility
-                artifact_manager.save(
-                    step_name='feature_generation',
-                    artifacts={
-                        # Legacy key used elsewhere in the codebase
-                        'generated_features': clean_features_df,
-                        # Standardized alias for broad compatibility
-                        'feature_dataframe': clean_features_df,
-                        # Names and categories already match ArtifactKeys values
-                        'feature_names': generation_result.feature_names,
-                        'feature_categories': generation_result.feature_categories,
-                        # Provide both legacy and standardized metric keys
-                        'generation_metrics': generation_result.generation_metrics,
-                        'feature_generation_metrics': generation_result.generation_metrics,
-                        'optimization_stats': generation_result.optimization_stats,
-                        'feature_optimization_stats': generation_result.optimization_stats
-                    },
-                    metadata={
-                        'step': 'feature_generation',
-                        'shape': clean_features_df.shape,
-                        'columns': list(clean_features_df.columns),
-                        'created_at': datetime.now().isoformat()
-                    }
-                )
-
-                # Also save under the component step name for backward compatibility
-                artifact_manager.save(
-                    step_name='feature_generation_feature_generation_step',
-                    artifacts={
-                        'generated_features': clean_features_df,
-                        'feature_dataframe': clean_features_df,
-                        'feature_names': generation_result.feature_names,
-                        'feature_categories': generation_result.feature_categories,
-                        'generation_metrics': generation_result.generation_metrics,
-                        'feature_generation_metrics': generation_result.generation_metrics,
-                        'optimization_stats': generation_result.optimization_stats,
-                        'feature_optimization_stats': generation_result.optimization_stats
-                    },
-                    metadata={
-                        'step': 'feature_generation_feature_generation_step',
-                        'shape': clean_features_df.shape,
-                        'columns': list(clean_features_df.columns),
-                        'created_at': datetime.now().isoformat()
-                    }
-                )
+                # Save artifacts using BaseStep methods
+                self._save_dataframe(clean_features_df, 'generated_features')
+                self._save_dataframe(clean_features_df, 'feature_dataframe')
+                self._save_metadata(generation_result.feature_names, 'feature_names')
+                self._save_metadata(generation_result.feature_categories, 'feature_categories')
+                self._save_metadata(generation_result.generation_metrics, 'generation_metrics')
+                self._save_metadata(generation_result.optimization_stats, 'optimization_stats')
                 
                 # Generate final report
                 report_path = await self._generate_final_report(

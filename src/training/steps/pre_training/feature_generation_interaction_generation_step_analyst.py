@@ -557,11 +557,13 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         tprint("🚀 [ANALYST] Starting three-phase LGBM+SHAP interaction generation pipeline")
         self.logger.info("🔧 Starting Analyst mode three-phase interaction generation")
         
-        # Set up enhanced artifact manager with Analyst context
-        symbol = training_input.get('symbol', 'ETHUSDT')
-        exchange = training_input.get('exchange', 'binance')
-        context = get_analyst_context(symbol, exchange)
-        am = setup_enhanced_artifact_manager(**context)
+        # Set context for enhanced file naming
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'Analyst')
+        
+        self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
         
         # Start memory monitoring
         self.m1_memory_optimizer.start_monitoring()
@@ -581,14 +583,12 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             tprint(f"📊 [ANALYST] Configuration: Symbol={symbol}, Timeframe={timeframe}, Direction={direction}, Intensity={intensity}")
             
-            # Get artifact manager
-            artifact_manager = get_pretraining_artifact_manager()
+        # Get artifact manager
+        artifact_manager = self.artifact_manager
             
             # Load selected features
             tprint("📥 [ANALYST] Loading selected features from artifact manager")
-            selected_df = artifact_manager.get_dataframe('feature_selection', ArtifactKeys.SELECTED_FEATURES)
-            if selected_df is None or selected_df.empty:
-                selected_df = artifact_manager.get_dataframe('feature_generation_feature_selection_step', ArtifactKeys.SELECTED_FEATURES)
+            selected_df = self._load_dataframe('selected_features')
             if selected_df is None or selected_df.empty:
                 return InteractionGenerationResult(
                     success=False,
@@ -603,13 +603,10 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Load targets
             tprint("📥 [ANALYST] Loading targets from labeling integration step")
-            targets_series = None
-            for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
-                series = artifact_manager.get_series(step_name, ArtifactKeys.TARGETS)
-                if isinstance(series, pd.Series) and not series.empty:
-                    targets_series = series.astype(float)
-                    tprint(f"✅ [ANALYST] Loaded targets from {step_name}: {len(targets_series)} samples")
-                    break
+            targets_series = self._load_dataframe('targets')
+            if isinstance(targets_series, pd.Series):
+                targets_series = targets_series.astype(float)
+                tprint(f"✅ [ANALYST] Loaded targets: {len(targets_series)} samples")
             
             if targets_series is None or targets_series.empty:
                 return InteractionGenerationResult(
@@ -723,15 +720,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             tprint("🧹 [ANALYST] Applying final memory optimization to interaction features")
             final_interactions = self._optimize_dataframe_memory(phase3_interactions)
             
-            # Store artifacts
-            tprint("💾 [ANALYST] Storing interaction features in artifact manager")
-            artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_FEATURES, final_interactions, {
-                'step': 'interaction_generation_analyst',
-                'shape': final_interactions.shape,
-                'created_at': datetime.now().isoformat(),
-                'direction': direction,
-                'intensity': intensity
-            })
+            # Store artifacts using BaseStep methods
+            tprint("💾 [ANALYST] Storing interaction features")
+            self._save_dataframe(final_interactions, 'interaction_features')
             
             # Combine all metadata
             combined_metadata = {
@@ -750,11 +741,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 }
             }
             
-            tprint("💾 [ANALYST] Storing interaction metadata in artifact manager")
-            artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_METADATA, combined_metadata, {
-                'step': 'interaction_generation_analyst',
-                'created_at': datetime.now().isoformat()
-            })
+            tprint("💾 [ANALYST] Storing interaction metadata")
+            self._save_metadata(combined_metadata, 'interaction_metadata')
             
             # Calculate generation metrics
             total_time = time.time() - start_time
@@ -770,11 +758,8 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                 'success': True
             }
             
-            tprint("💾 [ANALYST] Storing generation metrics in artifact manager")
-            artifact_manager.store_enhanced(ArtifactKeys.INTERACTION_GENERATION_METRICS, generation_metrics, {
-                'step': 'interaction_generation_analyst',
-                'created_at': datetime.now().isoformat()
-            })
+            tprint("💾 [ANALYST] Storing generation metrics")
+            self._save_metadata(generation_metrics, 'interaction_generation_metrics')
             
             # Create result
             result = InteractionGenerationResult(

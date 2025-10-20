@@ -88,7 +88,7 @@ except ImportError:
 
 # Import modular architecture
 from src.training.steps.pre_training.unified_data_driven_pipeline.core.modular_architecture import ModularComponent
-from src.training.steps.pre_training.utils.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
+from src.utils.artifact_manager import ArtifactManager
 
 
 logger = logging.getLogger(__name__)
@@ -294,23 +294,16 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         start_time = time.time()
         tprint_info(f"🎯 Starting final feature selection for {model_type}_{direction}")
         
-        # Set up enhanced artifact manager with context
-        context = get_step_context_from_config(self.config)
-        context.update({
-            'symbol': symbol,
-            'exchange': 'binance',  # Default exchange
-            'direction': direction,
-            'model': model_type.title()  # Convert to proper case
-        })
-        am = setup_enhanced_artifact_manager(**context)
+        # Set context for enhanced file naming
+        self._set_context(symbol=symbol, exchange='binance', direction=direction, model=model_type.title())
         
         try:
             # Get artifact manager
-            artifact_manager = am
+            artifact_manager = self.artifact_manager
             
             # Load artifacts from previous steps
             tprint_info("📦 Loading artifacts from previous steps")
-            features_df, targets = await self._load_artifacts(artifact_manager, model_type, direction)
+            features_df, targets = await self._load_artifacts(model_type, direction)
             
             if features_df is None or targets is None:
                 raise ValueError("Failed to load required artifacts from previous steps")
@@ -433,21 +426,15 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 error_message=str(e)
             )
     
-    async def _load_artifacts(self, artifact_manager, model_type: str, direction: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
+    async def _load_artifacts(self, model_type: str, direction: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
         """Load features and targets from previous steps."""
         try:
             # Load features from period_lookback_optimization and interaction_generation
             tprint_info("📦 Loading optimized features from period_lookback_optimization_step")
-            period_features = artifact_manager.get_dataframe(
-                'feature_generation_period_lookback_optimization_step',
-                ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME
-            )
+            period_features = self._load_dataframe('optimized_feature_dataframe')
             
             tprint_info("📦 Loading interaction features from interaction_generation_step")
-            interaction_features = artifact_manager.get_dataframe(
-                'feature_generation_interaction_generation_step',
-                ArtifactKeys.INTERACTION_FEATURES
-            )
+            interaction_features = self._load_dataframe('interaction_features')
             
             # Merge features
             if period_features is not None and interaction_features is not None:
@@ -471,10 +458,7 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
             
             # Load targets from labeling_integration_step
             tprint_info("📦 Loading targets from labeling_integration_step")
-            targets_artifact = artifact_manager.get_artifact(
-                'feature_generation_labeling_integration_step',
-                'targets'
-            )
+            targets_artifact = self._load_dataframe('targets')
             
             if targets_artifact is None:
                 tprint_error("❌ Targets not found in labeling_integration_step")
@@ -1065,35 +1049,22 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
                 'shap_values_40': shap_values_40
             }
     
-    async def _save_artifacts(self, artifact_manager, result: FinalFeatureSelectionResult,
+    async def _save_artifacts(self, result: FinalFeatureSelectionResult,
                             model_type: str, direction: str):
         """Save artifacts to artifact manager."""
         try:
-            step_name = f'feature_generation_final_feature_selection_step_{model_type}_{direction}'
-            
-            artifact_manager.save(
-                step_name=step_name,
-                artifacts={
-                    'selected_features_60': result.selected_features_60,
-                    'selected_features_50': result.selected_features_50,
-                    'selected_features_40': result.selected_features_40,
-                    'selected_feature_dataframe_60': result.selected_feature_dataframe_60,
-                    'selected_feature_dataframe_50': result.selected_feature_dataframe_50,
-                    'selected_feature_dataframe_40': result.selected_feature_dataframe_40,
-                    'feature_scores': result.feature_scores,
-                    'shap_values_60': result.shap_values_60,
-                    'shap_values_50': result.shap_values_50,
-                    'shap_values_40': result.shap_values_40,
-                    'selection_metadata': result.selection_metadata
-                },
-                metadata={
-                    'step': step_name,
-                    'model_type': model_type,
-                    'direction': direction,
-                    'created_at': datetime.now().isoformat(),
-                    'execution_time': result.execution_time
-                }
-            )
+            # Save artifacts using BaseStep methods
+            self._save_metadata(result.selected_features_60, 'selected_features_60')
+            self._save_metadata(result.selected_features_50, 'selected_features_50')
+            self._save_metadata(result.selected_features_40, 'selected_features_40')
+            self._save_dataframe(result.selected_feature_dataframe_60, 'selected_feature_dataframe_60')
+            self._save_dataframe(result.selected_feature_dataframe_50, 'selected_feature_dataframe_50')
+            self._save_dataframe(result.selected_feature_dataframe_40, 'selected_feature_dataframe_40')
+            self._save_metadata(result.feature_scores, 'feature_scores')
+            self._save_metadata(result.shap_values_60, 'shap_values_60')
+            self._save_metadata(result.shap_values_50, 'shap_values_50')
+            self._save_metadata(result.shap_values_40, 'shap_values_40')
+            self._save_metadata(result.selection_metadata, 'selection_metadata')
             
             tprint_success(f"✅ Artifacts saved for {model_type}_{direction}")
             

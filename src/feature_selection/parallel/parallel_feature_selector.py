@@ -201,6 +201,8 @@ class ParallelFeatureSelector:
             self.logger.error(f"Hardware-optimized parallel selection failed: {e}")
             raise
 
+    @memory_efficient(memory_threshold_mb=600.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _standard_parallel_selection(self, X: np.ndarray, y: np.ndarray,
                                    methods: List[str], **kwargs) -> Dict[str, Any]:
         """Use standard parallel processing."""
@@ -242,6 +244,8 @@ class ParallelFeatureSelector:
             self.logger.error(f"Standard parallel selection failed: {e}")
             raise
 
+    @memory_efficient(memory_threshold_mb=400.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _sequential_selection(self, X: np.ndarray, y: np.ndarray,
                             methods: List[str], **kwargs) -> Dict[str, Any]:
         """Run methods sequentially (fallback)."""

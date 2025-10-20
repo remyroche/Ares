@@ -37,9 +37,15 @@ except Exception:
 # Import M1 utilities for enhanced performance
 try:
     from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.enhanced_gpu_manager import EnhancedM1GPUManager
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.enhanced_cpu_optimizer import EnhancedCPUOptimizer
+    from src.utils.hardware.integrated_hardware_manager import get_integrated_hardware_manager
     GPU_AVAILABLE = True
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
 
 # Memory optimizer integration is optional and currently disabled to avoid import cycles
 MEMORY_OPTIMIZER_AVAILABLE = False
@@ -98,6 +104,15 @@ class ParetoFront:
         self.logger = _LOGGER
         self.logger.info("🚀 Initializing Enhanced ParetoFront with VectorBT optimizations...")
         start_time = time.time()
+        
+        # Initialize hardware optimization if available
+        self.hardware_manager = None
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                self.hardware_manager = get_integrated_hardware_manager()
+                self.logger.info("✅ Hardware optimization enabled for ParetoFront")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize hardware optimization: {e}")
 
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
@@ -907,6 +922,8 @@ def _dominates(a: Solution, b: Solution, objectives: ObjectiveDirection) -> bool
 
     return better_or_equal_all and strictly_better_at_least_one
 
+@performance_tracked(log_performance=True, track_memory=True)
+@memory_optimized(aggressive_cleanup=True, enable_gc_optimization=True)
 def compute_pareto_front(
     solutions: List[Solution],
     objectives: ObjectiveDirection,

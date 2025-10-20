@@ -18,6 +18,12 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
+# Import hardware optimization decorators
+from src.utils.hardware import (
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    MemoryOptimizationLevel, WorkloadType
+)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -148,6 +154,8 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
     def create_default(cls) -> 'TrendFeatureGenerator':
         return cls()
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing using Unified Vectorization Manager
         if self.unified_manager:
@@ -382,6 +390,8 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixi
         return (VECTORBT_AVAILABLE and
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def generate_optimized_trend_features(self, data: pd.DataFrame,
                                         feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """

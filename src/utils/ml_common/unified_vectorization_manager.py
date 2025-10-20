@@ -36,7 +36,6 @@ class OperationType(Enum):
     FEATURE_ENGINEERING = "feature_engineering"
     CROSS_VALIDATION = "cross_validation"
     BACKTESTING = "backtesting"
-    HMM_TRAINING = "hmm_training"
     MODEL_TRAINING = "model_training"
     FEATURE_SELECTION = "feature_selection"
     TECHNICAL_INDICATORS = "technical_indicators"
@@ -128,6 +127,10 @@ class UnifiedVectorizationManager:
         # Initialize strategy selection configuration
         self.strategy_config = strategy_config or StrategySelectionConfig()
 
+        # Initialize hardware optimization components first
+        tprint("🔄 Initializing hardware optimization components...")
+        self._initialize_hardware_components()
+
         # Initialize optimization components
         tprint("🔄 Initializing optimization components...")
         self._initialize_components()
@@ -139,7 +142,11 @@ class UnifiedVectorizationManager:
             'total_operations': 0,
             'strategy_usage': {strategy: 0 for strategy in OptimizationStrategy},
             'average_speedup': 0.0,
-            'total_computation_time': 0.0
+            'total_computation_time': 0.0,
+            'hardware_optimizations_applied': 0,
+            'memory_optimizations_applied': 0,
+            'gpu_operations': 0,
+            'cpu_optimizations': 0
         }
 
         tprint("✅ Unified Vectorization Manager initialized")
@@ -147,6 +154,43 @@ class UnifiedVectorizationManager:
 
         # Mark as initialized to prevent re-initialization
         UnifiedVectorizationManager._init_done = True
+
+    def _initialize_hardware_components(self):
+        """Initialize hardware optimization components."""
+        tprint("🔄 Initializing hardware optimization components...")
+        
+        try:
+            # Initialize integrated hardware manager
+            from ..hardware.integrated_hardware_manager import get_integrated_hardware_manager
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.hardware_available = True
+            tprint("✅ Integrated hardware manager loaded")
+        except Exception as e:
+            tprint(f"⚠️ Integrated hardware manager not available: {e}")
+            self.hardware_manager = None
+            self.hardware_available = False
+
+        try:
+            # Initialize M1 comprehensive optimizer
+            from ..hardware.m1_comprehensive_optimizer import get_comprehensive_optimizer
+            self.m1_optimizer = get_comprehensive_optimizer()
+            self.m1_optimizer_available = True
+            tprint("✅ M1 comprehensive optimizer loaded")
+        except Exception as e:
+            tprint(f"⚠️ M1 comprehensive optimizer not available: {e}")
+            self.m1_optimizer = None
+            self.m1_optimizer_available = False
+
+        try:
+            # Initialize VectorBT GPU accelerator
+            from ..hardware.vectorbt_gpu_accelerator import VectorBTGPUAccelerator
+            self.vectorbt_gpu_accelerator = VectorBTGPUAccelerator()
+            self.vectorbt_gpu_available = self.vectorbt_gpu_accelerator.gpu_available
+            tprint("✅ VectorBT GPU accelerator loaded")
+        except Exception as e:
+            tprint(f"⚠️ VectorBT GPU accelerator not available: {e}")
+            self.vectorbt_gpu_accelerator = None
+            self.vectorbt_gpu_available = False
 
     def _initialize_components(self):
         """Initialize all optimization components."""
@@ -270,10 +314,6 @@ class UnifiedVectorizationManager:
             self.technical_indicators = None
             self.technical_indicators_available = False
 
-        # HMM operations have been deprecated and removed
-        tprint("ℹ️ HMM operations deprecated - using alternative methods")
-        self.hmm_manager = None
-        self.hmm_available = False
 
         # Hardware detection
         tprint("🔄 Detecting hardware capabilities...")
@@ -281,14 +321,36 @@ class UnifiedVectorizationManager:
         tprint("✅ Component initialization completed")
 
     def _detect_hardware_capabilities(self):
-        """Detect available hardware capabilities."""
+        """Detect available hardware capabilities using integrated hardware manager."""
         tprint("🔄 Detecting hardware capabilities...")
+        
+        # Use integrated hardware manager if available
+        if self.hardware_available and self.hardware_manager:
+            try:
+                hardware_status = self.hardware_manager.get_system_status()
+                self.hardware_caps = {
+                    'cpu_cores': hardware_status.get('cpu_info', {}).get('total_cores', 1),
+                    'gpu_available': hardware_status.get('gpu_info', {}).get('available', False),
+                    'gpu_type': hardware_status.get('gpu_info', {}).get('type', None),
+                    'memory_gb': hardware_status.get('memory_stats', {}).get('total_gb', 4.0),
+                    'mps_available': hardware_status.get('gpu_info', {}).get('mps_available', False),
+                    'neural_engine_available': hardware_status.get('neural_engine_info', {}).get('available', False),
+                    'unified_memory_available': hardware_status.get('unified_memory_info', {}).get('available', False)
+                }
+                tprint("✅ Hardware capabilities detected via integrated manager")
+                return
+            except Exception as e:
+                tprint(f"⚠️ Failed to get hardware status from integrated manager: {e}")
+        
+        # Fallback to basic detection
         self.hardware_caps = {
             'cpu_cores': 1,
             'gpu_available': False,
             'gpu_type': None,
             'memory_gb': 4.0,
-            'mps_available': False
+            'mps_available': False,
+            'neural_engine_available': False,
+            'unified_memory_available': False
         }
 
         # Detect CPU cores
@@ -407,10 +469,15 @@ class UnifiedVectorizationManager:
                                config: OperationConfig, **kwargs) -> OptimizationStrategy:
         """
         Select the optimal optimization strategy based on operation type and constraints.
-        Enhanced with VectorBT prioritization for financial operations.
+        Enhanced with VectorBT prioritization for financial operations and hardware optimization.
         """
         # Check for prefer_vectorbt flag
         prefer_vectorbt = kwargs.get('prefer_vectorbt', False)
+
+        # Check if we have hardware optimizations available
+        has_hardware_optimization = (self.hardware_available and self.hardware_manager) or \
+                                   (self.m1_optimizer_available and self.m1_optimizer) or \
+                                   (self.vectorbt_gpu_available and self.vectorbt_gpu_accelerator)
 
         # VectorBT operations - prioritize VectorBT for financial operations
         if operation_type in [OperationType.VECTORBT_BACKTESTING,
@@ -418,10 +485,12 @@ class UnifiedVectorizationManager:
                             OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION,
                             OperationType.VECTORBT_TECHNICAL_ANALYSIS]:
             if (self.hardware_caps['gpu_available'] and
-                config.data_size > self.strategy_config.gpu_data_size_threshold):
+                config.data_size > self.strategy_config.gpu_data_size_threshold and
+                has_hardware_optimization):
                 return OptimizationStrategy.VECTORBT_GPU
             elif (self.hardware_caps['cpu_cores'] >= self.strategy_config.parallel_cpu_cores_threshold and
-                  config.data_size > self.strategy_config.parallel_data_size_threshold):
+                  config.data_size > self.strategy_config.parallel_data_size_threshold and
+                  has_hardware_optimization):
                 return OptimizationStrategy.VECTORBT_PARALLEL
             else:
                 return OptimizationStrategy.VECTORBT_CPU
@@ -444,7 +513,6 @@ class UnifiedVectorizationManager:
         # GPU-first approach for supported operations
         if self.hardware_caps['gpu_available']:
             if operation_type in [OperationType.MATRIX_MULTIPLICATION,
-                                OperationType.HMM_TRAINING,
                                 OperationType.FEATURE_ENGINEERING]:
                 if config.data_size > self.strategy_config.gpu_data_size_threshold:
                     return OptimizationStrategy.GPU_ACCELERATED
@@ -525,20 +593,53 @@ class UnifiedVectorizationManager:
 
     def _execute_gpu_accelerated(self, operation_type: OperationType,
                                data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
-        """Execute operation with GPU acceleration."""
+        """Execute operation with GPU acceleration using hardware optimizations."""
         metadata = {'gpu_accelerated': True}
 
+        # Try VectorBT GPU accelerator first if available
+        if (self.vectorbt_gpu_available and self.vectorbt_gpu_accelerator and
+            operation_type in [OperationType.BACKTESTING, OperationType.VECTORBT_BACKTESTING,
+                             OperationType.VECTORBT_METRICS, OperationType.VECTORBT_PORTFOLIO_OPTIMIZATION]):
+            try:
+                result = self.vectorbt_gpu_accelerator.accelerate_operation(
+                    operation_type.value, data, **kwargs
+                )
+                metadata['vectorbt_gpu_accelerator_used'] = True
+                self.optimization_stats['gpu_operations'] += 1
+                return result, metadata
+            except Exception as e:
+                self.logger.warning(f"VectorBT GPU accelerator failed: {e}")
+
+        # Try M1 optimizer for GPU operations
+        if (self.m1_optimizer_available and self.m1_optimizer and
+            self.hardware_caps.get('mps_available', False)):
+            try:
+                result = self.m1_optimizer.optimize_operation(
+                    operation_type.value, data, use_gpu=True, **kwargs
+                )
+                metadata['m1_gpu_optimizer_used'] = True
+                self.optimization_stats['gpu_operations'] += 1
+                return result, metadata
+            except Exception as e:
+                self.logger.warning(f"M1 GPU optimizer failed: {e}")
+
+        # Try integrated hardware manager
+        if self.hardware_available and self.hardware_manager:
+            try:
+                result = self.hardware_manager.process_data_with_optimization(
+                    data, workload_type='gpu_intensive'
+                )
+                metadata['integrated_hardware_manager_used'] = True
+                self.optimization_stats['hardware_optimizations_applied'] += 1
+                return result, metadata
+            except Exception as e:
+                self.logger.warning(f"Integrated hardware manager failed: {e}")
+
+        # Fallback to original GPU acceleration methods
         if operation_type == OperationType.MATRIX_MULTIPLICATION and self.vectorbt_rolling_optimizer:
             # Use VectorBTRollingOptimizer for matrix multiplication
             result = self.vectorbt_rolling_optimizer.optimize_matrix_operations(data['a'], data['b'])
             metadata['vectorbt_rolling_used'] = True
-
-        elif operation_type == OperationType.HMM_TRAINING and self.hmm_available:
-            # Use GPU-accelerated HMM training
-            result = self.hmm_manager.gpu_accelerated_hmm_training(
-                data, **kwargs
-            )
-            metadata['gpu_hmm_used'] = True
 
         elif operation_type == OperationType.BACKTESTING and self.backtesting_available:
             # Use GPU-accelerated backtesting
@@ -712,10 +813,34 @@ class UnifiedVectorizationManager:
 
     def _execute_memory_optimized(self, operation_type: OperationType,
                                 data: Any, config: OperationConfig, **kwargs) -> Tuple[Any, Dict[str, Any]]:
-        """Execute operation with memory optimization."""
+        """Execute operation with memory optimization using hardware optimizations."""
         metadata = {'memory_optimized': True}
 
-        # Use chunked processing for memory efficiency
+        # Try M1 optimizer for memory optimization first
+        if self.m1_optimizer_available and self.m1_optimizer:
+            try:
+                result = self.m1_optimizer.optimize_operation(
+                    operation_type.value, data, use_memory_optimization=True, **kwargs
+                )
+                metadata['m1_memory_optimizer_used'] = True
+                self.optimization_stats['memory_optimizations_applied'] += 1
+                return result, metadata
+            except Exception as e:
+                self.logger.warning(f"M1 memory optimizer failed: {e}")
+
+        # Try integrated hardware manager for memory optimization
+        if self.hardware_available and self.hardware_manager:
+            try:
+                result = self.hardware_manager.process_data_with_optimization(
+                    data, workload_type='memory_intensive'
+                )
+                metadata['integrated_hardware_memory_optimization_used'] = True
+                self.optimization_stats['memory_optimizations_applied'] += 1
+                return result, metadata
+            except Exception as e:
+                self.logger.warning(f"Integrated hardware memory optimization failed: {e}")
+
+        # Fallback to original chunked processing
         # Only chunk if memory budget is actually constrained
         if (config.memory_budget_mb < self.strategy_config.memory_optimization_threshold_mb and
             hasattr(data, '__len__') and
@@ -892,7 +1017,6 @@ class UnifiedVectorizationManager:
         # Adjust based on operation type
         memory_multipliers = {
             OperationType.MATRIX_MULTIPLICATION: 3.0,
-            OperationType.HMM_TRAINING: 2.5,
             OperationType.BACKTESTING: 2.0,
             OperationType.CROSS_VALIDATION: 1.5,
             OperationType.FEATURE_ENGINEERING: 1.8
@@ -913,7 +1037,6 @@ class UnifiedVectorizationManager:
             # Default baseline times (estimated) for different operations
             baseline_times = {
                 OperationType.MATRIX_MULTIPLICATION: 10.0,
-                OperationType.HMM_TRAINING: 50.0,
                 OperationType.BACKTESTING: 30.0,
                 OperationType.CROSS_VALIDATION: 20.0,
                 OperationType.FEATURE_ENGINEERING: 15.0,
@@ -1047,12 +1170,30 @@ class UnifiedVectorizationManager:
             'cross_validation': self.cv_available,
             'feature_selection': self.feature_selection_available,
             'technical_indicators': self.technical_indicators_available,
-            'hmm_operations': self.hmm_available,
             # VectorBT components
             'vectorbt_backtesting': self.vectorbt_backtesting_available,
             'vectorbt_metrics': self.vectorbt_metrics_available,
-            'vectorbt_portfolio_optimization': self.vectorbt_portfolio_optimization_available
+            'vectorbt_portfolio_optimization': self.vectorbt_portfolio_optimization_available,
+            # Hardware optimization components
+            'integrated_hardware_manager': self.hardware_available,
+            'm1_comprehensive_optimizer': self.m1_optimizer_available,
+            'vectorbt_gpu_accelerator': self.vectorbt_gpu_available
         }
+
+        # Add hardware-specific statistics if available
+        if self.hardware_available and self.hardware_manager:
+            try:
+                hardware_stats = self.hardware_manager.get_optimization_report()
+                stats['hardware_optimization_stats'] = hardware_stats
+            except Exception as e:
+                self.logger.warning(f"Failed to get hardware optimization stats: {e}")
+
+        if self.m1_optimizer_available and self.m1_optimizer:
+            try:
+                m1_stats = self.m1_optimizer.get_performance_metrics()
+                stats['m1_optimization_stats'] = m1_stats
+            except Exception as e:
+                self.logger.warning(f"Failed to get M1 optimization stats: {e}")
 
         return stats
 

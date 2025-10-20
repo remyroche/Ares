@@ -32,9 +32,10 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
     tprint_logged, LogLevel
 )
+from src.utils.hardware import get_memory_usage, optimize_dataframe_default
 from src.utils.data.klines_parquet import get_klines_manager
 from src.utils.serialization_utils import save_pickle, load_pickle
-from src.utils.common_operations import optimize_dataframe_memory, get_memory_usage
+# Memory optimization now handled by hardware module
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +55,12 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
     - Hardware optimization for M1 systems
     """
     
-    def __init__(self, step_name: str = "hdbscan_regime_discovery"):
+    def __init__(self, step_name: str = "hdbscan_regime_discovery", config: Optional[Dict[str, Any]] = None):
         """Initialize the HDBSCAN regime discovery step."""
         tprint_debug(f"Initializing HDBSCANRegimeDiscoveryStep with name: {step_name}")
         start_time = time.perf_counter()
         
-        super().__init__(step_name)
+        super().__init__(step_name, config)
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize regime discovery system
@@ -82,7 +83,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
         tprint_debug(f"Initial memory usage: {self.performance_stats['memory_usage_mb']:.2f}MB")
     
     @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
-    async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute HDBSCAN regime discovery step.
         
@@ -134,7 +135,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     raise ValueError("Failed to load market data")
                 
                 # Optimize memory usage
-                market_data = optimize_dataframe_memory(market_data)
+                market_data = optimize_dataframe_default(market_data)
                 tprint_success(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
                 tprint_debug(f"Data memory usage: {market_data.memory_usage(deep=True).sum() / 1024**2:.2f}MB")
             
@@ -444,7 +445,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 
                 # Comprehensive memory optimization
                 with tprint_timer("DataFrame memory optimization"):
-                    market_data = optimize_dataframe_memory(market_data)
+                    market_data = optimize_dataframe_default(market_data)
                     final_memory = market_data.memory_usage(deep=True).sum() / 1024**2
                     memory_saved = initial_memory - final_memory
                     

@@ -26,7 +26,7 @@ from src.utils.tprint import (
     tprint_debug, tprint_performance, tprint_progress, tprint_timer,
     tprint_logged, LogLevel
 )
-from src.utils.common_operations import safe_dataframe_operation, get_memory_usage
+from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import safe_dataframe_operation as safe_df_op
 from src.utils.math_validation import validate_finite, safe_divide, safe_log, safe_sqrt
 from src.utils.serialization_utils import save_pickle, load_pickle
@@ -36,7 +36,8 @@ from src.utils.hardware import (
     get_unified_hardware_manager, get_comprehensive_optimizer,
     smart_cache, auto_optimize, memory_efficient, performance_tracked,
     optimize_dataframe_default, optimize_numpy_array_default,
-    WorkloadType, OptimizationLevel, ComprehensiveConfig, OptimizationStrategy
+    WorkloadType, OptimizationLevel, ComprehensiveConfig, OptimizationStrategy,
+    get_memory_usage
 )
 
 # Import optimized regime discovery components (default)

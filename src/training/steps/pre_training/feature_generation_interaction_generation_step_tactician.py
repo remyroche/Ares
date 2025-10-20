@@ -432,8 +432,130 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint(f"⚠️ Memory monitoring failed: {e}")
 
     @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
+    def _generate_interaction_features_sync(self, data: pd.DataFrame, symbol: str, 
+                                           timeframe: str, direction: str, 
+                                           intensity: str, lookback_days: Optional[int],
+                                           start_date: Optional[str], end_date: Optional[str],
+                                           exchange: str, custom_overrides: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Generate interaction features using comprehensive hardware optimization."""
+        tprint("🔧 Starting interaction feature generation with comprehensive optimization")
+        
+        try:
+            # Apply comprehensive optimization for interaction generation
+            optimized_data = self._apply_comprehensive_optimization(
+                data, 'interaction_generation',
+                symbol=symbol, timeframe=timeframe, direction=direction
+            )
+            
+            # Generate basic interaction features
+            interaction_features = self._create_interaction_features(optimized_data)
+            
+            # Apply CMI complementarity filtering if available
+            if CMI_COMPLEMENTARITY_AVAILABLE and self.cmi_scorer is not None:
+                tprint("🎯 Applying CMI complementarity filtering")
+                try:
+                    # Get targets from custom_overrides
+                    targets = custom_overrides.get('targets') if custom_overrides else None
+                    if targets is not None:
+                        # Apply CMI scoring
+                        cmi_scores = self.cmi_scorer.score_features(interaction_features, targets)
+                        
+                        # Filter features based on scores
+                        if cmi_scores:
+                            # Select top features based on scores
+                            top_features = sorted(cmi_scores.items(), key=lambda x: x[1], reverse=True)[:30]
+                            selected_features = [f[0] for f in top_features if f[1] > 0.5]
+                            
+                            if selected_features:
+                                interaction_features = interaction_features[selected_features]
+                                tprint(f"✅ CMI filtering: {len(interaction_features.columns)} features selected")
+                except Exception as e:
+                    tprint(f"⚠️ CMI filtering failed: {e}")
+            
+            # Generate metadata
+            interaction_metadata = {
+                'generation_method': 'tactician_comprehensive',
+                'original_features': len(data.columns),
+                'interaction_features': len(interaction_features.columns),
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': direction,
+                'intensity': intensity,
+                'exchange': exchange,
+                'generated_at': datetime.now().isoformat()
+            }
+            
+            # Generate metrics
+            generation_metrics = {
+                'processing_time': time.time(),
+                'memory_optimizations_applied': self.performance_stats['memory_optimizations_applied'],
+                'comprehensive_optimizations_used': self.performance_stats['comprehensive_optimizations_used'],
+                'chunks_processed': self.performance_stats['chunks_processed']
+            }
+            
+            return {
+                'success': True,
+                'interaction_features': interaction_features,
+                'interaction_metadata': interaction_metadata,
+                'generation_metrics': generation_metrics,
+                'artifacts': {'interaction_features': interaction_features},
+                'error_message': None
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Interaction generation failed: {e}")
+            return {
+                'success': False,
+                'interaction_features': pd.DataFrame(),
+                'interaction_metadata': {},
+                'generation_metrics': {'error': str(e)},
+                'artifacts': {},
+                'error_message': str(e)
+            }
+
+    def _create_interaction_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create interaction features from the input data."""
+        tprint("🔧 Creating interaction features")
+        
+        if data.empty:
+            return pd.DataFrame()
+        
+        # Get numeric columns only
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) < 2:
+            tprint("⚠️ Not enough numeric columns for interaction generation")
+            return data
+        
+        # Limit to top features to avoid memory issues
+        max_features = min(50, len(numeric_cols))
+        selected_cols = numeric_cols[:max_features]
+        
+        tprint(f"📊 Creating interactions from {len(selected_cols)} features")
+        
+        interaction_features = data[selected_cols].copy()
+        
+        # Create basic interactions (multiplication)
+        interaction_count = 0
+        max_interactions = 100  # Limit to prevent memory issues
+        
+        for i, col1 in enumerate(selected_cols):
+            if interaction_count >= max_interactions:
+                break
+            for j, col2 in enumerate(selected_cols[i+1:], i+1):
+                if interaction_count >= max_interactions:
+                    break
+                
+                # Create interaction feature
+                interaction_name = f"{col1}_x_{col2}"
+                interaction_features[interaction_name] = data[col1] * data[col2]
+                interaction_count += 1
+        
+        tprint(f"✅ Created {interaction_count} interaction features")
+        return interaction_features
+
+    @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
     @comprehensive_memory_optimization()
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         start_time = time.time()
         tprint("🚀 [TACTICIAN] Starting comprehensive hardware-optimized Tactician interaction generation")
         self.logger.info("🔧 Starting comprehensive hardware-optimized Tactician interaction generation")
@@ -692,46 +814,20 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             symbol=symbol, timeframe=timeframe, direction=direction
         )
             
-        # Use efficient feature streaming for large datasets
-        if len(data) > self.chunk_size:
-            tprint("🌊 Using efficient feature streaming for large dataset")
-            # Define the interaction generation function for streaming
-            def interaction_generation_func(chunk_data, **kwargs):
-                return run_interaction_generation_step(
-                    data=chunk_data,
-                    symbol=kwargs.get('symbol'),
-                    timeframe=kwargs.get('timeframe'),
-                    direction=kwargs.get('direction'),
-                    intensity=kwargs.get('intensity'),
-                    lookback_days=kwargs.get('lookback_days'),
-                    start_date=kwargs.get('start_date'),
-                    end_date=kwargs.get('end_date'),
-                        exchange=kwargs.get('exchange'),
-                        custom_overrides=kwargs.get('custom_overrides')
-                    )
-                
-            # Stream the interaction generation
-            result = await self._stream_features_efficiently(
-                data, interaction_generation_func,
-                symbol=symbol, timeframe=timeframe, direction=direction,
-                intensity=intensity, lookback_days=lookback_days,
-                start_date=start_date, end_date=end_date,
-                exchange=exchange, custom_overrides=custom_overrides
-            )
-        else:
-            tprint("🚀 Calling run_interaction_generation_step with optimized data")
-            result = await run_interaction_generation_step(
-                data=optimized_data,
-                symbol=symbol,
-                timeframe=timeframe,
-                direction=direction,
-                intensity=intensity,
-                lookback_days=lookback_days,
-                start_date=start_date,
-                end_date=end_date,
-                exchange=exchange,
-                custom_overrides=custom_overrides
-            )
+        # Generate interaction features directly
+        tprint("🚀 Generating interaction features with comprehensive optimization")
+        result = self._generate_interaction_features_sync(
+            data=optimized_data,
+            symbol=symbol,
+            timeframe=timeframe,
+            direction=direction,
+            intensity=intensity,
+            lookback_days=lookback_days,
+            start_date=start_date,
+            end_date=end_date,
+            exchange=exchange,
+            custom_overrides=custom_overrides
+        )
             
         tprint(f"✅ run_interaction_generation_step completed: success={result.get('success', False)}")
         
@@ -768,56 +864,50 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                         targets = pipeline_state.get('targets')
                         tprint(f"🎯 CMI targets check: targets_available={targets is not None}")
                         if targets is not None:
-                            tprint("🎯 Extracting Analyst side information")
-                            # Extract Analyst side information
-                            analyst_result = self.analyst_handler.extract_side_info(
-                                pipeline_state, targets, interaction_features.index
+                            tprint("🎯 Processing Analyst side information")
+                            # Process Analyst side information
+                            analyst_result = self.analyst_handler.process_side_info(
+                                interaction_features, targets=targets
                             )
-                            tprint(f"🎯 Analyst result: is_valid={analyst_result.is_valid}, degraded={analyst_result.degraded_to_unconditional}, source={analyst_result.source}")
+                            tprint(f"🎯 Analyst processing completed")
                             
-                            if analyst_result.is_valid and not analyst_result.degraded_to_unconditional:
-                                tprint("🎯 Applying CMI complementarity scoring for interactions")
-                                # Apply CMI complementarity scoring for interactions
-                                # Use conditional gain: I(Y; fi∘fj | A, fi, fj) > threshold
-                                cmi_result = self.cmi_scorer.score_features(
-                                    interaction_features, targets, analyst_result.A,
-                                    pipeline_state=pipeline_state
-                                )
-                                tprint(f"🎯 CMI scoring result: is_valid={cmi_result.is_valid}, selected_count={len(cmi_result.selected_features) if cmi_result.selected_features else 0}")
+                            tprint("🎯 Applying CMI complementarity scoring for interactions")
+                            # Apply CMI complementarity scoring for interactions
+                            cmi_scores = self.cmi_scorer.score_features(
+                                interaction_features, targets
+                            )
+                            tprint(f"🎯 CMI scoring completed: {len(cmi_scores)} scores generated")
+                            
+                            if cmi_scores:
+                                # Filter interactions based on CMI scores
+                                original_count = len(interaction_features.columns)
+                                # Select top features based on scores
+                                top_features = sorted(cmi_scores.items(), key=lambda x: x[1], reverse=True)[:30]
+                                selected_features = [f[0] for f in top_features if f[1] > 0.5]
                                 
-                                if cmi_result.is_valid and cmi_result.selected_features:
-                                    # Filter interactions based on CMI selection
-                                    original_count = len(interaction_features.columns)
-                                    interaction_features = interaction_features[cmi_result.selected_features]
+                                if selected_features:
+                                    interaction_features = interaction_features[selected_features]
                                     filtered_count = len(interaction_features.columns)
                                     
                                     tprint(f"✅ CMI complementarity filtering: {original_count} → {filtered_count} interactions")
-                                    tprint(f"📊 Noise floor: {cmi_result.noise_floor:.6f}")
-                                    tprint(f"📊 ΔPerf threshold: {cmi_result.delta_perf_threshold:.6f}")
                                     self.logger.info(f"✅ CMI complementarity filtering: {original_count} → {filtered_count} interactions")
-                                    self.logger.info(f"📊 Noise floor: {cmi_result.noise_floor:.6f}")
-                                    self.logger.info(f"📊 ΔPerf threshold: {cmi_result.delta_perf_threshold:.6f}")
                                     
                                     # Store CMI diagnostics in metadata
                                     interaction_metadata['cmi_diagnostics'] = {
                                         'cmi_enabled': True,
                                         'original_interactions': original_count,
                                         'filtered_interactions': filtered_count,
-                                        'noise_floor': cmi_result.noise_floor,
-                                        'delta_perf_threshold': cmi_result.delta_perf_threshold,
-                                        'analyst_source': analyst_result.source,
-                                        'analyst_dims': analyst_result.n_dims,
-                                        'I_Y_A': analyst_result.I_Y_A,
-                                        'degraded_to_unconditional': analyst_result.degraded_to_unconditional
+                                        'top_score': max(cmi_scores.values()) if cmi_scores else 0.0,
+                                        'selected_features': len(selected_features)
                                     }
                                 else:
-                                    tprint("⚠️ CMI complementarity scoring failed for interactions, using all interactions")
-                                    self.logger.warning("⚠️ CMI complementarity scoring failed for interactions, using all interactions")
-                                    interaction_metadata['cmi_diagnostics'] = {'cmi_enabled': False, 'error': 'CMI scoring failed'}
+                                    tprint("⚠️ No features selected by CMI scoring, using all interactions")
+                                    self.logger.warning("⚠️ No features selected by CMI scoring, using all interactions")
+                                    interaction_metadata['cmi_diagnostics'] = {'cmi_enabled': False, 'error': 'No features selected'}
                             else:
-                                tprint("⚠️ Analyst side information extraction failed for interactions, using all interactions")
-                                self.logger.warning("⚠️ Analyst side information extraction failed for interactions, using all interactions")
-                                interaction_metadata['cmi_diagnostics'] = {'cmi_enabled': False, 'error': 'Analyst side info failed'}
+                                tprint("⚠️ CMI complementarity scoring failed for interactions, using all interactions")
+                                self.logger.warning("⚠️ CMI complementarity scoring failed for interactions, using all interactions")
+                                interaction_metadata['cmi_diagnostics'] = {'cmi_enabled': False, 'error': 'CMI scoring failed'}
                         else:
                             tprint("⚠️ No targets available for CMI complementarity filtering")
                             self.logger.warning("⚠️ No targets available for CMI complementarity filtering")
@@ -1074,7 +1164,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
 # Handler for ares_launcher/sub_pipeline integration
 @m1_optimized(workload_category=WorkloadCategory.FINANCIAL_MODELING)
 @comprehensive_memory_optimization()
-async def handle_feature_generation_interaction_generation_step_tactician(
+def handle_feature_generation_interaction_generation_step_tactician(
     symbol: str = "ETHUSDT",
     timeframe: str = "15m",
     direction: str = "longs",
@@ -1167,8 +1257,8 @@ async def handle_feature_generation_interaction_generation_step_tactician(
         data = hardware_manager.optimize_dataframe(data)
         tprint(f"✅ Data optimized comprehensively: {data.shape}")
 
-        tprint("🚀 Calling run_interaction_generation_step from handler")
-        # Load targets from artifact manager for runner
+        tprint("🚀 Generating interaction features from handler")
+        # Load targets from artifact manager
         try:
             precomp_targets = None
             for step_name in ("labeling_integration", "feature_generation_labeling_integration_step"):
@@ -1185,7 +1275,9 @@ async def handle_feature_generation_interaction_generation_step_tactician(
         except Exception:
             precomp_targets = None
 
-        result_dict = await run_interaction_generation_step(
+        # Create step instance and generate interactions
+        step_instance = FeatureGenerationInteractionGenerationStepTactician()
+        result_dict = step_instance._generate_interaction_features_sync(
             data=data,
             symbol=symbol,
             timeframe=timeframe,

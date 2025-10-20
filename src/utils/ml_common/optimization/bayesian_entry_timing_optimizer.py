@@ -419,9 +419,13 @@ class BayesianEntryTimingOptimizer:
                     'state': trial.state.name
                 })
 
-        # Calculate convergence
+        # Calculate convergence with safe division
         convergence_history = [trial.value for trial in study.trials if trial.value is not None]
-        convergence_achieved = len(convergence_history) > 10 and abs(convergence_history[-1] - convergence_history[-10]) < 0.01
+        if len(convergence_history) > 10:
+            recent_improvement = abs(convergence_history[-1] - convergence_history[-10])
+            convergence_achieved = recent_improvement < 0.01
+        else:
+            convergence_achieved = False
 
         # Generate recommendations
         recommendations = self._generate_recommendations(best_results, best_params)

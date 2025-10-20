@@ -80,19 +80,15 @@ except ImportError:
     def tprint_result(*args, **kwargs): print("RESULT:", *args, **kwargs)
 
 
-@dataclass
 class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
     """Period + lookback optimization step that calls the consolidated pipeline."""
 
-    def __init__(self, name: str = "period_lookback_optimization_step", 
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the period + lookback optimization step."""
         tprint_step("Initializing FeatureGenerationPeriodLookbackOptimizationStep")
-        tprint_info(f"Component name: {name}")
         tprint_info(f"Config type: {type(config)}")
         
-        super().__init__(name, config or {}, logger)
+        super().__init__("feature_generation_period_lookback_optimization_step", config)
         
         tprint_success("Base component initialization completed")
         
@@ -2617,69 +2613,87 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the period + lookback optimization step with M1 optimizations."""
-        tprint_step("Executing period + lookback optimization step with M1 optimizations")
-        tprint_info(f"Execute parameters: data_shape={data.shape if hasattr(data, 'shape') else 'Unknown'}, kwargs={list(kwargs.keys())}")
+        self.logger.info("🔍 Starting period + lookback optimization step")
         
-        # Create M1 optimization context
-        with self.m1_cpu_optimizer.create_m1_optimized_context():
+        # Set context for enhanced file naming
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'Analyst')
+        
+        self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
+        
+        # Get data from config
+        data = config.get('data')
+        if data is None or not isinstance(data, pd.DataFrame) or data.empty:
+            raise ValueError("Input data must be a non‑empty DataFrame")
+        
+        try:
+            # Log optimization configuration
+            tprint_info(f"🚀 M1 Optimization Configuration:")
+            tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
+            tprint_info(f"   - Chunk Size: {self.chunk_size}")
+            tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
+            tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
+            tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
+            tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
+            
+            # Process data through the optimization
+            tprint_info("Processing data through M1-optimized pipeline")
+            result = self._process_data(data, **config)
+            tprint_info(f"Process data result: success={result.get('success', False)}")
+            
+            # Save artifacts using BaseStep methods
+            if result.get('success', False):
+                if 'optimized_features' in result.get('artifacts', {}):
+                    self._save_dataframe(result['artifacts']['optimized_features'], 'optimized_features')
+                if 'optimization_metadata' in result:
+                    self._save_metadata(result['optimization_metadata'], 'optimization_metadata')
+                if 'family_diagnostics' in result.get('artifacts', {}):
+                    self._save_dataframe(result['artifacts']['family_diagnostics'], 'family_diagnostics')
+            
+            # Log optimization statistics
+            optimization_stats = result.get('optimization_stats', {})
+            if optimization_stats:
+                tprint_info("📊 Optimization Statistics:")
+                tprint_info(f"   - Workers Used: {optimization_stats.get('parallel_workers_used', 'N/A')}")
+                tprint_info(f"   - Final Memory Usage: {optimization_stats.get('final_memory_usage', 0):.1f}%")
+                tprint_info(f"   - GPU Acceleration: {optimization_stats.get('m1_gpu_acceleration', False)}")
+            
+            # Generate human-readable report
+            if result.get('success', False):
+                tprint_info("Generating human-readable optimization report")
+                report_path = self._generate_optimization_report(result, data, **config)
+                tprint_success(f"📊 Optimization report saved to: {report_path}")
+            
+            return {
+                'success': result.get('success', False),
+                'artifacts': list(result.get('artifacts', {}).keys()),
+                'metrics': {
+                    'optimization_stats': optimization_stats,
+                    'optimization_metadata': result.get('optimization_metadata', {})
+                },
+                'error': None if result.get('success', False) else "Period + lookback optimization failed"
+            }
+            
+        except Exception as e:
+            tprint_error(f"Period + lookback optimization execution failed: {e}")
+            tprint_debug(f"Execution error details: {traceback.format_exc()}")
+            self.logger.error(f"Period + lookback optimization execution failed: {e}")
+            
+            # Ensure cleanup even on error
             try:
-                # Log optimization configuration
-                tprint_info(f"🚀 M1 Optimization Configuration:")
-                tprint_info(f"   - Parallel Workers: {self.parallel_workers}")
-                tprint_info(f"   - Chunk Size: {self.chunk_size}")
-                tprint_info(f"   - Memory Mapping: {self.memory_mapping_enabled}")
-                tprint_info(f"   - Aggressive GC: {self.aggressive_gc_enabled}")
-                tprint_info(f"   - Data Type Optimization: {self.data_type_optimization}")
-                tprint_info(f"   - M1 GPU Available: {self.m1_gpu_manager.mps_available}")
-                
-                # Process data through the optimization
-                tprint_info("Processing data through M1-optimized pipeline")
-                result = self._process_data(data, **kwargs)
-                tprint_info(f"Process data result: success={result.get('success', False)}")
-                
-                # Log optimization statistics
-                optimization_stats = result.get('optimization_stats', {})
-                if optimization_stats:
-                    tprint_info("📊 Optimization Statistics:")
-                    tprint_info(f"   - Workers Used: {optimization_stats.get('parallel_workers_used', 'N/A')}")
-                    tprint_info(f"   - Final Memory Usage: {optimization_stats.get('final_memory_usage', 0):.1f}%")
-                    tprint_info(f"   - GPU Acceleration: {optimization_stats.get('m1_gpu_acceleration', False)}")
-                
-                # Generate human-readable report
-                if result.get('success', False):
-                    tprint_info("Generating human-readable optimization report")
-                    report_path = self._generate_optimization_report(result, data, **kwargs)
-                    tprint_success(f"📊 Optimization report saved to: {report_path}")
-                
-                # Convert dictionary result to ComponentResult
-                tprint_info("Converting result to ComponentResult")
-                component_result = ComponentResult(
-                    success=result.get('success', False),
-                    artifacts=result.get('artifacts', {}),
-                    metadata=result.get('optimization_metadata', {}),
-                    error_message=None if result.get('success', False) else "Period + lookback optimization failed"
-                )
-                tprint_success(f"ComponentResult created: success={component_result.success}")
-                return component_result
-                
-            except Exception as e:
-                tprint_error(f"Period + lookback optimization execution failed: {e}")
-                tprint_debug(f"Execution error details: {traceback.format_exc()}")
-                self.logger.error(f"Period + lookback optimization execution failed: {e}")
-                
-                # Ensure cleanup even on error
-                try:
-                    self.m1_memory_optimizer.stop_monitoring()
-                    if self.aggressive_gc_enabled:
-                        self._aggressive_garbage_collection()
-                except Exception as cleanup_error:
-                    tprint_warning(f"Cleanup failed: {cleanup_error}")
-                
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    metadata={},
-                    error_message=str(e)
-                )
+                self.m1_memory_optimizer.stop_monitoring()
+                if self.aggressive_gc_enabled:
+                    self._aggressive_garbage_collection()
+            except Exception as cleanup_error:
+                tprint_warning(f"Cleanup failed: {cleanup_error}")
+            
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {},
+                'error': str(e)
+            }
 
     # Required utility methods for BasePreTrainingComponent

@@ -151,10 +151,8 @@ class PhaseConfig:
 class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
     """Analyst mode interaction generation step with three-phase LGBM+SHAP pipeline."""
 
-    def __init__(self, name: str = "interaction_generation_step_analyst",
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
-        super().__init__(name, config or {}, logger)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__("feature_generation_interaction_generation_step_analyst", config)
         
         # Initialize phase configuration
         self.phase_config = PhaseConfig()

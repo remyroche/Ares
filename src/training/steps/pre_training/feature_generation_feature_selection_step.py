@@ -123,12 +123,12 @@ class FeatureSelectionResult:
 class FeatureGenerationFeatureSelectionStep(BaseStep):
     """Sophisticated feature selection step using battle-tested components."""
 
-    def __init__(self, name: str = "step", config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the sophisticated feature selection step."""
         tprint_info("🔧 [DEBUG] Initializing FeatureGenerationFeatureSelectionStep")
-        tprint_debug(f"🔧 [DEBUG] Name: {name}, Config keys: {list(config.keys()) if config else 'None'}")
+        tprint_debug(f"🔧 [DEBUG] Config keys: {list(config.keys()) if config else 'None'}")
         
-        super().__init__(name, config or {}, logger)
+        super().__init__("feature_generation_feature_selection_step", config)
         
         tprint_info("🔧 [DEBUG] Checking battle-tested components availability")
         tprint_debug(f"🔧 [DEBUG] BATTLE_TESTED_COMPONENTS_AVAILABLE: {BATTLE_TESTED_COMPONENTS_AVAILABLE}")
@@ -295,17 +295,23 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
         return data, targets
 
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute sophisticated feature selection step using battle-tested components with artifact manager integration."""
+        """Execute sophisticated feature selection step using battle-tested components with BaseStep integration."""
 
         self.logger.info("🎯 Starting sophisticated feature selection step with multi-objective optimization")
         tprint_info("🔍 [DEBUG] Starting feature selection execution")
+        
+        # Set context for enhanced file naming
+        symbol = config.get('symbol', 'ETHUSDT')
+        exchange = config.get('exchange', 'binance')
+        direction = config.get('direction', 'long')
+        model = config.get('model', 'Analyst')
+        timeframe = config.get('timeframe', '15m')
+        
+        self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
+        
         tprint_debug(f"🔍 [DEBUG] Input parameters - symbol: {symbol}, timeframe: {timeframe}, direction: {direction}")
 
         try:
-            # Get artifact manager
-            tprint_info("🔍 [DEBUG] Getting artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
-            tprint_success("✅ [DEBUG] Artifact manager retrieved successfully")
             
                         
             # Resolve feature set and labeling targets strictly via artifact manager
@@ -315,13 +321,12 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             # Try to load features from artifact manager first
             features_found_in_artifacts = False
             try:
-                for step_name in ("feature_generation_feature_generation_step", "feature_generation"):
-                    candidate = artifact_manager.get_dataframe(step_name, ArtifactKeys.FEATURE_DATAFRAME)
-                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
-                        features_df = candidate
-                        features_found_in_artifacts = True
-                        tprint_success(f"✅ [DEBUG] Loaded generated features from {step_name}: shape={features_df.shape}")
-                        break
+                # Try to load features using BaseStep methods
+                candidate = self._load_dataframe('generated_features')
+                if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                    features_df = candidate
+                    features_found_in_artifacts = True
+                    tprint_success(f"✅ [DEBUG] Loaded generated features from BaseStep: shape={features_df.shape}")
             except Exception as e:
                 tprint_warning(f"⚠️ [DEBUG] Artifact manager failed for features: {e}")
 
@@ -432,9 +437,9 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             
             # Try to load cached results from feature selection step
             tprint_info("🔍 [DEBUG] Checking for cached feature selection results")
-            cached_selected_features = artifact_manager.get_artifact("feature_selection", "selected_features")
-            cached_selection_metrics = artifact_manager.get_artifact("feature_selection", "selection_metrics")
-            cached_importance_rankings = artifact_manager.get_artifact("feature_selection", "feature_importance_rankings")
+            cached_selected_features = self._load_dataframe("selected_features")
+            cached_selection_metrics = self._load_metadata("selection_metrics")
+            cached_importance_rankings = self._load_metadata("feature_importance_rankings")
             
             tprint_debug(f"🔍 [DEBUG] Cached results - features: {cached_selected_features is not None}, metrics: {cached_selection_metrics is not None}, rankings: {cached_importance_rankings is not None}")
             
@@ -502,12 +507,10 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
                 tprint_debug(f"🔍 [DEBUG] Selection metrics keys: {list(selection_result.selection_metrics.keys()) if selection_result.selection_metrics else 'None'}")
                 tprint_debug(f"🔍 [DEBUG] Feature importance keys: {list(selection_result.feature_importance.keys()) if selection_result.feature_importance else 'None'}")
                 
-                artifact_manager.save(
-                    step_name='feature_selection',
-                    artifacts={
-                        'selected_features': selection_result.selected_features,
-                        'selection_metrics': selection_result.selection_metrics,
-                        'feature_importance_rankings': selection_result.feature_importance,
+                # Save artifacts using BaseStep methods
+                self._save_dataframe(selection_result.selected_features, 'selected_features')
+                self._save_metadata(selection_result.selection_metrics, 'selection_metrics')
+                self._save_metadata(selection_result.feature_importance, 'feature_importance_rankings')
                         'economic_validation': selection_result.economic_validation,
                         'multi_objective_results': selection_result.multi_objective_results,
                         'vectorbt_optimizations': selection_result.vectorbt_optimizations,

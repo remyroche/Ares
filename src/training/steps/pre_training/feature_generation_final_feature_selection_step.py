@@ -137,13 +137,11 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     - Computational optimizations (sampling, batching, caching, parallel processing)
     """
     
-    def __init__(self, name: str = "final_feature_selection_step",
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the final feature selection step."""
         tprint_info("🎯 Initializing FeatureGenerationFinalFeatureSelectionStep")
         
-        super().__init__(name, config or {}, logger)
+        super().__init__("feature_generation_final_feature_selection_step", config)
         
         # Initialize M1 hardware optimizers
         if M1_OPTIMIZATIONS_AVAILABLE:

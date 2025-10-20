@@ -121,16 +121,14 @@ class FeatureGenerationFinalValidationStep(BaseStep):
     advanced_metrics: Optional[AdvancedQualityMetrics]
     validation_manager: Optional[ValidationManager]
 
-    def __init__(self, name: str = "final_validation_step", 
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the enhanced final validation step."""
         tprint_step("🔧 Initializing FeatureGenerationFinalValidationStep")
         tprint_info(f"📝 Step name: {name}")
         tprint_info(f"⚙️ Config provided: {config is not None}")
         tprint_info(f"📋 Logger provided: {logger is not None}")
         
-        super().__init__(name, config or {}, logger)
+        super().__init__("feature_generation_final_validation_step", config)
         
         # Extract validation-specific parameters from config
         self.min_validation_score = self.get_config('min_validation_score', 70)

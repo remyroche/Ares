@@ -74,6 +74,10 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, memory_optimized, 
+    performance_tracked, force_cleanup, get_memory_stats
+)
 
 # Import enhanced hardware optimization tools
 from src.utils.hardware import (
@@ -112,7 +116,15 @@ class BaseStep(ABC):
         
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
+        artifact_config.update({
+            'hardware_optimization': True,
+            'memory_optimization': True,
+            'compression': 'auto'
+        })
         self.artifact_manager = ArtifactManager(config=artifact_config)
+        
+        # Integrate hardware manager with artifact manager
+        self.artifact_manager._hardware_manager = self.hardware_manager
         
         # Set up artifact manager context with step-category organization
         self.artifact_manager.set_context(
@@ -128,7 +140,7 @@ class BaseStep(ABC):
         
         self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization")
     
-    @memory_optimized(optimization_level='aggressive')
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
@@ -147,7 +159,7 @@ class BaseStep(ABC):
         )
         return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
-    @memory_efficient_function
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _load_dataframe(self, name: str) -> Any:
         """
         Convenience method to load a DataFrame with fallback support and memory optimization.
@@ -166,6 +178,7 @@ class BaseStep(ABC):
             )
         return data
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
@@ -180,6 +193,7 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.
@@ -604,15 +618,33 @@ class BaseStep(ABC):
     
     def _clear_cache(self) -> None:
         """
-        Clear the artifact manager cache.
+        Clear the artifact manager cache with enhanced hardware optimization.
         """
         try:
             self.artifact_manager.clear_cache()
-            self.logger.info("🧹 Artifact cache cleared")
+            # Use enhanced cleanup
+            force_cleanup()
+            self.logger.info("🧹 Artifact cache cleared with enhanced cleanup")
         except Exception as e:
             self.logger.error(f"Failed to clear cache: {e}")
     
-    @m1_optimized(operation_type="step_execution", workload_category=WorkloadCategory.DATA_PROCESSING)
+    def get_hardware_optimization_status(self) -> Dict[str, Any]:
+        """Get current hardware optimization status."""
+        try:
+            return self.hardware_manager.get_optimization_report()
+        except Exception as e:
+            self.logger.error(f"Failed to get hardware optimization status: {e}")
+            return {"error": "Hardware manager not available"}
+    
+    def get_memory_optimization_stats(self) -> Dict[str, Any]:
+        """Get memory optimization statistics."""
+        try:
+            return get_memory_stats()
+        except Exception as e:
+            self.logger.error(f"Failed to get memory stats: {e}")
+            return {"error": "Memory stats not available"}
+    
+    @performance_tracked(log_performance=True, track_memory=True)
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation with hardware optimization.

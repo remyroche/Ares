@@ -2623,10 +2623,81 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         self._set_context(symbol=symbol, exchange=exchange, direction=direction, model=model)
         
-        # Get data from config
-        data = config.get('data')
-        if data is None or not isinstance(data, pd.DataFrame) or data.empty:
-            raise ValueError("Input data must be a non‑empty DataFrame")
+        # Load required artifacts from previous steps
+        tprint_info("Loading required artifacts from previous steps")
+        
+        # Load features from feature_generation_feature_generation_step
+        features_df = None
+        try:
+            features_df = self._load_dataframe('generated_features')
+            if features_df is not None and not features_df.empty:
+                tprint_success(f"Loaded features from artifact manager: {features_df.shape}")
+            else:
+                tprint_warning("No features found in artifact manager, trying fallback")
+                # Try fallback loading
+                features_df = self._load_dataframe('feature_lists')
+        except Exception as e:
+            tprint_warning(f"Failed to load features from artifact manager: {e}")
+        
+        if features_df is None or features_df.empty:
+            tprint_error("No features available for period/lookback optimization")
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {},
+                'error': 'No features available. Run feature_generation_feature_generation_step first.'
+            }
+        
+        # Load targets from feature_generation_labeling_integration_step
+        targets_series = None
+        try:
+            targets_series = self._load_dataframe('targets')
+            if targets_series is not None and not targets_series.empty:
+                if isinstance(targets_series, pd.DataFrame):
+                    # Extract the target column if it's a DataFrame
+                    target_cols = ['target', 'targets', 'label', 'labels', 'y', 'direction_confidence', 'opportunity_asymmetry', 'directional_signal']
+                    for col in target_cols:
+                        if col in targets_series.columns:
+                            targets_series = targets_series[col]
+                            break
+                    if isinstance(targets_series, pd.DataFrame):
+                        targets_series = targets_series.iloc[:, 0]  # Take first column
+                tprint_success(f"Loaded targets from artifact manager: {len(targets_series)} samples")
+            else:
+                tprint_warning("No targets found in artifact manager, trying fallback")
+                # Try fallback loading
+                targets_series = self._load_dataframe('labels')
+        except Exception as e:
+            tprint_warning(f"Failed to load targets from artifact manager: {e}")
+        
+        if targets_series is None or targets_series.empty:
+            tprint_error("No targets available for period/lookback optimization")
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {},
+                'error': 'No targets available. Run feature_generation_labeling_integration_step first.'
+            }
+        
+        # Align features and targets
+        tprint_info("Aligning features and targets for optimization")
+        aligned_data = features_df.join(targets_series.rename('target'), how='inner').dropna()
+        if aligned_data.empty:
+            tprint_error("No overlapping timestamps between features and targets")
+            return {
+                'success': False,
+                'artifacts': [],
+                'metrics': {},
+                'error': 'No overlapping timestamps between features and targets.'
+            }
+        
+        aligned_features = aligned_data.drop(columns=['target'])
+        aligned_targets = aligned_data['target']
+        
+        tprint_success(f"Aligned data: features={aligned_features.shape}, targets={aligned_targets.shape}")
+        
+        # Use aligned data for optimization
+        data = aligned_features
         
         try:
             # Log optimization configuration

@@ -410,6 +410,53 @@ class FeatureGenerationFeatureSelectionStep(BaseStep):
             tprint_success(f"✅ [DEBUG] Prepared feature/target matrix: features={features_df.shape}, targets={targets.shape}")
             tprint_debug(f"🔍 [DEBUG] Final features shape: {features_df.shape}")
             tprint_debug(f"🔍 [DEBUG] Final targets shape: {targets.shape}")
+            
+            # Load periods/lookbacks from feature_generation_period_lookback_optimization_step
+            tprint_info("🔍 [DEBUG] Loading periods/lookbacks from period lookback optimization step")
+            try:
+                # Load top periods (top1 for trading)
+                top_periods = self._load_metadata('top_periods')
+                if top_periods is not None:
+                    tprint_success(f"✅ [DEBUG] Loaded top periods: {top_periods}")
+                else:
+                    tprint_warning("⚠️ [DEBUG] No top periods found, trying optimized_periods")
+                    optimized_periods = self._load_metadata('optimized_periods')
+                    if optimized_periods is not None:
+                        # Extract top 1 period if it's a list
+                        if isinstance(optimized_periods, list) and len(optimized_periods) > 0:
+                            top_periods = optimized_periods[0]
+                        else:
+                            top_periods = optimized_periods
+                        tprint_success(f"✅ [DEBUG] Loaded optimized periods (using first): {top_periods}")
+                    else:
+                        tprint_warning("⚠️ [DEBUG] No periods found in artifact manager")
+                
+                # Load top lookbacks (top1 for trading)
+                top_lookbacks = self._load_metadata('top_lookbacks')
+                if top_lookbacks is not None:
+                    tprint_success(f"✅ [DEBUG] Loaded top lookbacks: {top_lookbacks}")
+                else:
+                    tprint_warning("⚠️ [DEBUG] No top lookbacks found, trying optimized_lookbacks")
+                    optimized_lookbacks = self._load_metadata('optimized_lookbacks')
+                    if optimized_lookbacks is not None:
+                        # Extract top 1 lookback if it's a list
+                        if isinstance(optimized_lookbacks, list) and len(optimized_lookbacks) > 0:
+                            top_lookbacks = optimized_lookbacks[0]
+                        else:
+                            top_lookbacks = optimized_lookbacks
+                        tprint_success(f"✅ [DEBUG] Loaded optimized lookbacks (using first): {top_lookbacks}")
+                    else:
+                        tprint_warning("⚠️ [DEBUG] No lookbacks found in artifact manager")
+                
+                # Store periods/lookbacks in config for use in feature selection
+                if top_periods is not None:
+                    config['top_periods'] = top_periods
+                if top_lookbacks is not None:
+                    config['top_lookbacks'] = top_lookbacks
+                    
+            except Exception as e:
+                tprint_warning(f"⚠️ [DEBUG] Failed to load periods/lookbacks: {e}")
+                # Continue without periods/lookbacks - they're not critical for basic feature selection
                 
             # Fast fail: If no processed features are available, fail immediately
             # This ensures the pipeline fails fast rather than using raw data

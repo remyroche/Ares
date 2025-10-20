@@ -434,38 +434,79 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
     async def _load_artifacts(self, artifact_manager, model_type: str, direction: str) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
         """Load features and targets from previous steps."""
         try:
-            # Load features from period_lookback_optimization and interaction_generation
-            tprint_info("📦 Loading optimized features from period_lookback_optimization_step")
-            period_features = artifact_manager.get_dataframe(
-                'feature_generation_period_lookback_optimization_step',
-                ArtifactKeys.OPTIMIZED_FEATURE_DATAFRAME
+            # Load original features from feature_generation_feature_generation_step
+            tprint_info("📦 Loading original features from feature_generation_feature_generation_step")
+            original_features = artifact_manager.get_dataframe(
+                'feature_generation_feature_generation_step',
+                ArtifactKeys.GENERATED_FEATURES
             )
             
-            tprint_info("📦 Loading interaction features from interaction_generation_step")
-            interaction_features = artifact_manager.get_dataframe(
-                'feature_generation_interaction_generation_step',
+            # Load periods/lookbacks (top1) from feature_generation_period_lookback_optimization_step
+            tprint_info("📦 Loading top periods/lookbacks from period_lookback_optimization_step")
+            top_periods = artifact_manager.get_artifact(
+                'feature_generation_period_lookback_optimization_step',
+                'top_periods'
+            )
+            top_lookbacks = artifact_manager.get_artifact(
+                'feature_generation_period_lookback_optimization_step',
+                'top_lookbacks'
+            )
+            
+            # Load interaction features from both analyst and tactician interaction generation steps
+            tprint_info("📦 Loading interaction features from interaction_generation_step_analyst")
+            analyst_interaction_features = artifact_manager.get_dataframe(
+                'feature_generation_interaction_generation_step_analyst',
                 ArtifactKeys.INTERACTION_FEATURES
             )
             
-            # Merge features
-            if period_features is not None and interaction_features is not None:
-                tprint_info("🔗 Merging period and interaction features")
-                # Align indices
-                common_idx = period_features.index.intersection(interaction_features.index)
-                features_df = pd.concat([
-                    period_features.loc[common_idx],
-                    interaction_features.loc[common_idx]
-                ], axis=1)
-                tprint_success(f"✅ Merged features: {features_df.shape}")
-            elif period_features is not None:
-                features_df = period_features
-                tprint_warning("⚠️ Only period features available")
-            elif interaction_features is not None:
-                features_df = interaction_features
-                tprint_warning("⚠️ Only interaction features available")
-            else:
+            tprint_info("📦 Loading interaction features from interaction_generation_step_tactician")
+            tactician_interaction_features = artifact_manager.get_dataframe(
+                'feature_generation_interaction_generation_step_tactician',
+                ArtifactKeys.INTERACTION_FEATURES
+            )
+            
+            # Merge features from all sources
+            features_to_merge = []
+            
+            if original_features is not None:
+                features_to_merge.append(("original", original_features))
+                tprint_success(f"✅ Original features: {original_features.shape}")
+            
+            if analyst_interaction_features is not None:
+                features_to_merge.append(("analyst_interactions", analyst_interaction_features))
+                tprint_success(f"✅ Analyst interaction features: {analyst_interaction_features.shape}")
+            
+            if tactician_interaction_features is not None:
+                features_to_merge.append(("tactician_interactions", tactician_interaction_features))
+                tprint_success(f"✅ Tactician interaction features: {tactician_interaction_features.shape}")
+            
+            if not features_to_merge:
                 tprint_error("❌ No features available from previous steps")
                 return None, None
+            
+            # Merge all available features
+            if len(features_to_merge) == 1:
+                features_df = features_to_merge[0][1]
+                tprint_warning(f"⚠️ Only {features_to_merge[0][0]} features available")
+            else:
+                tprint_info(f"🔗 Merging {len(features_to_merge)} feature sets")
+                # Find common index across all features
+                common_idx = features_to_merge[0][1].index
+                for name, df in features_to_merge[1:]:
+                    common_idx = common_idx.intersection(df.index)
+                
+                if len(common_idx) == 0:
+                    tprint_error("❌ No common timestamps across feature sets")
+                    return None, None
+                
+                # Merge features on common index
+                merged_features = []
+                for name, df in features_to_merge:
+                    merged_features.append(df.loc[common_idx])
+                    tprint_info(f"   - {name}: {df.loc[common_idx].shape}")
+                
+                features_df = pd.concat(merged_features, axis=1)
+                tprint_success(f"✅ Merged features: {features_df.shape}")
             
             # Load targets from labeling_integration_step
             tprint_info("📦 Loading targets from labeling_integration_step")

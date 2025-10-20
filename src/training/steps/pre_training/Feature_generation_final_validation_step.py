@@ -280,6 +280,69 @@ class FeatureGenerationFinalValidationStep(BaseStep):
                 final_dataset=cached_dataset,
                 error_message=None
             )
+        
+        # Load required artifacts from previous steps for validation
+        tprint_info("📦 Loading artifacts from previous steps for validation")
+        
+        # Load final features from feature_generation_final_feature_selection_step
+        final_features = None
+        try:
+            final_features = artifact_manager.get_dataframe(
+                'feature_generation_final_feature_selection_step',
+                'selected_feature_dataframe_60'  # Use the 60-feature set as primary
+            )
+            if final_features is not None and not final_features.empty:
+                tprint_success(f"✅ Loaded final features: {final_features.shape}")
+            else:
+                tprint_warning("⚠️ No final features found, trying alternative names")
+                # Try alternative artifact names
+                for alt_name in ['selected_features_60', 'final_features', 'selected_features']:
+                    final_features = artifact_manager.get_dataframe(
+                        'feature_generation_final_feature_selection_step',
+                        alt_name
+                    )
+                    if final_features is not None and not final_features.empty:
+                        tprint_success(f"✅ Loaded final features from {alt_name}: {final_features.shape}")
+                        break
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load final features: {e}")
+        
+        # Load targets from feature_generation_labeling_integration_step
+        targets = None
+        try:
+            targets = artifact_manager.get_series(
+                'feature_generation_labeling_integration_step',
+                'targets'
+            )
+            if targets is not None and not targets.empty:
+                tprint_success(f"✅ Loaded targets: {len(targets)} samples")
+            else:
+                tprint_warning("⚠️ No targets found, trying alternative names")
+                # Try alternative artifact names
+                for alt_name in ['target', 'labels', 'y']:
+                    targets = artifact_manager.get_series(
+                        'feature_generation_labeling_integration_step',
+                        alt_name
+                    )
+                    if targets is not None and not targets.empty:
+                        tprint_success(f"✅ Loaded targets from {alt_name}: {len(targets)} samples")
+                        break
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load targets: {e}")
+        
+        # Use loaded artifacts if available
+        if final_features is not None:
+            data = final_features
+            tprint_info(f"📊 Using final features for validation: {data.shape}")
+        
+        if targets is not None:
+            # Align data and targets
+            aligned_data = data.join(targets.rename('target'), how='inner').dropna()
+            if not aligned_data.empty:
+                data = aligned_data
+                tprint_success(f"✅ Aligned data with targets: {data.shape}")
+            else:
+                tprint_warning("⚠️ No overlapping timestamps between features and targets")
 
         if data is None or (hasattr(data, 'empty') and data.empty):
             # Auto-load from vectorization outputs

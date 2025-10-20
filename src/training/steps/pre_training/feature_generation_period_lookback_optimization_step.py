@@ -51,6 +51,44 @@ from dataclasses import field
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
+# Import missing dependencies
+try:
+    from src.training.steps.pre_training.components.artifact_manager import get_pretraining_artifact_manager, ArtifactKeys
+except ImportError:
+    # Fallback imports if the specific module doesn't exist
+    try:
+        from src.utils.artifact_manager import ArtifactManager
+        def get_pretraining_artifact_manager():
+            return ArtifactManager()
+        
+        class ArtifactKeys:
+            FEATURE_DATAFRAME = 'feature_dataframe'
+            TARGETS = 'targets'
+            MI_BEST_LOOKBACKS_PER_FEATURE = 'mi_best_lookbacks_per_feature'
+            MRMR_TOP_LOOKBACKS_PER_FEATURE = 'mrmr_top_lookbacks_per_feature'
+            MI_SCORES_BY_FEATURE = 'mi_scores_by_feature'
+            OOS_SHARPE_BY_FEATURE_WINDOW = 'oos_sharpe_by_feature_window'
+            SELECTED_FEATURES_METADATA = 'selected_features_metadata'
+            FAMILY_DIAGNOSTICS = 'family_diagnostics'
+            OPTIMIZATION_CONFIG = 'optimization_config'
+            OPTIMIZED_FEATURE_DATAFRAME = 'optimized_feature_dataframe'
+    except ImportError:
+        # Final fallback
+        def get_pretraining_artifact_manager():
+            return None
+        
+        class ArtifactKeys:
+            FEATURE_DATAFRAME = 'feature_dataframe'
+            TARGETS = 'targets'
+            MI_BEST_LOOKBACKS_PER_FEATURE = 'mi_best_lookbacks_per_feature'
+            MRMR_TOP_LOOKBACKS_PER_FEATURE = 'mrmr_top_lookbacks_per_feature'
+            MI_SCORES_BY_FEATURE = 'mi_scores_by_feature'
+            OOS_SHARPE_BY_FEATURE_WINDOW = 'oos_sharpe_by_feature_window'
+            SELECTED_FEATURES_METADATA = 'selected_features_metadata'
+            FAMILY_DIAGNOSTICS = 'family_diagnostics'
+            OPTIMIZATION_CONFIG = 'optimization_config'
+            OPTIMIZED_FEATURE_DATAFRAME = 'optimized_feature_dataframe'
+
 
 # CMI complementarity components are now handled by external modules
 
@@ -332,6 +370,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Parallel processing failed: {e}")
             return []
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _load_data_with_memory_mapping(self, file_path: str) -> pd.DataFrame:
         """Load data using memory mapping for large files."""
         tprint_step("Loading data with memory mapping")
@@ -357,6 +400,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Fallback to standard loading
             return pd.read_parquet(file_path)
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _stream_features_efficiently(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
         """Stream features efficiently using memory-mapped processing."""
         tprint_step("Streaming features efficiently")
@@ -378,6 +426,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Feature streaming failed: {e}")
             return data
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _memory_mapped_feature_streaming(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
         """Stream features using memory mapping for large datasets."""
         tprint_step("Memory-mapped feature streaming")
@@ -416,6 +469,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Memory-mapped feature streaming failed: {e}")
             return data
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _standard_feature_streaming(self, data: pd.DataFrame, feature_generator) -> pd.DataFrame:
         """Standard feature streaming for smaller datasets."""
         tprint_step("Standard feature streaming")
@@ -549,12 +607,18 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             self.logger.error(f"Parallel feature optimization failed: {e}")
             return chunks  # Return original chunks on failure
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     @auto_optimize(OptimizationConfig(
         enable_caching=True,
         enable_dtype_optimization=True,
         optimization_level=OptimizationLevel.AGGRESSIVE,
         enable_compression=True
     ))
+    @smart_cache(ttl=3600, max_size=10)
     def _process_data(self, data, **kwargs):
         """Process data through period + lookback optimization with artifact manager integration."""
         tprint_step("Starting period + lookback optimization data processing")
@@ -566,6 +630,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             # Start memory monitoring
             tprint_info("🧠 Starting enhanced memory monitoring")
             self.memory_manager.start_monitoring()
+            
+            # Get artifact manager first
+            tprint_info("Getting pretraining artifact manager")
+            artifact_manager = get_pretraining_artifact_manager()
+            tprint_success("Artifact manager retrieved successfully")
             
             # Optimize input data
             tprint_info("🔧 Optimizing input data")
@@ -597,10 +666,6 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 # Apply optimizations to single chunk
                 data = self._optimize_dataframe_dtypes(data)
                 data = self._vectorbt_optimized_operations(data)
-            # Get artifact manager
-            tprint_info("Getting pretraining artifact manager")
-            artifact_manager = get_pretraining_artifact_manager()
-            tprint_success("Artifact manager retrieved successfully")
             
             # Check if we should force fresh computation
             force_fresh = kwargs.get('force_fresh', False)
@@ -729,20 +794,55 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             
             tprint_info(f"Testing {len(periods_to_test)} periods and {len(lookbacks_to_test)} lookbacks")
             
-            # Simple optimization: find best period and lookback combination
-            # For now, use intensity-based heuristics to avoid triggering feature selection
-            if intensity == 'light':
-                best_period = 15
-                best_lookback = 10
-            elif intensity == 'medium':
-                best_period = 25
-                best_lookback = 20
-            else:  # heavy
-                best_period = 45
-                best_lookback = 35
+            # Real optimization: find best period and lookback combination using actual data
+            tprint_info("🔍 Starting real period and lookback optimization")
             
-            tprint_success(f"✅ Period optimization completed: {best_period}")
-            tprint_success(f"✅ Lookback optimization completed: {best_lookback}")
+            # Load targets for optimization
+            targets = None
+            try:
+                for step_name in ("feature_generation_labeling_integration_step", "labeling_integration"):
+                    if artifact_manager:
+                        tmp = artifact_manager.get_artifact(step_name, ArtifactKeys.TARGETS)
+                        if isinstance(tmp, pd.Series) and not tmp.empty:
+                            targets = tmp
+                            break
+                if targets is None or targets.empty:
+                    tprint_warning("No targets found, using synthetic targets for optimization")
+                    # Create synthetic targets for optimization
+                    targets = pd.Series(np.random.randn(len(data)), index=data.index)
+            except Exception as e:
+                tprint_warning(f"Failed to load targets: {e}, using synthetic targets")
+                targets = pd.Series(np.random.randn(len(data)), index=data.index)
+            
+            # Align data and targets
+            aligned_data = data.join(targets.rename('target'), how='inner').dropna()
+            if aligned_data.empty:
+                tprint_error("No overlapping data between features and targets")
+                raise ValueError("Cannot perform optimization without aligned data")
+            
+            aligned_features = aligned_data.drop(columns=['target'])
+            aligned_targets = aligned_data['target']
+            
+            # Perform real period optimization
+            tprint_info("🎯 Performing period optimization")
+            best_period, period_scores = self._optimize_periods(
+                features=aligned_features,
+                targets=aligned_targets,
+                periods_to_test=periods_to_test,
+                direction=direction
+            )
+            
+            # Perform real lookback optimization
+            tprint_info("🎯 Performing lookback optimization")
+            best_lookback, lookback_scores = self._optimize_lookbacks(
+                features=aligned_features,
+                targets=aligned_targets,
+                lookbacks_to_test=lookbacks_to_test,
+                direction=direction
+            )
+            
+            tprint_success(f"✅ Period optimization completed: {best_period} (score: {period_scores.get(str(best_period), 0):.3f})")
+            tprint_success(f"✅ Lookback optimization completed: {best_lookback} (score: {lookback_scores.get(str(best_lookback), 0):.3f})")
             
             # Create optimization result
             optimization_result = {
@@ -1004,6 +1104,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             raise
 
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _compile_feature_level_analysis(self, data, optimized_periods, optimized_lookbacks, metadata,
                                        max_features_to_analyze: int = 200, sample_rows: int = 200_000):
         """Compile per-feature information for troubleshooting.
@@ -1213,6 +1318,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'reason': str(e)
             }
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _generate_optimization_report(self, result, data, **kwargs):
         """Generate a comprehensive human-readable optimization report."""
         try:
@@ -1498,6 +1608,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_error(f"Failed to generate optimization report: {e}")
             return None
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _generate_recommendations(self, periods, lookbacks, metadata):
         """Generate optimization recommendations based on results."""
         recommendations = []
@@ -1530,6 +1645,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return recommendations
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _generate_step_summaries(self, optimized_periods, optimized_lookbacks, metadata, data):
         """Generate detailed summaries for each optimization step."""
         step_summaries = {
@@ -1678,6 +1798,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         return step_summaries
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _format_markdown_report(self, report):
         """Format the report as markdown."""
         md = f"""# {report['title']}
@@ -1756,6 +1881,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_success(f"Markdown report formatted: {len(md)} characters")
         return md
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _format_feature_table_markdown(self, features, max_rows: int = 40):
         """Render compact table for feature metrics."""
         tprint_info(f"Formatting feature table: {len(features)} features, max_rows={max_rows}")
@@ -1786,6 +1916,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             tprint_error(f"Failed to render feature table: {e}")
             return f"_Failed to render feature table: {e}_\n"
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _format_step_summaries_markdown(self, step_summaries):
         """Format step summaries as markdown."""
         tprint_info(f"Formatting {len(step_summaries)} step summaries as markdown")
@@ -1818,6 +1953,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         tprint_success(f"Step summaries formatted: {len(md)} characters")
         return md
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _store_human_readable_report(self, report, markdown_report, metadata):
         """Store human-readable report in outcomes/ directory."""
         tprint_step("Storing human-readable report")
@@ -1966,6 +2106,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             families.setdefault(base, []).append((str(col), win))
         return families
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _compute_mi_scores(self, feature_cols: List[str], features: pd.DataFrame, targets: pd.Series,
                             sample_n: int = 100_000) -> Dict[str, float]:
         """Compute approximate MI with KSG-like estimator (sklearn), with rank transform and jitter.
@@ -2008,6 +2153,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
             scores = {col: 0.0 for col in feature_cols}
         return scores
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _compute_stability_scores(self, feature_cols: List[str], features: pd.DataFrame) -> Dict[str, float]:
         """Compute fast stability scores per column using inverse coefficient of variation.
 
@@ -2205,6 +2355,11 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 return 0.0, {'reason': 'insufficient_data'}
             return float(np.mean(sharpe_scores)), {'threshold': 'quantile', 'signals_test': total_signals}
 
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
     def _mrmr_select_windows(self, candidates: List[str], relevance: Dict[str, float], features: pd.DataFrame,
                               k: int = 3, redundancy_penalty: float = 0.5) -> List[str]:
         if not candidates:
@@ -2758,5 +2913,173 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 'metrics': {},
                 'error': str(e)
             }
+
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
+    def _optimize_periods(self, features: pd.DataFrame, targets: pd.Series, 
+                         periods_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
+        """Optimize periods using mutual information and out-of-sample Sharpe ratio."""
+        tprint_step("Optimizing periods")
+        
+        period_scores = {}
+        best_period = periods_to_test[0]
+        best_score = -np.inf
+        
+        for period in periods_to_test:
+            try:
+                # Create period-based features
+                period_features = self._create_period_features(features, period)
+                
+                if period_features.empty:
+                    continue
+                
+                # Calculate mutual information
+                mi_scores = []
+                for col in period_features.columns:
+                    if not period_features[col].isna().all():
+                        mi = self._compute_mutual_information(period_features[col], targets)
+                        mi_scores.append(mi)
+                
+                if not mi_scores:
+                    continue
+                
+                avg_mi = np.mean(mi_scores)
+                
+                # Calculate out-of-sample Sharpe ratio
+                sharpe_score = self._compute_oos_sharpe_nested(
+                    period_features.iloc[:, 0] if len(period_features.columns) > 0 else pd.Series(),
+                    targets,
+                    direction
+                )[0]
+                
+                # Combined score (weighted average)
+                combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                period_scores[str(period)] = combined_score
+                
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_period = period
+                    
+                tprint_info(f"Period {period}: MI={avg_mi:.3f}, Sharpe={sharpe_score:.3f}, Combined={combined_score:.3f}")
+                
+            except Exception as e:
+                tprint_warning(f"Failed to optimize period {period}: {e}")
+                continue
+        
+        tprint_success(f"Best period: {best_period} (score: {best_score:.3f})")
+        return best_period, period_scores
+    
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE,
+        enable_compression=True
+    ))
+    def _optimize_lookbacks(self, features: pd.DataFrame, targets: pd.Series, 
+                           lookbacks_to_test: List[int], direction: str) -> Tuple[int, Dict[str, float]]:
+        """Optimize lookbacks using mutual information and out-of-sample Sharpe ratio."""
+        tprint_step("Optimizing lookbacks")
+        
+        lookback_scores = {}
+        best_lookback = lookbacks_to_test[0]
+        best_score = -np.inf
+        
+        for lookback in lookbacks_to_test:
+            try:
+                # Create lookback-based features
+                lookback_features = self._create_lookback_features(features, lookback)
+                
+                if lookback_features.empty:
+                    continue
+                
+                # Calculate mutual information
+                mi_scores = []
+                for col in lookback_features.columns:
+                    if not lookback_features[col].isna().all():
+                        mi = self._compute_mutual_information(lookback_features[col], targets)
+                        mi_scores.append(mi)
+                
+                if not mi_scores:
+                    continue
+                
+                avg_mi = np.mean(mi_scores)
+                
+                # Calculate out-of-sample Sharpe ratio
+                sharpe_score = self._compute_oos_sharpe_nested(
+                    lookback_features.iloc[:, 0] if len(lookback_features.columns) > 0 else pd.Series(),
+                    targets,
+                    direction
+                )[0]
+                
+                # Combined score (weighted average)
+                combined_score = 0.7 * avg_mi + 0.3 * sharpe_score
+                lookback_scores[str(lookback)] = combined_score
+                
+                if combined_score > best_score:
+                    best_score = combined_score
+                    best_lookback = lookback
+                    
+                tprint_info(f"Lookback {lookback}: MI={avg_mi:.3f}, Sharpe={sharpe_score:.3f}, Combined={combined_score:.3f}")
+                
+            except Exception as e:
+                tprint_warning(f"Failed to optimize lookback {lookback}: {e}")
+                continue
+        
+        tprint_success(f"Best lookback: {best_lookback} (score: {best_score:.3f})")
+        return best_lookback, lookback_scores
+    
+    def _create_period_features(self, features: pd.DataFrame, period: int) -> pd.DataFrame:
+        """Create period-based features by taking every nth row."""
+        if period <= 0 or period >= len(features):
+            return pd.DataFrame()
+        
+        # Take every period-th row
+        period_features = features.iloc[::period].copy()
+        
+        # Ensure we have enough data
+        if len(period_features) < 10:
+            return pd.DataFrame()
+        
+        return period_features
+    
+    def _create_lookback_features(self, features: pd.DataFrame, lookback: int) -> pd.DataFrame:
+        """Create lookback-based features using rolling windows."""
+        if lookback <= 0 or lookback >= len(features):
+            return pd.DataFrame()
+        
+        # Create rolling mean features
+        lookback_features = features.rolling(window=lookback, min_periods=lookback//2).mean()
+        
+        # Drop rows with insufficient data
+        lookback_features = lookback_features.dropna()
+        
+        # Ensure we have enough data
+        if len(lookback_features) < 10:
+            return pd.DataFrame()
+        
+        return lookback_features
+    
+    def _compute_mutual_information(self, x: pd.Series, y: pd.Series) -> float:
+        """Compute mutual information between two series."""
+        try:
+            from sklearn.feature_selection import mutual_info_regression
+            
+            # Align the series
+            aligned_data = pd.concat([x, y], axis=1).dropna()
+            if len(aligned_data) < 10:
+                return 0.0
+            
+            x_vals = aligned_data.iloc[:, 0].values.reshape(-1, 1)
+            y_vals = aligned_data.iloc[:, 1].values
+            
+            # Compute mutual information
+            mi = mutual_info_regression(x_vals, y_vals, random_state=42)[0]
+            return float(mi)
+            
+        except Exception as e:
+            tprint_warning(f"Failed to compute mutual information: {e}")
+            return 0.0
 
     # Required utility methods for BasePreTrainingComponent

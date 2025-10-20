@@ -43,7 +43,7 @@ from src.training.steps.base_step import step_registry, BaseStep
 # Import step packages to register them
 import src.training.steps.data_collection  # Registers DATA_COLLECTION steps
 import src.training.steps.market_analysis  # Registers MARKET_ANALYSIS steps
-# import src.training.steps.pre_training.unified_data_driven_pipeline.steps  # Registers PRE_TRAINING steps - REMOVED
+import src.training.steps.pre_training  # Registers PRE_TRAINING steps
 import src.training.steps.model_training  # Registers MODEL_TRAINING steps
 import src.training.steps.backtesting  # Registers BACKTESTING steps
 

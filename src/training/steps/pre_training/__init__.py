@@ -65,6 +65,21 @@ from .feature_generation_final_validation_step import (
     handle_feature_generation_final_validation_step
 )
 
+# Import step registry for registration
+from src.training.steps.base_step import step_registry
+
+# Register all pre_training steps with the step registry
+step_registry.register("feature_generation_data_validation_step", FeatureGenerationDataValidationStep)
+step_registry.register("feature_generation_feature_generation_step", FeatureGenerationStep)
+step_registry.register("feature_generation_feature_selection_step", FeatureGenerationFeatureSelectionStep)
+step_registry.register("feature_generation_period_optimization_step", FeatureGenerationPeriodOptimizationStep)
+step_registry.register("feature_generation_lookback_optimization_step", FeatureGenerationLookbackOptimizationStep)
+step_registry.register("feature_generation_interaction_generation_step_analyst", FeatureGenerationInteractionGenerationStepAnalyst)
+step_registry.register("feature_generation_interaction_generation_step_tactician", FeatureGenerationInteractionGenerationStepTactician)
+step_registry.register("feature_generation_labeling_integration_step", FeatureGenerationLabelingIntegrationStep)
+step_registry.register("feature_generation_final_feature_selection_step", FeatureGenerationFinalFeatureSelectionStep)
+step_registry.register("feature_generation_final_validation_step", FeatureGenerationFinalValidationStep)
+
 # Export all step classes and handlers
 __all__ = [
     # Step classes

@@ -238,6 +238,12 @@ def force_cleanup():
     force_garbage_collection()
     cleanup_all_memory()
 
+def memory_efficient_function(func):
+    """Decorator for memory efficient function execution."""
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
 def get_memory_stats():
     """Get comprehensive memory statistics."""
     return get_memory_optimization_stats()
@@ -351,7 +357,7 @@ __all__ = [
     'make_efficient', 'track_perf', 'get_optimization_status', 'clear_all_caches',
     'optimize_with_gc', 'optimize_array_with_gc', 'memory_optimized_function',
     'chunked_function', 'gc_optimized_function', 'comprehensive_optimization',
-    'force_cleanup', 'get_memory_stats',
+    'force_cleanup', 'get_memory_stats', 'memory_efficient_function',
     
     # Utilities
     'apply_optimization_patches', 'remove_optimization_patches',

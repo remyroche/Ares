@@ -843,3 +843,21 @@ class ArtifactManager:
             self.logger.warning(f"Failed to profile memory usage for {artifact_id}: {e}")
             return 0.0
 
+
+def get_analyst_context(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Get analyst context from configuration."""
+    return {
+        'symbol': config.get('symbol', 'UNKNOWN'),
+        'timeframe': config.get('timeframe', '15m'),
+        'exchange': config.get('exchange', 'binance'),
+        'execution_mode': config.get('execution_mode', 'light')
+    }
+
+def setup_enhanced_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
+    """Setup enhanced artifact manager with configuration."""
+    return ArtifactManager(config)
+
+def get_pretraining_artifact_manager(config: Dict[str, Any]) -> 'ArtifactManager':
+    """Get pre-training artifact manager with configuration."""
+    return ArtifactManager(config)
+

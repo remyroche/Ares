@@ -67,7 +67,7 @@ class CMIComplementarityScorer:
             )
         )
     
-    @smart_cache(ttl=3600, max_size=100)
+    @smart_cache(ttl=3600)
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
     def score_features(self, features_df, targets, **kwargs):
         """Score features using CMI complementarity with hardware optimization."""
@@ -121,7 +121,7 @@ class AnalystSideInfoHandler:
             )
         )
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     @memory_optimized(optimization_level=MemoryOptimizationLevel.MODERATE)
     def process_side_info(self, features_df, **kwargs):
         """Process analyst side information with hardware optimization."""
@@ -602,11 +602,11 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                     )
                 )
             
-            @smart_cache(ttl=3600, max_size=200)
+            @smart_cache(ttl=3600)
             def retrieve_enhanced(self, key):
                 return self.cache.get(key)
             
-            @smart_cache(ttl=3600, max_size=200)
+            @smart_cache(ttl=3600)
             def store_enhanced(self, key, value, metadata=None):
                 # Optimize data before storing
                 if hasattr(value, 'memory_usage'):

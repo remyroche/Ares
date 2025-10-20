@@ -1,49 +1,100 @@
 # src/training/steps/models_training/__init__.py
 
-"""Models Training Package.
+"""Models Training Package - Unified Training Architecture
 
-This package contains all models training components including:
-- Tactician pre-ML orchestration
-- Model training pipelines
-- Training step orchestration
-- Pre-ML feature engineering
-- ModularComponent architecture for ML workflows
+This package contains all models training components using the unified BaseTrainer architecture:
 
-NEW FEATURES:
-- ModularComponent base class for all training components
-- ML-specific state management and performance monitoring
-- Comprehensive error handling and logging
-- Configuration management and validation
-- Model checkpointing and serialization
-- Migration utilities for existing components
+CORE COMPONENTS:
+- BaseTrainer: Abstract base class for all trainers
+- AnalystBaseTrainer: Base trainer for Analyst models
+- TacticianBaseTrainer: Base trainer for Tactician models
+- AnalystEnsembleTrainer: Ensemble trainer for Analyst models
+- TacticianEnsembleTrainer: Ensemble trainer for Tactician models
+
+TRAINING COMPONENTS:
+- AnalystBaseTraining: Individual Analyst model training
+- AnalystEnsembleTraining: Analyst ensemble model training
+- TacticianBaseTraining: Individual Tactician model training
+- TacticianEnsembleTraining: Tactician ensemble model training
+
+KEY FEATURES:
+- Unified training interface across all model types
+- Common training patterns and lifecycle management
+- Standardized configuration and validation
+- Performance monitoring and checkpointing
+- Error handling and recovery mechanisms
+- Role-specific feature engineering
+- Ensemble training capabilities
 """
 
-# Import ModularComponent architecture from base_component
+# Import core training architecture
+from .core import (
+    # Base classes
+    BaseTrainer,
+    TrainingConfig,
+    TrainingResult,
+    ValidationResult,
+    PredictionResult,
+    TrainingRole,
+    ModelType,
+    
+    # Role-specific base trainers
+    AnalystBaseTrainer,
+    AnalystTrainingConfig,
+    AnalystModelType,
+    TacticianBaseTrainer,
+    TacticianTrainingConfig,
+    TacticianModelType,
+    
+    # Role-specific ensemble trainers
+    AnalystEnsembleTrainer,
+    AnalystEnsembleTrainingConfig,
+    EnsembleMethod,
+    TacticianEnsembleTrainer,
+    TacticianEnsembleTrainingConfig,
+    TacticianEnsembleMethod,
+)
+
+# Import training components
+from .components.analyst_base_training import (
+    AnalystBaseTraining,
+    AnalystBaseTrainingConfig,
+    AnalystBaseTrainingResult,
+    create_analyst_base_training,
+    execute_analyst_base_training
+)
+
+from .components.analyst_ensemble_training import (
+    AnalystEnsembleTraining,
+    AnalystEnsembleTrainingConfig,
+    AnalystEnsembleTrainingResult,
+    create_analyst_ensemble_training,
+    execute_analyst_ensemble_training
+)
+
+from .components.tactician_base_training import (
+    TacticianBaseTraining,
+    TacticianBaseTrainingConfig,
+    TacticianBaseTrainingResult,
+    create_tactician_base_training,
+    execute_tactician_base_training
+)
+
+from .components.tactician_ensemble_training import (
+    TacticianEnsembleTraining,
+    TacticianEnsembleTrainingConfig,
+    TacticianEnsembleTrainingResult,
+    create_tactician_ensemble_training,
+    execute_tactician_ensemble_training
+)
+
+# Import legacy components for backward compatibility
 from .components.base_component import (
     ModularComponent,
     ErrorInfo,
     ErrorSeverity,
-    ErrorCategory
-)
-
-# Import base components
-from .components.base_component import BaseModelsTrainingComponent
-
-# Import migrated components
-from .components.analyst_models_training_modular import (
-    AnalystModelsTrainingModular,
-    AnalystModelType as AnalystModelsModelType,
-    AnalystModelsTrainingConfig,
-    AnalystModelsTrainingResult,
-    create_analyst_models_training
-)
-
-from .components.analyst_ensemble_training_modular import (
-    AnalystEnsembleTrainingModular,
-    EnsembleMethod,
-    AnalystEnsembleTrainingConfig,
-    AnalystEnsembleTrainingResult,
-    create_analyst_ensemble_training
+    ErrorCategory,
+    BaseModelsTrainingComponent
 )
 
 from .components.ml_entry_timing_labeler_modular import (
@@ -55,45 +106,70 @@ from .components.ml_entry_timing_labeler_modular import (
     create_ml_entry_timing_labeler
 )
 
-from .unified_training_pipeline import (
-    UnifiedTrainingPipeline,
-    create_unified_training_pipeline
-)
-
-# Migration utilities removed during cleanup
-
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 __all__ = [
-    # Core ModularComponent architecture
+    # Core training architecture
+    'BaseTrainer',
+    'TrainingConfig',
+    'TrainingResult',
+    'ValidationResult',
+    'PredictionResult',
+    'TrainingRole',
+    'ModelType',
+    
+    # Role-specific base trainers
+    'AnalystBaseTrainer',
+    'AnalystTrainingConfig',
+    'AnalystModelType',
+    'TacticianBaseTrainer',
+    'TacticianTrainingConfig',
+    'TacticianModelType',
+    
+    # Role-specific ensemble trainers
+    'AnalystEnsembleTrainer',
+    'AnalystEnsembleTrainingConfig',
+    'EnsembleMethod',
+    'TacticianEnsembleTrainer',
+    'TacticianEnsembleTrainingConfig',
+    'TacticianEnsembleMethod',
+    
+    # Training components
+    'AnalystBaseTraining',
+    'AnalystBaseTrainingConfig',
+    'AnalystBaseTrainingResult',
+    'create_analyst_base_training',
+    'execute_analyst_base_training',
+    
+    'AnalystEnsembleTraining',
+    'AnalystEnsembleTrainingConfig',
+    'AnalystEnsembleTrainingResult',
+    'create_analyst_ensemble_training',
+    'execute_analyst_ensemble_training',
+    
+    'TacticianBaseTraining',
+    'TacticianBaseTrainingConfig',
+    'TacticianBaseTrainingResult',
+    'create_tactician_base_training',
+    'execute_tactician_base_training',
+    
+    'TacticianEnsembleTraining',
+    'TacticianEnsembleTrainingConfig',
+    'TacticianEnsembleTrainingResult',
+    'create_tactician_ensemble_training',
+    'execute_tactician_ensemble_training',
+    
+    # Legacy components (for backward compatibility)
     'ModularComponent',
     'ErrorInfo',
     'ErrorSeverity',
     'ErrorCategory',
-    
-    # Base components
     'BaseModelsTrainingComponent',
-    
-    # Migrated components
-    'AnalystModelsTrainingModular',
-    'AnalystModelsModelType',
-    'AnalystModelsTrainingConfig',
-    'AnalystModelsTrainingResult',
-    'create_analyst_models_training',
-    
-    'AnalystEnsembleTrainingModular',
-    'EnsembleMethod',
-    'AnalystEnsembleTrainingConfig',
-    'AnalystEnsembleTrainingResult',
-    'create_analyst_ensemble_training',
     
     'MLEntryTimingLabelerModular',
     'LabelingMethod',
     'MLModelType',
     'MLEntryTimingConfig',
     'MLEntryTimingResult',
-    'create_ml_entry_timing_labeler',
-    
-    'UnifiedTrainingPipeline',
-    'create_unified_training_pipeline'
+    'create_ml_entry_timing_labeler'
 ]

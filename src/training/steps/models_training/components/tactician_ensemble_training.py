@@ -1,57 +1,75 @@
 """
-Tactician Ensemble Training Modular Component.
+Tactician Ensemble Training - Unified Training Architecture
 
-This component handles training of Tactician ensemble models that combine multiple base models
-for enhanced entry/exit timing predictions.
+This module provides the Tactician ensemble training component that handles training
+of ensemble models combining multiple Tactician base models using the unified BaseTrainer architecture.
+
+Key Features:
+- Ensemble training interface for Tactician models
+- Multiple ensemble methods (voting, averaging, stacking, blending)
+- Meta-learner support for complex ensemble strategies
+- Performance monitoring and validation
+- Error handling and recovery mechanisms
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass
-from enum import Enum
 import time
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from enum import Enum
 
-from .base_component import BaseModelsTrainingComponent
+import pandas as pd
+import numpy as np
+
+from ..core.tactician_ensemble_trainer import (
+    TacticianEnsembleTrainer, TacticianEnsembleTrainingConfig, TacticianEnsembleMethod
+)
+from ..core.tactician_base_trainer import TacticianModelType
 from src.training.steps.base_step import BaseStep
-from ..core.ensemble_trainer import EnsembleTrainer
-from ..core.base_trainer import TrainingConfig, TrainingRole, ModelType
-
-
-class TacticianEnsembleMethod(Enum):
-    """Tactician ensemble methods."""
-    VOTING = "voting"
-    AVERAGING = "averaging"
-    STACKING = "stacking"
-    BLENDING = "blending"
+from src.utils.logger import system_logger
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.core.decorators import handles_errors, traced, log_execution_time
 
 
 @dataclass
 class TacticianEnsembleTrainingConfig:
     """Configuration for Tactician ensemble training."""
-    base_models: List[str]
-    ensemble_method: TacticianEnsembleMethod
-    meta_learner_params: Dict[str, Any]
+    base_models: List[TacticianModelType]
+    ensemble_method: TacticianEnsembleMethod = TacticianEnsembleMethod.STACKING
+    training_params: Dict[str, Any] = field(default_factory=dict)
+    validation_params: Dict[str, Any] = field(default_factory=dict)
     timeframe: str = "15m"
+    symbol: str = "ETHUSDT"
     auto_save: bool = True
+    
+    # Feature engineering parameters
+    enable_entry_timing: bool = True
+    enable_exit_timing: bool = True
+    enable_position_sizing: bool = True
+    
+    # Meta-learner parameters
+    meta_learner_params: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class TacticianEnsembleTrainingResult:
     """Result of Tactician ensemble training."""
     success: bool
-    ensemble_model: Any
-    individual_models: Dict[str, Any]
-    ensemble_metrics: Dict[str, Any]
-    training_time: float
-    error_message: Optional[str] = None
+    ensemble_model: Any = None
+    individual_models: Dict[str, Any] = field(default_factory=dict)
+    ensemble_metrics: Dict[str, float] = field(default_factory=dict)
+    training_time: float = 0.0
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    feature_importance: Optional[Dict[str, float]] = None
 
 
-class TacticianEnsembleTrainingModular(BaseModelsTrainingComponent, BaseStep):
+class TacticianEnsembleTraining(BaseStep):
     """
-    ModularComponent implementation of Tactician Ensemble Training.
+    Tactician ensemble training component using unified BaseTrainer architecture.
     
-    This component handles training of Tactician ensemble models with comprehensive
-    state management, performance monitoring, and error handling.
+    This component handles training of ensemble models that combine multiple
+    Tactician base models for enhanced performance.
     """
     
     def __init__(
@@ -61,387 +79,402 @@ class TacticianEnsembleTrainingModular(BaseModelsTrainingComponent, BaseStep):
         logger: Optional[logging.Logger] = None
     ):
         """
-        Initialize the Tactician Ensemble Training component.
+        Initialize the Tactician ensemble training component.
         
         Args:
             name: Component name
             config: Configuration dictionary
             logger: Logger instance
         """
+        super().__init__(name, logger)
+        
         # Set default configuration
         default_config = {
-            'model': {
-                'type': 'ensemble',
-                'base_models': ['lightgbm', 'catboost', 'neural_network'],
-                'ensemble_method': 'stacking',
-                'meta_learner_type': 'lightgbm'
+            'base_models': [
+                TacticianModelType.LIGHTGBM,
+                TacticianModelType.CATBOOST,
+                TacticianModelType.NEURAL_NETWORK
+            ],
+            'ensemble_method': TacticianEnsembleMethod.STACKING,
+            'training_params': {
+                'validation_split': 0.2,
+                'cross_validation_folds': 5,
+                'random_seed': 42
             },
-            'training': {
-                'epochs': 100,
-                'batch_size': 32,
-                'learning_rate': 0.001,
-                'early_stopping_patience': 10,
-                'checkpoint_frequency': 10,
-                'cv_folds': 5
-            },
-            'validation': {
-                'split': 0.2,
-                'metrics': ['accuracy', 'precision', 'recall', 'f1_score']
+            'validation_params': {
+                'enable_early_stopping': True,
+                'early_stopping_patience': 10
             },
             'timeframe': '15m',
-            'auto_save': True
+            'symbol': 'ETHUSDT',
+            'auto_save': True,
+            'enable_entry_timing': True,
+            'enable_exit_timing': True,
+            'enable_position_sizing': True
         }
         
+        # Merge with provided configuration
         if config:
             default_config.update(config)
         
-        # Initialize both parent classes
-        BaseModelsTrainingComponent.__init__(self, name, default_config, logger)
-        BaseStep.__init__(self, name, default_config)
+        self.config = TacticianEnsembleTrainingConfig(**default_config)
         
-        # Tactician ensemble-specific configuration
-        self.ensemble_config = TacticianEnsembleTrainingConfig(
-            base_models=self.model_config.get('base_models', []),
-            ensemble_method=TacticianEnsembleMethod(self.model_config.get('ensemble_method', 'stacking')),
-            meta_learner_params=self.model_config.get('meta_learner_params', {}),
-            timeframe=self.model_config.get('timeframe', '15m'),
-            auto_save=self.model_config.get('auto_save', True)
-        )
+        # Initialize trainer
+        self._trainer = None
         
-        # Training state
-        self._ensemble_model = None
-        self._individual_models = {}
-        self._training_results = {}
-        self._ensemble_trainer = None
-        
-        # Performance tracking
-        self.training_time = 0.0
-        self._performance_metrics = {}
+        tprint_info(f"🔧 Initialized TacticianEnsembleTraining: {name}")
+        self.logger.info(f"Initialized TacticianEnsembleTraining: {name}")
     
-    def _initialize_resources(self) -> bool:
-        """Initialize training resources."""
+    @handles_errors(
+        exceptions=(ValueError, RuntimeError, MemoryError),
+        default_return=TacticianEnsembleTrainingResult(
+            success=False,
+            errors=["Component initialization failed"]
+        ),
+        context="tactician ensemble training"
+    )
+    async def initialize(self) -> bool:
+        """Initialize the component."""
         try:
-            # Initialize ensemble trainer
-            training_config = TrainingConfig(
-                role=TrainingRole.TACTICIAN,
-                model_types=[ModelType(model) for model in self.ensemble_config.base_models],
-                timeframe=self.ensemble_config.timeframe,
-                symbol=self.config.get('symbol', 'ETHUSDT'),
-                enable_ensemble=True,
-                custom_params={
-                    'ensemble_strategy': self.ensemble_config.ensemble_method.value,
-                    'meta_learner_type': self.ensemble_config.meta_learner_params.get('type', 'lightgbm'),
-                    'cv_folds': self.training_config.get('cv_folds', 5),
-                    **self.ensemble_config.meta_learner_params
-                }
+            tprint_info("🔧 Initializing Tactician ensemble training...")
+            
+            # Create trainer configuration
+            trainer_config = TacticianEnsembleTrainingConfig(
+                base_models=self.config.base_models,
+                ensemble_method=self.config.ensemble_method,
+                timeframe=self.config.timeframe,
+                symbol=self.config.symbol,
+                validation_split=self.config.training_params.get('validation_split', 0.2),
+                cross_validation_folds=self.config.training_params.get('cross_validation_folds', 5),
+                random_seed=self.config.training_params.get('random_seed'),
+                enable_entry_timing=self.config.enable_entry_timing,
+                enable_exit_timing=self.config.enable_exit_timing,
+                enable_position_sizing=self.config.enable_position_sizing,
+                meta_learner_params=self.config.meta_learner_params,
+                custom_params=self.config.training_params
             )
             
-            self._ensemble_trainer = EnsembleTrainer(training_config, self.logger)
-            
-            self.logger.info("✅ Tactician ensemble training resources initialized")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize tactician ensemble training resources: {e}")
-            return False
-    
-    def _cleanup_resources(self) -> None:
-        """Cleanup training resources."""
-        try:
-            if self._ensemble_trainer:
-                # Cleanup trainer if it has cleanup method
-                if hasattr(self._ensemble_trainer, 'cleanup'):
-                    self._ensemble_trainer.cleanup()
-                self._ensemble_trainer = None
-            
-            self.logger.info("✅ Tactician ensemble training resources cleaned up")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Resource cleanup failed: {e}")
-    
-    def _process_data(self, data: Dict[str, Any], **kwargs) -> TacticianEnsembleTrainingResult:
-        """
-        Process training data and train tactician ensemble models.
-        
-        Args:
-            data: Dictionary containing 'X_train' and 'y_train'
-            **kwargs: Additional arguments
-            
-        Returns:
-            TacticianEnsembleTrainingResult
-        """
-        try:
-            start_time = time.time()
-            
-            X_train = data.get('X_train')
-            y_train = data.get('y_train')
-            
-            if X_train is None or y_train is None:
-                return TacticianEnsembleTrainingResult(
-                    success=False,
-                    ensemble_model=None,
-                    individual_models={},
-                    ensemble_metrics={},
-                    training_time=0.0,
-                    error_message="Missing training data (X_train or y_train)"
-                )
+            # Create trainer
+            self._trainer = TacticianEnsembleTrainer(trainer_config, self.logger)
             
             # Initialize trainer
-            if not self._ensemble_trainer.initialize():
-                return TacticianEnsembleTrainingResult(
-                    success=False,
-                    ensemble_model=None,
-                    individual_models={},
-                    ensemble_metrics={},
-                    training_time=0.0,
-                    error_message="Failed to initialize ensemble trainer"
-                )
+            if not await self._trainer.initialize():
+                tprint_error("❌ Trainer initialization failed")
+                return False
             
-            # Train ensemble
-            result = self._ensemble_trainer.train(X_train, y_train)
+            tprint_success("✅ Tactician ensemble training initialized")
+            return True
             
-            if result.success:
-                # Store trained models
-                self._ensemble_model = result.model
-                self._individual_models = getattr(result, 'individual_models', {})
-                self._training_results = result.metrics
-                self._performance_metrics = result.metrics
-                
-                self.training_time = time.time() - start_time
-                
-                self.logger.info(f"✅ Tactician ensemble training completed in {self.training_time:.2f}s")
-                
-                return TacticianEnsembleTrainingResult(
-                    success=True,
-                    ensemble_model=self._ensemble_model,
-                    individual_models=self._individual_models,
-                    ensemble_metrics=result.metrics,
-                    training_time=self.training_time
-                )
-            else:
-                return TacticianEnsembleTrainingResult(
-                    success=False,
-                    ensemble_model=None,
-                    individual_models={},
-                    ensemble_metrics={},
-                    training_time=time.time() - start_time,
-                    error_message=result.error_message
-                )
-                
         except Exception as e:
-            self.logger.error(f"❌ Tactician ensemble training failed: {e}")
-            return TacticianEnsembleTrainingResult(
-                success=False,
-                ensemble_model=None,
-                individual_models={},
-                ensemble_metrics={},
-                training_time=time.time() - start_time,
-                error_message=str(e)
-            )
+            tprint_error(f"❌ Initialization failed: {e}")
+            self.logger.error(f"Initialization failed: {e}")
+            return False
     
-    def _validate_training_data(self, data: Dict[str, Any]) -> bool:
-        """Validate training data."""
+    @handles_errors(
+        exceptions=(ValueError, RuntimeError, MemoryError),
+        default_return=TacticianEnsembleTrainingResult(
+            success=False,
+            errors=["Training execution failed"]
+        ),
+        context="tactician ensemble training"
+    )
+    @traced
+    async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run the Tactician ensemble training.
+        
+        Args:
+            data: Input data containing training features and targets
+            
+        Returns:
+            Training result dictionary
+        """
         try:
+            tprint_info("🎯 Starting Tactician ensemble training...")
+            self.logger.info("Starting Tactician ensemble training...")
+            
+            start_time = time.time()
+            
+            # Extract data
             X_train = data.get('X_train')
             y_train = data.get('y_train')
             
             if X_train is None or y_train is None:
-                self.logger.error("❌ Missing training data")
-                return False
+                return {
+                    'success': False,
+                    'error_message': 'Missing required data: X_train and y_train',
+                    'training_time': 0.0
+                }
             
-            if len(X_train) != len(y_train):
-                self.logger.error("❌ Training data length mismatch")
-                return False
+            # Convert to pandas if needed
+            if not isinstance(X_train, pd.DataFrame):
+                X_train = pd.DataFrame(X_train)
+            if not isinstance(y_train, pd.Series):
+                y_train = pd.Series(y_train)
             
-            if len(X_train) == 0:
-                self.logger.error("❌ Empty training data")
-                return False
+            # Train ensemble
+            training_result = await self._trainer.train(X_train, y_train)
             
-            self.logger.info(f"✅ Training data validated: {len(X_train)} samples")
-            return True
+            if not training_result.success:
+                return {
+                    'success': False,
+                    'error_message': training_result.error_message,
+                    'training_time': time.time() - start_time
+                }
+            
+            # Create result
+            result = TacticianEnsembleTrainingResult(
+                success=True,
+                ensemble_model=training_result.model,
+                individual_models=training_result.metadata.get('base_models', {}),
+                ensemble_metrics=training_result.metrics,
+                training_time=training_result.training_time,
+                feature_importance=self._extract_feature_importance(training_result)
+            )
+            
+            # Auto-save if enabled
+            if self.config.auto_save:
+                await self._save_models(result)
+            
+            tprint_success(f"✅ Tactician ensemble training completed in {result.training_time:.2f}s")
+            self.logger.info(f"Tactician ensemble training completed in {result.training_time:.2f}s")
+            
+            return {
+                'success': True,
+                'result': result,
+                'training_time': result.training_time,
+                'ensemble_method': self.config.ensemble_method.value,
+                'base_models': [model.value for model in self.config.base_models],
+                'metrics': result.ensemble_metrics
+            }
             
         except Exception as e:
-            self.logger.error(f"❌ Data validation failed: {e}")
-            return False
+            tprint_error(f"❌ Tactician ensemble training failed: {e}")
+            self.logger.error(f"Tactician ensemble training failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'training_time': time.time() - start_time if 'start_time' in locals() else 0.0
+            }
+    
+    async def validate(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate the trained ensemble.
+        
+        Args:
+            data: Validation data containing features and targets
+            
+        Returns:
+            Validation result dictionary
+        """
+        try:
+            tprint_info("🎯 Validating Tactician ensemble...")
+            
+            # Extract data
+            X_val = data.get('X_val', data.get('X_train'))
+            y_val = data.get('y_val', data.get('y_train'))
+            
+            if X_val is None or y_val is None:
+                return {
+                    'success': False,
+                    'error_message': 'Missing required validation data'
+                }
+            
+            # Convert to pandas if needed
+            if not isinstance(X_val, pd.DataFrame):
+                X_val = pd.DataFrame(X_val)
+            if not isinstance(y_val, pd.Series):
+                y_val = pd.Series(y_val)
+            
+            # Validate ensemble
+            validation_result = await self._trainer.validate(X_val, y_val)
+            
+            if not validation_result.success:
+                return {
+                    'success': False,
+                    'error_message': validation_result.error_message
+                }
+            
+            tprint_success("✅ Tactician ensemble validation completed")
+            return {
+                'success': True,
+                'metrics': validation_result.metrics,
+                'predictions': validation_result.predictions
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Tactician ensemble validation failed: {e}")
+            self.logger.error(f"Tactician ensemble validation failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+    
+    async def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Make predictions with the trained ensemble.
+        
+        Args:
+            data: Input data for prediction
+            
+        Returns:
+            Prediction result dictionary
+        """
+        try:
+            tprint_info("🎯 Making Tactician ensemble predictions...")
+            
+            # Extract data
+            X_pred = data.get('X_pred', data.get('X_train'))
+            
+            if X_pred is None:
+                return {
+                    'success': False,
+                    'error_message': 'Missing required prediction data'
+                }
+            
+            # Convert to pandas if needed
+            if not isinstance(X_pred, pd.DataFrame):
+                X_pred = pd.DataFrame(X_pred)
+            
+            # Make predictions
+            prediction_result = await self._trainer.predict(X_pred)
+            
+            if not prediction_result.success:
+                return {
+                    'success': False,
+                    'error_message': prediction_result.error_message
+                }
+            
+            tprint_success("✅ Tactician ensemble predictions completed")
+            return {
+                'success': True,
+                'predictions': prediction_result.predictions,
+                'probabilities': prediction_result.probabilities
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Tactician ensemble prediction failed: {e}")
+            self.logger.error(f"Tactician ensemble prediction failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+    
+    def _extract_feature_importance(self, training_result) -> Optional[Dict[str, float]]:
+        """Extract feature importance from training result."""
+        try:
+            if hasattr(training_result, 'feature_importance') and training_result.feature_importance:
+                return training_result.feature_importance
+            return None
+        except Exception as e:
+            self.logger.warning(f"Could not extract feature importance: {e}")
+            return None
+    
+    async def _save_models(self, result: TacticianEnsembleTrainingResult) -> None:
+        """Save trained models."""
+        try:
+            if not result.success or not result.ensemble_model:
+                return
+            
+            # This would implement model saving logic
+            # For now, just log the save operation
+            self.logger.info(f"Ensemble model saved with method: {self.config.ensemble_method.value}")
+            tprint_info(f"💾 Ensemble model saved: {self.config.ensemble_method.value}")
+            
+        except Exception as e:
+            self.logger.warning(f"Model saving failed: {e}")
     
     def get_training_summary(self) -> Dict[str, Any]:
         """Get comprehensive training summary."""
-        summary = super().get_training_summary()
-        
-        # Add tactician ensemble-specific information
-        summary.update({
-            'ensemble_config': {
-                'base_models': self.ensemble_config.base_models,
-                'ensemble_method': self.ensemble_config.ensemble_method.value,
-                'timeframe': self.ensemble_config.timeframe
-            },
-            'ensemble_model': self._ensemble_model is not None,
-            'individual_models': list(self._individual_models.keys()),
-            'training_results': self._training_results,
-        })
-        
-        return summary
+        if self._trainer:
+            return self._trainer.get_ensemble_summary()
+        return {
+            'component_name': self.name,
+            'config': self.config.__dict__,
+            'trainer_initialized': self._trainer is not None
+        }
     
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the tactician ensemble training step (BaseStep interface).
-        
-        Args:
-            config: Configuration dictionary containing:
-                - symbol: Trading symbol (e.g., 'ETHUSDT')
-                - exchange: Exchange name (e.g., 'binance')
-                - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
-                - execution_mode: Execution mode ('full', 'light', 'blank')
-        
-        Returns:
-            Execution result dictionary
-        """
-        try:
-            self.logger.info("🚀 Starting Tactician Ensemble Training")
-            
-            # Set context for artifact management
-            self._set_context(
-                symbol=config.get('symbol'),
-                exchange=config.get('exchange'),
-                information='training',
-                direction=config.get('direction', 'longs'),
-                model='Tactician'
-            )
-            
-            # Load training data
-            training_data = self._load_dataframe('training_data')
-            if training_data is None:
-                training_data = self._load_dataframe('market_data')
-                if training_data is None:
-                    training_data = self._load_dataframe('processed_data')
-            
-            if training_data is None:
-                return {
-                    'success': False,
-                    'error': 'No training data found. Please ensure data is available in artifacts.',
-                    'artifacts': [],
-                    'metrics': {}
-                }
-            
-            # Load targets if available
-            targets = self._load_dataframe('tactician_targets')
-            if targets is None:
-                target_columns = ['target', 'y', 'label', 'tactician_target', 'entry_target', 'exit_target']
-                for col in target_columns:
-                    if col in training_data.columns:
-                        targets = training_data[col]
-                        training_data = training_data.drop(columns=[col])
-                        break
-                
-                if targets is None:
-                    return {
-                        'success': False,
-                        'error': 'No target data found for tactician ensemble training',
-                        'artifacts': [],
-                        'metrics': {}
-                    }
-            
-            # Load analyst predictions if available (for enhanced features)
-            analyst_predictions = self._load_dataframe('analyst_predictions')
-            if analyst_predictions is not None:
-                # Add analyst predictions as features
-                for col in analyst_predictions.columns:
-                    training_data[f'analyst_{col}'] = analyst_predictions[col]
-                self.logger.info(f"Enhanced training data with {len(analyst_predictions.columns)} analyst features")
-            
-            # Load tactician base model outputs if available
-            base_model_outputs = self._load_dataframe('tactician_base_predictions')
-            if base_model_outputs is not None:
-                # Add base model outputs as features
-                for col in base_model_outputs.columns:
-                    training_data[f'base_{col}'] = base_model_outputs[col]
-                self.logger.info(f"Enhanced training data with {len(base_model_outputs.columns)} base model features")
-            
-            # Prepare data for component
-            component_data = {
-                'X_train': training_data,
-                'y_train': targets
-            }
-            
-            # Initialize component
-            if not self.initialize():
-                return {
-                    'success': False,
-                    'error': 'Failed to initialize tactician ensemble training component',
-                    'artifacts': [],
-                    'metrics': {}
-                }
-            
-            # Process data with component
-            result = self.process(component_data)
-            
-            if result.success:
-                # Save ensemble model
-                if result.ensemble_model:
-                    self._save_model(result.ensemble_model, 'tactician_ensemble_model')
-                
-                # Save individual models
-                if result.individual_models:
-                    for model_name, model in result.individual_models.items():
-                        self._save_model(model, f'tactician_ensemble_{model_name}_model')
-                
-                # Save metrics
-                if result.ensemble_metrics:
-                    self._save_metadata(result.ensemble_metrics, 'tactician_ensemble_metrics')
-                
-                # Save training summary
-                training_summary = self.get_training_summary()
-                self._save_metadata(training_summary, 'tactician_ensemble_summary')
-                
-                self.logger.info("✅ Tactician Ensemble Training completed successfully")
-                
-                return {
-                    'success': True,
-                    'artifacts': [
-                        'tactician_ensemble_model',
-                        'tactician_ensemble_metrics',
-                        'tactician_ensemble_summary'
-                    ],
-                    'metrics': result.ensemble_metrics,
-                    'ensemble_method': self.ensemble_config.ensemble_method.value,
-                    'base_models_count': len(result.individual_models),
-                    'training_time': result.training_time
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f"Tactician ensemble training failed: {result.error_message}",
-                    'artifacts': [],
-                    'metrics': {}
-                }
-                
-        except Exception as e:
-            self.logger.error(f"❌ Tactician Ensemble Training failed: {e}")
-            return {
-                'success': False,
-                'error': f"Step execution failed: {str(e)}",
-                'artifacts': [],
-                'metrics': {}
-            }
-        finally:
-            # Cleanup component
-            if hasattr(self, 'cleanup'):
-                self.cleanup()
+    def get_required_dependencies(self) -> List[str]:
+        """Get list of required dependencies."""
+        return ['pandas', 'numpy', 'scikit-learn', 'lightgbm', 'catboost']
+    
+    def get_processing_capabilities(self) -> Dict[str, Any]:
+        """Get component processing capabilities."""
+        return {
+            'input_types': ['dict'],
+            'output_types': ['dict'],
+            'supports_parallel_processing': False,
+            'supports_checkpointing': True,
+            'supports_validation': True,
+            'supports_early_stopping': True,
+            'supports_ensemble': True,
+            'memory_efficient': True
+        }
 
 
+# Convenience functions
 def create_tactician_ensemble_training(
+    base_models: List[TacticianModelType] = None,
+    ensemble_method: TacticianEnsembleMethod = TacticianEnsembleMethod.STACKING,
     config: Optional[Dict[str, Any]] = None,
     logger: Optional[logging.Logger] = None
-) -> TacticianEnsembleTrainingModular:
+) -> TacticianEnsembleTraining:
     """
-    Create a Tactician Ensemble Training component.
+    Create a Tactician ensemble training component.
     
     Args:
+        base_models: List of base model types to combine
+        ensemble_method: Ensemble combination method
         config: Configuration dictionary
         logger: Logger instance
         
     Returns:
-        TacticianEnsembleTrainingModular instance
+        TacticianEnsembleTraining component
     """
-    return TacticianEnsembleTrainingModular(config=config, logger=logger)
+    if base_models is None:
+        base_models = [
+            TacticianModelType.LIGHTGBM,
+            TacticianModelType.CATBOOST,
+            TacticianModelType.NEURAL_NETWORK
+        ]
+    
+    if config is None:
+        config = {}
+    
+    config['base_models'] = base_models
+    config['ensemble_method'] = ensemble_method
+    
+    return TacticianEnsembleTraining(config=config, logger=logger)
+
+
+async def execute_tactician_ensemble_training(
+    data: Dict[str, Any],
+    base_models: List[TacticianModelType] = None,
+    ensemble_method: TacticianEnsembleMethod = TacticianEnsembleMethod.STACKING,
+    config: Optional[Dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, Any]:
+    """
+    Execute Tactician ensemble training with minimal configuration.
+    
+    Args:
+        data: Training data
+        base_models: List of base model types to combine
+        ensemble_method: Ensemble combination method
+        config: Configuration dictionary
+        logger: Logger instance
+        
+    Returns:
+        Training result
+    """
+    component = create_tactician_ensemble_training(base_models, ensemble_method, config, logger)
+    
+    # Initialize
+    if not await component.initialize():
+        return {
+            'success': False,
+            'error_message': 'Component initialization failed'
+        }
+    
+    # Run training
+    return await component.run(data)

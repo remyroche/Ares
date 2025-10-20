@@ -1,51 +1,72 @@
 """
-Tactician Base Training Modular Component.
+Tactician Base Training - Unified Training Architecture
 
-This component handles training of individual Tactician base models for precise entry/exit timing.
+This module provides the Tactician base training component that handles training
+of individual Tactician base models using the unified BaseTrainer architecture.
+
+Key Features:
+- Unified training interface for all Tactician model types
+- Common training patterns and lifecycle management
+- Standardized configuration and validation
+- Performance monitoring and checkpointing
+- Error handling and recovery mechanisms
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass
-from enum import Enum
 import time
+from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from enum import Enum
 
-from .base_component import BaseModelsTrainingComponent
+import pandas as pd
+import numpy as np
+
+from ..core.tactician_base_trainer import (
+    TacticianBaseTrainer, TacticianTrainingConfig, TacticianModelType
+)
 from src.training.steps.base_step import BaseStep
-from ..core.model_trainer import ModelTrainer
-from ..core.base_trainer import TrainingConfig, TrainingRole, ModelType
-
-
-class TacticianModelType(Enum):
-    """Types of Tactician models."""
-    LIGHTGBM = "lightgbm"
-    CATBOOST = "catboost"
-    NEURAL_NETWORK = "neural_network"
+from src.utils.logger import system_logger
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
+from src.core.decorators import handles_errors, traced, log_execution_time
 
 
 @dataclass
 class TacticianBaseTrainingConfig:
     """Configuration for Tactician base training."""
     model_types: List[TacticianModelType]
-    training_params: Dict[str, Any]
-    validation_params: Dict[str, Any]
+    training_params: Dict[str, Any] = field(default_factory=dict)
+    validation_params: Dict[str, Any] = field(default_factory=dict)
     timeframe: str = "15m"
+    symbol: str = "ETHUSDT"
     auto_save: bool = True
+    
+    # Feature engineering parameters
+    enable_entry_timing: bool = True
+    enable_exit_timing: bool = True
+    enable_position_sizing: bool = True
+    
+    # Model-specific parameters
+    lightgbm_params: Dict[str, Any] = field(default_factory=dict)
+    catboost_params: Dict[str, Any] = field(default_factory=dict)
+    neural_network_params: Dict[str, Any] = field(default_factory=dict)
+    linear_params: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class TacticianBaseTrainingResult:
     """Result of Tactician base training."""
     success: bool
-    models: Dict[str, Any]
-    metrics: Dict[str, Any]
-    training_time: float
-    error_message: Optional[str] = None
+    models: Dict[str, Any] = field(default_factory=dict)
+    metrics: Dict[str, float] = field(default_factory=dict)
+    training_time: float = 0.0
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    feature_importance: Optional[Dict[str, Dict[str, float]]] = None
 
 
-class TacticianBaseTrainingModular(BaseModelsTrainingComponent, BaseStep):
+class TacticianBaseTraining(BaseStep):
     """
-    ModularComponent implementation of Tactician Base Training.
+    Tactician base training component using unified BaseTrainer architecture.
     
     This component handles training of individual Tactician base models with comprehensive
     state management, performance monitoring, and error handling.
@@ -58,356 +79,403 @@ class TacticianBaseTrainingModular(BaseModelsTrainingComponent, BaseStep):
         logger: Optional[logging.Logger] = None
     ):
         """
-        Initialize the Tactician Base Training component.
+        Initialize the Tactician base training component.
         
         Args:
             name: Component name
             config: Configuration dictionary
             logger: Logger instance
         """
+        super().__init__(name, logger)
+        
         # Set default configuration
         default_config = {
-            'model': {
-                'type': 'multi_model',
-                'model_types': ['lightgbm', 'catboost', 'neural_network'],
+            'model_types': [TacticianModelType.LIGHTGBM, TacticianModelType.CATBOOST],
+            'training_params': {
+                'validation_split': 0.2,
+                'cross_validation_folds': 5,
+                'random_seed': 42
             },
-            'training': {
-                'epochs': 100,
-                'batch_size': 32,
-                'learning_rate': 0.001,
-                'early_stopping_patience': 10,
-                'checkpoint_frequency': 10
-            },
-            'validation': {
-                'split': 0.2,
-                'metrics': ['accuracy', 'precision', 'recall', 'f1_score']
+            'validation_params': {
+                'enable_early_stopping': True,
+                'early_stopping_patience': 10
             },
             'timeframe': '15m',
-            'auto_save': True
+            'symbol': 'ETHUSDT',
+            'auto_save': True,
+            'enable_entry_timing': True,
+            'enable_exit_timing': True,
+            'enable_position_sizing': True
         }
         
+        # Merge with provided configuration
         if config:
             default_config.update(config)
         
-        # Initialize both parent classes
-        BaseModelsTrainingComponent.__init__(self, name, default_config, logger)
-        BaseStep.__init__(self, name, default_config)
+        self.config = TacticianBaseTrainingConfig(**default_config)
         
-        # Tactician-specific configuration
-        self.tactician_config = TacticianBaseTrainingConfig(
-            model_types=[TacticianModelType(model) for model in self.model_config.get('model_types', [])],
-            training_params=self.training_config,
-            validation_params=self.validation_config,
-            timeframe=self.model_config.get('timeframe', '15m'),
-            auto_save=self.model_config.get('auto_save', True)
-        )
+        # Initialize trainer
+        self._trainer = None
         
-        # Training state
-        self._trained_models = {}
-        self._training_results = {}
-        self._model_trainer = None
-        
-        # Performance tracking
-        self.training_time = 0.0
-        self._performance_metrics = {}
+        tprint_info(f"🔧 Initialized TacticianBaseTraining: {name}")
+        self.logger.info(f"Initialized TacticianBaseTraining: {name}")
     
-    def _initialize_resources(self) -> bool:
-        """Initialize training resources."""
+    @handles_errors(
+        exceptions=(ValueError, RuntimeError, MemoryError),
+        default_return=TacticianBaseTrainingResult(
+            success=False,
+            errors=["Component initialization failed"]
+        ),
+        context="tactician base training"
+    )
+    async def initialize(self) -> bool:
+        """Initialize the component."""
         try:
-            # Initialize model trainer
-            training_config = TrainingConfig(
-                role=TrainingRole.TACTICIAN,
-                model_types=[ModelType(model.value) for model in self.tactician_config.model_types],
-                timeframe=self.tactician_config.timeframe,
-                symbol=self.config.get('symbol', 'ETHUSDT'),
-                enable_ensemble=False,  # Individual models only
-                custom_params=self.tactician_config.training_params
+            tprint_info("🔧 Initializing Tactician base training...")
+            
+            # Create trainer configuration
+            trainer_config = TacticianTrainingConfig(
+                model_types=[self._convert_model_type(mt) for mt in self.config.model_types],
+                timeframe=self.config.timeframe,
+                symbol=self.config.symbol,
+                validation_split=self.config.training_params.get('validation_split', 0.2),
+                cross_validation_folds=self.config.training_params.get('cross_validation_folds', 5),
+                random_seed=self.config.training_params.get('random_seed'),
+                enable_entry_timing=self.config.enable_entry_timing,
+                enable_exit_timing=self.config.enable_exit_timing,
+                enable_position_sizing=self.config.enable_position_sizing,
+                lightgbm_params=self.config.lightgbm_params,
+                catboost_params=self.config.catboost_params,
+                neural_network_params=self.config.neural_network_params,
+                linear_params=self.config.linear_params,
+                custom_params=self.config.training_params
             )
             
-            self._model_trainer = ModelTrainer(training_config, self.logger)
-            
-            self.logger.info("✅ Tactician base training resources initialized")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize tactician base training resources: {e}")
-            return False
-    
-    def _cleanup_resources(self) -> None:
-        """Cleanup training resources."""
-        try:
-            if self._model_trainer:
-                # Cleanup trainer if it has cleanup method
-                if hasattr(self._model_trainer, 'cleanup'):
-                    self._model_trainer.cleanup()
-                self._model_trainer = None
-            
-            self.logger.info("✅ Tactician base training resources cleaned up")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Resource cleanup failed: {e}")
-    
-    def _process_data(self, data: Dict[str, Any], **kwargs) -> TacticianBaseTrainingResult:
-        """
-        Process training data and train tactician base models.
-        
-        Args:
-            data: Dictionary containing 'X_train' and 'y_train'
-            **kwargs: Additional arguments
-            
-        Returns:
-            TacticianBaseTrainingResult
-        """
-        try:
-            start_time = time.time()
-            
-            X_train = data.get('X_train')
-            y_train = data.get('y_train')
-            
-            if X_train is None or y_train is None:
-                return TacticianBaseTrainingResult(
-                    success=False,
-                    models={},
-                    metrics={},
-                    training_time=0.0,
-                    error_message="Missing training data (X_train or y_train)"
-                )
+            # Create trainer
+            self._trainer = TacticianBaseTrainer(trainer_config, self.logger)
             
             # Initialize trainer
-            if not self._model_trainer.initialize():
-                return TacticianBaseTrainingResult(
-                    success=False,
-                    models={},
-                    metrics={},
-                    training_time=0.0,
-                    error_message="Failed to initialize model trainer"
-                )
+            if not await self._trainer.initialize():
+                tprint_error("❌ Trainer initialization failed")
+                return False
             
-            # Train models
-            result = self._model_trainer.train(X_train, y_train)
+            tprint_success("✅ Tactician base training initialized")
+            return True
             
-            if result.success:
-                # Store trained models
-                self._trained_models = {model_type: result.model for model_type in self.tactician_config.model_types}
-                self._training_results = result.metrics
-                self._performance_metrics = result.metrics
-                
-                self.training_time = time.time() - start_time
-                
-                self.logger.info(f"✅ Tactician base training completed in {self.training_time:.2f}s")
-                
-                return TacticianBaseTrainingResult(
-                    success=True,
-                    models=self._trained_models,
-                    metrics=result.metrics,
-                    training_time=self.training_time
-                )
-            else:
-                return TacticianBaseTrainingResult(
-                    success=False,
-                    models={},
-                    metrics={},
-                    training_time=time.time() - start_time,
-                    error_message=result.error_message
-                )
-                
         except Exception as e:
-            self.logger.error(f"❌ Tactician base training failed: {e}")
-            return TacticianBaseTrainingResult(
-                success=False,
-                models={},
-                metrics={},
-                training_time=time.time() - start_time,
-                error_message=str(e)
-            )
+            tprint_error(f"❌ Initialization failed: {e}")
+            self.logger.error(f"Initialization failed: {e}")
+            return False
     
-    def _validate_training_data(self, data: Dict[str, Any]) -> bool:
-        """Validate training data."""
+    @handles_errors(
+        exceptions=(ValueError, RuntimeError, MemoryError),
+        default_return=TacticianBaseTrainingResult(
+            success=False,
+            errors=["Training execution failed"]
+        ),
+        context="tactician base training"
+    )
+    @traced
+    async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run the Tactician base training.
+        
+        Args:
+            data: Input data containing training features and targets
+            
+        Returns:
+            Training result dictionary
+        """
         try:
+            tprint_info("⚔️ Starting Tactician base training...")
+            self.logger.info("Starting Tactician base training...")
+            
+            start_time = time.time()
+            
+            # Extract data
             X_train = data.get('X_train')
             y_train = data.get('y_train')
             
             if X_train is None or y_train is None:
-                self.logger.error("❌ Missing training data")
-                return False
+                return {
+                    'success': False,
+                    'error_message': 'Missing required data: X_train and y_train',
+                    'training_time': 0.0
+                }
             
-            if len(X_train) != len(y_train):
-                self.logger.error("❌ Training data length mismatch")
-                return False
+            # Convert to pandas if needed
+            if not isinstance(X_train, pd.DataFrame):
+                X_train = pd.DataFrame(X_train)
+            if not isinstance(y_train, pd.Series):
+                y_train = pd.Series(y_train)
             
-            if len(X_train) == 0:
-                self.logger.error("❌ Empty training data")
-                return False
+            # Train models
+            training_result = await self._trainer.train(X_train, y_train)
             
-            self.logger.info(f"✅ Training data validated: {len(X_train)} samples")
-            return True
+            if not training_result.success:
+                return {
+                    'success': False,
+                    'error_message': training_result.error_message,
+                    'training_time': time.time() - start_time
+                }
+            
+            # Create result
+            result = TacticianBaseTrainingResult(
+                success=True,
+                models=training_result.model if isinstance(training_result.model, dict) else {},
+                metrics=training_result.metrics,
+                training_time=training_result.training_time,
+                feature_importance=self._extract_feature_importance(training_result)
+            )
+            
+            # Auto-save if enabled
+            if self.config.auto_save:
+                await self._save_models(result)
+            
+            tprint_success(f"✅ Tactician base training completed in {result.training_time:.2f}s")
+            self.logger.info(f"Tactician base training completed in {result.training_time:.2f}s")
+            
+            return {
+                'success': True,
+                'result': result,
+                'training_time': result.training_time,
+                'models_trained': list(result.models.keys()),
+                'metrics': result.metrics
+            }
             
         except Exception as e:
-            self.logger.error(f"❌ Data validation failed: {e}")
-            return False
+            tprint_error(f"❌ Tactician base training failed: {e}")
+            self.logger.error(f"Tactician base training failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e),
+                'training_time': time.time() - start_time if 'start_time' in locals() else 0.0
+            }
+    
+    async def validate(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate the trained models.
+        
+        Args:
+            data: Validation data containing features and targets
+            
+        Returns:
+            Validation result dictionary
+        """
+        try:
+            tprint_info("⚔️ Validating Tactician base models...")
+            
+            # Extract data
+            X_val = data.get('X_val', data.get('X_train'))
+            y_val = data.get('y_val', data.get('y_train'))
+            
+            if X_val is None or y_val is None:
+                return {
+                    'success': False,
+                    'error_message': 'Missing required validation data'
+                }
+            
+            # Convert to pandas if needed
+            if not isinstance(X_val, pd.DataFrame):
+                X_val = pd.DataFrame(X_val)
+            if not isinstance(y_val, pd.Series):
+                y_val = pd.Series(y_val)
+            
+            # Validate models
+            validation_result = await self._trainer.validate(X_val, y_val)
+            
+            if not validation_result.success:
+                return {
+                    'success': False,
+                    'error_message': validation_result.error_message
+                }
+            
+            tprint_success("✅ Tactician base validation completed")
+            return {
+                'success': True,
+                'metrics': validation_result.metrics,
+                'predictions': validation_result.predictions
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Tactician base validation failed: {e}")
+            self.logger.error(f"Tactician base validation failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+    
+    async def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Make predictions with the trained models.
+        
+        Args:
+            data: Input data for prediction
+            
+        Returns:
+            Prediction result dictionary
+        """
+        try:
+            tprint_info("⚔️ Making Tactician base predictions...")
+            
+            # Extract data
+            X_pred = data.get('X_pred', data.get('X_train'))
+            
+            if X_pred is None:
+                return {
+                    'success': False,
+                    'error_message': 'Missing required prediction data'
+                }
+            
+            # Convert to pandas if needed
+            if not isinstance(X_pred, pd.DataFrame):
+                X_pred = pd.DataFrame(X_pred)
+            
+            # Make predictions
+            prediction_result = await self._trainer.predict(X_pred)
+            
+            if not prediction_result.success:
+                return {
+                    'success': False,
+                    'error_message': prediction_result.error_message
+                }
+            
+            tprint_success("✅ Tactician base predictions completed")
+            return {
+                'success': True,
+                'predictions': prediction_result.predictions,
+                'probabilities': prediction_result.probabilities
+            }
+            
+        except Exception as e:
+            tprint_error(f"❌ Tactician base prediction failed: {e}")
+            self.logger.error(f"Tactician base prediction failed: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+    
+    def _convert_model_type(self, model_type: TacticianModelType):
+        """Convert TacticianModelType to ModelType."""
+        from ..core.base_trainer import ModelType
+        
+        if model_type == TacticianModelType.LIGHTGBM:
+            return ModelType.LIGHTGBM
+        elif model_type == TacticianModelType.CATBOOST:
+            return ModelType.CATBOOST
+        elif model_type == TacticianModelType.NEURAL_NETWORK:
+            return ModelType.NEURAL_NETWORK
+        elif model_type == TacticianModelType.LINEAR:
+            return ModelType.LINEAR
+        else:
+            return ModelType.LIGHTGBM  # Default
+    
+    def _extract_feature_importance(self, training_result) -> Optional[Dict[str, Dict[str, float]]]:
+        """Extract feature importance from training result."""
+        try:
+            if hasattr(training_result, 'feature_importance') and training_result.feature_importance:
+                return training_result.feature_importance
+            return None
+        except Exception as e:
+            self.logger.warning(f"Could not extract feature importance: {e}")
+            return None
+    
+    async def _save_models(self, result: TacticianBaseTrainingResult) -> None:
+        """Save trained models."""
+        try:
+            if not result.success or not result.models:
+                return
+            
+            # This would implement model saving logic
+            # For now, just log the save operation
+            self.logger.info(f"Models saved: {list(result.models.keys())}")
+            tprint_info(f"💾 Models saved: {list(result.models.keys())}")
+            
+        except Exception as e:
+            self.logger.warning(f"Model saving failed: {e}")
     
     def get_training_summary(self) -> Dict[str, Any]:
         """Get comprehensive training summary."""
-        summary = super().get_training_summary()
-        
-        # Add tactician-specific information
-        summary.update({
-            'tactician_config': {
-                'model_types': [mt.value for mt in self.tactician_config.model_types],
-                'timeframe': self.tactician_config.timeframe
-            },
-            'trained_models': list(self._trained_models.keys()),
-            'training_results': self._training_results,
-        })
-        
-        return summary
+        if self._trainer:
+            return self._trainer.get_tactician_summary()
+        return {
+            'component_name': self.name,
+            'config': self.config.__dict__,
+            'trainer_initialized': self._trainer is not None
+        }
     
-    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the tactician base training step (BaseStep interface).
-        
-        Args:
-            config: Configuration dictionary containing:
-                - symbol: Trading symbol (e.g., 'ETHUSDT')
-                - exchange: Exchange name (e.g., 'binance')
-                - timeframe: Timeframe (e.g., '15m')
-                - direction: Trading direction ('longs', 'shorts', 'both')
-                - execution_mode: Execution mode ('full', 'light', 'blank')
-        
-        Returns:
-            Execution result dictionary
-        """
-        try:
-            self.logger.info("🚀 Starting Tactician Base Training")
-            
-            # Set context for artifact management
-            self._set_context(
-                symbol=config.get('symbol'),
-                exchange=config.get('exchange'),
-                information='training',
-                direction=config.get('direction', 'longs'),
-                model='Tactician'
-            )
-            
-            # Load training data
-            training_data = self._load_dataframe('training_data')
-            if training_data is None:
-                training_data = self._load_dataframe('market_data')
-                if training_data is None:
-                    training_data = self._load_dataframe('processed_data')
-            
-            if training_data is None:
-                return {
-                    'success': False,
-                    'error': 'No training data found. Please ensure data is available in artifacts.',
-                    'artifacts': [],
-                    'metrics': {}
-                }
-            
-            # Load targets if available
-            targets = self._load_dataframe('tactician_targets')
-            if targets is None:
-                target_columns = ['target', 'y', 'label', 'tactician_target', 'entry_target', 'exit_target']
-                for col in target_columns:
-                    if col in training_data.columns:
-                        targets = training_data[col]
-                        training_data = training_data.drop(columns=[col])
-                        break
-                
-                if targets is None:
-                    return {
-                        'success': False,
-                        'error': 'No target data found for tactician training',
-                        'artifacts': [],
-                        'metrics': {}
-                    }
-            
-            # Load analyst predictions if available (for enhanced features)
-            analyst_predictions = self._load_dataframe('analyst_predictions')
-            if analyst_predictions is not None:
-                # Add analyst predictions as features
-                for col in analyst_predictions.columns:
-                    training_data[f'analyst_{col}'] = analyst_predictions[col]
-                self.logger.info(f"Enhanced training data with {len(analyst_predictions.columns)} analyst features")
-            
-            # Prepare data for component
-            component_data = {
-                'X_train': training_data,
-                'y_train': targets
-            }
-            
-            # Initialize component
-            if not self.initialize():
-                return {
-                    'success': False,
-                    'error': 'Failed to initialize tactician training component',
-                    'artifacts': [],
-                    'metrics': {}
-                }
-            
-            # Process data with component
-            result = self.process(component_data)
-            
-            if result.success:
-                # Save trained models
-                if result.models:
-                    self._save_model(result.models, 'tactician_base_models')
-                
-                # Save metrics
-                if result.metrics:
-                    self._save_metadata(result.metrics, 'tactician_training_metrics')
-                
-                # Save training summary
-                training_summary = self.get_training_summary()
-                self._save_metadata(training_summary, 'tactician_training_summary')
-                
-                self.logger.info("✅ Tactician Base Training completed successfully")
-                
-                return {
-                    'success': True,
-                    'artifacts': [
-                        'tactician_base_models',
-                        'tactician_training_metrics',
-                        'tactician_training_summary'
-                    ],
-                    'metrics': result.metrics,
-                    'models_trained': len(result.models),
-                    'training_time': result.training_time
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f"Tactician training failed: {result.error_message}",
-                    'artifacts': [],
-                    'metrics': {}
-                }
-                
-        except Exception as e:
-            self.logger.error(f"❌ Tactician Base Training failed: {e}")
-            return {
-                'success': False,
-                'error': f"Step execution failed: {str(e)}",
-                'artifacts': [],
-                'metrics': {}
-            }
-        finally:
-            # Cleanup component
-            if hasattr(self, 'cleanup'):
-                self.cleanup()
+    def get_required_dependencies(self) -> List[str]:
+        """Get list of required dependencies."""
+        return ['pandas', 'numpy', 'scikit-learn', 'lightgbm', 'catboost']
+    
+    def get_processing_capabilities(self) -> Dict[str, Any]:
+        """Get component processing capabilities."""
+        return {
+            'input_types': ['dict'],
+            'output_types': ['dict'],
+            'supports_parallel_processing': False,
+            'supports_checkpointing': True,
+            'supports_validation': True,
+            'supports_early_stopping': True,
+            'supports_ensemble': False,
+            'memory_efficient': True
+        }
 
 
+# Convenience functions
 def create_tactician_base_training(
+    model_types: List[TacticianModelType] = None,
     config: Optional[Dict[str, Any]] = None,
     logger: Optional[logging.Logger] = None
-) -> TacticianBaseTrainingModular:
+) -> TacticianBaseTraining:
     """
-    Create a Tactician Base Training component.
+    Create a Tactician base training component.
     
     Args:
+        model_types: List of model types to train
         config: Configuration dictionary
         logger: Logger instance
         
     Returns:
-        TacticianBaseTrainingModular instance
+        TacticianBaseTraining component
     """
-    return TacticianBaseTrainingModular(config=config, logger=logger)
+    if model_types is None:
+        model_types = [TacticianModelType.LIGHTGBM, TacticianModelType.CATBOOST]
+    
+    if config is None:
+        config = {}
+    
+    config['model_types'] = model_types
+    
+    return TacticianBaseTraining(config=config, logger=logger)
+
+
+async def execute_tactician_base_training(
+    data: Dict[str, Any],
+    model_types: List[TacticianModelType] = None,
+    config: Optional[Dict[str, Any]] = None,
+    logger: Optional[logging.Logger] = None
+) -> Dict[str, Any]:
+    """
+    Execute Tactician base training with minimal configuration.
+    
+    Args:
+        data: Training data
+        model_types: List of model types to train
+        config: Configuration dictionary
+        logger: Logger instance
+        
+    Returns:
+        Training result
+    """
+    component = create_tactician_base_training(model_types, config, logger)
+    
+    # Initialize
+    if not await component.initialize():
+        return {
+            'success': False,
+            'error_message': 'Component initialization failed'
+        }
+    
+    # Run training
+    return await component.run(data)

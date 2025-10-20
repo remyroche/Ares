@@ -8,16 +8,16 @@ from src.training.steps.base_step import step_registry
 from .analyst_models_training_refactored import AnalystModelsTrainingStepRefactored
 
 # Import new BaseClass components
-from ..models_training.components.analyst_models_training_modular import AnalystModelsTrainingModular
-from ..models_training.components.analyst_ensemble_training_modular import AnalystEnsembleTrainingModular
-from ..models_training.components.tactician_base_training_modular import TacticianBaseTrainingModular
-from ..models_training.components.tactician_ensemble_training_modular import TacticianEnsembleTrainingModular
+from ..models_training.components.analyst_base_training import AnalystBaseTraining
+from ..models_training.components.analyst_ensemble_training import AnalystEnsembleTraining
+from ..models_training.components.tactician_base_training import TacticianBaseTraining
+from ..models_training.components.tactician_ensemble_training import TacticianEnsembleTraining
 
 # Register legacy model training steps
 step_registry.register("analyst_models_training", AnalystModelsTrainingStepRefactored)
 
 # Register new BaseClass model training steps
-step_registry.register("analyst_base_training", AnalystModelsTrainingModular)
-step_registry.register("analyst_ensemble_training", AnalystEnsembleTrainingModular)
-step_registry.register("tactician_base_training", TacticianBaseTrainingModular)
-step_registry.register("tactician_ensemble_training", TacticianEnsembleTrainingModular)
+step_registry.register("analyst_base_training", AnalystBaseTraining)
+step_registry.register("analyst_ensemble_training", AnalystEnsembleTraining)
+step_registry.register("tactician_base_training", TacticianBaseTraining)
+step_registry.register("tactician_ensemble_training", TacticianEnsembleTraining)

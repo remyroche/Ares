@@ -18,6 +18,13 @@ from sklearn.random_projection import GaussianRandomProjection, SparseRandomProj
 from sklearn.preprocessing import StandardScaler
 import warnings
 
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
+    tprint_debug, tprint_performance, tprint_progress, tprint_timer,
+    tprint_logged, LogLevel
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -86,6 +93,7 @@ class DimensionalityReducer:
     t-SNE, ICA, and other advanced methods.
     """
     
+    @tprint_logged(LogLevel.INFO, include_args=True)
     def __init__(self, config: Optional[DimensionalityReducerConfig] = None):
         """
         Initialize dimensionality reducer.
@@ -93,11 +101,16 @@ class DimensionalityReducer:
         Args:
             config: Configuration for dimensionality reduction
         """
+        tprint_info("Initializing DimensionalityReducer")
+        
         self.config = config or DimensionalityReducerConfig()
         self.model = None
         self.scaler = None
         self.feature_names = []
         self.reduction_stats = {}
+        
+        tprint_debug(f"Config: method={self.config.method}, n_components={self.config.n_components}")
+        tprint_success("✅ DimensionalityReducer initialized")
         
     def reduce(self, 
                features: np.ndarray, 

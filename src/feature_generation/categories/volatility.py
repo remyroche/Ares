@@ -28,6 +28,12 @@ except ImportError:
         print(*args, **kwargs)
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+# Import hardware optimization decorators
+from src.utils.hardware import (
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    MemoryOptimizationLevel, WorkloadType
+)
 from ..core.vectorbt_feature_generator import VectorBTFeatureGenerator, VECTORBT_AVAILABLE
 from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
@@ -229,6 +235,8 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
     def create_default(cls) -> 'VolatilityFeatureGenerator':
         return cls()
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         """Generate volatility feature using comprehensive VectorBT optimization."""
         start_time = time.time()
@@ -392,6 +400,8 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizatio
             }
             self.update_state(state_update)
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def generate_optimized_volatility_features(self, data: pd.DataFrame,
                                              feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
         """

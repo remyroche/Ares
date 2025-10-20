@@ -15,6 +15,12 @@ from scipy import stats
 from scipy.signal import find_peaks
 import warnings
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -73,6 +79,10 @@ class RegimeFeatureExtractor:
         self.feature_names = []
         self.feature_stats = {}
         
+    @smart_cache(ttl=1800)  # Cache features for 30 minutes
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def extract_features(self, 
                         market_data: pd.DataFrame,
                         existing_features: Optional[pd.DataFrame] = None) -> pd.DataFrame:
@@ -157,16 +167,19 @@ class RegimeFeatureExtractor:
                 regime_features = np.zeros((len(market_data), 1))
                 feature_names = ['regime_placeholder']
             
-            # Create DataFrame
+            # Create DataFrame with hardware optimization
             features_df = pd.DataFrame(regime_features, columns=feature_names, index=market_data.index)
+            features_df = optimize_dataframe_default(features_df)
             
             # Add interaction features
             if self.config.include_interactions:
                 features_df = self._add_interaction_features(features_df)
+                features_df = optimize_dataframe_default(features_df)
             
             # Add polynomial features
             if self.config.include_polynomial:
                 features_df = self._add_polynomial_features(features_df)
+                features_df = optimize_dataframe_default(features_df)
             
             # Add ratio features
             if self.config.include_ratios:

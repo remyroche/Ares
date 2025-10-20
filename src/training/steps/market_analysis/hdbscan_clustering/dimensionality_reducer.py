@@ -18,6 +18,12 @@ from sklearn.random_projection import GaussianRandomProjection, SparseRandomProj
 from sklearn.preprocessing import StandardScaler
 import warnings
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default
+)
+
 # Import tprint utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -113,6 +119,10 @@ class DimensionalityReducer:
         tprint_success("✅ DimensionalityReducer initialized")
         
     @tprint_logged(LogLevel.INFO, include_args=True)
+    @smart_cache(ttl=3600)  # Cache dimensionality reduction results for 1 hour
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=150.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def reduce(self, 
                features: np.ndarray, 
                fit: bool = True,

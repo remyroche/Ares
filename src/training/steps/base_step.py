@@ -74,6 +74,36 @@ from datetime import datetime
 import traceback
 
 from src.utils.artifact_manager import ArtifactManager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, memory_optimized, 
+    performance_tracked, force_cleanup, get_memory_stats
+)
+
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    memory_optimized, m1_optimized, memory_efficient_function,
+    gc_optimized_function, force_cleanup, get_memory_stats,
+    get_integrated_hardware_manager, WorkloadCategory
+)
+
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.unified_hardware_manager import get_unified_hardware_manager
+    from src.utils.hardware.optimization_decorators import (
+        auto_optimize, memory_efficient, OptimizationConfig, OptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    # Create dummy decorators
+    def auto_optimize(config=None):
+        def decorator(func):
+            return func
+        return decorator
+    def memory_efficient(config=None):
+        def decorator(func):
+            return func
+        return decorator
 
 
 class BaseStep(ABC):
@@ -88,9 +118,10 @@ class BaseStep(ABC):
     - Be callable only via launcher (no standalone CLI)
     """
     
+    @memory_optimized(optimization_level='balanced')
     def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize the base step with enhanced artifact management.
+        Initialize the base step with enhanced artifact management and hardware optimization.
         
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
@@ -99,9 +130,28 @@ class BaseStep(ABC):
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
         
+        # Initialize enhanced hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            try:
+                self.hardware_manager = get_unified_hardware_manager()
+                self.logger.info("Enhanced hardware optimization initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize hardware optimization: {e}")
+                self.hardware_manager = None
+        else:
+            self.hardware_manager = None
+        
         # Initialize artifact manager with enhanced configuration
         artifact_config = config or {}
+        artifact_config.update({
+            'hardware_optimization': True,
+            'memory_optimization': True,
+            'compression': 'auto'
+        })
         self.artifact_manager = ArtifactManager(config=artifact_config)
+        
+        # Integrate hardware manager with artifact manager
+        self.artifact_manager._hardware_manager = self.hardware_manager
         
         # Set up artifact manager context with step-category organization
         self.artifact_manager.set_context(
@@ -115,11 +165,16 @@ class BaseStep(ABC):
         # Ensure all step category directories exist
         self.artifact_manager.ensure_step_category_directories()
         
-        self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management")
+        self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management and hardware optimization")
     
+    @memory_efficient(OptimizationConfig(
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED,
+        enable_compression=True
+    ))
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
-        Convenience method to save a DataFrame with automatic optimization.
+        Convenience method to save a DataFrame with automatic optimization and hardware acceleration.
         
         Args:
             df: DataFrame to save
@@ -129,11 +184,20 @@ class BaseStep(ABC):
         Returns:
             Path where artifact was saved
         """
-        return self._save_enhanced_artifact(df, name, "data", metadata)
+        # Optimize DataFrame with hardware manager
+        optimized_df = self.hardware_manager.process_data_with_optimization(
+            df, WorkloadCategory.DATA_PROCESSING
+        )
+        return self._save_enhanced_artifact(optimized_df, name, "data", metadata)
     
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        enable_dtype_optimization=True,
+        optimization_level=OptimizationLevel.BALANCED
+    ))
     def _load_dataframe(self, name: str) -> Any:
         """
-        Convenience method to load a DataFrame with fallback support.
+        Convenience method to load a DataFrame with fallback support and memory optimization.
         
         Args:
             name: Name of the artifact to load
@@ -141,8 +205,18 @@ class BaseStep(ABC):
         Returns:
             Loaded DataFrame or None if not found
         """
-        return self._get_enhanced_artifact(name, "data")
+        data = self._get_enhanced_artifact(name, "data")
+        if data is not None:
+            # Apply hardware optimization to loaded data
+            return self.hardware_manager.process_data_with_optimization(
+                data, WorkloadCategory.DATA_PROCESSING
+            )
+        return data
     
+    @memory_efficient(OptimizationConfig(
+        enable_compression=True,
+        optimization_level=OptimizationLevel.AGGRESSIVE
+    ))
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
         Convenience method to save a model with enhanced storage.
@@ -157,6 +231,10 @@ class BaseStep(ABC):
         """
         return self._save_enhanced_artifact(model, name, "model", metadata)
     
+    @auto_optimize(OptimizationConfig(
+        enable_caching=True,
+        optimization_level=OptimizationLevel.BALANCED
+    ))
     def _load_model(self, name: str) -> Any:
         """
         Convenience method to load a model with fallback support.
@@ -581,20 +659,39 @@ class BaseStep(ABC):
     
     def _clear_cache(self) -> None:
         """
-        Clear the artifact manager cache.
+        Clear the artifact manager cache with enhanced hardware optimization.
         """
         try:
             self.artifact_manager.clear_cache()
-            self.logger.info("🧹 Artifact cache cleared")
+            # Use enhanced cleanup
+            force_cleanup()
+            self.logger.info("🧹 Artifact cache cleared with enhanced cleanup")
         except Exception as e:
             self.logger.error(f"Failed to clear cache: {e}")
     
+    def get_hardware_optimization_status(self) -> Dict[str, Any]:
+        """Get current hardware optimization status."""
+        try:
+            return self.hardware_manager.get_optimization_report()
+        except Exception as e:
+            self.logger.error(f"Failed to get hardware optimization status: {e}")
+            return {"error": "Hardware manager not available"}
+    
+    def get_memory_optimization_stats(self) -> Dict[str, Any]:
+        """Get memory optimization statistics."""
+        try:
+            return get_memory_stats()
+        except Exception as e:
+            self.logger.error(f"Failed to get memory stats: {e}")
+            return {"error": "Memory stats not available"}
+    
+    @performance_tracked(log_performance=True, track_memory=True)
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Run the step with error handling and outcome generation.
+        Run the step with error handling and outcome generation with hardware optimization.
         
         This is the main entry point called by the launcher.
-        Now includes enhanced artifact management and performance monitoring.
+        Now includes enhanced artifact management, performance monitoring, and hardware optimization.
         
         Args:
             config: Configuration dictionary
@@ -606,6 +703,9 @@ class BaseStep(ABC):
         
         try:
             self.logger.info(f"🚀 Starting execution of {self.step_name}")
+            
+            # Optimize hardware for step execution
+            self.hardware_manager.optimize_for_workload(WorkloadCategory.DATA_PROCESSING)
             
             # Set context from config if available
             symbol = config.get('symbol')
@@ -624,13 +724,15 @@ class BaseStep(ABC):
             execution_time = (datetime.now() - start_time).total_seconds()
             execution_result['execution_time'] = execution_time
             
-            # Add performance metrics
+            # Add performance metrics with hardware stats
             try:
                 performance_metrics = self._get_performance_metrics()
                 memory_analytics = self._get_memory_analytics()
+                hardware_stats = get_memory_stats()
                 
                 execution_result['performance_metrics'] = performance_metrics
                 execution_result['memory_analytics'] = memory_analytics
+                execution_result['hardware_stats'] = hardware_stats
             except Exception as e:
                 self.logger.warning(f"Failed to get performance metrics: {e}")
             
@@ -662,6 +764,9 @@ class BaseStep(ABC):
             }
             
             return failure_result
+        finally:
+            # Force cleanup after step execution
+            force_cleanup()
     
     def _ensure_directory_structure(self) -> None:
         """

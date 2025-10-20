@@ -18,6 +18,12 @@ from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 import warnings
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default
+)
+
 # Import tprint utilities
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
@@ -106,6 +112,10 @@ class FeatureProcessor:
         tprint_success("✅ FeatureProcessor initialized")
         
     @tprint_logged(LogLevel.INFO, include_args=True)
+    @smart_cache(ttl=1800)  # Cache processed features for 30 minutes
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=150.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def process_features(self, 
                         features_df: pd.DataFrame,
                         target: Optional[np.ndarray] = None) -> ProcessedFeatures:

@@ -25,6 +25,15 @@ from .base_trainer import BaseTrainer, TrainingConfig, TrainingResult, Validatio
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+)
 
 
 class TacticianModelType(Enum):
@@ -99,6 +108,14 @@ class TacticianBaseTrainer(BaseTrainer):
         ),
         context="tactician training"
     )
+    @comprehensive_memory_optimization(
+        optimization_level=MemoryOptimizationLevel.AGGRESSIVE,
+        enable_caching=True,
+        enable_chunking=True,
+        enable_gc=True,
+        enable_pools=True
+    )
+    @performance_tracked(log_performance=True, track_memory=True)
     @log_execution_time
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
@@ -339,9 +356,11 @@ class TacticianBaseTrainer(BaseTrainer):
             self.logger.warning(f"Could not extract feature importance: {e}")
             return None
     
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
     async def _create_tactician_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Create Tactician-specific features.
+        Create Tactician-specific features with enhanced optimization.
         
         Args:
             data: Input data
@@ -350,9 +369,13 @@ class TacticianBaseTrainer(BaseTrainer):
             Data with Tactician features
         """
         try:
-            tprint_info("🔧 Creating Tactician features...")
+            tprint_info("🔧 Creating Tactician features with enhanced optimization...")
             
-            feature_data = data.copy()
+            # Use integrated hardware manager for optimized data processing
+            hardware_manager = get_integrated_hardware_manager()
+            feature_data = hardware_manager.process_data_with_optimization(
+                data, WorkloadType.ML_TRAINING
+            )
             
             # Create entry timing features if enabled
             if self.config.enable_entry_timing:
@@ -370,7 +393,7 @@ class TacticianBaseTrainer(BaseTrainer):
                 self._tactician_state['position_sizing_features_created'] = True
             
             self._tactician_state['timing_features_completed'] = True
-            tprint_success(f"✅ Created {feature_data.shape[1]} features")
+            tprint_success(f"✅ Created {feature_data.shape[1]} features with enhanced optimization")
             
             return feature_data
             

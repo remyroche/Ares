@@ -9,6 +9,18 @@ import logging
 import numpy as np
 from typing import Any, List, Callable, Optional
 
+# Enhanced hardware optimization imports
+try:
+    from src.utils.hardware.optimization_decorators import (
+        smart_cache, auto_optimize, memory_efficient, performance_tracked
+    )
+    from src.utils.hardware.memory_optimized_decorators import (
+        memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -40,6 +52,7 @@ def safe_power(x: float, y: float, default: float = 0.0) -> float:
     except Exception:
         return default
 
+@performance_tracked(log_performance=True, track_memory=True) if HARDWARE_OPTIMIZATION_AVAILABLE else lambda x: x
 def validate_finite(value: Any, name: str = "value") -> Any:
     """Validate that a value is finite."""
     try:

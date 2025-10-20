@@ -6,6 +6,14 @@ import numpy as np
 import time
 import threading
 
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    optimize_dataframe_default, optimize_numpy_array_default,
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    get_memory_optimization_stats, force_cleanup,
+    MemoryOptimizationLevel, WorkloadType, get_integrated_hardware_manager
+)
+
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, FeatureResult
 from .optimization_mixin import OptimizationMixin
 from .rolling_operations_mixin import RollingOperationsMixin
@@ -554,26 +562,30 @@ class AutoOptimizedFeatureGenerator(FeatureGenerator,
                 error_message=str(e)
             )
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def _auto_optimize_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply automatic optimization using the configured strategy."""
+        """Apply automatic optimization using enhanced hardware optimizations."""
         try:
             if not self.auto_optimization_config.enable_auto_optimization:
                 self.logger.debug("Auto-optimization disabled, returning original data")
                 return data
 
-            self.logger.debug(f"Applying {self.optimization_strategy.__class__.__name__} optimization, input shape: {data.shape}")
+            self.logger.debug(f"Applying enhanced hardware optimization, input shape: {data.shape}")
 
-            # Use the configured optimization strategy
-            optimized_data = self.optimization_strategy.optimize_data(data, self)
+            # Use enhanced hardware optimization system
+            optimized_data = optimize_dataframe_default(data)
 
-            self.logger.debug(f"Optimization strategy completed, output shape: {optimized_data.shape}")
+            self.logger.debug(f"Enhanced hardware optimization completed, output shape: {optimized_data.shape}")
+
+            # Calculate memory savings
+            original_memory = data.memory_usage(deep=True).sum() / (1024 * 1024)
+            optimized_memory = optimized_data.memory_usage(deep=True).sum() / (1024 * 1024)
+            memory_saved = original_memory - optimized_memory
 
             # Update memory savings stats
-            if hasattr(self, 'get_optimization_stats'):
-                opt_stats = self.get_optimization_stats()
-                memory_saved = opt_stats.get('memory_saved_mb', 0.0)
-                with self._stats_lock:
-                    self.auto_optimization_stats['memory_savings_mb'] += memory_saved
+            with self._stats_lock:
+                self.auto_optimization_stats['memory_savings_mb'] += memory_saved
                 self.logger.debug(f"Memory saved this optimization: {memory_saved:.2f}MB")
 
             if self.auto_optimization_config.enable_optimization_logging:

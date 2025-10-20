@@ -26,18 +26,18 @@ from ..logger import get_logger
 from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
 from .pareto import Solution, ParetoFront, compute_pareto_front
 
-# Hardware optimization imports
+# Enhanced hardware optimization imports
 try:
-    from ...hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel
-    from ...matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
-    from ...matrix_operations.batch_operations import BatchMatrixProcessor
+    from ...hardware import (
+        get_integrated_hardware_manager, get_comprehensive_optimizer,
+        m1_optimized, memory_optimized, auto_optimize, smart_cache,
+        performance_tracked, optimize_dataframe, optimize_array,
+        process_ml_training_data, WorkloadCategory, OptimizationStrategy
+    )
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Hardware optimization not available: {e}")
+    logging.warning(f"Enhanced hardware optimization not available: {e}")
     HARDWARE_OPTIMIZATION_AVAILABLE = False
-    UnifiedHardwareManager = None
-    HardwareOptimizedMatrixProcessor = None
-    BatchMatrixProcessor = None
 
 # VectorBT optimization imports
 try:
@@ -378,6 +378,8 @@ class BayesianTPEOptimizer:
             self.vectorbt_rolling_optimizer = None
             self.enhanced_vectorization_manager = None
 
+    @performance_tracked(log_performance=True, track_memory=True)
+    @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
     def optimize(self, objective: Callable, search_space: Dict[str, Any],
                 **kwargs) -> Dict[str, Any]:
         """

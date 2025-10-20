@@ -12,6 +12,17 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from concurrent.futures import ThreadPoolExecutor
 import logging
 
+# Enhanced hardware optimization imports
+try:
+    from ...hardware import (
+        get_integrated_hardware_manager, m1_optimized, memory_optimized,
+        auto_optimize, smart_cache, performance_tracked, optimize_dataframe,
+        optimize_array, process_ml_training_data, WorkloadCategory
+    )
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 try:
     import torch
     TORCH_AVAILABLE = True
@@ -106,6 +117,8 @@ class MatrixCrossValidator:
 
         logger.info("🚀 VectorBT configured for cross-validation optimization")
 
+    @performance_tracked(log_performance=True, track_memory=True)
+    @memory_optimized(optimization_level='aggressive')
     def cross_validate(self, X: Union[np.ndarray, pd.DataFrame],
                       y: Union[np.ndarray, pd.Series],
                       model_class: Any,

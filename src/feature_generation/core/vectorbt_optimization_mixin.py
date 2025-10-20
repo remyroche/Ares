@@ -18,6 +18,14 @@ from typing import Any, Dict, List, Optional, Union
 from functools import wraps
 import time
 
+# Enhanced hardware optimization imports
+from src.utils.hardware import (
+    optimize_dataframe_default, optimize_numpy_array_default,
+    memory_optimized, gc_optimized, auto_optimize, performance_tracked,
+    get_memory_optimization_stats, force_cleanup,
+    MemoryOptimizationLevel, WorkloadType, get_integrated_hardware_manager
+)
+
 # VectorBT imports
 try:
     import vectorbt as vbt
@@ -552,29 +560,46 @@ class VectorBTOptimizationMixin:
             logger.warning(f"Optimized rolling operation failed: {e}, using fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
 
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
+    @performance_tracked
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for VectorBT processing."""
+        """Optimize DataFrame for VectorBT processing using enhanced hardware optimizations."""
         if not self._should_use_vectorbt(data):
             return data
 
-        # Convert to appropriate dtypes for VectorBT
-        optimized_data = data.copy()
-
-        for column in optimized_data.columns:
-            if optimized_data[column].dtype == 'object':
+        try:
+            # Use enhanced hardware optimization system
+            optimized_data = optimize_dataframe_default(data)
+            
+            # Ensure index is datetime for time series operations
+            if not isinstance(optimized_data.index, pd.DatetimeIndex):
                 try:
-                    optimized_data[column] = pd.to_numeric(optimized_data[column])
+                    optimized_data.index = pd.to_datetime(optimized_data.index)
                 except (ValueError, TypeError):
                     pass
 
-        # Ensure index is datetime for time series operations
-        if not isinstance(optimized_data.index, pd.DatetimeIndex):
-            try:
-                optimized_data.index = pd.to_datetime(optimized_data.index)
-            except (ValueError, TypeError):
-                pass
+            return optimized_data
+            
+        except Exception as e:
+            self.logger.warning(f"Enhanced VectorBT optimization failed: {e}, using fallback")
+            # Fallback to basic optimization
+            optimized_data = data.copy()
 
-        return optimized_data
+            for column in optimized_data.columns:
+                if optimized_data[column].dtype == 'object':
+                    try:
+                        optimized_data[column] = pd.to_numeric(optimized_data[column])
+                    except (ValueError, TypeError):
+                        pass
+
+            # Ensure index is datetime for time series operations
+            if not isinstance(optimized_data.index, pd.DatetimeIndex):
+                try:
+                    optimized_data.index = pd.to_datetime(optimized_data.index)
+                except (ValueError, TypeError):
+                    pass
+
+            return optimized_data
 
 def vectorbt_optimized(func):
     """Decorator to automatically optimize functions with VectorBT."""

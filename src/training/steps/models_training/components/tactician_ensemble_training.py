@@ -29,6 +29,15 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware.integrated_hardware_manager import (
+    get_integrated_hardware_manager, WorkloadType, process_ml_training_data
+)
+from src.utils.hardware.optimization_decorators import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked
+)
+from src.utils.hardware.memory_optimized_decorators import (
+    memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
+)
 
 
 @dataclass

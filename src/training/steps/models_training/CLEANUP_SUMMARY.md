@@ -97,7 +97,7 @@ src/training/steps/models_training/
 │   ├── base_trainer.py                     # Abstract base trainer
 │   ├── model_trainer.py                    # Individual model training
 │   ├── ensemble_trainer.py                 # Ensemble training
-│   └── pipeline_orchestrator.py            # Pipeline orchestration
+│   └── pipeline_orchestrator.py            # [DEPRECATED] Pipeline orchestration - DELETED
 ├── components/                              # 🆕 Modular components
 │   ├── analyst_ensemble_training_modular.py
 │   ├── analyst_models_training_modular.py

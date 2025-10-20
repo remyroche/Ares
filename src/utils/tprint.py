@@ -37,6 +37,12 @@ from enum import Enum
 import functools
 import io
 
+# Import enhanced hardware optimization tools
+from .hardware import (
+    memory_optimized, m1_optimized, memory_efficient_function,
+    gc_optimized_function, force_cleanup, get_memory_stats
+)
+
 # Try to import colorama for colored output
 try:
     from colorama import Fore, Back, Style, init
@@ -245,8 +251,9 @@ class TPrintConfig:
     })
 
 class TPrintManager:
-    """Manager for tprint functionality."""
+    """Manager for tprint functionality with hardware optimization."""
 
+    @memory_optimized(optimization_level='balanced')
     def __init__(self, config: Optional[TPrintConfig] = None):
         self.config = config or TPrintConfig()
         # Minimal mode to reduce overhead in hot loops: set env TPRINT_MINIMAL=1
@@ -324,8 +331,9 @@ class TPrintManager:
 
                     self.logger.setLevel(logging.DEBUG)
 
+    @memory_efficient_function
     def _get_timestamp(self) -> str:
-        """Get formatted timestamp with caching."""
+        """Get formatted timestamp with caching and memory optimization."""
         if not self.config.cache_timestamps:
             return self._format_timestamp()
 
@@ -388,8 +396,9 @@ class TPrintManager:
         color = self.config.colors.get(level, "")
         return f"{color}{message}{Style.RESET_ALL}"
 
+    @memory_efficient_function
     def _write_to_outputs(self, message: str, level: LogLevel, **kwargs):
-        """Write message to configured outputs."""
+        """Write message to configured outputs with memory optimization."""
         # Fast path for minimal mode
         if getattr(self, 'minimal_mode', False):
             try:
@@ -585,11 +594,16 @@ class TPrintManager:
                 # Silently handle logger errors
                 pass
 
+    @gc_optimized_function
     def close(self):
-        """Close file handles and cleanup."""
+        """Close file handles and cleanup with garbage collection optimization."""
         if self._file_handle:
             self._file_handle.close()
             self._file_handle = None
+        
+        # Force cleanup of cached data
+        self._timestamp_cache.clear()
+        force_cleanup()
 
 # Global manager instance
 _global_manager = TPrintManager()

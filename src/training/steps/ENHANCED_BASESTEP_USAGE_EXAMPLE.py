@@ -113,6 +113,19 @@ class ExampleEnhancedStep(BaseStep):
             if retrieved_data is not None:
                 self.logger.info(f"✅ Successfully retrieved data: {retrieved_data.shape}")
             
+            # 9. Demonstrate different fallback levels
+            self.logger.info("🔄 Testing different fallback levels...")
+            
+            # Test primary (step-category) retrieval
+            primary_data = self._load_dataframe('processed_data')
+            if primary_data is not None:
+                self.logger.info("✅ Primary fallback (step-category) successful")
+            
+            # Test generic search (without model/direction)
+            generic_data = self._load_dataframe('some_other_data')
+            if generic_data is not None:
+                self.logger.info("✅ Generic search fallback successful")
+            
             return {
                 'success': True,
                 'artifacts': ['processed_data', 'sample_model', 'execution_metadata'],

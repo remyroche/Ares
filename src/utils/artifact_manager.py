@@ -632,10 +632,10 @@ class ArtifactManager:
 		Retrieve an artifact using multiple fallback mechanisms for backward compatibility.
 		
 		This method implements a comprehensive fallback strategy:
-		1. Try step-category structure (artifacts/STEP-CATEGORY/)
-		2. Try general artifacts/ directory search
-		3. Try with model type and direction variations
-		4. Try fuzzy matching for similar names
+		1. Primary: Step-category structure (artifacts/STEP-CATEGORY/)
+		2. Fallback 1: General artifacts directory search
+		3. Fallback 2: Without model type and direction variations
+		4. Fallback 3: Fuzzy matching for similar names
 		
 		Args:
 			artifact_name: Name of the artifact to retrieve
@@ -663,11 +663,11 @@ class ArtifactManager:
 				self._log_file_operation("Retrieved artifact from fallback 1", fallback_path, success=True)
 				return data
 			
-			# Fallback 2: Search with model type and direction variations
-			variation_path = self._find_artifact_with_variations(artifact_name, artifact_type)
-			if variation_path and variation_path.exists():
-				data = self._load_artifact_from_path(variation_path)
-				self._log_file_operation("Retrieved artifact from variations", variation_path, success=True)
+			# Fallback 2: Search without model type and direction variations
+			generic_path = self._find_artifact_generic(artifact_name, artifact_type)
+			if generic_path and generic_path.exists():
+				data = self._load_artifact_from_path(generic_path)
+				self._log_file_operation("Retrieved artifact from generic search", generic_path, success=True)
 				return data
 			
 			# Fallback 3: Search in all subdirectories with fuzzy matching
@@ -803,38 +803,46 @@ class ArtifactManager:
 		except Exception:
 			return False
 	
-	def _find_artifact_with_variations(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
-		"""Find artifact with model type and direction variations."""
+	def _find_artifact_generic(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+		"""Find artifact without model type and direction variations (generic search)."""
 		try:
 			if not self._artifacts_dir.exists():
 				return None
 			
-			# Define variations to try
-			model_variations = ["Analyst", "Tactician", "analyst", "tactician", ""]
-			direction_variations = ["long", "short", "Long", "Short", ""]
+			# Search patterns that don't include model/direction context
+			search_patterns = [
+				f"*{artifact_name}*",
+				f"*{artifact_name}*.parquet",
+				f"*{artifact_name}*.csv",
+				f"*{artifact_name}*.pkl",
+				f"*{artifact_name}*.json",
+			]
 			
-			# Try different combinations
-			for model in model_variations:
-				for direction in direction_variations:
-					# Create search pattern with variations
-					pattern_parts = [artifact_name]
-					if model:
-						pattern_parts.append(model)
-					if direction:
-						pattern_parts.append(direction)
-					
-					# Try different separators
-					for separator in ["_", "-", ""]:
-						search_pattern = separator.join(pattern_parts)
-						
-						# Search for files matching this pattern
-						for file_path in self._artifacts_dir.rglob(f"*{search_pattern}*"):
-							if file_path.is_file():
+			# Search with multiple patterns
+			for pattern in search_patterns:
+				for file_path in self._artifacts_dir.rglob(pattern):
+					if file_path.is_file():
+						# Check if the filename actually contains the artifact name
+						if artifact_name.lower() in file_path.name.lower():
+							# Additional check: ensure it doesn't have model/direction in the name
+							filename_lower = file_path.name.lower()
+							has_model = any(model in filename_lower for model in ['analyst', 'tactician'])
+							has_direction = any(direction in filename_lower for direction in ['long', 'short'])
+							
+							# Prefer files without model/direction context
+							if not has_model and not has_direction:
 								return file_path
+			
+			# If no generic files found, try any file with the artifact name
+			for pattern in search_patterns:
+				for file_path in self._artifacts_dir.rglob(pattern):
+					if file_path.is_file():
+						if artifact_name.lower() in file_path.name.lower():
+							return file_path
 			
 			return None
 		except Exception as e:
-			self.logger.warning(f"Failed to search with variations: {e}")
+			self.logger.warning(f"Failed to search generically: {e}")
 			return None
 	
 	def _load_artifact_from_path(self, path: Path) -> Any:

@@ -257,9 +257,10 @@ class BaseStep(ABC):
         Retrieve an artifact using multiple fallback mechanisms for backward compatibility.
         
         This method implements a comprehensive fallback strategy:
-        1. Try to find in step-category structure (artifacts/STEP-CATEGORY/)
-        2. Try to find in general artifacts/ directory
-        3. Try to find with full name except model type and short/long variations
+        1. Primary: Step-category structure (artifacts/STEP-CATEGORY/)
+        2. Fallback 1: General artifacts directory search
+        3. Fallback 2: Without model type and direction variations (generic search)
+        4. Fallback 3: Fuzzy matching for similar names
         
         Args:
             artifact_name: Name of the artifact to retrieve
@@ -284,13 +285,13 @@ class BaseStep(ABC):
                 self.logger.info(f"✅ Retrieved artifact from fallback 1: {artifact_name}")
                 return data
             
-            # Fallback 2: Try with model type variations
+            # Fallback 2: Try without model type and direction variations
             data = self._get_artifact_fallback_2(artifact_name, artifact_type)
             if data is not None:
                 self.logger.info(f"✅ Retrieved artifact from fallback 2: {artifact_name}")
                 return data
             
-            # Fallback 3: Try with short/long variations
+            # Fallback 3: Try fuzzy matching for similar names
             data = self._get_artifact_fallback_3(artifact_name, artifact_type)
             if data is not None:
                 self.logger.info(f"✅ Retrieved artifact from fallback 3: {artifact_name}")
@@ -338,7 +339,10 @@ class BaseStep(ABC):
     
     def _get_artifact_fallback_2(self, artifact_name: str, artifact_type: str) -> Any:
         """
-        Fallback 2: Try with model type variations (Analyst/Tactician).
+        Fallback 2: Try without model type and direction variations.
+        
+        This searches for artifacts without the current model type and direction
+        in the filename, providing a more generic search.
         
         Args:
             artifact_name: Name of the artifact to retrieve
@@ -348,24 +352,32 @@ class BaseStep(ABC):
             Retrieved data or None if not found
         """
         try:
-            # Try different model type variations
-            model_variations = ["Analyst", "Tactician", "analyst", "tactician"]
+            # Clear model and direction context for generic search
+            original_model = self.artifact_manager._current_model
+            original_direction = self.artifact_manager._current_direction
             
-            for model in model_variations:
-                # Set context with different model
-                original_model = self.artifact_manager._current_model
-                self.artifact_manager._current_model = model
+            # Set generic context (no model, no direction)
+            self.artifact_manager._current_model = ""
+            self.artifact_manager._current_direction = ""
+            
+            try:
+                # Search with generic context
+                data = self.artifact_manager.get_artifact(
+                    artifact_name=artifact_name,
+                    artifact_type=artifact_type
+                )
+                if data is not None:
+                    return data
                 
-                try:
-                    data = self.artifact_manager.get_artifact(
-                        artifact_name=artifact_name,
-                        artifact_type=artifact_type
-                    )
-                    if data is not None:
-                        return data
-                finally:
-                    # Restore original model
-                    self.artifact_manager._current_model = original_model
+                # Also try searching with just the artifact name in different locations
+                data = self._search_generic_artifact(artifact_name, artifact_type)
+                if data is not None:
+                    return data
+                
+            finally:
+                # Restore original context
+                self.artifact_manager._current_model = original_model
+                self.artifact_manager._current_direction = original_direction
             
             return None
         except Exception as e:
@@ -374,7 +386,10 @@ class BaseStep(ABC):
     
     def _get_artifact_fallback_3(self, artifact_name: str, artifact_type: str) -> Any:
         """
-        Fallback 3: Try with short/long direction variations.
+        Fallback 3: Try fuzzy matching for similar names.
+        
+        This searches for artifacts with similar names using fuzzy matching
+        across all directories.
         
         Args:
             artifact_name: Name of the artifact to retrieve
@@ -384,28 +399,59 @@ class BaseStep(ABC):
             Retrieved data or None if not found
         """
         try:
-            # Try different direction variations
-            direction_variations = ["long", "short", "Long", "Short"]
-            
-            for direction in direction_variations:
-                # Set context with different direction
-                original_direction = self.artifact_manager._current_direction
-                self.artifact_manager._current_direction = direction
-                
-                try:
-                    data = self.artifact_manager.get_artifact(
-                        artifact_name=artifact_name,
-                        artifact_type=artifact_type
-                    )
-                    if data is not None:
-                        return data
-                finally:
-                    # Restore original direction
-                    self.artifact_manager._current_direction = original_direction
+            # Use the artifact manager's fuzzy search
+            data = self.artifact_manager._find_artifact_fuzzy(artifact_name, artifact_type)
+            if data is not None:
+                return self.artifact_manager._load_artifact_from_path(data)
             
             return None
         except Exception as e:
             self.logger.debug(f"Fallback 3 failed for {artifact_name}: {e}")
+            return None
+    
+    def _search_generic_artifact(self, artifact_name: str, artifact_type: str) -> Any:
+        """
+        Search for artifact with generic naming (no model/direction context).
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+        """
+        try:
+            # Search in artifacts directory with generic patterns
+            artifacts_dir = self.artifact_manager._artifacts_dir
+            if not artifacts_dir.exists():
+                return None
+            
+            # Search patterns that don't include model/direction
+            search_patterns = [
+                f"*{artifact_name}*",
+                f"*{artifact_name}*.parquet",
+                f"*{artifact_name}*.csv",
+                f"*{artifact_name}*.pkl",
+                f"*{artifact_name}*.json",
+            ]
+            
+            for pattern in search_patterns:
+                for file_path in artifacts_dir.rglob(pattern):
+                    if file_path.is_file():
+                        # Check if filename contains the artifact name
+                        if artifact_name.lower() in file_path.name.lower():
+                            # Additional check: ensure it doesn't have model/direction in the name
+                            filename_lower = file_path.name.lower()
+                            has_model = any(model in filename_lower for model in ['analyst', 'tactician'])
+                            has_direction = any(direction in filename_lower for direction in ['long', 'short'])
+                            
+                            # Prefer files without model/direction context
+                            if not has_model and not has_direction:
+                                return self.artifact_manager._load_artifact_from_path(file_path)
+            
+            return None
+        except Exception as e:
+            self.logger.debug(f"Generic search failed for {artifact_name}: {e}")
             return None
     
     def _set_context(self, symbol: Optional[str] = None, exchange: Optional[str] = None, 

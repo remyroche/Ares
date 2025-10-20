@@ -32,9 +32,8 @@ The system implements a comprehensive fallback strategy for data retrieval:
 
 1. **Primary**: Step-category structure (`artifacts/STEP-CATEGORY/`)
 2. **Fallback 1**: General artifacts directory search
-3. **Fallback 2**: Model type variations (Analyst/Tactician)
-4. **Fallback 3**: Direction variations (long/short)
-5. **Fallback 4**: Fuzzy matching for similar names
+3. **Fallback 2**: Without model type and direction variations (generic search)
+4. **Fallback 3**: Fuzzy matching for similar names
 
 ### 3. Enhanced Artifact Management
 

@@ -42,10 +42,48 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from .adaptive_optimization_engine import (
-    LearningAlgorithm, OptimizationTarget, PerformanceMetrics, OptimizationSettings,
-    LearningModel, AdaptiveOptimizationEngine as BaseAdaptiveOptimizationEngine
-)
+# Define the classes locally to avoid circular import
+class LearningAlgorithm(Enum):
+    """Learning algorithms for adaptive optimization."""
+    GRADIENT_DESCENT = "gradient_descent"
+    ADAM = "adam"
+    RMSPROP = "rmsprop"
+    MOMENTUM = "momentum"
+
+class OptimizationTarget(Enum):
+    """Optimization targets."""
+    PERFORMANCE = "performance"
+    MEMORY = "memory"
+    ENERGY = "energy"
+    BALANCED = "balanced"
+
+@dataclass
+class PerformanceMetrics:
+    """Performance metrics for optimization."""
+    execution_time: float = 0.0
+    memory_usage: float = 0.0
+    cpu_usage: float = 0.0
+    gpu_usage: float = 0.0
+    accuracy: float = 0.0
+    throughput: float = 0.0
+
+@dataclass
+class OptimizationSettings:
+    """Settings for optimization."""
+    learning_rate: float = 0.01
+    batch_size: int = 32
+    epochs: int = 100
+    patience: int = 10
+
+class LearningModel:
+    """Base learning model."""
+    def __init__(self):
+        pass
+
+class BaseAdaptiveOptimizationEngine:
+    """Base adaptive optimization engine."""
+    def __init__(self):
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -284,19 +322,22 @@ class NeuralNetworkOptimizer:
             target: [] for target in OptimizationTarget
         }
     
-    def _create_model(self, target: OptimizationTarget) -> nn.Module:
+    def _create_model(self, target: OptimizationTarget):
         """Create neural network model for optimization target."""
-        class OptimizationNet(nn.Module):
+        if not TORCH_AVAILABLE:
+            return None
+            
+        class OptimizationNet(torch.nn.Module):
             def __init__(self, input_size=15, hidden_size=64, output_size=1):
                 super().__init__()
-                self.network = nn.Sequential(
-                    nn.Linear(input_size, hidden_size),
-                    nn.ReLU(),
-                    nn.Dropout(0.2),
-                    nn.Linear(hidden_size, hidden_size // 2),
-                    nn.ReLU(),
-                    nn.Dropout(0.2),
-                    nn.Linear(hidden_size // 2, output_size)
+                self.network = torch.nn.Sequential(
+                    torch.nn.Linear(input_size, hidden_size),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(0.2),
+                    torch.nn.Linear(hidden_size, hidden_size // 2),
+                    torch.nn.ReLU(),
+                    torch.nn.Dropout(0.2),
+                    torch.nn.Linear(hidden_size // 2, output_size)
                 )
             
             def forward(self, x):
@@ -337,7 +378,7 @@ class NeuralNetworkOptimizer:
             
             model = self.models[target]
             optimizer = self.optimizers[target]
-            criterion = nn.MSELoss()
+            criterion = torch.nn.MSELoss()
             
             # Training loop
             model.train()

@@ -60,6 +60,9 @@ class OptimizationConfig:
     optimize_outputs: bool = True
     auto_convert_dataframes: bool = True
     auto_convert_arrays: bool = True
+    
+    # Compression
+    enable_compression: bool = False
 
 def smart_cache(
     ttl: Optional[float] = None,
@@ -574,6 +577,37 @@ def clear_optimization_cache():
     cache = get_global_cache()
     cache.clear()
     tprint_info("Optimization cache cleared")
+
+def auto_optimize(optimize_inputs: bool = True, optimize_outputs: bool = True, 
+                 optimization_level: OptimizationLevel = OptimizationLevel.AGGRESSIVE):
+    """
+    Automatically optimize function inputs and outputs.
+    
+    Args:
+        optimize_inputs: Whether to optimize function inputs
+        optimize_outputs: Whether to optimize function outputs
+        optimization_level: Level of optimization to apply
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Optimize inputs if requested
+            if optimize_inputs:
+                args, kwargs = _optimize_inputs_enhanced(args, kwargs)
+            
+            # Execute function
+            result = func(*args, **kwargs)
+            
+            # Optimize outputs if requested
+            if optimize_outputs:
+                result = _optimize_output_enhanced(result)
+            
+            return result
+        return wrapper
+    return decorator
 
 def _optimize_inputs_enhanced(args: tuple, kwargs: dict) -> tuple:
     """Enhanced input optimization with advanced features."""

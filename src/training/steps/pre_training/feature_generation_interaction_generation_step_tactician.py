@@ -80,10 +80,8 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
     filtering enabled by default for Tactician mode. Uses M1 hardware acceleration,
     chunked processing, memory optimization, and VectorBT integration."""
 
-    def __init__(self, name: str = "interaction_generation_step_tactician",
-                 config: Optional[Dict[str, Any]] = None,
-                 logger: Optional[logging.Logger] = None):
-        super().__init__(name, config or {}, logger)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        super().__init__("feature_generation_interaction_generation_step_tactician", config)
         
         # Initialize M1 hardware optimizers
         tprint("🧠 Initializing M1 hardware optimizers...")

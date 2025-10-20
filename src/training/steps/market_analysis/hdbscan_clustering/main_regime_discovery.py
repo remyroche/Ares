@@ -242,6 +242,13 @@ class HDBSCANRegimeDiscovery:
                 'cluster_sizes': optimized_result.cluster_sizes
             }
             
+            # Enhanced validation if enabled
+            if self.config.enable_validation:
+                validation_result = self._perform_enhanced_validation(
+                    data, optimized_result.cluster_labels, economic_validator
+                )
+                validation_metrics.update(validation_result)
+            
             return RegimeResult(
                 labels=optimized_result.cluster_labels,
                 probabilities=optimized_result.cluster_probabilities,
@@ -695,3 +702,242 @@ class HDBSCANRegimeDiscovery:
             tprint_info(f"🔧 Hardware optimized for {workload_type.value} workload ({optimization_level.value})")
         else:
             tprint_warning("⚠️ Hardware manager not available for optimization")
+    
+    def _perform_enhanced_validation(self, 
+                                   market_data: pd.DataFrame,
+                                   regime_labels: np.ndarray,
+                                   economic_validator: Any) -> Dict[str, Any]:
+        """Perform enhanced validation of regime discovery results."""
+        try:
+            logger.info("🔍 Performing enhanced validation")
+            
+            # Use the enhanced validation from economic_validator
+            validation_result = economic_validator.validate_regime_quality(
+                market_data, regime_labels
+            )
+            
+            # Extract key metrics
+            enhanced_metrics = {
+                'regime_quality_score': validation_result.get('overall_score', 0.0),
+                'regime_profiling_valid': validation_result.get('regime_profiling', {}).get('is_valid', False),
+                'statistical_analysis_valid': validation_result.get('statistical_analysis', {}).get('is_valid', False),
+                'economic_validation_valid': validation_result.get('economic_validation', {}).get('is_valid', False),
+                'cross_validation_score': validation_result.get('cross_validation', {}).get('mean_cv_score', 0.0),
+                'regime_stability': validation_result.get('regime_profiling', {}).get('regime_stability', 0.0),
+                'regime_transitions': validation_result.get('regime_profiling', {}).get('regime_transitions', 0),
+                'validation_issues': validation_result.get('regime_profiling', {}).get('issues', [])
+            }
+            
+            logger.info(f"✅ Enhanced validation completed. Quality score: {enhanced_metrics['regime_quality_score']:.3f}")
+            return enhanced_metrics
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced validation failed: {e}")
+            return {
+                'regime_quality_score': 0.0,
+                'validation_error': str(e)
+            }
+    
+    def enhanced_predict_with_uncertainty(self, 
+                                        market_data: pd.DataFrame,
+                                        use_optimized: bool = True) -> Dict[str, Any]:
+        """
+        Enhanced prediction with uncertainty quantification.
+        
+        Args:
+            market_data: Market data for prediction
+            use_optimized: Whether to use optimized components
+            
+        Returns:
+            Dictionary with predictions and uncertainty measures
+        """
+        try:
+            logger.info("🔮 Starting enhanced prediction with uncertainty")
+            
+            if not self.is_fitted:
+                raise ValueError("Model must be fitted before making predictions")
+            
+            # Extract features
+            features = self.regime_feature_extractor.extract_features(market_data)
+            
+            # Process features
+            processed_result = self.feature_processor.process_features(features)
+            processed_features = processed_result.processed_features
+            
+            # Reduce dimensionality
+            dr_result = self.dimensionality_reducer.reduce(processed_features)
+            reduced_features = dr_result.reduced_features
+            
+            # Get enhanced prediction
+            if use_optimized and hasattr(self.optimized_discovery, 'enhanced_predict_with_uncertainty'):
+                prediction_result = self.optimized_discovery.enhanced_predict_with_uncertainty(reduced_features)
+            else:
+                # Use legacy clusterer with enhanced prediction
+                prediction_result = self.hdbscan_clusterer.enhanced_predict_with_uncertainty(reduced_features)
+            
+            if prediction_result.get('success', False):
+                # Economic analysis for predictions
+                economic_result = self.economic_validator.validate_and_profile(
+                    market_data, prediction_result['labels']
+                )
+                
+                return {
+                    'labels': prediction_result['labels'],
+                    'probabilities': prediction_result['probabilities'],
+                    'uncertainty_measures': prediction_result.get('uncertainty_measures', {}),
+                    'method_breakdown': prediction_result.get('method_breakdown', {}),
+                    'economic_profiles': economic_result.get('regime_profiles', []),
+                    'trading_recommendations': economic_result.get('trading_recommendations', {}),
+                    'success': True
+                }
+            else:
+                raise Exception(f"Enhanced prediction failed: {prediction_result.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            logger.error(f"❌ Enhanced prediction failed: {e}")
+            return {'error': str(e), 'success': False}
+    
+    def save_model(self, filepath: str) -> bool:
+        """Save the complete regime discovery model."""
+        try:
+            logger.info(f"💾 Saving model to {filepath}")
+            
+            # Save individual components
+            component_paths = {}
+            
+            # Save HDBSCAN clusterer
+            if hasattr(self.hdbscan_clusterer, 'save_model'):
+                clusterer_path = f"{filepath}_clusterer.pkl"
+                if self.hdbscan_clusterer.save_model(clusterer_path):
+                    component_paths['clusterer'] = clusterer_path
+            
+            # Save other components if they have save methods
+            for name, component in [
+                ('feature_extractor', self.regime_feature_extractor),
+                ('feature_processor', self.feature_processor),
+                ('dimensionality_reducer', self.dimensionality_reducer),
+                ('economic_validator', self.economic_validator),
+                ('temporal_stabilizer', self.temporal_stabilizer)
+            ]:
+                if hasattr(component, 'save_model'):
+                    comp_path = f"{filepath}_{name}.pkl"
+                    if component.save_model(comp_path):
+                        component_paths[name] = comp_path
+            
+            # Save main model metadata
+            model_data = {
+                'config': self.config,
+                'component_paths': component_paths,
+                'is_fitted': self.is_fitted,
+                'model_metadata': {
+                    'created_at': time.time(),
+                    'version': '1.0.0'
+                }
+            }
+            
+            import pickle
+            with open(filepath, 'wb') as f:
+                pickle.dump(model_data, f)
+            
+            logger.info("✅ Model saved successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Model saving failed: {e}")
+            return False
+    
+    def load_model(self, filepath: str) -> bool:
+        """Load a complete regime discovery model."""
+        try:
+            logger.info(f"📂 Loading model from {filepath}")
+            
+            import pickle
+            with open(filepath, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            # Load configuration
+            self.config = model_data['config']
+            
+            # Load individual components
+            component_paths = model_data.get('component_paths', {})
+            
+            for name, comp_path in component_paths.items():
+                try:
+                    if name == 'clusterer' and hasattr(self.hdbscan_clusterer, 'load_model'):
+                        self.hdbscan_clusterer.load_model(comp_path)
+                    elif name == 'feature_extractor' and hasattr(self.regime_feature_extractor, 'load_model'):
+                        self.regime_feature_extractor.load_model(comp_path)
+                    elif name == 'feature_processor' and hasattr(self.feature_processor, 'load_model'):
+                        self.feature_processor.load_model(comp_path)
+                    elif name == 'dimensionality_reducer' and hasattr(self.dimensionality_reducer, 'load_model'):
+                        self.dimensionality_reducer.load_model(comp_path)
+                    elif name == 'economic_validator' and hasattr(self.economic_validator, 'load_model'):
+                        self.economic_validator.load_model(comp_path)
+                    elif name == 'temporal_stabilizer' and hasattr(self.temporal_stabilizer, 'load_model'):
+                        self.temporal_stabilizer.load_model(comp_path)
+                except Exception as e:
+                    logger.warning(f"Failed to load component {name}: {e}")
+            
+            self.is_fitted = model_data.get('is_fitted', False)
+            
+            logger.info("✅ Model loaded successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Model loading failed: {e}")
+            return False
+    
+    def generate_enhanced_report(self) -> str:
+        """Generate an enhanced comprehensive report."""
+        try:
+            report = []
+            report.append("=" * 100)
+            report.append("ENHANCED HDBSCAN REGIME DISCOVERY SYSTEM - COMPREHENSIVE REPORT")
+            report.append("=" * 100)
+            report.append("")
+            
+            # System status
+            report.append("SYSTEM STATUS:")
+            report.append(f"  Fitted: {self.is_fitted}")
+            report.append(f"  Use Optimized: {self.use_optimized}")
+            report.append(f"  Enable Validation: {self.config.enable_validation}")
+            report.append("")
+            
+            # Configuration
+            report.append("CONFIGURATION:")
+            report.append(f"  Feature Extraction: {self.config.feature_extraction_config.__class__.__name__}")
+            report.append(f"  Feature Processing: {self.config.feature_processing_config.__class__.__name__}")
+            report.append(f"  Dimensionality Reduction: {self.config.dimensionality_reduction_config.__class__.__name__}")
+            report.append(f"  HDBSCAN Clustering: {self.config.hdbscan_config.__class__.__name__}")
+            report.append(f"  Economic Validation: {self.config.economic_validation_config.__class__.__name__}")
+            report.append(f"  Temporal Stabilization: {self.config.temporal_stabilization_config.__class__.__name__}")
+            report.append("")
+            
+            # Enhanced features
+            report.append("ENHANCED FEATURES:")
+            report.append("  ✅ Advanced Probability Calculation")
+            report.append("  ✅ Model Persistence")
+            report.append("  ✅ Uncertainty Quantification")
+            report.append("  ✅ Enhanced Validation")
+            report.append("  ✅ Improved Error Handling")
+            report.append("")
+            
+            # Recommendations
+            report.append("RECOMMENDATIONS:")
+            if self.is_fitted:
+                report.append("  - System is ready for production use")
+                report.append("  - Consider real-time implementation")
+                report.append("  - Add monitoring and alerting")
+            else:
+                report.append("  - Run fit() method to train the system")
+                report.append("  - Use enhanced_predict_with_uncertainty() for predictions")
+                report.append("  - Save model after training for future use")
+            
+            report.append("")
+            report.append("=" * 100)
+            
+            return "\n".join(report)
+            
+        except Exception as e:
+            logger.error(f"❌ Report generation failed: {e}")
+            return f"Report generation failed: {e}"

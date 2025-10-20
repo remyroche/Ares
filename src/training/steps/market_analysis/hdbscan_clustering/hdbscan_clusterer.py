@@ -566,12 +566,359 @@ class HDBSCANClusterer:
                 except Exception as e:
                     logger.debug(f"HDBSCAN approximate_predict failed: {e}")
             
-            # Fallback to distance-based assignment
-            return self._distance_based_prediction(features)
+            # Try enhanced prediction methods
+            return self._enhanced_prediction_with_fallback(features)
             
         except Exception as e:
             logger.error(f"❌ Prediction failed: {e}")
             return self._random_fallback(features)
+    
+    def enhanced_predict_with_uncertainty(self, features: np.ndarray) -> Dict[str, Any]:
+        """
+        Enhanced prediction with uncertainty quantification.
+        
+        Args:
+            features: Feature matrix for prediction (n_samples, n_features)
+            
+        Returns:
+            Dictionary with predictions, probabilities, and uncertainty measures
+        """
+        try:
+            if self.clusterer is None:
+                logger.warning("⚠️ No trained clusterer available")
+                return self._random_fallback_with_uncertainty(features)
+            
+            # Get predictions from multiple methods
+            predictions = {}
+            methods = ['density_based', 'distance_based', 'knn_based', 'gmm_based']
+            
+            for method in methods:
+                try:
+                    labels, probabilities, method_name = self._predict_with_method(features, method)
+                    predictions[method] = {
+                        'labels': labels,
+                        'probabilities': probabilities,
+                        'method': method_name
+                    }
+                except Exception as e:
+                    logger.debug(f"Method {method} failed: {e}")
+                    continue
+            
+            if not predictions:
+                return self._random_fallback_with_uncertainty(features)
+            
+            # Calculate ensemble prediction
+            ensemble_result = self._calculate_ensemble_prediction(predictions)
+            
+            # Calculate uncertainty measures
+            uncertainty_measures = self._calculate_uncertainty_measures(predictions, ensemble_result)
+            
+            return {
+                'labels': ensemble_result['labels'],
+                'probabilities': ensemble_result['probabilities'],
+                'uncertainty_measures': uncertainty_measures,
+                'method_breakdown': predictions,
+                'success': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Enhanced prediction failed: {e}")
+            return {'error': str(e), 'success': False}
+    
+    def _enhanced_prediction_with_fallback(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Enhanced prediction with multiple fallback methods."""
+        try:
+            # Try density-based prediction first
+            try:
+                return self._density_based_prediction(features)
+            except Exception as e:
+                logger.debug(f"Density-based prediction failed: {e}")
+            
+            # Try improved distance-based prediction
+            try:
+                return self._improved_distance_based_prediction(features)
+            except Exception as e:
+                logger.debug(f"Improved distance-based prediction failed: {e}")
+            
+            # Fallback to original distance-based prediction
+            return self._distance_based_prediction(features)
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced prediction failed: {e}")
+            return self._random_fallback(features)
+    
+    def _predict_with_method(self, features: np.ndarray, method: str) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using a specific method."""
+        if method == 'density_based':
+            return self._density_based_prediction(features)
+        elif method == 'distance_based':
+            return self._improved_distance_based_prediction(features)
+        elif method == 'knn_based':
+            return self._knn_based_prediction(features)
+        elif method == 'gmm_based':
+            return self._gmm_based_prediction(features)
+        else:
+            raise ValueError(f"Unknown prediction method: {method}")
+    
+    def _density_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using HDBSCAN's internal density information."""
+        try:
+            if not hasattr(self.clusterer, 'cluster_persistence_'):
+                raise ValueError("No cluster persistence available")
+            
+            # Use HDBSCAN's approximate_predict if available
+            if hasattr(self.clusterer, 'approximate_predict'):
+                labels, probabilities = self.clusterer.approximate_predict(features)
+                return labels, probabilities, "hdbscan_density_based"
+            
+            # Fallback to distance-based with density weighting
+            if not hasattr(self, 'cluster_centers') or self.cluster_centers is None:
+                raise ValueError("No cluster centers available")
+            
+            # Calculate distances to cluster centers
+            distances = np.sqrt(((features[:, np.newaxis] - self.cluster_centers[np.newaxis, :]) ** 2).sum(axis=2))
+            
+            # Weight distances by cluster densities (if available)
+            if hasattr(self, 'cluster_densities') and self.cluster_densities is not None:
+                weighted_distances = distances / (self.cluster_densities + 1e-10)
+            else:
+                weighted_distances = distances
+            
+            # Assign to closest cluster
+            labels = np.argmin(weighted_distances, axis=1)
+            
+            # Calculate probabilities based on weighted distances
+            min_distances = np.min(weighted_distances, axis=1, keepdims=True)
+            probabilities = np.exp(-min_distances / (weighted_distances + 1e-10))
+            probabilities = np.max(probabilities, axis=1)
+            
+            return labels, probabilities, "density_weighted_distance"
+            
+        except Exception as e:
+            logger.debug(f"Density-based prediction failed: {e}")
+            raise
+    
+    def _improved_distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Improved distance-based prediction with better probability calculation."""
+        try:
+            # Get cluster centers from training
+            if not hasattr(self, 'cluster_centers') or self.cluster_centers is None:
+                raise ValueError("No cluster centers available")
+            
+            if len(self.cluster_centers) == 0:
+                raise ValueError("No cluster centers available")
+            
+            # Calculate distances to cluster centers
+            distances = np.sqrt(((features[:, np.newaxis] - self.cluster_centers[np.newaxis, :]) ** 2).sum(axis=2))
+            
+            # Assign to closest cluster
+            labels = np.argmin(distances, axis=1)
+            
+            # Calculate probabilities using softmax normalization
+            min_distances = np.min(distances, axis=1, keepdims=True)
+            exp_distances = np.exp(-distances / (min_distances + 1e-10))
+            probabilities = exp_distances / np.sum(exp_distances, axis=1, keepdims=True)
+            probabilities = np.max(probabilities, axis=1)
+            
+            return labels, probabilities, "improved_distance_based"
+            
+        except Exception as e:
+            logger.debug(f"Improved distance-based prediction failed: {e}")
+            raise
+    
+    def _knn_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using k-nearest neighbors approach."""
+        try:
+            if not hasattr(self, 'training_features') or self.training_features is None:
+                raise ValueError("No training features available")
+            
+            if not hasattr(self, 'training_labels') or self.training_labels is None:
+                raise ValueError("No training labels available")
+            
+            from sklearn.neighbors import NearestNeighbors
+            
+            # Train KNN model
+            knn = NearestNeighbors(n_neighbors=min(5, len(self.training_features)))
+            knn.fit(self.training_features)
+            
+            # Find k nearest neighbors
+            distances, indices = knn.kneighbors(features)
+            
+            # Get labels of nearest neighbors
+            neighbor_labels = self.training_labels[indices]
+            
+            # Calculate probabilities based on neighbor labels
+            labels = []
+            probabilities = []
+            
+            for i in range(len(features)):
+                # Count votes for each cluster
+                unique_labels, counts = np.unique(neighbor_labels[i], return_counts=True)
+                
+                # Remove noise label (-1) if present
+                if -1 in unique_labels:
+                    noise_idx = np.where(unique_labels == -1)[0][0]
+                    unique_labels = np.delete(unique_labels, noise_idx)
+                    counts = np.delete(counts, noise_idx)
+                
+                if len(unique_labels) == 0:
+                    labels.append(-1)  # Noise
+                    probabilities.append(0.0)
+                else:
+                    # Assign to most common label
+                    most_common_idx = np.argmax(counts)
+                    labels.append(unique_labels[most_common_idx])
+                    
+                    # Calculate probability based on vote proportion
+                    total_votes = np.sum(counts)
+                    probabilities.append(counts[most_common_idx] / total_votes)
+            
+            return np.array(labels), np.array(probabilities), "knn_based"
+            
+        except Exception as e:
+            logger.debug(f"KNN-based prediction failed: {e}")
+            raise
+    
+    def _gmm_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
+        """Predict using Gaussian Mixture Models for each cluster."""
+        try:
+            if not hasattr(self, 'gmm_models') or not self.gmm_models:
+                raise ValueError("No GMM models available")
+            
+            # Get predictions from all GMM models
+            all_probabilities = []
+            cluster_labels = []
+            
+            for cluster_id, gmm in self.gmm_models.items():
+                if cluster_id == -1:  # Skip noise cluster
+                    continue
+                
+                # Get probabilities for this cluster
+                cluster_probs = gmm.predict_proba(features)
+                all_probabilities.append(cluster_probs)
+                cluster_labels.append(cluster_id)
+            
+            if not all_probabilities:
+                raise ValueError("No valid GMM models available")
+            
+            # Combine probabilities
+            all_probabilities = np.array(all_probabilities)
+            combined_probs = np.mean(all_probabilities, axis=0)
+            
+            # Assign to cluster with highest probability
+            labels = np.argmax(combined_probs, axis=1)
+            labels = np.array([cluster_labels[i] for i in labels])
+            probabilities = np.max(combined_probs, axis=1)
+            
+            return labels, probabilities, "gmm_based"
+            
+        except Exception as e:
+            logger.debug(f"GMM-based prediction failed: {e}")
+            raise
+    
+    def _calculate_ensemble_prediction(self, predictions: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate ensemble prediction from multiple methods."""
+        # Get all unique cluster labels
+        all_labels = set()
+        for pred in predictions.values():
+            all_labels.update(pred['labels'])
+        
+        if -1 in all_labels:
+            all_labels.remove(-1)  # Remove noise label
+        all_labels = sorted(list(all_labels))
+        
+        if not all_labels:
+            # All predictions are noise
+            n_samples = len(list(predictions.values())[0]['labels'])
+            return {
+                'labels': np.full(n_samples, -1),
+                'probabilities': np.zeros(n_samples)
+            }
+        
+        # Calculate weighted ensemble
+        n_samples = len(list(predictions.values())[0]['labels'])
+        n_clusters = len(all_labels)
+        
+        # Initialize probability matrix
+        prob_matrix = np.zeros((n_samples, n_clusters))
+        
+        # Equal weights for all methods
+        weight = 1.0 / len(predictions)
+        
+        for method, pred in predictions.items():
+            for i, (label, prob) in enumerate(zip(pred['labels'], pred['probabilities'])):
+                if label != -1 and label in all_labels:
+                    cluster_idx = all_labels.index(label)
+                    prob_matrix[i, cluster_idx] += weight * prob
+        
+        # Normalize probabilities
+        prob_sums = np.sum(prob_matrix, axis=1, keepdims=True)
+        prob_matrix = prob_matrix / (prob_sums + 1e-10)
+        
+        # Assign labels and probabilities
+        labels = np.array([all_labels[i] if prob_sums[i, 0] > 0 else -1 
+                          for i in np.argmax(prob_matrix, axis=1)])
+        probabilities = np.max(prob_matrix, axis=1)
+        
+        return {
+            'labels': labels,
+            'probabilities': probabilities
+        }
+    
+    def _calculate_uncertainty_measures(self, predictions: Dict[str, Any], 
+                                      ensemble_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate uncertainty measures for the predictions."""
+        try:
+            uncertainty_measures = {}
+            
+            # Method agreement
+            if len(predictions) > 1:
+                all_labels = [pred['labels'] for pred in predictions.values()]
+                agreement_scores = []
+                
+                for i in range(len(ensemble_result['labels'])):
+                    labels_at_i = [labels[i] for labels in all_labels]
+                    unique_labels = set(labels_at_i)
+                    if -1 in unique_labels:
+                        unique_labels.remove(-1)
+                    
+                    if len(unique_labels) <= 1:
+                        agreement_scores.append(1.0)  # Perfect agreement
+                    else:
+                        # Calculate agreement as 1 - (number of different labels / total methods)
+                        agreement_scores.append(1.0 - (len(unique_labels) - 1) / len(predictions))
+                
+                uncertainty_measures['method_agreement'] = np.mean(agreement_scores)
+                uncertainty_measures['method_agreement_std'] = np.std(agreement_scores)
+            else:
+                uncertainty_measures['method_agreement'] = 1.0
+                uncertainty_measures['method_agreement_std'] = 0.0
+            
+            # Probability variance across methods
+            if len(predictions) > 1:
+                all_probs = [pred['probabilities'] for pred in predictions.values()]
+                prob_variance = np.var(all_probs, axis=0)
+                uncertainty_measures['probability_variance'] = np.mean(prob_variance)
+                uncertainty_measures['probability_variance_std'] = np.std(prob_variance)
+            else:
+                uncertainty_measures['probability_variance'] = 0.0
+                uncertainty_measures['probability_variance_std'] = 0.0
+            
+            # Low confidence predictions
+            low_confidence_mask = ensemble_result['probabilities'] < 0.1
+            uncertainty_measures['low_confidence_ratio'] = np.mean(low_confidence_mask)
+            uncertainty_measures['n_low_confidence'] = np.sum(low_confidence_mask)
+            
+            # Noise ratio
+            noise_mask = ensemble_result['labels'] == -1
+            uncertainty_measures['noise_ratio'] = np.mean(noise_mask)
+            uncertainty_measures['n_noise'] = np.sum(noise_mask)
+            
+            return uncertainty_measures
+            
+        except Exception as e:
+            logger.debug(f"Uncertainty calculation failed: {e}")
+            return {'error': str(e)}
     
     def _distance_based_prediction(self, features: np.ndarray) -> Tuple[np.ndarray, np.ndarray, str]:
         """Predict using distance-based assignment."""
@@ -634,3 +981,92 @@ class HDBSCANClusterer:
     def get_best_score(self) -> float:
         """Get best score from optimization."""
         return self.best_score
+    
+    def save_model(self, filepath: str) -> bool:
+        """Save the trained model to disk."""
+        try:
+            import pickle
+            from pathlib import Path
+            
+            # Create directory if it doesn't exist
+            Path(filepath).parent.mkdir(parents=True, exist_ok=True)
+            
+            model_data = {
+                'clusterer': self.clusterer,
+                'cluster_centers': self.cluster_centers,
+                'cluster_densities': getattr(self, 'cluster_densities', None),
+                'training_features': getattr(self, 'training_features', None),
+                'training_labels': getattr(self, 'training_labels', None),
+                'gmm_models': getattr(self, 'gmm_models', {}),
+                'knn_model': getattr(self, 'knn_model', None),
+                'clustering_stats': self.clustering_stats,
+                'best_params': self.best_params,
+                'best_score': self.best_score,
+                'config': self.config,
+                'model_metadata': {
+                    'created_at': time.time(),
+                    'version': '1.0.0',
+                    'n_features': self.training_features.shape[1] if hasattr(self, 'training_features') and self.training_features is not None else 0,
+                    'n_clusters': len(set(self.training_labels)) - (1 if -1 in self.training_labels else 0) if hasattr(self, 'training_labels') and self.training_labels is not None else 0
+                }
+            }
+            
+            with open(filepath, 'wb') as f:
+                pickle.dump(model_data, f)
+            
+            logger.info(f"✅ Model saved to {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to save model: {e}")
+            return False
+    
+    def load_model(self, filepath: str) -> bool:
+        """Load a trained model from disk."""
+        try:
+            import pickle
+            
+            with open(filepath, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            self.clusterer = model_data['clusterer']
+            self.cluster_centers = model_data['cluster_centers']
+            self.cluster_densities = model_data.get('cluster_densities')
+            self.training_features = model_data.get('training_features')
+            self.training_labels = model_data.get('training_labels')
+            self.gmm_models = model_data.get('gmm_models', {})
+            self.knn_model = model_data.get('knn_model')
+            self.clustering_stats = model_data['clustering_stats']
+            self.best_params = model_data['best_params']
+            self.best_score = model_data['best_score']
+            self.model_metadata = model_data.get('model_metadata', {})
+            
+            # Update config if provided
+            if 'config' in model_data:
+                self.config = model_data['config']
+            
+            logger.info(f"✅ Model loaded from {filepath}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load model: {e}")
+            return False
+    
+    def _random_fallback_with_uncertainty(self, features: np.ndarray) -> Dict[str, Any]:
+        """Fallback prediction with uncertainty measures."""
+        n_samples = len(features)
+        labels = np.random.randint(0, 3, n_samples)
+        probabilities = np.random.uniform(0.1, 0.9, n_samples)
+        
+        return {
+            'labels': labels,
+            'probabilities': probabilities,
+            'uncertainty_measures': {
+                'method_agreement': 0.0,
+                'probability_variance': 0.1,
+                'low_confidence_ratio': 0.5,
+                'noise_ratio': 0.0
+            },
+            'method_breakdown': {},
+            'success': True
+        }

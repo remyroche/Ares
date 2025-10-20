@@ -15,7 +15,7 @@ from .utils import (
     UnifiedVectorizationManager, get_unified_vectorization_manager
 )
 
-# Core imports with backward compatibility
+# Core imports with backward compatibility and enhanced features enabled by default
 from .backward_compatibility import BaseScaler, create_enhanced_scaler, enable_enhanced_logging
 from .transforms.base_scaler import create_optimized_scaler, create_optimized_batch_scaler
 from .transforms.vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler

@@ -166,8 +166,6 @@ except ImportError as e:
 # Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers,
         ensure_directory, safe_file_exists, get_current_datetime, validate_positive
     )
     tprint_info("✅ Common operations utilities loaded for ensemble")
@@ -206,20 +204,54 @@ try:
 except ImportError:
     DATA_CLEANING_AVAILABLE = False
 
-# Import advanced hardware optimization tools
+# Import comprehensive hardware optimization tools
 try:
-    from src.utils.hardware.unified_hardware_manager import (
-        UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    from src.utils.hardware import (
+        # Core hardware management
+        get_unified_hardware_manager, get_integrated_hardware_manager,
+        WorkloadType, OptimizationLevel, HardwareConfig,
+        
+        # Memory optimization
+        get_advanced_memory_manager, memory_optimized, gc_optimized,
+        comprehensive_memory_optimization, MemoryOptimizationLevel,
+        optimize_large_dataframes, optimize_large_arrays, optimize_memory_intensive,
+        
+        # CPU optimization
+        get_advanced_cpu_optimizer, optimize_cpu_execution, parallel_cpu_execution,
+        
+        # GPU optimization
+        get_enhanced_gpu_manager, gpu_accelerated, GPUOperationType,
+        
+        # Neural Engine optimization
+        get_neural_engine_manager, neural_engine_optimized, NeuralEngineOperation,
+        
+        # Comprehensive M1 optimization
+        get_comprehensive_optimizer, m1_optimized, WorkloadCategory,
+        ComprehensiveConfig, OptimizationStrategy,
+        
+        # Memory management
+        get_unified_memory_manager, optimize_for_unified_memory, allocate_unified_memory,
+        unified_memory_optimized, memory_tier_aware, MemoryTier,
+        
+        # Caching and optimization decorators
+        smart_cache, auto_optimize, memory_efficient, performance_tracked,
+        cache_dataframe_result, cache_numpy_result, optimize_heavy_computation,
+        memory_aware, optimize_all_dataframes, optimize_all_arrays,
+        
+        # Data optimization
+        optimize_dataframe_default, optimize_numpy_array_default,
+        optimize_dataframe, optimize_array,
+        
+        # Utility functions
+        get_optimization_status, clear_all_caches, force_cleanup,
+        get_memory_stats, initialize_optimization_system
     )
-    from src.utils.hardware.adaptive_optimization_engine import (
-        AdaptiveOptimizationEngine, LearningAlgorithm
-    )
-    ADVANCED_HARDWARE_AVAILABLE = True
-    tprint_info("✅ Advanced hardware optimization tools loaded for ensemble")
+    COMPREHENSIVE_HARDWARE_AVAILABLE = True
+    tprint_info("✅ Comprehensive hardware optimization tools loaded for ensemble")
 except ImportError as e:
-    ADVANCED_HARDWARE_AVAILABLE = False
-    tprint_warning(f"⚠️ Advanced hardware optimization tools not available: {e}")
-    tprint_info("ℹ️ Falling back to basic hardware optimization")
+    COMPREHENSIVE_HARDWARE_AVAILABLE = False
+    tprint_warning(f"⚠️ Comprehensive hardware optimization tools not available: {e}")
+    tprint_info("ℹ️ Falling back to basic optimization")
 
 try:
     from src.utils.common_utilities import (
@@ -424,27 +456,51 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 ensure_directory(config.model_save_path)
 
     def _initialize_hardware_optimizers_consolidated(self) -> Dict[str, Any]:
-        """Initialize hardware optimizers (consolidated method)."""
+        """Initialize comprehensive hardware optimization system."""
         hardware = {}
         try:
-            hardware['gpu'] = get_m1_gpu_manager()
-            hardware['memory'] = get_m1_memory_optimizer()
-            hardware['cpu'] = get_m1_cpu_optimizer()
-
-            available = sum(1 for v in hardware.values() if v is not None)
-            tprint_success(f"✅ Hardware: {available}/3 optimizers available")
-
-            # Set individual references for backwards compatibility
-            self.m1_gpu_manager = hardware['gpu']
-            self.m1_memory_optimizer = hardware['memory']
-            self.m1_cpu_optimizer = hardware['cpu']
-            self.hardware_optimization_enabled = available > 0
+            if COMPREHENSIVE_HARDWARE_AVAILABLE:
+                # Initialize comprehensive hardware management system
+                self.hardware_manager = get_integrated_hardware_manager()
+                self.unified_memory_manager = get_unified_memory_manager()
+                self.comprehensive_optimizer = get_comprehensive_optimizer()
+                
+                # Initialize specialized optimizers
+                hardware['memory'] = get_advanced_memory_manager()
+                hardware['cpu'] = get_advanced_cpu_optimizer()
+                hardware['gpu'] = get_enhanced_gpu_manager()
+                hardware['neural_engine'] = get_neural_engine_manager()
+                
+                # Configure for ML training workload
+                self.hardware_manager.configure_workload(
+                    WorkloadType.ML_TRAINING, 
+                    OptimizationLevel.AGGRESSIVE
+                )
+                
+                available = sum(1 for v in hardware.values() if v is not None)
+                tprint_success(f"✅ Comprehensive Hardware: {available}/4 optimizers available")
+                
+                # Set individual references for backwards compatibility
+                self.memory_optimizer = hardware['memory']
+                self.cpu_optimizer = hardware['cpu']
+                self.gpu_manager = hardware['gpu']
+                self.neural_engine_manager = hardware['neural_engine']
+                self.hardware_optimization_enabled = available > 0
+                
+                # Initialize optimization system
+                initialize_optimization_system()
+                tprint_info("🚀 Hardware optimization system initialized")
+                
+            else:
+                tprint_warning("⚠️ Comprehensive hardware tools not available, using fallback")
+                self.hardware_optimization_enabled = False
+                
         except Exception as e:
-            tprint_warning(f"⚠️ Hardware init failed: {e}")
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
+            tprint_warning(f"⚠️ Hardware initialization failed: {e}")
             self.hardware_optimization_enabled = False
+            # Set fallback values
+            for key in ['memory', 'cpu', 'gpu', 'neural_engine']:
+                hardware[key] = None
 
         return hardware
 
@@ -623,6 +679,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 self.logger.error(f"❌ Failed step: {self.current_step.step_name} - {error_message}")
             self.current_step = None
 
+    @m1_optimized("tactician_ensemble_training", WorkloadCategory.MACHINE_LEARNING)
+    @memory_efficient(memory_threshold_mb=500.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def execute(
         self,
         X: np.ndarray,
@@ -677,13 +736,27 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         overall_start_time = time.time()
         self.logger.info("🚀 Starting Tactician ensemble training step (meta-learner)")
 
+        # Initialize comprehensive hardware optimization if available
+        if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager') and self.hardware_manager:
+            self.hardware_manager.configure_workload(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE)
+            tprint_info("🚀 Comprehensive hardware optimization configured for ML training")
+
         try:
             # Step 1: Input validation
             self._start_step("Input Validation")
-            self._validate_inputs(
-                X, y, regime_labels, feature_names, analyst_green_light_periods,
-                confidence_scores=confidence_scores, timestamps=timestamps
-            )
+            
+            # Use hardware optimization context for input validation
+            if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager') and self.hardware_manager:
+                with self.hardware_manager.optimization_context(WorkloadType.DATA_PROCESSING, OptimizationLevel.MINIMAL):
+                    self._validate_inputs(
+                        X, y, regime_labels, feature_names, analyst_green_light_periods,
+                        confidence_scores=confidence_scores, timestamps=timestamps
+                    )
+            else:
+                self._validate_inputs(
+                    X, y, regime_labels, feature_names, analyst_green_light_periods,
+                    confidence_scores=confidence_scores, timestamps=timestamps
+                )
             self._complete_step(True, metrics={
                 'samples': len(X),
                 'features': X.shape[1],
@@ -693,13 +766,25 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
 
             # Step 2: Enhanced filtering (confidence > 0.5 + 45 min after drop)
             self._start_step("Enhanced Data Filtering")
-            X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
-                X, y, regime_labels, analyst_green_light_periods,
-                confidence_scores=confidence_scores,
-                timestamps=timestamps,
-                confidence_threshold=confidence_threshold,
-                ride_duration_minutes=ride_duration_minutes
-            )
+            
+            # Use hardware optimization context for data filtering
+            if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager') and self.hardware_manager:
+                with self.hardware_manager.optimization_context(WorkloadType.DATA_PROCESSING, OptimizationLevel.BALANCED):
+                    X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
+                        X, y, regime_labels, analyst_green_light_periods,
+                        confidence_scores=confidence_scores,
+                        timestamps=timestamps,
+                        confidence_threshold=confidence_threshold,
+                        ride_duration_minutes=ride_duration_minutes
+                    )
+            else:
+                X_filtered, y_filtered, regime_labels_filtered = self._filter_green_light_periods(
+                    X, y, regime_labels, analyst_green_light_periods,
+                    confidence_scores=confidence_scores,
+                    timestamps=timestamps,
+                    confidence_threshold=confidence_threshold,
+                    ride_duration_minutes=ride_duration_minutes
+                )
 
             # Calculate comprehensive filtering metrics
             if analyst_green_light_periods is not None:
@@ -732,9 +817,17 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
 
             # Step 4: Feature enhancement with full model integration
             self._start_step("Full Model Integration")
-            X_enhanced = self._combine_all_model_inputs(
-                X_filtered, analyst_models, analyst_ensembles, regime_data, feature_names
-            )
+            
+            # Use hardware optimization context for model integration
+            if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager') and self.hardware_manager:
+                with self.hardware_manager.optimization_context(WorkloadType.ML_TRAINING, OptimizationLevel.AGGRESSIVE):
+                    X_enhanced = self._combine_all_model_inputs(
+                        X_filtered, analyst_models, analyst_ensembles, regime_data, feature_names
+                    )
+            else:
+                X_enhanced = self._combine_all_model_inputs(
+                    X_filtered, analyst_models, analyst_ensembles, regime_data, feature_names
+                )
             enhancement_metrics = {
                 'original_features': X_filtered.shape[1],
                 'enhanced_features': X_enhanced.shape[1],
@@ -745,12 +838,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 5: Ensemble training with hardware optimization
             self._start_step("Ensemble Training")
 
-            # Use hardware optimization context if available
-            if hasattr(self, 'unified_hardware_manager') and self.unified_hardware_manager:
-                tprint_info("🚀 Using optimized hardware context for ensemble training")
-                with self.unified_hardware_manager.optimized_context(
-                    operation_type="ml_training",
-                    expected_duration_minutes=30
+            # Use comprehensive hardware optimization context if available
+            if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager') and self.hardware_manager:
+                tprint_info("🚀 Using comprehensive hardware optimization context for ensemble training")
+                with self.hardware_manager.optimization_context(
+                    WorkloadType.ML_TRAINING,
+                    OptimizationLevel.AGGRESSIVE
                 ):
                     results = super().execute(
                         X=X_enhanced,
@@ -765,17 +858,18 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                     )
             else:
                 # Standard training without advanced optimization
-                    results = super().execute(
-                        X=X_enhanced,
-                        y=y_filtered,
-                        regime_labels=regime_labels_filtered,
-                        feature_names=feature_names,
-                        regime_states=regime_states,
-                        is_classification=False,  # Tactician ensemble models are typically regression
-                        symbol=None,  # Can be passed as kwargs
-                        exchange=None,
-                        timeframe=self.config.timeframe
-                    )
+                tprint_info("ℹ️ Using standard training without comprehensive hardware optimization")
+                results = super().execute(
+                    X=X_enhanced,
+                    y=y_filtered,
+                    regime_labels=regime_labels_filtered,
+                    feature_names=feature_names,
+                    regime_states=regime_states,
+                    is_classification=False,  # Tactician ensemble models are typically regression
+                    symbol=None,  # Can be passed as kwargs
+                    exchange=None,
+                    timeframe=self.config.timeframe
+                )
 
             if 'error' in results:
                 self._complete_step(False, f"Parent training failed: {results['error']}")
@@ -812,6 +906,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
 
             return self._create_error_result("Training execution failed", error_msg)
 
+    @memory_efficient(memory_threshold_mb=50.0, auto_cleanup=True)
+    @optimize_cpu_execution(WorkloadType.DATA_PROCESSING)
     def _validate_inputs(
         self,
         X: np.ndarray,
@@ -904,6 +1000,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         if validation_errors:
             raise ValueError(f"Input validation failed: {'; '.join(validation_errors)}")
 
+    @memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True)
+    @optimize_cpu_execution(WorkloadType.DATA_PROCESSING)
     def _filter_green_light_periods(
         self,
         X: np.ndarray,
@@ -1303,6 +1401,10 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ Failed to generate analyst OOF predictions: {e}")
             return []
 
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @unified_memory_optimized('model_input_combination', 'shared')
+    @m1_optimized("model_input_combination", WorkloadCategory.MACHINE_LEARNING)
+    @performance_tracked(log_performance=True, track_memory=True)
     def _combine_all_model_inputs(
         self,
         X: np.ndarray,
@@ -1409,38 +1511,33 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 total_features = base_features + additional_features_count
 
                 try:
-                    # Use hardware optimization tools for memory-efficient array operations
-                    from src.utils.hardware import (
-                        get_advanced_memory_optimizer, get_unified_hardware_manager,
-                        ADVANCED_MEMORY_AVAILABLE, UNIFIED_MANAGER_AVAILABLE
-                    )
-
-                    if ADVANCED_MEMORY_AVAILABLE:
-                        # Use advanced memory optimizer for efficient array allocation
-                        memory_optimizer = get_advanced_memory_optimizer()
-                        X_enhanced = memory_optimizer.allocate_optimized_array(
+                    if COMPREHENSIVE_HARDWARE_AVAILABLE and hasattr(self, 'hardware_manager'):
+                        # Use comprehensive hardware optimization for array allocation
+                        X_enhanced = self.unified_memory_manager.allocate_unified_memory(
                             shape=(X.shape[0], total_features),
                             dtype=X.dtype,
+                            memory_tier=MemoryTier.SHARED,
                             optimization_level='aggressive'
                         )
-                        self.logger.info(f"📊 Using hardware-optimized array allocation for {total_features} features")
-
-                    elif UNIFIED_MANAGER_AVAILABLE:
-                        # Use unified hardware manager for memory optimization
-                        hardware_manager = get_unified_hardware_manager()
-                        X_enhanced = hardware_manager.optimize_array_allocation(
+                        self.logger.info(f"📊 Using unified memory manager for array allocation: {total_features} features")
+                        
+                    elif hasattr(self, 'memory_optimizer') and self.memory_optimizer:
+                        # Use advanced memory optimizer for efficient array allocation
+                        X_enhanced = self.memory_optimizer.allocate_optimized_array(
                             shape=(X.shape[0], total_features),
                             dtype=X.dtype,
-                            workload_type='ml_training'
+                            optimization_level=MemoryOptimizationLevel.AGGRESSIVE
                         )
-                        self.logger.info(f"📊 Using unified hardware manager for array allocation")
-
+                        self.logger.info(f"📊 Using advanced memory optimizer for array allocation: {total_features} features")
+                        
                     else:
                         # Fallback to standard allocation
                         X_enhanced = np.empty((X.shape[0], total_features), dtype=X.dtype)
+                        self.logger.info(f"📊 Using standard array allocation: {total_features} features")
 
-                except ImportError:
-                    # Hardware tools not available, use standard allocation
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Hardware optimization failed, using fallback: {e}")
+                    # Fallback to standard allocation
                     X_enhanced = np.empty((X.shape[0], total_features), dtype=X.dtype)
 
                 # Copy base features efficiently
@@ -1450,9 +1547,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 # Add HMM features with memory optimization
                 if hmm_features is not None:
                     try:
-                        if ADVANCED_MEMORY_AVAILABLE:
+                        if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
                             # Use hardware-optimized copy
-                            memory_optimizer.optimized_array_copy(
+                            self.memory_optimizer.optimized_array_copy(
                                 source=hmm_features,
                                 destination=X_enhanced[:, current_col:current_col + hmm_features_count]
                             )
@@ -1474,9 +1571,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 for model_name, predictions in analyst_predictions:
                     pred_cols = predictions.shape[1]
                     try:
-                        if ADVANCED_MEMORY_AVAILABLE:
+                        if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
                             # Use hardware-optimized copy
-                            memory_optimizer.optimized_array_copy(
+                            self.memory_optimizer.optimized_array_copy(
                                 source=predictions,
                                 destination=X_enhanced[:, current_col:current_col + pred_cols]
                             )
@@ -1498,9 +1595,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 for ensemble_name, predictions in ensemble_predictions:
                     pred_cols = predictions.shape[1]
                     try:
-                        if ADVANCED_MEMORY_AVAILABLE:
+                        if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
                             # Use hardware-optimized copy
-                            memory_optimizer.optimized_array_copy(
+                            self.memory_optimizer.optimized_array_copy(
                                 source=predictions,
                                 destination=X_enhanced[:, current_col:current_col + pred_cols]
                             )
@@ -1522,8 +1619,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 for base_name, predictions in tactician_predictions:
                     pred_cols = predictions.shape[1]
                     try:
-                        if ADVANCED_MEMORY_AVAILABLE:
-                            memory_optimizer.optimized_array_copy(
+                        if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
+                            self.memory_optimizer.optimized_array_copy(
                                 source=predictions,
                                 destination=X_enhanced[:, current_col:current_col + pred_cols]
                             )
@@ -1543,8 +1640,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
 
                 # Use hardware-optimized cleanup
                 try:
-                    if ADVANCED_MEMORY_AVAILABLE:
-                        memory_optimizer.cleanup_temporary_arrays([
+                    if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
+                        self.memory_optimizer.cleanup_temporary_arrays([
                             ('analyst_predictions', analyst_predictions),
                             ('ensemble_predictions', ensemble_predictions),
                             ('hmm_features', hmm_features)
@@ -1581,6 +1678,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.warning("⚠️ Returning original features due to combination failure")
             return X
 
+    @memory_efficient(memory_threshold_mb=100.0, auto_cleanup=True)
+    @optimize_cpu_execution(WorkloadType.ML_TRAINING)
     def _generate_oof_predictions(self, model: Any, X: np.ndarray, model_name: str, n_splits: int = 5) -> Optional[np.ndarray]:
         """
         Generate OOF predictions using PurgedKFoldTime to prevent data leakage.
@@ -1707,6 +1806,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"   Traceback: {traceback.format_exc()}")
             return None
 
+    @memory_efficient(memory_threshold_mb=50.0, auto_cleanup=True)
+    @gpu_accelerated(GPUOperationType.MATRIX_MULTIPLICATION)
     def _generate_model_predictions(self, model: Any, X: np.ndarray, model_name: str) -> Optional[np.ndarray]:
         """Generate predictions from a model with proper error handling and shape validation."""
         try:
@@ -1800,6 +1901,9 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.logger.warning(f"⚠️ Failed to generate predictions from {model_name}: {e}")
             return None
 
+    @memory_efficient(memory_threshold_mb=150.0, auto_cleanup=True)
+    @optimize_cpu_execution(WorkloadType.ML_TRAINING)
+    @gpu_accelerated(GPUOperationType.MATRIX_MULTIPLICATION)
     def _generate_oof_model_predictions(self,
                                        model: Any,
                                        X_train: np.ndarray,
@@ -2161,28 +2265,33 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         try:
             tprint_info("🧹 Cleaning up ensemble training resources...")
 
-            # Clean up M1 optimizers if available
+            # Clean up hardware optimizers if available
             if hasattr(self, 'hardware_optimization_enabled') and self.hardware_optimization_enabled:
                 try:
-                    from src.utils.common_operations import cleanup_m1_optimizers
-                    cleanup_result = cleanup_m1_optimizers()
-                    if cleanup_result:
-                        tprint_success("✅ M1 optimizers cleaned up successfully")
+                    if COMPREHENSIVE_HARDWARE_AVAILABLE:
+                        # Use comprehensive hardware cleanup
+                        clear_all_caches()
+                        force_cleanup()
+                        tprint_success("✅ Comprehensive hardware optimizers cleaned up successfully")
                         cleanup_stats['resources_cleaned'] += 1
                     else:
-                        tprint_warning("⚠️ M1 optimizer cleanup returned False")
+                        tprint_warning("⚠️ Comprehensive hardware tools not available for cleanup")
                 except ImportError:
-                    tprint_debug("ℹ️ M1 optimizer cleanup not available")
+                    tprint_debug("ℹ️ Hardware optimizer cleanup not available")
                 except Exception as cleanup_error:
-                    cleanup_stats['errors'].append(f"M1 cleanup failed: {cleanup_error}")
-                    tprint_warning(f"⚠️ M1 optimizer cleanup failed: {cleanup_error}")
+                    cleanup_stats['errors'].append(f"Hardware cleanup failed: {cleanup_error}")
+                    tprint_warning(f"⚠️ Hardware optimizer cleanup failed: {cleanup_error}")
 
             # Clean up individual hardware resources safely
 
             hardware_resources = [
-                ('m1_gpu_manager', 'M1 GPU manager'),
-                ('m1_memory_optimizer', 'M1 memory optimizer'),
-                ('m1_cpu_optimizer', 'M1 CPU optimizer')
+                ('gpu_manager', 'GPU manager'),
+                ('memory_optimizer', 'Memory optimizer'),
+                ('cpu_optimizer', 'CPU optimizer'),
+                ('neural_engine_manager', 'Neural Engine manager'),
+                ('hardware_manager', 'Hardware manager'),
+                ('unified_memory_manager', 'Unified memory manager'),
+                ('comprehensive_optimizer', 'Comprehensive optimizer')
             ]
 
             for attr_name, resource_name in hardware_resources:

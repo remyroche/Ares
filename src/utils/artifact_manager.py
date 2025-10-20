@@ -459,6 +459,23 @@ class ArtifactManager:
 		
 		self.logger.info(f"📁 Full path created: {full_path}")
 		return full_path
+	
+	def ensure_step_category_directories(self) -> None:
+		"""Ensure all step category directories exist."""
+		try:
+			# Ensure base artifacts directory exists
+			self._artifacts_dir.mkdir(parents=True, exist_ok=True)
+			
+			# Ensure all step category directories exist
+			for category in STEP_CATEGORIES.keys():
+				category_dir = self._artifacts_dir / category
+				category_dir.mkdir(parents=True, exist_ok=True)
+				self.logger.debug(f"📁 Ensured directory exists: {category_dir}")
+			
+			self.logger.info(f"📁 All step category directories ensured in: {self._artifacts_dir}")
+		except Exception as e:
+			self.logger.error(f"Failed to ensure step category directories: {e}")
+			raise
 
 	def _log_file_operation(self, operation: str, path: Path, success: bool = True) -> None:
 		"""Log file operations with full path information."""
@@ -612,17 +629,23 @@ class ArtifactManager:
 	def get_artifact(self, artifact_name: str, 
 	                artifact_type: str = "data") -> Any:
 		"""
-		Retrieve an artifact using the artifact manager.
+		Retrieve an artifact using multiple fallback mechanisms for backward compatibility.
+		
+		This method implements a comprehensive fallback strategy:
+		1. Try step-category structure (artifacts/STEP-CATEGORY/)
+		2. Try general artifacts/ directory search
+		3. Try with model type and direction variations
+		4. Try fuzzy matching for similar names
 		
 		Args:
 			artifact_name: Name of the artifact to retrieve
 			artifact_type: Type of artifact to retrieve
 			
 		Returns:
-			Retrieved data
+			Retrieved data or None if not found
 		"""
 		try:
-			# First try to find in step-category structure
+			# Primary: Try step-category structure
 			step_category = get_step_category(self._current_step_name)
 			artifact_path = self._find_artifact_in_category(
 				step_category, artifact_name, artifact_type
@@ -633,19 +656,72 @@ class ArtifactManager:
 				self._log_file_operation("Retrieved artifact from category", artifact_path, success=True)
 				return data
 			
-			# Fallback to direct artifacts/ directory search
+			# Fallback 1: Direct artifacts/ directory search
 			fallback_path = self._find_artifact_in_fallback(artifact_name, artifact_type)
 			if fallback_path and fallback_path.exists():
 				data = self._load_artifact_from_path(fallback_path)
-				self._log_file_operation("Retrieved artifact from fallback", fallback_path, success=True)
+				self._log_file_operation("Retrieved artifact from fallback 1", fallback_path, success=True)
 				return data
 			
-			self.logger.warning(f"Artifact not found: {artifact_name}")
+			# Fallback 2: Search with model type and direction variations
+			variation_path = self._find_artifact_with_variations(artifact_name, artifact_type)
+			if variation_path and variation_path.exists():
+				data = self._load_artifact_from_path(variation_path)
+				self._log_file_operation("Retrieved artifact from variations", variation_path, success=True)
+				return data
+			
+			# Fallback 3: Search in all subdirectories with fuzzy matching
+			fuzzy_path = self._find_artifact_fuzzy(artifact_name, artifact_type)
+			if fuzzy_path and fuzzy_path.exists():
+				data = self._load_artifact_from_path(fuzzy_path)
+				self._log_file_operation("Retrieved artifact from fuzzy search", fuzzy_path, success=True)
+				return data
+			
+			self.logger.warning(f"Artifact not found with any fallback method: {artifact_name}")
 			return None
 			
 		except Exception as e:
 			self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
-			raise
+			return None
+	
+	def _find_artifact_fuzzy(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+		"""Find artifact using fuzzy matching across all directories."""
+		try:
+			if not self._artifacts_dir.exists():
+				return None
+			
+			# Search in all subdirectories
+			for file_path in self._artifacts_dir.rglob("*"):
+				if file_path.is_file():
+					# Check if the filename is similar to the artifact name
+					if self._is_similar_name(artifact_name, file_path.stem):
+						# Additional check: ensure it's the right type of file
+						if self._is_correct_file_type(file_path, artifact_type):
+							return file_path
+			
+			return None
+		except Exception as e:
+			self.logger.warning(f"Failed to search with fuzzy matching: {e}")
+			return None
+	
+	def _is_correct_file_type(self, file_path: Path, artifact_type: str) -> bool:
+		"""Check if the file type matches the expected artifact type."""
+		try:
+			file_extension = file_path.suffix.lower()
+			
+			# Map artifact types to expected file extensions
+			type_mappings = {
+				"data": [".parquet", ".csv", ".json"],
+				"model": [".pkl", ".joblib", ".h5", ".onnx"],
+				"metadata": [".json", ".yaml", ".yml"],
+				"image": [".png", ".jpg", ".jpeg", ".svg"],
+				"text": [".txt", ".md", ".log"]
+			}
+			
+			expected_extensions = type_mappings.get(artifact_type, [".parquet", ".csv", ".json", ".pkl"])
+			return file_extension in expected_extensions
+		except Exception:
+			return True  # Default to True if we can't determine
 	
 	def _find_artifact_in_category(self, step_category: str, artifact_name: str, 
 	                              artifact_type: str) -> Optional[Path]:
@@ -666,19 +742,99 @@ class ArtifactManager:
 			return None
 	
 	def _find_artifact_in_fallback(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
-		"""Find artifact in fallback artifacts/ directory."""
+		"""Find artifact in fallback artifacts/ directory with enhanced search patterns."""
 		try:
 			if not self._artifacts_dir.exists():
 				return None
 			
-			# Search recursively for the artifact
-			for file_path in self._artifacts_dir.rglob(f"*{artifact_name}*"):
+			# Define search patterns for better matching
+			search_patterns = [
+				f"*{artifact_name}*",  # Original pattern
+				f"*{artifact_name}*.parquet",  # Specific parquet files
+				f"*{artifact_name}*.csv",  # Specific CSV files
+				f"*{artifact_name}*.pkl",  # Specific pickle files
+				f"*{artifact_name}*.json",  # Specific JSON files
+			]
+			
+			# Search with multiple patterns
+			for pattern in search_patterns:
+				for file_path in self._artifacts_dir.rglob(pattern):
+					if file_path.is_file():
+						# Check if the filename actually contains the artifact name
+						if artifact_name.lower() in file_path.name.lower():
+							return file_path
+			
+			# Additional search: look for files with similar names (fuzzy matching)
+			for file_path in self._artifacts_dir.rglob("*"):
 				if file_path.is_file():
-					return file_path
+					# Check for partial matches
+					filename_lower = file_path.name.lower()
+					artifact_lower = artifact_name.lower()
+					
+					# Check if artifact name is contained in filename or vice versa
+					if (artifact_lower in filename_lower or 
+						filename_lower in artifact_lower or
+						self._is_similar_name(artifact_name, file_path.stem)):
+						return file_path
 			
 			return None
 		except Exception as e:
 			self.logger.warning(f"Failed to search in fallback: {e}")
+			return None
+	
+	def _is_similar_name(self, name1: str, name2: str) -> bool:
+		"""Check if two names are similar (for fuzzy matching)."""
+		try:
+			# Simple similarity check - can be enhanced with more sophisticated algorithms
+			name1_clean = name1.lower().replace('_', '').replace('-', '')
+			name2_clean = name2.lower().replace('_', '').replace('-', '')
+			
+			# Check if one is contained in the other
+			if name1_clean in name2_clean or name2_clean in name1_clean:
+				return True
+			
+			# Check for common patterns
+			common_patterns = ['data', 'model', 'result', 'output', 'input']
+			for pattern in common_patterns:
+				if pattern in name1_clean and pattern in name2_clean:
+					return True
+			
+			return False
+		except Exception:
+			return False
+	
+	def _find_artifact_with_variations(self, artifact_name: str, artifact_type: str) -> Optional[Path]:
+		"""Find artifact with model type and direction variations."""
+		try:
+			if not self._artifacts_dir.exists():
+				return None
+			
+			# Define variations to try
+			model_variations = ["Analyst", "Tactician", "analyst", "tactician", ""]
+			direction_variations = ["long", "short", "Long", "Short", ""]
+			
+			# Try different combinations
+			for model in model_variations:
+				for direction in direction_variations:
+					# Create search pattern with variations
+					pattern_parts = [artifact_name]
+					if model:
+						pattern_parts.append(model)
+					if direction:
+						pattern_parts.append(direction)
+					
+					# Try different separators
+					for separator in ["_", "-", ""]:
+						search_pattern = separator.join(pattern_parts)
+						
+						# Search for files matching this pattern
+						for file_path in self._artifacts_dir.rglob(f"*{search_pattern}*"):
+							if file_path.is_file():
+								return file_path
+			
+			return None
+		except Exception as e:
+			self.logger.warning(f"Failed to search with variations: {e}")
 			return None
 	
 	def _load_artifact_from_path(self, path: Path) -> Any:

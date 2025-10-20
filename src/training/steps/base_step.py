@@ -1,8 +1,69 @@
 """
-Base Step Class for Autonomous Pipeline Steps
+Enhanced Base Step Class for Autonomous Pipeline Steps
 
 This module provides the abstract base class that all pipeline steps must inherit from.
 Each step becomes autonomous with standardized artifact management and outcome file generation.
+
+ENHANCED FEATURES:
+=================
+
+1. STEP-CATEGORY ORGANIZATION:
+   - All artifacts are stored in artifacts/STEP-CATEGORY/ structure
+   - Categories: data_collection, market_analysis, pre_training, models_training, backtesting
+   - Automatic category detection based on step name patterns
+
+2. MULTIPLE FALLBACK MECHANISMS:
+   - Primary: Step-category structure (artifacts/STEP-CATEGORY/)
+   - Fallback 1: General artifacts/ directory search
+   - Fallback 2: Model type variations (Analyst/Tactician)
+   - Fallback 3: Direction variations (long/short)
+   - Ensures backward compatibility with existing artifacts
+
+3. ADVANCED ARTIFACT MANAGEMENT:
+   - Memory optimization and compression
+   - Automatic CSV generation for small datasets (< 2000 rows)
+   - Enhanced filename generation with context (symbol, exchange, datetime, etc.)
+   - Performance monitoring and metrics collection
+   - Lazy loading and spill strategies for large datasets
+
+4. ENHANCED CONTEXT MANAGEMENT:
+   - Automatic context setting from config parameters
+   - Support for symbol, exchange, information, direction, model context
+   - Enhanced file naming with full context information
+
+5. CONVENIENCE METHODS:
+   - _save_dataframe() / _load_dataframe() for DataFrame operations
+   - _save_model() / _load_model() for model persistence
+   - _save_metadata() / _load_metadata() for metadata storage
+   - _get_performance_metrics() / _get_memory_analytics() for monitoring
+
+USAGE EXAMPLE:
+==============
+
+class MyStep(BaseStep):
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        # Set context for enhanced file naming
+        self._set_context(
+            symbol=config.get('symbol'),
+            exchange=config.get('exchange'),
+            information=config.get('information'),
+            direction=config.get('direction', 'long'),
+            model=config.get('model', 'Analyst')
+        )
+        
+        # Load data with fallback support
+        data = self._load_dataframe('market_data')
+        if data is None:
+            # Handle case where data not found
+            return {'success': False, 'error': 'Data not found'}
+        
+        # Process data...
+        processed_data = process_data(data)
+        
+        # Save with enhanced features
+        self._save_dataframe(processed_data, 'processed_data')
+        
+        return {'success': True, 'artifacts': ['processed_data']}
 """
 
 import os
@@ -27,16 +88,20 @@ class BaseStep(ABC):
     - Be callable only via launcher (no standalone CLI)
     """
     
-    def __init__(self, step_name: str):
+    def __init__(self, step_name: str, config: Optional[Dict[str, Any]] = None):
         """
-        Initialize the base step.
+        Initialize the base step with enhanced artifact management.
         
         Args:
             step_name: Unique name for this step (used for artifact paths and outcomes)
+            config: Optional configuration dictionary for artifact manager
         """
         self.step_name = step_name
         self.logger = logging.getLogger(f"ares.step.{step_name}")
-        self.artifact_manager = ArtifactManager(config={})
+        
+        # Initialize artifact manager with enhanced configuration
+        artifact_config = config or {}
+        self.artifact_manager = ArtifactManager(config=artifact_config)
         
         # Set up artifact manager context with step-category organization
         self.artifact_manager.set_context(
@@ -44,6 +109,91 @@ class BaseStep(ABC):
             datetime=datetime.now()
         )
         
+        # Ensure proper directory structure
+        self._ensure_directory_structure()
+        
+        # Ensure all step category directories exist
+        self.artifact_manager.ensure_step_category_directories()
+        
+        self.logger.info(f"🔧 BaseStep initialized: {step_name} with enhanced artifact management")
+    
+    def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
+        """
+        Convenience method to save a DataFrame with automatic optimization.
+        
+        Args:
+            df: DataFrame to save
+            name: Name for the artifact
+            metadata: Optional metadata
+            
+        Returns:
+            Path where artifact was saved
+        """
+        return self._save_enhanced_artifact(df, name, "data", metadata)
+    
+    def _load_dataframe(self, name: str) -> Any:
+        """
+        Convenience method to load a DataFrame with fallback support.
+        
+        Args:
+            name: Name of the artifact to load
+            
+        Returns:
+            Loaded DataFrame or None if not found
+        """
+        return self._get_enhanced_artifact(name, "data")
+    
+    def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
+        """
+        Convenience method to save a model with enhanced storage.
+        
+        Args:
+            model: Model to save
+            name: Name for the artifact
+            metadata: Optional metadata
+            
+        Returns:
+            Path where artifact was saved
+        """
+        return self._save_enhanced_artifact(model, name, "model", metadata)
+    
+    def _load_model(self, name: str) -> Any:
+        """
+        Convenience method to load a model with fallback support.
+        
+        Args:
+            name: Name of the artifact to load
+            
+        Returns:
+            Loaded model or None if not found
+        """
+        return self._get_enhanced_artifact(name, "model")
+    
+    def _save_metadata(self, metadata: Dict[str, Any], name: str) -> str:
+        """
+        Convenience method to save metadata.
+        
+        Args:
+            metadata: Metadata to save
+            name: Name for the artifact
+            
+        Returns:
+            Path where artifact was saved
+        """
+        return self._save_enhanced_artifact(metadata, name, "metadata")
+    
+    def _load_metadata(self, name: str) -> Any:
+        """
+        Convenience method to load metadata.
+        
+        Args:
+            name: Name of the artifact to load
+            
+        Returns:
+            Loaded metadata or None if not found
+        """
+        return self._get_enhanced_artifact(name, "metadata")
+    
     @abstractmethod
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -70,6 +220,12 @@ class BaseStep(ABC):
         """
         Save an artifact using the enhanced artifact manager with step-category organization.
         
+        This method uses the most advanced functions from Artifact_manager.py including:
+        - Step-category based directory organization
+        - Automatic CSV generation for small datasets
+        - Enhanced filename generation with context
+        - Memory optimization and compression
+        
         Args:
             data: Data to save (DataFrame, dict, model, etc.)
             artifact_name: Name for the artifact
@@ -81,6 +237,7 @@ class BaseStep(ABC):
             Path where artifact was saved
         """
         try:
+            # Use the enhanced save method with automatic CSV generation
             artifact_path = self.artifact_manager.save(
                 data=data,
                 artifact_name=artifact_name,
@@ -88,41 +245,310 @@ class BaseStep(ABC):
                 compression=compression,
                 metadata=metadata
             )
-            self.logger.info(f"Saved artifact: {artifact_name} -> {artifact_path}")
+            self.logger.info(f"✅ Saved artifact: {artifact_name} -> {artifact_path}")
             return artifact_path
         except Exception as e:
-            self.logger.error(f"Failed to save artifact {artifact_name}: {e}")
+            self.logger.error(f"❌ Failed to save artifact {artifact_name}: {e}")
             raise
     
     def _get_artifact(self, artifact_name: str, 
                      artifact_type: str = "data") -> Any:
         """
-        Retrieve an artifact using the enhanced artifact manager with step-category fallback.
+        Retrieve an artifact using multiple fallback mechanisms for backward compatibility.
+        
+        This method implements a comprehensive fallback strategy:
+        1. Try to find in step-category structure (artifacts/STEP-CATEGORY/)
+        2. Try to find in general artifacts/ directory
+        3. Try to find with full name except model type and short/long variations
         
         Args:
             artifact_name: Name of the artifact to retrieve
             artifact_type: Type of artifact to retrieve
             
         Returns:
-            Retrieved data
+            Retrieved data or None if not found
         """
         try:
+            # Primary: Try step-category structure
             data = self.artifact_manager.get_artifact(
                 artifact_name=artifact_name,
                 artifact_type=artifact_type
             )
-            self.logger.info(f"Retrieved artifact: {artifact_name}")
-            return data
+            if data is not None:
+                self.logger.info(f"✅ Retrieved artifact from step-category: {artifact_name}")
+                return data
+            
+            # Fallback 1: Try direct artifacts/ directory search
+            data = self._get_artifact_fallback_1(artifact_name, artifact_type)
+            if data is not None:
+                self.logger.info(f"✅ Retrieved artifact from fallback 1: {artifact_name}")
+                return data
+            
+            # Fallback 2: Try with model type variations
+            data = self._get_artifact_fallback_2(artifact_name, artifact_type)
+            if data is not None:
+                self.logger.info(f"✅ Retrieved artifact from fallback 2: {artifact_name}")
+                return data
+            
+            # Fallback 3: Try with short/long variations
+            data = self._get_artifact_fallback_3(artifact_name, artifact_type)
+            if data is not None:
+                self.logger.info(f"✅ Retrieved artifact from fallback 3: {artifact_name}")
+                return data
+            
+            self.logger.warning(f"⚠️ Artifact not found with any fallback method: {artifact_name}")
+            return None
+            
         except Exception as e:
-            self.logger.error(f"Failed to retrieve artifact {artifact_name}: {e}")
-            raise
+            self.logger.error(f"❌ Failed to retrieve artifact {artifact_name}: {e}")
+            return None
     
+    def _get_artifact_fallback_1(self, artifact_name: str, artifact_type: str) -> Any:
+        """
+        Fallback 1: Search in general artifacts/ directory.
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+        """
+        try:
+            # Use the artifact manager's fallback search
+            from src.utils.artifact_manager import get_step_category
+            step_category = get_step_category(self.step_name)
+            
+            # Search in artifacts/ directory recursively
+            artifacts_dir = self.artifact_manager._artifacts_dir
+            if not artifacts_dir.exists():
+                return None
+            
+            # Search for any file containing the artifact name
+            for file_path in artifacts_dir.rglob(f"*{artifact_name}*"):
+                if file_path.is_file():
+                    data = self.artifact_manager._load_artifact_from_path(file_path)
+                    if data is not None:
+                        return data
+            
+            return None
+        except Exception as e:
+            self.logger.debug(f"Fallback 1 failed for {artifact_name}: {e}")
+            return None
+    
+    def _get_artifact_fallback_2(self, artifact_name: str, artifact_type: str) -> Any:
+        """
+        Fallback 2: Try with model type variations (Analyst/Tactician).
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+        """
+        try:
+            # Try different model type variations
+            model_variations = ["Analyst", "Tactician", "analyst", "tactician"]
+            
+            for model in model_variations:
+                # Set context with different model
+                original_model = self.artifact_manager._current_model
+                self.artifact_manager._current_model = model
+                
+                try:
+                    data = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type
+                    )
+                    if data is not None:
+                        return data
+                finally:
+                    # Restore original model
+                    self.artifact_manager._current_model = original_model
+            
+            return None
+        except Exception as e:
+            self.logger.debug(f"Fallback 2 failed for {artifact_name}: {e}")
+            return None
+    
+    def _get_artifact_fallback_3(self, artifact_name: str, artifact_type: str) -> Any:
+        """
+        Fallback 3: Try with short/long direction variations.
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+        """
+        try:
+            # Try different direction variations
+            direction_variations = ["long", "short", "Long", "Short"]
+            
+            for direction in direction_variations:
+                # Set context with different direction
+                original_direction = self.artifact_manager._current_direction
+                self.artifact_manager._current_direction = direction
+                
+                try:
+                    data = self.artifact_manager.get_artifact(
+                        artifact_name=artifact_name,
+                        artifact_type=artifact_type
+                    )
+                    if data is not None:
+                        return data
+                finally:
+                    # Restore original direction
+                    self.artifact_manager._current_direction = original_direction
+            
+            return None
+        except Exception as e:
+            self.logger.debug(f"Fallback 3 failed for {artifact_name}: {e}")
+            return None
+    
+    def _set_context(self, symbol: Optional[str] = None, exchange: Optional[str] = None, 
+                    information: Optional[str] = None, direction: str = "long", 
+                    model: str = "Analyst") -> None:
+        """
+        Set the artifact manager context for enhanced file naming and path management.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            information: Information type
+            direction: Trading direction (long/short)
+            model: Model type (Analyst/Tactician)
+        """
+        self.artifact_manager.set_context(
+            step_name=self.step_name,
+            symbol=symbol,
+            exchange=exchange,
+            information=information,
+            direction=direction,
+            model=model
+        )
+        self.logger.info(f"📁 Context set: symbol={symbol}, exchange={exchange}, information={information}, direction={direction}, model={model}")
+    
+    def _save_enhanced_artifact(self, data: Any, artifact_name: str, 
+                               artifact_type: str = "data", 
+                               metadata: Optional[Dict] = None) -> str:
+        """
+        Save an artifact using the most advanced features from Artifact_manager.
+        
+        This method uses store_enhanced() which includes:
+        - Memory profiling and optimization
+        - Automatic spilling for large datasets
+        - Enhanced compression strategies
+        - Performance monitoring
+        
+        Args:
+            data: Data to save
+            artifact_name: Name for the artifact
+            artifact_type: Type of artifact
+            metadata: Additional metadata
+            
+        Returns:
+            Path where artifact was saved
+        """
+        try:
+            # Use the enhanced storage method
+            success = self.artifact_manager.store_enhanced(
+                key=artifact_name,
+                data=data,
+                metadata=metadata
+            )
+            
+            if success:
+                # Get the path where it was saved
+                step_category = self.artifact_manager.get_step_category(self.step_name)
+                artifact_path = self.artifact_manager._get_enhanced_path(
+                    self.step_name, artifact_name, "parquet"
+                )
+                self.logger.info(f"✅ Enhanced artifact saved: {artifact_name} -> {artifact_path}")
+                return str(artifact_path)
+            else:
+                raise Exception("Enhanced storage failed")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save enhanced artifact {artifact_name}: {e}")
+            # Fallback to regular save
+            return self._save_artifact(data, artifact_name, artifact_type, "auto", metadata)
+    
+    def _get_enhanced_artifact(self, artifact_name: str, 
+                              artifact_type: str = "data") -> Any:
+        """
+        Retrieve an artifact using the most advanced features from Artifact_manager.
+        
+        This method uses retrieve_enhanced() which includes:
+        - Lazy loading from spilled artifacts
+        - Memory-optimized retrieval
+        - Performance monitoring
+        
+        Args:
+            artifact_name: Name of the artifact to retrieve
+            artifact_type: Type of artifact to retrieve
+            
+        Returns:
+            Retrieved data or None if not found
+        """
+        try:
+            # Try enhanced retrieval first
+            data = self.artifact_manager.retrieve_enhanced(artifact_name)
+            if data is not None:
+                self.logger.info(f"✅ Enhanced artifact retrieved: {artifact_name}")
+                return data
+            
+            # Fallback to regular retrieval with multiple fallbacks
+            return self._get_artifact(artifact_name, artifact_type)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to retrieve enhanced artifact {artifact_name}: {e}")
+            return None
+    
+    def _get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get performance metrics from the artifact manager.
+        
+        Returns:
+            Dictionary containing performance metrics
+        """
+        try:
+            return self.artifact_manager.get_performance_metrics()
+        except Exception as e:
+            self.logger.error(f"Failed to get performance metrics: {e}")
+            return {}
+    
+    def _get_memory_analytics(self) -> Dict[str, Any]:
+        """
+        Get memory analytics from the artifact manager.
+        
+        Returns:
+            Dictionary containing memory analytics
+        """
+        try:
+            return self.artifact_manager.get_memory_analytics()
+        except Exception as e:
+            self.logger.error(f"Failed to get memory analytics: {e}")
+            return {}
+    
+    def _clear_cache(self) -> None:
+        """
+        Clear the artifact manager cache.
+        """
+        try:
+            self.artifact_manager.clear_cache()
+            self.logger.info("🧹 Artifact cache cleared")
+        except Exception as e:
+            self.logger.error(f"Failed to clear cache: {e}")
     
     async def run(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the step with error handling and outcome generation.
         
         This is the main entry point called by the launcher.
+        Now includes enhanced artifact management and performance monitoring.
         
         Args:
             config: Configuration dictionary
@@ -133,7 +559,17 @@ class BaseStep(ABC):
         start_time = datetime.now()
         
         try:
-            self.logger.info(f"Starting execution of {self.step_name}")
+            self.logger.info(f"🚀 Starting execution of {self.step_name}")
+            
+            # Set context from config if available
+            symbol = config.get('symbol')
+            exchange = config.get('exchange')
+            information = config.get('information')
+            direction = config.get('direction', 'long')
+            model = config.get('model', 'Analyst')
+            
+            if any([symbol, exchange, information]):
+                self._set_context(symbol, exchange, information, direction, model)
             
             # Execute the step (async)
             execution_result = await self.execute(config)
@@ -142,11 +578,25 @@ class BaseStep(ABC):
             execution_time = (datetime.now() - start_time).total_seconds()
             execution_result['execution_time'] = execution_time
             
-            # Log completion
+            # Add performance metrics
+            try:
+                performance_metrics = self._get_performance_metrics()
+                memory_analytics = self._get_memory_analytics()
+                
+                execution_result['performance_metrics'] = performance_metrics
+                execution_result['memory_analytics'] = memory_analytics
+            except Exception as e:
+                self.logger.warning(f"Failed to get performance metrics: {e}")
+            
+            # Log completion with enhanced information
             if execution_result.get('success', False):
-                self.logger.info(f"Successfully completed {self.step_name} in {execution_time:.2f}s")
+                self.logger.info(f"✅ Successfully completed {self.step_name} in {execution_time:.2f}s")
+                if 'performance_metrics' in execution_result:
+                    metrics = execution_result['performance_metrics']
+                    self.logger.info(f"📊 Performance: Cache hit ratio: {metrics.get('cache_hit_ratio', 0):.2%}, "
+                                   f"Compression savings: {metrics.get('compression_savings_mb', 0):.1f}MB")
             else:
-                self.logger.error(f"Failed to complete {self.step_name} after {execution_time:.2f}s")
+                self.logger.error(f"❌ Failed to complete {self.step_name} after {execution_time:.2f}s")
             
             return execution_result
             
@@ -165,8 +615,32 @@ class BaseStep(ABC):
                 'metrics': {}
             }
             
-            
             return failure_result
+    
+    def _ensure_directory_structure(self) -> None:
+        """
+        Ensure the proper directory structure exists for step-category organization.
+        
+        This method creates the necessary directories in the artifacts/STEP-CATEGORY/ structure.
+        """
+        try:
+            from src.utils.artifact_manager import get_step_category
+            
+            # Get the step category
+            step_category = get_step_category(self.step_name)
+            
+            # Ensure the artifacts directory exists
+            artifacts_dir = self.artifact_manager._artifacts_dir
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Ensure the step category directory exists
+            category_dir = artifacts_dir / step_category
+            category_dir.mkdir(parents=True, exist_ok=True)
+            
+            self.logger.info(f"📁 Directory structure ensured: {category_dir}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to ensure directory structure: {e}")
 
 
 class StepRegistry:

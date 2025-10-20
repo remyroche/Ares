@@ -37,6 +37,18 @@ from enum import Enum
 import functools
 import io
 
+# Import hardware optimization utilities
+from src.utils.hardware import (
+    # Core optimization decorators
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    # Memory management
+    memory_optimized, gc_optimized, MemoryOptimizationLevel,
+    # Hardware management
+    get_integrated_hardware_manager, track_memory_usage,
+    # M1 optimizations
+    m1_optimized, WorkloadCategory, OptimizationStrategy
+)
+
 # Try to import colorama for colored output
 try:
     from colorama import Fore, Back, Style, init
@@ -653,6 +665,8 @@ def tprint_context(config: Optional[TPrintConfig] = None):
     finally:
         _global_manager = old_manager
 
+@memory_optimized(level=MemoryOptimizationLevel.BALANCED)
+@m1_optimized(workload_category=WorkloadCategory.IO_INTENSIVE)
 def tprint(*args, **kwargs) -> None:
     """
     Enhanced print with timestamp - Production-ready version.
@@ -722,6 +736,8 @@ def tprint_debug(*args, **kwargs) -> None:
     """
     _global_manager._log(LogLevel.DEBUG, *args, **kwargs)
 
+@memory_optimized(level=MemoryOptimizationLevel.BALANCED)
+@m1_optimized(workload_category=WorkloadCategory.IO_INTENSIVE)
 def tprint_info(*args, **kwargs) -> None:
     """
     Print with timestamp and INFO prefix.
@@ -843,6 +859,8 @@ def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **k
     if compact is not None:
         _global_manager.config.compact_traceback = old_compact
 
+@memory_optimized(level=MemoryOptimizationLevel.BALANCED)
+@m1_optimized(workload_category=WorkloadCategory.IO_INTENSIVE)
 def tprint_success(*args, **kwargs) -> None:
     """
     Print with timestamp and SUCCESS prefix.

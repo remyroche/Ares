@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 class GPUOperationType(Enum):
     """Types of GPU operations."""
+    GENERAL = "general"
     MATRIX_MULTIPLICATION = "matrix_multiplication"
     TENSOR_OPERATIONS = "tensor_operations"
     NEURAL_NETWORK = "neural_network"

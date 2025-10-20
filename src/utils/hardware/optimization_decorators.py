@@ -8,6 +8,7 @@ and memory efficiency improvements to functions throughout the codebase.
 import logging
 import time
 import functools
+from functools import wraps
 import hashlib
 import inspect
 from typing import Any, Dict, List, Optional, Callable, Union, Tuple
@@ -32,6 +33,7 @@ class OptimizationLevel(Enum):
     """Optimization levels for decorators."""
     NONE = "none"
     BASIC = "basic"          # Basic caching and data type optimization
+    BALANCED = "balanced"    # Balanced optimization
     AGGRESSIVE = "aggressive"  # Full optimization with compression
     MAXIMUM = "maximum"      # Maximum optimization with all features
 
@@ -574,6 +576,35 @@ def clear_optimization_cache():
     cache = get_global_cache()
     cache.clear()
     tprint_info("Optimization cache cleared")
+
+def auto_optimize(optimize_inputs: bool = True, optimize_outputs: bool = True):
+    """
+    Apply automatic optimization to a function.
+    
+    Args:
+        optimize_inputs: Whether to optimize function inputs
+        optimize_outputs: Whether to optimize function outputs
+        
+    Returns:
+        Decorator function
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Optimize inputs if requested
+            if optimize_inputs:
+                args, kwargs = _optimize_inputs_enhanced(args, kwargs)
+            
+            # Execute function
+            result = func(*args, **kwargs)
+            
+            # Optimize outputs if requested
+            if optimize_outputs:
+                result = _optimize_output_enhanced(result)
+            
+            return result
+        return wrapper
+    return decorator
 
 def _optimize_inputs_enhanced(args: tuple, kwargs: dict) -> tuple:
     """Enhanced input optimization with advanced features."""

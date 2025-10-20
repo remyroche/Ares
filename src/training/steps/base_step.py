@@ -83,7 +83,7 @@ from src.utils.hardware.memory_optimized_decorators import (
     MemoryOptimizationLevel, comprehensive_memory_optimization
 )
 from src.utils.hardware.optimization_decorators import (
-    smart_cache, auto_optimize, performance_tracked
+    smart_cache, auto_optimize, performance_tracked, memory_efficient, OptimizationConfig, OptimizationLevel
 )
 
 
@@ -149,8 +149,7 @@ class BaseStep(ABC):
     
     @memory_efficient(OptimizationConfig(
         enable_dtype_optimization=True,
-        optimization_level=OptimizationLevel.BALANCED,
-        enable_compression=True
+        optimization_level=OptimizationLevel.BALANCED
     ))
     def _save_dataframe(self, df: Any, name: str, metadata: Optional[Dict] = None) -> str:
         """
@@ -194,7 +193,6 @@ class BaseStep(ABC):
         return data
     
     @memory_efficient(OptimizationConfig(
-        enable_compression=True,
         optimization_level=OptimizationLevel.AGGRESSIVE
     ))
     def _save_model(self, model: Any, name: str, metadata: Optional[Dict] = None) -> str:
@@ -668,7 +666,7 @@ class BaseStep(ABC):
             self.logger.warning(f"Hardware optimization failed, using fallback: {e}")
             return optimize_dataframe(df)
     
-    @smart_cache(ttl=1800, max_size=50)
+    @smart_cache(ttl=1800)
     def _get_hardware_stats(self) -> Dict[str, Any]:
         """
         Get comprehensive hardware statistics.

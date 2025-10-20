@@ -57,7 +57,7 @@ except ImportError:
     GZIP_AVAILABLE = False
 
 from .logger import system_logger
-from .common_operations import ensure_directory
+from .common_operations import ensure_directory, MemoryOptimizationLevel
 from .version_manager import get_version_manager
 
 # Import hardware optimization tools
@@ -1674,7 +1674,7 @@ class ArtifactManager:
 	
 	# Enhanced store method with profiling and spilling
 	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	@performance_tracked()
 	def store_enhanced(self, key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> bool:
 		"""Store artifact with enhanced profiling and spill strategies."""
 		try:
@@ -1702,7 +1702,7 @@ class ArtifactManager:
 	
 	# Enhanced retrieve method with lazy loading
 	@memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-	@performance_tracked(log_performance=True, track_memory=True)
+	@performance_tracked()
 	def retrieve_enhanced(self, key: str) -> Optional[Any]:
 		"""Retrieve artifact with lazy loading and spill support."""
 		try:

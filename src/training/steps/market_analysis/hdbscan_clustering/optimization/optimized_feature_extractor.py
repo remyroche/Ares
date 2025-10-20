@@ -19,7 +19,7 @@ import multiprocessing as mp
 # Import UnifiedVectorizationManager
 from src.utils.ml_common.unified_vectorization_manager import (
     UnifiedVectorizationManager, 
-    VectorizationConfig,
+    StrategySelectionConfig,
     get_unified_vectorization_manager
 )
 
@@ -93,7 +93,7 @@ class OptimizedFeatureExtractor:
         
         # Initialize UnifiedVectorizationManager
         with tprint_timer("Vectorization manager initialization"):
-            vectorization_config = VectorizationConfig(
+            vectorization_config = StrategySelectionConfig(
                 enable_vectorbt=self.config.enable_vectorbt,
                 enable_gpu=self.config.enable_gpu,
                 memory_efficient=self.config.memory_efficient,

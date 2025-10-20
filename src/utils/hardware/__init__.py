@@ -37,7 +37,7 @@ from .memory_optimized_decorators import (
 )
 
 from .optimization_decorators import (
-    smart_cache, memory_efficient, performance_tracked,
+    smart_cache, memory_efficient, performance_tracked, auto_optimize,
     cache_dataframe_result, cache_numpy_result, optimize_heavy_computation,
     memory_aware, optimize_all_dataframes, optimize_all_arrays,
     get_optimization_stats, clear_optimization_cache
@@ -293,7 +293,7 @@ __all__ = [
     'optimize_streaming_processing', 'get_memory_optimization_stats',
     
     # Decorators
-    'smart_cache', 'memory_efficient', 'performance_tracked',
+    'smart_cache', 'memory_efficient', 'performance_tracked', 'auto_optimize',
     'cache_dataframe_result', 'cache_numpy_result', 'optimize_heavy_computation',
     'memory_aware', 'optimize_all_dataframes', 'optimize_all_arrays',
     

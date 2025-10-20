@@ -77,6 +77,9 @@ from ..shared_utils.calibration_registry import (
     update_quality_calibration,
 )
 
+from src.utils.hardware import memory_optimized, performance_tracked
+from src.utils.hardware.memory_optimized_decorators import MemoryOptimizationLevel
+
 from ...base_step import BaseStep
 from .base_component import ComponentConfig, ComponentResult
 from ..regime_analysis.label_fusion import RegimeOptimizationService
@@ -550,7 +553,7 @@ class RegimeClusteringComponent(BaseStep):
                 self.cpu_optimizer = None
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _load_market_data_from_artifacts(self) -> Optional[pd.DataFrame]:
         """Load market data from artifacts using BaseStep artifact manager with hardware optimization."""
         try:
@@ -862,7 +865,7 @@ class RegimeClusteringComponent(BaseStep):
                 return {}
 
     def _run_clustering_trial(self, features: np.ndarray, market_data: pd.DataFrame, 
-                            config: NASTASClusteringConfig) -> Dict[str, Any]:
+                            config: RegimeClusteringConfig) -> Dict[str, Any]:
         """Run a single clustering trial for optimization."""
         try:
             tprint(f"Running clustering trial with n_regimes={config.n_regimes}", "INFO")
@@ -1130,7 +1133,7 @@ class RegimeClusteringComponent(BaseStep):
         """Get list of required artifacts this component must produce."""
         return ['nas_tas_clustering_result']
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _estimate_regime_range(self) -> Tuple[int, int, int]:
         """Estimate regime count bounds using discovery metrics from artifacts with performance tracking."""
 
@@ -1302,7 +1305,7 @@ class RegimeClusteringComponent(BaseStep):
 
         return int(min_bound), int(max_bound), suggested
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _extract_regime_counts(self) -> int:
         """Extract the number of regimes to use for clustering using data-driven approach with performance tracking."""
         tprint("📈 Step 1: Extracting regime count from artifacts...", "INFO")
@@ -1341,7 +1344,7 @@ class RegimeClusteringComponent(BaseStep):
             self.config.n_regimes = default_regimes
             return default_regimes
     
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _estimate_default_regime_count(self) -> int:
         """Estimate default regime count based on data characteristics."""
         # Use a simple heuristic based on data size
@@ -1367,7 +1370,7 @@ class RegimeClusteringComponent(BaseStep):
         self.clustering_config.n_regimes = n_regimes
         return n_regimes
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _validate_configuration(self) -> None:
         """Validate configuration using shared utilities with performance tracking."""
         tprint("Step 2: Validating inputs and configuration using shared utilities", "INFO")
@@ -1378,7 +1381,7 @@ class RegimeClusteringComponent(BaseStep):
 
         tprint("Configuration validation passed using shared utilities", "SUCCESS")
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _initialize_execution_metadata(self) -> None:
         """Initialize execution metadata for downstream use with performance tracking."""
         self.execution_metadata = {
@@ -1392,7 +1395,7 @@ class RegimeClusteringComponent(BaseStep):
             'calibration_loaded_from_state': False,
         }
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _restore_learned_weights_from_artifacts(self) -> None:
         """Restore learned metric weights and history from artifacts with performance tracking."""
         restored_weights: Dict[str, Dict[str, float]] = {}
@@ -1430,7 +1433,7 @@ class RegimeClusteringComponent(BaseStep):
             if sanitized_history:
                 self.metric_weight_history = sanitized_history[-self._weight_history_limit:]
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _iterate_weight_containers(self, node: Any) -> Iterator[Dict[str, Any]]:
         """Yield nested containers that may store learned weight metadata with performance tracking."""
         if isinstance(node, dict):
@@ -1442,7 +1445,7 @@ class RegimeClusteringComponent(BaseStep):
             for item in node:
                 yield from self._iterate_weight_containers(item)
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _sanitize_weight_dict(self, group: str, weights: Any) -> Dict[str, float]:
         """Convert a raw weight mapping into a normalized simplex weight dict with performance tracking."""
         if not isinstance(weights, dict):
@@ -1574,7 +1577,7 @@ class RegimeClusteringComponent(BaseStep):
 
         return serialized
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _load_calibration_history(self) -> None:
         """Load calibration history from artifacts if available with performance tracking."""
 
@@ -1874,7 +1877,7 @@ class RegimeClusteringComponent(BaseStep):
             tprint_warning(f"Quality threshold calibration failed: {exc}")
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _prepare_features(self, market_data: pd.DataFrame) -> FeaturePreparationResult:
         """Prepare market features for clustering and retain Stage 1 metadata with hardware optimization."""
         tprint("Step 4: Preparing features using shared utilities", "INFO")
@@ -1928,7 +1931,7 @@ class RegimeClusteringComponent(BaseStep):
         return 'other'
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _select_regime_features(
         self,
         feature_result: FeaturePreparationResult,
@@ -2350,7 +2353,7 @@ class RegimeClusteringComponent(BaseStep):
             return features, feature_names, {'selection_performed': False, 'error': str(e)}
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _generate_cluster_characteristics(
         self,
         market_data: pd.DataFrame,
@@ -2368,7 +2371,7 @@ class RegimeClusteringComponent(BaseStep):
         return cluster_characteristics
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _calculate_clustering_metrics_using_shared_utils(
         self,
         clustering_result: Dict[str, Any],
@@ -2657,7 +2660,7 @@ class RegimeClusteringComponent(BaseStep):
             }
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _build_artifacts(
         self,
         clustering_result: Dict[str, Any],
@@ -2690,7 +2693,7 @@ class RegimeClusteringComponent(BaseStep):
         return await self.execute(config)
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute regime clustering analysis with hardware optimization.
@@ -3035,7 +3038,7 @@ class RegimeClusteringComponent(BaseStep):
             return Path("outcomes/regime_clustering_metrics_fallback.md")
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load and validate market data for clustering with hardware optimization."""
         try:
@@ -3063,7 +3066,7 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"Market data loading failed: {e}", "ERROR")
             return None
     
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _create_clustering_config_using_shared_utils(self) -> Dict[str, Any]:
         """Create clustering configuration using shared utilities with performance tracking."""
         try:
@@ -3154,7 +3157,7 @@ class RegimeClusteringComponent(BaseStep):
     
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     async def _perform_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform clustering using advanced optimization methods with hardware acceleration."""
         try:
@@ -3172,7 +3175,7 @@ class RegimeClusteringComponent(BaseStep):
             raise ValueError(f"Clustering failed: {e}")
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     async def _perform_advanced_clustering(self, features: np.ndarray, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Perform advanced clustering using progressive regime optimization with hardware acceleration."""
         try:
@@ -3541,7 +3544,7 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             tprint_warning(f"Fallback cleanup failed: {e}")
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _determine_optimal_algorithm_type(self, data: Any) -> str:
         """
         Determine the optimal clustering algorithm based on data characteristics and regime discovery results.
@@ -3596,7 +3599,7 @@ class RegimeClusteringComponent(BaseStep):
             tprint_warning(f"Algorithm determination failed: {e}, using adaptive_clustering")
             return 'adaptive_clustering'
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _validate_execution_inputs(self, data: Any) -> None:
         """Validate inputs for execution method with performance tracking."""
         try:
@@ -5219,7 +5222,7 @@ class RegimeClusteringComponent(BaseStep):
             return 0.0
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _calculate_final_quality_metrics(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
         """Calculate final quality metrics for clustering results with hardware optimization."""
         try:
@@ -5541,7 +5544,7 @@ class RegimeClusteringComponent(BaseStep):
         self.metric_weight_history[-1]['fitted_weights'] = learned
         return learned
 
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _update_learned_weights(
         self,
         clustering_result: Dict[str, Any],
@@ -7226,7 +7229,7 @@ class RegimeClusteringComponent(BaseStep):
             return 0.5
     
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _calculate_regime_economic_metrics(self, centroids: Dict[int, np.ndarray], market_data: pd.DataFrame) -> Dict[int, Dict[str, float]]:
         """Calculate economic metrics for each regime with hardware optimization."""
         try:
@@ -7252,7 +7255,7 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"  ⚠️  Economic metrics calculation failed: {e}", "WARNING")
             return {}
     
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _calculate_economic_alignment_score(self, nas_metrics: Dict[str, float], tas_metrics: Dict[str, float]) -> float:
         """Calculate economic alignment score between regime metrics with performance tracking."""
         try:
@@ -8026,7 +8029,7 @@ class RegimeClusteringComponent(BaseStep):
             tprint(f"Convergence history update failed: {e}")
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _create_regime_assignments_dataframe(self, cluster_assignments: List[int],
                                            features: np.ndarray,
                                            market_data: pd.DataFrame) -> pd.DataFrame:
@@ -8100,7 +8103,7 @@ class RegimeClusteringComponent(BaseStep):
             return fallback_df
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _save_regime_assignments_parquet(self, regime_df: pd.DataFrame, symbol: str = "ETHUSDT") -> Path:
         """Save regime assignments DataFrame as parquet file with hardware optimization."""
         try:
@@ -8124,7 +8127,7 @@ class RegimeClusteringComponent(BaseStep):
             raise
 
     @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE)
-    @performance_tracked(log_performance=True, track_memory=True)
+    @performance_tracked()
     def _extract_regime_assignments(self) -> Tuple[np.ndarray, np.ndarray]:
         """Extract TAS and NAS regime assignments from artifacts with hardware optimization."""
         try:

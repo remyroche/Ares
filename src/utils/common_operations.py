@@ -13,7 +13,8 @@ from contextlib import contextmanager
 # Enhanced hardware optimization imports
 try:
     from src.utils.hardware.optimization_decorators import (
-        smart_cache, auto_optimize, memory_efficient, performance_tracked
+        smart_cache, auto_optimize, memory_efficient, performance_tracked,
+        OptimizationConfig, OptimizationLevel
     )
     from src.utils.hardware.memory_optimized_decorators import (
         memory_optimized, comprehensive_memory_optimization, MemoryOptimizationLevel
@@ -24,18 +25,40 @@ try:
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
     HARDWARE_OPTIMIZATION_AVAILABLE = False
-    # Create dummy decorators
+    # Create dummy decorators and classes
     def memory_efficient(config=None):
         def decorator(func):
             return func
         return decorator
-    def auto_optimize(config=None):
+    def auto_optimize(config=None, **kwargs):
         def decorator(func):
             return func
         return decorator
+    def performance_tracked(func):
+        return func
+    def smart_cache(func):
+        return func
+    class OptimizationConfig:
+        def __init__(self, **kwargs):
+            pass
+    class OptimizationLevel:
+        BALANCED = "balanced"
+        AGGRESSIVE = "aggressive"
+        CONSERVATIVE = "conservative"
+        MAXIMUM = "maximum"
+    class MemoryOptimizationLevel:
+        BALANCED = "balanced"
+        AGGRESSIVE = "aggressive"
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Define OptimizationLevel class
+class OptimizationLevel:
+    BALANCED = "balanced"
+    AGGRESSIVE = "aggressive"
+    CONSERVATIVE = "conservative"
+    MAXIMUM = "maximum"
 
 @auto_optimize(OptimizationConfig(
     enable_caching=True,
@@ -80,8 +103,7 @@ def get_memory_usage() -> Dict[str, float]:
 
 @memory_efficient(OptimizationConfig(
     enable_dtype_optimization=True,
-    optimization_level=OptimizationLevel.AGGRESSIVE,
-    enable_compression=True
+    optimization_level=OptimizationLevel.AGGRESSIVE
 ))
 def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
     """Optimize DataFrame memory usage using enhanced hardware optimization tools."""

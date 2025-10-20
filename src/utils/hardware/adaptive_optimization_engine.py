@@ -42,10 +42,7 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from .adaptive_optimization_engine import (
-    LearningAlgorithm, OptimizationTarget, PerformanceMetrics, OptimizationSettings,
-    LearningModel, AdaptiveOptimizationEngine as BaseAdaptiveOptimizationEngine
-)
+# Remove circular import - these classes are defined in this file
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +64,32 @@ class WorkloadCategory(Enum):
     FEATURE_ENGINEERING = "feature_engineering"
     MATRIX_OPERATIONS = "matrix_operations"
     NEURAL_INFERENCE = "neural_inference"
+
+class OptimizationTarget(Enum):
+    """Optimization targets."""
+    EXECUTION_TIME = "execution_time"
+    MEMORY_USAGE = "memory_usage"
+    CPU_USAGE = "cpu_usage"
+    CACHE_EFFICIENCY = "cache_efficiency"
+    OVERALL_SCORE = "overall_score"
+
+@dataclass
+class OptimizationSettings:
+    """Optimization settings."""
+    strategy: OptimizationStrategy = OptimizationStrategy.BALANCED
+    target: OptimizationTarget = OptimizationTarget.OVERALL_SCORE
+    max_iterations: int = 100
+    convergence_threshold: float = 0.01
+    enable_adaptive: bool = True
+
+@dataclass
+class PerformanceMetrics:
+    """Base performance metrics."""
+    execution_time: float = 0.0
+    memory_usage_mb: float = 0.0
+    cpu_usage_percent: float = 0.0
+    cache_hit_rate: float = 0.0
+    optimization_score: float = 0.0
 
 @dataclass
 class EnhancedPerformanceMetrics(PerformanceMetrics):
@@ -284,8 +307,11 @@ class NeuralNetworkOptimizer:
             target: [] for target in OptimizationTarget
         }
     
-    def _create_model(self, target: OptimizationTarget) -> nn.Module:
+    def _create_model(self, target: OptimizationTarget):
         """Create neural network model for optimization target."""
+        if not TORCH_AVAILABLE:
+            return None
+            
         class OptimizationNet(nn.Module):
             def __init__(self, input_size=15, hidden_size=64, output_size=1):
                 super().__init__()

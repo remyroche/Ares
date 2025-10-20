@@ -32,72 +32,23 @@ from src.utils.common_utilities import safe_dataframe_operation, validate_datafr
 from src.utils.math_validation import safe_divide, validate_finite, validate_positive, validate_range
 from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 # Hardware optimization imports
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
-
-@dataclass
-class FeatureSelectorConfig:
-    """Configuration for feature selection."""
-
-    # Variance-based filtering
-    variance_threshold: float = 0.01
-    min_features: int = 10
-
-    # PCA-based pruning
-    pca_components: Optional[int] = None
-    loading_threshold: float = 0.1
-    max_features: int = 200
-
-    # Domain-specific filtering
-    financial_whitelist: List[str] = field(default_factory=list)
-    financial_blacklist: List[str] = field(default_factory=list)
-
-    # Selection strategy
-    selection_method: str = "combined"  # "variance", "pca", "combined"
-    target_features: int = 100
-
-class FeatureSelector:
-    """
-    Feature selector for market analysis clustering.
-
-    Responsibilities:
-    - Drop near-zero-variance features
-    - Prune by PCA loading scores
-    - Allow whitelist/blacklist of financial features
-    - Return final feature set
-    """
-
-    def __init__(self, config: FeatureSelectorConfig = None):
-        """Initialize the FeatureSelector."""
-        self.config = config or FeatureSelectorConfig()
-        self.selection_metadata = {}
-
-        # Initialize hardware optimization components
-        self._initialize_hardware_optimization()
-
-        # Initialize matrix operations for efficient computations
-        self.matrix_ops = get_unified_matrix_operations(
-            enable_gpu=True,
-            enable_memory_optimization=True,
-            enable_parallel=True
-        )
-
-        # Initialize HPO for parameter optimization
-        self.hpo_optimizer = HyperparameterOptimization()
-
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        try:
-            self.gpu_manager = get_m1_gpu_manager() if get_m1_gpu_manager() else None
-            self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer() else None
-            self.cpu_optimizer = get_m1_cpu_optimizer() if get_m1_cpu_optimizer() else None
+    () if get_integrated_hardware_manager() else None
+            self.memory_optimizer = get_integrated_hardware_manager() if get_integrated_hardware_manager() else None
+            self.cpu_optimizer = get_comprehensive_optimizer() if get_comprehensive_optimizer() else None
 
             if self.gpu_manager or self.memory_optimizer or self.cpu_optimizer:
                 tprint("✅ Hardware optimization initialized for feature selection", "SUCCESS")

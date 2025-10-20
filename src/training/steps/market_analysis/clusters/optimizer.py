@@ -131,8 +131,8 @@ class ClusteringOptimizer:
             self.matrix_ops = UnifiedMatrixOperations()
 
             # Get hardware managers for optimization
-            self.hardware_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.memory_optimizer = get_integrated_hardware_manager()
 
             if self.hardware_manager or self.memory_optimizer:
                 tprint("🖥️ Hardware optimizations initialized for clustering optimizer", "INFO")

@@ -61,22 +61,22 @@ class M1CPUOptimizer:
         return [func(item) for item in items]
 
 # Convenience functions
-def get_m1_gpu_manager():
+def get_integrated_hardware_manager():
     return M1GPUManager()
 
 def get_m1_memory_optimizer(memory_limit_gb=8.0):
     return M1MemoryOptimizer(memory_limit_gb)
 
-def get_m1_cpu_optimizer():
+def get_comprehensive_optimizer():
     return M1CPUOptimizer()
 
 def optimize_dataframe_for_m1(df):
     return df.copy()
 
-def optimize_dataframe_memory(df):
+def optimize_dataframe(df):
     return df.copy()
 
-def optimize_memory():
+def get_integrated_hardware_manager().clear_all_caches():
     gc.collect()
 
 def create_m1_optimized_thread_pool():
@@ -182,9 +182,9 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         
         # Initialize M1 optimization components
         tprint_info("🚀 Initializing M1 optimization components")
-        self.m1_gpu_manager = get_m1_gpu_manager()
-        self.m1_memory_optimizer = get_m1_memory_optimizer()
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        self.m1_gpu_manager = get_integrated_hardware_manager()
+        self.m1_memory_optimizer = get_integrated_hardware_manager()
+        self.m1_cpu_optimizer = get_comprehensive_optimizer()
         
         # Optimization configuration
         self.parallel_workers = 6  # Optimized for M1
@@ -297,7 +297,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 tprint_info(f"Garbage collection cycle: {collected} objects collected")
             
             # Use M1 memory optimizer for additional cleanup
-            memory_result = optimize_memory()
+            memory_result = get_integrated_hardware_manager().clear_all_caches()
             if memory_result.get('success', False):
                 memory_saved = memory_result.get('memory_saved_mb', 0)
                 tprint_success(f"🧠 Memory optimization: {memory_saved:.1f} MB saved")
@@ -2559,7 +2559,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
         except Exception:
             pass
         try:
-            _ = optimize_memory()
+            _ = get_integrated_hardware_manager().clear_all_caches()
         except Exception:
             pass
 
@@ -2675,7 +2675,7 @@ class FeatureGenerationPeriodLookbackOptimizationStep(BaseStep):
                 })
 
             try:
-                _ = optimize_memory()
+                _ = get_integrated_hardware_manager().clear_all_caches()
             except Exception:
                 pass
 

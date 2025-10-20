@@ -28,6 +28,17 @@ from src.utils.common_operations import memory_checkpoint
 # Import matrix operations with fallback
 try:
     from src.utils.matrix_operations import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
         get_unified_matrix_operations,
         get_vectorized_processing_core,
         get_batch_matrix_processor
@@ -39,9 +50,9 @@ except ImportError:
 
 # Import M1 hardware optimizations
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    
+    
+    
     M1_HARDWARE_AVAILABLE = True
 except ImportError:
     M1_HARDWARE_AVAILABLE = False
@@ -261,9 +272,9 @@ class DawidSkeneService:
         self.logger = logger or _default_logger
 
         # Initialize hardware optimizers
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.cpu_optimizer = get_m1_cpu_optimizer()
-        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_integrated_hardware_manager()
+        self.cpu_optimizer = get_comprehensive_optimizer()
+        self.gpu_manager = get_integrated_hardware_manager()
 
         # Initialize matrix operations
         if MATRIX_OPERATIONS_AVAILABLE:

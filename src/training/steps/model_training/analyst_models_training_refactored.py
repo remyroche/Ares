@@ -54,9 +54,17 @@ except ImportError as e:
 # Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers, safe_divide,
-        ensure_directory, safe_file_exists, get_current_datetime, validate_positive
+        safe_divide, ensure_directory, safe_file_exists, get_current_datetime, validate_positive
+    )
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, 
+        get_comprehensive_optimizer,
+        memory_optimized, 
+        comprehensive_memory_optimization,
+        optimize_dataframe, 
+        m1_optimized,
+        WorkloadCategory,
+        MemoryOptimizationLevel
     )
     COMMON_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Common operations utilities loaded")
@@ -361,12 +369,10 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
                 'enable_confidence_calibration': True
             }
             
-            # Initialize hardware optimizers if available
-            if COMMON_OPERATIONS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
-                tprint_info("✅ Hardware optimizers initialized")
+            # Initialize enhanced hardware optimizers
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.comprehensive_optimizer = get_comprehensive_optimizer()
+            tprint_info("✅ Enhanced hardware optimizers initialized")
             
             # Initialize data quality monitoring
             self.data_quality_issues = []
@@ -596,11 +602,9 @@ class AnalystModelsTrainingStepRefactored(BaseStep):
             if TPRINT_AVAILABLE:
                 tprint_info("🔧 Initializing essential analyst training components")
             
-            # Initialize hardware optimizers if available
-            if COMMON_OPERATIONS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+            # Initialize enhanced hardware optimizers
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.comprehensive_optimizer = get_comprehensive_optimizer()
             
             # Initialize training phases
             for phase in TrainingPhase:

@@ -28,71 +28,38 @@ from src.training.steps.base_step import BaseStep
 from src.utils.common_operations import safe_dataframe_operation
 from src.utils.matrix_operations import safe_matrix_multiply, optimize_dataframe
 
-# Self-contained optimization components
-class OperationType:
-    """Operation types for vectorization."""
-    FEATURE_GENERATION = "feature_generation"
-    MATRIX_OPERATIONS = "matrix_operations"
-    DATA_TRANSFORMATION = "data_transformation"
-
-class M1GPUManager:
-    """Self-contained M1 GPU manager."""
-    def __init__(self):
-        self.mps_available = False  # Simplified - no actual M1 GPU detection
+# Import enhanced hardware optimization tools
+try:
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, 
+        get_comprehensive_optimizer,
+        memory_optimized, 
+        comprehensive_memory_optimization,
+        optimize_dataframe, 
+        optimize_array,
+        m1_optimized,
+        WorkloadCategory,
+        MemoryOptimizationLevel
+    )
+    M1_OPTIMIZATION_AVAILABLE = True
+    tprint_info("✅ Enhanced hardware optimization tools loaded")
+except ImportError as e:
+    print(f"⚠️ Enhanced hardware optimization tools not available: {e}")
+    M1_OPTIMIZATION_AVAILABLE = False
     
-    def optimize_dataframe(self, df):
-        """Optimize dataframe for M1."""
+    # Fallback functions
+    def optimize_dataframe(df): 
         return df.copy()
-
-class M1MemoryOptimizer:
-    """Self-contained M1 memory optimizer."""
-    def __init__(self, memory_limit_gb=8.0):
-        self.memory_limit_gb = memory_limit_gb
-    
-    def optimize_dataframe(self, df):
-        """Optimize dataframe memory usage."""
-        return df.copy()
-    
-    def optimize_memory(self):
-        """Optimize memory usage."""
-        gc.collect()
-        return {'success': True}
-
-class M1CPUOptimizer:
-    """Self-contained M1 CPU optimizer."""
-    def __init__(self):
-        self.max_workers = 4
-    
-    def create_thread_pool(self):
-        """Create optimized thread pool."""
-        return ThreadPoolExecutor(max_workers=self.max_workers)
-    
-    def parallel_map(self, func, items):
-        """Parallel map function."""
-        return [func(item) for item in items]
-
-class UnifiedVectorizationManager:
-    """Self-contained unified vectorization manager."""
-    def __init__(self):
-        self.operation_type = OperationType.FEATURE_GENERATION
-    
-    def optimize_operation(self, data, operation_type, **kwargs):
-        """Optimize operation using vectorization."""
-        return data.copy()
-
-# Set availability flag
-M1_OPTIMIZATION_AVAILABLE = True
-
-# Convenience functions
-def optimize_dataframe_for_m1(df): 
-    return df.copy()
-
-def optimize_dataframe_memory(df): 
-    return df.copy()
-
-def optimize_memory(): 
-    gc.collect()
-    return {'success': True}
+    def optimize_array(arr): 
+        return arr.copy()
+    def memory_optimized(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    def m1_optimized(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
 
 # Import tprint utilities
 try:
@@ -262,13 +229,11 @@ class FeatureGenerationStep(BaseStep):
         else:
             self.feature_bank = None
         
-        # Initialize M1 optimization components
+        # Initialize enhanced hardware optimization components
         if M1_OPTIMIZATION_AVAILABLE:
-            tprint_info("🧠 Initializing M1 optimization components for feature generation")
-            self.m1_gpu_manager = M1GPUManager()
-            self.m1_memory_optimizer = M1MemoryOptimizer(memory_limit_gb=8)
-            self.m1_cpu_optimizer = M1CPUOptimizer()
-            self.unified_vectorization_manager = UnifiedVectorizationManager()
+            tprint_info("🧠 Initializing enhanced hardware optimization components for feature generation")
+            self.hardware_manager = get_integrated_hardware_manager()
+            self.comprehensive_optimizer = get_comprehensive_optimizer()
             
             # M1 optimization configuration
             self.parallel_workers = 6  # Optimized for M1
@@ -378,13 +343,9 @@ class FeatureGenerationStep(BaseStep):
                 raise RuntimeError("Enhanced feature generation components are not available")
 
             # Apply M1 optimization to input data
-            if self.m1_memory_optimizer:
-                tprint_info("🧠 Applying M1 memory optimization to input data")
-                data = self._optimize_dataframe_memory(data)
-                
-            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
-                tprint_info("🚀 Applying M1 GPU acceleration to input data")
-                data = optimize_dataframe_for_m1(data)
+            if self.hardware_manager:
+                tprint_info("🧠 Applying enhanced hardware optimization to input data")
+                data = self.hardware_manager.process_data_with_optimization(data, WorkloadCategory.DATA_PROCESSING)
                 
             # Monitor memory usage
             self._monitor_memory_usage()
@@ -487,40 +448,24 @@ class FeatureGenerationStep(BaseStep):
             if self.m1_memory_optimizer:
                 try:
                     self.m1_memory_optimizer.stop_monitoring()
-                    optimize_memory()
+                    get_integrated_hardware_manager().clear_all_caches()
                     tprint_info("🧠 M1 memory monitoring stopped and cleanup completed")
                 except Exception as cleanup_error:
                     tprint_warning(f"⚠️ M1 cleanup failed: {cleanup_error}")
 
-    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply M1-specific memory optimizations to a DataFrame."""
+    def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Apply enhanced hardware optimizations to a DataFrame."""
         try:
             if not isinstance(df, pd.DataFrame) or df.empty:
                 return df
             
-            initial_memory = df.memory_usage(deep=True).sum()
+            if self.hardware_manager:
+                return self.hardware_manager.process_data_with_optimization(df, WorkloadCategory.DATA_PROCESSING)
+            else:
+                return optimize_dataframe(df)
             
-            # Apply M1 GPU optimization
-            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
-                df = optimize_dataframe_for_m1(df)
-            
-            # Convert float64 to float32 where precision allows
-            if self.float32_conversion:
-                for col in df.select_dtypes(include=[np.float64]).columns:
-                    if df[col].min() >= np.finfo(np.float32).min and df[col].max() <= np.finfo(np.float32).max:
-                        df[col] = df[col].astype(np.float32)
-            
-            # Apply M1 memory optimizer
-            if self.m1_memory_optimizer:
-                df = optimize_dataframe_memory(df)
-            
-            final_memory = df.memory_usage(deep=True).sum()
-            memory_saved = initial_memory - final_memory
-            
-            if memory_saved > 0:
-                tprint_info(f"🧠 Data type optimization: {memory_saved / 1024**2:.2f} MB saved")
-                self.performance_stats['memory_optimizations_applied'] += 1
-            
+        except Exception as e:
+            tprint_warning(f"DataFrame optimization failed: {e}")
             return df
             
         except Exception as e:
@@ -547,7 +492,7 @@ class FeatureGenerationStep(BaseStep):
                 
                 # Clear M1-specific caches
                 if self.m1_memory_optimizer:
-                    memory_result = optimize_memory()
+                    memory_result = get_integrated_hardware_manager().clear_all_caches()
                     if memory_result.get('success', False):
                         memory_saved = memory_result.get('memory_saved_mb', 0)
                         if memory_saved > 0:
@@ -575,17 +520,8 @@ class FeatureGenerationStep(BaseStep):
     def _process_chunk_with_optimization(self, chunk: pd.DataFrame, chunk_idx: int, **kwargs) -> pd.DataFrame:
         """Process a single data chunk with M1 optimizations."""
         try:
-            # Apply memory optimization
-            chunk = self._optimize_dataframe_memory(chunk)
-            
-            # Apply M1 GPU acceleration if available
-            if self.m1_gpu_manager and self.m1_gpu_manager.mps_available:
-                try:
-                    chunk = optimize_dataframe_for_m1(chunk)
-                    self.performance_stats['gpu_accelerations_used'] += 1
-                    tprint_debug(f"🚀 Chunk {chunk_idx} optimized with M1 GPU acceleration")
-                except Exception as e:
-                    tprint_warning(f"⚠️ M1 GPU acceleration failed for chunk {chunk_idx}: {e}")
+            # Apply enhanced hardware optimization
+            chunk = self._optimize_dataframe(chunk)
             
             # Force garbage collection after processing chunk
             gc.collect()
@@ -608,8 +544,8 @@ class FeatureGenerationStep(BaseStep):
             # Combine chunks efficiently
             combined_df = pd.concat(chunk_results, ignore_index=True)
             
-            # Apply final memory optimization
-            combined_df = self._optimize_dataframe_memory(combined_df)
+            # Apply final enhanced hardware optimization
+            combined_df = self._optimize_dataframe(combined_df)
             
             return combined_df
             

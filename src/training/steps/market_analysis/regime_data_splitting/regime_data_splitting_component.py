@@ -52,30 +52,7 @@ from src.utils.enhanced_error_handler import (
 
 # Use existing hardware utilities
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-
-# Use existing data validation utilities
-from src.utils.data.validation.validators import CrossStepValidator
-from src.utils.data.quality.data_quality import DataQualityFramework
-
-# Import common utilities
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
-    calculate_data_quality_metrics, safe_merge_dataframes, safe_groupby_operation,
-    safe_apply_function, create_summary_statistics, safe_drop_columns,
-    safe_rename_columns, validate_timestamp_column, safe_timestamp_conversion,
-    get_dataframe_info, safe_filter_dataframe, create_data_quality_report,
-    safe_to_parquet, safe_read_parquet, validate_dataframe_schema,
-    optimize_dataframe_dtypes, safe_fillna, safe_float, safe_int,
-    validate_finite, validate_positive, validate_range, safe_divide,
-    safe_log, safe_sqrt, safe_power, safe_mean, safe_std, safe_percentage_change,
-    safe_kelly_calculation, safe_weighted_average, validate_correlation_matrix,
-    safe_matrix_inverse, math_safe, timed_operation, format_bytes,
-    chunked_iterable, parallel_map, get_m1_gpu_manager, get_m1_memory_optimizer,
-    get_m1_cpu_optimizer, cleanup_m1_optimizers, integrate_with_m1_optimizers,
-    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+, get_memory_usage
 )
 
 from src.utils.math_validation import (
@@ -103,19 +80,15 @@ from src.utils.matrix_operations.unified_operations import (
     safe_matrix_multiply, safe_correlation_matrix, safe_matrix_inverse
 )
 
-from src.utils.hardware.m1_gpu_utils import (
-    get_m1_gpu_manager as get_gpu_manager, is_m1_available, is_mps_available,
+ as get_gpu_manager, is_m1_available, is_mps_available,
     optimize_dataframe_for_m1, create_m1_optimized_array, m1_backtesting_simulate,
     m1_monte_carlo_simulate
 )
 
-from src.utils.hardware.m1_memory_optimizer import (
-    get_m1_memory_optimizer as get_memory_optimizer, optimize_dataframe_memory,
-    start_m1_memory_monitoring, stop_m1_memory_monitoring, optimize_memory as mem_optimize
+ as mem_optimize
 )
 
-from src.utils.hardware.m1_cpu_optimizer import (
-    get_m1_cpu_optimizer as get_cpu_optimizer, optimize_function_for_m1,
+ as get_cpu_optimizer, optimize_function_for_m1,
     parallel_map_m1, create_m1_optimized_thread_pool, run_cpu_intensive_task
 )
 
@@ -595,7 +568,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 market_data = optimize_dataframe_for_m1(market_data)
 
             # Apply memory optimization
-            market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
+            market_data = self.memory_optimizer.optimize_dataframe(market_data)
 
             # Validate and clean data using common utilities
             market_data = safe_fillna(market_data, method='ffill')
@@ -628,7 +601,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             # Use memory context for optimization
             with memory_checkpoint("dataframe_view_creation"):
                 # Optimize data types first to reduce memory footprint
-                optimized_data = self.memory_optimizer.optimize_dataframe_memory(data)
+                optimized_data = self.memory_optimizer.optimize_dataframe(data)
 
                 # Use view instead of copy when possible
                 if hasattr(optimized_data, 'view'):
@@ -705,7 +678,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 processed_chunk['regime_state'] = self._assign_regime_states_efficient(chunk)
 
                 # Optimize memory usage of the processed chunk
-                processed_chunk = self.memory_optimizer.optimize_dataframe_memory(processed_chunk)
+                processed_chunk = self.memory_optimizer.optimize_dataframe(processed_chunk)
 
                 return processed_chunk
 
@@ -757,7 +730,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 result = pd.concat(sorted_chunks, ignore_index=True, copy=False)
 
                 # Optimize final result
-                result = self.memory_optimizer.optimize_dataframe_memory(result)
+                result = self.memory_optimizer.optimize_dataframe(result)
 
                 return result
 
@@ -1516,6 +1489,17 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
 
         # Use hardware manager for proper memory management
         from src.utils.hardware.memory_optimization import memory_context
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
         with memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
@@ -1714,11 +1698,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # Optimize memory using hardware manager
                 try:
                     if hasattr(self.hardware_manager, 'optimize_memory'):
-                        memory_result = self.hardware_manager.optimize_memory()
+                        memory_result = self.hardware_manager.get_integrated_hardware_manager().clear_all_caches()
                         self.logger.debug(f"Memory optimization result: {memory_result}")
                     else:
                         # Use memory optimizer directly
-                        memory_result = self.memory_optimizer.optimize_memory()
+                        memory_result = self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
                         self.logger.debug(f"Memory optimization result: {memory_result}")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Memory optimization failed: {e}")

@@ -27,7 +27,7 @@ try:
         safe_correlation, safe_covariance, safe_mean, safe_std, safe_percentile
     )
     from src.utils.common_operations import create_fallback_logger, safe_dataframe_operation
-    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    
     from src.utils.parallel_processing_optimizer import ParallelProcessor
     from src.utils.matrix_operations import (
         safe_correlation_matrix, safe_matrix_multiply, get_unified_matrix_operations
@@ -126,6 +126,17 @@ except ImportError as e:
 # Enhanced dependency management with fast fail
 try:
     from src.utils.logger import get_logger
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     _LOGGER = get_logger("FeatureSelection.BaseFramework")
     tprint("✅ Custom logger available for FeatureSelection.BaseFramework")
 except Exception as e:

@@ -112,7 +112,7 @@ async def test_optimized_components():
         
         # Test memory optimization
         test_df = pd.DataFrame(np.random.randn(1000, 10))
-        optimized_df = memory_optimizer.optimize_dataframe_memory(test_df)
+        optimized_df = memory_optimizer.optimize_dataframe(test_df)
         
         tprint_success("✅ Enhanced memory optimizer test PASSED")
         tprint_debug(f"Memory optimization applied to DataFrame: {test_df.shape}")
@@ -171,7 +171,7 @@ def test_memory_optimizations():
         tprint_debug(f"Initial DataFrame memory: {initial_memory:.2f}MB")
         
         # Optimize memory
-        optimized_data = optimize_dataframe_memory(test_data)
+        optimized_data = optimize_dataframe(test_data)
         final_memory = optimized_data.memory_usage(deep=True).sum() / 1024**2
         
         memory_saved = initial_memory - final_memory

@@ -28,8 +28,19 @@ from src.utils.logger import system_logger
 # Import optimization utilities for enhanced performance
 try:
     from src.utils.matrix_operations import get_vectorized_processing_core
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+    
+    
     import logging
     import os
     import time
@@ -55,8 +66,8 @@ class DataReadingStep(BaseStep):
         if OPTIMIZATIONS_AVAILABLE:
             try:
                 self.vectorized_core = get_vectorized_processing_core()
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
                 self.logger.info('🚀 Step 2 initialized with M1 hardware acceleration and vectorized processing')
             except Exception as e:
                 self.logger.warning(f'Failed to initialize optimizations: {e}')

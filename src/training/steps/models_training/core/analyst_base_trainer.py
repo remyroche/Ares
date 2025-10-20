@@ -25,6 +25,14 @@ from .base_trainer import BaseTrainer, TrainingConfig, TrainingResult, Validatio
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware import (
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 
 class AnalystModelType(Enum):
@@ -99,6 +107,8 @@ class AnalystBaseTrainer(BaseTrainer):
         context="analyst training"
     )
     @log_execution_time
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
+    @m1_optimized(operation_type="ml_training", workload_category=WorkloadCategory.MACHINE_LEARNING)
     async def train(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> TrainingResult:
         """
         Train Analyst models with given data.
@@ -334,6 +344,7 @@ class AnalystBaseTrainer(BaseTrainer):
             self.logger.warning(f"Could not extract feature importance: {e}")
             return None
     
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
     async def _create_analyst_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Create Analyst-specific features.
@@ -347,7 +358,8 @@ class AnalystBaseTrainer(BaseTrainer):
         try:
             tprint_info("🔧 Creating Analyst features...")
             
-            feature_data = data.copy()
+            # Optimize input data
+            feature_data = optimize_dataframe(data.copy())
             
             # Create PatchTST features if enabled
             if self.config.enable_patchtst_features:
@@ -363,6 +375,9 @@ class AnalystBaseTrainer(BaseTrainer):
             if self.config.enable_multi_timeframe:
                 feature_data = await self._create_multi_timeframe_features(feature_data)
                 self._analyst_state['multi_timeframe_features_created'] = True
+            
+            # Optimize final result
+            feature_data = optimize_dataframe(feature_data)
             
             self._analyst_state['feature_engineering_completed'] = True
             tprint_success(f"✅ Created {feature_data.shape[1]} features")

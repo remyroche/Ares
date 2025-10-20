@@ -134,7 +134,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                     raise ValueError("Failed to load market data")
                 
                 # Optimize memory usage
-                market_data = optimize_dataframe_memory(market_data)
+                market_data = optimize_dataframe(market_data)
                 tprint_success(f"✅ Loaded market data: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
                 tprint_debug(f"Data memory usage: {market_data.memory_usage(deep=True).sum() / 1024**2:.2f}MB")
             
@@ -444,7 +444,7 @@ class HDBSCANRegimeDiscoveryStep(BaseStep):
                 
                 # Comprehensive memory optimization
                 with tprint_timer("DataFrame memory optimization"):
-                    market_data = optimize_dataframe_memory(market_data)
+                    market_data = optimize_dataframe(market_data)
                     final_memory = market_data.memory_usage(deep=True).sum() / 1024**2
                     memory_saved = initial_memory - final_memory
                     

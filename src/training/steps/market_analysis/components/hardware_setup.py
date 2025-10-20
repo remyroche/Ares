@@ -37,17 +37,26 @@ except ImportError as error:  # pragma: no cover - import guard
 
 try:
     from src.utils.hardware.m1_gpu_utils import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
         get_m1_gpu_optimizer,
         get_m1_gpu_memory_manager,
         get_m1_gpu_performance_monitor,
     )
-    from src.utils.hardware.m1_memory_optimizer import (
-        get_m1_memory_optimizer,
+    ,
         get_m1_memory_pool_manager,
         get_m1_memory_monitor,
     )
-    from src.utils.hardware.m1_cpu_optimizer import (
-        get_m1_cpu_optimizer,
+    ,
         get_m1_cpu_performance_monitor,
         get_m1_cpu_scheduler,
     )
@@ -125,12 +134,12 @@ class HardwareSetup:
                     tprint("  ✅ M1 GPU optimizer initialized", "SUCCESS")
 
                 tprint("  💾 Initializing M1 memory optimizer...", "INFO")
-                resources["m1_memory_optimizer"] = get_m1_memory_optimizer()
+                resources["m1_memory_optimizer"] = get_integrated_hardware_manager()
                 if resources["m1_memory_optimizer"]:
                     tprint("  ✅ M1 memory optimizer initialized", "SUCCESS")
 
                 tprint("  🖥️  Initializing M1 CPU optimizer...", "INFO")
-                resources["m1_cpu_optimizer"] = get_m1_cpu_optimizer()
+                resources["m1_cpu_optimizer"] = get_comprehensive_optimizer()
                 if resources["m1_cpu_optimizer"]:
                     tprint("  ✅ M1 CPU optimizer initialized", "SUCCESS")
 

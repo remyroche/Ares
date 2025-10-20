@@ -16,148 +16,24 @@ import time
 import warnings
 
 from src.utils.tprint import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_performance, tprint_structured
 )
 
 # Import M1 hardware optimizations
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_memory_pool_manager import get_m1_memory_pool_manager
-    from src.utils.hardware.m1_memory_monitor import get_m1_memory_monitor
-    M1_HARDWARE_AVAILABLE = True
-except ImportError:
-    M1_HARDWARE_AVAILABLE = False
-    get_m1_memory_optimizer = lambda: None
-    get_m1_memory_pool_manager = lambda: None
-    get_m1_memory_monitor = lambda: None
-
-@dataclass
-class MemoryStats:
-    """Memory usage statistics."""
-    total_memory_mb: float
-    available_memory_mb: float
-    used_memory_mb: float
-    memory_percentage: float
-    process_memory_mb: float
-    timestamp: float = field(default_factory=time.time)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
-        return {
-            'total_memory_mb': self.total_memory_mb,
-            'available_memory_mb': self.available_memory_mb,
-            'used_memory_mb': self.used_memory_mb,
-            'memory_percentage': self.memory_percentage,
-            'process_memory_mb': self.process_memory_mb,
-            'timestamp': self.timestamp
-        }
-
-class MemoryManager:
-    """Advanced memory management with monitoring and optimization."""
-
-    def __init__(
-        self,
-        memory_limit_mb: Optional[int] = None,
-        enable_m1_optimization: bool = True,
-        monitoring_interval: float = 1.0
-    ):
-        """Initialize memory manager."""
-        self.memory_limit_mb = memory_limit_mb
-        self.enable_m1_optimization = enable_m1_optimization and M1_HARDWARE_AVAILABLE
-        self.monitoring_interval = monitoring_interval
-
-        # Initialize hardware optimizers
-        if self.enable_m1_optimization:
-            self.m1_optimizer = get_m1_memory_optimizer()
-            self.m1_pool_manager = get_m1_memory_pool_manager()
-            self.m1_monitor = get_m1_memory_monitor()
-        else:
-            self.m1_optimizer = None
-            self.m1_pool_manager = None
-            self.m1_monitor = None
-
-        # Memory tracking
-        self.memory_history: List[MemoryStats] = []
-        self.peak_memory_mb = 0.0
-        self.cleanup_callbacks: List[Callable] = []
-
-        # Start monitoring if available
-        if self.m1_monitor:
-            self.m1_monitor.start_monitoring()
-
-        tprint_info(f"Memory manager initialized (M1: {self.enable_m1_optimization})")
-
-    def get_memory_stats(self) -> MemoryStats:
-        """Get current memory statistics."""
-        try:
-            # System memory
-            memory = psutil.virtual_memory()
-            total_mb = memory.total / (1024 * 1024)
-            available_mb = memory.available / (1024 * 1024)
-            used_mb = memory.used / (1024 * 1024)
-            percentage = memory.percent
-
-            # Process memory
-            process = psutil.Process()
-            process_mb = process.memory_info().rss / (1024 * 1024)
-
-            stats = MemoryStats(
-                total_memory_mb=total_mb,
-                available_memory_mb=available_mb,
-                used_memory_mb=used_mb,
-                memory_percentage=percentage,
-                process_memory_mb=process_mb
-            )
-
-            # Track peak memory
-            if process_mb > self.peak_memory_mb:
-                self.peak_memory_mb = process_mb
-
-            # Add to history
-            self.memory_history.append(stats)
-
-            # Keep only recent history (last 100 entries)
-            if len(self.memory_history) > 100:
-                self.memory_history = self.memory_history[-100:]
-
-            return stats
-
-        except Exception as e:
-            tprint_error(f"Failed to get memory stats: {e}")
-            return MemoryStats(0, 0, 0, 0, 0)
-
-    def check_memory_limit(self) -> bool:
-        """Check if memory usage is within limits."""
-        if self.memory_limit_mb is None:
-            return True
-
-        stats = self.get_memory_stats()
-        return stats.process_memory_mb <= self.memory_limit_mb
-
-    def force_cleanup(self) -> None:
-        """Force memory cleanup."""
-        try:
-            # Run garbage collection
-            collected = gc.collect()
-
-            # Run cleanup callbacks
-            for callback in self.cleanup_callbacks:
-                try:
-                    callback()
-                except Exception as e:
-                    tprint_warning(f"Cleanup callback failed: {e}")
-
-            # M1-specific cleanup
-            if self.m1_optimizer:
-                self.m1_optimizer.force_cleanup()
-
-            tprint_info(f"Memory cleanup completed (collected {collected} objects)")
-
-        except Exception as e:
-            tprint_error(f"Memory cleanup failed: {e}")
-
-    def optimize_memory_usage(self, data: Union[np.ndarray, pd.DataFrame]) -> Union[np.ndarray, pd.DataFrame]:
+    _usage(self, data: Union[np.ndarray, pd.DataFrame]) -> Union[np.ndarray, pd.DataFrame]:
         """Optimize memory usage of data structures."""
         try:
             if isinstance(data, np.ndarray):

@@ -83,13 +83,13 @@ class UnifiedVectorizationManager:
         return data.copy()
 
 # Convenience functions
-def get_m1_gpu_manager():
+def get_integrated_hardware_manager():
     return M1GPUManager()
 
 def get_m1_memory_optimizer(memory_limit_gb=8.0):
     return M1MemoryOptimizer(memory_limit_gb)
 
-def get_m1_cpu_optimizer():
+def get_comprehensive_optimizer():
     return M1CPUOptimizer()
 
 def get_unified_vectorization_manager():
@@ -98,7 +98,7 @@ def get_unified_vectorization_manager():
 def optimize_dataframe_for_m1(df):
     return df.copy()
 
-def optimize_dataframe_memory(df):
+def optimize_dataframe(df):
     return df.copy()
 
 def create_m1_optimized_array(arr):
@@ -177,9 +177,9 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         # Initialize M1 hardware optimizers
         tprint("🧠 Initializing M1 hardware optimizers...")
-        self.m1_gpu_manager = get_m1_gpu_manager()
+        self.m1_gpu_manager = get_integrated_hardware_manager()
         self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)  # 8GB limit
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        self.m1_cpu_optimizer = get_comprehensive_optimizer()
         
         # Initialize VectorBT and unified vectorization
         tprint("🚀 Initializing VectorBT and unified vectorization...")
@@ -222,7 +222,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         
         tprint("✅ M1-optimized Tactician interaction generation step initialized")
 
-    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with M1-specific optimizations."""
         if df is None or df.empty:
             return df
@@ -242,7 +242,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
                     optimized_df[col] = optimized_df[col].astype(np.float32)
                     
         # Apply pandas memory optimization
-        optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
+        optimized_df = self.m1_memory_optimizer.optimize_dataframe(optimized_df)
         
         self.performance_stats['memory_optimizations_applied'] += 1
         tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
@@ -273,7 +273,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         tprint(f"🔄 Processing chunk {chunk_idx + 1} with M1 optimizations...")
         
         # Apply memory optimization to chunk
-        optimized_chunk = self._optimize_dataframe_memory(chunk)
+        optimized_chunk = self._optimize_dataframe(chunk)
         
         # Use M1 GPU acceleration for matrix operations if available
         if self.m1_gpu_manager.mps_available:
@@ -305,7 +305,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         combined = pd.concat(chunk_results, ignore_index=True)
         
         # Apply final memory optimization
-        combined = self._optimize_dataframe_memory(combined)
+        combined = self._optimize_dataframe(combined)
         
         tprint(f"✅ Combined chunks: {combined.shape}")
         return combined
@@ -351,7 +351,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         final_result = self._combine_chunk_results(chunk_results)
         
         # Final memory optimization
-        final_result = self._optimize_dataframe_memory(final_result)
+        final_result = self._optimize_dataframe(final_result)
         
         tprint(f"✅ Feature streaming completed: {final_result.shape}")
         return final_result
@@ -462,7 +462,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             self.logger.info("📦 Retrieved interaction features from artifact manager")
             
             # Optimize cached data with M1 memory optimization
-            optimized_cached_interactions = self._optimize_dataframe_memory(cached_interactions)
+            optimized_cached_interactions = self._optimize_dataframe(cached_interactions)
             
             result_cached = InteractionGenerationResult(
                 success=True,
@@ -531,7 +531,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
             tprint(f"✅ Using selected features for interaction generation: shape={selected_df.shape}")
             
             # Apply M1 memory optimization to selected features
-            data = self._optimize_dataframe_memory(selected_df)
+            data = self._optimize_dataframe(selected_df)
             tprint(f"🧠 Selected features optimized for M1: {data.shape}")
             
             # Check if memory mapping should be used
@@ -790,7 +790,7 @@ class FeatureGenerationInteractionGenerationStepTactician(BaseStep):
         # Apply final memory optimization to interaction features
         interaction_features = result.get('interaction_features', pd.DataFrame())
         if not interaction_features.empty:
-            interaction_features = self._optimize_dataframe_memory(interaction_features)
+            interaction_features = self._optimize_dataframe(interaction_features)
             tprint(f"🧠 Final interaction features optimized: {interaction_features.shape}")
         
         # Add performance statistics to metadata
@@ -1024,9 +1024,9 @@ async def handle_feature_generation_interaction_generation_step_tactician(
     tprint(f"📊 Data params: data_shape={data.shape if hasattr(data, 'shape') else 'None'}, lookback_days={lookback_days}, start_date={start_date}, end_date={end_date}")
     
     # Initialize M1 optimizers for handler
-    m1_gpu_manager = get_m1_gpu_manager()
+    m1_gpu_manager = get_integrated_hardware_manager()
     m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-    m1_cpu_optimizer = get_m1_cpu_optimizer()
+    m1_cpu_optimizer = get_comprehensive_optimizer()
     
     try:
         manager = get_pretraining_artifact_manager()
@@ -1055,7 +1055,7 @@ async def handle_feature_generation_interaction_generation_step_tactician(
         # Apply M1 memory optimization to loaded data
         tprint("🧠 Applying M1 memory optimization to loaded data...")
         data = optimize_dataframe_for_m1(data)
-        data = m1_memory_optimizer.optimize_dataframe_memory(data)
+        data = m1_memory_optimizer.optimize_dataframe(data)
         tprint(f"✅ Data optimized for M1: {data.shape}")
 
         tprint("🚀 Calling run_interaction_generation_step from handler")

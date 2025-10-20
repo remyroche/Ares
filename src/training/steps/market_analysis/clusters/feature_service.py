@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 """
 Feature Service for NAS-TAS Clustering.
 
@@ -14,337 +26,7 @@ import time
 # Mac M1 Hardware Optimizations
 HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
-except ImportError:
-    pass
-
-from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
-)
-
-from ..shared_utils import (
-    get_logger,
-    prepare_market_features,
-    FeatureConfig
-)
-
-# Import utility functions
-from src.utils.common_operations import (
-    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes
-)
-from src.utils.math_validation import (
-    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
-)
-
-@dataclass
-class FeaturePreparationResult:
-    """Result from feature preparation."""
-    features: np.ndarray
-    feature_names: List[str]
-    feature_scores: Dict[str, float]
-    dropped_features: List[str]
-    preparation_time: float
-    metadata: Dict[str, Any]
-
-class FeatureService:
-    """
-    Feature service that wraps FeaturePreprocessor, FeatureSelector, and FeatureAnalyzer.
-
-    Responsibilities:
-    - Wrap FeaturePreprocessor, FeatureSelector, and FeatureAnalyzer
-    - Handle scaling (RobustScaler), PCA/UMAP embedding
-    - Expose API: prepare_features(data) → clean feature matrix ready for clustering
-    """
-
-    def __init__(self, verbose: bool = True):
-        """Initialize the feature service."""
-        self.verbose = verbose
-        self.logger = get_logger('FeatureService')
-
-        # Feature preparation components
-        self.scaler = None
-        self.pca = None
-        self.umap_reducer = None
-
-        # Hardware service integration
-        try:
-            from .hardware_service import HardwareService
-            self.hardware_service = HardwareService(verbose=self.verbose)
-            self.hardware_integration_enabled = True
-        except ImportError:
-            self.hardware_service = None
-            self.hardware_integration_enabled = False
-
-        # Mac M1 Hardware Optimizations
-        self.memory_optimizer = None
-        self.cpu_optimizer = None
-
-        if HARDWARE_OPTIMIZATIONS_AVAILABLE:
-            try:
-                self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=2.0)  # Conservative limit for feature processing
-                self.cpu_optimizer = get_m1_cpu_optimizer()
-                self.cpu_optimizer.set_conservative_mode()  # Use conservative mode for feature processing
-                tprint("🧠 Mac M1 hardware optimizations initialized for feature service", "INFO")
-            except Exception as e:
-                tprint(f"⚠️ Failed to initialize hardware optimizations: {e}", "WARNING")
-
-        # Feature tracking
-        self.feature_history = []
-        self.performance_metrics = {
-            "total_preparation_time": 0.0,
-            "scaling_time": 0.0,
-            "embedding_time": 0.0,
-            "feature_reduction_rate": 0.0,
-            "hardware_accelerations": 0,
-            "memory_optimizations": 0
-        }
-
-    async def prepare_features(
-        self,
-        market_data: pd.DataFrame,
-        config: Any = None
-    ) -> FeaturePreparationResult:
-        """
-        Prepare features for clustering.
-
-        Args:
-            market_data: Market data for feature extraction
-            config: Configuration parameters
-
-        Returns:
-            FeaturePreparationResult with clean feature matrix
-        """
-        try:
-            start_time = time.time()
-            tprint("🔧 Starting feature preparation", "INFO")
-
-            # Start memory monitoring for feature preparation
-            if self.memory_optimizer:
-                try:
-                    self.memory_optimizer.start_monitoring()
-                    tprint("🧠 Memory monitoring started for feature preparation", "INFO")
-                except Exception as e:
-                    tprint(f"⚠️ Memory monitoring failed: {e}", "WARNING")
-
-            # Optimize market data for memory efficiency
-            if self.memory_optimizer and hasattr(market_data, 'memory_usage'):
-                try:
-                    market_data = self.memory_optimizer.optimize_dataframe_memory(market_data)
-                    tprint("🧠 Market data memory optimized for feature preparation", "INFO")
-                except Exception as e:
-                    tprint(f"⚠️ Data optimization failed: {e}", "WARNING")
-
-            # Step 1: Extract features using shared utilities
-            feature_config = self._create_feature_config(config)
-
-            # Validate market data before feature preparation
-            if market_data is None or len(market_data) == 0:
-                raise ValueError("Market data is None or empty in feature preparation")
-
-            shared_result = await self._prepare_features_shared(market_data, feature_config)
-
-            # Validate shared result
-            if shared_result is None or not hasattr(shared_result, 'features') or shared_result.features is None:
-                raise ValueError("Shared feature preparation returned None or invalid result")
-
-            if shared_result.features.size == 0:
-                raise ValueError("Shared feature preparation returned empty features array")
-
-            # Step 2: Apply scaling and normalization
-            scaled_features, scaling_time = await self._apply_scaling(shared_result.features)
-
-            # Step 3: Apply dimensionality reduction (PCA/UMAP)
-            final_features, embedding_time = await self._apply_embedding(
-                scaled_features, shared_result.feature_names, config
-            )
-
-            # Step 4: Validate final features
-            validation_results = self._validate_features(final_features, market_data)
-
-            # Record performance metrics
-            total_time = time.time() - start_time
-            self.performance_metrics["total_preparation_time"] = total_time
-            self.performance_metrics["scaling_time"] = scaling_time
-            self.performance_metrics["embedding_time"] = embedding_time
-
-            # Calculate feature reduction rate
-            original_count = shared_result.features.shape[1]
-            final_count = final_features.shape[1]
-            reduction_rate = (original_count - final_count) / original_count
-            self.performance_metrics["feature_reduction_rate"] = reduction_rate
-
-            # Log comprehensive feature preparation summary
-            tprint(f"📊 Feature Preparation Summary:", "INFO")
-            tprint(f"  📈 Original features: {original_count} → Final features: {final_count}", "INFO")
-            tprint(f"  📉 Feature reduction: {reduction_rate*100:.1f}%", "INFO")
-            tprint(f"  🎯 Embedding method: {self._get_embedding_method()}", "INFO")
-            tprint(f"  ✅ Validation: {'PASSED' if validation_results.get('valid', False) else 'FAILED'}", "INFO")
-
-            # Create result with proper column names for reduced features
-            if final_features.shape[1] == len(shared_result.feature_names):
-                # No dimensionality reduction, use original feature names
-                feature_names = shared_result.feature_names
-            else:
-                # Dimensionality reduction applied, create meaningful names based on method
-                if self._get_embedding_method() == "PCA":
-                    # Create PCA component names with variance information
-                    if hasattr(self, 'pca') and self.pca is not None:
-                        feature_names = [f"PC{i+1}_var{self.pca.explained_variance_ratio_[i]:.3f}"
-                                       for i in range(final_features.shape[1])]
-                    else:
-                        feature_names = [f"PC{i+1}" for i in range(final_features.shape[1])]
-                elif self._get_embedding_method() == "UMAP":
-                    feature_names = [f"UMAP_dim{i+1}" for i in range(final_features.shape[1])]
-                else:
-                    feature_names = [f"embedding_{i+1}" for i in range(final_features.shape[1])]
-
-            result = FeaturePreparationResult(
-                features=final_features,
-                feature_names=feature_names,
-                feature_scores={},
-                dropped_features=[],
-                preparation_time=total_time,
-                metadata={
-                    "original_feature_count": original_count,
-                    "final_feature_count": final_count,
-                    "feature_reduction_rate": self.performance_metrics["feature_reduction_rate"],
-                    "scaling_time": scaling_time,
-                    "scaling_method": "robust",
-                    "embedding_time": embedding_time,
-                    "embedding_method": "pca",
-                    "validation_passed": validation_results.get("passed", True),
-                    "validation_results": validation_results,
-                    "performance_metrics": self.performance_metrics
-                }
-            )
-
-            # Track feature history
-            self._track_feature_preparation(result)
-
-            # Final memory cleanup for feature preparation
-            if self.memory_optimizer:
-                try:
-                    self.memory_optimizer.force_garbage_collection()
-                    tprint("🧠 Final memory cleanup completed for feature preparation", "INFO")
-                except Exception as e:
-                    tprint(f"⚠️ Final cleanup failed: {e}", "WARNING")
-
-            # Stop memory monitoring
-            if self.memory_optimizer:
-                try:
-                    self.memory_optimizer.stop_monitoring()
-                    tprint("🧠 Memory monitoring stopped for feature preparation", "INFO")
-                except Exception as e:
-                    tprint(f"⚠️ Memory monitoring stop failed: {e}", "WARNING")
-
-            tprint(f"✅ Feature preparation completed in {total_time:.2f}s", "SUCCESS")
-            tprint(f"📊 Features: {original_count} → {final_count} (reduction: {result.metadata['performance_metrics']['feature_reduction_rate']:.1%})", "INFO")
-
-            return result
-
-        except Exception as e:
-            tprint(f"❌ Feature preparation failed: {e}", "ERROR")
-            raise ValueError(f"Feature preparation failed: {e}")
-
-    def _create_feature_config(self, config: Any) -> FeatureConfig:
-        """Create feature configuration from provided config."""
-        return FeatureConfig(
-            feature_categories=getattr(config, 'feature_categories', [
-                'regime_volatility',
-                'regime_volume',
-                'regime_structural_trend',
-                'regime_statistical'
-            ]),
-            use_standardized_features=getattr(config, 'use_standardized_features', True),
-            drop_highly_correlated=getattr(config, 'drop_highly_correlated', True),
-            correlation_threshold=getattr(config, 'correlation_threshold', 0.95)
-        )
-
-    async def _prepare_features_shared(
-        self,
-        market_data: pd.DataFrame,
-        feature_config: FeatureConfig
-    ):
-        """Prepare features using shared utilities."""
-        try:
-            tprint("📊 Preparing features using shared utilities", "INFO")
-
-            # Validate inputs
-            if market_data is None or len(market_data) == 0:
-                raise ValueError("Market data is None or empty in shared feature preparation")
-
-            if feature_config is None:
-                raise ValueError("Feature config is None in shared feature preparation")
-
-            # Use shared feature preparation
-            result = prepare_market_features(
-                market_data=market_data,
-                feature_config=feature_config,
-                return_metadata=True
-            )
-
-            # Validate result
-            if result is None:
-                raise ValueError("Shared feature preparation returned None")
-
-            # Handle both return types: FeaturePreparationResult or numpy array
-            if hasattr(result, 'features_array'):
-                # It's a FeaturePreparationResult from shared_utils
-                features = result.features_array
-                feature_names = list(result.features_df.columns) if hasattr(result, 'features_df') and result.features_df is not None else []
-                feature_scores = {}
-                dropped_features = []
-                metadata = result.metadata if hasattr(result, 'metadata') else {}
-                preparation_time = 0.0
-            elif hasattr(result, 'features'):
-                # It's a FeaturePreparationResult from feature_service
-                features = result.features
-                feature_names = result.feature_names
-                feature_scores = result.feature_scores if hasattr(result, 'feature_scores') else {}
-                dropped_features = result.dropped_features if hasattr(result, 'dropped_features') else []
-                metadata = result.metadata if hasattr(result, 'metadata') else {}
-                preparation_time = result.preparation_time if hasattr(result, 'preparation_time') else 0.0
-            else:
-                # It's a numpy array
-                features = result
-                feature_names = []
-                feature_scores = {}
-                dropped_features = []
-                metadata = {}
-                preparation_time = 0.0
-
-            tprint(f"✅ Shared utilities prepared {features.shape[1]} features", "SUCCESS")
-
-            # Create a proper FeaturePreparationResult object for consistency
-            return FeaturePreparationResult(
-                features=features,
-                feature_names=feature_names,
-                feature_scores=feature_scores,
-                dropped_features=dropped_features,
-                preparation_time=preparation_time,
-                metadata={
-                    **metadata,
-                    "scaling_method": "robust",  # Default scaling method for shared utilities
-                    "embedding_method": "none"   # No embedding applied in shared utilities
-                }
-            )
-
-        except Exception as e:
-            tprint(f"❌ Shared feature preparation failed: {e}", "ERROR")
-            raise
-
-    async def _apply_scaling(self, features: np.ndarray) -> Tuple[np.ndarray, float]:
-        """Apply scaling to features with hardware optimization."""
-        try:
-            start_time = time.time()
-            tprint("⚖️ Applying feature scaling", "INFO")
-
-            # Apply memory optimization if hardware service is available
-            if self.hardware_integration_enabled and self.hardware_service:
-                try:
-                    features, optimization_info = self.hardware_service.optimize_memory(features)
+    (features)
                     if optimization_info.get("hardware_optimization_used", False):
                         self.performance_metrics["memory_optimizations"] += 1
                         tprint(f"🧠 Memory optimization applied during scaling", "SUCCESS")
@@ -382,8 +64,8 @@ class FeatureService:
 
             # Check memory pressure before dimensionality reduction
             try:
-                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-                memory_optimizer = get_m1_memory_optimizer()
+                
+                memory_optimizer = get_integrated_hardware_manager()
                 memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
 
                 if memory_pressure > 0.85:  # Very high memory pressure threshold
@@ -480,8 +162,8 @@ class FeatureService:
 
             # Check memory pressure before PCA fitting
             try:
-                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-                memory_optimizer = get_m1_memory_optimizer()
+                
+                memory_optimizer = get_integrated_hardware_manager()
                 memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
 
                 if memory_pressure > 0.8:  # High memory pressure threshold

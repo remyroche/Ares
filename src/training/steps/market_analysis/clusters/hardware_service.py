@@ -17,63 +17,23 @@ from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 from src.utils.common_operations import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
     is_m1_available, is_mps_available
 )
-from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-from src.utils.math_validation import (
-    validate_finite, safe_divide, safe_log, safe_sqrt, safe_power
-)
-
-from ..shared_utils import get_logger
-
-@dataclass
-class HardwareCapabilities:
-    """Hardware capabilities and configuration."""
-    has_gpu: bool = False
-    gpu_memory_gb: float = 0.0
-    has_m1: bool = False
-    m1_memory_gb: float = 0.0
-    cpu_cores: int = 1
-    total_memory_gb: float = 0.0
-    optimal_batch_size: int = 1000
-    recommended_workers: int = 1
-
-@dataclass
-class HardwareOptimizationResult:
-    """Result from hardware optimization."""
-    device_selected: str
-    optimization_applied: Dict[str, Any]
-    performance_gains: Dict[str, float]
-    memory_usage: Dict[str, float]
-    execution_time: float
-
-class HardwareService:
-    """
-    Hardware service that abstracts hardware operations (CPU vs GPU).
-
-    Responsibilities:
-    - Abstract hardware ops (CPU vs GPU)
-    - Manage GPUManager, MemoryManager, M1Optimizer
-    - Provide methods like select_device(), optimize_memory(), accelerate_neighbors()
-    """
-
-    def __init__(self, verbose: bool = True):
-        """Initialize the hardware service."""
-        self.verbose = verbose
-        self.logger = get_logger('HardwareService')
-
-        # Hardware detection and capabilities
-        tprint("🔍 Initializing Hardware Service", "INFO")
-        self.capabilities = self._detect_hardware_capabilities()
-
-        # Initialize hardware managers using common operations
-        tprint("⚙️ Initializing hardware managers", "INFO")
-        self.gpu_manager = get_m1_gpu_manager() if is_m1_available() else None
-        self.memory_manager = get_m1_memory_optimizer()
-        self.m1_optimizer = get_m1_cpu_optimizer()
+() if is_m1_available() else None
+        self.memory_manager = get_integrated_hardware_manager()
+        self.m1_optimizer = get_comprehensive_optimizer()
 
         # Import hardware optimization modules (for local hardware components)
         try:

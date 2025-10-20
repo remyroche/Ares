@@ -1,3 +1,15 @@
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
+
 """
 Real Monte Carlo Simulation Engine
 
@@ -26,206 +38,8 @@ import multiprocessing as mp
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 # Hardware optimization
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUAccelerator
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer, M1MemoryOptimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer, M1CPUOptimizer
-from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
-from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
-from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
-
-# VectorBT optimization utilities
-from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
-from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
-
-# ML utilities
-from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
-from src.utils.ml_common.oof_generator import OOFGenerator
-from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
-
-# Math validation
-from src.utils.math_validation import (
-    safe_divide, safe_log, safe_sqrt, validate_finite,
-    validate_probability, validate_positive, validate_range,
-    check_for_nans, check_for_infs
-)
-
-# Common operations
-from src.utils.common_operations import (
-    safe_json_dump, safe_json_load, ensure_directory,
-    calculate_sharpe_ratio, calculate_sortino_ratio, calculate_max_drawdown,
-    calculate_win_rate, calculate_profit_factor, calculate_calmar_ratio
-)
-from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
-
-# Monte Carlo base engine
-try:
-    from src.utils.common_ml.backtesting.monte_carlo_engine import MonteCarloEngine, MonteCarloConfig
-    BASE_ENGINE_AVAILABLE = True
-except ImportError:
-    BASE_ENGINE_AVAILABLE = False
-
-# Output utilities
-from src.utils.tprint import tprint
-
-# Decorators
-from src.core.decorators import handles_errors, traced, log_execution_time
-
-logger = logging.getLogger(__name__)
-
-class MonteCarloMode(Enum):
-    """Monte Carlo simulation modes."""
-    BOOTSTRAP = "bootstrap"
-    PARAMETRIC = "parametric"
-    HISTORICAL = "historical"
-    HYBRID = "hybrid"
-
-@dataclass
-class MonteCarloMetrics:
-    """Comprehensive metrics from Monte Carlo simulation"""
-    # Return metrics
-    mean_return: float = 0.0
-    std_return: float = 0.0
-    min_return: float = 0.0
-    max_return: float = 0.0
-    median_return: float = 0.0
-
-    # Risk metrics
-    var_value: float = 0.0
-    expected_shortfall: float = 0.0
-    max_drawdown: float = 0.0
-    tail_risk: float = 0.0
-    tail_ratio: float = 0.0
-
-    # Performance metrics
-    sharpe_ratio: float = 0.0
-    sortino_ratio: float = 0.0
-    calmar_ratio: float = 0.0
-    win_rate: float = 0.0
-    profit_factor: float = 0.0
-
-    # Confidence intervals
-    ci_lower: float = 0.0
-    ci_upper: float = 0.0
-    confidence_level: float = 0.95
-
-    # Simulation metadata
-    n_simulations: int = 0
-    simulation_mode: str = ""
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert metrics to dictionary"""
-        return {
-            'return_metrics': {
-                'mean': self.mean_return,
-                'std': self.std_return,
-                'min': self.min_return,
-                'max': self.max_return,
-                'median': self.median_return
-            },
-            'risk_metrics': {
-                'var': self.var_value,
-                'expected_shortfall': self.expected_shortfall,
-                'max_drawdown': self.max_drawdown,
-                'tail_risk': self.tail_risk,
-                'tail_ratio': self.tail_ratio
-            },
-            'performance_metrics': {
-                'sharpe_ratio': self.sharpe_ratio,
-                'sortino_ratio': self.sortino_ratio,
-                'calmar_ratio': self.calmar_ratio,
-                'win_rate': self.win_rate,
-                'profit_factor': self.profit_factor
-            },
-            'confidence_interval': {
-                'lower': self.ci_lower,
-                'upper': self.ci_upper,
-                'level': self.confidence_level
-            },
-            'metadata': {
-                'n_simulations': self.n_simulations,
-                'mode': self.simulation_mode
-            }
-        }
-
-@dataclass
-class RealMonteCarloConfig:
-    """Configuration for real Monte Carlo simulation."""
-    # Basic configuration
-    n_simulations: int = 1000
-    confidence_level: float = 0.95
-    simulation_horizon: int = 252  # Trading days
-
-    # Hardware optimization
-    enable_gpu_acceleration: bool = True
-    enable_memory_optimization: bool = True
-    enable_parallel_processing: bool = True
-    max_workers: int = field(default_factory=lambda: max(1, mp.cpu_count() - 1))
-    chunk_size_mb: int = 128
-
-    # Simulation parameters
-    mode: MonteCarloMode = MonteCarloMode.HYBRID
-    bootstrap_sample_size: float = 0.8
-    parametric_distribution: str = "normal"  # "normal", "t", "skewed_t"
-
-    # Risk parameters
-    var_confidence: float = 0.05
-    expected_shortfall_confidence: float = 0.01
-    max_drawdown_threshold: float = 0.2
-
-    # Data validation
-    enable_data_validation: bool = True
-    enable_leakage_detection: bool = True
-    min_samples: int = 30
-
-    # Cross-validation
-    enable_cv_validation: bool = True
-    cv_folds: int = 5
-    embargo_pct: float = 0.01
-
-    # Output settings
-    save_results: bool = True
-    results_path: str = "monte_carlo_results"
-    enable_detailed_logging: bool = True
-
-    # Custom parameters
-    custom_params: Dict[str, Any] = field(default_factory=dict)
-
-class RealMonteCarloEngine:
-    """
-    Real Monte Carlo simulation engine using existing utilities.
-
-    This engine provides comprehensive Monte Carlo simulation with:
-    - GPU acceleration for M1/M2/M3 Macs
-    - Memory optimization for large simulations
-    - Multiple simulation methods (bootstrap, parametric, historical)
-    - Risk metrics calculation (VaR, Expected Shortfall, etc.)
-    """
-
-    def __init__(self, config: RealMonteCarloConfig):
-        """Initialize the enhanced Monte Carlo engine with hardware acceleration."""
-        self.config = config
-        self.logger = logger.getChild('RealMonteCarloEngine')
-
-        tprint("🚀 Initializing Enhanced Monte Carlo Simulation Engine", "header")
-
-        # Initialize hardware optimizers
-        try:
-            self.gpu_manager = get_m1_gpu_manager() if config.enable_gpu_acceleration else None
-            if config.enable_gpu_acceleration:
-                self.gpu_accelerator = M1GPUAccelerator()
-            else:
-                self.gpu_accelerator = None
-        except Exception as e:
-            tprint(f"⚠️  GPU acceleration unavailable: {e}", "warning")
-            self.gpu_manager = None
-            self.gpu_accelerator = None
-
-        try:
-            self.memory_optimizer = get_m1_memory_optimizer() if config.enable_memory_optimization else None
-            if config.enable_memory_optimization:
-                self.m1_memory_optimizer = M1MemoryOptimizer()
-                self.m1_memory_optimizer.optimize_memory_for_ml()
+, M1GPUAccelerator
+_for_ml()
             else:
                 self.m1_memory_optimizer = None
         except Exception as e:
@@ -234,7 +48,7 @@ class RealMonteCarloEngine:
             self.m1_memory_optimizer = None
 
         try:
-            self.cpu_optimizer = get_m1_cpu_optimizer() if config.enable_parallel_processing else None
+            self.cpu_optimizer = get_comprehensive_optimizer() if config.enable_parallel_processing else None
             if config.enable_parallel_processing:
                 self.m1_cpu_optimizer = M1CPUOptimizer()
             else:

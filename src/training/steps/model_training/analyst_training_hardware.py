@@ -11,51 +11,23 @@ import psutil
 
 from src.utils.tprint import tprint_info, tprint_success, tprint_warning, tprint_error
 from src.utils.common_operations import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
     integrate_with_m1_optimizers, get_memory_usage, check_disk_space
 )
-from src.utils.hardware.m1_gpu_utils import (
-    is_m1_available, is_mps_available, create_m1_optimized_array
-)
-
-from .analyst_training_constants import HARDWARE_STATUS_CACHE_TTL
-
-class HardwareManager:
-    """
-    Manages hardware optimization and monitoring with caching.
-
-    Provides cached access to hardware status to avoid repeated system calls.
-    """
-
-    def __init__(self):
-        """Initialize hardware manager with M1 optimization support."""
-        tprint_info("🧠 Initializing HardwareManager")
-
-        # Cache for hardware status
-        self._status_cache = None
-        self._status_cache_time = 0
-
-        # Initialize M1 optimizers
-        self.gpu_manager = None
-        self.memory_optimizer = None
-        self.cpu_optimizer = None
-
-        # Check M1 availability (cached)
-        self._m1_available = is_m1_available()
-        self._mps_available = is_mps_available()
-
-        if self._m1_available:
-            tprint_info("🍎 M1 hardware detected - initializing optimizers")
-            self._initialize_m1_optimizers()
-        else:
-            tprint_info("💻 Non-M1 hardware detected - standard mode")
-
-    def _initialize_m1_optimizers(self):
-        """Initialize M1-specific optimizers."""
-        try:
-            self.gpu_manager = get_m1_gpu_manager()
-            self.memory_optimizer = get_m1_memory_optimizer()
-            self.cpu_optimizer = get_m1_cpu_optimizer()
+()
+            self.memory_optimizer = get_integrated_hardware_manager()
+            self.cpu_optimizer = get_comprehensive_optimizer()
 
             integration_result = integrate_with_m1_optimizers()
 
@@ -163,7 +135,7 @@ class HardwareManager:
         # Memory optimization
         if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_memory'):
             try:
-                memory_result = self.memory_optimizer.optimize_memory()
+                memory_result = self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
                 optimization_result['optimizations_applied'].append('memory_optimization')
                 optimization_result['performance_improvements']['memory'] = memory_result
 
@@ -214,7 +186,7 @@ class HardwareManager:
 
             if self.memory_optimizer and hasattr(self.memory_optimizer, 'optimize_memory'):
                 try:
-                    opt_result = self.memory_optimizer.optimize_memory()
+                    opt_result = self.memory_optimizer.get_integrated_hardware_manager().clear_all_caches()
                     tprint_info(f"🧠 Memory optimization result: {opt_result}")
                     return True
                 except Exception as e:

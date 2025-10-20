@@ -49,9 +49,17 @@ except ImportError as e:
 # Import common utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.common_operations import (
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers, safe_divide,
-        ensure_directory, safe_file_exists, get_current_datetime, validate_positive
+        safe_divide, ensure_directory, safe_file_exists, get_current_datetime, validate_positive
+    )
+    from src.utils.hardware import (
+        get_integrated_hardware_manager, 
+        get_comprehensive_optimizer,
+        memory_optimized, 
+        comprehensive_memory_optimization,
+        optimize_dataframe, 
+        m1_optimized,
+        WorkloadCategory,
+        MemoryOptimizationLevel
     )
     COMMON_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Common operations utilities loaded")
@@ -776,60 +784,18 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         try:
             tprint_info("🧠 Initializing hardware optimizers...")
 
-            # Flag to track if M1 optimizers are available
-            self.m1_optimizers_available = False
-
+            # Initialize enhanced hardware optimizers
             try:
-                # Try to initialize M1 GPU manager
-                self.m1_gpu_manager = get_m1_gpu_manager()
-                if self.m1_gpu_manager:
-                    tprint_success("✅ M1 GPU manager initialized")
-                    self.m1_optimizers_available = True
-                else:
-                    tprint_warning("⚠️ M1 GPU manager not available (graceful fallback)")
-                    self.m1_gpu_manager = None
+                self.hardware_manager = get_integrated_hardware_manager()
+                self.comprehensive_optimizer = get_comprehensive_optimizer()
+                tprint_success("✅ Enhanced hardware optimizers initialized")
+                self.m1_optimizers_available = True
             except Exception as e:
-                tprint_warning(f"⚠️ M1 GPU manager initialization failed: {e} (graceful fallback)")
-                self.m1_gpu_manager = None
+                tprint_warning(f"⚠️ Enhanced hardware optimizer initialization failed: {e} (graceful fallback)")
+                self.hardware_manager = None
+                self.comprehensive_optimizer = None
+                self.m1_optimizers_available = False
 
-            try:
-                # Try to initialize M1 memory optimizer
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                if self.m1_memory_optimizer:
-                    tprint_success("✅ M1 memory optimizer initialized")
-                    self.m1_optimizers_available = True
-                else:
-                    tprint_warning("⚠️ M1 memory optimizer not available (graceful fallback)")
-                    self.m1_memory_optimizer = None
-            except Exception as e:
-                tprint_warning(f"⚠️ M1 memory optimizer initialization failed: {e} (graceful fallback)")
-                self.m1_memory_optimizer = None
-
-            try:
-                # Try to initialize M1 CPU optimizer
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-                if self.m1_cpu_optimizer:
-                    tprint_success("✅ M1 CPU optimizer initialized")
-                    self.m1_optimizers_available = True
-                else:
-                    tprint_warning("⚠️ M1 CPU optimizer not available (graceful fallback)")
-                    self.m1_cpu_optimizer = None
-            except Exception as e:
-                tprint_warning(f"⚠️ M1 CPU optimizer initialization failed: {e} (graceful fallback)")
-                self.m1_cpu_optimizer = None
-
-            # Try to integrate with M1 optimizers if any are available
-            if self.m1_optimizers_available:
-                try:
-                    integration_result = integrate_with_m1_optimizers()
-                    if integration_result and integration_result.get('success', False):
-                        tprint_success("✅ M1 optimizers integration successful")
-                    else:
-                        tprint_warning("⚠️ M1 optimizers integration incomplete (graceful fallback)")
-                        self.m1_optimizers_available = False
-                except Exception as e:
-                    tprint_warning(f"⚠️ M1 optimizers integration failed: {e} (graceful fallback)")
-                    self.m1_optimizers_available = False
 
             if self.m1_optimizers_available:
                 tprint_success("✅ Hardware optimizers initialization completed with M1 acceleration")

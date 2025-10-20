@@ -148,13 +148,13 @@ class UnifiedVectorizationManager:
         return data.copy()
 
 # Convenience functions
-def get_m1_gpu_manager():
+def get_integrated_hardware_manager():
     return M1GPUManager()
 
 def get_m1_memory_optimizer(memory_limit_gb=8.0):
     return M1MemoryOptimizer(memory_limit_gb)
 
-def get_m1_cpu_optimizer():
+def get_comprehensive_optimizer():
     return M1CPUOptimizer()
 
 def get_unified_vectorization_manager():
@@ -163,7 +163,7 @@ def get_unified_vectorization_manager():
 def optimize_dataframe_for_m1(df):
     return df.copy()
 
-def optimize_dataframe_memory(df):
+def optimize_dataframe(df):
     return df.copy()
 
 def create_m1_optimized_array(arr):
@@ -272,9 +272,9 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         
         # Initialize M1 hardware optimizers
         tprint("🧠 Initializing M1 hardware optimizers...")
-        self.m1_gpu_manager = get_m1_gpu_manager()
+        self.m1_gpu_manager = get_integrated_hardware_manager()
         self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        self.m1_cpu_optimizer = get_comprehensive_optimizer()
         
         # Initialize VectorBT and unified vectorization
         tprint("🚀 Initializing VectorBT and unified vectorization...")
@@ -318,7 +318,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
         
         tprint("✅ M1-optimized Analyst interaction generation step initialized")
 
-    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with M1-specific optimizations."""
         if df is None or df.empty:
             return df
@@ -337,7 +337,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
                     optimized_df[col] = optimized_df[col].astype(np.float32)
                     
         # Apply pandas memory optimization
-        optimized_df = self.m1_memory_optimizer.optimize_dataframe_memory(optimized_df)
+        optimized_df = self.m1_memory_optimizer.optimize_dataframe(optimized_df)
         
         self.performance_stats['memory_optimizations_applied'] += 1
         tprint(f"✅ DataFrame memory optimized: {optimized_df.shape}")
@@ -843,7 +843,7 @@ class FeatureGenerationInteractionGenerationStepAnalyst(BaseStep):
             
             # Apply final memory optimization
             tprint("🧹 [ANALYST] Applying final memory optimization to interaction features")
-            final_interactions = self._optimize_dataframe_memory(phase3_interactions)
+            final_interactions = self._optimize_dataframe(phase3_interactions)
             
             # Store artifacts
             tprint("💾 [ANALYST] Storing interaction features in artifact manager")

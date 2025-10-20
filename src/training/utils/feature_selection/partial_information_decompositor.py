@@ -274,9 +274,9 @@ class PartialInformationDecompositor:
         """Initialize hardware optimization utilities."""
         try:
             if COMMON_OPERATIONS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer()
 
                 if self.gpu_manager:
                     _LOGGER.info("✅ M1 GPU manager initialized")

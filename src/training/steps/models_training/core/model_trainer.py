@@ -22,13 +22,20 @@ from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.utils.common_operations import (
     safe_divide, safe_correlation, safe_mean, safe_std, safe_float, safe_int,
-    get_memory_usage, optimize_dataframe_memory, memory_checkpoint
+    get_memory_usage, memory_checkpoint
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time

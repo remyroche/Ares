@@ -126,13 +126,13 @@ class EnhancedMemoryOptimizer:
                 'timestamp': time.time()
             })
     
-    def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage with enhanced features."""
         with self.memory_monitor("dataframe_memory_optimization"):
             original_memory = df.memory_usage(deep=True).sum() / (1024 * 1024)  # MB
             
             # Use the utility function
-            optimized_df = optimize_dataframe_memory(df)
+            optimized_df = optimize_dataframe(df)
             
             # Additional optimizations
             optimized_df = self._apply_advanced_memory_optimizations(optimized_df)
@@ -218,7 +218,7 @@ class EnhancedMemoryOptimizer:
             result = safe_merge(left, right, **kwargs)
             
             if self.config.enable_memory_optimization:
-                result = self.optimize_dataframe_memory(result)
+                result = self.optimize_dataframe(result)
             
             return result
     
@@ -229,7 +229,7 @@ class EnhancedMemoryOptimizer:
             result = safe_concat(dataframes, **kwargs)
             
             if self.config.enable_memory_optimization:
-                result = self.optimize_dataframe_memory(result)
+                result = self.optimize_dataframe(result)
             
             return result
     

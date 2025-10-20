@@ -350,7 +350,7 @@ class HDBSCANRegimeDiscovery:
             tprint_debug(f"Data shape: {data.shape}, Memory usage: {initial_memory:.2f}MB")
             
             # Memory optimization
-            data = optimize_dataframe_memory(data)
+            data = optimize_dataframe(data)
             optimized_memory = get_memory_usage()
             tprint_debug(f"Memory after optimization: {optimized_memory:.2f}MB (saved {initial_memory - optimized_memory:.2f}MB)")
             

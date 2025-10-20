@@ -41,6 +41,17 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
     from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
     from src.utils.ml_common.evaluation.unified_evaluator import UnifiedEvaluator
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     from src.feature_selection.core import get_feature_selection_framework
     ML_COMMON_AVAILABLE = True
 except ImportError:
@@ -48,76 +59,9 @@ except ImportError:
 
 # Hardware optimization imports
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
-
-@dataclass
-class FeatureAnalyzerConfig:
-    """Configuration for feature analysis."""
-
-    # Importance analysis
-    importance_methods: List[str] = field(default_factory=lambda: ["pca", "correlation", "mutual_info"])
-    top_k_features: int = 20
-
-    # Correlation analysis
-    correlation_threshold: float = 0.8
-    multicollinearity_threshold: float = 10.0  # VIF threshold
-
-    # Stability analysis
-    stability_window: int = 30  # Days for stability calculation
-    stability_threshold: float = 0.1
-
-    # Visualization
-    generate_plots: bool = True
-    plot_format: str = "png"
-    max_plot_features: int = 50
-
-class FeatureAnalyzer:
-    """
-    Feature analyzer for market analysis clustering.
-
-    Responsibilities:
-    - Compute feature importance/loadings
-    - Explain retained features
-    - Provide diagnostics (correlation, variance inflation)
-    - Generate feature stability reports
-    """
-
-    def __init__(self, config: FeatureAnalyzerConfig = None):
-        """Initialize the FeatureAnalyzer."""
-        self.config = config or FeatureAnalyzerConfig()
-        self.analysis_results = {}
-
-        # Initialize hardware optimization components
-        self._initialize_hardware_optimization()
-
-        # Initialize matrix operations for efficient computations
-        self.matrix_ops = get_unified_matrix_operations(
-            enable_gpu=True,
-            enable_memory_optimization=True,
-            enable_parallel=True
-        )
-
-        # Initialize ML common utilities if available
-        if ML_COMMON_AVAILABLE:
-            self.hpo_optimizer = HyperparameterOptimization()
-            self.unified_evaluator = UnifiedEvaluator()
-            self.feature_selection_framework = FeatureSelectionFramework()
-        else:
-            self.hpo_optimizer = None
-            self.unified_evaluator = None
-            self.feature_selection_framework = None
-
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        try:
-            self.gpu_manager = get_m1_gpu_manager() if get_m1_gpu_manager() else None
-            self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer() else None
-            self.cpu_optimizer = get_m1_cpu_optimizer() if get_m1_cpu_optimizer() else None
+    () if get_integrated_hardware_manager() else None
+            self.memory_optimizer = get_integrated_hardware_manager() if get_integrated_hardware_manager() else None
+            self.cpu_optimizer = get_comprehensive_optimizer() if get_comprehensive_optimizer() else None
 
             if self.gpu_manager or self.memory_optimizer or self.cpu_optimizer:
                 tprint("✅ Hardware optimization initialized for feature analysis", "SUCCESS")

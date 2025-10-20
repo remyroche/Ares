@@ -77,9 +77,9 @@ from src.utils.tprint import (
 
 # Import M1 hardware optimizations
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    
+    
+    
     M1_HARDWARE_AVAILABLE = True
 except ImportError:
     M1_HARDWARE_AVAILABLE = False
@@ -99,6 +99,17 @@ except ImportError:
 
 try:  # pragma: no cover - fallback retained for runtime parity
     from src.utils.logging_utils import get_logger, log_warning
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 except ImportError:  # pragma: no cover - ensures CLI still works without dependency
     import logging
 
@@ -124,9 +135,9 @@ class RegimeAnalysisService:
         self.logger = get_logger("RegimeAnalyzer")
 
         # Initialize hardware optimizers
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.cpu_optimizer = get_m1_cpu_optimizer()
-        self.gpu_manager = get_m1_gpu_manager()
+        self.memory_optimizer = get_integrated_hardware_manager()
+        self.cpu_optimizer = get_comprehensive_optimizer()
+        self.gpu_manager = get_integrated_hardware_manager()
 
         # Initialize VectorBT optimization
         self.enable_vectorbt = enable_vectorbt and VECTORBT_AVAILABLE

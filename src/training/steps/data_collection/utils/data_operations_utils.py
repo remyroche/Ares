@@ -151,7 +151,7 @@ class MemoryOptimizedDataHandler:
             self.logger.warning(f"Failed to create structured array: {e}")
             return df.values  # Fallback to regular array
 
-    def optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+    def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame memory usage."""
         try:
             optimized_df = df.copy()

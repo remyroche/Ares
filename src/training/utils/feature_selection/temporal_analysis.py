@@ -38,9 +38,9 @@ except ImportError:
 
 # Import optimization utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+    
+    
+    
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
@@ -57,6 +57,17 @@ except ImportError:
 # Import common operations utilities
 try:
     from src.utils.ml_common.utils import get_memory_usage
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     COMMON_OPERATIONS_AVAILABLE = True
 except ImportError:
     COMMON_OPERATIONS_AVAILABLE = False
@@ -89,9 +100,9 @@ class TemporalAnalyzer:
         """Initialize hardware optimization utilities."""
         try:
             if OPTIMIZATION_AVAILABLE and COMMON_OPERATIONS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer()
 
                 if self.gpu_manager:
                     _LOGGER.info("✅ M1 GPU manager initialized for temporal analysis")

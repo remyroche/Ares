@@ -158,7 +158,7 @@ class EnhancedHDBSCANIntegration:
         # Step 1: Memory optimization
         if self.memory_optimizer:
             with self.memory_optimizer.memory_monitor("data_processing"):
-                data = self.memory_optimizer.optimize_dataframe_memory(data)
+                data = self.memory_optimizer.optimize_dataframe(data)
                 self.performance_stats['memory_optimizations'] += 1
         
         # Step 2: Feature generation using feature_generation/ system
@@ -172,7 +172,7 @@ class EnhancedHDBSCANIntegration:
         
         # Step 4: Final memory optimization
         if self.memory_optimizer:
-            features_df = self.memory_optimizer.optimize_dataframe_memory(features_df)
+            features_df = self.memory_optimizer.optimize_dataframe(features_df)
         
         # Update performance stats
         processing_time = time.time() - start_time

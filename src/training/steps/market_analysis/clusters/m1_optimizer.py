@@ -58,7 +58,7 @@ class M1Optimizer:
             self.logger.warning("M1 optimization tools not available, using fallback implementation")
             self.m1_optimizer = None
         else:
-            self.m1_optimizer = get_m1_cpu_optimizer()
+            self.m1_optimizer = get_comprehensive_optimizer()
 
         self.enable_monitoring = enable_monitoring
         self.conservative_mode = conservative_mode

@@ -56,6 +56,17 @@ from src.utils.math_validation import (
 
 # Import tprint for enhanced logging
 from src.utils.tprint import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     tprint,
     tprint_info,
     tprint_warning,
@@ -70,9 +81,9 @@ from ..shared_utils.calibration_registry import get_metric_thresholds
 
 # Import M1 hardware optimizations
 try:
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+    
+    
+    
     M1_HARDWARE_AVAILABLE = True
 except ImportError:
     M1_HARDWARE_AVAILABLE = False
@@ -88,7 +99,7 @@ def calculate_regime_distribution(labels: np.ndarray, regime_type: str) -> Dict[
             labels = validate_finite(labels, "regime_labels")
 
             # Initialize hardware optimizers
-            memory_optimizer = get_m1_memory_optimizer()
+            memory_optimizer = get_integrated_hardware_manager()
 
             # Use memory checkpoint for large datasets
             with memory_checkpoint("regime_distribution_calculation"):
@@ -196,9 +207,9 @@ def calculate_clustering_metrics(features: Optional[np.ndarray], labels: np.ndar
             labels = validate_finite(labels, "clustering_labels")
 
             # Initialize hardware optimizers
-            memory_optimizer = get_m1_memory_optimizer()
-            cpu_optimizer = get_m1_cpu_optimizer()
-            gpu_manager = get_m1_gpu_manager()
+            memory_optimizer = get_integrated_hardware_manager()
+            cpu_optimizer = get_comprehensive_optimizer()
+            gpu_manager = get_integrated_hardware_manager()
 
             # Use memory checkpoint for large datasets
             with memory_checkpoint("clustering_metrics_calculation"):

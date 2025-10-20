@@ -62,13 +62,13 @@ class M1CPUOptimizer:
         return ThreadPoolExecutor(max_workers=self.max_workers)
 
 # Convenience functions
-def get_m1_gpu_manager():
+def get_integrated_hardware_manager():
     return M1GPUManager()
 
 def get_m1_memory_optimizer(memory_limit_gb=8.0):
     return M1MemoryOptimizer(memory_limit_gb)
 
-def get_m1_cpu_optimizer():
+def get_comprehensive_optimizer():
     return M1CPUOptimizer()
 
 def optimize_dataframe_for_m1(df):
@@ -205,9 +205,9 @@ class FeatureGenerationFinalFeatureSelectionStep(BaseStep):
         # Initialize M1 hardware optimizers
         if M1_OPTIMIZATIONS_AVAILABLE:
             tprint_info("🚀 Initializing M1 hardware optimizers")
-            self.m1_gpu_manager = get_m1_gpu_manager()
+            self.m1_gpu_manager = get_integrated_hardware_manager()
             self.m1_memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+            self.m1_cpu_optimizer = get_comprehensive_optimizer()
             tprint_success("✅ M1 hardware optimizers initialized")
         else:
             self.m1_gpu_manager = None

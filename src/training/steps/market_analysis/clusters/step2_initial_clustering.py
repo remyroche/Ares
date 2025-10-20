@@ -12,6 +12,17 @@ from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
 
 from src.utils.tprint import (
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
 
@@ -95,8 +106,8 @@ class InitialClusteringStep:
 
             # Check memory pressure - skip optimal K determination if memory pressure is high
             try:
-                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-                memory_optimizer = get_m1_memory_optimizer()
+                
+                memory_optimizer = get_integrated_hardware_manager()
                 memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
 
                 if memory_pressure > 0.8:  # High memory pressure threshold

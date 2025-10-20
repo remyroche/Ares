@@ -82,7 +82,7 @@ class GPUManager:
             self.gpu_manager = get_enhanced_gpu_manager()
             self.enhanced_mode = True
         elif BASIC_GPU_AVAILABLE:
-            self.gpu_manager = get_m1_gpu_manager()
+            self.gpu_manager = get_integrated_hardware_manager()
             self.enhanced_mode = False
         else:
             self.gpu_manager = None

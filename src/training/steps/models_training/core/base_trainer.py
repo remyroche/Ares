@@ -31,9 +31,16 @@ from src.utils.common_operations import (
 )
 from src.utils.common_utilities import calculate_data_quality_metrics, get_dataframe_info
 from src.utils.math_validation import validate_finite, validate_positive, validate_range
-from src.utils.hardware.m1_memory_optimizer import optimize_memory
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory
+)
 from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
 from src.utils.kline_parquet import KlinesParquetManager
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -281,21 +288,18 @@ class BaseTrainer(ABC):
     async def _initialize_hardware_optimizers(self):
         """Initialize hardware optimizers."""
         try:
-            tprint_debug("🔧 Initializing hardware optimizers...")
+            tprint_debug("🔧 Initializing enhanced hardware optimizers...")
             
-            # Initialize memory optimizer
-            self._memory_optimizer = optimize_memory()
+            # Initialize integrated hardware manager
+            self._hardware_manager = get_integrated_hardware_manager()
             
-            # Initialize CPU optimizer
-            self._cpu_optimizer = get_m1_cpu_optimizer()
-            
-            # Initialize GPU manager
-            self._gpu_manager = get_m1_gpu_manager()
+            # Initialize comprehensive M1 optimizer
+            self._comprehensive_optimizer = get_comprehensive_optimizer()
             
             # Initialize parquet manager
             self._parquet_manager = KlinesParquetManager()
             
-            tprint_success("✅ Hardware optimizers initialized")
+            tprint_success("✅ Enhanced hardware optimizers initialized")
             
         except Exception as e:
             tprint_warning(f"⚠️ Hardware optimizer initialization failed: {e}")
@@ -369,7 +373,7 @@ class BaseTrainer(ABC):
         default_return=None,
         context="data preprocessing"
     )
-    @memory_checkpoint
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
     def _preprocess_data(self, data: pd.DataFrame, targets: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Preprocess data for training using our utilities.
@@ -404,10 +408,10 @@ class BaseTrainer(ABC):
                 data = data.replace([np.inf, -np.inf], np.nan)
                 data = data.fillna(data.median())
             
-            # Optimize memory usage
-            if self._memory_optimizer:
-                data = optimize_dataframe_memory(data)
-                tprint_debug("🧠 Memory optimization applied")
+            # Optimize memory usage with enhanced tools
+            if self._hardware_manager:
+                data = self._hardware_manager.process_data_with_optimization(data, WorkloadCategory.DATA_PROCESSING)
+                tprint_debug("🧠 Enhanced memory optimization applied")
             
             # Feature selection if enabled
             if self.config.max_features < len(data.columns):

@@ -48,83 +48,23 @@ from src.utils.common_operations import get_m1_gpu_manager, get_m1_memory_optimi
 from src.utils.common_utilities import safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics
 from src.utils.math_validation import safe_divide, validate_finite, validate_positive, validate_range
 from src.utils.matrix_operations import get_unified_matrix_operations, safe_matrix_multiply, safe_correlation_matrix
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 # Hardware optimization imports
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_optimizer
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as get_hw_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as get_hw_cpu_optimizer
-    HARDWARE_AVAILABLE = True
-except ImportError:
-    HARDWARE_AVAILABLE = False
-
-@dataclass
-class FeaturePreprocessorConfig:
-    """Configuration for feature preprocessing."""
-
-    # Scaling options
-    scaling_method: str = "robust"  # "robust", "minmax", "standard", "none"
-    scaling_params: Dict[str, Any] = field(default_factory=dict)
-
-    # NaN handling
-    nan_strategy: str = "median"  # "mean", "median", "most_frequent", "constant"
-    nan_fill_value: float = 0.0
-
-    # Outlier handling
-    outlier_method: str = "clip"  # "clip", "remove", "winsorize", "none"
-    outlier_threshold: float = 3.0  # Standard deviations or IQR multiplier
-
-    # Dimensionality reduction
-    reduction_method: str = "pca"  # "pca", "umap", "none"
-    n_components: Optional[int] = None
-    reduction_params: Dict[str, Any] = field(default_factory=dict)
-
-    # Data quality
-    remove_duplicates: bool = True
-    handle_infinity: bool = True
-    validate_features: bool = True
-
-class FeaturePreprocessor:
-    """
-    Feature preprocessor for market analysis clustering.
-
-    Responsibilities:
-    - Scale (RobustScaler, MinMax if needed)
-    - Handle NaNs, outliers, standardization
-    - Apply PCA/UMAP dimensionality reduction
-    - Return reduced, clean matrix
-    """
-
-    def __init__(self, config: FeaturePreprocessorConfig = None):
-        """Initialize the FeaturePreprocessor."""
-        self.config = config or FeaturePreprocessorConfig()
-        self.preprocessing_metadata = {}
-
-        # Initialize hardware optimization components
-        self._initialize_hardware_optimization()
-
-        # Initialize matrix operations for efficient computations
-        self.matrix_ops = get_unified_matrix_operations(
-            enable_gpu=True,
-            enable_memory_optimization=True,
-            enable_parallel=True
-        )
-
-        # Initialize data processing utilities if available
-        if DATA_PROCESSING_AVAILABLE:
-            self.data_processor = DataProcessor()
-            self.data_transformer = DataTransformer()
-        else:
-            self.data_processor = None
-            self.data_transformer = None
-            tprint("⚠️ Data processing utilities not available, using sklearn fallbacks", "WARNING")
-
-    def _initialize_hardware_optimization(self):
-        """Initialize hardware optimization components."""
-        try:
-            self.gpu_manager = get_m1_gpu_manager() if get_m1_gpu_manager() else None
-            self.memory_optimizer = get_m1_memory_optimizer() if get_m1_memory_optimizer() else None
-            self.cpu_optimizer = get_m1_cpu_optimizer() if get_m1_cpu_optimizer() else None
+    () if get_integrated_hardware_manager() else None
+            self.memory_optimizer = get_integrated_hardware_manager() if get_integrated_hardware_manager() else None
+            self.cpu_optimizer = get_comprehensive_optimizer() if get_comprehensive_optimizer() else None
 
             if self.gpu_manager or self.memory_optimizer or self.cpu_optimizer:
                 tprint("✅ Hardware optimization initialized for feature preprocessing", "SUCCESS")

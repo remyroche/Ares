@@ -432,7 +432,7 @@ class MemoryManager:
         """
         try:
             if M1_MEMORY_OPTIMIZATION_AVAILABLE and self.m1_memory_optimizer:
-                return self.m1_memory_optimizer.optimize_dataframe_memory(df)
+                return self.m1_memory_optimizer.optimize_dataframe(df)
             else:
                 return df
         except Exception as e:
@@ -614,7 +614,7 @@ def register_feature_matrix(name: str, matrix: Any, critical: bool = False) -> b
     manager = get_memory_manager()
     return manager.register_feature_matrix(name, matrix, critical)
 
-def optimize_dataframe_memory(df: Any) -> Any:
+def optimize_dataframe(df: Any) -> Any:
     """Optimize DataFrame memory usage."""
     manager = get_memory_manager()
     return manager.optimize_dataframe(df)

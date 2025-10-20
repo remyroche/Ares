@@ -202,9 +202,9 @@ class TacticianTrainingStep:
 
             # Initialize hardware optimizers
             if COMMON_OPS_AVAILABLE:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer()
                 tprint_success("✅ Hardware optimizers initialized")
             else:
                 self.gpu_manager = None

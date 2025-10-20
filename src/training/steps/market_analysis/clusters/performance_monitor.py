@@ -49,9 +49,9 @@ from src.utils.math_validation import (
 
 # Import hardware utilities
 try:
-    from src.utils.hardware.m1_gpu_utils import is_m1_available as hw_is_m1_available, is_mps_available as hw_is_mps_available
-    from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer as hw_get_m1_memory_optimizer
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as hw_get_m1_cpu_optimizer
+    from src.utils.hardware import get_integrated_hardware_manager
+     as hw_get_m1_memory_optimizer
+     as hw_get_m1_cpu_optimizer
 except ImportError:
     hw_is_m1_available = lambda: False
     hw_is_mps_available = lambda: False
@@ -68,6 +68,17 @@ try:
     # CVLSA PerformanceAnalytics removed - no longer available
     PerformanceAnalytics = None
     from src.utils.ml_common.optimization.shared_utils.integration_verification import SharedUtilsIntegrationVerifier
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 except ImportError:
     BayesianTPEOptimizer = None
     ConfigurationValidator = None
@@ -229,7 +240,7 @@ class PerformanceMonitor:
             if hw_is_m1_available():
                 tprint_debug("Using M1 hardware utilities for enhanced metrics")
                 try:
-                    m1_memory_opt = hw_get_m1_memory_optimizer()
+                    m1_memory_opt = hw_get_integrated_hardware_manager()
                     if m1_memory_opt:
                         m1_metrics = m1_memory_opt.get_memory_info()
                         metrics.update(m1_metrics)

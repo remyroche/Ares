@@ -24,17 +24,28 @@ from src.training.steps.base_step import BaseStep
 
 # Import existing utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
 
 # VectorBT optimization utilities
 from src.utils.ml_common.unified_vectorization_manager import get_unified_vectorization_manager, VectorizationConfig
 from src.feature_generation.utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
 
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+
+
 from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
 from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 from src.core.decorators import handles_errors, traced, log_execution_time
 
 # Optimization imports
@@ -126,9 +137,9 @@ class RealParametersOptimizer(BaseStep):
         self.logger = logger.getChild('RealParametersOptimizer')
 
         # Initialize hardware optimizers
-        self.gpu_manager = get_m1_gpu_manager() if config.enable_gpu_acceleration else None
-        self.memory_optimizer = get_m1_memory_optimizer() if config.enable_memory_optimization else None
-        self.cpu_optimizer = get_m1_cpu_optimizer() if config.enable_parallel_processing else None
+        self.gpu_manager = get_integrated_hardware_manager() if config.enable_gpu_acceleration else None
+        self.memory_optimizer = get_integrated_hardware_manager() if config.enable_memory_optimization else None
+        self.cpu_optimizer = get_comprehensive_optimizer() if config.enable_parallel_processing else None
 
         # Initialize matrix operations
         self.matrix_ops = get_unified_matrix_operations()

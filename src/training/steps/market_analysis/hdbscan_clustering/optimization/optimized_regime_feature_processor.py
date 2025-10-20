@@ -240,7 +240,7 @@ class OptimizedRegimeFeatureProcessor:
         
         # Memory optimization
         if self.config.memory_efficient:
-            features_df = optimize_dataframe_memory(features_df)
+            features_df = optimize_dataframe(features_df)
         
         # Final validation
         features_df = self._validate_final_features(features_df)

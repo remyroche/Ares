@@ -77,16 +77,16 @@ SRLevel = None
 
 # M1 Optimization Utilities - Now in hardware modules
 try:
-    from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-    from src.utils.hardware.m1_memory_optimizer import optimize_memory, get_memory_usage
-    from src.utils.hardware.m1_optimizations import M1Optimizer
+    
+    , get_memory_usage
+    from src.utils.hardware import get_comprehensive_optimizer
 
     # Create wrapper functions for compatibility
     def integrate_with_m1_optimizers():
         """Integrate with M1 optimizers."""
         try:
             # Initialize components
-            gpu_manager = get_m1_gpu_manager()
+            gpu_manager = get_integrated_hardware_manager()
             cpu_optimizer = m1_cpu_optimizer()
             memory_optimizer = M1Optimizer()
 
@@ -116,10 +116,10 @@ try:
 
     def gpu_context():
         """GPU context manager."""
-        gpu_manager = get_m1_gpu_manager()
+        gpu_manager = get_integrated_hardware_manager()
         return gpu_manager.get_gpu_context()
 
-    from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer as m1_cpu_optimizer
+     as m1_cpu_optimizer
 
     # Initialize M1 integration through common operations
     m1_integration_result = integrate_with_m1_optimizers()
@@ -212,6 +212,17 @@ class SRDetectionStep(BaseStep):
         # Initialize automatic memory management
         try:
             from src.utils.hardware.memory_optimization import get_memory_manager, MemoryContext as memory_context
+from src.utils.hardware import (
+    get_integrated_hardware_manager, 
+    get_comprehensive_optimizer,
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    optimize_array,
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
             self.memory_manager = get_memory_manager()
             self.memory_manager.start_monitoring()
             self.logger.info("🧠 Memory management initialized")

@@ -330,9 +330,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         hardware = {}
 
         try:
-            hardware['gpu'] = get_m1_gpu_manager()
-            hardware['memory'] = get_m1_memory_optimizer()
-            hardware['cpu'] = get_m1_cpu_optimizer()
+            hardware['gpu'] = get_integrated_hardware_manager()
+            hardware['memory'] = get_integrated_hardware_manager()
+            hardware['cpu'] = get_comprehensive_optimizer()
 
             available = sum(1 for v in hardware.values() if v is not None)
             tprint_success(f"✅ Hardware: {available}/3 optimizers available")

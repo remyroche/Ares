@@ -28,6 +28,14 @@ from src.training.steps.base_step import BaseStep
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug, tprint_performance
 from src.core.decorators import handles_errors, traced, log_execution_time
+from src.utils.hardware import (
+    memory_optimized, 
+    comprehensive_memory_optimization,
+    optimize_dataframe, 
+    m1_optimized,
+    WorkloadCategory,
+    MemoryOptimizationLevel
+)
 
 
 @dataclass
@@ -173,6 +181,8 @@ class AnalystBaseTraining(BaseStep):
         context="analyst base training"
     )
     @traced
+    @memory_optimized(optimization_level=MemoryOptimizationLevel.AGGRESSIVE, enable_chunking=True)
+    @m1_optimized(operation_type="ml_training", workload_category=WorkloadCategory.MACHINE_LEARNING)
     async def run(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Run the Analyst base training.
@@ -200,11 +210,14 @@ class AnalystBaseTraining(BaseStep):
                     'training_time': 0.0
                 }
             
-            # Convert to pandas if needed
+            # Convert to pandas if needed and optimize
             if not isinstance(X_train, pd.DataFrame):
                 X_train = pd.DataFrame(X_train)
             if not isinstance(y_train, pd.Series):
                 y_train = pd.Series(y_train)
+            
+            # Optimize data with enhanced hardware tools
+            X_train = optimize_dataframe(X_train)
             
             # Train models
             training_result = await self._trainer.train(X_train, y_train)

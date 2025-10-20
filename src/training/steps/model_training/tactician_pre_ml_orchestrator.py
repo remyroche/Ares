@@ -540,9 +540,9 @@ class TacticianPreMLOrchestrator:
         """Initialize hardware optimizers (consolidated method)."""
         if COMMON_OPS_AVAILABLE and self.config.enable_memory_optimization:
             try:
-                self.gpu_manager = get_m1_gpu_manager()
-                self.memory_optimizer = get_m1_memory_optimizer()
-                self.cpu_optimizer = get_m1_cpu_optimizer()
+                self.gpu_manager = get_integrated_hardware_manager()
+                self.memory_optimizer = get_integrated_hardware_manager()
+                self.cpu_optimizer = get_comprehensive_optimizer()
 
                 available = sum(1 for x in [self.gpu_manager, self.memory_optimizer, self.cpu_optimizer] if x is not None)
                 tprint_success(f"✅ Hardware optimizers: {available}/3 available")

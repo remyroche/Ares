@@ -359,21 +359,35 @@ class RegimeClusteringComponent(BaseStep):
             # Generate regime-specific features
             regime_features = self._generate_regime_features(market_data, regime_labels, config)
             
-            # Create regime training datasets
-            regime_datasets = self._create_regime_datasets(market_data, regime_labels, regime_features, config)
+            # Perform multi-step clustering optimization with sample reallocation
+            tprint("🔄 Performing multi-step clustering optimization...", "INFO")
+            optimization_result = await self._perform_multi_step_clustering_optimization(
+                regime_features['features_df'], regime_labels, market_data, config
+            )
             
-            # Calculate regime statistics
-            regime_stats = self._calculate_regime_statistics(regime_labels, regime_probabilities, economic_profiles)
+            if not optimization_result['success']:
+                tprint(f"⚠️ Clustering optimization failed: {optimization_result.get('error', 'Unknown error')}", "WARNING")
+                # Use original labels as fallback
+                optimized_labels = regime_labels
+            else:
+                optimized_labels = optimization_result['final_assignments']
+                tprint(f"✅ Clustering optimization completed: {optimization_result['optimization_metrics']['total_changes']} changes made", "SUCCESS")
+            
+            # Create regime training datasets with optimized labels
+            regime_datasets = self._create_regime_datasets(market_data, optimized_labels, regime_features, config)
+            
+            # Calculate regime statistics with optimized labels
+            regime_stats = self._calculate_regime_statistics(optimized_labels, regime_probabilities, economic_profiles)
             
             # Generate regime characteristics using shared utilities
             regime_characteristics = self._generate_regime_characteristics(
-                regime_features, regime_labels, economic_profiles
+                regime_features, optimized_labels, economic_profiles
             )
             
             # Store component state
             self.regime_data = market_data
             self.regime_features = regime_features
-            self.regime_labels = regime_labels
+            self.regime_labels = optimized_labels
             self.regime_probabilities = regime_probabilities
             self.economic_profiles = economic_profiles
             
@@ -381,13 +395,14 @@ class RegimeClusteringComponent(BaseStep):
             
             return {
                 'success': True,
-                'regime_labels': regime_labels,
+                'regime_labels': optimized_labels,
                 'regime_probabilities': regime_probabilities,
                 'regime_features': regime_features,
                 'regime_datasets': regime_datasets,
                 'regime_stats': regime_stats,
                 'economic_profiles': economic_profiles,
                 'regime_characteristics': regime_characteristics,
+                'clustering_optimization': optimization_result,
                 'n_regimes': regime_stats['n_regimes'],
                 'n_samples': regime_stats['n_samples']
             }
@@ -700,6 +715,7 @@ class RegimeClusteringComponent(BaseStep):
                 'regime_stats': regime_result['regime_stats'],
                 'economic_profiles': regime_result['economic_profiles'],
                 'regime_characteristics': regime_result.get('regime_characteristics', {}),
+                'clustering_optimization': regime_result.get('clustering_optimization', {}),
                 
                 # Configuration
                 'config': config,
@@ -748,6 +764,25 @@ class RegimeClusteringComponent(BaseStep):
                 
                 datasets_file = output_dir / f"regime_datasets_metadata_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 with open(datasets_file, 'w') as f:
+                    json.dump(datasets_metadata, f, indent=2)
+                tprint(f"✅ Regime datasets metadata saved to {datasets_file}", "SUCCESS")
+            
+            # Save clustering optimization results
+            if 'clustering_optimization' in artifacts and artifacts['clustering_optimization']:
+                optimization_file = output_dir / f"clustering_optimization_{config['symbol']}_{config['timeframe']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                optimization_data = {
+                    'optimization_metrics': artifacts['clustering_optimization'].get('optimization_metrics', {}),
+                    'global_reallocation_stats': artifacts['clustering_optimization'].get('global_reallocation_stats', {}),
+                    'local_reallocation_stats': artifacts['clustering_optimization'].get('local_reallocation_stats', {}),
+                    'consolidation_stats': artifacts['clustering_optimization'].get('consolidation_stats', {}),
+                    'initial_validation': artifacts['clustering_optimization'].get('initial_validation', {}),
+                    'final_validation': artifacts['clustering_optimization'].get('final_validation', {}),
+                    'n_regimes': artifacts['clustering_optimization'].get('n_regimes', 0),
+                    'n_samples': artifacts['clustering_optimization'].get('n_samples', 0)
+                }
+                with open(optimization_file, 'w') as f:
+                    json.dump(optimization_data, f, indent=2)
+                tprint(f"✅ Clustering optimization results saved to {optimization_file}", "SUCCESS")
                     json.dump(datasets_metadata, f, indent=2)
                 tprint(f"✅ Regime datasets metadata saved to {datasets_file}", "SUCCESS")
             
@@ -841,6 +876,677 @@ class RegimeClusteringComponent(BaseStep):
         except Exception as e:
             tprint(f"⚠️ Failed to create outcome report: {e}", "WARNING")
             return f"# Regime Clustering Outcome Report\n\nError creating report: {str(e)}"
+    
+    async def _perform_multi_step_clustering_optimization(
+        self, 
+        features_df: pd.DataFrame, 
+        initial_assignments: np.ndarray, 
+        market_data: pd.DataFrame, 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Perform multi-step clustering optimization with sample reallocation."""
+        try:
+            tprint("🔄 Starting multi-step clustering optimization...", "INFO")
+            
+            # Convert DataFrame to numpy array for clustering
+            features = features_df.values
+            
+            # Step 1: Feature optimization and dimensionality reduction
+            tprint("Step 1: Optimizing features and reducing dimensionality...", "INFO")
+            optimized_features, feature_metadata = self._optimize_features_for_clustering(features, config)
+            
+            # Step 2: Initial clustering validation
+            tprint("Step 2: Validating initial clustering...", "INFO")
+            initial_validation = self._validate_clustering_robustness(optimized_features, initial_assignments, market_data)
+            
+            # Step 3: Perform neighborhood analysis
+            tprint("Step 3: Performing neighborhood analysis...", "INFO")
+            neighborhood_results = self._perform_neighborhood_analysis(optimized_features, initial_assignments)
+            
+            # Step 4: Sample reallocation at global level
+            tprint("Step 4: Performing global sample reallocation...", "INFO")
+            global_reallocated, global_stats = self._perform_global_sample_reallocation(
+                optimized_features, initial_assignments, neighborhood_results, config
+            )
+            
+            # Step 5: Sample reallocation at local level
+            tprint("Step 5: Performing local sample reallocation...", "INFO")
+            local_reallocated, local_stats = self._perform_local_sample_reallocation(
+                optimized_features, global_reallocated, neighborhood_results, config
+            )
+            
+            # Step 6: Regime consolidation and optimization
+            tprint("Step 6: Consolidating and optimizing regimes...", "INFO")
+            final_assignments, consolidation_stats = self._consolidate_regimes(
+                optimized_features, local_reallocated, neighborhood_results, config
+            )
+            
+            # Step 7: Final validation
+            tprint("Step 7: Performing final validation...", "INFO")
+            final_validation = self._validate_clustering_robustness(optimized_features, final_assignments, market_data)
+            
+            # Calculate optimization metrics
+            optimization_metrics = self._calculate_optimization_metrics(
+                initial_assignments, final_assignments, 
+                global_stats, local_stats, consolidation_stats,
+                initial_validation, final_validation
+            )
+            
+            tprint("✅ Multi-step clustering optimization completed", "SUCCESS")
+            
+            return {
+                'success': True,
+                'initial_assignments': initial_assignments,
+                'final_assignments': final_assignments,
+                'optimized_features': optimized_features,
+                'feature_metadata': feature_metadata,
+                'neighborhood_results': neighborhood_results,
+                'global_reallocation_stats': global_stats,
+                'local_reallocation_stats': local_stats,
+                'consolidation_stats': consolidation_stats,
+                'initial_validation': initial_validation,
+                'final_validation': final_validation,
+                'optimization_metrics': optimization_metrics,
+                'n_regimes': len(np.unique(final_assignments)),
+                'n_samples': len(final_assignments)
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Multi-step clustering optimization failed: {e}", "ERROR")
+            return {
+                'success': False,
+                'error': str(e),
+                'final_assignments': initial_assignments
+            }
+    
+    def _optimize_features_for_clustering(
+        self, 
+        features: np.ndarray, 
+        config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Optimize features for clustering using dimensionality reduction."""
+        try:
+            tprint("🔧 Optimizing features for clustering...", "INFO")
+            
+            # Apply PCA for dimensionality reduction
+            if MATRIX_OPERATIONS_AVAILABLE:
+                try:
+                    from sklearn.decomposition import PCA
+                    
+                    # Use variance-based PCA
+                    pca = PCA(n_components=0.95, svd_solver='full')  # Keep 95% of variance
+                    optimized_features = pca.fit_transform(features)
+                    
+                    explained_variance = pca.explained_variance_ratio_.sum()
+                    n_components = optimized_features.shape[1]
+                    
+                    tprint(f"✅ PCA reduction: {features.shape[1]} -> {n_components} features (variance: {explained_variance:.3f})", "SUCCESS")
+                    
+                    metadata = {
+                        'method': 'pca',
+                        'n_components': n_components,
+                        'explained_variance': explained_variance,
+                        'original_shape': features.shape,
+                        'reduced_shape': optimized_features.shape
+                    }
+                    
+                except Exception as e:
+                    tprint(f"⚠️ PCA failed, using original features: {e}", "WARNING")
+                    optimized_features = features
+                    metadata = {
+                        'method': 'none',
+                        'n_components': features.shape[1],
+                        'explained_variance': 1.0,
+                        'original_shape': features.shape,
+                        'reduced_shape': features.shape
+                    }
+            else:
+                optimized_features = features
+                metadata = {
+                    'method': 'none',
+                    'n_components': features.shape[1],
+                    'explained_variance': 1.0,
+                    'original_shape': features.shape,
+                    'reduced_shape': features.shape
+                }
+            
+            return optimized_features, metadata
+            
+        except Exception as e:
+            tprint(f"❌ Feature optimization failed: {e}", "ERROR")
+            return features, {'error': str(e)}
+    
+    def _validate_clustering_robustness(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray, 
+        market_data: pd.DataFrame = None
+    ) -> Dict[str, Any]:
+        """Validate clustering robustness using multiple metrics."""
+        try:
+            tprint("🔍 Validating clustering robustness...", "INFO")
+            
+            validation_results = {}
+            
+            # Basic clustering metrics
+            n_clusters = len(np.unique(assignments))
+            n_samples = features.shape[0]
+            
+            validation_results['n_clusters'] = n_clusters
+            validation_results['n_samples'] = n_samples
+            
+            # Calculate silhouette score if possible
+            try:
+                from sklearn.metrics import silhouette_score
+                if n_clusters > 1 and n_samples > 1:
+                    silhouette = silhouette_score(features, assignments)
+                    validation_results['silhouette_score'] = silhouette
+                    tprint(f"📊 Silhouette Score: {silhouette:.4f}", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Silhouette score calculation failed: {e}", "WARNING")
+                validation_results['silhouette_score'] = None
+            
+            # Calculate Davies-Bouldin index if possible
+            try:
+                from sklearn.metrics import davies_bouldin_score
+                if n_clusters > 1:
+                    db_score = davies_bouldin_score(features, assignments)
+                    validation_results['davies_bouldin_score'] = db_score
+                    tprint(f"📊 Davies-Bouldin Index: {db_score:.4f}", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Davies-Bouldin score calculation failed: {e}", "WARNING")
+                validation_results['davies_bouldin_score'] = None
+            
+            # Calculate cluster balance
+            unique, counts = np.unique(assignments, return_counts=True)
+            cluster_sizes = counts
+            min_size = np.min(cluster_sizes)
+            max_size = np.max(cluster_sizes)
+            balance_ratio = min_size / max_size if max_size > 0 else 0
+            
+            validation_results['cluster_balance'] = {
+                'min_size': int(min_size),
+                'max_size': int(max_size),
+                'balance_ratio': balance_ratio,
+                'cluster_sizes': cluster_sizes.tolist()
+            }
+            
+            tprint(f"📊 Cluster Balance: {min_size}-{max_size} samples (ratio: {balance_ratio:.3f})", "INFO")
+            
+            return validation_results
+            
+        except Exception as e:
+            tprint(f"❌ Clustering validation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _perform_neighborhood_analysis(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray
+    ) -> Dict[str, Any]:
+        """Perform neighborhood analysis for local structure insights."""
+        try:
+            tprint("🔍 Performing neighborhood analysis...", "INFO")
+            
+            neighborhood_results = {}
+            
+            # K-NN consistency analysis
+            try:
+                from sklearn.neighbors import NearestNeighbors
+                
+                n_neighbors = min(10, len(features) - 1)
+                nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
+                nn.fit(features)
+                
+                # Find neighbors for each point
+                distances, indices = nn.kneighbors(features)
+                
+                # Calculate consistency scores
+                consistency_scores = []
+                for i, neighbor_indices in enumerate(indices):
+                    neighbor_assignments = assignments[neighbor_indices[1:]]  # Exclude self
+                    if len(neighbor_assignments) > 0:
+                        # Calculate consistency as the ratio of neighbors with the same assignment
+                        same_assignment = np.sum(neighbor_assignments == assignments[i])
+                        consistency = same_assignment / len(neighbor_assignments)
+                        consistency_scores.append(consistency)
+                    else:
+                        consistency_scores.append(0.0)
+                
+                neighborhood_results['knn_consistency'] = {
+                    'consistency_scores': consistency_scores,
+                    'mean_consistency': np.mean(consistency_scores),
+                    'std_consistency': np.std(consistency_scores)
+                }
+                
+                tprint(f"📊 K-NN Consistency: {np.mean(consistency_scores):.3f} ± {np.std(consistency_scores):.3f}", "INFO")
+                
+            except Exception as e:
+                tprint(f"⚠️ K-NN analysis failed: {e}", "WARNING")
+                neighborhood_results['knn_consistency'] = {'error': str(e)}
+            
+            # Local silhouette analysis
+            try:
+                local_scores = self._compute_local_silhouette_scores(features, assignments)
+                neighborhood_results['local_silhouette'] = {
+                    'local_scores': local_scores,
+                    'mean_local_score': np.mean(local_scores),
+                    'std_local_score': np.std(local_scores)
+                }
+                
+                tprint(f"📊 Local Silhouette: {np.mean(local_scores):.3f} ± {np.std(local_scores):.3f}", "INFO")
+                
+            except Exception as e:
+                tprint(f"⚠️ Local silhouette analysis failed: {e}", "WARNING")
+                neighborhood_results['local_silhouette'] = {'error': str(e)}
+            
+            return neighborhood_results
+            
+        except Exception as e:
+            tprint(f"❌ Neighborhood analysis failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _compute_local_silhouette_scores(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray
+    ) -> List[float]:
+        """Compute local silhouette scores for each point."""
+        try:
+            local_scores = []
+            
+            for i in range(len(features)):
+                # Get the cluster assignment for this point
+                cluster_id = assignments[i]
+                
+                # Find all points in the same cluster
+                same_cluster_mask = assignments == cluster_id
+                same_cluster_indices = np.where(same_cluster_mask)[0]
+                
+                if len(same_cluster_indices) < 2:
+                    local_scores.append(0.0)
+                    continue
+                
+                # Calculate intra-cluster distance (a_i)
+                intra_distances = []
+                for j in same_cluster_indices:
+                    if i != j:
+                        dist = np.linalg.norm(features[i] - features[j])
+                        intra_distances.append(dist)
+                
+                a_i = np.mean(intra_distances) if intra_distances else 0.0
+                
+                # Calculate inter-cluster distances (b_i)
+                other_clusters = np.unique(assignments[assignments != cluster_id])
+                inter_distances = []
+                
+                for other_cluster in other_clusters:
+                    other_cluster_mask = assignments == other_cluster
+                    other_cluster_indices = np.where(other_cluster_mask)[0]
+                    
+                    if len(other_cluster_indices) > 0:
+                        cluster_distances = []
+                        for j in other_cluster_indices:
+                            dist = np.linalg.norm(features[i] - features[j])
+                            cluster_distances.append(dist)
+                        inter_distances.append(np.mean(cluster_distances))
+                
+                b_i = np.min(inter_distances) if inter_distances else 0.0
+                
+                # Calculate local silhouette score
+                if max(a_i, b_i) > 0:
+                    local_score = (b_i - a_i) / max(a_i, b_i)
+                else:
+                    local_score = 0.0
+                
+                local_scores.append(local_score)
+            
+            return local_scores
+            
+        except Exception as e:
+            tprint(f"❌ Local silhouette calculation failed: {e}", "ERROR")
+            return [0.0] * len(features)
+    
+    def _perform_global_sample_reallocation(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray, 
+        neighborhood_results: Dict[str, Any], 
+        config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Perform global-level sample reallocation."""
+        try:
+            tprint("🔄 Performing global sample reallocation...", "INFO")
+            
+            # Get neighborhood analysis results
+            knn_results = neighborhood_results.get('knn_consistency', {})
+            local_silhouette = neighborhood_results.get('local_silhouette', {})
+            
+            if knn_results.get('error') or local_silhouette.get('error'):
+                tprint("⚠️ Neighborhood analysis incomplete, skipping global reallocation", "WARNING")
+                return assignments, {'reallocation_skipped': True}
+            
+            # Identify candidates for reallocation
+            consistency_scores = knn_results.get('consistency_scores', [])
+            local_scores = local_silhouette.get('local_scores', [])
+            
+            if not consistency_scores or not local_scores:
+                tprint("⚠️ No consistency or local scores available, skipping reallocation", "WARNING")
+                return assignments, {'reallocation_skipped': True}
+            
+            # Find points with poor global consistency
+            consistency_threshold = 0.6
+            local_threshold = -0.1
+            
+            misclustered_mask = np.array([
+                consistency < consistency_threshold and local_score < local_threshold
+                for consistency, local_score in zip(consistency_scores, local_scores)
+            ])
+            
+            n_misclustered = np.sum(misclustered_mask)
+            if n_misclustered == 0:
+                tprint("ℹ️ No misclustered points found for global reallocation", "INFO")
+                return assignments, {'reallocated_points': 0, 'reason': 'no_misclustered_points'}
+            
+            tprint(f"🔄 Found {n_misclustered} candidates for global reallocation", "INFO")
+            
+            # Perform reallocation using k-NN
+            reallocated_assignments, reallocation_stats = self._reallocate_misclustered_points(
+                features, assignments, misclustered_mask, knn_results, local_silhouette
+            )
+            
+            tprint(f"✅ Global reallocation completed: {reallocation_stats.get('reallocated_points', 0)} points moved", "SUCCESS")
+            
+            return reallocated_assignments, reallocation_stats
+            
+        except Exception as e:
+            tprint(f"❌ Global sample reallocation failed: {e}", "ERROR")
+            return assignments, {'error': str(e)}
+    
+    def _perform_local_sample_reallocation(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray, 
+        neighborhood_results: Dict[str, Any], 
+        config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Perform local-level sample reallocation."""
+        try:
+            tprint("🔄 Performing local sample reallocation...", "INFO")
+            
+            # For now, implement a simplified local reallocation
+            # In a full implementation, this would use more sophisticated local optimization
+            
+            local_silhouette = neighborhood_results.get('local_silhouette', {})
+            local_scores = local_silhouette.get('local_scores', [])
+            
+            if not local_scores:
+                tprint("⚠️ No local scores available, skipping local reallocation", "WARNING")
+                return assignments, {'reallocated_points': 0, 'reason': 'no_local_scores'}
+            
+            # Find points with very poor local silhouette scores
+            local_threshold = -0.3
+            poor_local_mask = np.array(local_scores) < local_threshold
+            
+            n_poor_local = np.sum(poor_local_mask)
+            if n_poor_local == 0:
+                tprint("ℹ️ No points with poor local scores found", "INFO")
+                return assignments, {'reallocated_points': 0, 'reason': 'no_poor_local_points'}
+            
+            tprint(f"🔄 Found {n_poor_local} points with poor local scores", "INFO")
+            
+            # Simple local reallocation: move points to nearest cluster centroid
+            reallocated_assignments = assignments.copy()
+            reallocation_count = 0
+            
+            # Calculate cluster centroids
+            unique_clusters = np.unique(assignments)
+            centroids = {}
+            for cluster_id in unique_clusters:
+                cluster_mask = assignments == cluster_id
+                cluster_points = features[cluster_mask]
+                if len(cluster_points) > 0:
+                    centroids[cluster_id] = np.mean(cluster_points, axis=0)
+            
+            # Reallocate poor local points
+            for i in np.where(poor_local_mask)[0]:
+                if i >= len(assignments):
+                    continue
+                    
+                current_cluster = assignments[i]
+                point = features[i]
+                
+                # Find nearest centroid
+                best_cluster = current_cluster
+                best_distance = float('inf')
+                
+                for cluster_id, centroid in centroids.items():
+                    if cluster_id != current_cluster:
+                        distance = np.linalg.norm(point - centroid)
+                        if distance < best_distance:
+                            best_distance = distance
+                            best_cluster = cluster_id
+                
+                # Only reallocate if it's different and improves local score
+                if best_cluster != current_cluster:
+                    # Test the move
+                    test_assignments = reallocated_assignments.copy()
+                    test_assignments[i] = best_cluster
+                    
+                    # Calculate new local score
+                    new_local_score = self._compute_local_silhouette_scores(features, test_assignments)[i]
+                    current_local_score = local_scores[i]
+                    
+                    if new_local_score > current_local_score:
+                        reallocated_assignments[i] = best_cluster
+                        reallocation_count += 1
+            
+            tprint(f"✅ Local reallocation completed: {reallocation_count} points moved", "SUCCESS")
+            
+            return reallocated_assignments, {
+                'reallocated_points': reallocation_count,
+                'total_candidates': n_poor_local,
+                'success_rate': reallocation_count / max(1, n_poor_local)
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Local sample reallocation failed: {e}", "ERROR")
+            return assignments, {'error': str(e)}
+    
+    def _reallocate_misclustered_points(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray, 
+        misclustered_mask: np.ndarray, 
+        knn_results: Dict[str, Any], 
+        local_silhouette: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Reallocate misclustered points using k-NN consensus."""
+        try:
+            from sklearn.neighbors import NearestNeighbors
+            
+            n_misclustered = np.sum(misclustered_mask)
+            if n_misclustered == 0:
+                return assignments, {'reallocated_points': 0, 'reason': 'no_misclustered_points'}
+            
+            # Fit k-NN for distance-based reallocation
+            n_neighbors = min(10, len(features) - 1)
+            nn = NearestNeighbors(n_neighbors=n_neighbors, metric='euclidean')
+            nn.fit(features)
+            
+            reallocated_assignments = assignments.copy()
+            reallocation_count = 0
+            
+            # Throttling constraints
+            max_moves = max(2, int(0.05 * len(assignments)))  # Cap at 5% of samples
+            neighbor_consensus_threshold = 0.7  # Require 70% neighbor consensus
+            
+            for i in np.where(misclustered_mask)[0]:
+                if reallocation_count >= max_moves:
+                    break
+                
+                # Find neighbors
+                distances, indices = nn.kneighbors(features[i:i+1])
+                neighbor_indices = indices[0][1:]  # Exclude self
+                neighbor_assignments = assignments[neighbor_indices]
+                
+                if len(neighbor_assignments) == 0:
+                    continue
+                
+                # Find most common cluster among neighbors
+                unique_clusters, counts = np.unique(neighbor_assignments, return_counts=True)
+                consensus_ratio = np.max(counts) / len(neighbor_assignments)
+                
+                # Require neighbor consensus
+                if consensus_ratio < neighbor_consensus_threshold:
+                    continue
+                
+                best_neighbor_cluster = unique_clusters[np.argmax(counts)]
+                current_cluster = assignments[i]
+                
+                # Only reallocate if different cluster
+                if best_neighbor_cluster != current_cluster:
+                    reallocated_assignments[i] = best_neighbor_cluster
+                    reallocation_count += 1
+            
+            return reallocated_assignments, {
+                'reallocated_points': reallocation_count,
+                'total_misclustered': n_misclustered,
+                'success_rate': reallocation_count / max(1, n_misclustered)
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Misclustered points reallocation failed: {e}", "ERROR")
+            return assignments, {'error': str(e)}
+    
+    def _consolidate_regimes(
+        self, 
+        features: np.ndarray, 
+        assignments: np.ndarray, 
+        neighborhood_results: Dict[str, Any], 
+        config: Dict[str, Any]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Consolidate regimes by merging small clusters and splitting large ones."""
+        try:
+            tprint("🔄 Consolidating regimes...", "INFO")
+            
+            # Calculate cluster sizes
+            unique_clusters, counts = np.unique(assignments, return_counts=True)
+            cluster_sizes = dict(zip(unique_clusters, counts))
+            
+            # Define thresholds
+            min_cluster_size = max(2, len(assignments) // 20)  # At least 5% of data
+            max_cluster_size = len(assignments) // 3  # At most 33% of data
+            
+            consolidated_assignments = assignments.copy()
+            consolidation_changes = 0
+            
+            # Merge small clusters
+            small_clusters = [cluster for cluster, size in cluster_sizes.items() if size < min_cluster_size]
+            if small_clusters:
+                tprint(f"🔄 Merging {len(small_clusters)} small clusters", "INFO")
+                
+                # Find the largest cluster to merge small ones into
+                largest_cluster = max(cluster_sizes.items(), key=lambda x: x[1])[0]
+                
+                for small_cluster in small_clusters:
+                    mask = consolidated_assignments == small_cluster
+                    consolidated_assignments[mask] = largest_cluster
+                    consolidation_changes += np.sum(mask)
+            
+            # Split large clusters (simplified implementation)
+            large_clusters = [cluster for cluster, size in cluster_sizes.items() if size > max_cluster_size]
+            if large_clusters:
+                tprint(f"🔄 Splitting {len(large_clusters)} large clusters", "INFO")
+                
+                for large_cluster in large_clusters:
+                    # Simple splitting: use k-means with k=2
+                    try:
+                        from sklearn.cluster import KMeans
+                        
+                        cluster_mask = consolidated_assignments == large_cluster
+                        cluster_points = features[cluster_mask]
+                        
+                        if len(cluster_points) > 2:
+                            kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
+                            sub_assignments = kmeans.fit_predict(cluster_points)
+                            
+                            # Create new cluster IDs
+                            new_cluster_id = max(consolidated_assignments) + 1
+                            
+                            # Update assignments
+                            cluster_indices = np.where(cluster_mask)[0]
+                            for i, sub_assignment in enumerate(sub_assignments):
+                                if sub_assignment == 1:  # Move second sub-cluster to new ID
+                                    consolidated_assignments[cluster_indices[i]] = new_cluster_id
+                                    consolidation_changes += 1
+                    
+                    except Exception as e:
+                        tprint(f"⚠️ Failed to split cluster {large_cluster}: {e}", "WARNING")
+            
+            tprint(f"✅ Regime consolidation completed: {consolidation_changes} changes", "SUCCESS")
+            
+            return consolidated_assignments, {
+                'consolidation_changes': consolidation_changes,
+                'merged_clusters': len(small_clusters),
+                'split_clusters': len(large_clusters)
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Regime consolidation failed: {e}", "ERROR")
+            return assignments, {'error': str(e)}
+    
+    def _calculate_optimization_metrics(
+        self, 
+        initial_assignments: np.ndarray, 
+        final_assignments: np.ndarray, 
+        global_stats: Dict[str, Any], 
+        local_stats: Dict[str, Any], 
+        consolidation_stats: Dict[str, Any],
+        initial_validation: Dict[str, Any], 
+        final_validation: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Calculate optimization metrics."""
+        try:
+            # Calculate assignment changes
+            total_changes = np.sum(initial_assignments != final_assignments)
+            change_rate = total_changes / len(initial_assignments) if len(initial_assignments) > 0 else 0
+            
+            # Calculate cluster count changes
+            initial_n_clusters = len(np.unique(initial_assignments))
+            final_n_clusters = len(np.unique(final_assignments))
+            
+            # Calculate quality improvements
+            initial_silhouette = initial_validation.get('silhouette_score', 0)
+            final_silhouette = final_validation.get('silhouette_score', 0)
+            silhouette_improvement = final_silhouette - initial_silhouette if initial_silhouette is not None and final_silhouette is not None else 0
+            
+            # Calculate balance improvements
+            initial_balance = initial_validation.get('cluster_balance', {}).get('balance_ratio', 0)
+            final_balance = final_validation.get('cluster_balance', {}).get('balance_ratio', 0)
+            balance_improvement = final_balance - initial_balance
+            
+            return {
+                'total_changes': int(total_changes),
+                'change_rate': change_rate,
+                'initial_n_clusters': initial_n_clusters,
+                'final_n_clusters': final_n_clusters,
+                'cluster_count_change': final_n_clusters - initial_n_clusters,
+                'silhouette_improvement': silhouette_improvement,
+                'balance_improvement': balance_improvement,
+                'global_reallocations': global_stats.get('reallocated_points', 0),
+                'local_reallocations': local_stats.get('reallocated_points', 0),
+                'consolidation_changes': consolidation_stats.get('consolidation_changes', 0),
+                'total_optimization_changes': (
+                    global_stats.get('reallocated_points', 0) + 
+                    local_stats.get('reallocated_points', 0) + 
+                    consolidation_stats.get('consolidation_changes', 0)
+                )
+            }
+            
+        except Exception as e:
+            tprint(f"❌ Optimization metrics calculation failed: {e}", "ERROR")
+            return {'error': str(e)}
     
     def _generate_regime_characteristics(
         self, 

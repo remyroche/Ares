@@ -68,19 +68,11 @@ from src.utils.math_validation import (
     validate_array_finite, validate_matrix_finite
 )
 
-# Import enhanced hardware optimization utilities
-from src.utils.hardware import (
-    get_integrated_hardware_manager, IntegratedHardwareConfig,
-    get_comprehensive_optimizer, ComprehensiveConfig, OptimizationStrategy,
-    WorkloadCategory, m1_optimized, memory_optimized, auto_optimize,
-    smart_cache, performance_tracked, optimize_dataframe, optimize_array,
-    process_ml_training_data, get_system_optimization_status,
-    clear_optimization_caches, initialize_optimization_system
-)
-
-# Import common operations for basic utilities (keeping only non-hardware functions)
+# Import common operations for hardware and data utilities
 from src.utils.common_operations import (
-    ensure_directory, safe_file_exists, get_current_datetime, validate_positive
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, ensure_directory, safe_file_exists,
+    get_current_datetime, validate_positive
 )
 
 # Import common utilities for DataFrame operations
@@ -136,15 +128,10 @@ class AnalystEnsembleTrainingConfig:
     save_models: bool = True
     output_directory: str = "generated/analyst_ensemble_training"
 
-    # Enhanced hardware optimization
+    # Hardware optimization
     enable_parallel_processing: bool = True
     enable_gpu_acceleration: bool = True
     memory_limit_gb: float = 8.0
-    optimization_strategy: str = "balanced"  # maximum_performance, balanced, power_efficient, memory_optimized
-    enable_comprehensive_optimization: bool = True
-    enable_adaptive_optimization: bool = True
-    enable_caching: bool = True
-    enable_performance_monitoring: bool = True
 
     # Validation parameters
     validation_split: float = 0.2
@@ -339,57 +326,19 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 ensure_directory(config.model_save_path)
 
     def _initialize_hardware_optimizers_consolidated(self) -> Dict[str, Any]:
-        """Initialize comprehensive hardware optimization system."""
+        """Initialize hardware optimizers (consolidated approach)."""
         hardware = {}
 
         try:
-            # Initialize comprehensive hardware manager
-            config = IntegratedHardwareConfig(
-                memory_limit_gb=self.config.memory_limit_gb,
-                enable_automatic_optimization=self.config.enable_adaptive_optimization,
-                enable_caching=self.config.enable_caching,
-                enable_performance_tracking=self.config.enable_performance_monitoring
-            )
-            
-            hardware['integrated_manager'] = get_integrated_hardware_manager(config)
-            
-            # Initialize comprehensive M1 optimizer
-            comprehensive_config = ComprehensiveConfig(
-                optimization_strategy=OptimizationStrategy[self.config.optimization_strategy.upper()],
-                workload_category=WorkloadCategory.MACHINE_LEARNING,
-                enable_adaptive_optimization=self.config.enable_adaptive_optimization,
-                enable_comprehensive_monitoring=self.config.enable_performance_monitoring
-            )
-            
-            hardware['comprehensive_optimizer'] = get_comprehensive_optimizer(comprehensive_config)
-            
-            # Initialize optimization system
-            hardware['optimization_system'] = initialize_optimization_system()
-            
-            tprint_success("✅ Enhanced hardware optimization system initialized")
-            tprint_info(f"⚙️ Strategy: {self.config.optimization_strategy}")
-            tprint_info(f"💾 Memory limit: {self.config.memory_limit_gb}GB")
-            tprint_info(f"🔄 Adaptive optimization: {self.config.enable_adaptive_optimization}")
-            tprint_info(f"💾 Caching enabled: {self.config.enable_caching}")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimization init failed: {e}")
-            # Fallback to basic initialization
-            hardware = self._initialize_fallback_hardware()
+            hardware['gpu'] = get_m1_gpu_manager()
+            hardware['memory'] = get_m1_memory_optimizer()
+            hardware['cpu'] = get_m1_cpu_optimizer()
 
-        return hardware
-
-    def _initialize_fallback_hardware(self) -> Dict[str, Any]:
-        """Fallback hardware initialization if enhanced system fails."""
-        hardware = {}
-        try:
-            # Basic fallback - minimal hardware optimization
-            from src.utils.hardware import get_unified_hardware_manager, HardwareConfig
-            config = HardwareConfig(memory_limit_gb=self.config.memory_limit_gb)
-            hardware['basic_manager'] = get_unified_hardware_manager(config)
-            tprint_warning("⚠️ Using fallback hardware optimization")
+            available = sum(1 for v in hardware.values() if v is not None)
+            tprint_success(f"✅ Hardware: {available}/3 optimizers available")
         except Exception as e:
-            tprint_error(f"❌ Fallback hardware init failed: {e}")
+            tprint_warning(f"⚠️ Hardware init partial: {e}")
+
         return hardware
 
     def _initialize_data_cleaner(self) -> Optional[DataCleaner]:
@@ -444,12 +393,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             'timeframe': config.timeframe,
             'vectorization_enabled': self.enable_vectorization,
             'hardware_available': {
-                'integrated_manager': self.hardware.get('integrated_manager') is not None,
-                'comprehensive_optimizer': self.hardware.get('comprehensive_optimizer') is not None,
-                'optimization_system': self.hardware.get('optimization_system') is not None,
-                'legacy_gpu': self.hardware.get('gpu') is not None,
-                'legacy_memory': self.hardware.get('memory') is not None,
-                'legacy_cpu': self.hardware.get('cpu') is not None
+                'gpu': self.hardware.get('gpu') is not None,
+                'memory': self.hardware.get('memory') is not None,
+                'cpu': self.hardware.get('cpu') is not None
             },
             'utilities_available': {
                 'data_cleaner': self.data_cleaner is not None,
@@ -463,18 +409,12 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         self._validate_config_consolidated(config)
 
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize enhanced hardware optimizers - delegates to consolidated method."""
+        """Initialize hardware optimizers - delegates to consolidated method."""
         self.hardware = self._initialize_hardware_optimizers_consolidated()
-        
-        # Set enhanced hardware references
-        self.integrated_manager = self.hardware.get('integrated_manager')
-        self.comprehensive_optimizer = self.hardware.get('comprehensive_optimizer')
-        self.optimization_system = self.hardware.get('optimization_system')
-        
-        # Legacy compatibility (for backward compatibility)
-        self.gpu_manager = None  # Replaced by integrated manager
-        self.memory_optimizer = None  # Replaced by integrated manager
-        self.cpu_optimizer = None  # Replaced by integrated manager
+        # Set individual references for backwards compatibility
+        self.gpu_manager = self.hardware.get('gpu')
+        self.memory_optimizer = self.hardware.get('memory')
+        self.cpu_optimizer = self.hardware.get('cpu')
 
     def _initialize_parent_class(self, config: EnsembleTrainingConfig, enable_vectorization: bool) -> None:
         """Initialize parent class - now handled in __init__."""
@@ -623,15 +563,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_info(f"🤖 Model types: {len(self.training_stats['model_types'])} types")
             tprint_info(f"🚀 Vectorization: {self.training_stats['vectorization_enabled']}")
 
-            # Enhanced hardware optimizers summary
+            # Hardware optimizers summary
             hw_stats = self.training_stats['hardware_optimizers_available']
-            tprint_info(f"🔧 Integrated manager: {hw_stats['integrated_manager']}")
-            tprint_info(f"⚡ Comprehensive optimizer: {hw_stats['comprehensive_optimizer']}")
-            tprint_info(f"🔄 Optimization system: {hw_stats['optimization_system']}")
-            
-            # Legacy hardware (for reference)
-            if hw_stats.get('legacy_gpu') or hw_stats.get('legacy_memory') or hw_stats.get('legacy_cpu'):
-                tprint_info("📊 Legacy hardware detected (fallback mode)")
+            tprint_info(f"⚙️ GPU manager: {hw_stats['gpu_manager']}")
+            tprint_info(f"💾 Memory optimizer: {hw_stats['memory_optimizer']}")
+            tprint_info(f"🖥️ CPU optimizer: {hw_stats['cpu_optimizer']}")
 
             # Utilities availability
             utils_stats = self.training_stats['utilities_available']
@@ -921,7 +857,6 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ Regime distribution validation failed: {e}")
             raise
 
-    @memory_optimized(optimization_level='aggressive')
     def _validate_memory_and_performance(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
         """Validate memory and performance considerations with bounds checking."""
         try:
@@ -979,9 +914,6 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_warning(f"⚠️ Memory and performance validation failed: {e}")
             # Don't raise - this is not critical
 
-    @performance_tracked(log_performance=True, track_memory=True)
-    @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
-    @memory_optimized(optimization_level='aggressive')
     def execute(
         self,
         X: np.ndarray,
@@ -1055,19 +987,6 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Step 2: Hardware optimization setup
             with tprint_timer("Step 2: Hardware optimization"):
                 self._setup_hardware_optimizations(X_clean, y_clean, regimes_clean, execution_stats)
-                
-                # Optimize data for training
-                training_data = {
-                    'X': X_clean,
-                    'y': y_clean,
-                    'regime_labels': regimes_clean
-                }
-                optimized_data = self._optimize_data_for_training(training_data)
-                
-                # Update data with optimized versions
-                X_clean = optimized_data.get('X', X_clean)
-                y_clean = optimized_data.get('y', y_clean)
-                regimes_clean = optimized_data.get('regime_labels', regimes_clean)
                 execution_stats['steps_completed'] += 1
 
             # Step 3: Regime integration if available
@@ -1123,17 +1042,8 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             }
 
         finally:
-            # Cleanup hardware resources and get final optimization status
+            # Cleanup hardware resources using common_operations
             self._cleanup_hardware_resources()
-            
-            # Get final optimization statistics
-            final_stats = self._get_optimization_statistics()
-            if final_stats:
-                execution_stats['final_optimization_stats'] = final_stats
-                tprint_info("📊 Final optimization statistics collected")
-            
-            # Display optimization performance metrics
-            self._display_optimization_performance(execution_stats)
 
     def _pre_execution_validation(
         self,
@@ -1195,8 +1105,6 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ Pre-execution validation failed: {e}")
             raise
 
-    @performance_tracked(log_performance=True, track_memory=True)
-    @memory_optimized(optimization_level='aggressive')
     def _setup_hardware_optimizations(
         self,
         X: np.ndarray,
@@ -1204,178 +1112,36 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         regime_labels: np.ndarray,
         execution_stats: Dict[str, Any]
     ) -> None:
-        """Setup comprehensive hardware optimizations for training."""
-        tprint_info("⚙️ Setting up comprehensive hardware optimizations")
+        """Setup hardware optimizations for training."""
+        tprint_info("⚙️ Setting up hardware optimizations")
 
         # Calculate data size for optimization decisions
         data_size_mb = (X.nbytes + y.nbytes + regime_labels.nbytes) / (1024 * 1024)
         execution_stats['memory_usage_mb'] = data_size_mb
 
-        try:
-            # Use integrated hardware manager for comprehensive optimization
-            integrated_manager = self.hardware.get('integrated_manager')
-            comprehensive_optimizer = self.hardware.get('comprehensive_optimizer')
-            
-            if integrated_manager:
-                # Process training data with full optimization
-                optimized_data = process_ml_training_data({
-                    'X': X, 'y': y, 'regime_labels': regime_labels
-                })
-                
-                # Update data with optimized versions
-                X[:] = optimized_data.get('X', X)
-                y[:] = optimized_data.get('y', y)
-                regime_labels[:] = optimized_data.get('regime_labels', regime_labels)
-                
-                execution_stats['hardware_optimizations_used'].append('integrated_optimization')
-                tprint_success("✅ Integrated hardware optimization applied")
-            
-            if comprehensive_optimizer:
-                # Apply comprehensive M1 optimizations
-                optimization_result = comprehensive_optimizer.optimize_for_workload(
-                    WorkloadCategory.MACHINE_LEARNING,
-                    data_size_mb=data_size_mb
-                )
-                
-                if optimization_result.success:
-                    execution_stats['hardware_optimizations_used'].append('comprehensive_optimization')
-                    execution_stats['performance_improvement'] = optimization_result.performance_improvement
-                    tprint_success(f"✅ Comprehensive optimization applied (improvement: {optimization_result.performance_improvement:.2%})")
-                else:
-                    tprint_warning(f"⚠️ Comprehensive optimization failed: {optimization_result.error_message}")
-            
-            # Apply memory optimization decorators
-            if data_size_mb > 100:  # > 100MB
-                execution_stats['hardware_optimizations_used'].append('memory_optimization')
-                tprint_success("✅ Memory optimization applied")
-            
-            # Apply performance tracking
-            if self.config.enable_performance_monitoring:
-                execution_stats['hardware_optimizations_used'].append('performance_monitoring')
-                tprint_success("✅ Performance monitoring enabled")
-            
-            # Get optimization status
-            if integrated_manager:
-                status = get_system_optimization_status()
-                execution_stats['optimization_status'] = status
-                tprint_info(f"📊 Optimization status: {len(status.get('performance_metrics', {}))} metrics tracked")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Enhanced hardware optimization failed: {e}")
-            # Fallback to basic optimization
-            self._setup_fallback_hardware_optimizations(X, y, regime_labels, execution_stats)
+        # Setup memory optimization if available
+        if self.memory_optimizer and data_size_mb > 100:  # > 100MB
+            self.memory_optimizer.optimize_for_training(data_size_mb)
+            execution_stats['hardware_optimizations_used'].append('memory_optimization')
+            tprint_success("✅ Memory optimization applied")
+
+        # Setup CPU optimization if available
+        if self.cpu_optimizer:
+            self.cpu_optimizer.optimize_for_ml_training()
+            execution_stats['hardware_optimizations_used'].append('cpu_optimization')
+            tprint_success("✅ CPU optimization applied")
+
+        # Setup GPU optimization if available
+        if self.gpu_manager and data_size_mb > 500:  # > 500MB
+            if self.gpu_manager.is_available():
+                self.gpu_manager.optimize_for_training()
+                execution_stats['hardware_optimizations_used'].append('gpu_optimization')
+                tprint_success("✅ GPU optimization applied")
+            else:
+                tprint_info("ℹ️ GPU not available for optimization")
 
         tprint_success("✅ Hardware optimizations setup completed")
 
-    def _get_optimization_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive optimization statistics."""
-        stats = {}
-        
-        try:
-            if self.integrated_manager:
-                stats['integrated_manager'] = self.integrated_manager.get_optimization_report()
-            
-            if self.comprehensive_optimizer:
-                stats['comprehensive_optimizer'] = self.comprehensive_optimizer.get_performance_metrics()
-            
-            # Get system-wide optimization status
-            stats['system_status'] = get_system_optimization_status()
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to get optimization statistics: {e}")
-            stats['error'] = str(e)
-        
-        return stats
-
-    def _display_optimization_performance(self, execution_stats: Dict[str, Any]) -> None:
-        """Display comprehensive optimization performance metrics."""
-        try:
-            tprint_info("📊 OPTIMIZATION PERFORMANCE METRICS:")
-            
-            # Show optimizations used
-            optimizations = execution_stats.get('hardware_optimizations_used', [])
-            if optimizations:
-                tprint_info(f"🔧 Optimizations applied: {', '.join(optimizations)}")
-            
-            # Show performance improvement
-            improvement = execution_stats.get('performance_improvement', 0.0)
-            if improvement > 0:
-                tprint_success(f"📈 Performance improvement: {improvement:.2%}")
-            
-            # Show memory usage
-            memory_mb = execution_stats.get('memory_usage_mb', 0.0)
-            if memory_mb > 0:
-                tprint_info(f"💾 Memory usage: {memory_mb:.2f}MB")
-            
-            # Show optimization status
-            opt_status = execution_stats.get('optimization_status', {})
-            if opt_status:
-                metrics = opt_status.get('performance_metrics', {})
-                if metrics:
-                    tprint_info(f"📊 Performance metrics tracked: {len(metrics)}")
-            
-            # Show final optimization statistics
-            final_stats = execution_stats.get('final_optimization_stats', {})
-            if final_stats:
-                tprint_info("📈 Final optimization statistics available")
-                
-        except Exception as e:
-            tprint_warning(f"⚠️ Failed to display optimization performance: {e}")
-
-    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
-    def _optimize_data_for_training(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize data for training using comprehensive hardware optimization."""
-        try:
-            if self.integrated_manager:
-                # Use integrated manager for comprehensive optimization
-                optimized_data = self.integrated_manager.process_data_with_optimization(
-                    data, WorkloadType.ML_TRAINING
-                )
-                return optimized_data
-            else:
-                # Fallback to basic optimization
-                optimized_data = {}
-                for key, value in data.items():
-                    if hasattr(value, 'shape'):  # NumPy array or DataFrame
-                        if isinstance(value, np.ndarray):
-                            optimized_data[key] = optimize_array(value)
-                        else:  # DataFrame
-                            optimized_data[key] = optimize_dataframe(value)
-                    else:
-                        optimized_data[key] = value
-                return optimized_data
-        except Exception as e:
-            tprint_warning(f"⚠️ Data optimization failed: {e}")
-            return data
-
-    def _setup_fallback_hardware_optimizations(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        regime_labels: np.ndarray,
-        execution_stats: Dict[str, Any]
-    ) -> None:
-        """Fallback hardware optimization setup."""
-        tprint_info("⚙️ Using fallback hardware optimization")
-        
-        # Basic memory optimization
-        data_size_mb = (X.nbytes + y.nbytes + regime_labels.nbytes) / (1024 * 1024)
-        
-        if data_size_mb > 100:
-            # Apply basic memory optimization
-            X_opt = optimize_array(X)
-            y_opt = optimize_array(y)
-            regime_opt = optimize_array(regime_labels)
-            
-            X[:] = X_opt
-            y[:] = y_opt
-            regime_labels[:] = regime_opt
-            
-            execution_stats['hardware_optimizations_used'].append('basic_memory_optimization')
-            tprint_success("✅ Basic memory optimization applied")
-
-    @memory_optimized(optimization_level='aggressive')
-    @smart_cache(ttl=300)  # Cache for 5 minutes
     def _integrate_regime_features(
         self,
         X: np.ndarray,
@@ -1673,14 +1439,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             # Add execution statistics
             results['execution_stats'] = execution_stats.copy()
 
-            # Add enhanced hardware optimization results
+            # Add hardware optimization results
             if execution_stats['hardware_optimizations_used']:
                 results['hardware_optimizations_used'] = execution_stats['hardware_optimizations_used']
-            
-            # Add optimization statistics
-            optimization_stats = self._get_optimization_statistics()
-            if optimization_stats:
-                results['optimization_statistics'] = optimization_stats
 
             tprint_success("✅ Post-training processing completed")
             return results
@@ -1731,11 +1492,9 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                 },
                 'hardware_optimization_summary': {
                     'optimizations_used': execution_stats.get('hardware_optimizations_used', []),
-                    'integrated_manager_available': self.integrated_manager is not None,
-                    'comprehensive_optimizer_available': self.comprehensive_optimizer is not None,
-                    'optimization_system_available': self.optimization_system is not None,
-                    'performance_improvement': execution_stats.get('performance_improvement', 0.0),
-                    'optimization_status': execution_stats.get('optimization_status', {})
+                    'gpu_manager_available': self.gpu_manager is not None,
+                    'memory_optimizer_available': self.memory_optimizer is not None,
+                    'cpu_optimizer_available': self.cpu_optimizer is not None
                 },
                 'utilities_availability': self.training_stats.get('utilities_available', {}),
                 'performance_analysis': self._analyze_performance(results),
@@ -1789,17 +1548,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_warning(f"⚠️ Model saving failed: {e}")
 
     def _cleanup_hardware_resources(self) -> None:
-        """Cleanup comprehensive hardware resources."""
+        """Cleanup hardware resources using common_operations utility."""
         try:
-            # Clear optimization caches
-            clear_optimization_caches()
-            
-            # Get optimization status before cleanup
-            if self.hardware.get('integrated_manager'):
-                status = get_system_optimization_status()
-                tprint_info(f"📊 Final optimization status: {status.get('performance_metrics', {})}")
-            
-            tprint_success("✅ Comprehensive hardware cleanup complete")
+            # Use the common_operations cleanup utility
+            cleanup_m1_optimizers()
+            tprint_success("✅ Hardware cleanup complete")
         except Exception as e:
             tprint_warning(f"⚠️ Hardware cleanup failed: {e}")
 
@@ -1833,20 +1586,10 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             memory_mb = execution_stats.get('memory_usage_mb', 0)
             tprint_info(f"💾 Memory usage: {memory_mb:.2f}MB")
 
-            # Enhanced hardware optimizations
+            # Hardware optimizations
             optimizations = execution_stats.get('hardware_optimizations_used', [])
             if optimizations:
                 tprint_info(f"⚙️ Hardware optimizations used: {optimizations}")
-                
-                # Show performance improvement if available
-                improvement = execution_stats.get('performance_improvement', 0.0)
-                if improvement > 0:
-                    tprint_success(f"📈 Performance improvement: {improvement:.2%}")
-                
-                # Show optimization status if available
-                opt_status = execution_stats.get('optimization_status', {})
-                if opt_status:
-                    tprint_info(f"📊 Optimization metrics: {len(opt_status.get('performance_metrics', {}))} tracked")
             else:
                 tprint_info("⚙️ No hardware optimizations used")
 
@@ -1898,21 +1641,11 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_info(f"🤖 Base models: {data_summary.get('base_models_used', 0)}")
             tprint_info(f"💾 Memory usage: {data_summary.get('memory_usage_mb', 0):.2f}MB")
 
-            # Enhanced hardware optimization summary
+            # Hardware optimization summary
             hw_summary = comprehensive_report.get('hardware_optimization_summary', {})
             optimizations = hw_summary.get('optimizations_used', [])
             if optimizations:
                 tprint_info(f"⚙️ Hardware optimizations: {optimizations}")
-                
-                # Show performance improvement
-                improvement = hw_summary.get('performance_improvement', 0.0)
-                if improvement > 0:
-                    tprint_success(f"📈 Performance improvement: {improvement:.2%}")
-                
-                # Show optimization status
-                opt_status = hw_summary.get('optimization_status', {})
-                if opt_status:
-                    tprint_info(f"📊 Optimization status: {len(opt_status.get('performance_metrics', {}))} metrics")
             else:
                 tprint_info("⚙️ No hardware optimizations used")
 
@@ -2434,18 +2167,14 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             else:
                 recommendations.append("🚀 Vectorization is enabled - good for performance")
 
-            # Enhanced hardware optimization recommendations
+            # Hardware optimization recommendations
             hw_stats = self.training_stats.get('hardware_optimizers_available', {})
-            if not hw_stats.get('integrated_manager', False):
-                recommendations.append("🔧 Consider enabling integrated hardware manager for comprehensive optimization")
-            if not hw_stats.get('comprehensive_optimizer', False):
-                recommendations.append("⚡ Consider enabling comprehensive M1 optimizer for maximum performance")
-            if not hw_stats.get('optimization_system', False):
-                recommendations.append("🔄 Consider enabling optimization system for adaptive performance tuning")
-            
-            # Legacy hardware recommendations (if using fallback)
-            if hw_stats.get('legacy_gpu') or hw_stats.get('legacy_memory') or hw_stats.get('legacy_cpu'):
-                recommendations.append("📊 Consider upgrading to enhanced hardware optimization system")
+            if not hw_stats.get('gpu_manager', False):
+                recommendations.append("⚙️ Consider enabling GPU manager for better performance")
+            if not hw_stats.get('memory_optimizer', False):
+                recommendations.append("💾 Consider enabling memory optimization for large datasets")
+            if not hw_stats.get('cpu_optimizer', False):
+                recommendations.append("🖥️ Consider enabling CPU optimization for better performance")
 
             # Utilities availability recommendations
             utils_stats = self.training_stats.get('utilities_available', {})
@@ -2920,17 +2649,11 @@ if __name__ == "__main__":
     tprint_info("- ✅ Creates regime-specific ensemble combinations")
     tprint_info("- ✅ Provides enhanced trade decision signals")
 
-    tprint_info("⚙️ ENHANCED HARDWARE OPTIMIZATION FEATURES:")
-    tprint_info("- ✅ Comprehensive M1/M2/M3/M4 optimization system")
-    tprint_info("- ✅ Integrated hardware manager with adaptive optimization")
-    tprint_info("- ✅ Advanced memory management with caching and compression")
-    tprint_info("- ✅ Neural Engine integration for ML workloads")
-    tprint_info("- ✅ Performance monitoring and auto-tuning")
-    tprint_info("- ✅ Dynamic memory allocation and optimization")
-    tprint_info("- ✅ GPU acceleration with unified memory management")
-    tprint_info("- ✅ Smart caching with LRU eviction and compression")
-    tprint_info("- ✅ Automatic data type optimization and memory efficiency")
-    tprint_info("- ✅ Real-time performance tracking and optimization statistics")
+    tprint_info("⚙️ HARDWARE OPTIMIZATION FEATURES:")
+    tprint_info("- ✅ M1 Mac optimization for enhanced performance")
+    tprint_info("- ✅ Memory optimization for large datasets")
+    tprint_info("- ✅ CPU optimization for better performance")
+    tprint_info("- ✅ Automatic hardware detection and configuration")
 
     tprint_info("🔧 UTILITY INTEGRATION FEATURES:")
     tprint_info("- ✅ Math validation utilities for safe operations")

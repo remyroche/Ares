@@ -48,17 +48,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 import gc
 from sklearn.model_selection import cross_validate, cross_val_predict
-
-# Enhanced hardware optimization imports
-try:
-    from ...hardware import (
-        get_integrated_hardware_manager, m1_optimized, memory_optimized,
-        auto_optimize, smart_cache, performance_tracked, optimize_dataframe,
-        optimize_array, process_ml_training_data, WorkloadCategory
-    )
-    HARDWARE_OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    HARDWARE_OPTIMIZATION_AVAILABLE = False
 from sklearn.metrics import make_scorer
 from sklearn.ensemble import (
     StackingClassifier, VotingClassifier, BaggingClassifier, AdaBoostClassifier,
@@ -1587,8 +1576,6 @@ class VectorizedTrainingManager:
 
     # ===== COMPUTATIONAL OPTIMIZATIONS =====
 
-    @performance_tracked(log_performance=True, track_memory=True)
-    @memory_optimized(optimization_level='aggressive')
     def train_with_gradient_accumulation(self,
                                         model: Any,
                                         train_loader: Any,
@@ -1712,8 +1699,6 @@ class VectorizedTrainingManager:
             self.logger.error(f"❌ Gradient accumulation training failed: {e}")
             return {'success': False, 'error': str(e)}
 
-    @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
-    @smart_cache(ttl=600)  # Cache for 10 minutes
     def compute_optimal_batch_size(self,
                                  X_shape: Tuple[int, ...],
                                  y_shape: Tuple[int, ...] = None,
@@ -1893,8 +1878,6 @@ class VectorizedTrainingManager:
 
     # ===== MIXED PRECISION TRAINING =====
 
-    @performance_tracked(log_performance=True, track_memory=True)
-    @m1_optimized(workload_category=WorkloadCategory.MACHINE_LEARNING)
     def train_with_mixed_precision(self,
                                   model: Any,
                                   train_loader: Any,

@@ -45,14 +45,31 @@ def safe_dataframe_operation(operation_func: Callable[..., pd.DataFrame], *args,
         raise TypeError("operation_func must return a pandas DataFrame")
     return df
 
+@performance_tracked
 def get_memory_usage() -> Dict[str, float]:
-    """Get current memory usage statistics."""
+    """Get current memory usage statistics with enhanced monitoring."""
+    try:
+        # Use enhanced memory monitoring if available
+        enhanced_stats = get_memory_optimization_stats()
+        if enhanced_stats:
+            return {
+                'rss': enhanced_stats.get('rss_mb', 0.0),
+                'vms': enhanced_stats.get('vms_mb', 0.0),
+                'percent': enhanced_stats.get('memory_percent', 0.0),
+                'optimized': True,
+                'memory_saved_mb': enhanced_stats.get('memory_saved_mb', 0.0)
+            }
+    except Exception:
+        pass
+    
+    # Fallback to basic psutil monitoring
     process = psutil.Process(os.getpid())
     memory_info = process.memory_info()
     return {
         'rss': memory_info.rss / 1024 / 1024,  # MB
         'vms': memory_info.vms / 1024 / 1024,  # MB
-        'percent': process.memory_percent()
+        'percent': process.memory_percent(),
+        'optimized': False
     }
 
 @memory_efficient(OptimizationConfig(
@@ -91,50 +108,94 @@ def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
             
             return df_opt
 
+@auto_optimize(optimize_inputs=True, optimize_outputs=True)
+@performance_tracked
 def safe_divide(a: Union[pd.Series, np.ndarray, float], 
                 b: Union[pd.Series, np.ndarray, float], 
                 fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:
-    """Safely divide two arrays/series, handling division by zero."""
-    if isinstance(a, pd.Series) and isinstance(b, pd.Series):
-        return a.div(b).fillna(fill_value)
-    elif isinstance(a, pd.Series):
-        return a.div(b).fillna(fill_value)
-    elif isinstance(b, pd.Series):
-        return a / b.fillna(1e-10)
-    else:
-        # NumPy array or scalars: allocate minimal output and use where mask
-        a_arr = np.asarray(a, dtype=np.float64)
-        b_arr = np.asarray(b, dtype=np.float64)
-        out_shape = np.broadcast(a_arr, b_arr).shape
-        result = np.empty(out_shape, dtype=np.float64)
-        # Initialize with fill_value only where division is invalid
-        mask = b_arr != 0
-        # Broadcast mask to output shape
-        mask_b = np.broadcast_to(mask, out_shape)
-        result[~mask_b] = fill_value
-        np.divide(a_arr, b_arr, out=result, where=mask_b)
-        return result
+    """Safely divide two arrays/series with enhanced optimization, handling division by zero."""
+    try:
+        if isinstance(a, pd.Series) and isinstance(b, pd.Series):
+            return a.div(b).fillna(fill_value)
+        elif isinstance(a, pd.Series):
+            return a.div(b).fillna(fill_value)
+        elif isinstance(b, pd.Series):
+            return a / b.fillna(1e-10)
+        else:
+            # NumPy array or scalars: allocate minimal output and use where mask
+            a_arr = np.asarray(a, dtype=np.float64)
+            b_arr = np.asarray(b, dtype=np.float64)
+            out_shape = np.broadcast(a_arr, b_arr).shape
+            result = np.empty(out_shape, dtype=np.float64)
+            # Initialize with fill_value only where division is invalid
+            mask = b_arr != 0
+            # Broadcast mask to output shape
+            mask_b = np.broadcast_to(mask, out_shape)
+            result[~mask_b] = fill_value
+            np.divide(a_arr, b_arr, out=result, where=mask_b)
+            return result
+    except Exception as e:
+        logger.warning(f"Safe divide optimization failed: {e}")
+        # Fallback to basic implementation
+        if isinstance(a, pd.Series) and isinstance(b, pd.Series):
+            return a.div(b).fillna(fill_value)
+        elif isinstance(a, pd.Series):
+            return a.div(b).fillna(fill_value)
+        elif isinstance(b, pd.Series):
+            return a / b.fillna(1e-10)
+        else:
+            return np.divide(a, b, out=np.full_like(a, fill_value), where=b!=0)
 
+@auto_optimize(optimize_inputs=True, optimize_outputs=True)
+@performance_tracked
 def safe_mean(x: Union[pd.Series, np.ndarray]) -> float:
-    """Fast nan-safe mean for arrays/Series."""
-    if isinstance(x, pd.Series):
-        return float(np.nanmean(x.to_numpy(dtype=float, copy=False)))
-    return float(np.nanmean(np.asarray(x, dtype=float)))
+    """Fast nan-safe mean for arrays/Series with enhanced optimization."""
+    try:
+        if isinstance(x, pd.Series):
+            # Use optimized numpy conversion if available
+            return float(np.nanmean(x.to_numpy(dtype=float, copy=False)))
+        return float(np.nanmean(np.asarray(x, dtype=float)))
+    except Exception as e:
+        logger.warning(f"Safe mean optimization failed: {e}")
+        # Fallback to basic implementation
+        if isinstance(x, pd.Series):
+            return float(x.mean())
+        return float(np.mean(x))
 
+@auto_optimize(optimize_inputs=True, optimize_outputs=True)
+@performance_tracked
 def safe_std(x: Union[pd.Series, np.ndarray], ddof: int = 0) -> float:
-    """Fast nan-safe std for arrays/Series."""
-    if isinstance(x, pd.Series):
-        return float(np.nanstd(x.to_numpy(dtype=float, copy=False), ddof=ddof))
-    return float(np.nanstd(np.asarray(x, dtype=float), ddof=ddof))
+    """Fast nan-safe std for arrays/Series with enhanced optimization."""
+    try:
+        if isinstance(x, pd.Series):
+            # Use optimized numpy conversion if available
+            return float(np.nanstd(x.to_numpy(dtype=float, copy=False), ddof=ddof))
+        return float(np.nanstd(np.asarray(x, dtype=float), ddof=ddof))
+    except Exception as e:
+        logger.warning(f"Safe std optimization failed: {e}")
+        # Fallback to basic implementation
+        if isinstance(x, pd.Series):
+            return float(x.std(ddof=ddof))
+        return float(np.std(x, ddof=ddof))
 
+@auto_optimize(optimize_inputs=True, optimize_outputs=True)
+@performance_tracked
 def safe_log(x: Union[pd.Series, np.ndarray], 
              base: float = np.e, 
              fill_value: float = 0.0) -> Union[pd.Series, np.ndarray]:
-    """Safely compute logarithm, handling zero and negative values."""
-    if isinstance(x, pd.Series):
-        return np.log(np.maximum(x, 1e-10)) / np.log(base)
-    else:
-        return np.log(np.maximum(x, 1e-10)) / np.log(base)
+    """Safely compute logarithm with enhanced optimization, handling zero and negative values."""
+    try:
+        if isinstance(x, pd.Series):
+            return np.log(np.maximum(x, 1e-10)) / np.log(base)
+        else:
+            return np.log(np.maximum(x, 1e-10)) / np.log(base)
+    except Exception as e:
+        logger.warning(f"Safe log optimization failed: {e}")
+        # Fallback to basic implementation
+        if isinstance(x, pd.Series):
+            return x.apply(lambda val: np.log(max(val, 1e-10)) / np.log(base))
+        else:
+            return np.log(np.maximum(x, 1e-10)) / np.log(base)
 
 def safe_sqrt(x: Union[pd.Series, np.ndarray]) -> Union[pd.Series, np.ndarray]:
     """Safely compute square root, handling negative values."""
@@ -1520,42 +1581,7 @@ def get_logger(name: str) -> logging.Logger:
     """Get logger instance."""
     return logging.getLogger(name)
 
-def cleanup_m1_optimizers() -> bool:
-    """Cleanup M1 optimizers.
-    
-    Returns:
-        bool: True if cleanup was successful, False otherwise
-    """
-    try:
-        # Placeholder for M1 optimizer cleanup
-        # TODO: Implement actual M1 optimizer cleanup logic
-        return True  # Return True to indicate successful cleanup (even if no-op)
-    except Exception:
-        return False
-
-def get_m1_gpu_manager():
-    """Get M1 GPU manager."""
-    try:
-        from src.utils.hardware.m1_gpu_utils import M1GPUManager
-        return M1GPUManager()
-    except Exception:
-        return None
-
-def get_m1_memory_optimizer():
-    """Get M1 memory optimizer."""
-    try:
-        from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
-        return M1MemoryOptimizer()
-    except Exception:
-        return None
-
-def get_m1_cpu_optimizer():
-    """Get M1 CPU optimizer."""
-    try:
-        from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
-        return M1CPUOptimizer()
-    except Exception:
-        return None
+# Legacy M1 hardware functions removed - use enhanced hardware utilities from src.utils.hardware instead
 
 def validate_finite(x: Union[pd.Series, np.ndarray]) -> bool:
     """Validate that values are finite."""
@@ -1589,10 +1615,17 @@ def timed_operation(operation_name: str = "Operation"):
     return _timed_operation()
 
 def optimize_memory():
-    """Optimize memory usage."""
+    """Optimize memory usage using enhanced hardware system."""
     try:
+        # Use enhanced hardware system for comprehensive memory optimization
+        from src.utils.hardware import force_cleanup, get_memory_stats
+        force_cleanup()
+        stats = get_memory_stats()
+        logger.info(f"🧹 Enhanced memory optimization completed: {stats}")
+    except ImportError:
+        # Fallback to basic optimization
         force_garbage_collection()
-        logger.info("🧹 Memory optimization completed")
+        logger.info("🧹 Basic memory optimization completed")
     except Exception as e:
         logger.warning(f"Memory optimization failed: {e}")
 

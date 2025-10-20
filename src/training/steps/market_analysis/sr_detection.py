@@ -21,22 +21,7 @@ import random
 import gc
 
 # Core imports
-try:
-    from src.training.base_step import BaseStep
-except ImportError:
-    # Fallback BaseStep class
-    class BaseStep:
-        def __init__(self, config):
-            self.config = config
-
-        async def execute(self, data):
-            pass
-
-        def validate_config(self):
-            pass
-
-        def get_status(self):
-            return {}
+from src.training.steps.base_step import BaseStep
 
 from src.utils.logger import system_logger
 
@@ -184,16 +169,16 @@ class SRDetectionStep(BaseStep):
     """SR Detection Stage: Detect Support/Resistance levels using Enhanced SR Detection."""
 
     @log_important_calls
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self, step_name: str = "sr_detection") -> None:
         """Initialize SR detection step."""
-        super().__init__(config)
+        super().__init__(step_name)
         self.logger = system_logger.getChild('SRDetectionStep')
         self.standards = PipelineStandards(self.logger)
-        self.sr_optimization_config = config.get('sr_optimization', {
+        self.sr_optimization_config = {
             'min_touches': 2,
             'tolerance_pct': 0.5,
             'lookback_periods': 100
-        })
+        }
 
         # Adjust configuration for LIGHT mode
         training_mode = os.environ.get('LIGHT_TRAINING_MODE', '')
@@ -225,21 +210,44 @@ class SRDetectionStep(BaseStep):
                     pass
             self.memory_manager = FallbackMemoryManager()
 
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Execute the SR detection stage."""
         self.logger.info('🎯 Starting SR Detection Stage execution')
         start_time = time.time()
 
         try:
-            # Get data from pipeline state
-            data = pipeline_state.get('dataframe')
+            # Set context for artifact management
+            self._set_context(
+                symbol=config.get('symbol', 'ETHUSDT'),
+                exchange=config.get('exchange', 'binance'),
+                direction=config.get('direction', 'both'),
+                model=config.get('model', 'default')
+            )
+
+            # Load data using artifact manager
+            data = self._load_dataframe('market_data')
             if data is None:
-                raise ValueError("No dataframe found in pipeline state")
+                # Try to load from different possible artifact names
+                data = self._load_dataframe('processed_data') or self._load_dataframe('data')
+                
+            if data is None:
+                raise ValueError("No market data found in artifacts")
 
             self.logger.info(f'📊 Data loaded: {data.shape[0]:,} rows, {data.shape[1]} columns')
 
+            # Update SR optimization config from config
+            self.sr_optimization_config.update(config.get('sr_optimization', {}))
+
             # Detect SR levels
             sr_levels = self._detect_sr_levels(data)
+
+            # Save results using artifact manager
+            self._save_artifact('sr_levels', sr_levels)
+            self._save_metadata({
+                'execution_time': time.time() - start_time,
+                'sr_levels_count': len(sr_levels.get('levels', [])),
+                'config': config
+            })
 
             execution_time = time.time() - start_time
             self.logger.info(f'✅ SR Detection completed in {execution_time:.2f} seconds')
@@ -596,3 +604,16 @@ class SRDetectionStep(BaseStep):
             'max_sr_ratio': self.max_sr_ratio,
             'timestamp': get_current_datetime().isoformat()
         }
+
+
+# Register the step
+def register_sr_detection_step():
+    """Register the SR detection step."""
+    from src.training.steps.base_step import step_registry
+    
+    step_registry.register("sr_detection", SRDetectionStep)
+    print("✅ SR detection step registered")
+
+
+# Auto-register when module is imported
+register_sr_detection_step()

@@ -16,6 +16,12 @@ from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bo
 from sklearn.neighbors import NearestNeighbors
 import warnings
 
+# Import enhanced hardware optimization tools
+from src.utils.hardware import (
+    smart_cache, auto_optimize, memory_efficient, performance_tracked,
+    optimize_dataframe_default, optimize_numpy_array_default
+)
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -83,6 +89,10 @@ class HDBSCANClusterer:
                 'cluster_selection_epsilon': [0.0, 0.1, 0.2, 0.3]
             }
     
+    @smart_cache(ttl=3600)  # Cache clustering results for 1 hour
+    @auto_optimize(optimize_inputs=True, optimize_outputs=True)
+    @memory_efficient(memory_threshold_mb=200.0, auto_cleanup=True)
+    @performance_tracked(log_performance=True, track_memory=True)
     def cluster_data(self, features_df: pd.DataFrame) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Cluster data using HDBSCAN.
